@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -608,7 +608,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented by native sonnet coder: planogram/contracts.py (all cycle contracts, CreditPolicy validation/default, is_resolved), additive ShelfAssessment + optional ComplianceResult.assessment in parrot/models/compliance.py, tests/planogram_cycle/test_contracts.py (7 passed).
+
+Review fix: coder added an unlisted tests/planogram_cycle/__init__.py (fidelity_violation); removed in aaf0a845e (not needed — collection works without it). Model feedback recorded: coder-feedback:e0daa670b250251730937ce3 (pattern unlisted-file-added); review: coder-review:2a878068f57cf17a4a4a1e42.
+Merge-tier tests: all green except 2 failures pre-existing on origin/dev (test_dataset_models::test_neither_query_nor_slug_fails_validation, test_endcap_no_shelves_promotional::test_status_not_missing_when_found). Note: select_tests must run with PYTHONPATH pointing at the worktree's packages/*/src, else it imports the main checkout.
+Engine lint commit 4186b7167 (black); residual B905/B007 in pre-existing TextMatcher code left for /sdd-done.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 256s · Tokens: 78.8k (total)
