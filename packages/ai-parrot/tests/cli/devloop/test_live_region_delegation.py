@@ -1,4 +1,5 @@
 """RunView delegates its Live handling to LiveRegion (FEAT-573 TASK-3414, spec M14)."""
+
 from __future__ import annotations
 
 import asyncio

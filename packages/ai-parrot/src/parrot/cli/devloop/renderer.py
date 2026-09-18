@@ -4,16 +4,15 @@ Polls ``SessionHost.replay_since(last_seq)`` on a ticker and maps action
 types to Rich renderables in a scrolling Live region. Read-only
 relationship with the host — never calls ``apply`` or ``resolve_gate``.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console, Group
 from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
 
 from parrot.cli.console import LiveRegion
@@ -75,10 +74,7 @@ class RunView:
     def pending_gates(self) -> Dict[str, Any]:
         """Return currently pending gates from host state."""
         gates = getattr(self.host.state, "gates", {})
-        return {
-            gid: gate for gid, gate in gates.items()
-            if getattr(gate, "status", "") == "pending"
-        }
+        return {gid: gate for gid, gate in gates.items() if getattr(gate, "status", "") == "pending"}
 
     def pause(self) -> None:
         """Pause the live display (for modal prompts) — delegates to ``LiveRegion.pause``."""
@@ -220,8 +216,7 @@ class RunView:
             gate_id = getattr(gate, "gate_id", "")
             self._add_line(
                 Panel(
-                    f"[bold yellow]GATE[/bold yellow] {kind}: {title}\n"
-                    f"ID: {gate_id}",
+                    f"[bold yellow]GATE[/bold yellow] {kind}: {title}\n" f"ID: {gate_id}",
                     border_style="yellow",
                     title="Approval Required",
                 )
