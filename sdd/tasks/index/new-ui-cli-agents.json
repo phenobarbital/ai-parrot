@@ -128,7 +128,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -139,8 +139,8 @@
       "parallelism_notes": "Imports get_console/LiveRegion from TASK-3400 (cli/console.py) and TurnEvent subclasses from TASK-3403 (cli/events.py). Sole editor of cli/renderer.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3405-renderer-live-region-streaming.md"
+      "completed_at": "2026-09-18T07:13:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3405-renderer-live-region-streaming.md"
     },
     {
       "id": "TASK-3406",

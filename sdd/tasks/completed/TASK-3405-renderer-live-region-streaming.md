@@ -402,10 +402,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt 27e15146bb1f4aae837abf3e29e46440)
+**Date**: 2026-09-18
+**Notes**: Removed `_BlockingSafeFile` and all `sys.stdout`/`Console(file=...)`
+workarounds; `ResponseRenderer(console=None, region=None)` now defaults to
+`get_console()`, with a lazily-built `region` property honouring a console
+swapped in after construction. `render_stream_start/chunk/end` repaint via
+`region.update(Markdown(buffer))` with a `Text` fallback if Markdown
+construction raises. Added `render_usage_unknown`, `render_tool_started`,
+`render_turn_event` (dispatches every `TurnEventKind`), `render_history`.
+Checked the TASK-3374 reuse-helper pattern for the `TurnFailed` branch: read
+`render_error`'s body first, found it appends a live traceback (wrong for a
+structured error_type/error_message pair) and built a dedicated `Panel`
+instead of reusing it.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Merge clean (`coder_merge` outcome=merged); engine lint autofix (black)
+applied. Orchestrator ran `pytest test_renderer_stream.py`: 6 passed; then
+the full `packages/ai-parrot/tests/cli/` suite: 192 passed, 5 failures
+confirmed pre-existing on `dev` itself (unrelated `TestStandaloneAgentLoader`
++ `test_wizard_workbrief_roundtrip`), 1 known `uv sync` gap
+(`test_textual_is_importable`) — no regressions from this change.
 
-**Deviations from spec**: none | describe if any
+**Feedback recorded**: none — clean delivery, TASK-3374 pattern correctly
+judged and applied (checked before reusing, decided not to reuse).
+**Deviations from spec**: none.
