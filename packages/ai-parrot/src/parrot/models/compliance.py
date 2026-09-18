@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Iterable, Set
+from typing import Any, Dict, List, Optional, Tuple, Iterable, Set
 from enum import Enum
 import re
 import unicodedata
@@ -29,6 +29,18 @@ class BrandComplianceResult(BaseModel):
     found: bool = False
     confidence: float = 0.0
 
+class ShelfAssessment(BaseModel):
+    """Additive shelf assessment metadata (FEAT-574). Every field is optional so legacy producers need not set it."""
+    assessment_status: Optional[str] = Field(default=None, description="complete | inconclusive | legacy_unmeasured")
+    coverage: Optional[float] = Field(default=None, description="Resolved facings / expected facings on this shelf")
+    strict_score: Optional[float] = Field(default=None)
+    lenient_score: Optional[float] = Field(default=None)
+    expected_facings: Optional[int] = Field(default=None)
+    resolved_facings: Optional[int] = Field(default=None)
+    unresolved_facing_ids: List[str] = Field(default_factory=list)
+    rule_results: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class ComplianceResult(BaseModel):
     """Final compliance check result"""
     shelf_level: str = Field(description="Shelf level being checked")
@@ -50,6 +62,9 @@ class ComplianceResult(BaseModel):
     )
     text_compliance_score: float = Field(default=1.0)
     overall_text_compliant: bool = Field(default=True)
+    assessment: Optional[ShelfAssessment] = Field(
+        default=None, description="Additive assessment metadata; None for legacy producers."
+    )
 
 
 class TextMatcher:
