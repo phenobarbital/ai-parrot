@@ -131,3 +131,24 @@ async def test_is_connected_false_after_close(tmp_path):
 async def test_build_overflow_prefix_default(backend):
     prefix = backend.build_overflow_prefix("u", "a", "s", "aid")
     assert prefix == "artifacts/USER#u#AGENT#a/THREAD#s/aid"
+
+
+def _aiosqlite_threads() -> set[str]:
+    import threading
+
+    return {t.name for t in threading.enumerate() if "_connection_worker_thread" in t.name}
+
+
+async def test_failed_initialize_closes_connection_and_leaks_no_thread(tmp_path):
+    """A schema error after connect() must release the aiosqlite worker thread."""
+    import sqlite3
+
+    path = tmp_path / "parrot.db"
+    with sqlite3.connect(path) as raw:
+        raw.execute("CREATE TABLE conversations (user_id TEXT NOT NULL)")  # index columns missing
+    before = _aiosqlite_threads()
+    b = ConversationSQLiteBackend(path=str(path))
+    with pytest.raises(Exception, match="no such column"):
+        await b.initialize()
+    assert b.is_connected is False
+    assert _aiosqlite_threads() == before

@@ -101,12 +101,18 @@ class ConversationSQLiteBackend(ConversationBackend):
         Path(self._path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = await aiosqlite.connect(self._path)
         self._conn.row_factory = aiosqlite.Row
-        await self._conn.execute("PRAGMA journal_mode=WAL")
-        await self._conn.execute(self._CREATE_CONVERSATIONS)
-        await self._conn.execute(self._CREATE_CONV_IDX_USER_AGENT)
-        await self._conn.execute(self._CREATE_CONV_IDX_EXPIRES)
-        await self._conn.execute(self._CREATE_ARTIFACTS)
-        await self._conn.commit()
+        try:
+            await self._conn.execute("PRAGMA journal_mode=WAL")
+            await self._conn.execute(self._CREATE_CONVERSATIONS)
+            await self._conn.execute(self._CREATE_CONV_IDX_USER_AGENT)
+            await self._conn.execute(self._CREATE_CONV_IDX_EXPIRES)
+            await self._conn.execute(self._CREATE_ARTIFACTS)
+            await self._conn.commit()
+        except BaseException:
+            # An open aiosqlite connection owns a non-daemon worker thread; a failed
+            # schema step must not leave it running (it would pin the process).
+            await self.close()
+            raise
         self._initialized = True
         self.logger.info("SQLite backend initialized: %s", self._path)
 

@@ -91,10 +91,15 @@ class SQLiteEpisodeBackend:
         possible instead of fighting sqlite3's implicit transaction wrapping.
         """
         self._db = await aiosqlite.connect(str(self._path), isolation_level=None, timeout=self._busy_timeout_ms / 1000)
-        await self._db.execute("PRAGMA journal_mode=WAL")
-        await self._db.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms}")
-        await self._db.execute("PRAGMA synchronous=NORMAL")
-        await self._db.executescript(SCHEMA)
+        try:
+            await self._db.execute("PRAGMA journal_mode=WAL")
+            await self._db.execute(f"PRAGMA busy_timeout={self._busy_timeout_ms}")
+            await self._db.execute("PRAGMA synchronous=NORMAL")
+            await self._db.executescript(SCHEMA)
+        except BaseException:
+            # A leaked aiosqlite worker thread (non-daemon) pins the interpreter after a failure.
+            await self.close()
+            raise
         try:
             await self._db.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(episode_id UNINDEXED, text)"
