@@ -1,4 +1,5 @@
 """Unit tests for parrot.cli.modes (FEAT-573 TASK-3401)."""
+
 from __future__ import annotations
 
 import os
@@ -7,8 +8,16 @@ import stat
 import pytest  # verified: packages/ai-parrot/tests/cli/test_integration.py:14
 
 from parrot.cli.modes import (
-    SessionPointer, UIMode, UIModeError, agent_slug, cli_state_dir, history_path,
-    is_interactive, load_session_pointer, resolve_ui_mode, save_session_pointer,
+    SessionPointer,
+    UIMode,
+    UIModeError,
+    agent_slug,
+    cli_state_dir,
+    history_path,
+    is_interactive,
+    load_session_pointer,
+    resolve_ui_mode,
+    save_session_pointer,
 )
 
 

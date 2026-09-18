@@ -1,4 +1,5 @@
 """UI mode resolution and per-user CLI state paths for ``parrot agent`` (FEAT-573 M2)."""
+
 from __future__ import annotations
 
 import json
@@ -49,7 +50,9 @@ def resolve_ui_mode(requested: UIMode, *, stdin_isatty: bool, stdout_isatty: boo
         UIModeError: when ``TUI`` is requested explicitly but the streams are not both TTYs
             (or ``TERM`` is ``dumb``).
     """
-    tui_capable = is_interactive(stdin_isatty=stdin_isatty, stdout_isatty=stdout_isatty) and (term or "").lower() != "dumb"
+    tui_capable = (
+        is_interactive(stdin_isatty=stdin_isatty, stdout_isatty=stdout_isatty) and (term or "").lower() != "dumb"
+    )
     if requested is UIMode.AUTO:
         return UIMode.TUI if tui_capable else UIMode.INLINE
     if requested is UIMode.TUI:
@@ -109,9 +112,7 @@ def save_session_pointer(agent_name: str, session_id: str) -> None:
     os.chmod(parent, 0o700)
     pointer = SessionPointer(agent_name=agent_name, last_session_id=session_id)
     target = parent / f"{agent_slug(agent_name)}.json"
-    with tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", dir=parent, delete=False
-    ) as tmp_file:
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=parent, delete=False) as tmp_file:
         tmp_file.write(pointer.model_dump_json())
         tmp_path = Path(tmp_file.name)
     try:
