@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-18T22:25:14+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-18T23:31:46+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -196,7 +196,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -208,8 +208,8 @@
       "parallelism_notes": "documents KNOWN_PROJECTS/PROJECT_ALIASES from TASK-3459 (sdd_meta.py), the doc_taxonomy flags from TASK-3461 (scripts/sdd/doc_taxonomy.py) and the backfill flags from TASK-3463 (scripts/sdd/backfill_taxonomy.py)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3468-workflow-docs-taxonomy.md"
+      "completed_at": "2026-09-18T23:31:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3468-workflow-docs-taxonomy.md"
     }
   ]
 }
