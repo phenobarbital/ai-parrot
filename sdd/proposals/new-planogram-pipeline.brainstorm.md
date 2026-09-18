@@ -464,6 +464,27 @@ image identify; existing illumination check, text requirements, promotional
 aliasing and `_assign_products_to_shelves` semantics carried into the compare
 hook.
 
+### Provisional scoring defaults (configurable)
+
+Extends the `ScoringWeights` pattern of `plancheck` (`misplaced=0.5`,
+`variant_unresolved=0.5`, `inferred_present=0.5`,
+`verified_by_expectation=1.0`) with one new weight. **Provisional** — chosen so
+the first benchmark run has numbers to react to, not tuned on data.
+
+| Rule | Default | Rationale |
+|---|---|---|
+| `llm_added` weight | **0.5** | Same tier as the other "probably right, not proven" statuses. |
+| Reported confidence of an `llm_added` identification | `llm_confidence × 0.5` | The box was localised by the LLM, not by pixels; halve it so it never outranks a CV-anchored detection of equal LLM confidence. |
+| **Strict** credit for a match whose only evidence is `llm_added` | **0.0** | Strict means deterministic evidence. An LLM-localised shape has none. |
+| **Lenient** credit for that match | **0.5** (`weights.llm_added`) | Counts as present, at half value. |
+| A facing seen by both a CV shape and an `llm_added` shape | CV observation wins; `llm_added` is ignored for that facing | Never let the weaker source override the stronger one. |
+| Whole-run LLM-detector fallback (`detection_source="llm"`) | every detection treated as `llm_added` | Same evidence class; the run is honest about it: strict 0, lenient ≤ 50 %. |
+| `overall_compliance_score` (the key the handler reports) | the **lenient** score, 0–1 | Closest to today's semantics; `strict` is exposed as a new additive key. |
+| Legacy adapter types | unaffected | Their own `check_planogram_compliance` produces the score. |
+
+All of these live in one Pydantic weights model with these defaults, overridable
+per planogram.
+
 ### Edge Cases & Error Handling
 
 - **No shapes / too few shapes** → LLM detector fallback; never an empty silent
@@ -927,7 +948,7 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - [x] **Which real ProductOnShelves photo feeds the spike and the first `slots_definition`?** — *Owner: Jesus Lara*: `examples/planogram/photo_2026-09-18_20-36-30.jpg` (git-ignored, 1280×955). See "Reference photo" under Code Context for what it contains.
 - [x] **Which catalog backs the SKU lookup of the descriptor utility?** — *Owner: Jesus Lara*: none — **discarded**. There is no data yet to back SKU or price lookups. The descriptor utility works from the **POG PDF only**; `price` is never proposed by it and stays an optional, manually supplied field.
 - [x] **Shape of the `PlanogramConfig` backend field** — *Owner: Jesus Lara*: a single `"provider:model"` string, the format `LLMFactory.create` already takes (e.g. `google:gemini-3.5-flash`, `anthropic:claude-sonnet-5`), with a matching nullable column on `troc.planograms_configurations` added by the same ALTER script.
-- [ ] **Confidence weight of `llm_added` shapes** in the compare stage, and whether strict credit can ever be earned by an LLM-added detection. — *Owner: Jesus Lara*
+- [x] **Confidence weight of `llm_added` shapes** — *Owner: Jesus Lara*: provisional default set by Claude at the user's request, configurable, to be revisited with the benchmark numbers — `llm_added = 0.5`. See "Provisional scoring defaults" under Feature Description.
 - [ ] **Fixture scoping without an ROI gate.** The reference photo shows neighbouring aisles full of other printers and price tags. With no ROI, perception will propose those too. How are off-fixture shapes excluded — anchor on the backlit + the box stack below it (soft scope, never a hard gate), let registration discard what does not align with `slots_definition`, or have the LLM flag `off_fixture`? — *Owner: Jesus Lara*
 - [ ] **Name of the backend field** on `PlanogramConfig` / the table (e.g. `llm`), given `PlanogramCompliance.__init__` already has `llm`, `llm_provider`, `llm_model` arguments. — *Owner: Jesus Lara*
 - [ ] **Photo resolution.** The reference photo is 1280×955 (messenger-compressed); price-tag text is a few pixels tall. Is this the resolution production will receive, or will originals be available? OCR expectations for ProductOnShelves depend on it. — *Owner: Jesus Lara*
