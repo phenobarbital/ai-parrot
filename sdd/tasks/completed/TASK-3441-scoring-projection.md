@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3440
@@ -641,7 +641,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+comparison/scoring.py: _decide (10-step list; reliable = not uncertain and saying occupancy/product/brand; empty only via occupancy=='empty'; uncertain never conflicts; source never consulted), merge_positions (one PositionResult per facing in definition order, credits from CreditPolicy, deciding observation FIRST in observations + 'deciding:<image>/<shape>' note, all provenance kept, ambiguous registrations ignored), _weights (header/endcap branch keyed on endcap.position; non-header defaults 0.8/0.1/0.2; normalised over applying terms), score_shelves (|F_s| always in the denominator, zone_score = required zones with a passed zone_present outcome, text/visual = mean assessed outcome score (unassessed earn 0), illumination penalty / max(1,|F|) applied once via _combine, clamp01), summarize (unweighted shelf means, global coverage, definition_coverage, evidence_quality from the deciding observation of resolved facings, COMPLETE iff all facings resolved and all rule_results assessed).
+comparison/projection.py: project_compliance (status rules; missing_products = EMPTY facings + illumination pseudo-entries; ShelfAssessment on every result) and finalize_comparison (only place overall_compliant can be True).
+Design decision (signature gap): project_compliance cannot see bindings, so score_shelves puts into ShelfScore.rule_results only status-relevant outcomes — every MANDATORY binding (unassessed placeholder when no outcome) plus assessed illumination ones; projection treats a failed entry as blocking and a failed entry with penalty>0 (only illumination rules carry penalties) as an illumination pseudo-entry. Zero-facing shelves satisfy the facing threshold vacuously (rules decide).
+Tests: test_scoring_projection.py 12 passed — the 7 pinned fixtures with the spec values (weight_normalisation 0.92727, zone_only ((0.64+0.15)/0.84)*0.5, partial_identity 0.8/0.6/0.6, full_llm evidence_quality 0.5, ...) + 5 projection tests. ruff clean on comparison/.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
