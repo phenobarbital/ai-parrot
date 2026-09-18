@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3418
@@ -368,7 +368,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+perception/ocr.py: OcrReader (import probe at construction, RapidOCR engine built on first read, x4 INTER_CUBIC upscale, texts joined ' | ', mean score clamped to [0,1], empty/None crop or unavailable -> ('', 0.0), engine failure -> warning + ('', 0.0)); module-level picklable read_crop with a per-process singleton. pyproject: numpy, pillow, rapidfuzz>=3.0 appended to dependencies; [project.optional-dependencies] planogram = rapidocr>=3.9, onnxruntime>=1.20. No lockfile touched; no uv sync.
+Tests: test_ocr_reader.py 7 passed (incl. a subprocess check that importing the module loads neither rapidocr nor onnxruntime; fake engines only — no ONNX model loaded). ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
