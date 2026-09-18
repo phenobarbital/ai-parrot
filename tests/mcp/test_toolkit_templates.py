@@ -1,4 +1,5 @@
 """Every packaged toolkit template is well-formed (FEAT-570, TASK-3370)."""
+
 from __future__ import annotations
 
 import importlib
