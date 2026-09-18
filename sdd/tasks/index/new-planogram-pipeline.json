@@ -34,7 +34,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "Imports propose_shapes and ShapeProfile from TASK-3418 (planogram/perception/shapes.py, profiles.py) to measure them.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3419-perception-spike-harness.md"
+      "completed_at": "2026-09-18T23:35:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3419-perception-spike-harness.md"
     },
     {
       "id": "TASK-3420",

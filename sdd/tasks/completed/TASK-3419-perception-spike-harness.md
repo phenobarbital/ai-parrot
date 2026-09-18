@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3418
@@ -548,7 +548,12 @@ def test_outcome_passed_only_when_every_gate_passes(ev): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+.gitignore negations (harness *.py + README tracked, anything else in perception_spike/ ignored; descriptor_assistant.py / backend_benchmark.py un-ignored) — verified with git check-ignore. evaluate.py (stdlib+pydantic): iou, deterministic greedy one-to-one matching, evaluate_photo (per-profile P/R, slot metrics over product/box proposals de-duplicated at IoU 0.7 and not rejected by membership, off-fixture counts with tri-state admission), decide_outcome (inconclusive first: <3 evaluable photos / missing required condition / any untested gate; then failed; else passed). run_spike.py: CANDIDATE_PROFILES hypothesis (price_tag, product_body edge, product_box edge, backlit_zone bright, electronic_tag bright), four synthetic scenes whose annotations come from the draw calls, private-sample loader logging counts only, optional --membership-module (admit(candidates, image_size)), Markdown report. README with privacy rules and annotation format.
+Committed report (no private sample in the worktree, no membership module): Outcome inconclusive; synthetic results — full_wall P0.86/R1.00, partial_shelf P0.50/R1.00, absent_anchors P1.00/R1.00, adjacent_fixture P0.67/R1.00 (4 off-fixture proposals) => synthetic gate failed; accepted profiles []. Profiles were NOT tuned against the synthetic scenes (per the task: record failures). ProductOnShelves therefore keeps perception_mode='llm_detector'.
+Tests: test_spike_evaluate.py 9 passed; ruff clean on examples/planogram/perception_spike/.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
