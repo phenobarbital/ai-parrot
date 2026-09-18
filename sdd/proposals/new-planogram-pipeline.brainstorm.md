@@ -13,6 +13,10 @@ base_branch: dev
 **Status**: exploration
 **Recommended Option**: A
 
+**Review consolidation**: 2026-09-18. The contracts below incorporate the
+evaluation follow-up. Numerical spike and evidence defaults remain provisional
+until validated; this document is still an exploration, not an approved spec.
+
 **Related**: FEAT-565 `new-planogram-compliance-algo` (merged) — produced the
 standalone `examples/planogram/plancheck/` engine this feature draws on. FEAT-048
 `planogram-compliance-modular` — introduced `AbstractPlanogramType`.
@@ -50,8 +54,10 @@ specific, and not reachable from the production handler.
 (`PlanogramComplianceHandler`), and developers adding planogram types.
 
 **Goal**: make the three-step cycle the *only* cycle of `PlanogramCompliance`,
-as a drop-in replacement, with the type-specific parts expressed per
-`AbstractPlanogramType`.
+with the existing public call and response shapes, and with type-specific parts
+expressed per `AbstractPlanogramType`. Migrated ProductOnShelves configurations
+require a reviewed data migration before deployment; this is not an unchanged
+configuration or unchanged score-semantics guarantee.
 
 ### The operating cycle (user-defined)
 
@@ -67,18 +73,22 @@ as a drop-in replacement, with the type-specific parts expressed per
 
 ## Constraints & Requirements
 
-- **Drop-in replacement.** `PlanogramCompliance(planogram_config=..., llm=...)`
+- **Public API compatibility, with an explicit configuration migration.**
+  `PlanogramCompliance(planogram_config=..., llm=...)`
   and `await pipeline.run(image, output_dir=..., image_id=...)` keep working.
   The handler reads exactly four result keys — `overlay_path`,
   `overall_compliant`, `overall_compliance_score`, `compliance_results` — and
   the examples additionally read `step3_compliance_results` and
   `rendered_image`. **All eight existing keys are preserved**; new keys are
-  additive.
+  additive. Existing ProductOnShelves configurations must receive a validated
+  `slots_definition` before the new runtime is deployed. See Migration and
+  compatibility contract; preserving keys does not promise identical scores.
 - **Total replacement of the run cycle** (user decision). The ROI-first
   orchestration in `plan.py` goes away; it is not kept behind a flag.
 - **Unmigrated types keep working through an adapter in the base class** (user
   decision). `GraphicPanelDisplay`, `ProductCounter`,
-  `EndcapNoShelvesPromotional`, `EndcapBacklitMultitier` are not touched; the
+  `EndcapNoShelvesPromotional`, `EndcapBacklitMultitier` retain their algorithms;
+  provider-neutral call-site updates are still in scope. The
   base `AbstractPlanogramType` provides default implementations of the new
   hooks that wrap their existing `compute_roi` / `detect_objects` /
   `check_planogram_compliance`.
@@ -100,11 +110,14 @@ as a drop-in replacement, with the type-specific parts expressed per
   products (an InkWall may have 102 products or 50). `planogram_page1.json` is
   the InkWall definition; **an equivalent JSON must be authored for
   ProductOnShelves**.
-- **CV/OCR dependencies are an optional extra** (user decision) with lazy
-  imports; without RapidOCR, text is read by the LLM only.
+- **Local OCR is an optional extra**, with lazy imports; without RapidOCR,
+  text is read by the LLM only. OpenCV remains an existing hard dependency;
+  this feature does not move it into an extra. Declare directly used runtime
+  dependencies in the package rather than relying on transitive installs.
 - **Model benchmark is a deliverable** (user decision): reproducible
-  speed + detection-quality comparison of `gemini-3.5-flash` vs Claude Sonnet 5
-  decides the default.
+  descriptive comparison of `gemini-3.5-flash` vs Claude Sonnet 5 informs the
+  user's default selection. It measures speed and reported outputs, not accuracy
+  or recall. The perception spike has a separate manually checked sample.
 - **Slots definition source** (user decision, round 4): the definition may come
   from a **new JSONB column on `troc.planograms_configurations`** *or* from a
   JSON file — "JSON on disk" and "JSONB from Postgres" are the same thing to
@@ -136,10 +149,12 @@ as a drop-in replacement, with the type-specific parts expressed per
 - **Round-5 decisions** (user, 2026-09-18):
   - **Spike first.** The first task is a time-boxed spike measuring
     profile-driven shape proposals on real ProductOnShelves photos; it fixes the
-    profiles. Poor recall ⇒ ProductOnShelves starts on the LLM-detector
-    fallback, perception hook unchanged.
+    profiles. Its manually checked sample and provisional acceptance criteria
+    are defined below. A failed or inconclusive spike ⇒ ProductOnShelves starts
+    on the LLM-detector fallback, perception hook unchanged.
   - **The LLM may add shapes** the CV missed, in every type, flagged
-    `source="llm_added"` with a lower confidence weight.
+    `source="llm_added"` with a lower evidence weight. Raw model confidence is
+    preserved; source weights do not directly reduce compliance credit.
   - **`slots_definition` replaces** `planogram_config.shelves[].products` as the
     expected-products reference for migrated types; **non-product expectations
     stay in `planogram_config`** (backlit/poster, illumination,
@@ -165,8 +180,9 @@ as a drop-in replacement, with the type-specific parts expressed per
     `_enhance_image` stays only on the legacy adapter path.
   - **`examples/planogram/plancheck/` stays as it is** — independent tool and
     live reference. Not moved, deleted or rewired.
-- Repo rules: async-first, no blocking I/O on the event loop (OpenCV/OCR go
-  through `asyncio.to_thread`), Pydantic v2 models, `self.logger`, `aiohttp`
+- Repo rules: async-first, no blocking I/O on the event loop. CPU-bound
+  OpenCV/OCR and image encoding run in a bounded process executor; blocking
+  file I/O may use `asyncio.to_thread`. Pydantic v2 models, `self.logger`, `aiohttp`
   only, Google-style docstrings, no new `requests`/`httpx`.
 - This repository is public: real store photos and `planogram_page1.json` are
   git-ignored. **Tests must run on synthetic fixtures**, offline, with a fake
@@ -221,8 +237,8 @@ blocks the hooks compose:
 - **Generic zero-shot shape detection does not exist yet.** `plancheck`
   detects one thing — bright landscape labels via six fixed global thresholds,
   no morphology, no edges. Detecting printers, product boxes, posters and
-  backlits with classical CV is new R&D with unproven recall (see Open
-  Questions). This is the feature's main technical risk.
+  backlits with classical CV is new R&D with unproven recall (see Remaining
+  Validation). This is the feature's main technical risk.
 - `ProductOnShelves` is 1683 lines with **no tests** on
   `check_planogram_compliance`, fact-tag OCR or illumination. Migrating it
   without characterization tests risks silent regressions.
@@ -240,9 +256,9 @@ blocks the hooks compose:
 | `numpy` | array ops | used transitively today, **not declared** — declare it |
 | `rapidocr` (3.9.2 installed) | local OCR of tag/label crops | NEW, optional extra; API assumed: `RapidOCR()(img).txts` |
 | `onnxruntime` (1.30.0 installed) | RapidOCR backend | never imported directly; pulled by rapidocr |
-| `rapidfuzz` (3.11.0 installed) | brand/alias fuzzy match | in core `ai-parrot` deps already; declare in the extra |
+| `rapidfuzz` (3.11.0 installed) | brand/alias fuzzy match | in core `ai-parrot` deps already; declare directly as a runtime dep if comparison uses it |
 | `pydantic` v2 | all contracts | existing |
-| `pillow` | `open_image`, overlay render | existing (transitive) |
+| `pillow` | `open_image`, overlay render | existing (transitive); declare directly for runtime image handling |
 
 🔗 **Existing Code to Reuse:**
 - `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py` — keep `__init__`, `_PLANOGRAM_TYPES`, `render_evaluated_image`, the result-dict keys; replace the body of `run()`.
@@ -367,10 +383,10 @@ What we trade off, honestly:
   here only for price tags. The recommendation is to contain that risk rather
   than avoid it: (a) ship **InkWall first** — its detector is already proven;
   (b) treat `ProductOnShelves` perception as a profile-driven proposer whose
-  recall is *measured* by the benchmark deliverable before it becomes the
-  default; (c) let the identify stage **add** shapes the CV missed (flagged
-  `source="llm_added"`) so a recall miss degrades a score instead of losing a
-  product; (d) keep the explicit LLM-detector fallback. Option C stays on the
+  recall is measured on the spike's manually checked sample before it becomes
+  the default; (c) let the identify stage **add** shapes the CV missed (flagged
+  `source="llm_added"`) while preserving evidence provenance and uncertainty;
+  (d) keep the explicit LLM-detector fallback. Option C stays on the
   table as a later swap *behind the same perception hook* if measured recall is
   not good enough — the hook makes that a contained change.
 - **We accept a transitional dual contract** (legacy abstract methods + new
@@ -385,10 +401,12 @@ What we trade off, honestly:
 
 ### User-Facing Behavior
 
-- **Nothing changes for the handler.** `POST /api/v1/planogram/compliance`
-  keeps its request and response; `rendered_image_base64`, `overall_compliant`,
-  `overall_compliance_score` and `shelf_results` are produced from the same
-  result keys.
+- **The handler keeps its request and existing response fields.**
+  `POST /api/v1/planogram/compliance` still returns `rendered_image_base64`, `overall_compliant`,
+  `overall_compliance_score`, and `shelf_results`, produced from the same
+  result keys. Add `assessment_status`, `coverage`, and `errors` to the response
+  so an incomplete assessment is distinguishable from observed non-compliance.
+  This additive response change is part of the consolidation.
 - Callers of `PlanogramCompliance.run()` get the existing eight keys plus new,
   additive ones:
   - `detections` — stage-1 output: shapes with pixel box, kind, shelf/row,
@@ -400,7 +418,8 @@ What we trade off, honestly:
     `variant_unresolved`, `mismatch`, `empty`, `inferred_present`,
     `occupied_unassigned`, `conflict`, `not_assessed`, `not_visible`), credits.
   - `shelf_scores` — per-shelf strict/lenient %, coverage, occupancy.
-  - `coverage`, `detection_source`, `errors`.
+  - `coverage`, `definition_coverage`, `assessment_status`, `strict_compliance_score`,
+    `evidence_quality`, `detection_source`, `errors`.
 - `run()` accepts one image or a list of images of the same fixture.
 - A new planogram type `ink_wall` is selectable via
   `PlanogramConfig.planogram_type`.
@@ -416,6 +435,77 @@ What we trade off, honestly:
   of objects detected (CV shapes, identified, LLM-added) and duration per stage.
   No ground truth is required; the user picks the default from that report.
 
+### Migration and compatibility contract
+
+- Ship a preflight/conversion utility for existing ProductOnShelves config
+  dicts or exported DB rows. It emits candidate slots JSON and a validation
+  report, without changing the database. Preserve the original config for
+  review and rollback. Fixed quantities can seed candidate facings; quantity
+  ranges and ambiguous positions require human resolution. Never invent an
+  exact layout from a range or copy one fixture's sample JSON to every config.
+- Before activating the replacement runtime, apply the idempotent schema
+  ALTER, review and backfill `slots_definition` for every active migrated
+  configuration, then run a read-only preflight that reports unresolved rows.
+  A nullable column alone is not a completed migration. The user applies the
+  database changes; this feature supplies scripts and the runbook.
+- `InkWall` and migrated `ProductOnShelves` fail construction with a precise
+  migration/validation error when slots are missing or invalid. Legacy types
+  do not require slots; validate their required prompts at construction.
+  There is no implicit runtime conversion or hidden old-cycle switch.
+- Give shelves, expected products/facings, and non-product zones stable IDs
+  within a versioned definition. Keep non-product rules in `planogram_config`,
+  with explicit bindings to these IDs. The migration must extract and preserve
+  nested `illumination_required`, `illumination_penalty`, `text_requirements`,
+  and visual features currently stored in `shelves[].products`, as well as
+  poster/backlit, promotional, threshold, and shelf-weight settings.
+  Preserve legacy entries for rollback; migrated comparison reads expected
+  products only from slots and non-product rules through the validated bindings.
+  Reject dangling or ambiguous bindings instead of silently dropping rules.
+- Legacy adapter characterization tests must cover the complete old
+  orchestration, including enhancement, promotional OCR, poster/logo injection,
+  virtual shelves, shelf assignment, fact-tag refinement and corroboration.
+  Delegating only the three named public methods is insufficient. Legacy
+  types retain their scoring behavior; migrated types use the explicit scoring
+  contract below. Explain the score-semantics change in the migration runbook.
+- For multi-image calls, identify all observations and boxes by `image_id`;
+  merge only after registration to stable expected-facing IDs. Return additive
+  per-image render records; the existing singular render/path keys represent
+  the first successfully processed input image. Never draw boxes from one photo
+  on another photo. If all images fail, these keys are `None` and the assessment
+  is inconclusive.
+
+### Fixture membership and observation validation
+
+Perception proposes shapes across the whole image. A separate membership step
+uses fixture anchors, shelf continuity, and spatial relationships to assign
+`on_fixture`, `off_fixture`, or `uncertain` to each observation. Header/backlit
+and box-stack anchors are useful evidence, not mandatory gates. An LLM may
+suggest membership, with its evidence and source recorded. Expected SKU matches
+alone must never establish membership or select among neighbouring fixtures.
+
+Only `on_fixture` observations enter product-row registration and scoring.
+Keep other proposals in the audit output. When anchors are absent or membership
+is ambiguous, continue perception/identification and report unassessed facings;
+do not silently select the fixture that best matches the planogram. The spike
+must exercise adjacent fixtures, repeated SKUs, missing anchors, and partial
+views; its outcome validates this proposed membership policy.
+
+Identification responses contain separate `existing_identifications` and
+`added_shapes` collections. Unknown IDs in the former are invalid references;
+missing known IDs become uncertain. Additions have no authority to choose an
+existing detection/facing ID: validate image/strip ownership, finite in-bounds
+boxes, positive area, membership, and duplicates, then allocate pipeline-owned
+IDs with `source="llm_added"`. Retain additions as proposals until these checks
+pass. Normalize strip coordinates into their source image before deduplication.
+
+Resolve duplicate observations within an image before cross-photo merging.
+Concordant observations for the same registered facing retain all provenance;
+prefer stronger evidence for presentation only. Incompatible admissible
+identities become `conflict`, regardless of whether either source is CV.
+Uncertain/unreadable evidence does not override a supported identification.
+CV localization alone never wins an identity disagreement. Registration ties
+remain uncertain; candidate identity cannot force a facing assignment.
+
 ### Internal Behavior
 
 `PlanogramCompliance.run()` — shared orchestration only:
@@ -423,36 +513,43 @@ What we trade off, honestly:
 1. **Load** image(s) at full resolution, **untouched** — `open_image` always
    applies `_enhance_image` today, so the new cycle needs a load path without
    it; enhancement remains only for the legacy adapter path.
-2. **Perceive** — `type_handler` perception hook, executed off the event loop.
-   Produces shapes grouped into rows/shelves and derived slots. Reads text in
-   each shape with the OCR reader when available.
-3. **Fallback check** — if shapes are below the type's threshold, run the LLM
-   detector over the full image through the vision adapter and mark
-   `detection_source="llm"`.
+2. **Perceive** — async `type_handler` hook, offloading CPU work to the bounded
+   process executor. Produces shapes grouped into rows/shelves and derived
+   slots. Reads text in each shape with the OCR reader when available and
+   records provisional fixture membership.
+3. **Fallback check** — if usable on-fixture shapes are below the type's
+   threshold, run the LLM detector over the full image through the vision
+   adapter and mark `detection_source="llm"`. Distractor counts cannot suppress
+   fallback. Apply the same membership validation to fallback observations.
 4. **Identify** — the type declares a strategy: *full image* (one call: image +
    stage-1 JSON) or *strips* (one call per shelf/row, Set-of-Marks overlay,
    bounded concurrency via one shared semaphore). Structured input (the stage-1
    JSON) and structured output (Pydantic contract with confidence and
-   evidence). Answer hygiene: unknown ids dropped, missing ids become
-   uncertain, never guessed. Optional closed-set verification pass for
-   unresolved slots (expected SKU + distractors, evidence-gated).
+   evidence). Validate existing IDs and new proposals through the separate
+   collections defined above; missing IDs become uncertain. Revalidate membership
+   for additions and corrected observations. Optional closed-set verification
+   pass for unresolved slots (expected SKU + distractors, evidence-gated).
 5. **Compare** — load the slots definition, register observed rows to planogram
    shelves, decide a status per expected facing (merging observations across
    photos), compute strict/lenient credits, per-shelf and global scores, then
-   **project onto `List[ComplianceResult]`** (one per shelf) so
-   `overall_compliance_score` / `overall_compliant` keep their meaning.
+   **project onto `List[ComplianceResult]`** (one per shelf), following the
+   unknown-state and aggregation rules below. Preserve field types while
+   documenting the changed assessment semantics for migrated configurations.
 6. **Render + assemble** — existing `render_evaluated_image`, existing keys,
    new keys.
 
 `AbstractPlanogramType` — new concrete hooks with adapter defaults:
 
-- *perceive* default: call legacy `compute_roi` + `detect_objects`, wrap the
+- *perceive* default: execute the full characterized legacy preparation and
+  detection sequence (including the shared helpers listed above), wrap the
   `IdentifiedProduct`s as already-identified detections
   (`detection_source="legacy_llm"`).
 - *identify* default: pass-through (legacy types identified during detection).
 - *compare* default: call legacy `check_planogram_compliance`.
-- The four legacy abstract methods stop being `@abstractmethod` for types that
-  override the new hooks (`InkWall` implements none of them).
+- The four legacy methods receive explicit unsupported-operation defaults
+  instead of abstract requirements (`InkWall` implements none of them).
+  Validate at construction that a type supplies either the complete legacy
+  contract or all new hooks; reject incomplete types before a run starts.
 
 `InkWall` — price-tag-anchored: bright-label shape profile → tag rows → slots
 above tags (+ gap-filled and untagged bottom row) → strips per row → descriptor
@@ -464,26 +561,132 @@ image identify; existing illumination check, text requirements, promotional
 aliasing and `_assign_products_to_shelves` semantics carried into the compare
 hook.
 
-### Provisional scoring defaults (configurable)
+### Compliance, coverage, and evidence contract
 
-Extends the `ScoringWeights` pattern of `plancheck` (`misplaced=0.5`,
-`variant_unresolved=0.5`, `inferred_present=0.5`,
-`verified_by_expectation=1.0`) with one new weight. **Provisional** — chosen so
-the first benchmark run has numbers to react to, not tuned on data.
+Keep these three measures separate. A detector source does not establish SKU
+identity, and model-reported confidence is not a calibrated probability.
+`raw_confidence` is retained unchanged. The provisional evidence source weights
+are `cv=1.0`, `llm_added=0.5`, and `llm=0.5`; report the resulting evidence-quality
+measure separately. These weights do not multiply compliance credit or decide
+identity conflicts. The descriptive benchmark can inform a later policy review,
+but cannot calibrate confidence or validate these weights without reference data.
 
-| Rule | Default | Rationale |
-|---|---|---|
-| `llm_added` weight | **0.5** | Same tier as the other "probably right, not proven" statuses. |
-| Reported confidence of an `llm_added` identification | `llm_confidence × 0.5` | The box was localised by the LLM, not by pixels; halve it so it never outranks a CV-anchored detection of equal LLM confidence. |
-| **Strict** credit for a match whose only evidence is `llm_added` | **0.0** | Strict means deterministic evidence. An LLM-localised shape has none. |
-| **Lenient** credit for that match | **0.5** (`weights.llm_added`) | Counts as present, at half value. |
-| A facing seen by both a CV shape and an `llm_added` shape | CV observation wins; `llm_added` is ignored for that facing | Never let the weaker source override the stronger one. |
-| Whole-run LLM-detector fallback (`detection_source="llm"`) | every detection treated as `llm_added` | Same evidence class; the run is honest about it: strict 0, lenient ≤ 50 %. |
-| `overall_compliance_score` (the key the handler reports) | the **lenient** score, 0–1 | Closest to today's semantics; `strict` is exposed as a new additive key. |
-| Legacy adapter types | unaffected | Their own `check_planogram_compliance` produces the score. |
+An admissible exact match needs validated fixture membership and registration,
+plus product-discriminating evidence tied to the crop (for example readable
+identifiers or required visible variant attributes). Neither a rectangle nor
+an expected SKU offered in a verification prompt is sufficient. Unresolved
+identity remains unresolved regardless of source or self-reported confidence.
 
-All of these live in one Pydantic weights model with these defaults, overridable
-per planogram.
+Provisional per-facing credits, represented in a validated Pydantic policy:
+
+| Facing status | Strict credit | Lenient credit | Assessment treatment |
+|---|---|---|---|
+| `match` with admissible exact identity evidence | 1.0 | 1.0 | Assessed |
+| `misplaced` with supported identity | 0.0 | 0.5 | Assessed, placement violation |
+| `variant_unresolved`, `inferred_present` | 0.0 | 0.5 | Partially supported; unresolved for coverage |
+| `mismatch`, visibly `empty` | 0.0 | 0.0 | Assessed violation |
+| `occupied_unassigned`, `conflict`, `not_assessed`, `not_visible` | 0.0 | 0.0 | Unresolved; never assert missing from absence of evidence |
+
+- All expected facings remain in the denominator: per-shelf strict/lenient
+  scores are summed credits divided by the number of expected facings. The
+  lenient score is a policy credit measure, not an estimate of unseen compliance.
+  Partial views cannot achieve 100% by excluding unseen positions.
+- `coverage` is the fraction of expected facings with resolved assessments
+  (`match`, `misplaced`, `mismatch`, or visibly `empty`). Report visible and
+  occupied fractions separately; visibility is not assessment coverage.
+  `definition_coverage` is the fraction with descriptors sufficient to resolve
+  the required identity. An undescribed SKU stays unresolved unless an exact,
+  independently readable identifier links it to the definition.
+- `overall_compliance_score` is the mean of per-shelf lenient scores, preserving
+  the current global aggregation rule; `strict_compliance_score` is the same
+  mean for strict scores. Existing per-shelf rule weights remain local to each
+  shelf. Do not silently switch to facing-weighted global aggregation.
+  Report global coverage over facings, not as a mean of shelf percentages.
+- Carry characterized text, brand, illumination, and promotional checks into
+  shelf evaluation through the explicit rule bindings. Apply their existing
+  shelf-local combination/penalty semantics once; specify the exact combination
+  formula in the spec and pin it with characterization examples before coding.
+  Required zone-only shelves retain their own checks; do not divide by zero or
+  manufacture product facings for them.
+- `assessment_status` is `complete` only when every expected facing and required
+  non-product rule is assessed; otherwise it is `inconclusive`. It describes
+  completeness independently of whether observed violations exist.
+- `overall_compliant` is true only when the assessment is complete and all
+  shelf thresholds and mandatory rules pass. Inconclusive means false in this
+  legacy boolean, with the additive status/coverage explaining why. Zero
+  coverage always yields false and inconclusive; supported partial identities
+  may still earn lenient credit. Zero usable evidence yields score 0. Never
+  interpret partial credit or an empty result list as a pass.
+- Project unresolved shelves to `ComplianceStatus.NON_COMPLIANT`, with additive
+  shelf assessment metadata explaining incompleteness. Only proven missing or
+  misplaced products populate those legacy lists/statuses; do not label unseen
+  products as missing. `ComplianceResult`'s existing enum remains unchanged.
+- A full LLM-detector fallback can reach full compliance if the same evidence
+  and completeness requirements are met. There is no source-imposed 50% cap.
+  It retains lower evidence-quality weighting and `detection_source="llm"`.
+- Legacy adapter types retain their characterized scoring. New coverage fields
+  that their contract cannot establish are `None`, with
+  `assessment_status="legacy_unmeasured"`; never fabricate full coverage.
+
+### Perception spike and backend benchmark
+
+The first task is a **two-engineering-day spike** (provisional time box). Use the
+named ProductOnShelves photo plus available private photos covering partial
+views and neighbouring fixtures. Keep photos and manual annotations git-ignored;
+commit only aggregate results and synthetic regression cases. Record unavailable
+conditions rather than claiming generalization from one photo.
+
+Manually enumerate target-fixture objects/anchors and neighbouring distractors
+on this small sample, with boxes and fixture membership. Match proposals to
+annotations one-to-one (provisional IoU threshold 0.5); report precision and
+recall separately for each shape profile and photo, plus off-fixture admissions.
+Tag-anchored proposals must additionally demonstrate that their derived slots
+cover the intended products; tag recall alone is not product-slot recall.
+
+Provisional acceptance for making CV the default on the evaluated fixture
+profile: at least 90% product-slot recall and 90% precision on each evaluable
+photo, zero off-fixture observations admitted into scoring, and successful
+synthetic cases for partial shelves, repeated SKUs, absent anchors, and ambiguous
+membership. Report thresholds as engineering gates, not population accuracy
+claims. Insufficient photos, untested membership conditions, or any failed gate
+make the result inconclusive/failed and select the LLM-detector fallback. The
+fallback must still obey membership and unknown-state rules; it does not bypass
+them. The spec records accepted profiles and the spike outcome.
+
+The separate **backend benchmark remains unlabelled** and has no automated
+quality pass bar. It reports raw confidence distributions, evidence quality,
+coverage, compliance, object counts, additions, errors, and per-stage duration.
+Pin definition/image hashes, prompts/schemas, provider/model IDs, parameters,
+package versions, concurrency, and retry limits. Report cold uncached runs
+separately from cache hits and record repeated runs to expose variability.
+The user chooses the backend from that report and inspection; do not call its
+counts or self-reported confidence accuracy or recall. Verify requested model
+availability at execution time and report unavailable backends explicitly.
+
+### Backend selection and execution boundaries
+
+Name the nullable config/DB field `llm_backend` (`provider:model`). Resolve an
+explicit `llm` instance/string first; otherwise apply explicitly supplied
+`llm_provider`/`llm_model` overrides to the configured backend, then use the
+documented package default. Use an unset sentinel for omitted constructor
+arguments so the existing `"google"` default cannot mask `llm_backend`.
+If an explicit provider differs from the configured provider and no model is
+supplied, use that provider's default, never the other provider's model ID.
+An explicit model alone uses the configured provider (or package default).
+Test the full precedence matrix and record the resolved backend in results.
+
+Vision calls must honor the resolved model even where a client method has its
+own default argument. Anthropic parity and its requested default-model update
+remain in scope; a new method default must not override a caller's selection.
+`no_memory` is accepted by both vision clients after parity work; the adapter
+does not manage conversation history and does not drop unrelated kwargs silently.
+
+Use a bounded, lifecycle-managed process executor for CPU-heavy CV/OCR/encoding,
+with OCR initialized lazily inside workers. Await submissions from async hooks;
+do not move async LLM calls into process workers. Use one shared bounded LLM
+semaphore per run, bounded image/strip queues, finite retries/timeouts, and
+cancellation cleanup. Blocking file I/O may use `asyncio.to_thread`. Specify
+worker limits per gunicorn worker to avoid unbounded memory/process growth.
 
 ### Edge Cases & Error Handling
 
@@ -491,10 +694,12 @@ per planogram.
   result. If the fallback also fails, facings are `not_assessed`, coverage is
   low, and `errors` says why.
 - **Partial view** (photo covers 3 of 6 shelves) → registration assigns visible
-  rows to the best-scoring shelves; uncovered facings are `not_visible`, not
-  `missing`.
-- **Several photos disagree** → `conflict` status for that facing; never an
-  arbitrary pick.
+  on-fixture rows only when the alignment is supported and unambiguous;
+  uncovered facings are `not_visible`, not `missing`. Ambiguous alignment
+  remains unassessed.
+- **Several admissible photo observations disagree** → `conflict` status for
+  that facing, irrespective of source; unreadable evidence does not contradict
+  an otherwise supported identity.
 - **OCR unavailable** (extra not installed) → text read by LLM only; reported in
   the result.
 - **LLM returns invalid structure** → one repair retry, then the affected
@@ -506,12 +711,14 @@ per planogram.
 - **Undescribed SKUs** → listed, not fatal; a definition with *zero* described
   positions is rejected. (`planogram_page1.json` has only 2 of 102 positions
   described today.)
-- **Provider differences** → adapter strips/renames kwargs (`no_memory` is
-  Google-only; Anthropic has `system_prompt`). A client with no `ask_to_image`
+- **Provider differences** → adapter normalizes explicitly supported kwargs
+  (`no_memory` is accepted by both clients after parity; Anthropic additionally
+  supports `system_prompt`). A client with no `ask_to_image`
   fails fast with a clear error (`ClaudeAgentClient` raises
   `NotImplementedError`).
-- **Blocking work** → OpenCV, OCR, PNG encoding and file writes run in
-  `asyncio.to_thread`.
+- **Blocking work** → CPU-bound OpenCV/OCR/PNG encoding uses the bounded process
+  executor; file I/O may use `asyncio.to_thread`, with lifecycle and cancellation
+  handled as described above.
 
 ---
 
@@ -523,11 +730,13 @@ per planogram.
 - `planogram-vision-adapter`: provider-neutral `ask_to_image` + structured output, kwarg normalisation, response cache, repair retry.
 - `planogram-llm-identification`: structured-input/structured-output identification with confidence, per-type call strategy (full image | strips), optional closed-set verification.
 - `planogram-slots-definition`: JSON definition of shelves/slots/products/descriptors, loadable from `PlanogramConfig`.
+- `planogram-config-migration`: offline candidate conversion, stable rule bindings, read-only DB preflight, and deployment/rollback runbook for migrated configurations.
+- `planogram-fixture-membership`: auditable on/off/uncertain fixture assignments before registration, independent of expected SKU matching.
 - `planogram-registration-scoring`: row→shelf registration, per-facing decision, multi-photo merge, strict/lenient, per-shelf and global scores, projection to `ComplianceResult`.
 - `planogram-type-ink-wall`: new `InkWall` type.
 - `planogram-shape-spike`: time-boxed measurement of profile-driven shape proposals on real ProductOnShelves photos; output fixes the shape profiles (first task).
 - `planogram-descriptor-assistant`: LLM-assisted utility proposing per-position descriptors from the POG PDF, for human review (no catalog/SKU/price lookup).
-- `planogram-config-backend`: provider/model and `slots_definition` fields on `PlanogramConfig`, optional prompts, matching DB column + idempotent ALTER script.
+- `planogram-config-backend`: `llm_backend` and `slots_definition` fields on `PlanogramConfig`, optional prompts, matching nullable DB columns + idempotent ALTER script, explicit constructor precedence.
 - `planogram-llm-benchmark`: reproducible backend comparison (confidence, scoring, object counts, duration) that informs the default model; no ground truth.
 - `anthropic-vision-parity`: `AnthropicClient.ask_to_image(no_memory=...)` and a new `AnthropicClient.detect_objects(...)` matching the Google client's contract.
 - `planogram-provider-neutral-llm`: removal of hard-coded model literals and of the unconditional Google `roi_client`; provider/model resolved from the pipeline.
@@ -536,7 +745,7 @@ per planogram.
 ### Modified Capabilities
 - `planogram-compliance-modular` (FEAT-048): `PlanogramCompliance.run()` cycle replaced; `AbstractPlanogramType` contract extended with adapter defaults.
 - `planogram-new-types`: `ProductOnShelves` migrated to the new cycle.
-- `planogram-compliance-handler` (FEAT-047): unchanged contract; optional multi-image upload is an open question.
+- `planogram-compliance-handler` (FEAT-047): existing request/response fields retained; additive assessment status, coverage, errors, and shelf assessment metadata. Multi-image upload remains out of scope.
 
 ---
 
@@ -549,23 +758,26 @@ per planogram.
 | `parrot_pipelines/planogram/types/product_on_shelves.py` | modifies | overrides new hooks; legacy LLM detection becomes the fallback |
 | `parrot_pipelines/planogram/types/ink_wall.py` | new | price-tag anchored type |
 | `parrot_pipelines/planogram/<perception subpackage>` | new | shapes, rows, slots, OCR, vision adapter, reference, registration, scoring |
-| `parrot_pipelines/models.py` (`PlanogramConfig`) | extends | slots-definition field (dict or path); `roi_detection_prompt` / `object_identification_prompt` become optional |
+| `parrot_pipelines/models.py` (`PlanogramConfig`) | extends | `slots_definition` (dict or path), `llm_backend`, versioned rule bindings; prompts become optional with type-specific validation |
 | `parrot_pipelines/abstract.py` (`AbstractPipeline`) | modifies | remove the unconditional `GoogleGenAIClient` `roi_client`; auxiliary vision calls go through the pipeline's own client |
 | `parrot_pipelines/planogram/types/*.py` (all six) | modifies | replace every hard-coded `model="gemini-3.5-flash"` / `self.pipeline.roi_client` use — touches the four unmigrated types too, minimally |
-| `parrot_pipelines/handlers/planogram_compliance.py` | modifies | reads 4 keys — must stay; `_build_planogram_config` reads the new JSONB column and tolerates missing prompts; stops hard-coding `GoogleGenAIClient(model=DEFAULT_LLM_MODEL)` |
-| `troc.planograms_configurations` (Postgres) | extends | new nullable JSONB column for the slots definition; check the package's shipped `*.sql` |
+| `parrot_pipelines/handlers/planogram_compliance.py` | modifies | retains existing fields, adds assessment metadata; hydrates both new config columns, tolerates nullable prompts, resolves configured backend |
+| `troc.planograms_configurations` (Postgres) | extends | nullable `slots_definition JSONB` and `llm_backend TEXT`; migrated active configurations require reviewed backfill |
 | `packages/ai-parrot-client-anthropic/.../anthropic/client.py` | extends | `ask_to_image(no_memory=...)`; new `detect_objects(image, prompt, reference_images, output_dir) -> List[Dict[str, Any]]` |
 | `parrot_pipelines/__init__.py` (`PIPELINE_REGISTRY`) | extends | add `InkWall` (3 existing types are already missing from it) |
-| `packages/ai-parrot-pipelines/pyproject.toml` | extends | first `[project.optional-dependencies]` section; declare `numpy` |
-| `packages/ai-parrot/src/parrot/models/detections.py`, `compliance.py` | depends on / maybe extends | core package — extend only if projection needs a field |
+| `packages/ai-parrot-pipelines/pyproject.toml` | extends | optional local OCR extra; declare directly used `numpy`, `pillow`, and comparison dependencies; OpenCV stays a hard dependency |
+| `packages/ai-parrot/src/parrot/models/detections.py`, `compliance.py` | depends on / extends | backward-compatible shelf assessment metadata with defaults; keep existing compliance enum and existing fields |
 | `examples/planogram/` | extends | benchmark script, ProductOnShelves `slots_definition` JSON, descriptor utility CLI; **`plancheck/` is left untouched** |
-| `parrot_pipelines/table.sql` + new ALTER script | extends | `slots_definition JSONB NULL`; prompts lose `NOT NULL`; idempotent ALTER for deployed DBs |
+| `parrot_pipelines/table.sql` + new ALTER script | extends | `slots_definition JSONB NULL`, `llm_backend TEXT NULL`; prompts lose `NOT NULL`; idempotent ALTER for deployed DBs |
+| planogram migration utility + deployment documentation | new | candidate conversion, explicit non-product rule bindings, preflight report, reviewed backfill and rollback sequence |
 | `tests/pipelines/`, `packages/ai-parrot-pipelines/tests/` | extends | offline synthetic tests; characterization tests for `ProductOnShelves` first |
 
-No breaking change for the handler. **Breaking for subclass authors** only if a
-third-party type relied on `run()` calling private helpers
-(`_generate_virtual_shelves`, `_assign_products_to_shelves`, `_ocr_fact_tags`)
-via `hasattr` — the adapter default must keep calling them for legacy types.
+Existing handler fields and call shapes remain compatible; additional metadata
+explains changed assessment semantics. Configuration migration is a deployment
+prerequisite for migrated types. The adapter must preserve existing private
+helper calls for legacy subclasses, verified by characterization tests; incomplete
+contracts fail at construction. Audit changes to shared clients and
+`AbstractPipeline` for consumers outside planogram as well.
 
 ---
 
@@ -886,7 +1098,8 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: moderate. After a first task fixes the shared
+- **Internal parallelism**: moderate. After the initial perception spike, a
+  contract task fixes the shared
   contracts (perception/identification/position models + the new
   `AbstractPlanogramType` hooks), these are independent: (a) shape
   proposer + rows + slots, (b) OCR reader, (c) vision adapter, (d) slots
@@ -912,7 +1125,12 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 
 ---
 
-## Open Questions
+## Consolidated Decisions and Remaining Validation
+
+Checked entries record the current design, including the authorized review
+consolidation. Earlier discovery rounds are superseded where their wording
+conflicts with the contracts above. Provisional numerical defaults still need
+the spike/spec validation listed at the end.
 
 - [x] Feature or hotfix, base branch — *Owner: Jesus Lara*: feature, `dev`.
 - [x] Fate of the pure-LLM ROI cycle — *Owner: Jesus Lara*: total replacement; public signature kept.
@@ -924,12 +1142,12 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - [x] CV finds too few shapes — *Owner: Jesus Lara*: fall back to an LLM detector; mark `detection_source`.
 - [x] Where the slot definition lives — *Owner: Jesus Lara*: `PlanogramConfig` names the type; a JSON defines shelves/slots/products; a ProductOnShelves JSON must be created.
 - [x] Output contract — *Owner: Jesus Lara*: same keys + new additive keys.
-- [x] CV/OCR dependencies — *Owner: Jesus Lara*: optional extra, lazy import.
-- [x] Model benchmark — *Owner: Jesus Lara*: deliverable of this feature; fixes the default.
+- [x] Dependencies: local OCR is an optional extra with lazy imports; OpenCV remains a hard dependency. Declare directly used dependencies explicitly.
+- [x] Model benchmark — *Owner: Jesus Lara*: unlabelled descriptive deliverable; the user selects the default. It makes no accuracy or recall claim.
 - [x] **How does the slots JSON reach a DB-driven config?** — *Owner: Jesus Lara*: both sources are valid and equivalent — a **new JSONB column** on `troc.planograms_configurations` (DB-driven configs) or a JSON file (scripts/examples). `PlanogramConfig` names the type; the slots JSON gives the fine granularity (shelves, slots, products). `table.sql` needs the new nullable column.
 - [x] **Name and nullability of the new column / field** — *Owner: Jesus Lara*: `slots_definition` — `JSONB NULL` on `troc.planograms_configurations`, same name on `PlanogramConfig`. The feature ships an **idempotent ALTER script** (`ADD COLUMN IF NOT EXISTS slots_definition`, `ALTER COLUMN … DROP NOT NULL` on both prompts) next to the updated `table.sql`; the user applies it to deployed databases.
-- [x] **Generic shape detection is unproven** — *Owner: Jesus Lara*: a **time-boxed spike is the first task**: run profile-driven proposals over the real ProductOnShelves photos and measure how many shapes each profile finds. Its result fixes the profiles. If recall is poor, ProductOnShelves starts on the LLM-detector fallback and the perception hook stays ready for another detector (Option C).
-- [x] **May the LLM add shapes the CV missed?** — *Owner: Jesus Lara*: yes, for all types — reported with `source="llm_added"` and a lower confidence weight, so a recall miss lowers the score instead of losing the product.
+- [x] **Generic shape detection is unproven**: the first task is the perception spike with a manually checked sample, per-profile precision/recall, and fixture-membership tests. Failed or inconclusive gates select the LLM-detector fallback. The hook remains ready for another detector (Option C).
+- [x] **May the LLM add shapes the CV missed?**: yes, through validated `added_shapes` with pipeline-owned IDs and `source="llm_added"`. Keep raw confidence intact and lower only the separate evidence-quality weight; no detector-source cap on compliance.
 - [x] **Hard-coded models / Google client** — *Owner: Jesus Lara*: eliminate them; either client must be able to drive the whole run. 60 call sites in 10 files (see Code Context worklist).
 - [x] **Client homologation** — *Owner: Jesus Lara*: in scope of this spec — add `no_memory` to `AnthropicClient.ask_to_image` and add `detect_objects` to `AnthropicClient`, matching the Google client.
 - [x] **`ProductOnShelves` tests** — *Owner: Jesus Lara*: must be built in this feature.
@@ -937,7 +1155,7 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - [x] **Which model ids does the benchmark compare?** — *Owner: Jesus Lara*: `gemini-3.5-flash` vs `claude-sonnet-5` (`ClaudeModel.SONNET_5`).
 - [x] **Where does the default provider/model live once literals are gone?** — *Owner: Jesus Lara*: a field on `PlanogramConfig` (provider + model), so each planogram can pin its backend; explicit `llm=` / `llm_provider=` / `llm_model=` passed to `PlanogramCompliance` still win.
 - [x] **`AnthropicClient.ask_to_image` default model** — *Owner: Jesus Lara*: bump to `ClaudeModel.SONNET_5`, and use the same default for the new `detect_objects`.
-- [x] **`planogram_page1.json` has 2/102 positions described** — *Owner: Jesus Lara*: the feature includes an **LLM-assisted descriptor utility** that proposes `display_name/family/xl/colors/pack/price` per position from **both** sources — the POG PDF pages (primary) and a catalog lookup by SKU (complete/validate) — for the user to review. Partial definitions stay legal (undescribed SKUs listed, not fatal).
+- [x] **`planogram_page1.json` has 2/102 positions described**: the descriptor utility proposes `display_name/family/xl/colors/pack` and readable identifiers/aliases from the POG PDF only, with page evidence for human review. No catalog lookup or generated price. Partial definitions remain legal, with definition coverage and unresolved identities explicit.
 - [x] **ProductOnShelves slots JSON: replace or complement?** — *Owner: Jesus Lara*: `slots_definition` **replaces** `planogram_config.shelves[].products` as the expected-products reference for migrated types. Non-product expectations — backlit/poster, illumination, `text_requirements`, `compliance_threshold`, per-shelf weights, `advertisement_endcap` — **stay in `planogram_config`**.
 - [x] **`roi_detection_prompt` / `object_identification_prompt` required?** — *Owner: Jesus Lara*: no longer mandatory — OpenCV does object detection (and potentially the ROI) zero-shot. They become optional on `PlanogramConfig`; `table.sql` has them `TEXT NOT NULL` (L16-17) and must relax too. Unmigrated types that still need them must fail with a clear message when absent.
 - [x] **`AbstractPipeline.roi_client` is always Google** — *Owner: Jesus Lara*: remove the hard-coding; auxiliary calls (`_check_illumination`, fact-tag OCR) go through the pipeline's own client.
@@ -947,8 +1165,13 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - [x] **`open_image` always enhances brightness/contrast** — *Owner: Jesus Lara*: perception, OCR and the crops sent to the LLM use the **untouched full-resolution image**; enhancement is kept only for the legacy adapter path.
 - [x] **Which real ProductOnShelves photo feeds the spike and the first `slots_definition`?** — *Owner: Jesus Lara*: `examples/planogram/photo_2026-09-18_20-36-30.jpg` (git-ignored, 1280×955). See "Reference photo" under Code Context for what it contains.
 - [x] **Which catalog backs the SKU lookup of the descriptor utility?** — *Owner: Jesus Lara*: none — **discarded**. There is no data yet to back SKU or price lookups. The descriptor utility works from the **POG PDF only**; `price` is never proposed by it and stays an optional, manually supplied field.
-- [x] **Shape of the `PlanogramConfig` backend field** — *Owner: Jesus Lara*: a single `"provider:model"` string, the format `LLMFactory.create` already takes (e.g. `google:gemini-3.5-flash`, `anthropic:claude-sonnet-5`), with a matching nullable column on `troc.planograms_configurations` added by the same ALTER script.
-- [x] **Confidence weight of `llm_added` shapes** — *Owner: Jesus Lara*: provisional default set by Claude at the user's request, configurable, to be revisited with the benchmark numbers — `llm_added = 0.5`. See "Provisional scoring defaults" under Feature Description.
-- [ ] **Fixture scoping without an ROI gate.** The reference photo shows neighbouring aisles full of other printers and price tags. With no ROI, perception will propose those too. How are off-fixture shapes excluded — anchor on the backlit + the box stack below it (soft scope, never a hard gate), let registration discard what does not align with `slots_definition`, or have the LLM flag `off_fixture`? — *Owner: Jesus Lara*
-- [ ] **Name of the backend field** on `PlanogramConfig` / the table (e.g. `llm`), given `PlanogramCompliance.__init__` already has `llm`, `llm_provider`, `llm_model` arguments. — *Owner: Jesus Lara*
+- [x] **Backend field and precedence**: nullable `llm_backend` (`provider:model`) on config and DB, added by the same ALTER script. Explicit `llm` wins, then explicit provider/model overrides, then config, then documented defaults. Omitted arguments use a sentinel; changing provider cannot inherit another provider's model.
+- [x] **Evidence weight of `llm_added` shapes**: provisional `0.5`, configurable, applied only to evidence quality. Raw confidence and compliance remain separate. This supersedes the previous strict-zero/lenient-50% fallback rule.
+- [x] **Fixture scoping without an ROI gate**: full-image proposals followed by evidence-based on/off/uncertain membership before registration. Expected SKU agreement cannot establish membership. Missing anchors do not stop perception; ambiguous membership prevents a conclusive assessment.
+- [x] **Configuration compatibility**: reviewed ProductOnShelves slots backfill and non-product rule bindings are required before deployment. Ship candidate conversion and read-only preflight; nullable schema additions alone are insufficient.
+- [x] **Unknown states and public scores**: retain all expected facings in score denominators, report coverage separately, preserve the unweighted shelf mean, and require complete assessment before `overall_compliant=True`. Add assessment metadata to handler responses; keep the existing enum.
+- [x] **Observation conflicts**: merge agreeing evidence with provenance; incompatible admissible identities become `conflict`, independent of source. CV localization does not override identity evidence.
+- [x] **CPU work**: bounded process executor for CV/OCR/encoding; thread offload is limited to blocking I/O. Async hooks and LLM calls remain in the event loop.
+- [ ] **Spike validation**: confirm or revise the provisional two-day time box, 0.5 IoU, and 90% precision/recall gates using the available private sample. Record tested conditions, failures, and whether membership exclusion is reliable. — *Owner: implementation spike / Jesus Lara*
+- [ ] **Scoring examples for the spec**: pin shelf-local non-product combination formulas and status projection with characterization fixtures; include zero evidence, partial identity, incomplete definitions, conflicting photos, zone-only shelves, and full LLM fallback. — *Owner: specification task*
 - [ ] **Photo resolution.** The reference photo is 1280×955 (messenger-compressed); price-tag text is a few pixels tall. Is this the resolution production will receive, or will originals be available? OCR expectations for ProductOnShelves depend on it. — *Owner: Jesus Lara*
