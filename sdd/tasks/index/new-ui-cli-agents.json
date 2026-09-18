@@ -16,7 +16,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "Exclusive: edits packages/ai-parrot/pyproject.toml and uv.lock (shared dependency manifest/lockfile) and sdd/specs/new-cli-infra.spec.md. Root of the graph; TASK-3410/3411/3412/3413 import textual and are serialized behind it.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3399-dependency-and-feat519-supersession.md"
+      "completed_at": "2026-09-18T05:48:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3399-dependency-and-feat519-supersession.md"
     },
     {
       "id": "TASK-3400",
