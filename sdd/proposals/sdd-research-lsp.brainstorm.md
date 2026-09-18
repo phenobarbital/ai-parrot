@@ -274,9 +274,9 @@ Source-level imports verified; no runtime import smoke test claimed:
 
 - [x] Flow defaults — *Owner: Codex*: `type: feature`, `base_branch: dev`, applied per skill defaults; no explicit user confirmation received.
 - [x] Provenance of percentages — *Owner: Codex*: located Marmelab's primary report; workload-specific observations, not local measurements.
-- [ ] Which host and seats are first consumers: SDD CLI research/coding/review, in-process dev-loop agents, or both? — *Owner: Jesús*
-- [ ] Is Python-only navigation plus diagnostics the approved initial scope, or is another language/diagnostics-only preferred? — *Owner: Jesús*
-- [ ] Which representative tasks and cost/quality/latency thresholds should govern the pilot? — *Owner: Jesús and maintainers*
-- [ ] Which server executable/version and client adapter should be approved, and who owns environment provisioning? — *Owner: maintainers*
-- [ ] Should access reuse an existing host LSP session, use an optional standalone toolkit, or extend wiki MCP? — *Owner: maintainers*
-- [ ] Are on-disk checkpoints sufficient, and what freshness, timeout, and memory budgets are acceptable? — *Owner: maintainers*
+- [x] Which host and seats are first consumers — *Owner: Jesús* (2026-09-19): SDD CLI research/coding/review seats are the first consumers. In-process dev-loop agents are not wired in during this pilot.
+- [x] Is Python-only navigation plus diagnostics the approved initial scope — *Owner: Jesús* (2026-09-19): Yes, Python-only, both navigation and diagnostics, matching Option B as recommended.
+- [x] Which representative tasks and cost/quality/latency thresholds should govern the pilot — *Owner: Jesús* (2026-09-19): Accepted the brainstorm's proposal as-is — the 12-task design (§ Experiment and decision gate, step 1), 3 paired repetitions per task/arm, and the proposed gate (≥10% lower model cost per successful task vs. A, no acceptance-rate/correctness regression, ≤10% median wall-time regression).
+- [x] Which server executable/version and client adapter should be approved, and who owns environment provisioning — *Owner: Jesús* (2026-09-19): Pyright approved as the pilot candidate server. Provisioning ownership and exact version pin remain for specification time.
+- [x] Should access reuse an existing host LSP session, use an optional standalone toolkit, or extend wiki MCP — *Owner: Jesús* (2026-09-19): Standalone optional toolkit in `parrot_tools`, owning its own server lifecycle, kept out of wiki core.
+- [x] Are on-disk checkpoints sufficient, and what freshness, timeout, and memory budgets are acceptable — *Owner: Jesús* (2026-09-19): On-disk checkpoints only for the pilot; unsaved/in-memory edit synchronization is out of scope and the limitation is declared explicitly (see Edge Cases & Error Handling).
