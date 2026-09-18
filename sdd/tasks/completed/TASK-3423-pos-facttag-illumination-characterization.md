@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3420
@@ -461,7 +461,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+17 characterization tests (same FakeVisionClient bound to roi_client AND llm; _downscale_image identity; model kwarg never asserted): _check_illumination parsing/None-on-failure/crop precedence (600x200, 400x500, 800x1000)/brand hint/no_memory+max_tokens=128; _ocr_fact_tags one call per non-background shelf, strip crops (460,75)/(460,55), detected-tag rows (120,30), token parsing, ocr_text on tags, known-models hint, per-shelf failure isolation; corroboration injection shape (0.85, fact_tag_confirmed:) and the three skip rules; assignment default overlap, promo/background, box-less middle-shelf fallback, y1 mode (centre then y1 hint), no-shelves no-op.
+Deviations: none — every blueprint expectation matched unmodified production code.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1

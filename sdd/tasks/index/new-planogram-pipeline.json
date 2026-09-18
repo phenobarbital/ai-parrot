@@ -108,7 +108,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -118,8 +118,8 @@
       "parallelism_notes": "Uses the fake_vision_client fixture created by TASK-3420 (tests/conftest.py) to fake ask_to_image answers.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3423-pos-facttag-illumination-characterization.md"
+      "completed_at": "2026-09-18T23:30:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3423-pos-facttag-illumination-characterization.md"
     },
     {
       "id": "TASK-3424",
