@@ -74,7 +74,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "sdd_ingest.py imports DocTaxonomy + parse_taxonomy from TASK-3459 (parrot/knowledge/wiki/ledger/sdd_meta.py)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3462-wiki-ingest-taxonomy-summary.md"
+      "completed_at": "2026-09-18T22:56:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3462-wiki-ingest-taxonomy-summary.md"
     },
     {
       "id": "TASK-3463",

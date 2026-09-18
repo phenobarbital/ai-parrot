@@ -216,10 +216,21 @@ def test_ingest_invalid_taxonomy_still_ingests(tmp_path: Path, caplog: pytest.Lo
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet), via sdd-worker orchestration (FEAT-549)
+**Date**: 2026-09-19
+**Notes**: `SDDGraphIngest._process_spec_file` now calls `parse_taxonomy(spec_path)`,
+catching `ValidationError` locally (logs a warning, falls back to empty
+`DocTaxonomy` so the page is still produced). Added `_taxonomy_suffix()` helper
+building `; projects: a, b; tags: x, y`, omitting either segment when empty
+(byte-identical to the pre-FEAT-576 summary when both empty, per AC9), wired
+into the summary f-string.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: `pytest tests/knowledge/wiki/test_ledger_sdd_ingest_taxonomy.py
+tests/knowledge/wiki/test_ledger_sdd_ingest.py -q` → 12 passed (3 new + 9
+pre-existing unmodified).
+
+Review: no defects found (`coder-review:17d8c0c020f0939130b9ed69`), fix_commits=[].
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
 **Deviations from spec**: none
