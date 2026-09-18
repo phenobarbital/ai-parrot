@@ -503,7 +503,7 @@ result["overall_compliance_score"], result["assessment_status"], result["coverag
 - **Path**: `planogram/perception/__init__.py`, `planogram/perception/profiles.py`,
   `planogram/perception/shapes.py`, `examples/planogram/perception_spike/`
   (`run_spike.py`, `evaluate.py`, `README.md`), `.gitignore` (negations for the
-  harness `*.py` / `README.md`), `sdd/state/FEAT-574/spike/report.md`
+  harness `*.py` / `README.md`), `docs/pipelines/planogram-perception-spike.md`
 - **Responsibility**: a profile-driven classical-CV shape proposer (the
   generalisation of `plancheck.detection.find_candidates`, whose constants only
   describe a bright landscape price label) and a harness that measures it.
@@ -1304,7 +1304,7 @@ def fake_vision_client() -> FakeVisionClient:
 - [ ] No `requests` / `httpx` / `print`; `ruff check` passes (TID251); Google-style docstrings and type hints on all new code.
 
 **Deliverables**
-- [ ] Spike report committed at `sdd/state/FEAT-574/spike/report.md` with per-profile / per-photo precision and recall, tested conditions, off-fixture admissions, accepted profiles and the pass / fail / inconclusive outcome; no photo or manual annotation is committed.
+- [ ] Spike report committed at `docs/pipelines/planogram-perception-spike.md` with per-profile / per-photo precision and recall, tested conditions, off-fixture admissions, accepted profiles and the pass / fail / inconclusive outcome; no photo or manual annotation is committed.
 - [ ] Migration utility emits candidate slots JSON + bindings + report without touching the DB or the original config; read-only preflight lists unresolved rows; runbook covers ALTER → backfill → preflight → deploy → rollback and the score-semantics change.
 - [ ] Descriptor assistant works from the POG PDF only and never proposes `price`.
 - [ ] Backend benchmark produces the pinned, unlabelled report for `gemini-3.5-flash` vs `claude-sonnet-5` and makes no accuracy/recall claim.
@@ -1864,5 +1864,6 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-18 | Jesus Lara (with Claude) | Initial draft from `new-planogram-pipeline.brainstorm.md` (Option A); codebase contract re-verified against `dev` @ `dfd1155bd` |
+| 0.2 | 2026-09-18 | Jesus Lara (with Claude) | /sdd-task: spike report moved to `docs/pipelines/planogram-perception-spike.md` (sdd-coder tasks never write under `sdd/`); M22 registry/exports/doc folded into the InkWall task; `roi_client` removal deferred from M5 to the last M6 task so intermediate merges stay green |
 
 
