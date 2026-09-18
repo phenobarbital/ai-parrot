@@ -74,8 +74,7 @@ def filter_rows(rows: list[TaxonomyRow], projects: list[str], tags: list[str]) -
     return [
         row
         for row in rows
-        if (not norm_projects or norm_projects & set(row.projects))
-        and (not norm_tags or norm_tags & set(row.tags))
+        if (not norm_projects or norm_projects & set(row.projects)) and (not norm_tags or norm_tags & set(row.tags))
     ]
 
 
