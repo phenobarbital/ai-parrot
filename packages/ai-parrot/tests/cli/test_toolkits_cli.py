@@ -24,12 +24,12 @@ def test_list_on_empty_repo(tmp_path):
         assert "wikitoolkit" not in result.output
 
 
-def test_install_without_names_no_tty_exits_nonzero(tmp_path, monkeypatch):
-    """AC2 — CI must fail with instructions, never hang on a picker."""
+def test_no_tty_without_names_exits_2(tmp_path, monkeypatch):
+    """AC2 — CI must fail (exit 2) with instructions, never hang on a picker."""
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     with CliRunner().isolated_filesystem(temp_dir=tmp_path):
         result = CliRunner().invoke(cli, ["toolkits", "install"])
-        assert result.exit_code != 0
+        assert result.exit_code == 2
         assert "non-interactive" in result.output.lower()
 
 

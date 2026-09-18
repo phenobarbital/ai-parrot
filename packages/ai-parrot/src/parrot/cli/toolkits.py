@@ -47,7 +47,8 @@ def _resolve_names(root: Path, names: tuple[str, ...], hosts) -> list[str]:
     if names:
         return list(names)
     if not sys.stdin.isatty():
-        raise click.ClickException(
+        # click.UsageError (not ClickException) — its exit_code is 2, per AC2.
+        raise click.UsageError(
             "No toolkit names given and stdin is not a TTY. "
             "Use the non-interactive form: parrot toolkits install <name>... [--host ...] --yes"
         )

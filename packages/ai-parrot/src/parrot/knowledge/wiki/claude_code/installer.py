@@ -477,6 +477,39 @@ def uninstall_toolkit_approvals(root: Path, removed_toolkit_names: Sequence[str]
     return f".claude/settings.local.json — {len(to_remove)} MCP server approval(s) removed"
 
 
+def install_toolkit_approvals(root: Path) -> Optional[str]:
+    """Merge ONLY toolkit-managed server names into `enabledMcpjsonServers`.
+
+    Toolkit-only sibling of `_install_mcp_approval` for `parrot toolkits`
+    install/enable (FEAT-570). Unlike `_install_mcp_approval` — which merges
+    `_managed_server_names(root)`, and that helper UNCONDITIONALLY prepends
+    `"wikitoolkit"` regardless of whether a wikitoolkit `.mcp.json` entry
+    actually exists (spec §7 Known Risk S3) — this merges `toolkit_server_names(root)`
+    only, so `parrot toolkits` never pre-authorizes a wikitoolkit approval that
+    was never installed (FEAT-570 AC5).
+
+    Must be called AFTER `.mcp.json` has been reconciled, so the entry-shape
+    check reflects the final state (same precondition as `toolkit_server_names`).
+
+    Returns:
+        An action string, or None when nothing needed authorizing.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    local = _load_settings(local_path) or {}
+    names = local.get("enabledMcpjsonServers")
+    if names is None:
+        names = local["enabledMcpjsonServers"] = []
+    if not isinstance(names, list):
+        raise RuntimeError(f"{local_path}: 'enabledMcpjsonServers' is not a list")
+
+    missing = [n for n in toolkit_server_names(root) if n not in names]
+    if not missing:
+        return None
+    names.extend(missing)
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(missing)} MCP server(s) authorized ({', '.join(missing)})"
+
+
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     """Whether a ``parrot-<name>`` ``.mcp.json`` entry was written by us.
 

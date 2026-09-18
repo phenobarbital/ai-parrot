@@ -99,7 +99,7 @@ class ClaudeAdapter:
 
     def sync_approvals(self, root: Path, removed: Sequence[str] = ()) -> Optional[str]:
         from parrot.knowledge.wiki.claude_code.installer import (
-            _install_mcp_approval,
+            install_toolkit_approvals,
             uninstall_toolkit_approvals,
         )
 
@@ -109,7 +109,12 @@ class ClaudeAdapter:
             # `uninstall_toolkit_approvals` is the toolkit-only sibling that
             # never touches wikitoolkit (FEAT-570 AC5).
             return uninstall_toolkit_approvals(root, removed)
-        return _install_mcp_approval(root)
+        # NEVER `_install_mcp_approval` here: it merges `_managed_server_names`,
+        # which unconditionally prepends "wikitoolkit" even when no wikitoolkit
+        # `.mcp.json` entry exists (spec §7 Known Risk S3) — pre-authorizing a
+        # server that was never installed. `install_toolkit_approvals` is the
+        # toolkit-only sibling that never touches wikitoolkit (FEAT-570 AC5).
+        return install_toolkit_approvals(root)
 
 
 class CodexAdapter:

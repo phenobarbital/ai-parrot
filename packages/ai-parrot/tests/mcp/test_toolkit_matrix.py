@@ -187,6 +187,29 @@ def test_wikitoolkit_never_touched_end_to_end(repo_with_hosts):
     assert after == before
 
 
+def test_install_never_pre_authorizes_a_nonexistent_wikitoolkit(tmp_path, monkeypatch):
+    """AC5 / spec §7 S3 — `parrot toolkits install` must never approve a
+    "wikitoolkit" server that was never installed via `parrot claude install`.
+
+    Regression test: `ClaudeAdapter.sync_approvals`'s install/enable branch
+    previously called `_install_mcp_approval`, which merges
+    `_managed_server_names(root)` — a helper that UNCONDITIONALLY prepends
+    `"wikitoolkit"` regardless of whether a wikitoolkit `.mcp.json` entry
+    exists. On a repo with no wikitoolkit entry at all, that pre-authorized
+    a phantom approval in `.claude/settings.local.json`.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["toolkits", "install", "memory", "--host", "claude", "--yes"])
+    assert result.exit_code == 0, result.output
+
+    local_path = tmp_path / ".claude" / "settings.local.json"
+    local = json.loads(local_path.read_text(encoding="utf-8"))
+    assert "wikitoolkit" not in local.get("enabledMcpjsonServers", [])
+    assert "parrot-memory" in local.get("enabledMcpjsonServers", [])
+
+
 def test_no_secret_reaches_any_written_file(repo_with_hosts, monkeypatch):
     """AC6 — a DSN in the environment must never be written to disk."""
     secret = "postgres://user:sup3rs3cr3t@db.internal:5432/prod"
