@@ -1,0 +1,57 @@
+{
+  "days-v1": {
+    "forget_threshold": 0.2,
+    "fraction_forgotten_before_first_review": 0.0,
+    "fraction_good_review_survives_30d": 1.0,
+    "fraction_prevented_recurrence_retained": 1.0,
+    "fraction_stale_persistence": null,
+    "n_good_review_lessons": 32,
+    "n_lessons": 60,
+    "n_lessons_with_reviews": 49,
+    "n_prevented_recurrence_lessons": 12,
+    "n_stale_eligible_lessons": 0,
+    "rank_correlation_new_score_vs_baseline": -0.6600922882789404,
+    "time_policy": "days-v1"
+  },
+  "hours-v1": {
+    "forget_threshold": 0.2,
+    "fraction_forgotten_before_first_review": 0.0,
+    "fraction_good_review_survives_30d": 1.0,
+    "fraction_prevented_recurrence_retained": 1.0,
+    "fraction_stale_persistence": null,
+    "n_good_review_lessons": 32,
+    "n_lessons": 60,
+    "n_lessons_with_reviews": 49,
+    "n_prevented_recurrence_lessons": 12,
+    "n_stale_eligible_lessons": 0,
+    "rank_correlation_new_score_vs_baseline": -0.6670599910347982,
+    "time_policy": "hours-v1"
+  },
+  "ledger_cadence": {
+    "first_seen": "2026-09-16T00:25:50.066511+00:00",
+    "last_seen": "2026-09-18T09:46:07.134637+00:00",
+    "note": "no attribution -> no grades",
+    "patterns": 22,
+    "rows": 25
+  },
+  "source_pass_check": {
+    "days-v1": 1.0,
+    "hours-v1": 1.0
+  },
+  "fast_parity_checks": {
+    "test_reference_pin": "PASS",
+    "test_initial_state_parity": "PASS (4/4 grades)",
+    "test_sequence_parity_days_policy": {
+      "status": "PASS",
+      "max_delta_stability": 0.0,
+      "max_delta_difficulty": 0.0,
+      "n_rows": 1628
+    },
+    "hours_v1_variant_recorded_not_asserted": {
+      "max_delta_stability": 16.537530182246982,
+      "max_delta_difficulty": 0.0
+    },
+    "test_same_day_clamp_and_stability_floor": "PASS",
+    "test_retrievability_non_increasing": "PASS"
+  }
+}

@@ -497,10 +497,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated native `sonnet` delivery, via the task's
+Delegation Contract — design-complete blueprint, all impl-* blocks applied verbatim)
+**Date**: 2026-09-18
+**Notes**: `UnifiedMemoryManager._record_episodic` repaired: it was calling
+`EpisodicMemoryStore.record_tool_episode(query=, response=, tool_calls=)` — an overload
+that does not exist (real signature is `record_tool_episode(namespace, tool_name,
+tool_args, tool_result, ...)`), so every real-store call silently raised inside a
+broad except and no episode was ever persisted (only the mock in the old test suite hid
+this). Fixed to call `record_episode(namespace=ns, situation=query[:500],
+action_taken=f"Responded: {response_text}", outcome=EpisodeOutcome.PARTIAL,
+category=EpisodeCategory.QUERY_RESOLUTION)`, preserving room_id/crew_id in the namespace.
+Hardened `test_manager.py`'s mock fixture with `create_autospec(EpisodicMemoryStore,
+instance=True)` so an invalid-keyword regression raises `TypeError` instead of passing
+silently (verified: calling the old broken signature against the autospec now raises
+"missing a required argument: tool_name", proving the hardened fixture would have caught
+the original bug). Added `test_manager_real_store.py` with a real `EpisodicMemoryStore`
+over an in-memory `FAISSBackend` (4 tests) as the real-store regression test the task
+required. All 15 tests pass (11 + 4) verified post-merge in the feature worktree. One
+pre-existing `ruff` B905 finding at `manager.py:268` (inside `_get_episodic_warnings`,
+untouched by this task) — not a regression, left for `/sdd-done`'s feature-wide lint pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: none — the task's own file list already excluded `sdd/`
+entirely (pure code repair), so no Option A relocation was needed here.
 
-**Deviations from spec**: none | describe if any
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~906s ·
+Tokens: n/a (native — usage not tracked by the engine)
