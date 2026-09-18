@@ -239,7 +239,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -251,8 +251,8 @@
       "parallelism_notes": "Imports render_strip from TASK-3344 (examples/planogram/plancheck/identify.py), VisionBackend from TASK-3342 (examples/planogram/plancheck/vision.py), SlotObservation/RowVerification from TASK-3338 (examples/planogram/plancheck/models.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3346-verify.md"
+      "completed_at": "2026-09-18T00:38:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3346-verify.md"
     },
     {
       "id": "TASK-3347",
@@ -281,7 +281,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -291,8 +291,8 @@
       "parallelism_notes": "Imports ComplianceReport, Settings, SlotObservation, PositionResult from TASK-3338 (examples/planogram/plancheck/models.py); only cv2/json I/O otherwise.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3348-report.md"
+      "completed_at": "2026-09-18T00:38:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3348-report.md"
     },
     {
       "id": "TASK-3349",
