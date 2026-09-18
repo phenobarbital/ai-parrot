@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-574
 **Date**: 2026-09-18
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-pipelines 1.1.0 (ai-parrot-client-anthropic: next patch)
 
 **Source**: `sdd/proposals/new-planogram-pipeline.brainstorm.md` (Recommended Option **A**)
