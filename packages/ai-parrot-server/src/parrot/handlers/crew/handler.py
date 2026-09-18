@@ -8,6 +8,7 @@ Endpoints:
     GET /api/v1/crew - List all crews or get specific crew by name
     DELETE /api/v1/crew - Delete a crew
 """
+
 import json
 from aiohttp import web
 from navigator.views import BaseView
@@ -18,6 +19,7 @@ from navconfig.logging import logging
 from .models import CrewDefinition, ExecutionMode
 from ._tenancy import resolve_session_tenant
 from parrot.bots.flows.crew import AgentCrew
+from parrot.bots.flows.crew.credentials import apply_google_api_key, get_crew_google_api_key
 
 
 @is_authenticated()
@@ -40,12 +42,12 @@ class CrewHandler(BaseView):
     its own subprotocol pre-auth middleware for the WS route.
     """
 
-    path: str = '/api/v1/crew'
+    path: str = "/api/v1/crew"
     app: WebApp = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.logger = logging.getLogger('Parrot.CrewHandler')
+        self.logger = logging.getLogger("Parrot.CrewHandler")
         # Get bot manager from app if available
         self._bot_manager = None
         # Job Manager moved to CrewExecutionHandler
@@ -55,7 +57,7 @@ class CrewHandler(BaseView):
         """Get bot manager."""
         if not self._bot_manager:
             app = self.request.app
-            self._bot_manager = app['bot_manager'] if 'bot_manager' in app else None
+            self._bot_manager = app["bot_manager"] if "bot_manager" in app else None
         return self._bot_manager
 
     @bot_manager.setter
@@ -79,18 +81,11 @@ class CrewHandler(BaseView):
         # startup operations over extension backend
         if app:
             url = f"{path}"
-            app.router.add_view(
-                r"{url}/{{id:.*}}".format(url=url), cls
-            )
-            app.router.add_view(
-                r"{url}{{meta:(:.*)?}}".format(url=url), cls
-            )
+            app.router.add_view(r"{url}/{{id:.*}}".format(url=url), cls)
+            app.router.add_view(r"{url}{{meta:(:.*)?}}".format(url=url), cls)
             # Job Manager config moved to CrewExecutionHandler
-    
-    async def _create_crew_from_definition(
-        self,
-        crew_def: CrewDefinition
-    ) -> AgentCrew:
+
+    async def _create_crew_from_definition(self, crew_def: CrewDefinition) -> AgentCrew:
         """
         Create an AgentCrew instance from a CrewDefinition.
 
@@ -107,6 +102,9 @@ class CrewHandler(BaseView):
         """
         # Create agents
         agents = []
+        # FEAT-575: default Google credential for handler-built crews. None when
+        # CREW_AI_KEY is unset, which makes every use below a no-op.
+        google_key = get_crew_google_api_key()
         for agent_def in crew_def.agents:
             # Get agent class from BotManager registry
             agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
@@ -126,23 +124,19 @@ class CrewHandler(BaseView):
 
             # Create agent instance — config dict is unpacked as kwargs
             # This allows WebSearchAgent to receive contrastive_search, synthesize, etc.
-            agent = agent_class(
-                name=agent_def.name or agent_def.agent_id,
-                tools=tools,
-                **agent_def.config
-            )
+            agent = agent_class(name=agent_def.name or agent_def.agent_id, tools=tools, **agent_def.config)
 
             # Set system prompt if provided
             if agent_def.system_prompt:
                 agent.system_prompt = agent_def.system_prompt
 
+            apply_google_api_key(agent, google_key)
+
             agents.append(agent)
 
         # Create crew
         crew = AgentCrew(
-            name=crew_def.name,
-            agents=agents,
-            max_parallel_tasks=crew_def.max_parallel_tasks
+            name=crew_def.name, agents=agents, max_parallel_tasks=crew_def.max_parallel_tasks, google_api_key=google_key
         )
 
         # Add shared tools
@@ -156,10 +150,7 @@ class CrewHandler(BaseView):
         for tool_node_def in crew_def.tool_nodes:
             tool = self.bot_manager.get_tool(tool_node_def.tool)
             if not tool:
-                raise ValueError(
-                    f"Tool '{tool_node_def.tool}' not found for tool node "
-                    f"'{tool_node_def.node_id}'"
-                )
+                raise ValueError(f"Tool '{tool_node_def.tool}' not found for tool node " f"'{tool_node_def.node_id}'")
             crew.add_tool_node(
                 tool,
                 tool_node_def.node_id,
@@ -173,18 +164,16 @@ class CrewHandler(BaseView):
             for relation in crew_def.flow_relations:
                 # Convert agent IDs to agent objects
                 source_agents = self._get_agents_by_ids(
-                    crew,
-                    relation.source if isinstance(relation.source, list) else [relation.source]
+                    crew, relation.source if isinstance(relation.source, list) else [relation.source]
                 )
                 target_agents = self._get_agents_by_ids(
-                    crew,
-                    relation.target if isinstance(relation.target, list) else [relation.target]
+                    crew, relation.target if isinstance(relation.target, list) else [relation.target]
                 )
 
                 # Setup flow
                 crew.task_flow(
                     source_agents if len(source_agents) > 1 else source_agents[0],
-                    target_agents if len(target_agents) > 1 else target_agents[0]
+                    target_agents if len(target_agents) > 1 else target_agents[0],
                 )
 
         return crew
@@ -228,37 +217,25 @@ class CrewHandler(BaseView):
             # Read file field
             field = await reader.next()
 
-            if not field or field.name != 'file':
-                return self.error(
-                    response={"message": "No file provided. Expected 'file' field."},
-                    status=400
-                )
+            if not field or field.name != "file":
+                return self.error(response={"message": "No file provided. Expected 'file' field."}, status=400)
 
             # Read file content
             content = await field.read(decode=True)
             try:
                 crew_data = json.loads(content)
             except json.JSONDecodeError as e:
-                return self.error(
-                    response={"message": f"Invalid JSON format: {str(e)}"},
-                    status=400
-                )
+                return self.error(response={"message": f"Invalid JSON format: {str(e)}"}, status=400)
 
             # Validate bot manager availability
             if not self.bot_manager:
-                return self.error(
-                    response={"message": "BotManager not available"},
-                    status=500
-                )
+                return self.error(response={"message": "BotManager not available"}, status=500)
 
             # Parse into CrewDefinition
             try:
                 crew_def = CrewDefinition(**crew_data)
             except Exception as e:
-                return self.error(
-                    response={"message": f"Invalid crew definition: {str(e)}"},
-                    status=400
-                )
+                return self.error(response={"message": f"Invalid crew definition: {str(e)}"}, status=400)
 
             # Create the crew
             try:
@@ -267,9 +244,7 @@ class CrewHandler(BaseView):
                 # Register crew in bot manager
                 await self.bot_manager.add_crew(crew_def.name, crew, crew_def)
 
-                self.logger.info(
-                    f"Uploaded and created crew '{crew_def.name}' with {len(crew_def.agents)} agents"
-                )
+                self.logger.info(f"Uploaded and created crew '{crew_def.name}' with {len(crew_def.agents)} agents")
 
                 return self.json_response(
                     {
@@ -279,26 +254,20 @@ class CrewHandler(BaseView):
                         "name": crew_def.name,
                         "execution_mode": crew_def.execution_mode.value,  # pylint: disable=E1101  #noqa
                         "agents": [agent.agent_id for agent in crew_def.agents],
-                        "created_at": crew_def.created_at.isoformat()
+                        "created_at": crew_def.created_at.isoformat(),
                     },
-                    status=201
+                    status=201,
                 )
 
             except Exception as e:
                 self.logger.error("Error creating crew from upload: %s", e, exc_info=True)
-                return self.error(
-                    response={"message": f"Error creating crew: {str(e)}"},
-                    status=400
-                )
+                return self.error(response={"message": f"Error creating crew: {str(e)}"}, status=400)
 
         except web.HTTPError:
             raise
         except Exception as e:
             self.logger.error("Error processing upload: %s", e, exc_info=True)
-            return self.error(
-                response={"message": f"Error processing upload: {str(e)}"},
-                status=500
-            )
+            return self.error(response={"message": f"Error processing upload: {str(e)}"}, status=500)
 
     async def put(self):
         """
@@ -337,7 +306,7 @@ class CrewHandler(BaseView):
         try:
             # Get crew ID from URL if provided
             match_params = self.match_parameters(self.request)
-            url_crew_id = match_params.get('id')
+            url_crew_id = match_params.get("id")
 
             # Parse request body
             data = await self.request.json()
@@ -346,19 +315,12 @@ class CrewHandler(BaseView):
             # never the body; `declared=` triggers a 400 on conflicting
             # values. The resolved tenant is authoritative for both the
             # lookup below AND the definition that gets persisted.
-            tenant = await resolve_session_tenant(
-                self.request, declared=data.get('tenant')
-            )
+            tenant = await resolve_session_tenant(self.request, declared=data.get("tenant"))
             crew_def.tenant = tenant
 
             # Validate bot manager availability
             if not self.bot_manager:
-                return self.error(
-                    response={
-                        "message": "BotManager not available"
-                    },
-                    status=500
-                )
+                return self.error(response={"message": "BotManager not available"}, status=500)
             # if crew_id is provided, then is an update
             if url_crew_id:
                 existing_crew = await self.bot_manager.get_crew(url_crew_id, tenant=tenant)
@@ -366,12 +328,7 @@ class CrewHandler(BaseView):
                 # so guard against a None definition before reading
                 # existing_def.crew_id.
                 if not existing_crew or existing_crew[1] is None:
-                    return self.error(
-                        response={
-                            "message": f"Crew '{url_crew_id}' not found for update"
-                        },
-                        status=404
-                    )
+                    return self.error(response={"message": f"Crew '{url_crew_id}' not found for update"}, status=404)
                 # Update existing crew definition
                 _, existing_def = existing_crew
                 crew_def.crew_id = existing_def.crew_id  # Preserve original ID
@@ -395,9 +352,7 @@ class CrewHandler(BaseView):
                 action = "updated" if url_crew_id else "created"
                 status_code = 202 if url_crew_id else 201
 
-                self.logger.info(
-                    f"{action.capitalize()} crew '{crew_def.name}' with {len(crew_def.agents)} agents"
-                )
+                self.logger.info(f"{action.capitalize()} crew '{crew_def.name}' with {len(crew_def.agents)} agents")
 
                 return self.json_response(
                     {
@@ -407,29 +362,19 @@ class CrewHandler(BaseView):
                         "name": crew_def.name,
                         "execution_mode": crew_def.execution_mode.value,  # pylint: disable=E1101
                         "agents": [agent.agent_id for agent in crew_def.agents],
-                        "created_at": crew_def.created_at.isoformat()  # pylint: disable=E1101
+                        "created_at": crew_def.created_at.isoformat(),  # pylint: disable=E1101
                     },
-                    status=status_code
+                    status=status_code,
                 )
 
             except Exception as e:
                 self.logger.error("Error creating crew: %s", e, exc_info=True)
-                return self.error(
-                    response={
-                        "message": f"Error creating crew: {str(e)}"
-                    },
-                    status=400
-                )
+                return self.error(response={"message": f"Error creating crew: {str(e)}"}, status=400)
         except web.HTTPError:
             raise
         except Exception as e:
             self.logger.error("Error parsing request: %s", e, exc_info=True)
-            return self.error(
-                response={
-                    "message": f"Invalid request: {str(e)}"
-                },
-                status=400
-            )
+            return self.error(response={"message": f"Invalid request: {str(e)}"}, status=400)
 
     async def get(self):
         """
@@ -452,19 +397,14 @@ class CrewHandler(BaseView):
         try:
             qs = self.get_arguments(self.request)
             match_params = self.match_parameters(self.request)
-            crew_id = match_params.get('id') or qs.get('crew_id')
-            crew_name = qs.get('name')
+            crew_id = match_params.get("id") or qs.get("crew_id")
+            crew_name = qs.get("name")
             # FEAT-446: tenant comes from the session, never the query
             # string; `declared=` triggers a 400 on conflicting values.
-            tenant = await resolve_session_tenant(
-                self.request, declared=qs.get('tenant')
-            )
+            tenant = await resolve_session_tenant(self.request, declared=qs.get("tenant"))
 
             if not self.bot_manager:
-                return self.error(
-                    response={"message": "BotManager not available"},
-                    status=400
-                )
+                return self.error(response={"message": "BotManager not available"}, status=400)
 
             # Get specific crew
             if crew_name or crew_id:
@@ -478,34 +418,29 @@ class CrewHandler(BaseView):
                 # 'NoneType' object has no attribute 'crew_id'. Validate the
                 # resolved definition explicitly.
                 if not crew_data or crew_data[1] is None:
-                    return self.error(
-                        response={
-                            "message": f"Crew '{identifier}' not found"
-                        },
-                        status=404
-                    )
+                    return self.error(response={"message": f"Crew '{identifier}' not found"}, status=404)
 
                 crew, crew_def = crew_data
-                return self.json_response({
-                    "crew_id": crew_def.crew_id,
-                    "tenant": crew_def.tenant,
-                    "name": crew_def.name,
-                    "description": crew_def.description,
-                    "execution_mode": crew_def.execution_mode.value,
-                    "agents": [agent.dict() for agent in crew_def.agents],
-                    "flow_relations": [
-                        rel.dict() for rel in crew_def.flow_relations
-                    ],
-                    "shared_tools": crew_def.shared_tools,
-                    "max_parallel_tasks": crew_def.max_parallel_tasks,
-                    "created_at": crew_def.created_at.isoformat(),
-                    "updated_at": crew_def.updated_at.isoformat(),
-                    "metadata": crew_def.metadata
-                })
+                return self.json_response(
+                    {
+                        "crew_id": crew_def.crew_id,
+                        "tenant": crew_def.tenant,
+                        "name": crew_def.name,
+                        "description": crew_def.description,
+                        "execution_mode": crew_def.execution_mode.value,
+                        "agents": [agent.dict() for agent in crew_def.agents],
+                        "flow_relations": [rel.dict() for rel in crew_def.flow_relations],
+                        "shared_tools": crew_def.shared_tools,
+                        "max_parallel_tasks": crew_def.max_parallel_tasks,
+                        "created_at": crew_def.created_at.isoformat(),
+                        "updated_at": crew_def.updated_at.isoformat(),
+                        "metadata": crew_def.metadata,
+                    }
+                )
 
             # Sync crews from Redis first
             await self.bot_manager.sync_crews()
-            
+
             # List all crews
             crews = self.bot_manager.list_crews(tenant=tenant)
             crew_list = []
@@ -527,18 +462,12 @@ class CrewHandler(BaseView):
                 if crew_def is not None
             )
 
-            return self.json_response({
-                "crews": crew_list,
-                "total": len(crew_list)
-            })
+            return self.json_response({"crews": crew_list, "total": len(crew_list)})
         except web.HTTPError:
             raise
         except Exception as e:
             self.logger.error("Error getting crew: %s", e, exc_info=True)
-            return self.error(
-                response={"message": f"Error: {str(e)}"},
-                status=500
-            )
+            return self.error(response={"message": f"Error: {str(e)}"}, status=500)
 
     async def delete(self):
         """
@@ -561,50 +490,34 @@ class CrewHandler(BaseView):
         try:
             match_params = self.match_parameters(self.request)
             qs = self.get_arguments(self.request)
-            crew_id = match_params.get('id') or qs.get('crew_id')
-            crew_name = qs.get('name')
+            crew_id = match_params.get("id") or qs.get("crew_id")
+            crew_name = qs.get("name")
             # FEAT-446: tenant comes from the session, never the query
             # string; `declared=` triggers a 400 on conflicting values.
-            tenant = await resolve_session_tenant(
-                self.request, declared=qs.get('tenant')
-            )
+            tenant = await resolve_session_tenant(self.request, declared=qs.get("tenant"))
 
             if not crew_name and not crew_id:
-                return self.error(
-                    response={"message": "name or crew_id is required"},
-                    status=400
-                )
+                return self.error(response={"message": "name or crew_id is required"}, status=400)
 
             if not self.bot_manager:
-                return self.error(
-                    response={"message": "BotManager not available"},
-                    status=500
-                )
+                return self.error(response={"message": "BotManager not available"}, status=500)
 
             identifier = crew_name or crew_id
-            
+
             # Check if exists first. get_crew() returns the truthy tuple
             # (None, None) on a miss, so validate the resolved definition
             # rather than relying on `not crew_data`.
             crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
             if not crew_data or crew_data[1] is None:
-                return self.error(
-                    response={"message": f"Crew '{identifier}' not found"},
-                    status=404
-                )
+                return self.error(response={"message": f"Crew '{identifier}' not found"}, status=404)
 
             # Remove crew
             await self.bot_manager.remove_crew(identifier, tenant=tenant)
 
-            return self.json_response({
-                "message": f"Crew '{identifier}' deleted successfully"
-            })
+            return self.json_response({"message": f"Crew '{identifier}' deleted successfully"})
 
         except web.HTTPError:
             raise
         except Exception as e:
             self.logger.error("Error deleting crew: %s", e, exc_info=True)
-            return self.error(
-                response={"message": f"Error: {str(e)}"},
-                status=500
-            )
+            return self.error(response={"message": f"Error: {str(e)}"}, status=500)
