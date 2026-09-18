@@ -21,13 +21,13 @@ from prompt_toolkit.history import FileHistory, InMemoryHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 from pydantic import BaseModel, Field
 
-from parrot.bots.abstract import AbstractBot
 from parrot.cli.commands import ConversationTurn, SlashCommand, SlashCommandDispatcher
 from parrot.cli.console import get_console
 from parrot.cli.events import PostTurnHook, TextDelta, TurnCompleted, TurnFailed, TurnStarted
 from parrot.cli.modes import UIMode, history_path
 from parrot.cli.renderer import ResponseRenderer
 from parrot.cli.session import TurnRunner
+from parrot.models.basic import ToolCall
 from parrot.models.responses import AIMessage
 
 
@@ -93,7 +93,7 @@ class AgentREPL:
 
     def __init__(
         self,
-        bot: AbstractBot,
+        bot: Any,
         config: REPLConfig,
         renderer: ResponseRenderer,
         *,
@@ -102,7 +102,11 @@ class AgentREPL:
         """Initialise the REPL.
 
         Args:
-            bot: The configured ``AbstractBot`` to converse with.
+            bot: The configured ``AbstractBot`` to converse with, or a duck-typed
+                proxy (``_ServerBotProxy``, ``loaders.py``) exposing the same
+                ``ask``/``ask_stream``/``get_conversation_history`` surface --
+                typed ``Any`` to match ``TurnRunner``'s own ``bot: Any`` (session.py),
+                which this REPL always forwards ``bot`` to.
             config: REPL session configuration.
             renderer: Response renderer for terminal output.
             runner: Turn execution boundary. Defaults to ``TurnRunner(bot, config)``.
@@ -302,6 +306,9 @@ class AgentREPL:
             ``0`` on success, ``1`` if any turn ended in ``TurnFailed``.
         """
         exit_code = 0
+        if self.config.resume_session_id:
+            turns = await self.runner.load_history(self.config.resume_session_id)
+            self.renderer.render_history(turns, session_id=self.config.session_id)
         for line in lines:
             text = line.strip()
             if not text:
@@ -347,5 +354,5 @@ class _StreamedResponse:
         self.query = query
         self.output = output
         self.response = output
-        self.tool_calls = []
+        self.tool_calls: List[ToolCall] = []
         self.usage = None

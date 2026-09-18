@@ -15,7 +15,7 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Optional
+from typing import Optional, Set
 
 import click
 
@@ -332,7 +332,7 @@ async def _handle_list(
             name_val = getattr(agent_item, "name", "?")
             factory = getattr(agent_item, "factory", None)
             class_val = factory.__name__ if factory and hasattr(factory, "__name__") else str(factory)
-            tags = getattr(agent_item, "tags", set()) or set()
+            tags: Set[str] = getattr(agent_item, "tags", set()) or set()
             tags_val = ", ".join(sorted(tags))
             source_val = "standalone"
         rows.append([name_val, class_val, tags_val, source_val])

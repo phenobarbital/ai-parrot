@@ -257,7 +257,15 @@ class TurnRunner:
             self._active_task = None
 
     def cancel(self) -> bool:
-        """Cancel the active turn's task; True if one was active."""
+        """Cancel the active turn's task; True if one was active.
+
+        Relies on ``self._active_task`` -- the caller's own task, captured by
+        ``run_turn()`` via ``asyncio.current_task()`` -- so this only cancels
+        anything when the caller wraps turn-consumption in a dedicated task
+        (as the inline REPL's ``_turn_with_cancel`` and the TUI's
+        ``action_cancel_turn`` both do). A caller that drives ``run_turn()``
+        directly on its own task (no wrapper) has nothing for this to cancel.
+        """
         if not self.is_active:
             return False
         self._active_task.cancel()  # type: ignore[union-attr]

@@ -7,7 +7,7 @@ workspace consume them. Nothing here performs I/O.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
@@ -42,7 +42,7 @@ class TurnEvent(BaseModel):
     kind: TurnEventKind
     turn_id: str
     seq: int = Field(ge=0)
-    at: datetime = Field(default_factory=datetime.now)
+    at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class TurnStarted(TurnEvent):

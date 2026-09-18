@@ -38,13 +38,22 @@ class RendererProtocol(Protocol):
 
 
 class CommandContext(Protocol):
-    """Host surface a handler may touch. Implemented by the inline REPL (TASK-3407) and ``TUICommandContext`` (tui/adapter.py, TASK-3411)."""
+    """Host surface a handler may touch. Implemented by the inline REPL (TASK-3407) and ``TUICommandContext`` (tui/adapter.py, TASK-3411).
+
+    ``renderer`` is declared as a read-only property (never reassigned by any
+    handler or presenter) rather than a plain attribute, so mypy checks it
+    covariantly: a presenter's ``ResponseRenderer``/``TUIRenderer`` -- both
+    supersets of ``RendererProtocol`` -- correctly satisfy this Protocol
+    without widening either concrete class's own ``self.renderer`` type.
+    """
 
     bot: Any
     config: "REPLConfig"
-    renderer: RendererProtocol
     dispatcher: "SlashCommandDispatcher"
     runner: "TurnRunner"
+
+    @property
+    def renderer(self) -> RendererProtocol: ...
 
     @property
     def history(self) -> List["ConversationTurn"]: ...
@@ -248,7 +257,7 @@ async def _cmd_info(ctx: "CommandContext", args: str) -> None:  # noqa: ARG001
             ("LLM provider", str(provider)),
             ("Model", str(model)),
             ("Session ID", config.session_id),
-            ("User ID", config.user_id),
+            ("User ID", str(config.user_id)),
             ("Tools", str(tool_count)),
             ("Streaming", streaming_state),
             ("Server URL", config.server_url or "(standalone)"),
@@ -458,12 +467,15 @@ async def _cmd_create_agent(ctx: "CommandContext", args: str) -> None:
         result = await orchestrator.run(request)
 
         if result.status == FactoryStatus.SUCCESS:
-            ctx.renderer.print(
-                f"[green]Agent created:[/green] " f"[bold]{result.definition.name}[/bold] → {result.yaml_path}"
-            )
+            # FactoryResult.definition is populated only on SUCCESS (contracts.py docstring);
+            # the None-guard is defensive narrowing for mypy, not an expected runtime path.
+            agent_name = result.definition.name if result.definition is not None else "(unknown)"
+            ctx.renderer.print(f"[green]Agent created:[/green] [bold]{agent_name}[/bold] → {result.yaml_path}")
         elif result.status == FactoryStatus.CANCELLED_BY_USER:
-            ctx.renderer.print(f"[yellow]Cancelled at {result.cancelled_at.value}.[/yellow]")
+            checkpoint = result.cancelled_at.value if result.cancelled_at is not None else "unknown checkpoint"
+            ctx.renderer.print(f"[yellow]Cancelled at {checkpoint}.[/yellow]")
         elif result.status == FactoryStatus.TIMEOUT:
-            ctx.renderer.print(f"[yellow]Timed out at {result.cancelled_at.value}.[/yellow]")
+            checkpoint = result.cancelled_at.value if result.cancelled_at is not None else "unknown checkpoint"
+            ctx.renderer.print(f"[yellow]Timed out at {checkpoint}.[/yellow]")
         else:
             ctx.renderer.print(f"[red]Factory failed:[/red] {result.error or 'unknown'}")

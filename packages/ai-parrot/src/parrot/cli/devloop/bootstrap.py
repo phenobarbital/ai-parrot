@@ -20,6 +20,8 @@ from pydantic import BaseModel, Field
 from rich.console import Console
 from rich.table import Table
 
+from parrot.cli.console import get_console
+
 logger = logging.getLogger(__name__)
 
 #: Backend id -> actual CLI binary name, for the (few) backends whose
@@ -294,7 +296,7 @@ async def build_runtime(*, console: Optional[Console] = None) -> DevLoopRuntime:
     Raises:
         SystemExit: If preflight fails.
     """
-    con = console or Console()
+    con = console or get_console()
     result = await preflight(console=con)
     if not result.ok:
         raise SystemExit(1)
@@ -569,7 +571,7 @@ async def build_dev_flow_runtime(*, console: Optional[Console] = None) -> DevFlo
     """
     import functools  # noqa: PLC0415
 
-    con = console or Console()
+    con = console or get_console()
     result = await preflight(console=con, topology="dev_flow")
     if not result.ok:
         raise SystemExit(1)
