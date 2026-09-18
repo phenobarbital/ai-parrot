@@ -128,7 +128,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,8 +140,8 @@
       "parallelism_notes": "Wraps reconcile_toolkit_entries from TASK-3371 (claude_code/installer.py), reconcile_toolkit_tables from TASK-3372 (codex/installer.py) and reconcile_toolkit_entries + toolkit_config_paths from TASK-3373 (google/installer.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3374-host-adapter-contract.md"
+      "completed_at": "2026-09-18T05:54:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3374-host-adapter-contract.md"
     },
     {
       "id": "TASK-3375",
