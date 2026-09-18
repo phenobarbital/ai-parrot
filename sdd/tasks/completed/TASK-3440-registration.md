@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3435
@@ -436,7 +436,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+comparison/registration.py: ImageRegistration + register_image (spec skeleton). _pair_score uses only Identification evidence (same product +4, brand+family +2, brand +1, other brand -2, else 0; uncertain/None neutral); _align_row = port of the reference semi-global DP (end gaps cheaper, deterministic tie-break match > skip-facing > skip-slot, anchors = +4 matches, mapping keyed by Identification.shape_id, slots without identification never mapped); register_image = cached alignments over strictly increasing combinations with consecutive/full-height priors, ambiguity gate (margin < MARGIN_LOW or zero anchors, and more rows than shelves) => ambiguous with empty mappings. Join rule identification.shape_id in {anchor_shape_id, slot_id}.
+Tests: test_registration.py 9 passed (incl. spec names test_registration_partial_view_not_visible / test_registration_ambiguous_stays_unassessed). ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
