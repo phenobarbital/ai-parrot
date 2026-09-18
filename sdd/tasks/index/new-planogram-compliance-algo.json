@@ -301,7 +301,7 @@
       "feature_id": "FEAT-565",
       "feature": "new-planogram-compliance-algo",
       "spec": "sdd/specs/new-planogram-compliance-algo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -320,8 +320,8 @@
       "parallelism_notes": "Imports one entry point from every stage: load_* (TASK-3339 reference.py), detect_tags (TASK-3340 detection.py), build_slots (TASK-3341 grid.py), VisionBackend (TASK-3342 vision.py), read_prices (TASK-3343 prices.py), identify_rows (TASK-3344 identify.py), register_image (TASK-3345 registration.py), verify_rows (TASK-3346 verify.py), merge_positions (TASK-3347 scoring.py), write_report (TASK-3348 report.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:08:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3349-pipeline.md"
+      "completed_at": "2026-09-18T00:46:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3349-pipeline.md"
     },
     {
       "id": "TASK-3350",

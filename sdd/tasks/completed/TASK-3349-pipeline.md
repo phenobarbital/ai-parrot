@@ -577,10 +577,16 @@ In a worktree prefix the command with
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (backend nova, model zai.glm-5, attempt_uid 98a57d6a6c044baf95551e89a25be559)
+**Date**: 2026-09-18
+**Notes**: Created `examples/planogram/plancheck/pipeline.py` (run_check orchestrating
+stages 1-8, resolve_verify_pass, effective_concurrency, absolutize, `_process_image`
+with AsyncExitStack backend lifecycle and shared semaphore concurrency control) and
+`examples/planogram/tests/test_plancheck_pipeline.py` with all 5 blueprint-named tests
+(verified none disabled/renamed). `ruff check` clean. Engine lint autofix commit
+`f64cc2177`. Post-merge full suite → 112 passed. Review recorded:
+`coder-review:d634e4a5bf1be864a3ae1df7`, no corrections needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Seat**: glm5 · Backend: nova · Model: zai.glm-5 · Attempts: 1 · Duration: 369.7s · Tokens: 1838672/8845
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
