@@ -72,6 +72,7 @@ optional — every non-empty brainstorm section below has a target in the spec:
 | Code Context (entire section) | §6 Codebase Contract (re-verify every reference — code may have shifted) |
 | Libraries / Tools table | §7 External Dependencies |
 | Parallelism Assessment | Worktree Strategy section |
+| Frontmatter `projects` / `tags` (FEAT-576) | Spec frontmatter `projects` / `tags` — verbatim; extend `projects` only with a distribution §4 research shows the feature touches |
 | Open Questions (see 2b) | §8 Open Questions (with resolved/unresolved state preserved) |
 
 Rejected options from the brainstorm are NOT carried into the spec body.
@@ -458,11 +459,17 @@ stay with the thinking model — eligibility never delegates a design choice.
      ---
      type: feature        # or: hotfix
      base_branch: dev     # or: main (mandatory for hotfix)
+     projects: [ai-parrot]  # FEAT-576 — parts of the codebase; carried from the brainstorm/proposal
+     tags: [memory]         # FEAT-576 — 2–6 kebab-case keywords; carried from the brainstorm/proposal
      # reuse_feature_id: FEAT-<NNN>   # OPTIONAL — only for an intentional
      #   multi-spec split of one initiative (see Guardrails); when present,
      #   skip the reserve_ids.py call below and use this ID verbatim.
      ---
      ```
+   - **projects / tags** (FEAT-576): copy from the exploration doc; with no
+     exploration doc, derive projects from §4 research (mapping in
+     `/sdd-brainstorm` §10) and propose 2–6 tags. Vocabulary: `KNOWN_PROJECTS`
+     in `scripts/sdd/sdd_meta.py` (unknown values warn).
    - **Feature ID — SKIP ENTIRELY when `TYPE == "hotfix"` (FEAT-466).** A
      bugfix is not a feature and reserves no `FEAT-<NNN>`: ledger ids exist
      for features and the brainstorm → spec → task SDD flow, and a hotfix is
@@ -538,6 +545,9 @@ stay with the thinking model — eligibility never delegates a design choice.
    body for a passage that reflects the resolution. If you cannot find
    one, you have failed to carry the decision forward — fix the spec
    before committing.
+5. Confirm the spec frontmatter carries the exploration doc's `projects` and
+   `tags` (FEAT-576) — `python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse_taxonomy; print(parse_taxonomy(Path('<spec>')))"`
+   must list at least the carried values.
 
 **Worktree hint (new section in spec):**
 Include a `## Worktree Strategy` section in the spec with:
