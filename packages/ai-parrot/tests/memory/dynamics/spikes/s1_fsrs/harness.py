@@ -1,4 +1,5 @@
 """S1 spike harness: reference loader, traces, metrics and report writer."""
+
 from __future__ import annotations
 
 import importlib
@@ -19,8 +20,12 @@ from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedbackStore
 from . import candidate
 
 logger = logging.getLogger(__name__)
-REPO_ROOT = Path(__file__).resolve().parents[7]  # …/spikes/s1_fsrs/harness.py → repo root (only for CoderFeedbackStore.from_root)
-SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
+REPO_ROOT = (
+    Path(__file__).resolve().parents[7]
+)  # …/spikes/s1_fsrs/harness.py → repo root (only for CoderFeedbackStore.from_root)
+SPIKE_DIR = (
+    Path(__file__).resolve().parent
+)  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 REFERENCE_DIR = SPIKE_DIR / "reference"
 REFERENCE_COMMIT = "9446cb06605c597a063aeee49f7d188d42e34dc2"  # py-fsrs v6.3.2, MIT
 
@@ -81,7 +86,9 @@ def review_sequences(seed: int, count: int) -> list[list[ReviewEvent]]:
     return sequences
 
 
-def parity_rows(fsrs: Any, sequences: list[list[ReviewEvent]], w: tuple[float, ...], *, time_policy: str) -> list[dict[str, float]]:
+def parity_rows(
+    fsrs: Any, sequences: list[list[ReviewEvent]], w: tuple[float, ...], *, time_policy: str
+) -> list[dict[str, float]]:
     """Replay each sequence through reference Scheduler(enable_fuzzing=False) and candidate; return per-step deltas."""
     scheduler = fsrs.Scheduler(parameters=w, enable_fuzzing=False)
     rows: list[dict[str, float]] = []
@@ -120,8 +127,12 @@ def parity_rows(fsrs: Any, sequences: list[list[ReviewEvent]], w: tuple[float, .
 
             if time_policy == "days-v1":
                 # The reference is exact only under its own (whole-day) time policy — AC03.
-                assert delta_stability < 1e-9, f"stability parity failed seq={seq_idx} step={step_idx}: {delta_stability}"
-                assert delta_difficulty < 1e-9, f"difficulty parity failed seq={seq_idx} step={step_idx}: {delta_difficulty}"
+                assert (
+                    delta_stability < 1e-9
+                ), f"stability parity failed seq={seq_idx} step={step_idx}: {delta_stability}"
+                assert (
+                    delta_difficulty < 1e-9
+                ), f"difficulty parity failed seq={seq_idx} step={step_idx}: {delta_difficulty}"
                 if delta_retrievability is not None:
                     assert (
                         delta_retrievability < 1e-9
@@ -260,7 +271,9 @@ def calibration_metrics(
             forgotten_flags.append(r_before_first_review < forget_threshold)
 
         for review in reviews:
-            state = candidate.transition(state, candidate.Grade(review["grade"]), w, review["at"], time_policy=time_policy)
+            state = candidate.transition(
+                state, candidate.Grade(review["grade"]), w, review["at"], time_policy=time_policy
+            )
 
         final_r = candidate.retrievability(state, window_end, w, time_policy=time_policy)
 
@@ -339,7 +352,9 @@ def write_report(metrics: dict[str, Any], *, commands: list[str], provenance: di
             continue
         good_survival = policy_metrics.get("fraction_good_review_survives_30d")
         status = "PASS" if good_survival == 1.0 else ("FAIL" if good_survival is not None else "PENDING")
-        lines.append(f"- [{policy_key}] non-lapsed lesson with >=1 GOOD review survives 30 days: {status} ({good_survival})")
+        lines.append(
+            f"- [{policy_key}] non-lapsed lesson with >=1 GOOD review survives 30 days: {status} ({good_survival})"
+        )
     lines.append("")
     lines.append("## Limitations")
     lines.append("")

@@ -1,4 +1,5 @@
 """S1 gate tests: fast parity (always) + full calibration (PARROT_SPIKE_FULL=1)."""
+
 from __future__ import annotations
 
 import os
@@ -88,7 +89,7 @@ def test_retrievability_non_increasing() -> None:
     state = candidate.initial_state(candidate.Grade.GOOD, w, T0)
     for policy in ("days-v1", "hours-v1"):
         previous = None
-        for offset_days in range(0, 60):
+        for offset_days in range(60):
             now = T0 + timedelta(days=offset_days)
             current = candidate.retrievability(state, now, w, time_policy=policy)
             if previous is not None:
@@ -115,7 +116,9 @@ def test_full_calibration_writes_report(fsrs) -> None:
 
     report_path = harness.write_report(
         metrics,
-        commands=["PARROT_SPIKE_FULL=1 pytest packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/test_s1_harness.py -q -s"],
+        commands=[
+            "PARROT_SPIKE_FULL=1 pytest packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/test_s1_harness.py -q -s"
+        ],
         provenance={
             "synthetic_trace": "seeded generic-agent trace, seed=571, 30 days, 60 lessons",
             "ledger_signal": ledger_cadence,

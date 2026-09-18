@@ -1,4 +1,5 @@
 """S1 spike: pure FSRS-6 candidate transitions (prototype for FEAT-571 M1 — NOT importable from parrot.*)."""
+
 from __future__ import annotations
 
 import math
@@ -90,7 +91,9 @@ def _short_term_stability(stability: float, grade: Grade, w: tuple[float, ...]) 
     return max(stability * increase, STABILITY_MIN)
 
 
-def _next_forget_stability(difficulty: float, stability: float, retrievability_value: float, w: tuple[float, ...]) -> float:
+def _next_forget_stability(
+    difficulty: float, stability: float, retrievability_value: float, w: tuple[float, ...]
+) -> float:
     """Lapse branch (w11..w14) with the short-term floor; mirrors reference `_next_forget_stability`."""
     long_term = (
         w[11]
@@ -119,7 +122,9 @@ def _next_recall_stability(
     )
 
 
-def transition(state: CandidateState, grade: Grade, w: tuple[float, ...], reviewed_at: datetime, *, time_policy: str) -> CandidateState:
+def transition(
+    state: CandidateState, grade: Grade, w: tuple[float, ...], reviewed_at: datetime, *, time_policy: str
+) -> CandidateState:
     """Apply one review: same-day branch, recall branch (w8..w10, w15/w16), lapse branch (w11..w14, floor)."""
     if state.last_review is None:
         return initial_state(grade, w, reviewed_at)
