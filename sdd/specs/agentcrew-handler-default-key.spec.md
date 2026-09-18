@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-575
 **Date**: 2026-09-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.5
 
 ---
