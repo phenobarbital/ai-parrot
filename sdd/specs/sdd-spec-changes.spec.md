@@ -13,7 +13,7 @@ tags: [sdd, templates, taxonomy, frontmatter]
 **Feature ID**: FEAT-576
 **Date**: 2026-09-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot` (the parser lives in core)
 
 ---
