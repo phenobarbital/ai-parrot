@@ -6,6 +6,8 @@ from parrot.knowledge.wiki.claude_code.cli import claude
 from parrot.knowledge.wiki.claude_code.installer import (
     install_claude_integration,
     integration_status,
+    reconcile_toolkit_entries,
+    toolkit_server_names,
     uninstall_claude_integration,
 )
 from parrot.mcp.toolkit_seed import available_templates
@@ -57,6 +59,62 @@ class TestMCPJsonInstall:
         install_claude_integration(repo_root)
         data = json.loads(mcp_json.read_text())
         assert "wikitoolkit" in data["mcpServers"]
+
+
+class TestToolkitOnlyReconciler:
+    """FEAT-570 TASK-3371 — the toolkit-only reconciler never touches wikitoolkit."""
+
+    def test_reconcile_toolkit_entries_preserves_wikitoolkit(self, repo_root):
+        # Seed .mcp.json with a wikitoolkit entry + one managed parrot-memory entry.
+        install_claude_integration(repo_root, toolkits=["bounded-source"], bookstore=False)
+        mcp_json = repo_root / ".mcp.json"
+        before = json.loads(mcp_json.read_text())
+        wikitoolkit_before = before["mcpServers"]["wikitoolkit"]
+
+        actions, warnings = reconcile_toolkit_entries(repo_root)
+
+        after = json.loads(mcp_json.read_text())
+        assert after["mcpServers"]["wikitoolkit"] == wikitoolkit_before
+        assert "parrot-bounded-source" in after["mcpServers"]
+        assert isinstance(actions, list)
+        assert isinstance(warnings, list)
+
+    def test_reconcile_toolkit_entries_preserves_foreign_entry(self, repo_root):
+        mcp_json = repo_root / ".mcp.json"
+        mcp_json.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "wikitoolkit": {"command": "wikitoolkit", "args": ["mcp"], "env": {}},
+                        "parrot-bounded-source": {"command": "some-other-binary", "args": ["not", "ours"]},
+                    }
+                }
+            )
+        )
+        (repo_root / ".parrot" / "mcp-toolkits.yaml").write_text(
+            "toolkits:\n"
+            "  bounded-source:\n"
+            "    class: parrot_tools.scraping.toolkit.BoundedSourceToolkit\n"
+            "    kwargs: {}\n"
+        )
+
+        wikitoolkit_before = json.loads(mcp_json.read_text())["mcpServers"]["wikitoolkit"]
+        actions, warnings = reconcile_toolkit_entries(repo_root)
+
+        data = json.loads(mcp_json.read_text())
+        assert data["mcpServers"]["wikitoolkit"] == wikitoolkit_before
+        assert data["mcpServers"]["parrot-bounded-source"] == {
+            "command": "some-other-binary",
+            "args": ["not", "ours"],
+        }
+        assert len(warnings) == 1
+        assert "parrot-bounded-source" in warnings[0]
+
+    def test_toolkit_server_names_excludes_wikitoolkit(self, repo_root):
+        install_claude_integration(repo_root, toolkits=["bounded-source"], bookstore=False)
+        names = toolkit_server_names(repo_root)
+        assert "wikitoolkit" not in names
+        assert "parrot-bounded-source" in names
 
 
 class TestMCPJsonUninstall:
