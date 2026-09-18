@@ -85,7 +85,12 @@ class _SlowBot:
 
 
 @pytest.fixture
-def lifecycle_scope():
+def _runner_lifecycle_scope():
+    """Local equivalent of the shared ``lifecycle_scope`` conftest fixture (TASK-3416):
+
+    renamed here to avoid shadowing conftest.py's fixture of the same name for every
+    test in this module (pytest resolves the closest definition first).
+    """
     with scope() as reg:
         yield reg
 
@@ -95,7 +100,7 @@ async def _collect(runner: TurnRunner, query: str):
 
 
 @pytest.mark.asyncio
-async def test_turn_event_seq_monotonic_and_terminal_once(lifecycle_scope, tmp_path, monkeypatch):
+async def test_turn_event_seq_monotonic_and_terminal_once(_runner_lifecycle_scope, tmp_path, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     final = SimpleNamespace(output="abc", response="abc", tool_calls=[], usage=None)
     runner = TurnRunner(_FakeBot(["a", "b", "c"], final), _config())
@@ -115,7 +120,7 @@ async def test_turn_event_seq_monotonic_and_terminal_once(lifecycle_scope, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_runner_live_tool_events_scoped(lifecycle_scope, tmp_path, monkeypatch):
+async def test_runner_live_tool_events_scoped(_runner_lifecycle_scope, tmp_path, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     runner = TurnRunner(_FakeBot(["a", "b"], None, tool=_OkTool()), _config())
     events = await _collect(runner, "hi")
@@ -140,7 +145,7 @@ async def test_runner_live_tool_events_scoped(lifecycle_scope, tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_runner_batch_mode_uses_ask(lifecycle_scope, tmp_path, monkeypatch):
+async def test_runner_batch_mode_uses_ask(_runner_lifecycle_scope, tmp_path, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     final = SimpleNamespace(output="done", response="done", tool_calls=[], usage=None)
     bot = _FakeBot([], final)
@@ -151,7 +156,7 @@ async def test_runner_batch_mode_uses_ask(lifecycle_scope, tmp_path, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_runner_cancel_yields_cancelled_and_closes_stream(lifecycle_scope, tmp_path, monkeypatch):
+async def test_runner_cancel_yields_cancelled_and_closes_stream(_runner_lifecycle_scope, tmp_path, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     bot = _SlowBot()
     hook_calls: List[Any] = []
@@ -181,7 +186,7 @@ async def test_runner_cancel_yields_cancelled_and_closes_stream(lifecycle_scope,
 
 
 @pytest.mark.asyncio
-async def test_runner_failure_preserves_partial(lifecycle_scope, tmp_path, monkeypatch):
+async def test_runner_failure_preserves_partial(_runner_lifecycle_scope, tmp_path, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     bot = _FakeBot(["a", "b", "c"], None, fail_after=1)
     runner = TurnRunner(bot, _config())
@@ -194,7 +199,7 @@ async def test_runner_failure_preserves_partial(lifecycle_scope, tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_runner_rejects_second_turn(lifecycle_scope, tmp_path, monkeypatch):
+async def test_runner_rejects_second_turn(_runner_lifecycle_scope, tmp_path, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     bot = _SlowBot()
     runner = TurnRunner(bot, _config())
@@ -248,7 +253,7 @@ async def test_runner_load_history_maps_memory_turns():
 
 
 @pytest.mark.asyncio
-async def test_runner_post_turn_hook_after_completed_only(lifecycle_scope, tmp_path, monkeypatch):
+async def test_runner_post_turn_hook_after_completed_only(_runner_lifecycle_scope, tmp_path, monkeypatch):
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     calls: List[Any] = []
 
