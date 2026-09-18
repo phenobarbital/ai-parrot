@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3429
@@ -392,7 +392,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+Closed worklist rewritten (6 sites: ProductOnShelves._find_poster/_ocr_fact_tags, ProductCounter.compute_roi/detect_objects_roi, EndcapNoShelvesPromotional.compute_roi/detect_objects_roi): async with self.pipeline.llm + **self._vision_kwargs() replacing the roi_client/model='gemini-3.5-flash'/no_memory lines; product_on_shelves.py's single self.pipeline.llm.detect_objects( call untouched. tests/pipelines/{test_endcap_no_shelves,test_product_counter}.py _make_pipeline: llm alias + resolved_backend(model=None).
+Tests: test_neutral_shelf_types.py 10 passed; tests/pipelines endcap 19 / product_counter 18; characterization suites 13/17/10 and test_planogram_types 26 unchanged. No new ruff findings vs origin/dev.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
