@@ -16,7 +16,7 @@
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "Root task. Owns conf.py and creates credentials.py; no other task writes either file before it.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3451-crew-key-config-and-llm-classifier.md"
+      "completed_at": "2026-09-18T22:42:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3451-crew-key-config-and-llm-classifier.md"
     },
     {
       "id": "TASK-3452",
