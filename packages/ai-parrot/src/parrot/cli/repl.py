@@ -7,6 +7,7 @@ directly — the ``TurnRunner`` is the sole turn-execution boundary (spec §3 M5
 
 Also exports ``REPLConfig`` — a Pydantic v2 model holding session configuration.
 """
+
 import asyncio
 import logging
 import os
@@ -189,9 +190,7 @@ class AgentREPL:
                     break
                 except KeyboardInterrupt:
                     # Ctrl+C at the prompt — print hint, continue
-                    self.console.print(
-                        "[dim]Use Ctrl+D or /quit to exit.[/dim]"
-                    )
+                    self.console.print("[dim]Use Ctrl+D or /quit to exit.[/dim]")
                     continue
 
                 text = text.strip()
