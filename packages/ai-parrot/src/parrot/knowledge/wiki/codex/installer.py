@@ -107,6 +107,131 @@ def _existing_table_names(text: str) -> set[str]:
     return names
 
 
+def _extract_toml_table(text: str, table: str) -> Optional[str]:
+    """Return one TOML table hierarchy's verbatim text, or ``None`` if absent.
+
+    Mirrors :func:`_remove_toml_table`'s header-matching walk, but returns the
+    excised text instead of the remainder — used to preserve the wikitoolkit
+    table byte-for-byte across a toolkit-only reconcile (FEAT-570 AC5).
+    """
+    lines = text.splitlines(keepends=True)
+    start: Optional[int] = None
+    end = len(lines)
+    for index, line in enumerate(lines):
+        match = _TABLE_HEADER.match(line.rstrip("\n"))
+        if match is None:
+            continue
+        current = match.group(1).strip()
+        is_target = current == table or current.startswith(f"{table}.")
+        if start is None:
+            if is_target:
+                start = index
+            continue
+        if not is_target:
+            end = index
+            break
+    if start is None:
+        return None
+    return "".join(lines[start:end])
+
+
+def _toolkit_sections(cfg: Any, existing_tables: set[str]) -> tuple[dict[str, Any], list[str]]:
+    """Enabled toolkit sections that do not collide with a foreign table.
+
+    A toolkit name colliding with a table already present OUTSIDE the managed
+    marker block is never overwritten: it is reported as a warning and
+    omitted from the managed block instead (mirrors the Claude Code
+    installer's warn-and-skip semantics for `.mcp.json`).
+
+    Args:
+        cfg: The loaded ``MCPToolkitsConfig``.
+        existing_tables: Top-level table names found OUTSIDE the managed
+            marker block (verified via ``_existing_table_names``).
+
+    Returns:
+        (sections, warnings) — ``sections`` is ready for
+        ``assets.toolkit_mcp_block``; ``warnings`` are human-readable strings.
+    """
+    sections: dict[str, Any] = {}
+    warnings: list[str] = []
+    for name, section in cfg.toolkits.items():
+        if not section.enabled:
+            continue
+        table_name = f"mcp_servers.parrot-{name}"
+        if table_name in existing_tables:
+            warnings.append(
+                f"Warning: .codex/config.toml — '[{table_name}]' already exists outside "
+                "the managed block and was not written by `parrot codex install`; "
+                "omitting it from the managed MCP block."
+            )
+            continue
+        sections[name] = section
+    return sections, warnings
+
+
+def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:
+    """Regenerate ONLY the `[mcp_servers.parrot-<name>]` tables in .codex/config.toml.
+
+    The managed marker block also carries the wikitoolkit table; this function
+    preserves that table's existing text verbatim and rewrites the toolkit tables
+    around it (FEAT-570 AC5). A `parrot-<name>` table present OUTSIDE the managed
+    block is foreign: it is reported as a warning and omitted, never overwritten.
+
+    Codex has no per-entry managed-shape check (unlike Claude and Google) —
+    ownership is structural: inside the marker block means ours.
+
+    Returns:
+        (actions, warnings) — human-readable strings.
+    """
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    path = root / ".codex" / "config.toml"
+    before = path.read_text(encoding="utf-8") if path.exists() else ""
+    _validate_toml(path, before)
+
+    without_managed = _remove_marker_block(before, assets.MCP_BEGIN, assets.MCP_END)
+    without_existing = _remove_toml_table(without_managed, assets.MCP_TABLE)
+    existing_tables = _existing_table_names(without_existing)
+
+    cfg = load_toolkits_config(root)
+    sections, warnings = _toolkit_sections(cfg, existing_tables)
+    toolkit_block = assets.toolkit_mcp_block(root, sections)
+
+    wikitoolkit_text: Optional[str] = None
+    if assets.MCP_BEGIN in before:
+        _, _, rest = before.partition(assets.MCP_BEGIN)
+        block_body = rest.partition(assets.MCP_END)[0] if assets.MCP_END in rest else rest
+        wikitoolkit_text = _extract_toml_table(block_body, assets.MCP_TABLE)
+
+    parts: list[str] = []
+    if wikitoolkit_text is not None:
+        parts.append(wikitoolkit_text.strip("\n"))
+    if toolkit_block:
+        parts.append(toolkit_block)
+
+    base_text = before if assets.MCP_BEGIN in before else without_existing
+    if parts:
+        new_block = f"{assets.MCP_BEGIN}\n" + "\n\n".join(parts) + f"\n{assets.MCP_END}\n"
+        after = _upsert_marker_block(base_text, new_block, assets.MCP_BEGIN, assets.MCP_END)
+    else:
+        after = _remove_marker_block(base_text, assets.MCP_BEGIN, assets.MCP_END)
+    _validate_toml(path, after)
+
+    actions: list[str] = []
+    if after == before:
+        actions.append(".codex/config.toml — toolkit tables already current")
+        return actions, warnings
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(after, encoding="utf-8")
+    if sections:
+        names = ", ".join(f"parrot-{name}" for name in sorted(sections))
+        actions.append(f".codex/config.toml — {len(sections)} toolkit table(s) reconciled ({names})")
+    else:
+        actions.append(".codex/config.toml — toolkit tables removed (no enabled sections present)")
+    return actions, warnings
+
+
 def _install_mcp(root: Path) -> str:
     """Write/refresh the managed MCP block: wikitoolkit table plus one
     ``[mcp_servers.parrot-<name>]`` table per enabled toolkit section
@@ -130,20 +255,9 @@ def _install_mcp(root: Path) -> str:
     cfg = load_toolkits_config(root)
     existing_tables = _existing_table_names(without_existing)
 
-    sections = {}
-    for name, section in cfg.toolkits.items():
-        if not section.enabled:
-            continue
-        table_name = f"mcp_servers.parrot-{name}"
-        if table_name in existing_tables:
-            print(
-                f"Warning: .codex/config.toml — '[{table_name}]' already exists outside "
-                "the managed block and was not written by `parrot codex install`; "
-                "omitting it from the managed MCP block.",
-                file=sys.stderr,
-            )
-            continue
-        sections[name] = section
+    sections, warnings = _toolkit_sections(cfg, existing_tables)
+    for warning in warnings:
+        print(warning, file=sys.stderr)
 
     toolkit_block = assets.toolkit_mcp_block(root, sections)
     after = _upsert_marker_block(
