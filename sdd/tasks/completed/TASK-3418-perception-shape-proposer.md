@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -489,7 +489,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+perception/ package: ShapeProfile (band/threshold validator naming the field), ShapeCandidate, PRICE_TAG_PROFILE (FEAT-565 constants verbatim); shapes.propose_shapes with bright/dark/edge polarities (edge = blur+Canny+close, convex-hull fill ratio), per-profile dedup port of detection.py:54-65, INTER_AREA downscale to work_width and scale-back/clip to source pixels. Module-level, picklable; examples/planogram/plancheck untouched.
+Tests: test_shapes.py 11 passed (AC-1..AC-7); ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
