@@ -270,10 +270,44 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via native seat `sonnet`
+**Date**: 2026-09-19
+**Status**: done-with-issues (blocked on a pre-existing, out-of-scope production bug)
+**Notes**: Created `test_crew_google_key_integration.py` per the blueprint: a
+real `GoogleGenAIClient` subclass (never reaches the network) driven through
+`CrewHandler._create_crew_from_definition` + `agent.configure()`, asserting
+the constructed client's `api_key`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+The coder verified the entire FEAT-575 plumbing (agent._llm_kwargs["api_key"]
+→ `_resolve_llm_config` → `_apply_llm_params`/`config.extra` →
+`_create_llm_client(**config.extra)`) is correct end-to-end, then found the
+test fails against the REAL `GoogleGenAIClient` for a pre-existing,
+out-of-scope reason: `GoogleGenAIClient.__init__` (client.py:189) does
+`self.api_key = kwargs.pop("api_key", config.get("GOOGLE_API_KEY"))` BEFORE
+`super().__init__(**kwargs)`; `AbstractClient.__init__` (base.py:448)
+unconditionally does `self.api_key = kwargs.get("api_key", None)`, which
+always resets `self.api_key` to `None` since `"api_key"` was already popped.
+**`GoogleGenAIClient.api_key` is always `None` after construction,
+independent of any caller** — confirmed by direct read of both files
+(not just the coder's claim), and confirmed pre-existing via `git blame`
+(commit `0f76129b1`, 2026-06-23, months before FEAT-575). Sibling
+`GeminiOpenAICompatClient` (openai_compat.py:37) works around the identical
+hazard by re-setting `self.api_key` AFTER `super().__init__()`; so does
+`GeminiLiveClient` (live.py:435). `GoogleGenAIClient` never does.
 
-**Deviations from spec**: none | describe if any
+This is out of scope for every FEAT-575 task (`client.py` is not in any
+task's file list, and the spec's Integration Points table explicitly says
+the Google clients are "already accept api_key=, so unchanged"). Per Cardinal
+Rule "NO SCOPE CREEP", the fix was NOT made here. Both tests in the new file
+are marked `@pytest.mark.xfail(strict=True, reason="...")` documenting the
+exact bug so they (a) don't block this feature's merge/CI, and (b) will fail
+loudly (XPASS) the moment the bug is fixed, prompting removal of the xfail
+markers. Filed **critical** ledger issue `issue:cf6d9974a385` for the fix
+(`GoogleGenAIClient.__init__` credential-assignment ordering).
+Test run: `pytest test_crew_google_key_integration.py` → 2 xfailed (confirmed
+strict, no false XPASS). `ruff check` clean.
+
+**Deviations from spec**: Both tests are `xfail(strict=True)` rather than
+passing outright, because the bug they found is in code outside every
+FEAT-575 task's scope. The test logic itself matches the blueprint; only the
+markers were added, with the full bug analysis in each `reason=`.
