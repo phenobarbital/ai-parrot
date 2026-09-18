@@ -1,0 +1,9 @@
+# parrot:summary: Structured web scraping and crawling with plan caching.
+# parrot:requires_llm: false
+# parrot:requires_dist: parrot_tools
+  scraping:
+    class: parrot_tools.scraping.toolkit.WebScrapingToolkit
+    kwargs:
+      headless: true
+      plans_dir: .parrot/scraping_plans
+    env: {}
