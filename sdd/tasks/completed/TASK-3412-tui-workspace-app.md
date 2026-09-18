@@ -484,10 +484,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt 18ca07e3589e4b6896b01c9f4a6fdef3)
+**Date**: 2026-09-18
+**Notes**: Implemented `AgentWorkspaceApp(App[int])` wiring TASK-3410
+widgets and TASK-3411 adapters into one screen, driving `TurnRunner.run_turn()`
+via an exclusive `@work` worker. Filled all 4 blueprint FILL INs (sub_title
+refresh on session rotation, tool-panel toggle, transcript scroll delegation,
+narrow-terminal resize handling). Checked both historical feedback patterns:
+`unisolated-real-home-in-tests` confirmed not applicable (constructor
+injection of `TurnRunner`, tests use only `_FakeRunner`, zero
+`PARROT_HOME`/`save_session_pointer`/`TurnRunner(` matches); also
+independently re-verified TASK-3411's `App.suspend()`/`SuspendNotSupported`
+discrepancy does not recur here (`app.py` never calls `.suspend()` directly,
+confirmed via grep — only via `TUICommandContext`, already tested).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Merge clean (`coder_merge` outcome=merged, 0 residual lint). `pytest
+test_app.py`: 1 skipped (clean — `textual` still absent from shared `.venv`,
+same carried-over gap since TASK-3399/3410/3411).
 
-**Deviations from spec**: none | describe if any
+**Feedback recorded**: none — clean delivery, all checks correctly applied.
+**Deviations from spec**: none.

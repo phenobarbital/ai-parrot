@@ -276,7 +276,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -288,8 +288,8 @@
       "parallelism_notes": "Imports TurnRunner from TASK-3404 (cli/session.py), the widgets from TASK-3410 (cli/tui/widgets.py) and TUICommandContext/DrawerLogHandler from TASK-3411 (cli/tui/adapter.py). Creates cli/tui/app.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3412-tui-workspace-app.md"
+      "completed_at": "2026-09-18T08:58:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3412-tui-workspace-app.md"
     },
     {
       "id": "TASK-3413",
