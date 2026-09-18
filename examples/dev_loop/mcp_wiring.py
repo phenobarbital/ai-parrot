@@ -20,8 +20,10 @@ Environment:
     DEV_LOOP_RESEARCH_MCP_ENABLED: Kill switch (default ``true``).
     DEV_LOOP_RESEARCH_MCP_TOOLKITS: Comma-separated section names from
         ``.parrot/mcp-toolkits.yaml`` to serve, or ``auto`` (default) for
-        exactly the sections DECLARED IN THE FILE. ``auto`` deliberately
-        skips undeclared built-ins (``scraping``/``browsing``/``memory``):
+        exactly the sections DECLARED IN THE FILE. Nothing resolves
+        implicitly (FEAT-570 hard cut): a packaged template like
+        ``scraping``/``browsing``/``memory`` participates only if this
+        file (or an explicit selection) names a declared section for it —
         those may need optional extras and must not be auto-spawned.
 """
 
@@ -60,8 +62,11 @@ def _config_flag(key: str, default: bool) -> bool:
 def _declared_section_names(config_path: Path) -> list[str]:
     """Return the toolkit names DECLARED in the YAML file itself.
 
-    ``load_toolkits_config`` merges built-ins in, so ``auto`` mode reads the
-    raw file to know which sections the operator actually wrote down.
+    Reads the raw file directly rather than reusing the already-loaded
+    ``MCPToolkitsConfig`` so ``auto`` mode has its own explicit,
+    self-contained notion of "what the operator wrote down" — nothing is
+    implicit here either way (FEAT-570): ``load_toolkits_config`` resolves
+    a toolkit only if this same file declares a section for it.
 
     Args:
         config_path: Path to ``.parrot/mcp-toolkits.yaml``.

@@ -34,6 +34,8 @@ def _configure_stderr_logging() -> None:
 def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
     """Print resolvable toolkit names, enabled state, and class path.
 
+    Every name comes from a section declared in
+    ``.parrot/mcp-toolkits.yaml`` — nothing resolves implicitly (FEAT-570).
     Deliberately does NOT import any toolkit class — only the config
     models (dotted-path strings) are loaded, keeping ``--list`` fast and
     side-effect free.
@@ -81,7 +83,7 @@ def _print_toolkit_list(root: Path, config_path: Path | None = None) -> None:
     "list_toolkits",
     is_flag=True,
     default=False,
-    help="List resolvable toolkit names (built-ins + config sections) and exit.",
+    help="List resolvable toolkit names (sections declared in .parrot/mcp-toolkits.yaml) and exit.",
 )
 def mcp_local(
     name: str | None,
@@ -131,6 +133,17 @@ def mcp_local(
         server = create_toolkit_mcp_server(name, root, **overrides)
     except (ValueError, ImportError) as exc:
         click.echo(f"Error: {exc}", err=True)
+        # An unknown name (not a configured section) is the hard cut's only
+        # migration aid — name the exact fix. An ImportError (the class path
+        # resolves to a missing distribution) needs a different fix, so it
+        # is left to its own message rather than advised to reinstall the
+        # toolkit config, which cannot help it.
+        if isinstance(exc, ValueError) and str(exc).startswith("Unknown toolkit name:"):
+            click.echo(
+                f"No toolkit named {name!r} is configured. Install it with: "
+                f"parrot toolkits install {name}",
+                err=True,
+            )
         sys.exit(1)
 
     try:

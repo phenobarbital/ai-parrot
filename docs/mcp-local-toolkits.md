@@ -4,54 +4,95 @@
 > **Spec**: [sdd/specs/expose-toolkits-as-local-mcp.spec.md](../sdd/specs/expose-toolkits-as-local-mcp.spec.md)
 > **Package**: `ai-parrot` (core) — `parrot.mcp.local_cli`, `parrot.mcp.toolkit_server`, `parrot.mcp.toolkit_config`
 
-`parrot mcp-local <name>` serves any `AbstractToolkit` subclass — one of
-the three zero-config built-ins (`scraping`, `browsing`, `memory`) or a
-toolkit of your own — as a **per-toolkit local stdio MCP server**. Each
-name becomes its own process, its own tool namespace, and its own
-`.mcp.json` / `.codex/config.toml` server entry, so an MCP host (Claude
-Code, Codex) sees the toolkit's tools as first-class, equal-standing tools
-at tool-selection time — no Bash competition, no hook nudging. This is the
-same pattern FEAT-403 proved for `wikitoolkit mcp`, generalized to any
-toolkit.
+`parrot mcp-local <name>` serves any `AbstractToolkit` subclass — a
+toolkit you've installed with `parrot toolkits install` (`scraping`,
+`browsing`, `memory`) or a toolkit of your own — as a **per-toolkit local
+stdio MCP server**. Each name becomes its own process, its own tool
+namespace, and its own `.mcp.json` / `.codex/config.toml` server entry, so
+an MCP host (Claude Code, Codex) sees the toolkit's tools as first-class,
+equal-standing tools at tool-selection time — no Bash competition, no hook
+nudging. This is the same pattern FEAT-403 proved for `wikitoolkit mcp`,
+generalized to any toolkit.
+
+> **Hard cut (FEAT-570)**: `scraping`, `browsing` and `memory` are no
+> longer resolvable "for free" — a name resolves **only** if
+> `.parrot/mcp-toolkits.yaml` declares a section for it. There is no
+> auto-migration. If your `parrot mcp-local <name>` used to work and now
+> exits with `Unknown toolkit name`, re-run
+> `parrot toolkits install <name>` (see below) — that is the single
+> migration aid this feature ships.
 
 ---
 
 ## Quickstart
 
 ```bash
-# See what's resolvable (built-ins + your .parrot/mcp-toolkits.yaml
-# sections), with enabled state — fast, does not import any toolkit class:
+# Install one or more toolkits: seeds .parrot/mcp-toolkits.yaml AND
+# registers the managed server entries with every detected MCP host
+# (Claude Code's .mcp.json, Codex's .codex/config.toml, Google Antigravity):
+parrot toolkits install scraping browsing memory --yes
+
+# See what's resolvable — declared sections only — with enabled state and
+# per-host status; fast, does not import any toolkit class:
 parrot mcp-local --list
+parrot toolkits list
 
 # Serve a toolkit directly (mostly for manual testing — an MCP host
 # normally spawns this for you via the installed .mcp.json entry):
 parrot mcp-local memory
-
-# Wire it into Claude Code's .mcp.json:
-parrot claude install
-
-# Or into Codex's .codex/config.toml:
-parrot codex install
 ```
 
-`parrot claude install` / `parrot codex install` write one managed server
-entry per **enabled** toolkit section automatically — you do not hand-edit
-`.mcp.json` or `.codex/config.toml`. Re-running either command reconciles:
-sections you disable or delete disappear from the managed entries; foreign
-entries (anything the installer did not write) are never touched.
+`parrot toolkits install|uninstall|enable|disable [NAMES...] [--host
+claude|codex|google] [--yes]` is the primary entry point (FEAT-570):
+
+- **`parrot toolkits list`** — a table of every packaged toolkit template
+  with its state (`not_installed`/`enabled`/`disabled`), which hosts have a
+  managed entry for it, missing dependencies, and any drift from the
+  packaged template.
+- **`parrot toolkits status`** — each host's resolved config paths, scope
+  (repo vs. user-global) and presence.
+- **`parrot toolkits install NAMES...`** — seeds `NAMES` into
+  `.parrot/mcp-toolkits.yaml` (if not already declared) and registers a
+  managed server entry with every targeted host. Run with no `NAMES` from
+  an interactive terminal to get a checkbox picker instead.
+- **`parrot toolkits uninstall NAMES...`** — removes `NAMES`' sections and
+  deregisters their host entries. **Config only** — a toolkit's own data
+  (scraping plans, DB results) is never deleted.
+- **`parrot toolkits enable / disable NAMES...`** — flips `enabled:` and
+  reconciles the host entries, keeping the section (and its `kwargs`)
+  around either way.
+- **`--host`** (repeatable) targets specific hosts; default is every host
+  whose config already exists. **`--yes`** skips the confirmation prompt
+  (required for non-interactive/CI use, alongside explicit `NAMES`).
+
+Re-running `install`/`uninstall`/`enable`/`disable` reconciles: sections
+you disable or delete disappear from the managed entries; foreign entries
+(anything the installer did not write) are never touched.
+
+---
+
+## Credential posture
+
+The packaged templates (`scraping`, `browsing`, `memory`, …) ship with
+`env: {}` — the installer never writes a secret into `.mcp.json` /
+`.codex/config.toml`. Any credential a toolkit needs (an API key, a DSN)
+is inherited from the **environment the MCP host passes to
+`parrot mcp-local`** at spawn time, exactly like any other environment
+variable the host process sees — not from anything `parrot toolkits`
+generates or stores. If a toolkit of your own needs a secret, add it to
+its section's `env:` map as an `"${VAR}"` reference (see
+`examples/mcp-toolkits.yaml`), never as a literal value.
 
 ---
 
 ## Configuration: `.parrot/mcp-toolkits.yaml`
 
 Read relative to the **project root** — the directory the MCP host starts
-`parrot mcp-local <name>` in (normally your repo root). The file is
-optional: the three built-ins (`scraping`, `browsing`, `memory`) work with
-**no config file at all**. When present, its `toolkits:` sections are
-deep-merged **over** the built-in defaults — a section with a built-in's
-name **replaces** that built-in wholesale (its `kwargs` are not merged
-with the built-in's kwargs, they are overwritten); new names are simply
-added.
+`parrot mcp-local <name>` in (normally your repo root). A toolkit resolves
+**only** if this file declares a section for it (FEAT-570) — nothing is
+implicit, and there is no built-in default set. An absent file resolves to
+an empty config (`parrot mcp-local --list` prints "No toolkits
+resolvable.").
 
 See [`examples/mcp-toolkits.yaml`](../examples/mcp-toolkits.yaml) for a
 fully annotated copy-paste starting point.
@@ -63,7 +104,7 @@ toolkits:
   <name>:
     class: <dotted.path.to.AbstractToolkitSubclass>   # required (YAML key: "class")
     enabled: true                                     # default: true
-    kwargs: {}                                        # constructor kwargs (replaces, not merges)
+    kwargs: {}                                        # constructor kwargs
     include: null                                      # optional whitelist of tool names
     exclude: null                                      # optional blacklist of tool names
     llm: null                                          # optional "provider:model" string
@@ -74,8 +115,8 @@ toolkits:
 | Field | Type | Meaning |
 |---|---|---|
 | `class` | `str` (required) | Dotted path to an `AbstractToolkit` subclass, e.g. `parrot_tools.scraping.toolkit.WebScrapingToolkit`. Resolved via `importlib` — see the trust note below. |
-| `enabled` | `bool` (default `true`) | Whether the installers (`parrot claude install` / `parrot codex install`) include this section in their managed entries and whether `--list` shows it as `enabled`/`disabled`. **Does not** block a direct `parrot mcp-local <name>` invocation — a disabled section can still be served manually. |
-| `kwargs` | `dict` | Keyword arguments passed to the toolkit's constructor. A file section's `kwargs` **replaces** a built-in's `kwargs` entirely, it is not deep-merged. |
+| `enabled` | `bool` (default `true`) | Whether `parrot toolkits install/enable/disable` include this section in their managed host entries and whether `--list` shows it as `enabled`/`disabled`. **Does not** block a direct `parrot mcp-local <name>` invocation — a disabled section can still be served manually. |
+| `kwargs` | `dict` | Keyword arguments passed to the toolkit's constructor. |
 | `include` | `list[str] \| null` | Whitelist of tool names to expose. When set, only these are exposed. |
 | `exclude` | `list[str] \| null` | Blacklist of tool names to exclude. Only consulted when `include` is unset. |
 | `llm` | `str \| null` | A `"provider:model"` string (e.g. `"openai:gpt-4o-mini"`, `"anthropic:claude-3-5-haiku-latest"`). When set, `LLMFactory.create()` builds a client passed to the toolkit's constructor as `llm_client`. |
@@ -98,13 +139,20 @@ toolkits:
   `wikitoolkit mcp` today. This is model-settable — the real human gate is
   the MCP host's own permission prompt, not anything `parrot`-side.
 
-### Built-ins
+### Packaged toolkit templates
+
+`parrot toolkits install <name>` seeds one of these packaged templates into
+`.parrot/mcp-toolkits.yaml` — none of them resolve until you do:
 
 | Name | Class | Notes |
 |---|---|---|
 | `scraping` | `parrot_tools.scraping.toolkit.WebScrapingToolkit` | Requires `ai-parrot-tools[scraping]` (or `[browsing]` for shared browser drivers). Structured scraping/crawling with plan caching. |
 | `browsing` | `parrot_tools.browsing.toolkit.WebBrowsingToolkit` | Requires `ai-parrot-tools[browsing]`. Catalogued, deterministic site automation. |
 | `memory` | `parrot.tools.working_memory.tool.WorkingMemoryToolkit` | Ships with bare `ai-parrot` — no extra install. Ephemeral, **per-process** DataFrame/result scratchpad; state never persists across restarts and is never shared between two server processes. |
+
+`parrot toolkits list` shows every packaged template (this table plus any
+others shipped since), each one's state, and whether its distribution is
+importable.
 
 ---
 
@@ -126,10 +174,10 @@ toolkits:
    class — it is a fast, side-effect-free check).
 4. Serve it manually to sanity check: `parrot mcp-local my-toolkit`, then
    send a JSON-RPC `initialize` / `tools/list` on stdin.
-5. Wire it into your MCP host: `parrot claude install` and/or
-   `parrot codex install`. Re-run either after editing the config to
-   reconcile the managed entries (add/update/remove) — installs are
-   idempotent.
+5. Wire it into your MCP host(s): `parrot toolkits install my-toolkit`
+   (or `--host claude` / `--host codex` / `--host google` to target one).
+   Re-run after editing the config to reconcile the managed entries
+   (add/update/remove) — installs are idempotent.
 
 ### ⚠️ Trust note
 
@@ -155,9 +203,12 @@ be a mapping; each section needs at least `class`).
 
 **`parrot mcp-local <name>` exits immediately with a `ValueError: Unknown
 toolkit name`.**
-The name isn't a built-in and isn't a key under `toolkits:` in your
-config. The error message on stderr lists every resolvable name — compare
-against `parrot mcp-local --list`.
+The name isn't a key under `toolkits:` in your config — no name resolves
+implicitly (FEAT-570 hard cut). stderr also prints
+`No toolkit named '<name>' is configured. Install it with: parrot toolkits
+install <name>` — run that command (or add the section by hand) and
+re-run. The error also lists every resolvable name — compare against
+`parrot mcp-local --list` / `parrot toolkits list`.
 
 **`ImportError: Cannot import toolkit '<dotted.path>' for '<name>'`.**
 The `class:` path doesn't resolve in this Python environment. For
