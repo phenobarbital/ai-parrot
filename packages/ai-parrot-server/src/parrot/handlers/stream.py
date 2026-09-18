@@ -1,13 +1,66 @@
 from typing import Any, Dict, Optional, Set
 import asyncio
 import logging
+import uuid
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navigator.views import BaseHandler
 from parrot.bots import AbstractBot
 from parrot.models.responses import AIMessage
+from parrot.core.events.lifecycle import (
+    AfterToolCallEvent,
+    BeforeToolCallEvent,
+    ToolCallFailedEvent,
+    get_global_registry,
+)
+from parrot.core.events.lifecycle.turn_scope import in_turn_scope, turn_scope  # provided by TASK-3402
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_event_frame(event: Any, *, turn_id: str, seq: int) -> Dict[str, Any]:
+    """Build the ``tool_event`` SSE frame body for one lifecycle tool event.
+
+    Args:
+        event: ``BeforeToolCallEvent`` | ``AfterToolCallEvent`` | ``ToolCallFailedEvent``.
+        turn_id: The streamed turn this event belongs to.
+        seq: Monotonic per-turn sequence number.
+
+    Returns:
+        ``{"type": "tool_event", "data": {...}}`` per spec §3 Module 10.
+    """
+    data: Dict[str, Any] = {
+        "call_id": event.trace_context.span_id,
+        "tool_name": event.tool_name,
+        "turn_id": turn_id,
+        "seq": seq,
+        "at": event.timestamp.isoformat(),
+    }
+    if isinstance(event, BeforeToolCallEvent):
+        data.update(event="started", args_summary=dict(event.args_summary or {}))
+    elif isinstance(event, AfterToolCallEvent):
+        data.update(
+            event="finished",
+            duration_ms=event.duration_ms,
+            result_status=event.result_status,
+            result_size_bytes=event.result_size_bytes,
+        )
+    else:
+        data.update(
+            event="failed",
+            duration_ms=event.duration_ms,
+            error_type=event.error_type,
+            error_message=event.error_message,
+        )
+    return {"type": "tool_event", "data": data}
+
+
+async def _drain(queue: "asyncio.Queue[Dict[str, Any]]", response: web.StreamResponse) -> None:
+    """Write every queued tool_event frame to ``response`` (non-blocking on an empty queue)."""
+    while not queue.empty():
+        frame = queue.get_nowait()
+        await response.write(f"data: {json_encoder(frame)}\n\n".encode("utf-8"))
+        await response.drain()
 
 
 class StreamHandler(BaseHandler):
@@ -81,15 +134,34 @@ class StreamHandler(BaseHandler):
             }
         )
         await response.prepare(request)
+        turn_id = str(uuid.uuid4())
+        queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
+        seq = {"n": 0}
+        registry = get_global_registry()
+
+        async def _enqueue(event: Any) -> None:
+            seq["n"] += 1
+            queue.put_nowait(_tool_event_frame(event, turn_id=turn_id, seq=seq["n"]))
+
+        predicate = in_turn_scope(turn_id)
+        sub_ids = [
+            registry.subscribe(BeforeToolCallEvent, _enqueue, where=predicate),
+            registry.subscribe(AfterToolCallEvent, _enqueue, where=predicate),
+            registry.subscribe(ToolCallFailedEvent, _enqueue, where=predicate),
+        ]
         try:
             ai_message = None
-            async for chunk in bot.ask_stream(prompt, **ask_kwargs):
-                if isinstance(chunk, AIMessage):
-                    ai_message = chunk
-                    continue
-                sse_data = f"data: {json_encoder({'content': chunk})}\n\n"
-                await response.write(sse_data.encode('utf-8'))
-                await response.drain()
+            with turn_scope(turn_id):
+                async for chunk in bot.ask_stream(prompt, **ask_kwargs):
+                    if isinstance(chunk, AIMessage):
+                        ai_message = chunk
+                        continue
+                    await _drain(queue, response)
+                    sse_data = f"data: {json_encoder({'content': chunk})}\n\n"
+                    await response.write(sse_data.encode('utf-8'))
+                    await response.drain()
+                await asyncio.sleep(0)  # let emit_nowait tasks scheduled on this tick land
+                await _drain(queue, response)
 
             if ai_message is not None:
                 meta_event = f"data: {json_encoder({'type': 'ai_message', 'data': ai_message.to_dict()})}\n\n"
@@ -107,6 +179,8 @@ class StreamHandler(BaseHandler):
                 b"error: Internal streaming error\n\n"
             )
         finally:
+            for sid in sub_ids:
+                registry.unsubscribe(sid)
             await response.write_eof()
         return response
 
