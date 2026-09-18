@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3418
@@ -359,7 +359,11 @@ async def test_broken_pool_is_rebuilt():                           # AC-7
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+perception/executor.py: CpuExecutor(max_workers=2) — lazy spawn-context ProcessPoolExecutor, asyncio.Semaphore bound on in-flight submissions (created lazily inside run), run_in_executor with positional args, BrokenProcessPool logged + pool discarded + re-raised (rebuilt on next run), idempotent non-blocking aclose (shutdown(wait=False, cancel_futures=True)), RuntimeError after close, async context manager. No background tasks created.
+Tests: test_cpu_executor.py 7 passed (AC-1..AC-7; the bounded test warms the spawned pool before timing the 3 waves). ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
