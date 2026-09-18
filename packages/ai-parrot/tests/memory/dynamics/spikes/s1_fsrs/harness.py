@@ -217,7 +217,7 @@ def _spearman(a: list[float], b: list[float]) -> float | None:
         return None
     ra, rb = _rank(a), _rank(b)
     mean_a, mean_b = sum(ra) / n, sum(rb) / n
-    cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(ra, rb))
+    cov = sum((x - mean_a) * (y - mean_b) for x, y in zip(ra, rb, strict=True))
     var_a = sum((x - mean_a) ** 2 for x in ra)
     var_b = sum((y - mean_b) ** 2 for y in rb)
     if var_a == 0 or var_b == 0:

@@ -64,7 +64,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
     """Pure-Python cosine similarity — no numpy dependency needed for the spike."""
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     norm_a = sum(x * x for x in a) ** 0.5
     norm_b = sum(y * y for y in b) ** 0.5
     if norm_a == 0.0 or norm_b == 0.0:

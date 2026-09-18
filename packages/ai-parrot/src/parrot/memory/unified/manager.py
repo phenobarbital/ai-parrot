@@ -265,7 +265,7 @@ class UnifiedMemoryManager:
 
                 cross_results = await asyncio.gather(*cross_ns_tasks, return_exceptions=True)
 
-                for agent_id, result in zip(relevant_agents, cross_results):
+                for agent_id, result in zip(relevant_agents, cross_results, strict=True):
                     if isinstance(result, Exception):
                         self.logger.warning(
                             "Cross-domain retrieval from %s failed: %s",
