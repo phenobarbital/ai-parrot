@@ -133,6 +133,36 @@ as a drop-in replacement, with the type-specific parts expressed per
   reports, per backend and per photo: identification **confidence**, compliance
   **scoring**, **number of objects detected**, and **duration**. The user
   judges the default from those numbers; there is no automated pass bar.
+- **Round-5 decisions** (user, 2026-09-18):
+  - **Spike first.** The first task is a time-boxed spike measuring
+    profile-driven shape proposals on real ProductOnShelves photos; it fixes the
+    profiles. Poor recall ⇒ ProductOnShelves starts on the LLM-detector
+    fallback, perception hook unchanged.
+  - **The LLM may add shapes** the CV missed, in every type, flagged
+    `source="llm_added"` with a lower confidence weight.
+  - **`slots_definition` replaces** `planogram_config.shelves[].products` as the
+    expected-products reference for migrated types; **non-product expectations
+    stay in `planogram_config`** (backlit/poster, illumination,
+    `text_requirements`, `compliance_threshold`, per-shelf weights,
+    `advertisement_endcap`).
+  - **Field/column name `slots_definition`** (`JSONB NULL`), plus an idempotent
+    ALTER script for deployed databases (also drops `NOT NULL` on both prompts).
+  - **Backend (provider + model) is a `PlanogramConfig` field**; explicit
+    constructor arguments still win. Benchmark compares `gemini-3.5-flash` vs
+    `claude-sonnet-5`.
+  - **Anthropic vision default bumped to `ClaudeModel.SONNET_5`** (`ask_to_image`
+    and the new `detect_objects`).
+  - **LLM-assisted descriptor utility** is in scope: proposes descriptors per
+    position from the POG PDF (primary) and a catalog lookup by SKU
+    (complete/validate); the user reviews.
+  - **`run(image=…)` accepts one image or a list**; the handler stays
+    single-file in this feature.
+  - **Header/backlit/poster are zones detected apart**, outside row→shelf
+    registration; product rows register in increasing order.
+  - **Perception, OCR and LLM crops use the untouched full-resolution image**;
+    `_enhance_image` stays only on the legacy adapter path.
+  - **`examples/planogram/plancheck/` stays as it is** — independent tool and
+    live reference. Not moved, deleted or rewired.
 - Repo rules: async-first, no blocking I/O on the event loop (OpenCV/OCR go
   through `asyncio.to_thread`), Pydantic v2 models, `self.logger`, `aiohttp`
   only, Google-style docstrings, no new `requests`/`httpx`.
@@ -388,8 +418,9 @@ What we trade off, honestly:
 
 `PlanogramCompliance.run()` — shared orchestration only:
 
-1. **Load** image(s) at full resolution (no enhancement that alters OCR input;
-   note `open_image` always applies `_enhance_image` today).
+1. **Load** image(s) at full resolution, **untouched** — `open_image` always
+   applies `_enhance_image` today, so the new cycle needs a load path without
+   it; enhancement remains only for the legacy adapter path.
 2. **Perceive** — `type_handler` perception hook, executed off the event loop.
    Produces shapes grouped into rows/shelves and derived slots. Reads text in
    each shape with the OCR reader when available.
@@ -471,6 +502,9 @@ hook.
 - `planogram-slots-definition`: JSON definition of shelves/slots/products/descriptors, loadable from `PlanogramConfig`.
 - `planogram-registration-scoring`: row→shelf registration, per-facing decision, multi-photo merge, strict/lenient, per-shelf and global scores, projection to `ComplianceResult`.
 - `planogram-type-ink-wall`: new `InkWall` type.
+- `planogram-shape-spike`: time-boxed measurement of profile-driven shape proposals on real ProductOnShelves photos; output fixes the shape profiles (first task).
+- `planogram-descriptor-assistant`: LLM-assisted utility proposing per-position descriptors from the POG PDF + catalog lookup by SKU, for human review.
+- `planogram-config-backend`: provider/model and `slots_definition` fields on `PlanogramConfig`, optional prompts, matching DB column + idempotent ALTER script.
 - `planogram-llm-benchmark`: reproducible backend comparison (confidence, scoring, object counts, duration) that informs the default model; no ground truth.
 - `anthropic-vision-parity`: `AnthropicClient.ask_to_image(no_memory=...)` and a new `AnthropicClient.detect_objects(...)` matching the Google client's contract.
 - `planogram-provider-neutral-llm`: removal of hard-coded model literals and of the unconditional Google `roi_client`; provider/model resolved from the pipeline.
@@ -501,7 +535,8 @@ hook.
 | `parrot_pipelines/__init__.py` (`PIPELINE_REGISTRY`) | extends | add `InkWall` (3 existing types are already missing from it) |
 | `packages/ai-parrot-pipelines/pyproject.toml` | extends | first `[project.optional-dependencies]` section; declare `numpy` |
 | `packages/ai-parrot/src/parrot/models/detections.py`, `compliance.py` | depends on / maybe extends | core package — extend only if projection needs a field |
-| `examples/planogram/` | depends on | benchmark script + ProductOnShelves slots JSON; fate of `plancheck/` is an open question |
+| `examples/planogram/` | extends | benchmark script, ProductOnShelves `slots_definition` JSON, descriptor utility CLI; **`plancheck/` is left untouched** |
+| `parrot_pipelines/table.sql` + new ALTER script | extends | `slots_definition JSONB NULL`; prompts lose `NOT NULL`; idempotent ALTER for deployed DBs |
 | `tests/pipelines/`, `packages/ai-parrot-pipelines/tests/` | extends | offline synthetic tests; characterization tests for `ProductOnShelves` first |
 
 No breaking change for the handler. **Breaking for subclass authors** only if a
@@ -847,21 +882,25 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - [x] CV/OCR dependencies — *Owner: Jesus Lara*: optional extra, lazy import.
 - [x] Model benchmark — *Owner: Jesus Lara*: deliverable of this feature; fixes the default.
 - [x] **How does the slots JSON reach a DB-driven config?** — *Owner: Jesus Lara*: both sources are valid and equivalent — a **new JSONB column** on `troc.planograms_configurations` (DB-driven configs) or a JSON file (scripts/examples). `PlanogramConfig` names the type; the slots JSON gives the fine granularity (shelves, slots, products). `table.sql` needs the new nullable column.
-- [ ] **Name and nullability of the new column / field** (e.g. `slots_definition JSONB NULL`), and the `ALTER TABLE` for already-deployed databases — `table.sql` is a `DROP TABLE … CREATE TABLE` script, not a migration. — *Owner: Jesus Lara*
-- [ ] **Generic shape detection is unproven.** Only price tags are detected today. What recall is acceptable for ProductOnShelves products/boxes/backlit with classical CV before we consider Option C behind the same hook? Should the spec time-box a spike first? — *Owner: Jesus Lara*
-- [ ] **May the LLM add shapes the CV missed?** Recommended yes, flagged `source="llm_added"`, so a recall miss lowers confidence instead of losing a product — but it re-introduces LLM localisation for those items. — *Owner: Jesus Lara*
+- [x] **Name and nullability of the new column / field** — *Owner: Jesus Lara*: `slots_definition` — `JSONB NULL` on `troc.planograms_configurations`, same name on `PlanogramConfig`. The feature ships an **idempotent ALTER script** (`ADD COLUMN IF NOT EXISTS slots_definition`, `ALTER COLUMN … DROP NOT NULL` on both prompts) next to the updated `table.sql`; the user applies it to deployed databases.
+- [x] **Generic shape detection is unproven** — *Owner: Jesus Lara*: a **time-boxed spike is the first task**: run profile-driven proposals over the real ProductOnShelves photos and measure how many shapes each profile finds. Its result fixes the profiles. If recall is poor, ProductOnShelves starts on the LLM-detector fallback and the perception hook stays ready for another detector (Option C).
+- [x] **May the LLM add shapes the CV missed?** — *Owner: Jesus Lara*: yes, for all types — reported with `source="llm_added"` and a lower confidence weight, so a recall miss lowers the score instead of losing the product.
 - [x] **Hard-coded models / Google client** — *Owner: Jesus Lara*: eliminate them; either client must be able to drive the whole run. 60 call sites in 10 files (see Code Context worklist).
 - [x] **Client homologation** — *Owner: Jesus Lara*: in scope of this spec — add `no_memory` to `AnthropicClient.ask_to_image` and add `detect_objects` to `AnthropicClient`, matching the Google client.
 - [x] **`ProductOnShelves` tests** — *Owner: Jesus Lara*: must be built in this feature.
 - [x] **Benchmark ground truth** — *Owner: Jesus Lara*: none. The benchmark reports confidence, scoring, number of objects detected and duration per backend; the user judges from those numbers. No automated pass bar.
-- [ ] **Which Gemini id does the benchmark use?** `ClaudeModel.SONNET_5 = "claude-sonnet-5"` exists. On the Google side the request says `gemini-3.5-flash`, `plancheck` defaults to `google:gemini-3.8-flash`, and `roi_client` uses `gemini-3-flash-preview`. — *Owner: Jesus Lara*
-- [ ] **Where does the default provider/model live once literals are gone?** `parrot.conf.DEFAULT_LLM_MODEL` (used by the handler), a `PlanogramConfig` field, or a per-row DB column so each planogram can pin its backend? — *Owner: Jesus Lara*
-- [ ] **`AnthropicClient.ask_to_image` defaults to `ClaudeModel.SONNET_4`** (also at L1490, L1560). Bump the default to `SONNET_5` as part of the homologation, or leave it and always pass the model explicitly? — *Owner: Jesus Lara*
-- [ ] **`planogram_page1.json` has 2/102 positions described** and is git-ignored. Who fills the descriptors, and where does the production definition live? — *Owner: Jesus Lara*
-- [ ] **ProductOnShelves slots JSON.** Which real planogram/client is it authored from, and does it replace or complement `planogram_config.shelves[].products` (`quantity_range`, `visual_features`, `text_requirements`)? — *Owner: Jesus Lara*
+- [x] **Which model ids does the benchmark compare?** — *Owner: Jesus Lara*: `gemini-3.5-flash` vs `claude-sonnet-5` (`ClaudeModel.SONNET_5`).
+- [x] **Where does the default provider/model live once literals are gone?** — *Owner: Jesus Lara*: a field on `PlanogramConfig` (provider + model), so each planogram can pin its backend; explicit `llm=` / `llm_provider=` / `llm_model=` passed to `PlanogramCompliance` still win.
+- [x] **`AnthropicClient.ask_to_image` default model** — *Owner: Jesus Lara*: bump to `ClaudeModel.SONNET_5`, and use the same default for the new `detect_objects`.
+- [x] **`planogram_page1.json` has 2/102 positions described** — *Owner: Jesus Lara*: the feature includes an **LLM-assisted descriptor utility** that proposes `display_name/family/xl/colors/pack/price` per position from **both** sources — the POG PDF pages (primary) and a catalog lookup by SKU (complete/validate) — for the user to review. Partial definitions stay legal (undescribed SKUs listed, not fatal).
+- [x] **ProductOnShelves slots JSON: replace or complement?** — *Owner: Jesus Lara*: `slots_definition` **replaces** `planogram_config.shelves[].products` as the expected-products reference for migrated types. Non-product expectations — backlit/poster, illumination, `text_requirements`, `compliance_threshold`, per-shelf weights, `advertisement_endcap` — **stay in `planogram_config`**.
 - [x] **`roi_detection_prompt` / `object_identification_prompt` required?** — *Owner: Jesus Lara*: no longer mandatory — OpenCV does object detection (and potentially the ROI) zero-shot. They become optional on `PlanogramConfig`; `table.sql` has them `TEXT NOT NULL` (L16-17) and must relax too. Unmigrated types that still need them must fail with a clear message when absent.
 - [x] **`AbstractPipeline.roi_client` is always Google** — *Owner: Jesus Lara*: remove the hard-coding; auxiliary calls (`_check_illumination`, fact-tag OCR) go through the pipeline's own client.
-- [ ] **Multi-image API shape**: widen `image` to accept a list, or add `images=`? Does the handler's multipart upload accept several files in this feature? — *Owner: Jesus Lara*
-- [ ] **Registration assumes strictly increasing shelves** (gondola). Fine for InkWall; is it right for ProductOnShelves endcaps with a header/backlit zone? — *Owner: Jesus Lara*
-- [ ] **What happens to `examples/planogram/plancheck/`** once the package has its own implementation — keep as an independent tool, turn `planogram_check.py` into a thin CLI over the package, or delete? — *Owner: Jesus Lara*
-- [ ] **`open_image` always enhances brightness/contrast.** Should perception/OCR run on the untouched image? — *Owner: Jesus Lara*
+- [x] **Multi-image API shape** — *Owner: Jesus Lara*: `run(image=…)` accepts one image or a list (backwards compatible). The handler keeps single-file upload in this feature; multi-upload is a later feature.
+- [x] **Registration assumes strictly increasing shelves** — *Owner: Jesus Lara*: header/backlit/poster are **zones detected apart** (large luminous shape) and do not take part in row→shelf alignment; product rows register in increasing order.
+- [x] **What happens to `examples/planogram/plancheck/`** — *Owner: Jesus Lara*: stays as it is — an independent tool and a live reference for comparing results. Not moved, not deleted, not rewired.
+- [x] **`open_image` always enhances brightness/contrast** — *Owner: Jesus Lara*: perception, OCR and the crops sent to the LLM use the **untouched full-resolution image**; enhancement is kept only for the legacy adapter path.
+- [ ] **Which real ProductOnShelves planogram/photos feed the spike and the first `slots_definition`?** The only ProductOnShelves-like photo under `examples/planogram/` is a Best Buy store image; the client/fixture and its expected products are not identified yet. — *Owner: Jesus Lara*
+- [ ] **Which catalog backs the SKU lookup of the descriptor utility?** (`examples/clients/bestbuy_catalog/` is untracked work in progress; is it the intended source, and is it reachable from the package or only from examples?) — *Owner: Jesus Lara*
+- [ ] **Name/shape of the `PlanogramConfig` model field(s) for the backend** (one `"provider:model"` string as `LLMFactory.create` takes, or two fields) and whether the DB table gets a matching column. — *Owner: Jesus Lara*
+- [ ] **Confidence weight of `llm_added` shapes** in the compare stage, and whether strict credit can ever be earned by an LLM-added detection. — *Owner: Jesus Lara*
