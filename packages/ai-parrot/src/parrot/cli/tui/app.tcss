@@ -1,0 +1,13 @@
+/* Layout contract for AgentWorkspaceApp (TASK-3412). Ids are fixed; visual values are free. */
+Screen { layout: vertical; }
+#transcript { height: 1fr; padding: 0 1; }
+#transcript .turn { margin-bottom: 1; }
+#transcript .user { color: $text; text-style: bold; }
+#transcript .assistant { margin-left: 2; }
+#transcript .tools { margin-left: 2; }
+#transcript .turn-footer { color: $text-muted; margin-left: 2; }
+#transcript .notice { color: $text-muted; }
+#composer { height: auto; min-height: 3; max-height: 8; border: tall $accent; }
+#status { height: 1; padding: 0 1; background: $panel; }
+#logs { height: 8; border-top: solid $panel; display: none; }
+/* FILL IN: narrow-width tweaks are applied from Python on Resize (TASK-3412) — keep CSS static */
