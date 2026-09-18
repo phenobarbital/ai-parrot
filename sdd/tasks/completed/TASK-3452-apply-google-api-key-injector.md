@@ -342,10 +342,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via native seat `sonnet`
+**Date**: 2026-09-19
+**Notes**: Implemented `apply_google_api_key(agent, api_key) -> bool` in
+`credentials.py`: no-op (returns False) for non-`AbstractBot` agents (missing
+`_llm_raw`/`_llm_kwargs`), for non-Google `is_google_llm`, for falsy `api_key`,
+or when `_llm_kwargs` already holds `api_key`/`credentials_file`/`credentials`/
+truthy `vertexai`; otherwise REBINDS `agent._llm_kwargs = {**agent._llm_kwargs,
+"api_key": api_key}` (never mutates in place). Added 6 new test cases (one
+parametrized x4) to `test_crew_credentials.py` covering AC1/AC2/AC3/AC7.
+Test run: `pytest .../test_crew_credentials.py` → 22 passed. `ruff check` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

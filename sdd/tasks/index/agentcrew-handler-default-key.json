@@ -34,7 +34,7 @@
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "Calls is_google_llm and reads _CREDENTIAL_KWARGS from TASK-3451 (packages/ai-parrot/src/parrot/bots/flows/crew/credentials.py); also appends to the same credentials.py and the same test_crew_credentials.py that TASK-3451 creates.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3452-apply-google-api-key-injector.md"
+      "completed_at": "2026-09-18T22:46:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3452-apply-google-api-key-injector.md"
     },
     {
       "id": "TASK-3453",
