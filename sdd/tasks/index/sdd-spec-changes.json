@@ -16,7 +16,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "root of the graph: creates DocTaxonomy/parse_taxonomy/KNOWN_PROJECTS in sdd_meta.py that every other task consumes; touches only sdd_meta.py (+ shim) and its own test",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3459-taxonomy-parser.md"
+      "completed_at": "2026-09-18T22:39:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3459-taxonomy-parser.md"
     },
     {
       "id": "TASK-3460",
