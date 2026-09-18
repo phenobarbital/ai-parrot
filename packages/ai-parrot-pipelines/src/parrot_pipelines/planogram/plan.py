@@ -207,12 +207,11 @@ class PlanogramCompliance(AbstractPipeline):
                             )
 
                         ocr_prompt = f"Read all visible text in this image.{visuals_prompt}{text_reqs_prompt}\nReturn text content. If visual features confirmed, list them."
-                        async with self.roi_client as client:
+                        async with self.llm as client:
                             msg = await client.ask_to_image(
                                 image=p_img,
                                 prompt=ocr_prompt,
-                                model="gemini-3.5-flash",
-                                no_memory=True,
+                                **self._type_handler._vision_kwargs(),
                                 max_tokens=1024,
                             )
                             found_content = msg.output if msg else ""

@@ -231,12 +231,11 @@ class AbstractPlanogramType(ABC):
 
         raw_answer = ""
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=roi_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     max_tokens=128,
                 )
             raw_answer = (msg.output or "").strip().upper()
@@ -444,6 +443,24 @@ class AbstractPlanogramType(ABC):
             prev_y = base_y
 
         return bg_shelves + new_fg
+
+    def _vision_kwargs(self, **extra: Any) -> Dict[str, Any]:
+        """Build the provider-neutral kwargs for an auxiliary ``ask_to_image`` call.
+
+        Args:
+            **extra: Additional keyword arguments merged into the result.
+
+        Returns:
+            ``{"no_memory": True, **extra}`` plus ``"model"`` when the pipeline's
+            resolved backend pins a model id. When the backend leaves the model
+            unset, ``"model"`` is omitted so the client's own default applies.
+        """
+        kwargs: Dict[str, Any] = {"no_memory": True, **extra}
+        backend = getattr(self.pipeline, "resolved_backend", None)
+        model = getattr(backend, "model", None)
+        if isinstance(model, str) and model:
+            kwargs["model"] = model
+        return kwargs
 
     def get_render_colors(self) -> Dict[str, Tuple[int, int, int]]:
         """Return color scheme for rendering compliance overlays.

@@ -97,8 +97,9 @@ def mock_pipeline(planogram_config_obj):
     pipeline.logger = logging.getLogger("test.planogram")
     pipeline.planogram_config = planogram_config_obj
     pipeline.reference_images = {}
-    pipeline.roi_client = MagicMock()
     pipeline.llm = MagicMock()
+    pipeline.roi_client = pipeline.llm  # same object until TASK-3432 removes roi_client
+    pipeline.resolved_backend = MagicMock(provider="google", model=None)
     pipeline._json = MagicMock()
     pipeline._downscale_image = MagicMock()
     pipeline.left_margin_ratio = 0.01
