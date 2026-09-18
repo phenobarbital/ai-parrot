@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
 
 from parrot.memory.abstract import ConversationMemory
-from parrot.memory.episodic.models import MemoryNamespace
+from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 
 from .context import ContextAssembler
@@ -387,16 +387,31 @@ class UnifiedMemoryManager:
             agent_id=self.namespace.agent_id,
             user_id=user_id,
             session_id=session_id,
+            room_id=self.namespace.room_id,
+            crew_id=self.namespace.crew_id,
         )
         response_text = (
             response if isinstance(response, str)
             else getattr(response, "content", str(response))
         )
-        await self.episodic.record_tool_episode(  # type: ignore[union-attr]
+        if not isinstance(response_text, str):
+            response_text = str(response_text)
+        # ``tool_calls`` is accepted for signature compatibility only: tool calls
+        # are not proof of success and their own hooks record tool episodes
+        # (FEAT-571 M0). A conversation turn has no verified outcome here, so it
+        # is recorded as PARTIAL and no memory review is emitted.
+        self.logger.debug(
+            "_record_episodic: recording query episode for %s/%s (tool_calls=%d ignored)",
+            user_id,
+            session_id,
+            len(tool_calls or []),
+        )
+        await self.episodic.record_episode(  # type: ignore[union-attr]
             namespace=ns,
-            query=query,
-            response=response_text,
-            tool_calls=tool_calls,
+            situation=query[:500],
+            action_taken=f"Responded: {response_text}",
+            outcome=EpisodeOutcome.PARTIAL,
+            category=EpisodeCategory.QUERY_RESOLUTION,
         )
 
     # ------------------------------------------------------------------
