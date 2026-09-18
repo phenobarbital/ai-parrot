@@ -379,6 +379,9 @@ Set frontmatter:
 - `status: discussion` if any unknowns remain unresolved
 - `status: review` if all unknowns resolved but user hasn't accepted
 - `status: accepted` only if the user explicitly says "accept" at the final summary
+- `projects` / `tags` (FEAT-576): `projects` from §2.1 Localization paths
+  (same mapping as `/sdd-brainstorm` §10; vocabulary `KNOWN_PROJECTS` in
+  `scripts/sdd/sdd_meta.py`, unknown values warn); `tags`: 2–6 kebab-case keywords.
 
 Update `state.json`:
 - `phases.output.proposal_path: "sdd/proposals/<slug>.proposal.md"`
@@ -459,6 +462,7 @@ Print:
    Findings:           11 files read, 9 grep, 3 git
    Synthesis:          4 high-confidence claims, 3 medium, 1 low
    Unknowns resolved:  2 / 2
+   Projects: <list>   Tags: <list>
 
 Next steps:
   → /sdd-spec FEAT-XXX     (recommended — high-confidence localization)

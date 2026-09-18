@@ -31,6 +31,8 @@ source -> research plan -> budgeted research -> synthesis -> review gate -> targ
 - Persist state under `sdd/state/<FEAT-ID>/`.
 - Do not write implementation code.
 - Commit only proposal and state files.
+- Fill frontmatter `projects` (parts of the codebase, vocabulary `KNOWN_PROJECTS` in
+  `scripts/sdd/sdd_meta.py`; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Inputs
 
