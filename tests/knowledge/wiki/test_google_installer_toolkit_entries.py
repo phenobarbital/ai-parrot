@@ -257,9 +257,7 @@ class TestInstallCLIToolkitOptions:
         assert result.exit_code == 0, result.output
         assert "parrot toolkits install" in result.output
 
-    def test_install_command_still_reconciles_enabled_toolkits(
-        self, tmp_root_with_config: Path, mcp_config_path: Path
-    ):
+    def test_install_command_still_reconciles_enabled_toolkits(self, tmp_root_with_config: Path, mcp_config_path: Path):
         """The flag cut must not break reconciliation for a repo with enabled sections."""
         root = tmp_root_with_config
 
