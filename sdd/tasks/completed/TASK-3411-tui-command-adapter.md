@@ -428,10 +428,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt f89f948b3205470483f6f02ff5102e6d)
+**Date**: 2026-09-18
+**Notes**: Implemented `TUIRenderer`, `TUICommandContext`, `DrawerLogHandler`
+per blueprint. Correctly did NOT reuse/wrap `ResponseRenderer` (per the
+task's own contract — `TUIRenderer` has a real transcript, not a Console)
+after reading `render_error`/`render_table`/`render_info` line by line
+first (TASK-3374 pattern applied and confirmed not to warrant reuse).
+Checked PARROT_HOME isolation pattern: not applicable, no filesystem
+convention path touched by this adapter or its tests.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Task-file discrepancy found and handled gracefully (not silently
+worked around)**: the task's own Codebase Contract asserts `App.suspend()`
+is a no-op under `run_test()`'s headless driver. The coder verified
+against the actual pinned `textual==8.2.8` source that
+`HeadlessDriver.can_suspend` is `False` (inherited, not overridden), so
+`App.suspend()` actually raises `SuspendNotSupported` under the default
+test driver — the task file's assumption is incorrect. Wrote
+`test_suspend_is_context_manager` to accept either outcome with an inline
+comment explaining why, asserting what actually matters (delegates
+correctly into `App.suspend()`), without editing the task file itself.
+**Flag for TASK-3412's implementer**: the same incorrect assumption about
+headless-driver suspend behavior may appear in its test blueprint too —
+verify independently rather than trusting the contract's claim.
 
-**Deviations from spec**: none | describe if any
+Merge clean (`coder_merge` outcome=merged, 0 residual lint). `pytest
+test_adapter.py`: 1 skipped (clean — `textual` still absent from the
+shared `.venv`, same carried-over gap as TASK-3410). Coder also confirmed
+this file has a SECOND, independent blocker once `textual` is available:
+`parrot.utils.types` (the sandboxed sub-worktree's usual missing Cython
+extension) — noting this for whoever re-runs with a real textual-enabled
+venv.
+
+**Feedback recorded**: none — clean delivery, both historical patterns
+correctly checked and applied/judged not applicable.
+**Deviations from spec**: test accepts either suspend-context-manager
+outcome (documented above); production `adapter.py` matches blueprint.

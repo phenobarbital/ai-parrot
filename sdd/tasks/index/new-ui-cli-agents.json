@@ -255,7 +255,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -266,8 +266,8 @@
       "parallelism_notes": "Implements CommandContext/RendererProtocol from TASK-3406 (cli/commands.py) and imports TranscriptView/LogDrawer from TASK-3410 (cli/tui/widgets.py). Creates cli/tui/adapter.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3411-tui-command-adapter.md"
+      "completed_at": "2026-09-18T08:48:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3411-tui-command-adapter.md"
     },
     {
       "id": "TASK-3412",
