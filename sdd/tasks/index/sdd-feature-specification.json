@@ -16,14 +16,14 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: creates intake.schema.json and widens state.schema.json; the foundation other tasks read",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3469-intake-state-schemas.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "needs sdd/templates/intake.schema.json + widened state.schema.json from TASK-3469 (the procedure names both; its test asserts the paths exist)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3470-intake-procedure.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "needs sdd/templates/intake.procedure.md from TASK-3470 (§1.5 points at it; test asserts it exists). Rebase on FEAT-576 TASK-3465, which edits the same twin pair",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3471-sdd-spec-intake-wiring.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": true,
       "parallelism_notes": "needs the --no-interview flag documented in .claude/commands/sdd-spec.md by TASK-3471",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3472-unattended-no-interview.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "reads intake.json updated_at as defined by sdd/templates/intake.schema.json from TASK-3469",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3473-intake-retention.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -124,7 +124,7 @@
       "parallel": true,
       "parallelism_notes": "reads the intake.json shape from TASK-3469 (intake.schema.json) and the `intake: <staging-dir>` pointer emitted by TASK-3470 (intake.procedure.md §3b)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3474-brainstorm-intake-handoff.md"
     },
@@ -135,7 +135,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -145,7 +145,7 @@
       "parallel": true,
       "parallelism_notes": "links sdd/templates/intake.procedure.md created by TASK-3470 and documents the `python -m scripts.sdd.install_hooks` command created by TASK-3476",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3475-intake-docs.md"
     },
@@ -156,7 +156,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -165,7 +165,7 @@
       "parallel": true,
       "parallelism_notes": "the hook block calls `scripts.sdd.prune_intake --daily --apply` created by TASK-3473 (scripts/sdd/prune_intake.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3476-daily-prune-hook-installer.md"
     }
