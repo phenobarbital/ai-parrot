@@ -288,7 +288,7 @@ async def _cmd_resume(ctx: "CommandContext", args: str) -> None:
         ctx.renderer.print("[red]This backend cannot resume conversations (no history read path).[/red]")
         return
     if target == "last":
-        pointer = load_session_pointer(ctx.config.agent_name)
+        pointer = await asyncio.to_thread(load_session_pointer, ctx.config.agent_name)
         if pointer is None:
             ctx.renderer.print("[yellow]No previous session recorded for this agent.[/yellow]")
             return

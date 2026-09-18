@@ -6,6 +6,8 @@ so tests can run without a running server, LLM API keys, or database.
 
 from __future__ import annotations
 
+import io
+import os
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -151,9 +153,6 @@ def response_with_tools():
 # ---------------------------------------------------------------------------
 # Shared end-to-end fixtures (FEAT-573 TASK-3416, spec §4 Test Data / Fixtures)
 # ---------------------------------------------------------------------------
-
-import io
-import os
 
 
 @pytest.fixture

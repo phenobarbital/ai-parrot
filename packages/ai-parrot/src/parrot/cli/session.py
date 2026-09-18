@@ -9,13 +9,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, List, Optional
 from uuid import uuid4
 
 from parrot.cli.commands import ConversationTurn  # verified: commands.py:38
 from parrot.cli.events import (  # provided by TASK-3403
     BackendCapabilities,
-    PostTurnHook,
     TextDelta,
     ToolFailed,
     ToolFinished,
@@ -37,6 +36,12 @@ from parrot.core.events.lifecycle import (  # verified: lifecycle/__init__.py:21
 from parrot.core.events.lifecycle.turn_scope import in_turn_scope, turn_scope  # provided by TASK-3402
 from parrot.models.basic import ToolCall  # verified: models/basic.py:23
 from parrot.models.outputs import OutputMode  # verified: repl.py:24
+
+#: Hook signature as ``TurnRunner`` itself actually calls it: ``hook(runner, turn)``.
+#: Distinct from ``parrot.cli.events.PostTurnHook`` (which types the presenter-facing
+#: ``ctx: CommandContext`` parameter) because ``TurnRunner`` has no presenter reference
+#: and passes itself as the first argument -- see ``add_post_turn_hook``'s docstring.
+_RunnerPostTurnHook = Callable[["TurnRunner", ConversationTurn], Awaitable[None]]
 
 
 class TurnInProgressError(RuntimeError):
@@ -67,7 +72,7 @@ class TurnRunner:
         self.config = config
         self.history: List[ConversationTurn] = []
         self.logger = logging.getLogger(__name__)
-        self._hooks: List[PostTurnHook] = []
+        self._hooks: List[_RunnerPostTurnHook] = []
         self._active_task: Optional[asyncio.Task] = None
         self._capabilities = capabilities or self._default_capabilities(bot)
 
@@ -145,7 +150,7 @@ class TurnRunner:
                 await asyncio.sleep(0)
             return _drain_pending()
 
-        yield TurnStarted(kind="started", turn_id=turn_id, seq=seq, query=query, streaming=self.config.streaming)
+        yield TurnStarted(turn_id=turn_id, seq=seq, query=query, streaming=self.config.streaming)
         try:
             if self.capabilities.live_tool_events:
 
@@ -229,15 +234,17 @@ class TurnRunner:
             yield TurnCompleted(turn_id=turn_id, seq=seq, text=partial, message=response)
             turn = ConversationTurn(query=query, response=response, timestamp=datetime.now())
             self.history.append(turn)
-            save_session_pointer(self.config.agent_name, self.config.session_id)
+            # save_session_pointer() does real, synchronous filesystem I/O
+            # (mkdir/chmod/NamedTemporaryFile/os.replace) — never block the
+            # event loop on every completed turn.
+            await asyncio.to_thread(save_session_pointer, self.config.agent_name, self.config.session_id)
             for hook in self._hooks:
                 await hook(self, turn)
         except asyncio.CancelledError:
-            yield TurnCancelled(kind="cancelled", turn_id=turn_id, seq=seq + 1, partial_text=partial)
+            yield TurnCancelled(turn_id=turn_id, seq=seq + 1, partial_text=partial)
         except Exception as exc:  # noqa: BLE001 — presenters must never see a raw exception (AC19)
             self.logger.exception("turn %s failed", turn_id)
             yield TurnFailed(
-                kind="failed",
                 turn_id=turn_id,
                 seq=seq + 1,
                 error_type=type(exc).__name__,
@@ -292,7 +299,7 @@ class TurnRunner:
         self.history.clear()
         return self.config.session_id
 
-    def add_post_turn_hook(self, hook: PostTurnHook) -> None:
+    def add_post_turn_hook(self, hook: _RunnerPostTurnHook) -> None:
         """Register a coroutine awaited after each COMPLETED turn.
 
         The hook is awaited as ``hook(self, turn)`` — the ``TurnRunner`` itself

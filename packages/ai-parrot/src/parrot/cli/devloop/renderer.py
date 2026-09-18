@@ -15,7 +15,7 @@ from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
 
-from parrot.cli.console import LiveRegion
+from parrot.cli.console import LiveRegion, get_console
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class RunView:
         run_id: str = "",
     ) -> None:
         self.host = host
-        self.console = console or Console()
+        self.console = console or get_console()
         self.run_id = run_id or getattr(host, "state", None) and host.state.run_id or "?"
         self._last_seq = 0
         self.region: LiveRegion = LiveRegion(self.console, refresh_per_second=8, transient=False)

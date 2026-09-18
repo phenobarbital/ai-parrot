@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from parrot.cli.console import get_console
 from parrot.cli.devloop.renderer import RunView
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids a heavy runtime import
@@ -55,7 +56,7 @@ class DevLoopConsole:
         console: Optional[Console] = None,
         session: Optional[PromptSession] = None,
     ) -> None:
-        self.console = console or Console()
+        self.console = console or get_console()
         self._session = session or PromptSession()
         self._runtime: Any = None  # DevLoopRuntime
         self._runs: Dict[str, asyncio.Task] = {}

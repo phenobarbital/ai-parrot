@@ -157,7 +157,16 @@ class StreamHandler(BaseHandler):
                     sse_data = f"data: {json_encoder({'content': chunk})}\n\n"
                     await response.write(sse_data.encode("utf-8"))
                     await response.drain()
-                await asyncio.sleep(0)  # let emit_nowait tasks scheduled on this tick land
+                # BeforeToolCallEvent reaches this subscription through TWO nested
+                # loop.create_task hops (EventRegistry.emit_nowait schedules the tool's
+                # own registry emit(), whose forward-to-global step schedules a second
+                # task), while AfterToolCallEvent/ToolCallFailedEvent need only one. A
+                # tool whose _execute() has no real await of its own never gives the
+                # loop a natural turn between Before/After, so a single sleep(0) can
+                # still miss a ToolStarted right before the terminal [DONE] frame --
+                # matching session.py's TurnRunner._flush_pending (same race, same fix).
+                for _ in range(3):
+                    await asyncio.sleep(0)
                 await _drain(queue, response)
 
             if ai_message is not None:

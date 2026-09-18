@@ -225,7 +225,7 @@ async def _run(
 
     resume_id = session
     if session == "last":
-        pointer = load_session_pointer(name)
+        pointer = await asyncio.to_thread(load_session_pointer, name)
         if pointer is None:
             console.print(f"[yellow]No previous session for {name}[/yellow]")
             resume_id = None
