@@ -85,10 +85,13 @@ current behavior.
   written and no FEAT-ID is reserved. The intake answers and synthesis seed the
   brainstorm's discovery, and `intake.json` ends at `phase: handed_off`.
 - G13. **Staging retention.** `sdd/state/.intake/` is git-ignored, and staged
-  runs **older than 10 days are pruned during `/sdd-status`** by a small,
-  tested script (`scripts/sdd/prune_intake.py`). This is the one documented
-  exception to `/sdd-status`'s read-only guardrail, and it may only delete
-  untracked staging directories under `sdd/state/.intake/`.
+  runs **older than 10 days are pruned automatically by a git hook that runs
+  at most once a day**. Git triggers it on `post-checkout`, `post-merge` and
+  `post-commit`, and a daily stamp gates it. A small, tested script
+  (`scripts/sdd/prune_intake.py --daily --apply`) does the work, and an
+  idempotent installer (`scripts/sdd/install_hooks.py`) adds the hook blocks.
+  `/sdd-status` stays **read-only**. The pruner may only delete untracked
+  staging directories under `sdd/state/.intake/`.
 
 ### Non-Goals (explicitly out of scope)
 - A new `/sdd-feature` command. The user chose a *mode* of `/sdd-spec`; a
@@ -193,9 +196,23 @@ the adaptive rounds:
   offered, because there is no command to hand off to.
 - `sdd-spec` / `sdd-task`, `light`, `none`: no offer.
 
-**Staging retention** (G13): `/sdd-status` gets a new first step that runs
-`python -m scripts.sdd.prune_intake --older-than-days 10 --apply` and reports
-the pruned dirs in one line (or stays silent when there are none). A run's age
+**Staging retention** (G13): `python -m scripts.sdd.install_hooks` adds a
+marker-delimited block (`# >>> sdd-intake-prune >>>` … `# <<< sdd-intake-prune <<<`)
+to the `post-checkout`, `post-merge` and `post-commit` hooks in the effective
+hooks directory (`git rev-parse --git-path hooks`, which honours
+`core.hooksPath`). It uses the same marker-block convention as the
+`parrot claude install` wiki hook. The block runs only in the primary checkout
+(`[ -d .git ]`; a linked worktree's `.git` is a file), calls
+`<venv-python> -m scripts.sdd.prune_intake --daily --apply`, and swallows all
+output and errors (`… >/dev/null 2>&1 || true`), so a git operation is never
+slowed by a failure or blocked. `--daily` gates on a stamp file at
+`$(git rev-parse --git-common-dir)/sdd-intake-prune.stamp`. When the stamp is
+younger than 24 h the script exits 0 immediately. Otherwise it touches the
+stamp **first** (so concurrent triggers don't double-run) and then prunes. The
+installer refuses, with a clear message and exit 2, when the hooks directory
+doesn't exist (e.g. `core.hooksPath` points at a missing path). It never
+creates or repoints `core.hooksPath`. `--uninstall` removes only its own
+blocks. A run's age
 is `now - intake.json.updated_at`, falling back to the directory mtime when
 `intake.json` is missing or unreadable. `--resume` does not refresh an expired
 run. Once pruned, the run is gone and the user starts again with `--interview`.
@@ -270,9 +287,10 @@ argument is rejected with a message, because intake has no FEAT-ID until §5
 | `.claude/agents/sdd-planner.md` + `_subagent_data/sdd-planner.md` | modifies | `--no-interview` where it runs `/sdd-spec` |
 | `.gitignore` | modifies | ignore `sdd/state/.intake/` |
 | `scripts/sdd/prune_intake.py` | new | prune staged intake runs older than N days (G13) |
-| `.claude/commands/sdd-status.md` + `.agent/workflows/sdd-status.md` + `.agents/skills/sdd-status/SKILL.md` | modifies | new prune step; the read-only guardrail gains the one documented exception |
+| `scripts/sdd/install_hooks.py` | new | idempotent install/uninstall of the daily prune block in `post-checkout` / `post-merge` / `post-commit` (G13) |
+| `.git/hooks/*` (the parrot-wiki marker blocks from `parrot claude install`) | coexists | a separate marker block; never edits the wiki block |
 | `.claude/commands/sdd-brainstorm.md` | modifies | accept an `intake:` pointer after `--` as pre-answered discovery context (G12) |
-| `docs/sdd/WORKFLOW.md` | modifies | document the intake entry point |
+| `sdd/WORKFLOW.md` | modifies | document the intake entry point + hook install step |
 
 ### Data Models
 
@@ -347,8 +365,9 @@ Command surface (both twins):
 | M5: codex skill | yes | add usage line + one "Intake mode" paragraph pointing at `intake.procedure.md` | — |
 | M6: unattended callers | yes | append ` --no-interview` to the exact lines listed in §6; same edit in both copies | — |
 | M7: contract tests | yes | test names in §4 | — |
-| M8: docs + gitignore | yes | `.gitignore` line next to 406–407; WORKFLOW.md subsection | — |
-| M9: intake retention | yes | `scripts/sdd/prune_intake.py` signatures in Module 9; `/sdd-status` step text fixed in Module 9 | — |
+| M8: docs | yes | `sdd/WORKFLOW.md` subsection | — |
+| M9: intake pruner | yes | `scripts/sdd/prune_intake.py` signatures + `--daily` stamp gate fixed in Module 9 | — |
+| M11: daily prune hook installer | yes | `scripts/sdd/install_hooks.py` signatures, marker names, events and hook snippet fixed in Module 11 | — |
 | M10: brainstorm hand-off intake | no | — | prose change to `/sdd-brainstorm`'s discovery rules; judgement about which questions count as answered |
 
 ### Module 1: Intake record schema
@@ -440,14 +459,14 @@ Command surface (both twins):
 - **Responsibility**: the tests in §4.
 - **Depends on**: M1, M2, M4, M6
 
-### Module 8: Docs + ignore rule
-- **Path**: `.gitignore` (add `sdd/state/.intake/` beside lines 406–407), `docs/sdd/WORKFLOW.md` (new subsection "Starting from an interview: `/sdd-spec` intake mode")
-- **Responsibility**: keep staging out of git. Document the new entry point, its flags, and how it relates to `/sdd-brainstorm` / `/sdd-proposal`.
+### Module 8: Docs
+- **Path**: `sdd/WORKFLOW.md` (new subsection "Starting from an interview: `/sdd-spec` intake mode"). This is the canonical workflow doc; `docs/sdd/WORKFLOW.md` is a stale June copy and is not edited. The `.gitignore` line moved to M9.
+- **Responsibility**: document the new entry point, its flags, how it relates to `/sdd-brainstorm` / `/sdd-proposal`, and the one-time `python -m scripts.sdd.install_hooks` step for daily staging retention.
 - **Depends on**: M3
 
-### Module 9: Intake staging retention
-- **Path**: `scripts/sdd/prune_intake.py` (new), `tests/sdd_scripts/test_prune_intake.py` (new), `.claude/commands/sdd-status.md` + `.agent/workflows/sdd-status.md` + `.agents/skills/sdd-status/SKILL.md` (modify)
-- **Responsibility**: find and (with `--apply`) delete staged intake runs older than N days (default 10) that are direct child directories of `sdd/state/.intake/`. The script is dry-run by default. It refuses a `--root` that doesn't resolve to a path ending in `sdd/state/.intake` inside the repo, and it never follows symlinks, deletes files at the root level, or touches anything outside the root. Deletion uses `shutil.rmtree` on the vetted child path only. `/sdd-status` gains **Step 0 — Prune stale intake staging** that calls it with `--apply` and prints `🧹 Pruned N stale intake run(s) (>10 days): <names>`. The Guardrail line 18 becomes "Read-only — do not modify any files, **except** Step 0's pruning of git-ignored `sdd/state/.intake/` staging (FEAT-577)". The two sdd-status copies stay byte-identical modulo frontmatter, and the codex skill gets the same exception.
+### Module 9: Intake staging pruner
+- **Path**: `scripts/sdd/prune_intake.py` (new), `tests/sdd_scripts/test_prune_intake.py` (new), `.gitignore` (modify; moved here from M8)
+- **Responsibility**: find and (with `--apply`) delete staged intake runs older than N days (default 10) that are direct child directories of `sdd/state/.intake/`. The script is dry-run by default. It refuses a `--root` that doesn't resolve to a path ending in `sdd/state/.intake` inside the repo, and it never follows symlinks, deletes files at the root level, or touches anything outside the root. Deletion uses `shutil.rmtree` on the vetted child path only. `--daily` adds the once-a-day gate: the stamp is `<git-common-dir>/sdd-intake-prune.stamp` (overridable with `--stamp` for tests). It skips with exit 0 when the stamp's mtime is younger than 24 h, and otherwise touches the stamp before pruning. `/sdd-status` is **not** modified.
 - **Depends on**: M1 (reads `intake.json.updated_at`)
 - **Interface Skeleton**:
   ```python
@@ -462,6 +481,8 @@ Command surface (both twins):
 
   DEFAULT_ROOT: Path = Path("sdd/state/.intake")
   DEFAULT_MAX_AGE_DAYS: int = 10
+  DAILY_INTERVAL: timedelta = timedelta(hours=24)
+  STAMP_NAME: str = "sdd-intake-prune.stamp"
 
   class StaleIntake(BaseModel):
       """One staged run selected for pruning."""
@@ -478,8 +499,45 @@ Command surface (both twins):
   def prune(root: Path, max_age_days: int = DEFAULT_MAX_AGE_DAYS, *, apply: bool = False, now: datetime | None = None) -> list[StaleIntake]:
       """Return the stale runs; delete them only when ``apply``. Raises ValueError for an unsafe root."""
 
+  def default_stamp() -> Path:
+      """``$(git rev-parse --git-common-dir)/sdd-intake-prune.stamp`` (shared by all worktrees)."""
+
+  def claim_daily_slot(stamp: Path, now: datetime | None = None) -> bool:
+      """True (and touch the stamp) when the last run was ≥ 24 h ago or never; False otherwise."""
+
   def main(argv: list[str] | None = None) -> int:
-      """CLI: --root, --older-than-days (default 10), --apply. Prints one line per run; exit 0, or 2 on an unsafe root."""
+      """CLI: --root, --older-than-days (default 10), --apply, --daily, --stamp. Prints one line per run; exit 0, or 2 on an unsafe root."""
+  ```
+
+### Module 11: Daily prune hook installer
+- **Path**: `scripts/sdd/install_hooks.py` (new), `tests/sdd_scripts/test_install_hooks.py` (new)
+- **Responsibility**: install and uninstall the `sdd-intake-prune` marker block in the `post-checkout`, `post-merge` and `post-commit` hooks of the effective hooks dir. It is idempotent: a re-install replaces the block in place and never duplicates it. It creates a missing hook file with a `#!/bin/sh` shebang and `chmod +x`. It preserves every other line and block (for example the parrot-wiki block). `--uninstall` removes only its block. The hook snippet embeds the absolute interpreter path (`sys.executable`, like the wiki hook embeds its venv binary) and the repo root. A missing hooks dir, including a `core.hooksPath` that points nowhere, is reported and gets exit 2 with nothing written.
+- **Depends on**: M9 (the snippet calls `scripts.sdd.prune_intake --daily --apply`)
+- **Interface Skeleton**:
+  ```python
+  # scripts/sdd/install_hooks.py  (new)
+  """``install_hooks.py`` — install the daily /sdd-spec intake prune git hook (FEAT-577)."""
+  from __future__ import annotations
+  from pathlib import Path
+
+  MARKER_BEGIN: str = "# >>> sdd-intake-prune >>>"
+  MARKER_END: str = "# <<< sdd-intake-prune <<<"
+  HOOK_EVENTS: tuple[str, ...] = ("post-checkout", "post-merge", "post-commit")
+
+  def hooks_dir(repo_root: Path) -> Path:
+      """Resolve ``git rev-parse --git-path hooks`` against ``repo_root`` (honours core.hooksPath)."""
+
+  def render_block(python: str, repo_root: Path) -> str:
+      """The marker-delimited shell block: primary checkout only; `python -m scripts.sdd.prune_intake --daily --apply`; never fails."""
+
+  def install(hooks: Path, block: str, events: tuple[str, ...] = HOOK_EVENTS) -> list[Path]:
+      """Add or replace the block in each hook; create + chmod +x missing hooks. Raises FileNotFoundError when ``hooks`` is missing."""
+
+  def uninstall(hooks: Path, events: tuple[str, ...] = HOOK_EVENTS) -> list[Path]:
+      """Remove only the sdd-intake-prune block from each hook; leave everything else byte-identical."""
+
+  def main(argv: list[str] | None = None) -> int:
+      """CLI: [--uninstall] [--repo-root]. Exit 0; 2 when the hooks dir is missing (message names core.hooksPath)."""
   ```
 
 ### Module 10: `/sdd-brainstorm` accepts a hand-off from intake
@@ -512,7 +570,16 @@ Command surface (both twins):
 | `test_prune_apply_deletes_only_stale_children` | M9 | the fresh run, root-level files and symlinked dirs survive `apply=True` |
 | `test_prune_rejects_unsafe_root` | M9 | `--root /tmp/x` or `sdd/state` → ValueError / exit 2 |
 | `test_prune_missing_root_is_noop` | M9 | a missing root returns `[]`, exit 0 |
-| `test_sdd_status_prunes_intake_first` | M9/M7 | both sdd-status copies name `scripts.sdd.prune_intake` and the FEAT-577 read-only exception |
+| `test_daily_gate_skips_within_24h` | M9 | a fresh stamp ⇒ `claim_daily_slot` False and nothing pruned; a stamp 25 h old ⇒ True and the stamp is refreshed |
+| `test_daily_gate_first_run_creates_stamp` | M9 | a missing stamp ⇒ True, and the stamp now exists |
+| `test_gitignore_ignores_intake_staging` | M9 | `.gitignore` lists `sdd/state/.intake/` |
+| `test_install_creates_missing_hooks` | M11 | a fresh hooks dir gets 3 executable hooks with `#!/bin/sh` + one block |
+| `test_install_is_idempotent` | M11 | installing twice leaves exactly one block per hook |
+| `test_install_preserves_other_blocks` | M11 | an existing parrot-wiki block is byte-identical after install + uninstall |
+| `test_uninstall_removes_only_its_block` | M11 | after uninstall no `sdd-intake-prune` marker remains, and other content is unchanged |
+| `test_missing_hooks_dir_exits_2` | M11 | a nonexistent hooks dir ⇒ `main` returns 2, and nothing is created |
+| `test_block_never_fails_git` | M11 | the rendered block contains the `[ -d .git ]` guard, `--daily --apply` and `\|\| true` |
+| `test_sdd_status_stays_read_only` | M9/M7 | neither sdd-status copy mentions `prune_intake` (G13 keeps it read-only) |
 | `test_brainstorm_accepts_intake_pointer` | M10/M7 | `sdd-brainstorm.md` documents the `intake:` pointer and `intake.json` |
 
 ### Integration Tests
@@ -558,11 +625,13 @@ def intake_state_sample() -> dict:
 - [ ] Intake mode never writes a `.brainstorm.md` or `.proposal.md` (G10).
 - [ ] `sdd-research` and `sdd-planner` (both copies each) pass `--no-interview`. Both parity tests pass (G11).
 - [ ] All tests in §4 pass: `pytest tests/sdd_scripts/ packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -v`.
-- [ ] `docs/sdd/WORKFLOW.md` documents intake mode.
+- [ ] `sdd/WORKFLOW.md` documents intake mode and the `install_hooks` step.
 - [ ] No change to `/sdd-proposal`'s FEAT allocation.
 - [ ] When `full` research recommends `sdd-brainstorm`, the user is offered the switch. Accepting it writes no spec, reserves no FEAT-ID, sets `phase: handed_off` and prints the seeded `/sdd-brainstorm` command. Declining it records `handoff_declined: true` and continues (G12).
 - [ ] `/sdd-brainstorm <slug> -- intake: <dir>` treats the intake facts as answered, seeds Round 1 from the synthesis, and still runs its 2 mandatory rounds (G12).
-- [ ] `/sdd-status` prunes `sdd/state/.intake/` runs older than 10 days and never touches anything outside that directory. `prune_intake.py` is dry-run unless `--apply` is passed (G13).
+- [ ] After `python -m scripts.sdd.install_hooks`, a `git checkout` / `pull` / `commit` in the primary checkout prunes `sdd/state/.intake/` runs older than 10 days **at most once per 24 h**, never touches anything outside that directory, and never fails or blocks the git operation (G13).
+- [ ] `prune_intake.py` is dry-run unless `--apply` is passed. The installer is idempotent, preserves other hook blocks, and refuses (exit 2) when the hooks dir is missing.
+- [ ] `/sdd-status` remains read-only and unchanged by this feature.
 
 ---
 
@@ -603,7 +672,9 @@ resolve_flow(doc_path: Path | None, type_override: str | None, base_branch_overr
 - `sdd/templates/spec.md`: header fields `Feature ID/Date/Author/Status/Target version` (`:11-15`). There is **no** `**Jira**` field; `/sdd-tojira` adds that line.
 - `.gitignore:406-407`: `# FEAT-545: id-independent staging…` / `sdd/state/.design_research/`.
 - `sdd/templates/synthesis.prompt.md:158-166` (Step 8): `recommended_next_command.command` is exactly one of `sdd-spec`, `sdd-brainstorm`, `sdd-task`, `manual-review`; `sdd-brainstorm` = "medium confidence OR multiple viable architectural paths". Output shape `:292-295` = `{"command": …, "rationale": …}`.
-- `.claude/commands/sdd-status.md` (104 lines): Guardrail `:18` = "- Read-only — do not modify any files."; `## Steps` `:21`; `### 1. Read All Per-Spec Indexes` `:23`. `.agent/workflows/sdd-status.md` is the same body plus a `model: haiku` frontmatter (`:18` identical). `.agents/skills/sdd-status/SKILL.md:18` = "- Read-only: never modifies any files."
+- `.claude/commands/sdd-status.md:18` = "- Read-only — do not modify any files." It **stays read-only** (G13); this feature does not touch it.
+- **Git hooks today** (verified 2026-09-19): `.git/hooks/post-commit` and `.git/hooks/post-merge` hold a `# >>> parrot-wiki post-commit >>>` … `# <<< parrot-wiki post-commit <<<` block installed by `parrot claude install`. The post-merge variant skips linked worktrees with `if [ ! -f .git ]` and calls an absolute venv binary. The versioned `.githooks/pre-commit` (registry check) is installed only via `git config core.hooksPath .githooks` or a symlink.
+- **Local config hazard**: on the author's checkout, `core.hooksPath` (`.git/config`) = `/home/jesuslara/proyectos/navigator/ai-parrot/.git/hooks`, which **does not exist**, so git currently runs *no* hooks. `install_hooks.py` must detect a missing effective hooks dir and refuse with an explanatory message. It must never create that dir or rewrite `core.hooksPath`."
 - `.claude/commands/sdd-brainstorm.md` (214 lines): the command body the user invokes. There is no `.agent/workflows` parity test for it (`_TWINNED` covers only `sdd-spec`, `sdd-task`).
 - `scripts/sdd/check_task_graph.py`: the pattern for a small `scripts/sdd` CLI with `main(argv) -> int`.
 
@@ -646,7 +717,8 @@ TASK-3465 (FEAT-576) also edits `/sdd-spec` (carrying projects/tags forward), wh
 - ~~A Python `IntakeRecord` model or `scripts/sdd/spec_intake.py`~~: explicitly not built (Option C rejected).
 - ~~`KNOWN_PROJECTS` / `normalize_project` / `parse_taxonomy` in `sdd_meta` today~~: FEAT-576, pending.
 - ~~A `**Jira**` field in `sdd/templates/spec.md`~~: absent.
-- ~~`scripts/sdd/prune_intake.py`~~: created by M9. No existing SDD script deletes staging dirs (`.design_research/` is pruned manually).
+- ~~`scripts/sdd/prune_intake.py`, `scripts/sdd/install_hooks.py`~~: created by M9/M11. No existing SDD script deletes staging dirs (`.design_research/` is pruned manually) or installs git hooks.
+- ~~A `/sdd-status` prune step~~: explicitly **not** added; `/sdd-status` stays read-only.
 - ~~An `intake:` pointer in `/sdd-brainstorm`~~: added by M10.
 - ~~`/sdd-proposal` using `reserve_ids.py`~~: it doesn't, and this feature does not change that.
 
@@ -692,6 +764,7 @@ TASK-3465 (FEAT-576) also edits `/sdd-spec` (carrying projects/tags forward), wh
   - M7 → M1, M2, M4, M6 (tests over their outputs). It may be split so each module's tests ship with it.
   - M8 → M3 (docs describe it).
   - M9 → M1 (reads `intake.json.updated_at` per the schema; its tests build samples from it).
+  - M11 → M9 (the hook block calls `scripts.sdd.prune_intake --daily --apply`).
   - M10 → M1, M3 (reads the `intake.json` shape; the procedure emits the `intake:` pointer).
   - M1 and M2 have no edge between them and run concurrently.
 - **Shared files**: `.claude/commands/sdd-spec.md` + `.agent/workflows/sdd-spec.md` (M4 only). `tests/sdd_scripts/test_command_contracts.py` (M7 only; the M9/M10 contract checks live there too, so they serialize with M7). `sdd/templates/intake.procedure.md` (M3; the hand-off section is part of M3).
@@ -716,7 +789,7 @@ TASK-3465 (FEAT-576) also edits `/sdd-spec` (carrying projects/tags forward), wh
 - [x] Inline procedure or shared file? — *Resolved in spec Q&A*: shared `sdd/templates/intake.procedure.md`; the twins carry a short §1.5 pointer.
 - [x] `--resume` in v1? — *Resolved in spec Q&A*: yes. Because intake is id-less until §5, it is keyed by slug/staging dir (`--resume [<staging-dir>]`), not by `FEAT-<NNN>`; `--resume FEAT-<NNN>` is rejected with an explanation.
 - [x] Research-plan gate and `/sdd-proposal` allocator? — *Resolved in spec Q&A*: the gate is shown by default (`--no-gate` skips it); the allocator fix is left to a separate change.
-- [x] Should `sdd/state/.intake/` staging dirs older than N days be pruned automatically, or stay manual like `.design_research/`? — *Resolved in spec review*: prune during `/sdd-status` after 10 days, and keep the dir git-ignored. Landed in G13, §2 "Staging retention", Module 9, §5. This is a documented exception to `/sdd-status`'s read-only guardrail, limited to untracked `sdd/state/.intake/` children.
+- [x] Should `sdd/state/.intake/` staging dirs older than N days be pruned automatically, or stay manual like `.design_research/`? — *Resolved in spec review*: prune runs older than 10 days and keep the dir git-ignored. `/sdd-status` stays read-only, so pruning runs automatically from a git hook (`post-checkout` / `post-merge` / `post-commit`) gated to once a day by a stamp file. Landed in G13, §2 "Staging retention", Modules 9 and 11, §5.
 - [x] Should a synthesis whose `recommended_next_command` suggests a brainstorm offer to switch to `/sdd-brainstorm` instead of writing the spec? — *Resolved in spec review*: yes. Landed in G12, §2 "Brainstorm hand-off", Module 10, §5. It is an offer the user can decline, not an automatic switch.
 
 ---
@@ -740,3 +813,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-09-19 | Jesus Lara | Initial draft from `sdd/proposals/sdd-feature-specification.brainstorm.md` (Option A) + spec Q&A |
 | 0.2 | 2026-09-19 | Jesus Lara | Approved; last two §8 questions resolved → G12 brainstorm hand-off (M10), G13 intake retention via `/sdd-status` (M9) |
+| 0.3 | 2026-09-19 | Jesus Lara | G13 revised: `/sdd-status` stays read-only; retention moves to a once-a-day git hook (M9 `--daily`, new M11 installer); `.gitignore` moves from M8 to M9 |
