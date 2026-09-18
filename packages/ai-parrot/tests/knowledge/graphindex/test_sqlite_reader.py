@@ -403,3 +403,28 @@ class TestSQLiteGraphReader:
         await reader.load()
         await reader.close()
         await reader.close()  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Connection hygiene: a failed load() must not leak the aiosqlite worker thread
+# (a non-daemon thread keeps the interpreter — and any sandbox around it — alive).
+# ---------------------------------------------------------------------------
+
+
+def _aiosqlite_threads() -> set[str]:
+    import threading
+
+    return {t.name for t in threading.enumerate() if "_connection_worker_thread" in t.name}
+
+
+async def test_failed_load_closes_connection_and_leaks_no_thread(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "broken.sqlite"
+    sqlite3.connect(db_path).close()  # valid database file, no graphindex schema
+    before = _aiosqlite_threads()
+    reader = SQLiteGraphReader(db_path)
+    with pytest.raises(Exception, match="no such table"):
+        await reader.load()
+    assert reader._conn is None
+    assert _aiosqlite_threads() == before

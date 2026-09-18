@@ -381,3 +381,67 @@ def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout
     result = sandboxed(["git", "worktree", "remove", str(feature)])
     assert result.returncode == 0, result.stderr
     assert not feature.exists()
+
+
+# ---------------------------------------------------------------------------
+# Hung-command guard: a sandboxed process that never exits must not keep bwrap
+# (and the host's Bash tool) "running" forever.
+# ---------------------------------------------------------------------------
+
+
+def _sandboxed_argv(response: dict[str, Any]) -> list[str]:
+    return shlex.split(response["hookSpecificOutput"]["updatedInput"]["command"])
+
+
+def test_hook_bounds_command_with_tool_timeout(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    response = policy.hook_response(
+        {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest -q x.py", "timeout": 90_000}}
+    )
+    argv = _sandboxed_argv(response)
+    tail = argv[argv.index("--") + 1 :]
+    assert tail == ["/usr/bin/timeout", "-k", "5", "90", "/bin/bash", "-c", "pytest -q x.py"]
+
+
+def test_hook_default_timeout_matches_host_default(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.delenv("BASH_DEFAULT_TIMEOUT_MS", raising=False)
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
+    argv = _sandboxed_argv(response)
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "120"]
+    monkeypatch.setenv("BASH_DEFAULT_TIMEOUT_MS", "600000")
+    response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
+    argv = _sandboxed_argv(response)
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "600"]
+
+
+def test_hook_leaves_background_commands_unbounded_without_explicit_timeout(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
+    payload = {
+        "cwd": str(checkout[0]),
+        "tool_name": "Bash",
+        "tool_input": {"command": "true", "run_in_background": True},
+    }
+    argv = _sandboxed_argv(policy.hook_response(payload))
+    assert argv[argv.index("--") + 1 :] == ["/bin/bash", "-c", "true"]
+    payload["tool_input"]["timeout"] = 30_000
+    argv = _sandboxed_argv(policy.hook_response(payload))
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "30"]
+
+
+def test_real_hung_sandboxed_process_is_killed_at_tool_timeout(tmp_path: Path) -> None:
+    """A child that prints an error and then never exits must not outlive the tool timeout."""
+    _require_bubblewrap()
+    (tmp_path / ".git").mkdir()
+    command = "echo 'sqlite3.OperationalError: no such column: 624' >&2; sleep 60"
+    response = policy.hook_response(
+        {"cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": command, "timeout": 1_000}}
+    )
+    argv = _sandboxed_argv(response)
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 124, result
+    assert "no such column: 624" in result.stderr

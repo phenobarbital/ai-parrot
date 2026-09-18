@@ -165,41 +165,43 @@ async def _open_backend(arm: str, path: Path, dim: int = 8):
 
 async def _worker_writes(arm: str, path: Path, worker_id: int, count: int, dim: int) -> dict[str, Any]:
     backend = await _open_backend(arm, path, dim)
-    store_ms: list[float] = []
-    search_embed_ms: list[float] = []
-    search_db_ms: list[float] = []
-    text_embed_ms: list[float] = []
-    text_db_ms: list[float] = []
-    last_situation = ""
-    for i in range(count):
-        tag = f"w{worker_id}-{i}"
-        episode = _new_episode(tag, agent_id="s2-agent", model_id="openai:gpt-4o")
-        last_situation = episode.situation
-        t0 = time.perf_counter()
-        await backend.store(episode)
-        store_ms.append((time.perf_counter() - t0) * 1000)
+    try:
+        store_ms: list[float] = []
+        search_embed_ms: list[float] = []
+        search_db_ms: list[float] = []
+        text_embed_ms: list[float] = []
+        text_db_ms: list[float] = []
+        last_situation = ""
+        for i in range(count):
+            tag = f"w{worker_id}-{i}"
+            episode = _new_episode(tag, agent_id="s2-agent", model_id="openai:gpt-4o")
+            last_situation = episode.situation
+            t0 = time.perf_counter()
+            await backend.store(episode)
+            store_ms.append((time.perf_counter() - t0) * 1000)
 
-    # Recall latency: embedding generation timed separately from the backend DB round-trip.
-    for _ in range(min(20, max(1, count // 10))):
-        t0 = time.perf_counter()
-        vec = _stub_embedding(last_situation)
-        t1 = time.perf_counter()
-        await backend.search_similar(vec, {"agent_id": "s2-agent"}, top_k=5, score_threshold=0.0)
-        t2 = time.perf_counter()
-        search_embed_ms.append((t1 - t0) * 1000)
-        search_db_ms.append((t2 - t1) * 1000)
-
-    if arm == "sqlite":
+        # Recall latency: embedding generation timed separately from the backend DB round-trip.
         for _ in range(min(20, max(1, count // 10))):
             t0 = time.perf_counter()
-            _ = last_situation.split()[-1]
+            vec = _stub_embedding(last_situation)
             t1 = time.perf_counter()
-            await backend.search_text(last_situation.split()[-1], {"agent_id": "s2-agent"}, top_k=5)
+            await backend.search_similar(vec, {"agent_id": "s2-agent"}, top_k=5, score_threshold=0.0)
             t2 = time.perf_counter()
-            text_embed_ms.append((t1 - t0) * 1000)
-            text_db_ms.append((t2 - t1) * 1000)
+            search_embed_ms.append((t1 - t0) * 1000)
+            search_db_ms.append((t2 - t1) * 1000)
 
-    await backend.close()
+        if arm == "sqlite":
+            for _ in range(min(20, max(1, count // 10))):
+                t0 = time.perf_counter()
+                _ = last_situation.split()[-1]
+                t1 = time.perf_counter()
+                await backend.search_text(last_situation.split()[-1], {"agent_id": "s2-agent"}, top_k=5)
+                t2 = time.perf_counter()
+                text_embed_ms.append((t1 - t0) * 1000)
+                text_db_ms.append((t2 - t1) * 1000)
+
+    finally:
+        await backend.close()
     return {
         "worker_id": worker_id,
         "written": count,
@@ -216,11 +218,13 @@ async def _worker_review(path: Path, worker_id: int, command_kwargs: dict[str, A
 
     backend = SQLiteEpisodeBackend(path)
     await backend.configure()
-    command = ReviewCommand(**command_kwargs)
-    t0 = time.perf_counter()
-    receipt = await backend.apply_review(command)
-    elapsed_ms = (time.perf_counter() - t0) * 1000
-    await backend.close()
+    try:
+        command = ReviewCommand(**command_kwargs)
+        t0 = time.perf_counter()
+        receipt = await backend.apply_review(command)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+    finally:
+        await backend.close()
     return {
         "worker_id": worker_id,
         "result": receipt.result,
@@ -231,15 +235,17 @@ async def _worker_review(path: Path, worker_id: int, command_kwargs: dict[str, A
 
 async def _worker_filter(path: Path, worker_id: int, count: int, namespace: dict[str, str]) -> dict[str, Any]:
     backend = await _open_backend("sqlite" if "sqlite" in str(path) else "faiss", path, dim=8)
-    for i in range(count):
-        tag = f"filter-{worker_id}-{i}"
-        episode = _new_episode(
-            tag,
-            agent_id=namespace["agent_id"],
-            model_id=namespace["model_id"],
-        )
-        await backend.store(episode)
-    await backend.close()
+    try:
+        for i in range(count):
+            tag = f"filter-{worker_id}-{i}"
+            episode = _new_episode(
+                tag,
+                agent_id=namespace["agent_id"],
+                model_id=namespace["model_id"],
+            )
+            await backend.store(episode)
+    finally:
+        await backend.close()
     return {"worker_id": worker_id, "written": count, "namespace": namespace}
 
 
@@ -301,21 +307,23 @@ async def _restart_and_replay(db_path: Path, command_kwargs: dict[str, Any]) -> 
 
     backend = SQLiteEpisodeBackend(db_path)
     await backend.configure()
-    command = ReviewCommand(**command_kwargs)
-    applied_on_replay = await backend.replay([command])
+    try:
+        command = ReviewCommand(**command_kwargs)
+        applied_on_replay = await backend.replay([command])
 
-    assert backend._db is not None  # internal handle, verification-only
-    cur = await backend._db.execute(
-        "SELECT COUNT(*) FROM reviews WHERE outcome_id = ? AND episode_id = ?",
-        (command.outcome_id, command.episode_id),
-    )
-    review_count = (await cur.fetchone())[0]
-    state_cur = await backend._db.execute(
-        "SELECT apply_revision FROM memory_state WHERE episode_id = ?", (command.episode_id,)
-    )
-    state_row = await state_cur.fetchone()
-    converged = review_count == 1 and state_row is not None and state_row[0] == command.expected_apply_revision + 1
-    await backend.close()
+        assert backend._db is not None  # internal handle, verification-only
+        cur = await backend._db.execute(
+            "SELECT COUNT(*) FROM reviews WHERE outcome_id = ? AND episode_id = ?",
+            (command.outcome_id, command.episode_id),
+        )
+        review_count = (await cur.fetchone())[0]
+        state_cur = await backend._db.execute(
+            "SELECT apply_revision FROM memory_state WHERE episode_id = ?", (command.episode_id,)
+        )
+        state_row = await state_cur.fetchone()
+        converged = review_count == 1 and state_row is not None and state_row[0] == command.expected_apply_revision + 1
+    finally:
+        await backend.close()
     return {"applied_on_replay": applied_on_replay, "converged": converged, "review_rows": review_count}
 
 
@@ -384,9 +392,11 @@ def _run_review_workload(workload: Workload, tmp_dir: Path, kind: str) -> dict[s
 
     async def _seed() -> str:
         backend = await _open_backend("sqlite", db_path, dim=8)
-        episode = _new_episode("review-target", agent_id="s2-agent")
-        await backend.store(episode)
-        await backend.close()
+        try:
+            episode = _new_episode("review-target", agent_id="s2-agent")
+            await backend.store(episode)
+        finally:
+            await backend.close()
         return episode.episode_id
 
     episode_id = asyncio.run(_seed())
@@ -440,9 +450,11 @@ def _run_crash_workload(workload: Workload, tmp_dir: Path) -> dict[str, Any]:
 
     async def _seed() -> str:
         backend = await _open_backend("sqlite", db_path, dim=8)
-        episode = _new_episode(f"crash-target-{workload.crash_at}", agent_id="s2-agent")
-        await backend.store(episode)
-        await backend.close()
+        try:
+            episode = _new_episode(f"crash-target-{workload.crash_at}", agent_id="s2-agent")
+            await backend.store(episode)
+        finally:
+            await backend.close()
         return episode.episode_id
 
     episode_id = asyncio.run(_seed())
@@ -531,42 +543,44 @@ def _run_import_workload(workload: Workload, tmp_dir: Path) -> dict[str, Any]:
 
     async def _run() -> dict[str, Any]:
         backend = await _open_backend("sqlite", db_path, dim=8)
-        ids = []
-        for i in range(workload.episodes):
-            legacy_id = f"coder-feedback:{i}"
-            episode_id = str(uuid.uuid5(_IMPORT_NAMESPACE, legacy_id))
-            episode = _new_episode(
-                f"import-{i}",
-                agent_id="s2-agent",
-                episode_id=episode_id,
-                created_at=original_ts,
-                expires_at=None,
-                metadata={"source": "feedback_import", "legacy_id": legacy_id},
-            )
-            ids.append(episode_id)
-            await backend.store(episode)
-        first_pass_count = await backend.count({"agent_id": "s2-agent"})
+        try:
+            ids = []
+            for i in range(workload.episodes):
+                legacy_id = f"coder-feedback:{i}"
+                episode_id = str(uuid.uuid5(_IMPORT_NAMESPACE, legacy_id))
+                episode = _new_episode(
+                    f"import-{i}",
+                    agent_id="s2-agent",
+                    episode_id=episode_id,
+                    created_at=original_ts,
+                    expires_at=None,
+                    metadata={"source": "feedback_import", "legacy_id": legacy_id},
+                )
+                ids.append(episode_id)
+                await backend.store(episode)
+            first_pass_count = await backend.count({"agent_id": "s2-agent"})
 
-        # Re-run the same import batch — must be idempotent (no new rows, timestamps preserved).
-        for i in range(workload.episodes):
-            legacy_id = f"coder-feedback:{i}"
-            episode_id = str(uuid.uuid5(_IMPORT_NAMESPACE, legacy_id))
-            episode = _new_episode(
-                f"import-{i}",
-                agent_id="s2-agent",
-                episode_id=episode_id,
-                created_at=original_ts,
-                expires_at=None,
-                metadata={"source": "feedback_import", "legacy_id": legacy_id},
-            )
-            await backend.store(episode)
-        second_pass_count = await backend.count({"agent_id": "s2-agent"})
+            # Re-run the same import batch — must be idempotent (no new rows, timestamps preserved).
+            for i in range(workload.episodes):
+                legacy_id = f"coder-feedback:{i}"
+                episode_id = str(uuid.uuid5(_IMPORT_NAMESPACE, legacy_id))
+                episode = _new_episode(
+                    f"import-{i}",
+                    agent_id="s2-agent",
+                    episode_id=episode_id,
+                    created_at=original_ts,
+                    expires_at=None,
+                    metadata={"source": "feedback_import", "legacy_id": legacy_id},
+                )
+                await backend.store(episode)
+            second_pass_count = await backend.count({"agent_id": "s2-agent"})
 
-        deleted = await backend.delete_expired()
-        after_delete_count = await backend.count({"agent_id": "s2-agent"})
-        recent = await backend.get_recent({"agent_id": "s2-agent"}, limit=1)
-        preserved_ts = recent[0].created_at == original_ts if recent else False
-        await backend.close()
+            deleted = await backend.delete_expired()
+            after_delete_count = await backend.count({"agent_id": "s2-agent"})
+            recent = await backend.get_recent({"agent_id": "s2-agent"}, limit=1)
+            preserved_ts = recent[0].created_at == original_ts if recent else False
+        finally:
+            await backend.close()
         return {
             "first_pass_count": first_pass_count,
             "second_pass_count": second_pass_count,
