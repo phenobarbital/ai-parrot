@@ -140,8 +140,7 @@ def mcp_local(
         # toolkit config, which cannot help it.
         if isinstance(exc, ValueError) and str(exc).startswith("Unknown toolkit name:"):
             click.echo(
-                f"No toolkit named {name!r} is configured. Install it with: "
-                f"parrot toolkits install {name}",
+                f"No toolkit named {name!r} is configured. Install it with: " f"parrot toolkits install {name}",
                 err=True,
             )
         sys.exit(1)

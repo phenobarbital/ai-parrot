@@ -119,8 +119,7 @@ def build_research_mcp(repo_root: Path) -> tuple[dict[str, Any], list[str]]:
         tools.extend(WIKI_MCP_TOOLS)
     else:
         logger.warning(
-            "wikitoolkit binary not found (looked at %r) — research agents "
-            "get no wiki graph-search MCP server.",
+            "wikitoolkit binary not found (looked at %r) — research agents " "get no wiki graph-search MCP server.",
             wikitoolkit_cmd,
         )
 
@@ -142,8 +141,7 @@ def build_research_mcp(repo_root: Path) -> tuple[dict[str, Any], list[str]]:
         section = cfg.toolkits.get(name)
         if section is None:
             logger.warning(
-                "DEV_LOOP_RESEARCH_MCP_TOOLKITS names unknown toolkit %r "
-                "(resolvable: %s) — skipped.",
+                "DEV_LOOP_RESEARCH_MCP_TOOLKITS names unknown toolkit %r " "(resolvable: %s) — skipped.",
                 name,
                 ", ".join(sorted(cfg.toolkits)),
             )
