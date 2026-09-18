@@ -3,6 +3,7 @@
 One ``TurnRunner`` (parrot/cli/session.py) produces these; the inline REPL and the Textual
 workspace consume them. Nothing here performs I/O.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,6 +58,7 @@ class TextDelta(TurnEvent):
 
 class ToolStarted(TurnEvent):
     """``call_id`` is the lifecycle event's ``trace_context.span_id``; ``args_summary`` is already truncated."""
+
     kind: TurnEventKind = TurnEventKind.TOOL_STARTED
     call_id: str
     tool_name: str
@@ -83,6 +85,7 @@ class ToolFailed(TurnEvent):
 
 class TurnCompleted(TurnEvent):
     """``message`` is the AIMessage or backend response object (duck-typed: .output/.response/.tool_calls/.usage)."""
+
     kind: TurnEventKind = TurnEventKind.COMPLETED
     text: str
     message: Any
