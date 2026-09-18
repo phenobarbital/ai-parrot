@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-18T00:30:14.274956+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-18T10:20:41+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -388,7 +388,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -399,8 +399,8 @@
       "parallelism_notes": "Documents the option surface fixed by TASK-3413 (cli/agent_repl.py) and the attach hook from TASK-3415 (agentd/cli.py). Creates docs/cli/parrot-agent.md, edits docs/agentd.md; a doc-presence test file is its validation target.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3417-docs-parrot-agent.md"
+      "completed_at": "2026-09-18T10:20:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3417-docs-parrot-agent.md"
     }
   ]
 }

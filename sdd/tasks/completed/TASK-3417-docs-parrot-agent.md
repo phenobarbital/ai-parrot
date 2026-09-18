@@ -258,10 +258,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: MCP seat `gemini` (backend google-compat, model gemini-3.5-flash, attempt ac2a456c8517476a87472bd589393357)
+**Date**: 2026-09-18
+**Notes**: Created `docs/cli/parrot-agent.md` (usage, keybindings, slash
+commands, resume vs. history, server mode routes, non-interactive rules,
+troubleshooting) and updated `docs/agentd.md` with the `add_post_turn_hook`
+migration note (TASK-3415). Added `test_docs_parrot_agent.py` guard test.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Orchestrator spot-checked the documented keybindings against
+`AgentWorkspaceApp.BINDINGS` (`app.py`) — exact match (pageup/pagedown,
+end, ctrl+c, ctrl+d, f2, f3, ctrl+l). Merge clean via the engine (auto
+lint fix applied). `pytest test_docs_parrot_agent.py`: 11 passed.
 
-**Deviations from spec**: none | describe if any
+**Feedback recorded**: none — clean delivery, spot-checked accurate.
+**Deviations from spec**: none.
