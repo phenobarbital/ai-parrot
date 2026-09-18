@@ -149,7 +149,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -160,8 +160,8 @@
       "parallelism_notes": "Imports load_session_pointer from TASK-3401 (cli/modes.py); /resume and /clear call TurnRunner.load_history/reset_session from TASK-3404 (cli/session.py). Sole editor of cli/commands.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3406-command-context-and-resume.md"
+      "completed_at": "2026-09-18T07:26:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3406-command-context-and-resume.md"
     },
     {
       "id": "TASK-3407",
