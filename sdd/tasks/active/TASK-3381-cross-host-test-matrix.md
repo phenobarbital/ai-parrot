@@ -51,7 +51,7 @@ the Completion Note and open a ledger issue.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/tests/mcp/test_toolkit_matrix.py` | CREATE | Cross-host lifecycle matrix |
-| `packages/ai-parrot/tests/mcp/conftest.py` | MODIFY | `repo_with_hosts` fixture |
+| `packages/ai-parrot/tests/mcp/conftest.py` | CREATE | `repo_with_hosts` fixture (file does not yet exist — corrected from MODIFY, verified via `ls packages/ai-parrot/tests/mcp/`) |
 
 ---
 
@@ -110,7 +110,7 @@ from parrot.mcp.toolkit_seed import available_templates        # verified: toolk
   "schema_version": 1,
   "targets": [
     {"path": "packages/ai-parrot/tests/mcp/test_toolkit_matrix.py", "action": "CREATE"},
-    {"path": "packages/ai-parrot/tests/mcp/conftest.py", "action": "MODIFY"}
+    {"path": "packages/ai-parrot/tests/mcp/conftest.py", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/cli/__init__.py#cli",
@@ -161,7 +161,7 @@ from parrot.mcp.toolkit_seed import available_templates        # verified: toolk
 5. Write the spawn test — *why*: proves an installed toolkit actually serves, which
    is the user-visible point of the whole feature.
 
-### `packages/ai-parrot/tests/mcp/conftest.py` (MODIFY)
+### `packages/ai-parrot/tests/mcp/conftest.py` (CREATE)
 ```python
 # occurrences: verify with `grep -c 'def ' packages/ai-parrot/tests/mcp/conftest.py`
 # ADD:
