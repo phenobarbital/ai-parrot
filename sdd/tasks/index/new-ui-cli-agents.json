@@ -34,7 +34,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +42,8 @@
       "parallelism_notes": "Root: creates parrot/cli/console.py (get_console, set_console, LiveRegion). Imports nothing from other tasks. Consumers: TASK-3405, 3407, 3414 (LiveRegion), TASK-3415 (get_console).",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3400-shared-console-live-region.md"
+      "completed_at": "2026-09-18T05:59:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3400-shared-console-live-region.md"
     },
     {
       "id": "TASK-3401",

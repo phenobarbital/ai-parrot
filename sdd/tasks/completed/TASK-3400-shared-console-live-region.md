@@ -400,10 +400,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt f90862da9c0447fabaedca003eba2f6a), via sdd-worker orchestrator
+**Date**: 2026-09-18
+**Notes**: Implemented `packages/ai-parrot/src/parrot/cli/console.py` per the
+blueprint: module-level `get_console()`/`set_console()`/`reset_console()`
+singleton seam plus `LiveRegion` (start/stop/pause/resume/update + `modal()`
+contextmanager) wrapping `rich.live.Live`, mirroring
+`devloop/renderer.py:82-107`'s `RunView.pause/resume` pattern. Degrades to
+sequential printing when the console is not a terminal (AC2): `start()`/
+`pause()`/`resume()` are no-ops and `update()` falls back to a single
+`console.print()`. `modal()` always resumes in a `finally` block. Guard test
+`test_console.py` covers singleton/override, non-TTY sequential print + ANSI
+scan, and modal pause/resume/idempotency.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+`ruff check` and `mypy` clean. `pytest packages/ai-parrot/tests/cli/test_console.py
+-q`: 3 passed (verified directly by the orchestrator after merge). The
+broader merge-tier `select_tests` sweep hits the same pre-existing, repo-wide
+test-collection failure on ~25 unrelated files (confirmed present on `dev`
+itself, independent of this change — see TASK-3399's Completion Note for the
+root cause) and is out of scope here.
 
-**Deviations from spec**: none | describe if any
+Merge was clean (`coder_merge` outcome=merged, no unexpected files); engine
+lint autofix (black) applied automatically.
+
+**Feedback recorded**: none — clean delivery, no confirmed defect.
+**Deviations from spec**: none.
