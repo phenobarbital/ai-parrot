@@ -153,8 +153,10 @@ as a drop-in replacement, with the type-specific parts expressed per
   - **Anthropic vision default bumped to `ClaudeModel.SONNET_5`** (`ask_to_image`
     and the new `detect_objects`).
   - **LLM-assisted descriptor utility** is in scope: proposes descriptors per
-    position from the POG PDF (primary) and a catalog lookup by SKU
-    (complete/validate); the user reviews.
+    position from the **POG PDF only** (catalog/SKU/price lookup discarded — no
+    data to back it yet); never proposes `price`; the user reviews.
+  - **Backend field is one `"provider:model"` string** (the `LLMFactory.create`
+    format), with a matching nullable DB column.
   - **`run(image=…)` accepts one image or a list**; the handler stays
     single-file in this feature.
   - **Header/backlit/poster are zones detected apart**, outside row→shelf
@@ -503,7 +505,7 @@ hook.
 - `planogram-registration-scoring`: row→shelf registration, per-facing decision, multi-photo merge, strict/lenient, per-shelf and global scores, projection to `ComplianceResult`.
 - `planogram-type-ink-wall`: new `InkWall` type.
 - `planogram-shape-spike`: time-boxed measurement of profile-driven shape proposals on real ProductOnShelves photos; output fixes the shape profiles (first task).
-- `planogram-descriptor-assistant`: LLM-assisted utility proposing per-position descriptors from the POG PDF + catalog lookup by SKU, for human review.
+- `planogram-descriptor-assistant`: LLM-assisted utility proposing per-position descriptors from the POG PDF, for human review (no catalog/SKU/price lookup).
 - `planogram-config-backend`: provider/model and `slots_definition` fields on `PlanogramConfig`, optional prompts, matching DB column + idempotent ALTER script.
 - `planogram-llm-benchmark`: reproducible backend comparison (confidence, scoring, object counts, duration) that informs the default model; no ground truth.
 - `anthropic-vision-parity`: `AnthropicClient.ask_to_image(no_memory=...)` and a new `AnthropicClient.detect_objects(...)` matching the Google client's contract.
@@ -790,6 +792,28 @@ class ClaudeModel:  SONNET_5 = "claude-sonnet-5"   # L15   (exists)
 # .../anthropic/client.py: ask_to_image default model = ClaudeModel.SONNET_4  (L1312) — stale default
 ```
 
+#### Reference photo for ProductOnShelves (spike input)
+
+`examples/planogram/photo_2026-09-18_20-36-30.jpg` — git-ignored, 1280×955,
+viewed 2026-09-18. An Epson EcoTank endcap:
+
+- **Backlit header**: large luminous panel, "EPSON — Goodbye Cartridges. Hello
+  Savings.", person + printer artwork. The largest, brightest rectangle in frame.
+- **Display shelf**: 3 white printers side by side on a white riser — low
+  contrast against the riser (hard case for threshold/contour proposals).
+- **3 electronic price tags** (white with a red band) on the riser's front edge,
+  one under each printer — same tag-below-product anchoring as the ink wall.
+- **Box stack below**: 6 product boxes in a 3-column × 2-row grid (white and
+  blue Epson boxes, strong rectangular edges), with small tags at the base.
+- **Distractors**: the left aisle shows other printers with price tags and the
+  right aisle shows unrelated products — all *outside* the fixture, all
+  detectable shapes.
+
+Implications for the spike: three shape profiles at very different scales
+(backlit ≫ boxes > printers ≫ tags); tags here are not plain white; printers need
+an edge/structure cue, not a brightness threshold; and fixture scoping must be
+solved without re-introducing a hard ROI gate.
+
 #### Verified Imports
 ```python
 from parrot_pipelines.planogram import PlanogramCompliance, AbstractPlanogramType   # planogram/__init__.py L4-22 (lazy __getattr__)
@@ -900,7 +924,10 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - [x] **Registration assumes strictly increasing shelves** — *Owner: Jesus Lara*: header/backlit/poster are **zones detected apart** (large luminous shape) and do not take part in row→shelf alignment; product rows register in increasing order.
 - [x] **What happens to `examples/planogram/plancheck/`** — *Owner: Jesus Lara*: stays as it is — an independent tool and a live reference for comparing results. Not moved, not deleted, not rewired.
 - [x] **`open_image` always enhances brightness/contrast** — *Owner: Jesus Lara*: perception, OCR and the crops sent to the LLM use the **untouched full-resolution image**; enhancement is kept only for the legacy adapter path.
-- [ ] **Which real ProductOnShelves planogram/photos feed the spike and the first `slots_definition`?** The only ProductOnShelves-like photo under `examples/planogram/` is a Best Buy store image; the client/fixture and its expected products are not identified yet. — *Owner: Jesus Lara*
-- [ ] **Which catalog backs the SKU lookup of the descriptor utility?** (`examples/clients/bestbuy_catalog/` is untracked work in progress; is it the intended source, and is it reachable from the package or only from examples?) — *Owner: Jesus Lara*
-- [ ] **Name/shape of the `PlanogramConfig` model field(s) for the backend** (one `"provider:model"` string as `LLMFactory.create` takes, or two fields) and whether the DB table gets a matching column. — *Owner: Jesus Lara*
+- [x] **Which real ProductOnShelves photo feeds the spike and the first `slots_definition`?** — *Owner: Jesus Lara*: `examples/planogram/photo_2026-09-18_20-36-30.jpg` (git-ignored, 1280×955). See "Reference photo" under Code Context for what it contains.
+- [x] **Which catalog backs the SKU lookup of the descriptor utility?** — *Owner: Jesus Lara*: none — **discarded**. There is no data yet to back SKU or price lookups. The descriptor utility works from the **POG PDF only**; `price` is never proposed by it and stays an optional, manually supplied field.
+- [x] **Shape of the `PlanogramConfig` backend field** — *Owner: Jesus Lara*: a single `"provider:model"` string, the format `LLMFactory.create` already takes (e.g. `google:gemini-3.5-flash`, `anthropic:claude-sonnet-5`), with a matching nullable column on `troc.planograms_configurations` added by the same ALTER script.
 - [ ] **Confidence weight of `llm_added` shapes** in the compare stage, and whether strict credit can ever be earned by an LLM-added detection. — *Owner: Jesus Lara*
+- [ ] **Fixture scoping without an ROI gate.** The reference photo shows neighbouring aisles full of other printers and price tags. With no ROI, perception will propose those too. How are off-fixture shapes excluded — anchor on the backlit + the box stack below it (soft scope, never a hard gate), let registration discard what does not align with `slots_definition`, or have the LLM flag `off_fixture`? — *Owner: Jesus Lara*
+- [ ] **Name of the backend field** on `PlanogramConfig` / the table (e.g. `llm`), given `PlanogramCompliance.__init__` already has `llm`, `llm_provider`, `llm_model` arguments. — *Owner: Jesus Lara*
+- [ ] **Photo resolution.** The reference photo is 1280×955 (messenger-compressed); price-tag text is a few pixels tall. Is this the resolution production will receive, or will originals be available? OCR expectations for ProductOnShelves depend on it. — *Owner: Jesus Lara*
