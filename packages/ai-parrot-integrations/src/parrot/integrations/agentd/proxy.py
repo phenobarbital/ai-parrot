@@ -113,9 +113,7 @@ class _DaemonBotProxy:
         Returns:
             A `_DaemonResponse` with an `.output` attribute.
         """
-        result = await self._client.call(
-            "chat.send", prompt=question, stream=False, metadata=kwargs
-        )
+        result = await self._client.call("chat.send", prompt=question, stream=False, metadata=kwargs)
         return _DaemonResponse(result)
 
     async def ask_stream(
@@ -337,8 +335,7 @@ async def _cmd_schedules(ctx: "CommandContext", proxy: DaemonAgentProxy, args: s
             ctx.renderer.print(f"[green]Added:[/green] {result}")
         else:
             ctx.renderer.print(
-                f"[yellow]Unknown /schedules subcommand: {sub}[/yellow] "
-                "(use list|add|pause|resume|remove)"
+                f"[yellow]Unknown /schedules subcommand: {sub}[/yellow] " "(use list|add|pause|resume|remove)"
             )
     except RpcRemoteError as exc:
         ctx.renderer.render_error(exc)
@@ -369,9 +366,7 @@ async def _cmd_invoke(ctx: "CommandContext", proxy: DaemonAgentProxy, args: str)
             return
 
     try:
-        result = await proxy._client.call(
-            "agent.invoke", params={"method": method, "kwargs": kwargs}
-        )
+        result = await proxy._client.call("agent.invoke", params={"method": method, "kwargs": kwargs})
     except RpcRemoteError as exc:
         ctx.renderer.render_error(exc)
         return

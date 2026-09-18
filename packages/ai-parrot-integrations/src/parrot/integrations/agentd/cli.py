@@ -47,12 +47,8 @@ __all__ = [
 
 @click.command("serve")
 @click.argument("config_or_target")
-@click.option(
-    "--name", default=None, help="Service name (required for a module:attr target)."
-)
-@click.option(
-    "--socket", "socket_path", default=None, type=click.Path(), help="Explicit UDS socket path."
-)
+@click.option("--name", default=None, help="Service name (required for a module:attr target).")
+@click.option("--socket", "socket_path", default=None, type=click.Path(), help="Explicit UDS socket path.")
 @click.option("--dsn", default=None, help="Postgres DSN for schedule persistence.")
 @click.option(
     "--redis/--no-redis",
@@ -105,9 +101,7 @@ def _build_serve_config(
             cfg = cfg.model_copy(update={"name": name})
     else:
         if not name:
-            raise click.UsageError(
-                "--name is required when serving directly from a module:attr target."
-            )
+            raise click.UsageError("--name is required when serving directly from a module:attr target.")
         cfg = AgentServiceConfig.from_target(config_or_target, name=name)
 
     overrides: dict[str, Any] = {}
@@ -124,9 +118,7 @@ def _build_serve_config(
     if use_redis is not None:
         scheduler_overrides["redis"] = use_redis
     if scheduler_overrides:
-        cfg = cfg.model_copy(
-            update={"scheduler": cfg.scheduler.model_copy(update=scheduler_overrides)}
-        )
+        cfg = cfg.model_copy(update={"scheduler": cfg.scheduler.model_copy(update=scheduler_overrides)})
 
     return cfg
 
@@ -183,9 +175,7 @@ async def _run_attach(name_or_socket: str, no_stream: bool) -> None:
     register_daemon_commands(repl, proxy)
     repl.add_post_turn_hook(_drain_events_hook(proxy))
 
-    console.print(
-        f"\n[bold green]Attached to daemon:[/bold green] [bold]{display_name}[/bold]"
-    )
+    console.print(f"\n[bold green]Attached to daemon:[/bold green] [bold]{display_name}[/bold]")
     console.print(
         "[dim]Type your message to chat.  Use /help for slash commands "
         "(including /status, /schedules, /invoke).  Ctrl+D or /quit to "
@@ -251,9 +241,7 @@ async def _run_ask(name_or_socket: str, question: str) -> None:
 
     try:
         try:
-            result = await client.call(
-                "chat.send", prompt=question, stream=False, metadata={}
-            )
+            result = await client.call("chat.send", prompt=question, stream=False, metadata={})
         except RpcRemoteError as exc:
             click.echo(f"Error: {exc}", err=True)
             raise SystemExit(1) from exc

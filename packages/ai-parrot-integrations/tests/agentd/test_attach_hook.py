@@ -1,4 +1,5 @@
 """`parrot attach` uses AgentREPL.add_post_turn_hook (FEAT-573 TASK-3415, spec M15 / AC15)."""
+
 from __future__ import annotations
 
 import asyncio
