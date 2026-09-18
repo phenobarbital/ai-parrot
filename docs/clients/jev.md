@@ -154,6 +154,14 @@ to `JevBadRequestError` (400/422), `JevAuthenticationError` (401/403),
 `JevNotFoundError` (404), `JevRateLimitError` (429), `JevServerError` (5xx).
 `invoke()` wraps everything in `InvokeError` (`.original` holds the cause).
 
+## Related: Jev-guided compaction in Claude Code
+
+`parrot claude install` also enables the
+[fast-jev-compaction](https://github.com/tamaratran/fast-jev-compaction)
+plugin, which uses the same `POST /v1/systemone` noul questions to prune a
+Claude Code session's tool calls verbatim instead of summarising them. See
+`docs/wiki-claude-code.md` § fast-jev-compaction.
+
 ## Design notes
 
 - Prompts and history are *state*, not a chat transcript: keep only the

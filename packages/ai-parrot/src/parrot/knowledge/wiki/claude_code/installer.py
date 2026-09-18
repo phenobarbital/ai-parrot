@@ -775,6 +775,9 @@ def install_claude_integration(
     bookstore: bool = True,
     toolkits: Sequence[str] = (),
     approve_mcp: bool = True,
+    compaction: bool = False,
+    typesafe_api_key: Optional[str] = None,
+    plugin_cli: bool = True,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -790,6 +793,14 @@ def install_claude_integration(
             Empty seeds nothing (spec §8 Q1: opt-in).
         approve_mcp: Authorize the managed servers in
             `.claude/settings.local.json` after reconciliation.
+        compaction: Install the ``fast-jev-compaction`` Claude Code plugin
+            wiring (Jev-guided verbatim compaction); see
+            :mod:`parrot.knowledge.wiki.claude_code.compaction`.
+        typesafe_api_key: TypeSafe API key to store in the git-ignored
+            ``.claude/settings.local.json`` for the plugin; ``None`` leaves
+            it to ``TYPESAFE_API_KEY``.
+        plugin_cli: Let the compaction installer also run the ``claude
+            plugin`` CLI when it is on ``PATH``.
 
     Returns:
         Human-readable list of actions performed.
@@ -856,6 +867,10 @@ def install_claude_integration(
         from .bookstore import install_bookstore
 
         actions.extend(install_bookstore(root))
+    if compaction:
+        from .compaction import install_compaction
+
+        actions.extend(install_compaction(root, api_key=typesafe_api_key, plugin_cli=plugin_cli))
     return actions
 
 
@@ -875,8 +890,10 @@ def uninstall_claude_integration(root: Path) -> list[str]:
     actions: list[str] = []
 
     from .bookstore import uninstall_bookstore
+    from .compaction import uninstall_compaction
 
     actions.extend(uninstall_bookstore(root))
+    actions.extend(uninstall_compaction(root))
 
     claude_md = root / "CLAUDE.md"
     if claude_md.exists():
@@ -1065,9 +1082,11 @@ def integration_status(root: Path) -> dict[str, Any]:
                 pass
 
     from .bookstore import bookstore_status
+    from .compaction import compaction_status
 
     return {
         **bookstore_status(root),
+        **compaction_status(root),
         "root": str(root),
         "config": config_path(root).exists(),
         "wiki_built": config.is_built(root),

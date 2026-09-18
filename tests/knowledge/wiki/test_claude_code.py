@@ -32,6 +32,14 @@ from parrot.knowledge.wiki.project import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_claude_plugin_cli(monkeypatch):
+    """Never shell out to a real ``claude`` CLI from the compaction installer."""
+    from parrot.knowledge.wiki.claude_code import compaction
+
+    monkeypatch.setattr(compaction, "_claude_binary", lambda: None)
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A fake repo with a .git dir (so the git hook installs)."""
