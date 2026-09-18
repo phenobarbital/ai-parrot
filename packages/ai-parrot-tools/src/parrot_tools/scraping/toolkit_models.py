@@ -7,10 +7,65 @@ projection), and PlanSaveResult (plan save operation result).
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+#: Environment/navconfig key holding a default Google Chrome executable,
+#: used when no explicit ``browser_binary`` is configured (e.g. a machine
+#: that only has ``/opt/google/chrome-beta/google-chrome-beta``).
+DEFAULT_CHROME_EXECUTABLE_PATH_KEY = "DEFAULT_CHROME_EXECUTABLE_PATH"
+
+#: Browser names (``DriverConfig.browser``) that launch a Chrome binary.
+_CHROME_BROWSERS = frozenset({"chrome", "chromium", "undetected"})
+
+
+def resolve_browser_binary(
+    browser_binary: Optional[str],
+    browser: str = "chrome",
+    channel: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve the browser executable a driver should launch.
+
+    An explicit ``browser_binary`` always wins and is returned untouched.
+    Otherwise, for Chrome-family browsers, the ``DEFAULT_CHROME_EXECUTABLE_PATH``
+    setting (environment or navconfig) is used when it points at an existing
+    file. The default is skipped when a non-Chrome Playwright channel
+    (e.g. ``"msedge"``) is requested, so it never hijacks another browser.
+
+    Args:
+        browser_binary: Explicitly configured executable path, if any.
+        browser: ``DriverConfig.browser`` name (``"chrome"``, ``"firefox"``...).
+        channel: Playwright channel, if any.
+
+    Returns:
+        The executable path to launch, or ``None`` to let the driver use
+        its own default (bundled Chromium, channel lookup, or driver manager).
+    """
+    if browser_binary:
+        return browser_binary
+    if (browser or "chrome").lower() not in _CHROME_BROWSERS:
+        return None
+    if channel and not channel.lower().startswith("chrom"):
+        return None
+    from navconfig import config
+
+    default = config.get(DEFAULT_CHROME_EXECUTABLE_PATH_KEY)
+    if not default:
+        return None
+    if not Path(default).is_file():
+        logger.warning(
+            "%s=%s does not exist; falling back to the driver's default browser",
+            DEFAULT_CHROME_EXECUTABLE_PATH_KEY,
+            default,
+        )
+        return None
+    return str(default)
 
 
 class DriverConfig(BaseModel):
@@ -40,6 +95,10 @@ class DriverConfig(BaseModel):
         browser_channel: Playwright browser channel (e.g. ``"chrome"``,
             ``"msedge"``) to launch a real installed browser instead of
             the bundled engine. Ignored by the Selenium backend.
+        browser_binary: Path to the browser executable to launch
+            (Playwright ``executable_path`` / Selenium ``binary_location``).
+            For Chrome-family browsers it falls back to the
+            ``DEFAULT_CHROME_EXECUTABLE_PATH`` setting when unset.
         cdp_endpoint_url: Explicit Obscura CDP endpoint (FEAT-530).
             Only used when ``driver_type="obscura"``.
         obscura_binary: Path to (or ``PATH``-resolvable name of) the
@@ -67,6 +126,7 @@ class DriverConfig(BaseModel):
     user_data_dir: Optional[str] = None
     profile_directory: Optional[str] = None
     browser_channel: Optional[str] = None
+    browser_binary: Optional[str] = None
     cdp_endpoint_url: Optional[str] = None
     obscura_binary: Optional[str] = None
     obscura_port: int = 9222

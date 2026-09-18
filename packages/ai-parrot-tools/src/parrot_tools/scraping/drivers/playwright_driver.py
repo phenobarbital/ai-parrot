@@ -63,7 +63,8 @@ class PlaywrightDriver(AbstractDriver):
         instead of a fresh browser + incognito context, so the page sees
         the profile's cookies, saved sessions and credential store
         (``config.channel="chrome"`` opens a real installed Google Chrome
-        for real Chrome profiles).
+        for real Chrome profiles; ``config.executable_path`` points at a
+        binary outside the channel's hardcoded install location).
         """
         from playwright.async_api import async_playwright
 
@@ -86,6 +87,8 @@ class PlaywrightDriver(AbstractDriver):
             launch_kwargs["proxy"] = self.config.proxy
         if self.config.channel:
             launch_kwargs["channel"] = self.config.channel
+        if self.config.executable_path:
+            launch_kwargs["executable_path"] = self.config.executable_path
 
         if self.config.user_data_dir:
             context_kwargs = self._build_context_kwargs()

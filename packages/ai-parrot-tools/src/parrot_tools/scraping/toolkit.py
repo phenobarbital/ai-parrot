@@ -280,6 +280,10 @@ class WebScrapingToolkit(AbstractToolkit):
         overlay_housekeeping: Dismiss overlays between actions.
         disable_images: Block image loading.
         custom_user_agent: Override user agent.
+        browser_binary: Browser executable to launch (Playwright
+            ``executable_path`` / Selenium ``binary_location``). For
+            Chrome-family browsers it defaults to the
+            ``DEFAULT_CHROME_EXECUTABLE_PATH`` setting.
         plans_dir: Root directory for plan storage.
         llm_client: LLM client with ``async complete(prompt) -> str``.
         cdp_endpoint_url: Explicit Obscura CDP endpoint (FEAT-530). Only
@@ -310,6 +314,7 @@ class WebScrapingToolkit(AbstractToolkit):
         overlay_housekeeping: bool = True,
         disable_images: bool = False,
         custom_user_agent: str | None = None,
+        browser_binary: str | None = None,
         plans_dir: str | Path | None = None,
         llm_client: Any | None = None,
         cdp_endpoint_url: str | None = None,
@@ -334,6 +339,7 @@ class WebScrapingToolkit(AbstractToolkit):
             overlay_housekeeping=overlay_housekeeping,
             disable_images=disable_images,
             custom_user_agent=custom_user_agent,
+            browser_binary=browser_binary,
             cdp_endpoint_url=cdp_endpoint_url,
             obscura_binary=obscura_binary,
             obscura_port=obscura_port,
