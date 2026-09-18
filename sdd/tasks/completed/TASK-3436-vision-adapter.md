@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3420, TASK-3421, TASK-3426
@@ -405,7 +405,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+identification/ package: VisionError; SUPPORTED_KWARGS keyed by client_name (google / claude / openai; unknown -> common subset) + KNOWN_KWARGS; normalise_kwargs (unknown raises, unsupported omitted with a debug log, None dropped); cache_key (canonical JSON incl. backend string, max_tokens, stage, prompt version, FINAL prompt, schema qualname + JSON schema, image sha256s); picklable encode_png; VisionAdapter (capability guard; ask = cache -> call -> extract -> up to repair_retries repair prompts -> store under the original key; semaphore held only around the provider call; asyncio.wait_for timeout -> VisionError; CancelledError propagates; model kwarg only when pinned; temperature 0.0; no_memory requested always; system_prompt native for claude, folded into the prompt otherwise; cache via asyncio.to_thread, corrupt/incompatible entries are misses, cache_dir=None disables).
+Tests: test_vision_adapter.py 16 passed; ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
