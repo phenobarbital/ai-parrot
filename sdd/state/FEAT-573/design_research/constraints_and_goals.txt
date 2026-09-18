@@ -1,0 +1,9 @@
+- Flow defaults: `feature`, based on `dev`; these were asked in round 1 and remain defaults until answered.
+- Keep `parrot agent <name>`, optional selection, `--list`, `--server`, and `--no-stream` behavior available.
+- Reuse agent loading, identity propagation, slash commands, and bot-owned conversation memory. Never introduce direct provider SDK calls or changes to `clients/base.py` for presentation.
+- Keep an inline fallback for unsupported terminals and an explicit UI mode override. Define non-TTY behavior before implementation; the existing REPL is not a proven batch interface.
+- Core declares Python `>=3.11,<3.14`, Rich `>=13.0`, and prompt_toolkit `>=3.0`. Textual and Toad are not declared workspace dependencies.
+- A Textual dependency is proposed only. User approval and resolver verification are required before adding it; this brainstorm changes no dependencies.
+- Async I/O and one terminal display owner. Do not reuse blocking retry sleeps or have independent Rich Live and input renderers compete for the screen.
+- Preserve permission context and existing device-code authentication. UI work must not silently change tool authorization.
+- Initial scope assumed for exploration: one active agent/session, multiline composer, transcript navigation, commands, cancellation, and available tool details. Persistent resume, embedded shell, file attachments, and concurrent sessions require separate scope decisions.
