@@ -36,8 +36,7 @@ CORE_TOOLKITS = ["memory", "database-query"]  # no optional distribution require
 # ---------------------------------------------------------------------------
 _CORE_SRC = Path(__file__).resolve().parents[2] / "src"
 
-_BOOTSTRAP = textwrap.dedent(
-    f"""
+_BOOTSTRAP = textwrap.dedent(f"""
     import sys, types
     sys.path.insert(0, {str(_CORE_SRC)!r})
 
@@ -69,8 +68,7 @@ _BOOTSTRAP = textwrap.dedent(
 
     from parrot.cli import cli
     cli(prog_name="parrot")
-    """
-)
+    """)
 
 
 def _spawn(cwd: Path, *args: str) -> subprocess.Popen:
