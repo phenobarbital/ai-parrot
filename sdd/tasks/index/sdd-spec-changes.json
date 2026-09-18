@@ -5,14 +5,14 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-18T22:25:14+00:00",
-  "completed_at": "2026-09-18T23:31:46+00:00",
+  "completed_at": "2026-09-18T23:50:49+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
     {
       "id": "TASK-3459",
       "slug": "taxonomy-parser",
-      "title": "Taxonomy parser — DocTaxonomy, parse_taxonomy, KNOWN_PROJECTS",
+      "title": "Taxonomy parser \u2014 DocTaxonomy, parse_taxonomy, KNOWN_PROJECTS",
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T22:39:36+00:00",
-      "file": "sdd/tasks/completed/TASK-3459-taxonomy-parser.md"
+      "file": "sdd/tasks/completed/TASK-3459-taxonomy-parser.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3460",
@@ -45,12 +46,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T22:52:02+00:00",
-      "file": "sdd/tasks/completed/TASK-3460-templates-taxonomy-keys.md"
+      "file": "sdd/tasks/completed/TASK-3460-templates-taxonomy-keys.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3461",
       "slug": "doc-taxonomy-cli",
-      "title": "doc_taxonomy CLI — list SDD docs by project/tag",
+      "title": "doc_taxonomy CLI \u2014 list SDD docs by project/tag",
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
@@ -65,12 +67,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T22:45:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3461-doc-taxonomy-cli.md"
+      "file": "sdd/tasks/completed/TASK-3461-doc-taxonomy-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3462",
       "slug": "wiki-ingest-taxonomy-summary",
-      "title": "Wiki ledger ingest — projects/tags in spec page summary",
+      "title": "Wiki ledger ingest \u2014 projects/tags in spec page summary",
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
@@ -85,12 +88,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T22:56:34+00:00",
-      "file": "sdd/tasks/completed/TASK-3462-wiki-ingest-taxonomy-summary.md"
+      "file": "sdd/tasks/completed/TASK-3462-wiki-ingest-taxonomy-summary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3463",
       "slug": "backfill-taxonomy-script",
-      "title": "backfill_taxonomy — infer projects for existing docs (dry-run default)",
+      "title": "backfill_taxonomy \u2014 infer projects for existing docs (dry-run default)",
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
@@ -105,12 +109,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T23:03:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3463-backfill-taxonomy-script.md"
+      "file": "sdd/tasks/completed/TASK-3463-backfill-taxonomy-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3464",
       "slug": "authoring-commands-fill-taxonomy",
-      "title": "Authoring commands fill projects/tags — brainstorm, proposal, fromjira",
+      "title": "Authoring commands fill projects/tags \u2014 brainstorm, proposal, fromjira",
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
@@ -126,7 +131,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T23:14:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3464-authoring-commands-fill-taxonomy.md"
+      "file": "sdd/tasks/completed/TASK-3464-authoring-commands-fill-taxonomy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3465",
@@ -143,16 +149,17 @@
         "TASK-3460"
       ],
       "parallel": true,
-      "parallelism_notes": "sanity-check snippet calls parse_taxonomy from TASK-3459 (scripts/sdd/sdd_meta.py); §5 frontmatter shape mirrors the sdd/templates/spec.md block from TASK-3460",
+      "parallelism_notes": "sanity-check snippet calls parse_taxonomy from TASK-3459 (scripts/sdd/sdd_meta.py); \u00a75 frontmatter shape mirrors the sdd/templates/spec.md block from TASK-3460",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T23:19:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3465-sdd-spec-carry-forward-and-ideation.md"
+      "file": "sdd/tasks/completed/TASK-3465-sdd-spec-carry-forward-and-ideation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3466",
       "slug": "status-next-taxonomy-filters",
-      "title": "/sdd-status and /sdd-next — --project/--tag filters",
+      "title": "/sdd-status and /sdd-next \u2014 --project/--tag filters",
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
@@ -167,12 +174,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T23:03:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3466-status-next-taxonomy-filters.md"
+      "file": "sdd/tasks/completed/TASK-3466-status-next-taxonomy-filters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3467",
       "slug": "sdd-tojira-labels",
-      "title": "/sdd-tojira — map projects ∪ tags to Jira labels",
+      "title": "/sdd-tojira \u2014 map projects \u222a tags to Jira labels",
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
@@ -187,7 +195,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T23:09:37+00:00",
-      "file": "sdd/tasks/completed/TASK-3467-sdd-tojira-labels.md"
+      "file": "sdd/tasks/completed/TASK-3467-sdd-tojira-labels.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3468",
@@ -209,7 +218,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": "2026-09-18T23:31:46+00:00",
-      "file": "sdd/tasks/completed/TASK-3468-workflow-docs-taxonomy.md"
+      "file": "sdd/tasks/completed/TASK-3468-workflow-docs-taxonomy.md",
+      "verification": "verified"
     }
   ]
 }
