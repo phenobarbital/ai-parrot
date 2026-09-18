@@ -184,7 +184,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -194,8 +194,8 @@
       "parallelism_notes": "Imports UNSET, resolve_backend and ResolvedBackend from TASK-3426 (planogram/backend.py).",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3427-pipeline-base-sentinel-open-image.md"
+      "completed_at": "2026-09-18T23:29:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3427-pipeline-base-sentinel-open-image.md"
     },
     {
       "id": "TASK-3428",

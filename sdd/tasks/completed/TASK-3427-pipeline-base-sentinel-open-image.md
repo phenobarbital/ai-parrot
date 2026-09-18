@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3426
@@ -375,7 +375,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+AbstractPipeline.__init__(llm, llm_provider=UNSET, llm_model=UNSET, *, config_backend=None, **kwargs): resolve_backend -> self.resolved_backend on every path; None or 'provider:model' string builds the client via _get_llm(resolved.provider, resolved.model, **kwargs); instance kept as is. self.llm_provider pre-set to the resolved provider before _get_llm (which overwrites it from client_name) so it is never None when _get_llm is patched. config_backend is keyword-only and never forwarded. roi_client block untouched. open_image(..., *, enhance=True).
+Removed the pre-existing unused PIL.ImageFont import (AC: ruff clean on abstract.py).
+Behaviour note: subclasses that pass llm_provider='google' with llm_model=None now resolve to matrix row 4 => model = DEFAULT_LLM_MODEL (package default) instead of the Google client's own default model.
+Tests: test_pipeline_base.py 7 passed; test_planogram_types.py 26 passed; tests/pipelines/test_product_counter.py 18 passed; full pipelines tests: only the pre-existing endcap failure.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
