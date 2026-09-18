@@ -1,4 +1,5 @@
 """Tests for the canonical-route server proxy (FEAT-573 TASK-3408, spec §3 M9)."""
+
 from __future__ import annotations
 
 import json
@@ -56,7 +57,9 @@ def _make_app(frames: List[Dict[str, Any]], seen: Dict[str, Any]) -> web.Applica
 
     async def chatbot_info(request: web.Request) -> web.Response:
         name = request.match_info["name"]
-        return web.json_response({"chatbot": name}) if name == "alpha" else web.json_response({"error": "nf"}, status=404)
+        return (
+            web.json_response({"chatbot": name}) if name == "alpha" else web.json_response({"error": "nf"}, status=404)
+        )
 
     async def talk(request: web.Request) -> web.Response:
         seen["ask_body"] = await request.json()

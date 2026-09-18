@@ -7,6 +7,7 @@ Provides two loading strategies:
 - ``ServerAgentProxy`` — proxies agent interactions to a running
   AI-Parrot server via HTTP.
 """
+
 import difflib
 import json
 import logging
@@ -528,15 +529,10 @@ class ServerAgentProxy:
         except aiohttp.ClientConnectorError as exc:
             raise AgentLoadError(
                 name,
-                message=(
-                    f"Cannot connect to server at {self.server_url}. "
-                    f"Is it running? ({exc})"
-                ),
+                message=(f"Cannot connect to server at {self.server_url}. " f"Is it running? ({exc})"),
             ) from exc
         except aiohttp.ClientError as exc:
-            raise AgentLoadError(
-                name, message=f"Server error: {exc}"
-            ) from exc
+            raise AgentLoadError(name, message=f"Server error: {exc}") from exc
         return _ServerBotProxy(name, self.server_url, session)
 
     async def list_agents(self) -> List[Dict[str, Any]]:
@@ -559,10 +555,7 @@ class ServerAgentProxy:
         except aiohttp.ClientConnectorError as exc:
             raise AgentLoadError(
                 "",
-                message=(
-                    f"Cannot connect to server at {self.server_url}. "
-                    f"Is it running? ({exc})"
-                ),
+                message=(f"Cannot connect to server at {self.server_url}. " f"Is it running? ({exc})"),
             ) from exc
         except aiohttp.ClientError as exc:
             raise AgentLoadError("", message=f"Server error: {exc}") from exc
