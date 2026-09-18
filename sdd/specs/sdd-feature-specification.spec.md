@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-577
 **Date**: 2026-09-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: n/a — repository SDD tooling (commands, templates, agent prompts); no package release. The `_subagent_data/` prompt edits ship with the next `ai-parrot` minor.
 
 ---
@@ -78,6 +78,17 @@ current behavior.
 - G11. **Unattended lanes never interview.** Every agent prompt that invokes
   `/sdd-spec` passes `--no-interview`, in both the `.claude/agents/` and the
   `_subagent_data/` copies.
+- G12. **Brainstorm hand-off.** When the research synthesis recommends
+  `sdd-brainstorm` (`recommended_next_command.command`, i.e. medium confidence
+  or several viable architectural paths), the intake **offers** to switch to
+  `/sdd-brainstorm` instead of writing the spec. If the user accepts, no spec is
+  written and no FEAT-ID is reserved. The intake answers and synthesis seed the
+  brainstorm's discovery, and `intake.json` ends at `phase: handed_off`.
+- G13. **Staging retention.** `sdd/state/.intake/` is git-ignored, and staged
+  runs **older than 10 days are pruned during `/sdd-status`** by a small,
+  tested script (`scripts/sdd/prune_intake.py`). This is the one documented
+  exception to `/sdd-status`'s read-only guardrail, and it may only delete
+  untracked staging directories under `sdd/state/.intake/`.
 
 ### Non-Goals (explicitly out of scope)
 - A new `/sdd-feature` command. The user chose a *mode* of `/sdd-spec`; a
@@ -164,6 +175,31 @@ flag. This is a defensive fallback on top of G11.
    commits its own stamp. On failure, report the error and print the manual
    command. The spec stays committed.
 
+**Brainstorm hand-off** (G12), evaluated once research completes and before
+the adaptive rounds:
+- `full` research whose `synthesis.json.recommended_next_command.command ==
+  "sdd-brainstorm"`: show the rationale and ask *"Research found competing
+  approaches — switch to `/sdd-brainstorm` (seeded with this intake), or
+  continue to the spec?"*.
+  - **Switch**: set `intake.json.phase = handed_off` and stop `/sdd-spec` (no
+    §2d–§6, no FEAT-ID). Tell the user to run `/sdd-brainstorm <slug> --
+    intake: sdd/state/.intake/<slug>-<RUN_ID>/`. `/sdd-brainstorm` reads
+    `intake.json` + `synthesis.json` from that path as discovery context: its
+    Round 0 and the fixed-batch facts count as already answered, and it still
+    runs its own rounds. The staging dir stays in place and is pruned under G13.
+  - **Continue**: record the choice in `intake.json.research.handoff_declined =
+    true` and proceed to the adaptive rounds.
+- `manual-review`: print the rationale as a warning and continue. No switch is
+  offered, because there is no command to hand off to.
+- `sdd-spec` / `sdd-task`, `light`, `none`: no offer.
+
+**Staging retention** (G13): `/sdd-status` gets a new first step that runs
+`python -m scripts.sdd.prune_intake --older-than-days 10 --apply` and reports
+the pruned dirs in one line (or stays silent when there are none). A run's age
+is `now - intake.json.updated_at`, falling back to the directory mtime when
+`intake.json` is missing or unreadable. `--resume` does not refresh an expired
+run. Once pruned, the run is gone and the user starts again with `--interview`.
+
 **Spec mapping from intake:**
 
 | Intake source | Spec target |
@@ -233,6 +269,9 @@ argument is rejected with a message, because intake has no FEAT-ID until §5
 | `.claude/agents/sdd-research.md` + `_subagent_data/sdd-research.md` | modifies | `--no-interview` on both `/sdd-spec` lines |
 | `.claude/agents/sdd-planner.md` + `_subagent_data/sdd-planner.md` | modifies | `--no-interview` where it runs `/sdd-spec` |
 | `.gitignore` | modifies | ignore `sdd/state/.intake/` |
+| `scripts/sdd/prune_intake.py` | new | prune staged intake runs older than N days (G13) |
+| `.claude/commands/sdd-status.md` + `.agent/workflows/sdd-status.md` + `.agents/skills/sdd-status/SKILL.md` | modifies | new prune step; the read-only guardrail gains the one documented exception |
+| `.claude/commands/sdd-brainstorm.md` | modifies | accept an `intake:` pointer after `--` as pre-answered discovery context (G12) |
 | `docs/sdd/WORKFLOW.md` | modifies | document the intake entry point |
 
 ### Data Models
@@ -250,14 +289,15 @@ model; this is repo tooling, driven by the command prompt.
   "feature_slug": "my-feature",                 // null until confirmed
   "feat_id": null,                              // set in §5; pattern ^FEAT-[0-9]{3,}$ when set
   "started_at": "…", "updated_at": "…",
-  "phase": "started | intake_confirmed | research_running | research_complete | research_degraded | rounds_complete | spec_drafted | committed | failed",
+  "phase": "started | intake_confirmed | research_running | research_complete | research_degraded | rounds_complete | spec_drafted | committed | handed_off | failed",
   "flow": {"type": "feature | hotfix", "base_branch": "dev"},
   "research": {
     "depth": "full | light | none",
     "gate": true,
     "budget": "tight | default | loose",
     "degraded_from": null, "failure_reason": null,
-    "synthesis_path": null                      // "synthesis.json" when full succeeded
+    "synthesis_path": null,                     // "synthesis.json" when full succeeded
+    "handoff_declined": false                   // true when the G12 offer was shown and declined
   },
   "answers": {
     "feature_name": "…",
@@ -308,6 +348,8 @@ Command surface (both twins):
 | M6: unattended callers | yes | append ` --no-interview` to the exact lines listed in §6; same edit in both copies | — |
 | M7: contract tests | yes | test names in §4 | — |
 | M8: docs + gitignore | yes | `.gitignore` line next to 406–407; WORKFLOW.md subsection | — |
+| M9: intake retention | yes | `scripts/sdd/prune_intake.py` signatures in Module 9; `/sdd-status` step text fixed in Module 9 | — |
+| M10: brainstorm hand-off intake | no | — | prose change to `/sdd-brainstorm`'s discovery rules; judgement about which questions count as answered |
 
 ### Module 1: Intake record schema
 - **Path**: `sdd/templates/intake.schema.json` (new), `tests/sdd_scripts/test_intake_templates.py` (new)
@@ -347,6 +389,7 @@ Command surface (both twins):
   ## 1. Staging (RUN_ID, sdd/state/.intake/<slug>-<RUN_ID>/, intake.json init)
   ## 2. Round 0 + fixed intake batch (questions, validation, confirm/edit)
   ## 3. Research by depth (full → subagent via /sdd-proposal Phases 1–3; light; none; degrade)
+  ## 3b. Brainstorm hand-off offer (synthesis recommends sdd-brainstorm → switch | continue)
   ## 4. Adaptive rounds (2–4, gap-driven, stop rule)
   ## 5. Hand-off to /sdd-spec §2d–§6 (spec mapping table, §3b intake brief sources)
   ## 6. Jira (existing → stamp; create → /sdd-tojira after §6; none)
@@ -402,6 +445,48 @@ Command surface (both twins):
 - **Responsibility**: keep staging out of git. Document the new entry point, its flags, and how it relates to `/sdd-brainstorm` / `/sdd-proposal`.
 - **Depends on**: M3
 
+### Module 9: Intake staging retention
+- **Path**: `scripts/sdd/prune_intake.py` (new), `tests/sdd_scripts/test_prune_intake.py` (new), `.claude/commands/sdd-status.md` + `.agent/workflows/sdd-status.md` + `.agents/skills/sdd-status/SKILL.md` (modify)
+- **Responsibility**: find and (with `--apply`) delete staged intake runs older than N days (default 10) that are direct child directories of `sdd/state/.intake/`. The script is dry-run by default. It refuses a `--root` that doesn't resolve to a path ending in `sdd/state/.intake` inside the repo, and it never follows symlinks, deletes files at the root level, or touches anything outside the root. Deletion uses `shutil.rmtree` on the vetted child path only. `/sdd-status` gains **Step 0 — Prune stale intake staging** that calls it with `--apply` and prints `🧹 Pruned N stale intake run(s) (>10 days): <names>`. The Guardrail line 18 becomes "Read-only — do not modify any files, **except** Step 0's pruning of git-ignored `sdd/state/.intake/` staging (FEAT-577)". The two sdd-status copies stay byte-identical modulo frontmatter, and the codex skill gets the same exception.
+- **Depends on**: M1 (reads `intake.json.updated_at`)
+- **Interface Skeleton**:
+  ```python
+  # scripts/sdd/prune_intake.py  (new)
+  """``prune_intake.py`` — prune stale /sdd-spec intake staging (FEAT-577)."""
+  from __future__ import annotations
+  import argparse
+  import logging
+  from datetime import datetime, timedelta, timezone
+  from pathlib import Path
+  from pydantic import BaseModel
+
+  DEFAULT_ROOT: Path = Path("sdd/state/.intake")
+  DEFAULT_MAX_AGE_DAYS: int = 10
+
+  class StaleIntake(BaseModel):
+      """One staged run selected for pruning."""
+      path: Path
+      age_days: float
+      age_source: str  # "updated_at" | "mtime"
+
+  def run_age(run_dir: Path, now: datetime) -> tuple[timedelta, str]:
+      """Age from intake.json ``updated_at``; falls back to the dir mtime when missing/unparsable."""
+
+  def find_stale(root: Path, max_age_days: int = DEFAULT_MAX_AGE_DAYS, now: datetime | None = None) -> list[StaleIntake]:
+      """Direct child dirs of ``root`` (no symlinks) older than ``max_age_days``. Missing root → []."""
+
+  def prune(root: Path, max_age_days: int = DEFAULT_MAX_AGE_DAYS, *, apply: bool = False, now: datetime | None = None) -> list[StaleIntake]:
+      """Return the stale runs; delete them only when ``apply``. Raises ValueError for an unsafe root."""
+
+  def main(argv: list[str] | None = None) -> int:
+      """CLI: --root, --older-than-days (default 10), --apply. Prints one line per run; exit 0, or 2 on an unsafe root."""
+  ```
+
+### Module 10: `/sdd-brainstorm` accepts a hand-off from intake
+- **Path**: `.claude/commands/sdd-brainstorm.md` (modify §1 Parse Input + §3 Interactive Discovery)
+- **Responsibility**: when the `--` notes contain `intake: <staging-dir>`, read `<staging-dir>/intake.json` (+ `synthesis.json`). Treat Round 0 and the fixed-batch facts (name, projects, overview, problem, Jira, why) as answered, show them as a carry-in summary, and seed Round 1 with the synthesis `unknowns` and competing hypotheses. The two mandatory rounds still run. Copy the synthesis `localization` into `## Code Context` after re-verifying it. A missing or invalid staging dir prints a warning, and the brainstorm runs normally.
+- **Depends on**: M1 (reads the `intake.json` shape), M3 (the procedure emits the pointer)
+
 ---
 
 ## 4. Test Specification
@@ -419,6 +504,16 @@ Command surface (both twins):
 | `test_unattended_callers_pass_no_interview` | M6/M7 | every line matching `/sdd-spec` as an invocation in `sdd-research.md` / `sdd-planner.md` (both copies) contains `--no-interview` |
 | `test_sdd_spec_points_at_intake_procedure` | M4/M7 | both twins mention `sdd/templates/intake.procedure.md` and the procedure file exists |
 | `test_intake_procedure_names_its_schemas` | M3/M7 | the procedure references `intake.schema.json`, `state.schema.json`, `research_plan.prompt.md` and `synthesis.prompt.md`, and each path exists |
+| `test_intake_procedure_offers_brainstorm_handoff` | M3/M7 | the procedure names `recommended_next_command`, `sdd-brainstorm` and `handed_off` |
+| `test_intake_schema_accepts_handed_off` | M1 | `phase: handed_off` + `research.handoff_declined` validate |
+| `test_find_stale_uses_updated_at` | M9 | a run with `updated_at` 11 days ago is stale; one at 9 days is not (fixed `now`) |
+| `test_find_stale_falls_back_to_mtime` | M9 | a missing or corrupt `intake.json` falls back to the dir mtime (`os.utime`) |
+| `test_prune_dry_run_deletes_nothing` | M9 | without `apply` the dirs survive, and the result lists them |
+| `test_prune_apply_deletes_only_stale_children` | M9 | the fresh run, root-level files and symlinked dirs survive `apply=True` |
+| `test_prune_rejects_unsafe_root` | M9 | `--root /tmp/x` or `sdd/state` → ValueError / exit 2 |
+| `test_prune_missing_root_is_noop` | M9 | a missing root returns `[]`, exit 0 |
+| `test_sdd_status_prunes_intake_first` | M9/M7 | both sdd-status copies name `scripts.sdd.prune_intake` and the FEAT-577 read-only exception |
+| `test_brainstorm_accepts_intake_pointer` | M10/M7 | `sdd-brainstorm.md` documents the `intake:` pointer and `intake.json` |
 
 ### Integration Tests
 | Test | Description |
@@ -465,6 +560,9 @@ def intake_state_sample() -> dict:
 - [ ] All tests in §4 pass: `pytest tests/sdd_scripts/ packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -v`.
 - [ ] `docs/sdd/WORKFLOW.md` documents intake mode.
 - [ ] No change to `/sdd-proposal`'s FEAT allocation.
+- [ ] When `full` research recommends `sdd-brainstorm`, the user is offered the switch. Accepting it writes no spec, reserves no FEAT-ID, sets `phase: handed_off` and prints the seeded `/sdd-brainstorm` command. Declining it records `handoff_declined: true` and continues (G12).
+- [ ] `/sdd-brainstorm <slug> -- intake: <dir>` treats the intake facts as answered, seeds Round 1 from the synthesis, and still runs its 2 mandatory rounds (G12).
+- [ ] `/sdd-status` prunes `sdd/state/.intake/` runs older than 10 days and never touches anything outside that directory. `prune_intake.py` is dry-run unless `--apply` is passed (G13).
 
 ---
 
@@ -504,6 +602,10 @@ resolve_flow(doc_path: Path | None, type_override: str | None, base_branch_overr
 - `sdd/templates/synthesis.prompt.md:188`: the output example carries `"feat_id": "FEAT-156"`. In intake mode the subagent emits `null` (the synthesis lint rules at sdd-proposal `:262-282` do not check `feat_id`).
 - `sdd/templates/spec.md`: header fields `Feature ID/Date/Author/Status/Target version` (`:11-15`). There is **no** `**Jira**` field; `/sdd-tojira` adds that line.
 - `.gitignore:406-407`: `# FEAT-545: id-independent staging…` / `sdd/state/.design_research/`.
+- `sdd/templates/synthesis.prompt.md:158-166` (Step 8): `recommended_next_command.command` is exactly one of `sdd-spec`, `sdd-brainstorm`, `sdd-task`, `manual-review`; `sdd-brainstorm` = "medium confidence OR multiple viable architectural paths". Output shape `:292-295` = `{"command": …, "rationale": …}`.
+- `.claude/commands/sdd-status.md` (104 lines): Guardrail `:18` = "- Read-only — do not modify any files."; `## Steps` `:21`; `### 1. Read All Per-Spec Indexes` `:23`. `.agent/workflows/sdd-status.md` is the same body plus a `model: haiku` frontmatter (`:18` identical). `.agents/skills/sdd-status/SKILL.md:18` = "- Read-only: never modifies any files."
+- `.claude/commands/sdd-brainstorm.md` (214 lines): the command body the user invokes. There is no `.agent/workflows` parity test for it (`_TWINNED` covers only `sdd-spec`, `sdd-task`).
+- `scripts/sdd/check_task_graph.py`: the pattern for a small `scripts/sdd` CLI with `main(argv) -> int`.
 
 ### Unattended callers (verified 2026-09-19)
 - `.claude/agents/sdd-research.md:75-76` and `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-research.md:75-76`:
@@ -544,6 +646,8 @@ TASK-3465 (FEAT-576) also edits `/sdd-spec` (carrying projects/tags forward), wh
 - ~~A Python `IntakeRecord` model or `scripts/sdd/spec_intake.py`~~: explicitly not built (Option C rejected).
 - ~~`KNOWN_PROJECTS` / `normalize_project` / `parse_taxonomy` in `sdd_meta` today~~: FEAT-576, pending.
 - ~~A `**Jira**` field in `sdd/templates/spec.md`~~: absent.
+- ~~`scripts/sdd/prune_intake.py`~~: created by M9. No existing SDD script deletes staging dirs (`.design_research/` is pruned manually).
+- ~~An `intake:` pointer in `/sdd-brainstorm`~~: added by M10.
 - ~~`/sdd-proposal` using `reserve_ids.py`~~: it doesn't, and this feature does not change that.
 
 ---
@@ -587,8 +691,10 @@ TASK-3465 (FEAT-576) also edits `/sdd-spec` (carrying projects/tags forward), wh
   - M6 → M4 (`--no-interview` must be a real flag first).
   - M7 → M1, M2, M4, M6 (tests over their outputs). It may be split so each module's tests ship with it.
   - M8 → M3 (docs describe it).
+  - M9 → M1 (reads `intake.json.updated_at` per the schema; its tests build samples from it).
+  - M10 → M1, M3 (reads the `intake.json` shape; the procedure emits the `intake:` pointer).
   - M1 and M2 have no edge between them and run concurrently.
-- **Shared files**: `.claude/commands/sdd-spec.md` + `.agent/workflows/sdd-spec.md` (M4 only). `tests/sdd_scripts/test_command_contracts.py` (M7 only).
+- **Shared files**: `.claude/commands/sdd-spec.md` + `.agent/workflows/sdd-spec.md` (M4 only). `tests/sdd_scripts/test_command_contracts.py` (M7 only; the M9/M10 contract checks live there too, so they serialize with M7). `sdd/templates/intake.procedure.md` (M3; the hand-off section is part of M3).
 - **Exclusive resources**: none (no lockfile, migration or rebuild).
 - **Cross-feature dependencies**: **FEAT-576 `sdd-spec-changes` must merge first**. It provides `KNOWN_PROJECTS` / `normalize_*` and its TASK-3465 edits the same `/sdd-spec` twin pair.
 
@@ -610,8 +716,8 @@ TASK-3465 (FEAT-576) also edits `/sdd-spec` (carrying projects/tags forward), wh
 - [x] Inline procedure or shared file? — *Resolved in spec Q&A*: shared `sdd/templates/intake.procedure.md`; the twins carry a short §1.5 pointer.
 - [x] `--resume` in v1? — *Resolved in spec Q&A*: yes. Because intake is id-less until §5, it is keyed by slug/staging dir (`--resume [<staging-dir>]`), not by `FEAT-<NNN>`; `--resume FEAT-<NNN>` is rejected with an explanation.
 - [x] Research-plan gate and `/sdd-proposal` allocator? — *Resolved in spec Q&A*: the gate is shown by default (`--no-gate` skips it); the allocator fix is left to a separate change.
-- [ ] Should `sdd/state/.intake/` staging dirs older than N days be pruned automatically (e.g. by `/remove-worktree` or `/sdd-status`), or stay manual like `.design_research/`? — *Owner: Jesus Lara*
-- [ ] Should a synthesis with `recommended_next_command` suggesting a brainstorm (low confidence, competing hypotheses) offer to switch to `/sdd-brainstorm` instead of writing the spec? — *Owner: Jesus Lara*
+- [x] Should `sdd/state/.intake/` staging dirs older than N days be pruned automatically, or stay manual like `.design_research/`? — *Resolved in spec review*: prune during `/sdd-status` after 10 days, and keep the dir git-ignored. Landed in G13, §2 "Staging retention", Module 9, §5. This is a documented exception to `/sdd-status`'s read-only guardrail, limited to untracked `sdd/state/.intake/` children.
+- [x] Should a synthesis whose `recommended_next_command` suggests a brainstorm offer to switch to `/sdd-brainstorm` instead of writing the spec? — *Resolved in spec review*: yes. Landed in G12, §2 "Brainstorm hand-off", Module 10, §5. It is an offer the user can decline, not an automatic switch.
 
 ---
 
@@ -633,3 +739,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-19 | Jesus Lara | Initial draft from `sdd/proposals/sdd-feature-specification.brainstorm.md` (Option A) + spec Q&A |
+| 0.2 | 2026-09-19 | Jesus Lara | Approved; last two §8 questions resolved → G12 brainstorm hand-off (M10), G13 intake retention via `/sdd-status` (M9) |
