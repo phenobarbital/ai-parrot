@@ -53,7 +53,7 @@
       "feature_id": "FEAT-571",
       "feature": "memory-dynamics",
       "spec": "sdd/specs/memory-dynamics.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -61,8 +61,8 @@
       "parallelism_notes": "graph root (gate G3): writes only tests/memory/dynamics/spikes/s3_attribution/* and sdd/state/FEAT-571/spikes/s3-attribution/* (judgments.jsonl is task-local, hash-only); reads mixin/tools/engine/ledger source read-only; U1/U3 are owner acceptance decisions, not depends_on edges",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3384-s3-attribution-precision-spike.md"
+      "completed_at": "2026-09-18T13:23:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3384-s3-attribution-precision-spike.md"
     },
     {
       "id": "TASK-3385",

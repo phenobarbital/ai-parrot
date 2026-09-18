@@ -483,10 +483,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated native `sonnet` delivery)
+**Date**: 2026-09-18
+**Notes**: 50-item judgment corpus (0 real / 50 synthetic — declared gate limitation, no
+coder-review ledger or episodic-store snapshot was available in this worktree to mine real
+traces) exercising every grade-table branch and attribution edge case. Metrics per
+strategy×cap: `cited` holds precision=1.000 at every cap (missed_attribution=0.300,
+false_reinforcement=0.000); `overlap_tokens` trades precision for recall
+(1.000→0.920 as cap grows from 1→3/5, false_reinforcement/collision_rate rising to 0.080).
+U1 (citations-first vs both) and U3 (precision target) explicitly marked PENDING — owner
+acceptance decisions, not resolved by this gate. `amendment.md` proposes `cited`-only
+default, overlap cap 3/threshold 0.3, the structural recovery-linkage predicate (never
+prose equality), the evidence-schema field mapping, and 2 trusted-receipt adapters
+(tool_runtime, coder_engine) plus the untrusted-source list. Fast tests (5 passed, 1
+env-gated skip) verified green post-merge in the feature worktree; `judgments.jsonl`
+confirmed 50 rows, zero transcript-shaped keys.
+Full REPORT.md/metrics.json/amendment.md/judgments.jsonl:
+`packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/` (mirrored by the
+orchestrator to `sdd/state/FEAT-571/spikes/s3-attribution/` for owner/architecture review —
+the gate itself is NOT passed until that review happens and U1/U3 are decided).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: Task's own "Files to Create / Modify" list originally placed
+`judgments.jsonl`/REPORT.md/metrics.json/amendment.md under
+`sdd/state/FEAT-571/spikes/s3-attribution/`; amended by sdd-worker (2026-09-18, Option A,
+user-approved) to `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/` because
+the FEAT-549 sdd-coder engine's fidelity gate unconditionally rejects any coder-committed
+path under `sdd/`. No other deviation from the blueprint (one added fast test,
+`test_metrics_ignores_unknown_labels`, scoped strictly to the `metrics()` contract already
+in scope).
 
-**Deviations from spec**: none | describe if any
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~672s ·
+Tokens: n/a (native — usage not tracked by the engine)
