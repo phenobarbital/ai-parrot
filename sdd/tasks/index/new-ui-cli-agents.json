@@ -194,7 +194,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "Imports ToolStarted/ToolFinished/ToolFailed/BackendCapabilities from TASK-3403 (cli/events.py). Sole editor of cli/loaders.py. Parses the frame grammar TASK-3409 emits but does not import from it (tolerates servers without tool_event frames).",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3408-server-proxy-canonical-routes.md"
+      "completed_at": "2026-09-18T08:07:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3408-server-proxy-canonical-routes.md"
     },
     {
       "id": "TASK-3409",
