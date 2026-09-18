@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3418, TASK-3421
@@ -444,7 +444,12 @@ def test_public_functions_are_picklable():                  # AC-10
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+perception/rows.py: group_rows (port of the reference line consensus over ShapeCandidates; deterministic tie-break members > median residual > lower first index; rows top->bottom, items left->right; leftovers omitted) and detect_shelf_edges (blur + Canny + HoughLinesP, |angle| <= 5 deg, y clustered within 1% of H — the two edges of a thick board merge into its centre line; [] on blank; ValueError on non-image).
+perception/slots.py: AnchorRule, candidate_shape_id, build_slots (SHAPE_IS_SLOT: candidate box = slot, anchored id; TAG_BELOW_PRODUCT: port of grid.py — neighbour-midpoint x bounds with end/clamp half widths, top from the previous row line + TOP_OFFSET or the first-row gap, gap filling with inferred anchor-less slots, optional untagged bottom row when >= 0.6 vertical pitch remains; slot ids '<image_id>:r<row>:s<slot>', confidence = anchor score or 0.0), strip_box, to_strip_norm, from_strip_norm (validates length/finite/0..1000/non-inverted; source pixels clipped to the strip).
+Tests: test_rows_slots.py 14 passed (AC-1..AC-10). ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
