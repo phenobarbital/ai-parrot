@@ -34,7 +34,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "its test imports parse_taxonomy/DocTaxonomy from TASK-3459 (scripts/sdd/sdd_meta.py re-export)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3460-templates-taxonomy-keys.md"
+      "completed_at": "2026-09-18T22:52:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3460-templates-taxonomy-keys.md"
     },
     {
       "id": "TASK-3461",
