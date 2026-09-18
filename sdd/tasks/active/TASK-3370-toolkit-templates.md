@@ -56,6 +56,7 @@ resolves from the environment the spawned `parrot mcp-local` process inherits.
 | `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/memory.yaml` | CREATE | Migrated from `BUILTIN_TOOLKITS["memory"]` |
 | `packages/ai-parrot/src/parrot/mcp/toolkit_seed.py` | MODIFY | `requires_dist` header key + `ToolkitTemplate` field |
 | `tests/mcp/test_toolkit_templates.py` | CREATE | Every packaged template parses and is well-formed |
+| `tests/mcp/test_toolkit_seed.py` | MODIFY | Widen `test_available_templates_lists_packaged_names` from the 3-name set to the 8-name set — the task's own AC1 and Validation Commands require `available_templates()` to return all 8 names and `pytest tests/mcp/test_toolkit_seed.py -q` to pass; this file was omitted from the original table (orchestrator-corrected 2026-09-18, mechanical one-line change only) |
 
 ---
 
