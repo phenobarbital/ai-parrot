@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T23:28:17.184655+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-18T11:16:16+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-17T23:50:08+00:00",
-      "file": "sdd/tasks/completed/TASK-3368-delete-builtin-toolkits.md"
+      "file": "sdd/tasks/completed/TASK-3368-delete-builtin-toolkits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3369",
@@ -45,7 +46,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-17T23:59:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3369-seed-preflight-and-mutation-helpers.md"
+      "file": "sdd/tasks/completed/TASK-3369-seed-preflight-and-mutation-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3370",
@@ -65,7 +67,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T00:14:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3370-toolkit-templates.md"
+      "file": "sdd/tasks/completed/TASK-3370-toolkit-templates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3371",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T00:27:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3371-claude-toolkit-only-reconciler.md"
+      "file": "sdd/tasks/completed/TASK-3371-claude-toolkit-only-reconciler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3372",
@@ -101,7 +105,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T00:37:56+00:00",
-      "file": "sdd/tasks/completed/TASK-3372-codex-toolkit-only-reconciler.md"
+      "file": "sdd/tasks/completed/TASK-3372-codex-toolkit-only-reconciler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3373",
@@ -119,7 +124,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T05:36:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3373-google-toolkit-only-reconciler.md"
+      "file": "sdd/tasks/completed/TASK-3373-google-toolkit-only-reconciler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3374",
@@ -141,7 +147,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T05:54:13+00:00",
-      "file": "sdd/tasks/completed/TASK-3374-host-adapter-contract.md"
+      "file": "sdd/tasks/completed/TASK-3374-host-adapter-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3375",
@@ -162,7 +169,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T06:14:19+00:00",
-      "file": "sdd/tasks/completed/TASK-3375-install-orchestration.md"
+      "file": "sdd/tasks/completed/TASK-3375-install-orchestration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3376",
@@ -182,7 +190,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T06:31:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3376-toolkits-cli-group.md"
+      "file": "sdd/tasks/completed/TASK-3376-toolkits-cli-group.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3377",
@@ -203,7 +212,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T06:42:57+00:00",
-      "file": "sdd/tasks/completed/TASK-3377-claude-flag-cut.md"
+      "file": "sdd/tasks/completed/TASK-3377-claude-flag-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3378",
@@ -224,7 +234,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T06:55:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3378-codex-flag-cut.md"
+      "file": "sdd/tasks/completed/TASK-3378-codex-flag-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3379",
@@ -245,7 +256,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T07:00:37+00:00",
-      "file": "sdd/tasks/completed/TASK-3379-google-flag-cut.md"
+      "file": "sdd/tasks/completed/TASK-3379-google-flag-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3380",
@@ -265,7 +277,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T07:21:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3380-builtin-consumer-audit.md"
+      "file": "sdd/tasks/completed/TASK-3380-builtin-consumer-audit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3381",
@@ -288,7 +301,8 @@
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
       "completed_at": "2026-09-18T07:43:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3381-cross-host-test-matrix.md"
+      "file": "sdd/tasks/completed/TASK-3381-cross-host-test-matrix.md",
+      "verification": "verified"
     }
   ]
 }
