@@ -29,6 +29,17 @@ dependencies = [
     "ai-parrot>=1.0.4",
     "opencv-python-headless>=4.8",
     "pytesseract>=0.3.13",
+    "numpy",
+    "pillow",
+    "rapidfuzz>=3.0",
+]
+
+[project.optional-dependencies]
+# FEAT-574: local OCR for the planogram compliance cycle. Without it the pipeline still runs
+# and text is read by the LLM only.
+planogram = [
+    "rapidocr>=3.9",
+    "onnxruntime>=1.20",
 ]
 
 [project.urls]
