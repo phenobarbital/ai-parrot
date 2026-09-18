@@ -176,10 +176,30 @@ See the CREATE block above — it is the complete test file.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (attempt 3, self-implemented per FEAT-549 protocol)
+**Date**: 2026-09-19
+**Notes**: Inserted the fixed `projects: []` / `tags: []` taxonomy block (with its two
+comment lines) below `base_branch: dev` in `sdd/templates/spec.md` and `brainstorm.md`
+(line 6), and below `base_branch: dev` / above `research_state:` in `sdd/templates/
+proposal.md` (line 15) — verbatim per spec §2 Overview. Created `tests/sdd_scripts/
+test_template_taxonomy.py` exactly per the task's Test Specification.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: `pytest tests/sdd_scripts/test_template_taxonomy.py tests/sdd_scripts/
+test_design_research_templates.py -q` → 10 passed. `ruff check` clean.
+`git status --porcelain` before commit showed exactly the 4 task-listed files.
+
+**Attempt history**: two prior sdd-coder attempts (minimax/nova, then native/sonnet)
+each produced a byte-identical-in-scope diff (verified by direct inspection of both
+sub-worktrees: exactly the 3 template MODIFYs + 1 test CREATE, matching this task's
+Complexity Contract targets) but were both rejected by the merge fidelity gate with
+`fidelity_violation` / `unexpected_files` naming precisely those 3 declared MODIFY
+targets. Root cause: `sdd/templates/*.md` are pre-existing tracked exceptions to the
+repo's blanket `.gitignore` `templates/` rule (documented in CLAUDE.md's "Heads-up"
+note); the fidelity gate's declared-vs-actual file comparison appears to mishandle
+gitignored-but-tracked paths, flagging them as unexpected regardless of the coder or
+how `git add` was invoked. This is a fidelity-gate defect, not a coder defect — filed
+in the final feature ledger for follow-up. Implemented directly per protocol ("attempt
+3 is yours... only for a standard classification with confirmed evidence" —
+classification here was `standard`).
 
 **Deviations from spec**: none

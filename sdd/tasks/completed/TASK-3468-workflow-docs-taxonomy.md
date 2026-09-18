@@ -136,10 +136,50 @@ Documentation only. The `--help` checks in the Acceptance Criteria confirm the d
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (attempt 3, self-implemented per FEAT-549 protocol)
+**Date**: 2026-09-19
+**Notes**: Added the "Document Taxonomy (FEAT-576)" section to `sdd/WORKFLOW.md`
+immediately before `## Release Cut`: the `projects`/`tags` key shapes and
+normalization rules, a "Querying" subsection (`doc_taxonomy` flags), "Where they
+are used" (`/sdd-status`, `/sdd-next`, `/sdd-tojira`, wiki summary), and
+"Backfill" (`backfill_taxonomy`, dry-run default, `--apply`, never commits).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verified every CLI flag against the landed code (not copied from the spec
+blindly), per AC12:
+
+```
+$ python -m scripts.sdd.doc_taxonomy --help
+usage: python -m scripts.sdd.doc_taxonomy [-h] [--root ROOT]
+                                          [--kind {spec,brainstorm,proposal,all}]
+                                          [--project PROJECT] [--tag TAG]
+                                          [--paths-only | --json | --summary]
+options: -h/--help, --root ROOT, --kind {...}, --project PROJECT, --tag TAG,
+--paths-only, --json, --summary
+
+$ python -m scripts.sdd.backfill_taxonomy --help
+usage: python -m scripts.sdd.backfill_taxonomy [-h] [--root ROOT]
+                                               [--kind {spec,brainstorm,proposal,all}]
+                                               [--limit LIMIT] [--apply]
+options: -h/--help, --root ROOT, --kind {...}, --limit LIMIT (stop after N
+proposed edits, 0 = no limit), --apply (write the edits, default: dry run)
+```
+
+Verification: `pytest tests/sdd_scripts/test_command_contracts.py -q` → 12
+passed. `git status --porcelain` before commit showed exactly the 1 task-listed
+file.
+
+**Attempt history / engine limitation found**: attempt 1 (qwen) timed out
+(`APITimeoutError`, infra failure). Attempt 2 (mistral) produced CORRECT content
+— byte-for-byte the section this Completion Note documents, verified by reading
+the sub-worktree's commit directly — but was rejected by the merge fidelity gate
+as `fidelity_violation` / `unexpected_files: ["sdd/WORKFLOW.md"]`. This is a
+genuine engine-policy conflict, not a coder defect: `sdd/WORKFLOW.md` is this
+task's own explicit, correctly-declared MODIFY target (spec §3 Module 9, AC12),
+yet the fidelity gate appears to blanket-reject ANY path under `sdd/` regardless
+of the task's own Complexity Contract declaring it. Filed in the final feature
+ledger for follow-up (the gate needs an exception for a task whose *own*
+declared target legitimately lives under `sdd/`, as opposed to a coder
+gratuitously touching `sdd/tasks/`/`sdd/tasks/index/` state it was never asked
+to touch). No model feedback filed — mistral's delivery was correct.
 
 **Deviations from spec**: none

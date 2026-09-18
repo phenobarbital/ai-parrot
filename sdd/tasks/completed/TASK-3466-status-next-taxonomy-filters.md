@@ -184,10 +184,22 @@ the functional verification — record its output in the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, haiku), via sdd-worker orchestration (FEAT-549)
+**Date**: 2026-09-19
+**Notes**: Added `--project`/`--tag` documentation to `/sdd-status` and `/sdd-next`
+(all 3 mirrors each): usage lines, a filter paragraph resolving matching specs via
+`doc_taxonomy --kind spec --paths-only` and keeping only indexes whose `spec` is in
+that list (AND across flags, OR within a repeated flag; `_orphans.json` excluded),
+and a "Projects: ... · Tags: ..." line on the status panel. No task-index schema
+change (AC8).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: jq filter tested against the real repo with
+`SPECS=sdd/specs/sdd-spec-changes.spec.md`, correctly isolated to FEAT-576's index.
+`pytest tests/sdd_scripts/test_command_contracts.py tests/sdd_scripts/
+test_command_twin_parity.py -q` → 14 passed.
+
+Review: no defects found (`coder-review:5345ed1ad9c565a71eb9948e`), fix_commits=[].
+
+Seat: haiku (native) · Backend: native · Model: haiku · Attempts: 1 · Duration: n/a · Tokens: n/a
 
 **Deviations from spec**: none

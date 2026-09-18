@@ -7,7 +7,7 @@ description: Aggregate task state across per-spec indexes and display the SDD ta
 
 Use this skill when the user asks for SDD status, runs `sdd-status`, or wants to see the task board.
 
-Invocation: `sdd-status [<feature-name>]`.
+Invocation: `sdd-status [<feature-name>] [--project <project>] [--tag <tag>]`.
 
 ## Purpose
 
@@ -24,6 +24,7 @@ Aggregate task states across all per-spec indexes (`sdd/tasks/index/*.json`) and
 1. Load all per-spec indexes:
    - Glob `sdd/tasks/index/*.json`.
    - Filter by feature slug or `FEAT-NNN` if argument is provided.
+   - Optional `--project` / `--tag` (FEAT-576): get matching spec paths from `python -m scripts.sdd.doc_taxonomy --kind spec --paths-only ...` and keep only indexes whose `spec` is listed.
 2. Group tasks by feature and status:
    - `in-progress` (🔄)
    - `pending` (⏳)

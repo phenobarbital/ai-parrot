@@ -166,6 +166,15 @@ Evaluate the feature's decomposition potential for parallel development:
 2. Create `sdd/proposals/<feature-name>.brainstorm.md` with today's date.
    **Update the frontmatter `type` and `base_branch` values to match the
    user's Round 0 answers.** Do NOT strip the frontmatter.
+   **Fill `projects` and `tags` (FEAT-576).** `projects` lists the parts of the
+   codebase this brainstorm concerns — derive them from the Code Context paths
+   (`packages/<dist>/…` → `<dist>`; `packages/ai-parrot-server/ui/` → `admin-ui`;
+   `parrot_tools`/`parrot_loaders`/`parrot_pipelines` → their `ai-parrot-*` dist;
+   `scripts/sdd/`, `.claude/commands/`, `sdd/templates/` → `sdd-tooling`;
+   `flows/dev_loop` → `dev-loop`; other `parrot/…` → `ai-parrot`). The vocabulary
+   is `KNOWN_PROJECTS` in `scripts/sdd/sdd_meta.py`; an unknown value is allowed
+   but warns. `tags`: 2–6 lowercase kebab-case keywords. Never leave
+   `projects: []` when the Code Context names code paths.
 3. Set `Status: exploration`.
 4. **Commit (ONLY the brainstorm file — NEVER unrelated changes):**
    ```bash
@@ -187,6 +196,7 @@ Evaluate the feature's decomposition potential for parallel development:
    Effort: <Low|Medium|High>
    Worktree isolation: <per-spec|mixed>
    Open questions: <count>
+   Projects: <list>   Tags: <list>
 
 Next steps:
   - Review and refine the brainstorm

@@ -197,10 +197,36 @@ Acceptance Criteria plus the existing command-contract tests.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (attempt 3, self-implemented per FEAT-549 protocol)
+**Date**: 2026-09-19
+**Notes**: Added the "Fill `projects`/`tags`" instruction to all 9 files: `sdd-brainstorm`
+(after the frontmatter update step, plus an Output line), `sdd-proposal` (as a 4th
+"Set frontmatter" bullet, plus an Output line), `sdd-fromjira` (`projects:`/`tags:`
+lines in the inline frontmatter example above `jira:`, a sentence after the
+Validation rule paragraph, plus an Output line), and one guardrail bullet in each
+of the 3 `SKILL.md` twins.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: `pytest tests/sdd_scripts/test_command_contracts.py tests/sdd_scripts/
+test_command_twin_parity.py -q` → 14 passed. `diff .claude/commands/sdd-X.md
+.agent/workflows/sdd-X.md` for X ∈ {brainstorm, fromjira}: exactly the pre-existing
+1-line Worktree-policy divergence, unchanged by my edits. `git status --porcelain`
+before commit showed exactly the 9 task-listed files.
+
+**Contract correction**: the task's Codebase Contract claimed sdd-proposal's twin
+differs by exactly ONE line (the Worktree-policy line). Verified against `git show
+HEAD:...` before editing: the twin pair already had a SECOND pre-existing
+divergence (the `description:` frontmatter line, unrelated to FEAT-576, present
+before this task started). My edits were applied byte-identically to both files,
+so no new divergence was introduced — the AC's intent (no drift from my own
+changes) is satisfied, but the stale "exactly ONE line" claim should be corrected
+in a future contract pass.
+
+**Attempt history**: attempt 1 (gemini) left `sdd/tasks/active/TASK-3464-...md`
+dirty (self-modified the task file, a Cardinal Rule violation — coders must never
+touch `sdd/`) and failed `dirty_task_worktree` — recorded as model feedback
+`coder-feedback:0009c8677d4ca472f27f7522` (pattern: `coder-touches-sdd-state`);
+attempt 2 (qwen) timed out (`APITimeoutError`, infra failure, not attributable).
+Implemented directly per protocol ("attempt 3 is yours... only for a standard
+classification with confirmed evidence" — classification here was `standard`).
 
 **Deviations from spec**: none

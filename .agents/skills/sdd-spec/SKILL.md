@@ -90,6 +90,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      multi-spec split and document that reuse.
 10. Write the spec:
    - frontmatter `type` and `base_branch`
+   - frontmatter `projects` and `tags`, carried from the exploration doc (FEAT-576)
    - ID or Jira identity
    - date
    - architecture and module breakdown

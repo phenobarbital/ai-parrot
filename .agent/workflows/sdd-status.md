@@ -11,6 +11,7 @@ and print a human-friendly status report.
 ```
 /sdd-status
 /sdd-status <feature-name>
+/sdd-status --project <project> [--project …] [--tag <tag> …]
 ```
 
 ## Guardrails
@@ -34,6 +35,16 @@ ALL=$(jq -s '.' sdd/tasks/index/*.json)
 If a `<feature-name>` filter is provided, show only the index whose
 `feature` slug matches (substring) or whose `feature_id` matches exactly.
 
+If `--project` / `--tag` is given (FEAT-576), resolve the matching specs from
+their frontmatter — the index header does not carry taxonomy — and keep only
+indexes whose `spec` is in the list (AND across flags, OR within a repeated
+flag; `_orphans.json` is excluded because it has no spec):
+
+```bash
+SPECS=$(python -m scripts.sdd.doc_taxonomy --kind spec --paths-only --project <p> --tag <t>)
+ALL=$(jq -s --arg specs "$SPECS" '[.[] | select(.spec as $s | ($specs | split("\n")) | index($s))]' sdd/tasks/index/*.json)
+```
+
 ### 2. Group and Display
 
 The task `status` field has **exactly four** valid values — match each
@@ -56,6 +67,7 @@ and by feature. Print:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Feature: <feature>
 Spec: sdd/specs/<feature>.spec.md
+Projects: <a, b> · Tags: <x, y>
 
   🔄 In-Progress
      TASK-<NNN> — <title>  [<priority>/<effort>]  assigned: <who>
