@@ -139,7 +139,7 @@ def _mini_report(mini_planogram, tmp_path: Path) -> tuple[ComplianceReport, Sett
         started_at="2026-01-01T00:00:00Z",
         finished_at="2026-01-01T00:05:00Z",
         errors=[],
-        catalog_missing_skus=[],
+        undescribed_skus=[],
     )
     report = ComplianceReport(
         run=run_info,
@@ -153,12 +153,9 @@ def _mini_report(mini_planogram, tmp_path: Path) -> tuple[ComplianceReport, Sett
     )
     planogram_path = tmp_path / "planogram.json"
     planogram_path.write_text(json.dumps({"mini": True}), encoding="utf-8")
-    catalog_path = tmp_path / "catalog.json"
-    catalog_path.write_text(json.dumps({"items": []}), encoding="utf-8")
     settings = Settings(
         images=["img1.jpg"],
         planogram=str(planogram_path),
-        catalog=str(catalog_path),
         output=str(tmp_path / "out"),
         cache_dir=str(tmp_path / "cache"),
     )

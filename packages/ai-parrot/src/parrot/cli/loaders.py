@@ -20,6 +20,7 @@ import questionary
 from parrot.bots.abstract import AbstractBot
 from parrot.registry import agent_registry
 from parrot.registry.registry import BotMetadata
+from parrot.utils.tty import restore_stdin_blocking
 from parrot.cli.events import BackendCapabilities, ToolFailed, ToolFinished, ToolStarted
 
 
@@ -190,10 +191,11 @@ class StandaloneAgentLoader:
                 "",
                 message="No agents are registered. Check your agents directory.",
             )
-        selected = await questionary.select(
-            "Select an agent to start:",
-            choices=agents,
-        ).ask_async()
+        with restore_stdin_blocking():
+            selected = await questionary.select(
+                "Select an agent to start:",
+                choices=agents,
+            ).ask_async()
         if selected is None:
             raise AgentLoadError("", message="No agent selected.")
         return selected
@@ -573,10 +575,11 @@ class ServerAgentProxy:
         if not agents:
             raise AgentLoadError("", message="No agents found on server.")
         names = [a.get("name", str(a)) for a in agents]
-        selected = await questionary.select(
-            "Select an agent to start:",
-            choices=names,
-        ).ask_async()
+        with restore_stdin_blocking():
+            selected = await questionary.select(
+                "Select an agent to start:",
+                choices=names,
+            ).ask_async()
         if selected is None:
             raise AgentLoadError("", message="No agent selected.")
         return selected

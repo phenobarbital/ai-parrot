@@ -257,6 +257,62 @@ def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:
     return "allow", None
 
 
+HOST_DEFAULT_TIMEOUT_MS = 120_000
+KILL_GRACE_SECONDS = 5
+
+
+def command_timeout_seconds(tool_input: dict[str, Any]) -> int | None:
+    """Resolve the wall-clock bound the sandboxed command must respect.
+
+    The host kills a foreground Bash call at ``tool_input["timeout"]`` (or its
+    default, ``BASH_DEFAULT_TIMEOUT_MS`` / 120 s). A process that prints an
+    error and then never exits — an unclosed ``aiosqlite`` worker thread is the
+    classic case — keeps Bubblewrap waiting on it, and the host's kill does not
+    always reach through the sandbox. Enforcing the same bound *inside* the
+    sandbox guarantees the call terminates either way.
+
+    Args:
+        tool_input: The native ``Bash`` tool input.
+
+    Returns:
+        The bound in whole seconds (at least 1), or ``None`` for a background
+        command without an explicit timeout, which the host never bounds.
+    """
+    explicit = tool_input.get("timeout")
+    if isinstance(explicit, (int, float)) and explicit > 0:
+        return max(1, int(explicit // 1000))
+    if tool_input.get("run_in_background"):
+        return None
+    default_ms = os.environ.get("BASH_DEFAULT_TIMEOUT_MS", "")
+    try:
+        milliseconds = int(default_ms) if default_ms else HOST_DEFAULT_TIMEOUT_MS
+    except ValueError:
+        milliseconds = HOST_DEFAULT_TIMEOUT_MS
+    return max(1, milliseconds // 1000)
+
+
+def bounded_shell_argv(command: str, tool_input: dict[str, Any]) -> list[str]:
+    """Build the ``/bin/bash -c`` argv for ``command``, wrapped in ``timeout`` when bounded.
+
+    ``timeout`` sends SIGTERM to the whole command group at the bound and SIGKILL
+    ``KILL_GRACE_SECONDS`` later, so the sandbox's main child always exits and
+    Bubblewrap tears the PID namespace down with it.
+
+    Args:
+        command: The shell text the seat issued (already scope-guarded).
+        tool_input: The native ``Bash`` tool input, for the timeout fields.
+
+    Returns:
+        The argv to place after Bubblewrap's ``--`` separator.
+    """
+    argv = ["/bin/bash", "-c", command]
+    seconds = command_timeout_seconds(tool_input)
+    timeout_bin = shutil.which("timeout") if seconds is not None else None
+    if timeout_bin is None:
+        return argv
+    return [timeout_bin, "-k", str(KILL_GRACE_SECONDS), str(seconds), *argv]
+
+
 def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
     """Wrap native Bash input and reject shared-environment file-tool writes."""
     cwd = Path(payload["cwd"])
@@ -272,7 +328,7 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
             if action == "rewrite" and value:
                 command = value
-            wrapped = protected_argv(cwd, ["/bin/bash", "-c", command])
+            wrapped = protected_argv(cwd, bounded_shell_argv(command, tool_input))
             # Preserve timeout/background/description without granting approval
             # or overriding decisions from other hooks.
             output["updatedInput"] = {**tool_input, "command": shlex.join(wrapped)}
