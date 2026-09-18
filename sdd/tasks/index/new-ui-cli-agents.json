@@ -170,7 +170,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Imports get_console from TASK-3400, history_path/UIMode from TASK-3401, TurnRunner from TASK-3404, the renderer's region/render_turn_event from TASK-3405, and CommandContext + dispatch_async(ctx) from TASK-3406. Sole editor of cli/repl.py and tests/cli/test_integration.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3407-agent-repl-on-turn-runner.md"
+      "completed_at": "2026-09-18T07:50:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3407-agent-repl-on-turn-runner.md"
     },
     {
       "id": "TASK-3408",

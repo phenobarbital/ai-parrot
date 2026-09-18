@@ -475,10 +475,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt e58e24b1e28940dcbd003e2dbb111a23), fixed by orchestrator
+**Date**: 2026-09-18
+**Notes**: Rewrote `AgentREPL` to consume `TurnRunner` instead of calling
+`bot.ask`/`bot.ask_stream` directly, implementing the `CommandContext`
+protocol added by TASK-3406. Made zero changes to `test_integration.py`
+(verified its full FEAT-168 suite stays green, so no edit was needed).
+Correctly implemented `add_post_turn_hook` as a wrapping closure
+(`await hook(self, turn)`, not TASK-3406's/TurnRunner's raw
+`(TurnRunner, turn)` signature), verified against TASK-3404's actual
+delivered `session.py` — deviated from the blueprint's literal one-liner
+per the flagged design note, and locked it in with an explicit
+`assert ctx is repl` in the new test. Fixed AC5's own literal grep
+contract (blueprint prose accidentally contained the banned substrings).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Confirmed and fixed by orchestrator review**: 2 of 5 new tests in
+`test_repl_runner.py` did not isolate `PARROT_HOME`, so every real turn's
+unconditional `save_session_pointer()` (session.py:227) wrote to the
+developer's real `~/.parrot` — failing on a read-only `$HOME` (this
+environment) and, more importantly, silently polluting real user state on
+any normal machine. Fixed with an autouse `_isolated_parrot_home` fixture,
+matching `test_modes.py`'s established convention. Fix commit:
+`e0b317a4a332c2ed1dd34d6718b68e9b6a440f01`. Recorded as model feedback
+(`unisolated-real-home-in-tests`).
 
-**Deviations from spec**: none | describe if any
+**Result confirmed by orchestrator**: `test_repl_runner.py`: 5 passed.
+`test_integration.py::TestSlashCommandsAsync::test_clear_new_session` —
+the test flagged as an expected transitional failure by TASK-3406 — now
+**passes**. `test_integration.py` full suite: 25 passed, 4 pre-existing
+`TestStandaloneAgentLoader` failures confirmed unrelated (present on `dev`
+itself, out of scope here).
+
+**Deviations from spec**: `add_post_turn_hook` wraps the hook rather than
+the blueprint's bare one-liner (documented above, verified correct against
+the actual delivered contract); two docstring lines reworded to satisfy
+AC5's literal grep check.
