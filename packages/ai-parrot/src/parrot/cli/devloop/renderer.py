@@ -12,10 +12,11 @@ import time
 from typing import Any, Dict, List, Optional, Type
 
 from rich.console import Console, Group
-from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+
+from parrot.cli.console import LiveRegion
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class RunView:
         self.console = console or Console()
         self.run_id = run_id or getattr(host, "state", None) and host.state.run_id or "?"
         self._last_seq = 0
-        self._live: Optional[Live] = None
+        self.region: LiveRegion = LiveRegion(self.console, refresh_per_second=8, transient=False)
         self._paused = False
         self._stop = False
         self._renderables: List[Any] = []
@@ -80,16 +81,14 @@ class RunView:
         }
 
     def pause(self) -> None:
-        """Pause the live display (for modal prompts)."""
+        """Pause the live display (for modal prompts) — delegates to ``LiveRegion.pause``."""
         self._paused = True
-        if self._live:
-            self._live.stop()
+        self.region.pause()
 
     def resume(self) -> None:
-        """Resume the live display after a modal prompt."""
+        """Resume the live display after a modal prompt — delegates to ``LiveRegion.resume``."""
         self._paused = False
-        if self._live:
-            self._live.start()
+        self.region.resume()
 
     def stop(self) -> None:
         """Signal the run_live loop to stop."""
@@ -100,23 +99,20 @@ class RunView:
         self._stop = False
         stop = stop_event or asyncio.Event()
 
-        with Live(
-            self._build_display(),
-            console=self.console,
-            refresh_per_second=8,
-            transient=False,
-        ) as live:
-            self._live = live
+        self.region.update(self._build_display())
+        self.region.start()
+        try:
             while not self._stop and not stop.is_set():
                 if not self._paused:
                     self.poll_once()
-                    live.update(self._build_display())
+                    self.region.update(self._build_display())
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=_POLL_INTERVAL)
                     break
                 except asyncio.TimeoutError:
                     pass
-            self._live = None
+        finally:
+            self.region.stop()
 
     def _build_display(self) -> Group:
         """Build the current display from accumulated renderables."""

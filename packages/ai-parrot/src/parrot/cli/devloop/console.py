@@ -7,11 +7,12 @@ one writer at a time (pause/resume Live around prompts).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, ContextManager, Dict, List, Optional, Set
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -900,73 +901,79 @@ class DevLoopConsole:
             else:
                 self.console.print("[dim]Type /help for commands.[/dim]")
 
+    def _view_modal(self) -> ContextManager[None]:
+        """Yield the terminal to a modal prompt.
+
+        Returns ``self._active_view.region.modal()`` when a run view owns the
+        display (pausing it for the block and resuming afterwards, even on
+        exception) and a no-op ``contextlib.nullcontext()`` otherwise — the
+        exact behaviour of the former ``if self._active_view: pause()`` /
+        ``resume()`` pairs.
+        """
+        if self._active_view is not None:
+            return self._active_view.region.modal()
+        return contextlib.nullcontext()
+
     async def _handle_gates(self, gates: Dict[str, Any]) -> None:
         """Prompt user for each pending gate."""
         for gate_id, gate in gates.items():
-            if self._active_view:
-                self._active_view.pause()
+            with self._view_modal():
+                kind = getattr(gate, "kind", "")
+                title = getattr(gate, "title", "")
+                instructions = getattr(gate, "instructions", "")
+                expires_at = getattr(gate, "expires_at", None)
 
-            kind = getattr(gate, "kind", "")
-            title = getattr(gate, "title", "")
-            instructions = getattr(gate, "instructions", "")
-            expires_at = getattr(gate, "expires_at", None)
+                panel_content = f"[bold yellow]{kind}[/bold yellow]: {title}"
+                if instructions:
+                    panel_content += f"\n{instructions}"
+                if expires_at:
+                    import time  # noqa: PLC0415
+                    remaining = max(0, expires_at - time.time())
+                    panel_content += f"\n[dim]Expires in {int(remaining)}s[/dim]"
 
-            panel_content = f"[bold yellow]{kind}[/bold yellow]: {title}"
-            if instructions:
-                panel_content += f"\n{instructions}"
-            if expires_at:
-                import time  # noqa: PLC0415
-                remaining = max(0, expires_at - time.time())
-                panel_content += f"\n[dim]Expires in {int(remaining)}s[/dim]"
-
-            self.console.print(Panel(
-                panel_content,
-                title=f"Gate: {gate_id}",
-                border_style="yellow",
-            ))
-
-            try:
-                resolution = await self._session.prompt_async(
-                    "  Approve or reject? [a/r]: "
-                )
-                resolution = resolution.strip().lower()
-                if resolution in ("a", "approve", "approved", "y", "yes"):
-                    resolution_str = "approved"
-                elif resolution in ("r", "reject", "rejected", "n", "no"):
-                    resolution_str = "rejected"
-                else:
-                    self.console.print("[yellow]Skipping gate (enter 'a' or 'r').[/yellow]")
-                    if self._active_view:
-                        self._active_view.resume()
-                    continue
-
-                comment = await self._session.prompt_async("  Comment (optional): ")
-                comment = comment.strip()
-
-                identity = os.environ.get("USER", "cli-user")
-                runner = self._runtime.runner
+                self.console.print(Panel(
+                    panel_content,
+                    title=f"Gate: {gate_id}",
+                    border_style="yellow",
+                ))
 
                 try:
-                    await runner.resolve_gate(
-                        self._active_run_id,
-                        gate_id,
-                        resolution=resolution_str,
-                        resolved_by=identity,
-                        comment=comment,
+                    resolution = await self._session.prompt_async(
+                        "  Approve or reject? [a/r]: "
                     )
-                    self.console.print(
-                        f"[green]Gate {gate_id} {resolution_str}.[/green]"
-                    )
-                except Exception as exc:
-                    self.console.print(
-                        f"[red]Gate resolution failed: {exc}[/red]"
-                    )
+                    resolution = resolution.strip().lower()
+                    if resolution in ("a", "approve", "approved", "y", "yes"):
+                        resolution_str = "approved"
+                    elif resolution in ("r", "reject", "rejected", "n", "no"):
+                        resolution_str = "rejected"
+                    else:
+                        self.console.print("[yellow]Skipping gate (enter 'a' or 'r').[/yellow]")
+                        continue
 
-            except (EOFError, KeyboardInterrupt):
-                self.console.print("[dim]Gate skipped.[/dim]")
+                    comment = await self._session.prompt_async("  Comment (optional): ")
+                    comment = comment.strip()
 
-            if self._active_view:
-                self._active_view.resume()
+                    identity = os.environ.get("USER", "cli-user")
+                    runner = self._runtime.runner
+
+                    try:
+                        await runner.resolve_gate(
+                            self._active_run_id,
+                            gate_id,
+                            resolution=resolution_str,
+                            resolved_by=identity,
+                            comment=comment,
+                        )
+                        self.console.print(
+                            f"[green]Gate {gate_id} {resolution_str}.[/green]"
+                        )
+                    except Exception as exc:
+                        self.console.print(
+                            f"[red]Gate resolution failed: {exc}[/red]"
+                        )
+
+                except (EOFError, KeyboardInterrupt):
+                    self.console.print("[dim]Gate skipped.[/dim]")
 
     async def _handle_ctrl_c(self) -> None:
         """Handle Ctrl-C: confirm cancellation."""
@@ -1098,52 +1105,43 @@ class DevLoopConsole:
 
     async def _cmd_new(self, args: str) -> None:
         """Start a new run with the wizard."""
-        if self._active_view:
-            self._active_view.pause()
-        try:
-            brief = await self._collect_work_brief()
-            await self._dispatch_run(brief)
-        except (EOFError, KeyboardInterrupt):
-            self.console.print("[dim]Cancelled.[/dim]")
-        except (FileNotFoundError, ValueError) as exc:
-            # Mirrors start()'s friendly error path (G5): pydantic.
-            # ValidationError subclasses ValueError, so this also catches
-            # an invalid brief — never a raw traceback.
-            self.console.print(f"[bold red]Brief error:[/bold red] {exc}")
-        if self._active_view:
-            self._active_view.resume()
+        with self._view_modal():
+            try:
+                brief = await self._collect_work_brief()
+                await self._dispatch_run(brief)
+            except (EOFError, KeyboardInterrupt):
+                self.console.print("[dim]Cancelled.[/dim]")
+            except (FileNotFoundError, ValueError) as exc:
+                # Mirrors start()'s friendly error path (G5): pydantic.
+                # ValidationError subclasses ValueError, so this also catches
+                # an invalid brief — never a raw traceback.
+                self.console.print(f"[bold red]Brief error:[/bold red] {exc}")
 
     async def _cmd_feature(self, args: str) -> None:
         """Start a new feature-mode run via free-text intake (``/feature``, G3/G4)."""
-        if self._active_view:
-            self._active_view.pause()
-        try:
-            text = args.strip() or None
-            brief = await self._collect_feature_brief(text=text)
-            await self._dispatch_run(brief)
-        except (EOFError, KeyboardInterrupt):
-            self.console.print("[dim]Cancelled.[/dim]")
-        except (FileNotFoundError, ValueError) as exc:
-            # Mirrors start()'s friendly error path (G5): an empty free-text
-            # request, an intake LLM failure, or an invalid FeatureBrief
-            # (pydantic.ValidationError subclasses ValueError) all surface
-            # as "Brief error:" — never a raw traceback.
-            self.console.print(f"[bold red]Brief error:[/bold red] {exc}")
-        if self._active_view:
-            self._active_view.resume()
+        with self._view_modal():
+            try:
+                text = args.strip() or None
+                brief = await self._collect_feature_brief(text=text)
+                await self._dispatch_run(brief)
+            except (EOFError, KeyboardInterrupt):
+                self.console.print("[dim]Cancelled.[/dim]")
+            except (FileNotFoundError, ValueError) as exc:
+                # Mirrors start()'s friendly error path (G5): an empty free-text
+                # request, an intake LLM failure, or an invalid FeatureBrief
+                # (pydantic.ValidationError subclasses ValueError) all surface
+                # as "Brief error:" — never a raw traceback.
+                self.console.print(f"[bold red]Brief error:[/bold red] {exc}")
 
     async def _cmd_revise(self, args: str) -> None:
         """Start a revision-mode run."""
-        if self._active_view:
-            self._active_view.pause()
-        try:
-            brief_file = args.strip() or None
-            brief = await self._collect_revision_brief(brief_file)
-            await self._dispatch_revision(brief)
-        except (EOFError, KeyboardInterrupt):
-            self.console.print("[dim]Cancelled.[/dim]")
-        if self._active_view:
-            self._active_view.resume()
+        with self._view_modal():
+            try:
+                brief_file = args.strip() or None
+                brief = await self._collect_revision_brief(brief_file)
+                await self._dispatch_revision(brief)
+            except (EOFError, KeyboardInterrupt):
+                self.console.print("[dim]Cancelled.[/dim]")
 
     async def _cmd_help(self, args: str) -> None:
         """Show help."""
