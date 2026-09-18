@@ -1,4 +1,5 @@
 """S4 gate tests: fast design/lineage tests (always) + env-gated comparison run (PARROT_SPIKE_FULL=1)."""
+
 from __future__ import annotations
 
 import asyncio

@@ -1,4 +1,5 @@
 """S4 spike harness: brain page-state designs, version identity, lineage and report writer."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -19,7 +20,9 @@ from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens  # store
 from parrot.memory.episodic.models import EpisodeOutcome, EpisodicMemory  # episodic/models.py:20,55
 
 logger = logging.getLogger(__name__)
-SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
+SPIKE_DIR = (
+    Path(__file__).resolve().parent
+)  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 MAX_LINEAGE_DEPTH = 32  # report parameter — the amendment freezes the production bound
 _IMPORTANCE_THRESHOLD = 5  # mirrors DreamConfig.importance_threshold default (models.py:78)
 
@@ -325,7 +328,11 @@ async def scenario_copy_and_edit(design: Design, store: Any) -> dict[str, Any]:
     body_v1 = "Original distilled body for the copy/edit scenario."
     version_v1 = content_version(body_v1, episode_ids)
     state_v1 = PageState(
-        stability=2.0, difficulty=4.0, review_count=1, prior_stability=None, prior_difficulty=None,
+        stability=2.0,
+        difficulty=4.0,
+        review_count=1,
+        prior_stability=None,
+        prior_difficulty=None,
         parameter_version="v1",
     )
     record_v1 = WikiPageRecord(
@@ -345,7 +352,11 @@ async def scenario_copy_and_edit(design: Design, store: Any) -> dict[str, Any]:
     body_v2 = body_v1 + " Updated with new evidence."
     version_v2 = content_version(body_v2, episode_ids)
     state_v2 = PageState(
-        stability=2.5, difficulty=4.0, review_count=2, prior_stability=2.0, prior_difficulty=4.0,
+        stability=2.5,
+        difficulty=4.0,
+        review_count=2,
+        prior_stability=2.0,
+        prior_difficulty=4.0,
         parameter_version="v1",
     )
     record_v2 = WikiPageRecord(
@@ -392,7 +403,11 @@ async def scenario_search_drift(design: Design, store: Any) -> dict[str, Any]:
     episode_ids = ["ep-drift-1"]
     version = content_version(body, episode_ids)
     state = PageState(
-        stability=3.3333, difficulty=6.6666, review_count=4, prior_stability=None, prior_difficulty=None,
+        stability=3.3333,
+        difficulty=6.6666,
+        review_count=4,
+        prior_stability=None,
+        prior_difficulty=None,
         parameter_version="v1",
     )
     with_state_id = "mem-" + hashlib.sha1(f"{design.name}-drift-with-state::lesson".encode()).hexdigest()[:12]
@@ -490,7 +505,8 @@ def scenario_watermark_recovery() -> dict[str, Any]:
     eligible = [
         ep
         for ep in since_filtered
-        if (ep.importance >= _IMPORTANCE_THRESHOLD or bool(ep.lesson_learned)) and "consolidated_into" not in ep.metadata
+        if (ep.importance >= _IMPORTANCE_THRESHOLD or bool(ep.lesson_learned))
+        and "consolidated_into" not in ep.metadata
     ]
     excluded_by_watermark = [ep.episode_id for ep in all_episodes if ep.created_at <= last_run]
 
