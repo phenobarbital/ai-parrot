@@ -59,6 +59,15 @@ oversampling, and the review-log ↔ backend-state recovery order under crash/re
   retention policy"), lexical fallback, oversampling, JSONL/PG review-log cursor
   format and recovery order. Logs → `artifacts/logs/`.
 
+> **Amendment (sdd-worker, 2026-09-18): all spike artifacts (REPORT.md, metrics.json,
+> amendment.md) are relocated from `sdd/state/FEAT-571/spikes/s2-concurrent-storage/` to
+> `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/` throughout this file. The
+> FEAT-549 sdd-coder engine's fidelity gate (`check_fidelity()`) unconditionally rejects any
+> coder-committed path starting with `sdd/`, regardless of what a task's own contract lists —
+> so these gate deliverables must live in a directory the coder already owns. The orchestrator
+> (sdd-worker) is responsible for mirroring the final REPORT.md/metrics.json/amendment.md into
+> `sdd/state/FEAT-571/spikes/s2-concurrent-storage/` as a post-merge step for owner review.
+
 **NOT in scope**: creating `parrot/memory/episodic/backends/sqlite.py` (M2, and only if
 G2 selects it); adding `store.review`/`cite` (M2); `parrot/memory/dynamics/*` (M1);
 real PostgreSQL/Redis integration runs (M2's `test_backend_review_contracts` — S2 only
@@ -75,9 +84,9 @@ real PostgreSQL/Redis integration runs (M2's `test_backend_review_contracts` —
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/sqlite_prototype.py` | CREATE | throwaway `SQLiteEpisodeBackend` candidate + `apply_review`/`search_text` |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/harness.py` | CREATE | multi-process workloads, crash injection, metrics, report writer |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/test_s2_harness.py` | CREATE | fast single-process contract tests + env-gated full load run |
-| `sdd/state/FEAT-571/spikes/s2-concurrent-storage/REPORT.md` | CREATE | reproducible gate report (hardware, workload, metrics, pass/fail) |
-| `sdd/state/FEAT-571/spikes/s2-concurrent-storage/metrics.json` | CREATE | raw summary metrics |
-| `sdd/state/FEAT-571/spikes/s2-concurrent-storage/amendment.md` | CREATE | proposed storage/identity/protocol amendment |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/REPORT.md` | CREATE | reproducible gate report (hardware, workload, metrics, pass/fail) |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/metrics.json` | CREATE | raw summary metrics |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/amendment.md` | CREATE | proposed storage/identity/protocol amendment |
 
 ---
 
@@ -164,9 +173,9 @@ class LedgerLog:                                           # :10 ; __init__(self
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/sqlite_prototype.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/harness.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/test_s2_harness.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s2-concurrent-storage/REPORT.md", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s2-concurrent-storage/metrics.json", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s2-concurrent-storage/amendment.md", "action": "CREATE"}
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/REPORT.md", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/metrics.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/amendment.md", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/memory/episodic/backends/abstract.py#AbstractEpisodeBackend",
@@ -336,8 +345,7 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-REPO_ROOT = Path(__file__).resolve().parents[7]
-SPIKE_DIR = REPO_ROOT / "sdd" / "state" / "FEAT-571" / "spikes" / "s2-concurrent-storage"
+SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 CRASH_POINTS = ("before_log", "after_log", "after_state")
 
 
@@ -451,7 +459,7 @@ def test_full_matrix_writes_report(tmp_path) -> None:
 ```
 **Why**: the fast tests pin the *semantics* the amendment will freeze (dedupe, stale revision, scoped filters, TTL exemption, lexical route); the gated test produces the AC14 numbers.
 
-### `sdd/state/FEAT-571/spikes/s2-concurrent-storage/amendment.md` (CREATE)
+### `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/amendment.md` (CREATE)
 ```markdown
 # Proposed spec amendment — S2 (TASK-3383) · status: PROPOSED (owner + architecture review required)
 

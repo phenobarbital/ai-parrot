@@ -36,7 +36,7 @@ target) must be resolved by the owner for *acceptance*, not for collecting the b
 - Vendor the pinned py-fsrs reference (**v6.3.2**, commit
   `9446cb06605c597a063aeee49f7d188d42e34dc2`, MIT) — `fsrs/{__init__,card,rating,
   review_log,scheduler,state}.py` + `LICENSE` — under
-  `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/`, with a `PIN.md` recording the
+  `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/`, with a `PIN.md` recording the
   commit, retrieval date, and per-file SHA-256. Do **not** vendor `optimizer.py`
   (torch/pandas deps — spec §7 External Dependencies).
 - Write a pure **candidate** FSRS-6 (`candidate.py`): initial state, difficulty update,
@@ -65,6 +65,15 @@ target) must be resolved by the owner for *acceptance*, not for collecting the b
   freezing: time policy id, default parameter set + bounds + reference pin, thresholds,
   promotion criterion, oversampling recommendation input for S2. Logs → `artifacts/logs/`.
 
+> **Amendment (sdd-worker, 2026-09-18): all spike artifacts (reference vendoring, REPORT.md,
+> metrics.json, amendment.md) are relocated from `sdd/state/FEAT-571/spikes/s1-fsrs-parity/`
+> to `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/` throughout this file. The
+> FEAT-549 sdd-coder engine's fidelity gate (`check_fidelity()`) unconditionally rejects any
+> coder-committed path starting with `sdd/`, regardless of what a task's own contract lists —
+> so these gate deliverables must live in a directory the coder already owns. The orchestrator
+> (sdd-worker) is responsible for mirroring the final REPORT.md/metrics.json/amendment.md into
+> `sdd/state/FEAT-571/spikes/s1-fsrs-parity/` as a post-merge step for owner review.
+
 **NOT in scope**: editing `sdd/specs/memory-dynamics.spec.md` (owner applies the
 amendment after review — keeps G1–G4 free of file overlap); creating
 `parrot/memory/dynamics/*` (M1); adding any `fsrs` dependency to `pyproject.toml`;
@@ -81,17 +90,17 @@ storage/backend work (S2).
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/candidate.py` | CREATE | pure FSRS-6 candidate (prototype for M1) |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/harness.py` | CREATE | reference loader, trace generators, metrics, report writer |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/test_s1_harness.py` | CREATE | fast parity tests (always run) + full calibration (env-gated) |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/__init__.py` | CREATE | vendored py-fsrs v6.3.2 |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/card.py` | CREATE | vendored py-fsrs v6.3.2 |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/rating.py` | CREATE | vendored py-fsrs v6.3.2 |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/review_log.py` | CREATE | vendored py-fsrs v6.3.2 |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/scheduler.py` | CREATE | vendored py-fsrs v6.3.2 |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/state.py` | CREATE | vendored py-fsrs v6.3.2 |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/LICENSE` | CREATE | py-fsrs MIT license text, verbatim |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/PIN.md` | CREATE | commit, tag, date, per-file sha256 |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/REPORT.md` | CREATE | reproducible gate report |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/metrics.json` | CREATE | raw summary metrics |
-| `sdd/state/FEAT-571/spikes/s1-fsrs-parity/amendment.md` | CREATE | proposed spec amendment (owner merges) |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/__init__.py` | CREATE | vendored py-fsrs v6.3.2 |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/card.py` | CREATE | vendored py-fsrs v6.3.2 |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/rating.py` | CREATE | vendored py-fsrs v6.3.2 |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/review_log.py` | CREATE | vendored py-fsrs v6.3.2 |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/scheduler.py` | CREATE | vendored py-fsrs v6.3.2 |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/state.py` | CREATE | vendored py-fsrs v6.3.2 |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/LICENSE` | CREATE | py-fsrs MIT license text, verbatim |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/PIN.md` | CREATE | commit, tag, date, per-file sha256 |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/REPORT.md` | CREATE | reproducible gate report |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/metrics.json` | CREATE | raw summary metrics |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/amendment.md` | CREATE | proposed spec amendment (owner merges) |
 
 ---
 
@@ -162,17 +171,17 @@ scheduler.py needs `typing_extensions.Self` (:29) — already installed transiti
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/candidate.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/harness.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/test_s1_harness.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/__init__.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/card.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/rating.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/review_log.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/scheduler.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/fsrs/state.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/LICENSE", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/PIN.md", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/REPORT.md", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/metrics.json", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s1-fsrs-parity/amendment.md", "action": "CREATE"}
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/__init__.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/card.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/rating.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/review_log.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/scheduler.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/fsrs/state.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/LICENSE", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/PIN.md", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/REPORT.md", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/metrics.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/amendment.md", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/ledger/coder_feedback.py#CoderFeedbackStore",
@@ -195,7 +204,7 @@ scheduler.py needs `typing_extensions.Self` (:29) — already installed transiti
 - **Deterministic comparison**: construct the reference `Scheduler(parameters=..., enable_fuzzing=False)`; never compare against a fuzzed interval. Compare `card.stability`, `card.difficulty` and `get_card_retrievability(card, review_datetime)`.
 - **Time policy is data**: every trace/metric row records `time_policy_id` (`"days-v1"` reference-exact; `"hours-v1"` fractional). The report presents both; the amendment proposes one.
 - **No invented history**: ledger rows give first-occurrence timestamps + recurrence, not grades. Use them only for (a) the *cadence* of real signals and (b) the baseline ranking correlation. Say so in REPORT.md "Data provenance".
-- **Report location**: `sdd/state/FEAT-571/spikes/s1-fsrs-parity/` (spec §3). Logs under `artifacts/logs/feat-571-s1-*.log` (git-ignored, not a target).
+- **Report location**: `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/` (spec §3). Logs under `artifacts/logs/feat-571-s1-*.log` (git-ignored, not a target).
 - Formatting: `black` (120 cols) and `ruff check` on the spike package; vendored reference files are excluded from formatting (leave byte-identical; PIN.md hashes prove it).
 
 ### References in Codebase
@@ -297,8 +306,8 @@ from typing import Any
 from . import candidate
 
 logger = logging.getLogger(__name__)
-REPO_ROOT = Path(__file__).resolve().parents[7]  # …/spikes/s1_fsrs/harness.py → repo root
-SPIKE_DIR = REPO_ROOT / "sdd" / "state" / "FEAT-571" / "spikes" / "s1-fsrs-parity"
+REPO_ROOT = Path(__file__).resolve().parents[7]  # …/spikes/s1_fsrs/harness.py → repo root (only for CoderFeedbackStore.from_root)
+SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 REFERENCE_DIR = SPIKE_DIR / "reference"
 REFERENCE_COMMIT = "9446cb06605c597a063aeee49f7d188d42e34dc2"  # py-fsrs v6.3.2, MIT
 
@@ -426,7 +435,7 @@ def test_full_calibration_writes_report(fsrs) -> None:
 ```
 **Why**: the always-on tests are the machine-checkable half of AC03; the gated test is the reproducible calibration command quoted in REPORT.md.
 
-### `sdd/state/FEAT-571/spikes/s1-fsrs-parity/reference/PIN.md` (CREATE)
+### `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/reference/PIN.md` (CREATE)
 ```markdown
 # py-fsrs reference pin (S1 / TASK-3382)
 
@@ -446,7 +455,7 @@ def test_full_calibration_writes_report(fsrs) -> None:
 ```
 **Why**: spec §7 "Vendor only the accepted pinned MIT reference logic/license after G1" — the pin is what makes "after G1" auditable.
 
-### `sdd/state/FEAT-571/spikes/s1-fsrs-parity/amendment.md` (CREATE)
+### `packages/ai-parrot/tests/memory/dynamics/spikes/s1_fsrs/amendment.md` (CREATE)
 ```markdown
 # Proposed spec amendment — S1 (TASK-3382) · status: PROPOSED (owner review required)
 

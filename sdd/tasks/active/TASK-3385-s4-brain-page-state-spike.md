@@ -57,6 +57,15 @@ G2 *before passing* (spec §3 G4 "coordinate atomic requirements with G2 before 
   wiki backend, version identity rule, forwarding/admission policy, promotion evidence
   policy, report field semantics, FEAT-390 supersession note). Logs → `artifacts/logs/`.
 
+> **Amendment (sdd-worker, 2026-09-18): all spike artifacts (REPORT.md, metrics.json,
+> amendment.md) are relocated from `sdd/state/FEAT-571/spikes/s4-brain-state/` to
+> `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/` throughout this file.
+> The FEAT-549 sdd-coder engine's fidelity gate (`check_fidelity()`) unconditionally rejects
+> any coder-committed path starting with `sdd/`, regardless of what a task's own contract
+> lists — so these gate deliverables must live in a directory the coder already owns. The
+> orchestrator (sdd-worker) is responsible for mirroring the final REPORT.md/metrics.json/
+> amendment.md into `sdd/state/FEAT-571/spikes/s4-brain-state/` as a post-merge step for owner review.
+
 **NOT in scope**: editing `WikiPageRecord`, any wiki store backend, `BrainStore`,
 `DreamCycleRunner`, `dream/models.py` (M4 after this gate); `parrot/memory/dynamics/*`
 (M1); editing the spec or the FEAT-390 spec (owner applies `amendment.md`); the atomic
@@ -71,9 +80,9 @@ review protocol itself (G2 — S4 only records the coordination points).
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/__init__.py` | CREATE | package marker |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/harness.py` | CREATE | three page-state designs, version identity, lineage graph, metrics, report writer |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/test_s4_harness.py` | CREATE | fast design/lineage tests + env-gated comparison run |
-| `sdd/state/FEAT-571/spikes/s4-brain-state/REPORT.md` | CREATE | reproducible gate report |
-| `sdd/state/FEAT-571/spikes/s4-brain-state/metrics.json` | CREATE | raw per-design metrics |
-| `sdd/state/FEAT-571/spikes/s4-brain-state/amendment.md` | CREATE | proposed page-state/lineage/promotion amendment |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/REPORT.md` | CREATE | reproducible gate report |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/metrics.json` | CREATE | raw per-design metrics |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/amendment.md` | CREATE | proposed page-state/lineage/promotion amendment |
 
 ---
 
@@ -145,9 +154,9 @@ class DreamCycleReport(BaseModel):    # :103 — episodes_collected, groups_form
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/__init__.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/harness.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/test_s4_harness.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s4-brain-state/REPORT.md", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s4-brain-state/metrics.json", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s4-brain-state/amendment.md", "action": "CREATE"}
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/REPORT.md", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/metrics.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/amendment.md", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/memory/dream/brain.py#BrainStore",
@@ -209,8 +218,7 @@ from typing import Any, Protocol
 from parrot.knowledge.wiki.store import WikiPageRecord  # store.py:409
 
 logger = logging.getLogger(__name__)
-REPO_ROOT = Path(__file__).resolve().parents[7]
-SPIKE_DIR = REPO_ROOT / "sdd" / "state" / "FEAT-571" / "spikes" / "s4-brain-state"
+SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 MAX_LINEAGE_DEPTH = 32  # report parameter — the amendment freezes the production bound
 
 
@@ -360,7 +368,7 @@ async def test_full_comparison_writes_report(tmp_path) -> None:
 ```
 **Why**: the always-on tests fix the invariants AC12 names (version identity, bounded cycle-free lineage, no double credit, no prose pollution); the gated test produces the design comparison.
 
-### `sdd/state/FEAT-571/spikes/s4-brain-state/amendment.md` (CREATE)
+### `packages/ai-parrot/tests/memory/dynamics/spikes/s4_brain_state/amendment.md` (CREATE)
 ```markdown
 # Proposed spec amendment — S4 (TASK-3385) · status: PROPOSED (owner + architecture review; G2 coordination required)
 
