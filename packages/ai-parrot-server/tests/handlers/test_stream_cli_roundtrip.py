@@ -1,4 +1,5 @@
 """Real StreamHandler ↔ rewritten ServerAgentProxy round-trip (FEAT-573 TASK-3416, spec §4 row 3)."""
+
 from __future__ import annotations
 
 import asyncio

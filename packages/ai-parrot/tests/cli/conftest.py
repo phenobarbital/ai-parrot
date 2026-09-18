@@ -3,6 +3,7 @@
 These fixtures provide lightweight mocks for AbstractBot and AIMessage
 so tests can run without a running server, LLM API keys, or database.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -11,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from parrot.models.outputs import OutputMode
-
 
 # ---------------------------------------------------------------------------
 # Helpers — build a minimal AIMessage-like mock
@@ -94,6 +94,7 @@ def repl_config():
         REPLConfig instance with test defaults.
     """
     from parrot.cli.repl import REPLConfig
+
     return REPLConfig(
         agent_name="test_agent",
         streaming=False,
@@ -112,6 +113,7 @@ def renderer():
     import os
     from rich.console import Console
     from parrot.cli.renderer import ResponseRenderer
+
     r = ResponseRenderer()
     fh = open(os.devnull, "w")  # noqa: SIM115
     r.console = Console(file=fh)

@@ -1,4 +1,5 @@
 """End-to-end tests for the agent workspace (FEAT-573 TASK-3416, spec §4 Integration Tests)."""
+
 from __future__ import annotations
 
 import asyncio
