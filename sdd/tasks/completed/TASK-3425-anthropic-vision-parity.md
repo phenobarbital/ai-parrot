@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -477,7 +477,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+ask_to_image: model default None with resolution explicit -> client model -> ClaudeModel.SONNET_5 (one resolved value feeds payload and AIMessage.model); new last param no_memory gates history replay. New module-level _NormalizedObjectBox/_NormalizedObjectBoxes and AnthropicClient.detect_objects (Google positional signature, 0-1000 [ymin,xmin,ymax,xmax] -> original-pixel [x1,y1,x2,y2], degenerate boxes dropped, clamp, mask/overlay None, [] on unparseable answer or failed call, CancelledError re-raised). Path.mkdir / Image.open offloaded with asyncio.to_thread (ruff ASYNC240).
+Tests: test_vision_parity.py 8 passed (payload snapshotted at call time because ask_to_image appends the assistant reply to the same messages list); test_claude_multiround_usage.py still green. Ruff: only the 2 pre-existing findings remain in client.py.
+Callers of ask_to_image relying on the old SONNET_4 default: none identified as Anthropic-specific — planogram call sites use the Google roi_client; parrot/interfaces/images/plugins/{analisys,classify,detect}.py call ask_to_image on a configurable client and would now get the client's model / SONNET_5 instead of SONNET_4 when no model is passed (not edited).
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
