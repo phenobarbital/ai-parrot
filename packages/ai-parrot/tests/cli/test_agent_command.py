@@ -1,4 +1,5 @@
 """CliRunner tests for the `parrot agent` entry point (FEAT-573 AC1/AC2/AC22/AC27)."""
+
 from __future__ import annotations
 
 import sys
@@ -57,7 +58,10 @@ def test_ui_tui_on_non_tty_exit_2():
 def test_inline_batch_does_not_import_tui():
     sys.modules.pop("parrot.cli.tui", None)
     sys.modules.pop("parrot.cli.tui.app", None)
-    with patch("parrot.cli.agent_repl.StandaloneAgentLoader") as cls, patch("parrot.cli.agent_repl.AgentREPL") as repl_cls:
+    with (
+        patch("parrot.cli.agent_repl.StandaloneAgentLoader") as cls,
+        patch("parrot.cli.agent_repl.AgentREPL") as repl_cls,
+    ):
         cls.return_value = _loader_returning(_bot())
         repl_cls.return_value.run_batch = AsyncMock(return_value=0)
         result = CliRunner().invoke(agent_cmd, ["a", "--ui", "inline"], input="hi\n")

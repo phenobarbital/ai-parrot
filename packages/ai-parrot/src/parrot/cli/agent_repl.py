@@ -10,6 +10,7 @@ The function name must be ``agent`` to match the LazyGroup key:
 ``LazyGroup.get_command()`` uses ``getattr(mod, cmd_name)`` — i.e.
 ``getattr(module, "agent")``.
 """
+
 import asyncio
 import logging
 import os
@@ -32,6 +33,7 @@ from parrot.cli.modes import (  # provided by TASK-3401
 from parrot.cli.renderer import ResponseRenderer
 from parrot.cli.repl import AgentREPL, REPLConfig
 from parrot.cli.session import TurnRunner  # provided by TASK-3404
+
 # NOTE: no `from rich.console import Console` and no `parrot.cli.tui` import at module level (AC12, AC22)
 
 logger = logging.getLogger(__name__)
@@ -170,7 +172,9 @@ async def _run(
     interactive = is_interactive(stdin_isatty=stdin_tty, stdout_isatty=stdout_tty)
 
     try:
-        mode = resolve_ui_mode(UIMode(ui), stdin_isatty=stdin_tty, stdout_isatty=stdout_tty, term=os.environ.get("TERM"))
+        mode = resolve_ui_mode(
+            UIMode(ui), stdin_isatty=stdin_tty, stdout_isatty=stdout_tty, term=os.environ.get("TERM")
+        )
     except UIModeError as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")
         raise SystemExit(2) from exc
@@ -360,7 +364,4 @@ def _print_banner(bot: object, name: str, server: Optional[str]) -> None:
         f"([dim]{bot_class}[/dim]) • mode=[cyan]{mode}[/cyan]"
         + (f" • tools=[magenta]{tool_count}[/magenta]" if has_tools else "")
     )
-    console.print(
-        "[dim]Type your message to chat.  "
-        "Use /help for slash commands.  Ctrl+D or /quit to exit.[/dim]\n"
-    )
+    console.print("[dim]Type your message to chat.  " "Use /help for slash commands.  Ctrl+D or /quit to exit.[/dim]\n")
