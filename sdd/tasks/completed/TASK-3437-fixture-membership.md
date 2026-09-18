@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3418, TASK-3421
@@ -362,7 +362,11 @@ def test_partial_view_header_cut_off(): ...                                    #
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+perception/membership.py: assign_membership(shapes, zones, image_size, *, llm_hints) — anchor-column votes (union of zone x-extents, +10% on / beyond 25% off), row-block votes (rows split into clusters at gaps > 1.75 x the global median neighbour pitch; main run per row; block = main runs overlapping the largest by >= 50%; coherent with >= 2 rows or one row >= 50% of the image width; members 'row_block', other clusters of block rows 'row_gap'), one-pass containment votes ('contained_in:<id>', container expanded 10%), combination rules 1-3, llm hints recorded always and resolving only UNCERTAIN ('resolved_by:llm_hint'); degenerate boxes -> UNCERTAIN 'degenerate_box'; copies via model_copy, same order. usable_shapes as specified.
+Tests: test_membership.py 9 passed (AC-1..AC-9 + containment); ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1

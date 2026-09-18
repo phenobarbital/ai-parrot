@@ -392,7 +392,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -403,8 +403,8 @@
       "parallelism_notes": "Operates on Shape and FixtureMembership from TASK-3421 (planogram/contracts.py) inside the perception package created by TASK-3418.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3437-fixture-membership.md"
+      "completed_at": "2026-09-18T23:42:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3437-fixture-membership.md"
     },
     {
       "id": "TASK-3438",
