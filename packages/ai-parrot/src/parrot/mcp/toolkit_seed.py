@@ -31,6 +31,7 @@ class ToolkitTemplate(BaseModel):
     body: str
     requires_llm: bool = False
     summary: str = ""
+    requires_dist: tuple[str, ...] = ()
 
 
 class SeedResult(BaseModel):
@@ -77,6 +78,7 @@ def load_template(name: str) -> ToolkitTemplate:
     # Parse metadata from header lines
     summary = ""
     requires_llm = False
+    requires_dist: tuple[str, ...] = ()
     body_start = 0
 
     for i, line in enumerate(lines):
@@ -91,12 +93,17 @@ def load_template(name: str) -> ToolkitTemplate:
         elif meta_content.startswith("requires_llm:"):
             requires_llm_str = meta_content[13:].strip()  # Remove "requires_llm:" prefix
             requires_llm = requires_llm_str.lower() == "true"
+        elif meta_content.startswith("requires_dist:"):
+            raw = meta_content[len("requires_dist:") :].strip()
+            requires_dist = tuple(part.strip() for part in raw.split(",") if part.strip())
 
     # Extract body (remaining lines)
     body_lines = lines[body_start:]
     body = "\n".join(body_lines)
 
-    return ToolkitTemplate(name=name, body=body, requires_llm=requires_llm, summary=summary)
+    return ToolkitTemplate(
+        name=name, body=body, requires_llm=requires_llm, summary=summary, requires_dist=requires_dist
+    )
 
 
 def _missing_keys(template: Any, existing: Any, prefix: str = "") -> list[str]:

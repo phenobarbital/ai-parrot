@@ -27,7 +27,16 @@ COMMENTED = """toolkits:
 
 
 def test_available_templates_lists_packaged_names():
-    assert set(available_templates()) == {"sdd-coder", "bounded-source", "targeted-writer"}
+    assert set(available_templates()) == {
+        "sdd-coder",
+        "bounded-source",
+        "targeted-writer",
+        "querysource",
+        "database-query",
+        "scraping",
+        "browsing",
+        "memory",
+    }
 
 
 def test_templates_resolve_from_package_not_repo():
