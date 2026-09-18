@@ -4,18 +4,18 @@ Polls ``SessionHost.replay_since(last_seq)`` on a ticker and maps action
 types to Rich renderables in a scrolling Live region. Read-only
 relationship with the host — never calls ``apply`` or ``resolve_gate``.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console, Group
-from rich.live import Live
 from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
+
+from parrot.cli.console import LiveRegion, get_console
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +34,10 @@ class RunView:
         run_id: str = "",
     ) -> None:
         self.host = host
-        self.console = console or Console()
+        self.console = console or get_console()
         self.run_id = run_id or getattr(host, "state", None) and host.state.run_id or "?"
         self._last_seq = 0
-        self._live: Optional[Live] = None
+        self.region: LiveRegion = LiveRegion(self.console, refresh_per_second=8, transient=False)
         self._paused = False
         self._stop = False
         self._renderables: List[Any] = []
@@ -74,22 +74,17 @@ class RunView:
     def pending_gates(self) -> Dict[str, Any]:
         """Return currently pending gates from host state."""
         gates = getattr(self.host.state, "gates", {})
-        return {
-            gid: gate for gid, gate in gates.items()
-            if getattr(gate, "status", "") == "pending"
-        }
+        return {gid: gate for gid, gate in gates.items() if getattr(gate, "status", "") == "pending"}
 
     def pause(self) -> None:
-        """Pause the live display (for modal prompts)."""
+        """Pause the live display (for modal prompts) — delegates to ``LiveRegion.pause``."""
         self._paused = True
-        if self._live:
-            self._live.stop()
+        self.region.pause()
 
     def resume(self) -> None:
-        """Resume the live display after a modal prompt."""
+        """Resume the live display after a modal prompt — delegates to ``LiveRegion.resume``."""
         self._paused = False
-        if self._live:
-            self._live.start()
+        self.region.resume()
 
     def stop(self) -> None:
         """Signal the run_live loop to stop."""
@@ -100,23 +95,20 @@ class RunView:
         self._stop = False
         stop = stop_event or asyncio.Event()
 
-        with Live(
-            self._build_display(),
-            console=self.console,
-            refresh_per_second=8,
-            transient=False,
-        ) as live:
-            self._live = live
+        self.region.update(self._build_display())
+        self.region.start()
+        try:
             while not self._stop and not stop.is_set():
                 if not self._paused:
                     self.poll_once()
-                    live.update(self._build_display())
+                    self.region.update(self._build_display())
                 try:
                     await asyncio.wait_for(stop.wait(), timeout=_POLL_INTERVAL)
                     break
                 except asyncio.TimeoutError:
                     pass
-            self._live = None
+        finally:
+            self.region.stop()
 
     def _build_display(self) -> Group:
         """Build the current display from accumulated renderables."""
@@ -186,7 +178,6 @@ class RunView:
         self._add_line(Text(f"  [{node_id}] skipped", style="dim"))
 
     def _handle_dispatch_queued(self, action: Any) -> None:
-        node_id = getattr(action, "node_id", "")
         dispatcher = getattr(action, "dispatcher", "")
         self._add_line(Text(f"    dispatch queued ({dispatcher})", style="dim"))
 
@@ -224,8 +215,7 @@ class RunView:
             gate_id = getattr(gate, "gate_id", "")
             self._add_line(
                 Panel(
-                    f"[bold yellow]GATE[/bold yellow] {kind}: {title}\n"
-                    f"ID: {gate_id}",
+                    f"[bold yellow]GATE[/bold yellow] {kind}: {title}\n" f"ID: {gate_id}",
                     border_style="yellow",
                     title="Approval Required",
                 )

@@ -129,6 +129,9 @@ dependencies = [
     "ormsgpack>=1.5",
     # HTTP / networking
     "rich>=13.0",
+    # FEAT-573: Textual TUI framework for `parrot agent --ui tui` (core, not an extra;
+    # requires rich>=14.2 and python>=3.9 — both already satisfied).
+    "textual>=8.2,<9",
     # requests is otherwise transitive; pin to the 2.33 series — the intersection
     # of flowtask 5.12.3 (>=2.33.0) and arxiv>=3.0.0 (<2.34).
     "requests>=2.33,<2.34",
