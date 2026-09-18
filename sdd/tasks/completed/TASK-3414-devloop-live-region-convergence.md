@@ -441,10 +441,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt a735ac8dd8bc455f9bba3bf0c2c3abf2)
+**Date**: 2026-09-18
+**Notes**: `RunView.pause()`/`resume()` now delegate to a `LiveRegion` instance
+(TASK-3400, already merged) instead of hand-rolled `Live` management;
+`run_live()` uses `region.start()`/`region.update()`/`region.stop()`.
+`DevLoopConsole` replaced 9 manual pause/resume call sites with a single
+`_view_modal()` context manager delegating to `region.modal()`. Applied
+the `unscoped-removal-reuses-full-uninstall-helper` pattern directly: read
+`LiveRegion`'s actual `start/stop/pause/resume/modal` bodies before
+delegating, confirmed semantics match exactly (and `modal()` is a strict
+superset — also resumes on exception types the original code didn't
+catch, matching the blueprint's stated intent).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Blueprint inconsistency found and resolved soundly**: the Scope section
+and Test Specification table implied `start → update → stop` ordering,
+but the Implementation Blueprint's own code block calls `update()` before
+`start()`. The coder verified `LiveRegion.start()`'s actual body (builds
+`Live` from whatever `self._renderable` currently holds) and implemented
+the literal blueprint code (update-before-start) since starting first
+would show one blank frame — a real, if tiny, behavior change violating
+AC25's "zero behaviour change" mandate. Wrote its own test assertions
+against the actually-correct implemented behavior rather than the
+blueprint's contradictory literal assertion suggestion.
 
-**Deviations from spec**: none | describe if any
+Merge clean (`coder_merge` outcome=merged); 2 residual pre-existing lint
+findings (B007/F841, confirmed via `git show HEAD:<file>` byte-identical
+rule sets before/after) deferred to `/sdd-done`. Orchestrator ran the full
+`packages/ai-parrot/tests/cli/devloop/` suite: **100 passed**, no
+regressions.
+
+**Feedback recorded**: none — clean delivery; `hasattr-duck-typing`
+pattern correctly judged not applicable (identity check, not multi-shape
+duck-typing); `unisolated-real-home-in-tests` correctly judged not
+applicable (no filesystem convention path in scope).
+**Deviations from spec**: test assertions verify actual correct behavior
+rather than the blueprint's self-contradictory literal suggestion
+(documented above).
