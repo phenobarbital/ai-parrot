@@ -41,6 +41,7 @@ import contextlib
 import asyncio
 import re
 import uuid
+
 try:
     from tqdm.asyncio import tqdm as async_tqdm
 except ImportError:  # pragma: no cover — exercised via sys.modules patching
@@ -2143,9 +2144,7 @@ Current task: {current_input}"""
             from ....clients.google import GoogleGenAIClient
 
             if self._google_api_key:
-                self._llm = GoogleGenAIClient(
-                    model="gemini-2.5-pro", max_tokens=8192, api_key=self._google_api_key
-                )
+                self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192, api_key=self._google_api_key)
             else:
                 self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192)
 
@@ -3784,7 +3783,6 @@ analyze, and present information in the most helpful way for the user.
             "los",
             "las",
             "the",
-            "a",
             "an",
             "and",
             "or",
