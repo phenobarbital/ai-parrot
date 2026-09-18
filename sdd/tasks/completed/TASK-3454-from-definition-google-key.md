@@ -347,10 +347,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via native seat `sonnet`
+**Date**: 2026-09-19
+**Notes**: Added keyword-only `google_api_key: Optional[str] = None` to
+`AgentCrew.from_definition`. Calls `apply_google_api_key(agent, google_api_key)`
+right after `_apply_definition_prompt` for every constructed agent, then
+forwards `google_api_key=google_api_key` explicitly into the `cls(...)` call.
+Default `None` behavior unchanged (AC8). Created
+`test_crew_from_definition_google_key.py` (4 tests: mixed google/openai
+injection, default-None regression, forwarding to crew ctor, explicit
+per-agent credential respected). Coder deviation note: extended the
+blueprint's `_StubAgent` test helper (test-scope only) with
+`add_event_listener`/`EVENT_*`/`invoke` stubs required by the current
+`add_agent()`/`AgentLike` protocol, and used a collision-safe key literal in
+the leak-check test (the 1-char `"k"` collides with field names like `"wiki"`
+in `model_dump()`). Test run: full `packages/ai-parrot/tests/bots/flows/crew/`
+→ 49 passed. `ruff check` flagged the same 2 pre-existing B905 findings
+(zip without strict=) at crew.py:1332/2730, unrelated to this diff.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (test-helper additive fix + key-literal
+adjustment noted above; no production-code deviation)
