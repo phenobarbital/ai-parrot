@@ -234,7 +234,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -245,8 +245,8 @@
       "parallelism_notes": "Imports textual (declared by TASK-3399 in pyproject.toml/uv.lock) and TurnEvent subclasses from TASK-3403 (cli/events.py). Creates cli/tui/__init__.py, widgets.py, app.tcss.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3410-tui-widgets.md"
+      "completed_at": "2026-09-18T08:36:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3410-tui-widgets.md"
     },
     {
       "id": "TASK-3411",

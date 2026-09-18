@@ -617,10 +617,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt 8728d6445e3c4c92bd903604be0c9355)
+**Date**: 2026-09-18
+**Notes**: Implemented all 5 Textual widget files per blueprint:
+`TranscriptView` (200-panel cap eviction + hidden-count notice,
+scroll-stops-follow), `TurnPanel` (streaming Markdown, usage/tool
+enrichment on terminal events via `_format_usage_text()`), `ToolActivity`
+(start/finish/fail row lifecycle), `Composer` (history walk, single-match
+Tab completion), `StatusBar` (full state transitions). Test file correctly
+uses `pytest.importorskip("textual")` at the top (line 9) so it degrades
+to a clean skip rather than a collection error when `textual` isn't
+installed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Known, carried-over environment gap** (from TASK-3399, not introduced
+here): `textual>=8.2,<9` is declared in `pyproject.toml` and pinned in
+`uv.lock` (8.2.8) but was never `uv sync`'d into the shared `.venv` — that
+step is the main-checkout operator's, which no worker (native or
+orchestrator) may perform itself per the shared-environment policy. The
+coder confirmed `import textual` fails here, did not attempt to install
+it, and verified widget logic instead via a throwaway standalone harness
+that stubs only the `textual` import (not `widgets.py` itself) — all
+internal checks passed, but this does NOT exercise real Textual runtime
+behavior (App/Pilot, CSS, reactive wiring).
 
-**Deviations from spec**: none | describe if any
+Merge clean (`coder_merge` outcome=merged); 4 residual E402 lint findings
+(module-level imports after `importorskip`, an idiomatic and necessary
+pattern) deferred to `/sdd-done` per protocol. Orchestrator ran
+`pytest test_widgets.py -v`: **1 skipped** (clean, correct skip — not a
+failure) confirming `textual` is still absent from the shared `.venv`.
+
+**Operator follow-up required before this task's tests can actually run**:
+run `uv sync` in the main checkout (or wherever `.venv` is rebuilt) to
+install `textual`, then re-run `pytest packages/ai-parrot/tests/cli/tui/test_widgets.py -v`
+to get a real pass/fail signal. Flagging prominently for the feature-level
+completion summary.
+
+**Feedback recorded**: none — both historical patterns checked and
+correctly judged not applicable (no PARROT_HOME/XDG code; no helper reuse,
+net-new widgets only).
+**Deviations from spec**: none.
