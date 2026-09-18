@@ -281,7 +281,7 @@
           "final_snapshot_corrupted": false,
           "lost_writes": 0,
           "converged": true,
-          "note": "FAISS has no SQL WHERE \u2014 model_id isolation only proven for the sqlite arm"
+          "note": "FAISS has no SQL WHERE — model_id isolation only proven for the sqlite arm"
         }
       }
     },

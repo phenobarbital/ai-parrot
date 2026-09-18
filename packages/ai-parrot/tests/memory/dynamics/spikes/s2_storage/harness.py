@@ -19,7 +19,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[7]
-SPIKE_DIR = REPO_ROOT / "sdd" / "state" / "FEAT-571" / "spikes" / "s2-concurrent-storage"
+SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 CRASH_POINTS = ("before_log", "after_log", "after_state")
 _CORE_SRC = str(REPO_ROOT / "packages" / "ai-parrot" / "src")
 _SPIKE_PARENT = str(Path(__file__).resolve().parent.parent)  # "spikes" dir -> makes `s2_storage` importable
