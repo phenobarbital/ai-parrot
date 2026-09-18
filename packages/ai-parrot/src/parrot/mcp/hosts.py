@@ -100,11 +100,15 @@ class ClaudeAdapter:
     def sync_approvals(self, root: Path, removed: Sequence[str] = ()) -> Optional[str]:
         from parrot.knowledge.wiki.claude_code.installer import (
             _install_mcp_approval,
-            _uninstall_mcp_approval,
+            uninstall_toolkit_approvals,
         )
 
         if removed:
-            return _uninstall_mcp_approval(root, removed)
+            # NEVER `_uninstall_mcp_approval` here: it also strips "wikitoolkit"
+            # by design (it backs the FULL `parrot claude uninstall` path).
+            # `uninstall_toolkit_approvals` is the toolkit-only sibling that
+            # never touches wikitoolkit (FEAT-570 AC5).
+            return uninstall_toolkit_approvals(root, removed)
         return _install_mcp_approval(root)
 
 

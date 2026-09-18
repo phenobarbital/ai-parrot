@@ -432,6 +432,51 @@ def _uninstall_mcp_approval(root: Path, removed_toolkit_names: Sequence[str] = (
     return f".claude/settings.local.json — {len(to_remove)} MCP server approval(s) removed"
 
 
+def uninstall_toolkit_approvals(root: Path, removed_toolkit_names: Sequence[str]) -> Optional[str]:
+    """Remove exactly `removed_toolkit_names` from `enabledMcpjsonServers`.
+
+    Toolkit-only sibling of `_uninstall_mcp_approval` for `parrot toolkits`
+    uninstall/disable (FEAT-570 TASK-3375 via `hosts.ClaudeAdapter.sync_approvals`).
+    Unlike `_uninstall_mcp_approval` — which always ALSO strips `"wikitoolkit"`
+    because it backs the FULL `parrot claude uninstall` path — this NEVER
+    touches `"wikitoolkit"`: `parrot toolkits` must never de-authorize the wiki
+    server (FEAT-570 AC5; mirrors `toolkit_server_names`'s exclusion above).
+
+    Args:
+        root: Repository root.
+        removed_toolkit_names: The exact `parrot-<name>` keys just removed
+            from `.mcp.json` by the toolkit-only reconcile.
+
+    Returns:
+        An action string, or None when there was nothing to remove.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    try:
+        local = _load_settings(local_path)
+    except RuntimeError:
+        local = None
+    if not isinstance(local, dict):
+        return None
+
+    names = local.get("enabledMcpjsonServers")
+    if not isinstance(names, list):
+        return None
+
+    candidates = set(removed_toolkit_names)
+    to_remove = {n for n in names if n in candidates}
+    if not to_remove:
+        return None
+
+    kept = [n for n in names if n not in to_remove]
+    if kept:
+        local["enabledMcpjsonServers"] = kept
+    else:
+        local.pop("enabledMcpjsonServers", None)
+
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(to_remove)} MCP server approval(s) removed"
+
+
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     """Whether a ``parrot-<name>`` ``.mcp.json`` entry was written by us.
 
