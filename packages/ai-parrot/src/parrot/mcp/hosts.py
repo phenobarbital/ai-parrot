@@ -4,6 +4,7 @@ Claude Code, Codex and Google Antigravity differ in config format, ownership
 detection and — critically — scope: Google's primary config is USER-GLOBAL.
 `parrot toolkits` talks to this protocol, never to a host's private helpers.
 """
+
 from __future__ import annotations
 
 import json
@@ -217,8 +218,7 @@ class GoogleAdapter:
 
 def get_adapter(kind: HostKind) -> HostAdapter:
     """Return the adapter for `kind`."""
-    return {HostKind.CLAUDE: ClaudeAdapter(), HostKind.CODEX: CodexAdapter(),
-            HostKind.GOOGLE: GoogleAdapter()}[kind]
+    return {HostKind.CLAUDE: ClaudeAdapter(), HostKind.CODEX: CodexAdapter(), HostKind.GOOGLE: GoogleAdapter()}[kind]
 
 
 def detect_hosts(root: Path) -> list[HostKind]:

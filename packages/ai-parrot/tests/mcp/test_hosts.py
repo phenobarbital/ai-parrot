@@ -1,4 +1,5 @@
 """HostAdapter contract over three asymmetric hosts (FEAT-570, TASK-3374)."""
+
 from __future__ import annotations
 
 import sys
