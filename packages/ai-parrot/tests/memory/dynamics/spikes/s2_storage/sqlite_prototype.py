@@ -1,4 +1,5 @@
 """S2 spike: SQLite/WAL episodic backend prototype (throwaway — M2 decides the real module)."""
+
 from __future__ import annotations
 
 import json
@@ -95,7 +96,9 @@ class SQLiteEpisodeBackend:
         await self._db.execute("PRAGMA synchronous=NORMAL")
         await self._db.executescript(SCHEMA)
         try:
-            await self._db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(episode_id UNINDEXED, text)")
+            await self._db.execute(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS episodes_fts USING fts5(episode_id UNINDEXED, text)"
+            )
             self._fts_enabled = True
         except aiosqlite.OperationalError:
             self._fts_enabled = False
@@ -186,7 +189,9 @@ class SQLiteEpisodeBackend:
         scored.sort(key=lambda item: item[0], reverse=True)
         return [EpisodeSearchResult(**data, score=min(score, 1.01)) for score, data in scored[:top_k]]
 
-    async def search_text(self, query: str, namespace_filter: dict[str, Any], top_k: int = 5) -> list[EpisodeSearchResult]:
+    async def search_text(
+        self, query: str, namespace_filter: dict[str, Any], top_k: int = 5
+    ) -> list[EpisodeSearchResult]:
         """FTS5 bm25 (normalized to [0,1]) when available, else a LIKE fallback — recall without embeddings."""
         assert self._db is not None
         where_sql, params = self._build_where(namespace_filter)

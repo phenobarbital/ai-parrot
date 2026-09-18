@@ -1,4 +1,5 @@
 """S2 gate tests: fast single-process contract checks (always) + full multi-process matrix (PARROT_SPIKE_FULL=1)."""
+
 from __future__ import annotations
 
 import os

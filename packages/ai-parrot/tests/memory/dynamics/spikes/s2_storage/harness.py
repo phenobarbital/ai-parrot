@@ -1,4 +1,5 @@
 """S2 spike harness: spawn-based multi-process workloads, crash injection, FAISS comparison, report writer."""
+
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +20,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[7]
-SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
+SPIKE_DIR = (
+    Path(__file__).resolve().parent
+)  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 CRASH_POINTS = ("before_log", "after_log", "after_state")
 _CORE_SRC = str(REPO_ROOT / "packages" / "ai-parrot" / "src")
 _SPIKE_PARENT = str(Path(__file__).resolve().parent.parent)  # "spikes" dir -> makes `s2_storage` importable
@@ -68,9 +71,7 @@ def _cpu_model() -> str:
 
 def _disk_type() -> str:
     try:
-        out = subprocess.run(
-            ["lsblk", "-d", "-o", "NAME,ROTA", "-n"], capture_output=True, text=True, timeout=5
-        ).stdout
+        out = subprocess.run(["lsblk", "-d", "-o", "NAME,ROTA", "-n"], capture_output=True, text=True, timeout=5).stdout
         lines = [ln.split() for ln in out.strip().splitlines() if ln.strip()]
         if lines:
             rota = lines[0][1] if len(lines[0]) > 1 else "?"
@@ -242,7 +243,9 @@ async def _worker_filter(path: Path, worker_id: int, count: int, namespace: dict
     return {"worker_id": worker_id, "written": count, "namespace": namespace}
 
 
-def _worker_main(kind: str, arm: str, db_path: str, worker_id: int, plan: dict[str, Any], barrier, out_q: mp.Queue) -> None:
+def _worker_main(
+    kind: str, arm: str, db_path: str, worker_id: int, plan: dict[str, Any], barrier, out_q: mp.Queue
+) -> None:
     """Process entry point. A crash (`os._exit`) inside the async body is a real process death — never caught.
 
     Every OTHER failure (e.g. a FAISS worker hitting a corrupted snapshot mid-write from a sibling
@@ -280,8 +283,7 @@ def _spawn_pool(kind: str, arm: str, db_path: Path, n: int, plans: list[dict[str
     out_q: mp.Queue = ctx.Queue()
     barrier = ctx.Barrier(n) if n > 1 else None
     procs = [
-        ctx.Process(target=_worker_main, args=(kind, arm, str(db_path), i, plans[i], barrier, out_q))
-        for i in range(n)
+        ctx.Process(target=_worker_main, args=(kind, arm, str(db_path), i, plans[i], barrier, out_q)) for i in range(n)
     ]
     for p in procs:
         p.start()
@@ -611,7 +613,9 @@ def default_matrix() -> list[Workload]:
     matrix = [
         Workload("plain_writes_5000", episodes=5000, processes=8, arms=("sqlite", "faiss")),
         Workload("plain_writes_10000", episodes=10000, processes=8, arms=("sqlite", "faiss")),
-        Workload("duplicate_apply_review", episodes=1, processes=8, arms=("sqlite",), extra={"kind": "duplicate_review"}),
+        Workload(
+            "duplicate_apply_review", episodes=1, processes=8, arms=("sqlite",), extra={"kind": "duplicate_review"}
+        ),
         Workload(
             "concurrent_same_memory_review",
             episodes=1,
@@ -622,7 +626,14 @@ def default_matrix() -> list[Workload]:
     ]
     for crash_at in CRASH_POINTS:
         matrix.append(
-            Workload(f"crash_{crash_at}", episodes=1, processes=1, crash_at=crash_at, arms=("sqlite",), extra={"kind": "crash"})
+            Workload(
+                f"crash_{crash_at}",
+                episodes=1,
+                processes=1,
+                crash_at=crash_at,
+                arms=("sqlite",),
+                extra={"kind": "crash"},
+            )
         )
     matrix.append(
         Workload(
@@ -684,14 +695,18 @@ def write_report(results: list[dict[str, Any]], *, commands: list[str]) -> Path:
             if "counts" in ar:
                 note_bits.append(f"counts={ar['counts']} expected_each={ar['expected_each_namespace']}")
             if "worker_errors" in ar:
-                note_bits.append(f"worker_errors={ar['worker_errors']} final_snapshot_corrupted={ar.get('final_snapshot_corrupted')}")
+                note_bits.append(
+                    f"worker_errors={ar['worker_errors']} final_snapshot_corrupted={ar.get('final_snapshot_corrupted')}"
+                )
             if "first_pass_count" in ar:
                 note_bits.append(
                     f"first={ar['first_pass_count']} second={ar['second_pass_count']} "
                     f"ttl_deleted={ar['deleted_by_ttl_sweep']} ts_preserved={ar['timestamps_preserved']}"
                 )
             note = "; ".join(note_bits)
-            lines.append(f"| {r['name']} | {arm} | {ar.get('lost_writes', 'n/a')} | {ar.get('converged', 'n/a')} | {note} |")
+            lines.append(
+                f"| {r['name']} | {arm} | {ar.get('lost_writes', 'n/a')} | {ar.get('converged', 'n/a')} | {note} |"
+            )
     lines.append("")
     lines.append("## Non-Atomicity Evidence (documented, not re-run live) — spec §6 C5")
     lines.append("")
@@ -702,7 +717,7 @@ def write_report(results: list[dict[str, Any]], *, commands: list[str]) -> Path:
     )
     lines.append(
         "- **Redis** `RedisVectorBackend.update_metadata` (`core/memory/episodic/backends/redis_vector.py:575-587`): "
-        "`hget(key, \"metadata\")` → merge in Python → `hset(key, \"metadata\", ...)` with no `WATCH`/`MULTI` — "
+        '`hget(key, "metadata")` → merge in Python → `hset(key, "metadata", ...)` with no `WATCH`/`MULTI` — '
         "a classic read-modify-write race."
     )
     faiss_evidence = []
@@ -716,7 +731,7 @@ def write_report(results: list[dict[str, Any]], *, commands: list[str]) -> Path:
             )
     lines.append(
         "- **FAISS** `FAISSBackend.save`/`load` (`core/memory/episodic/backends/faiss.py:292-360`) rewrites the "
-        "entire snapshot from this process's in-memory `_episodes` dict with plain `open(path, \"w\")` — no lock, "
+        'entire snapshot from this process\'s in-memory `_episodes` dict with plain `open(path, "w")` — no lock, '
         "no temp-file-then-rename. Measured this run under 8 concurrent processes: " + "; ".join(faiss_evidence) + ". "
         "`worker_errors` counts workers that additionally raised `JSONDecodeError` reading a sibling's in-progress "
         "write; `final_snapshot_corrupted` (when true) means even the final on-disk snapshot failed to load at "
@@ -726,16 +741,18 @@ def write_report(results: list[dict[str, Any]], *, commands: list[str]) -> Path:
     lines.append("")
     lines.append("## Pass/Fail")
     lines.append("")
-    sqlite_lost = sum(
-        ar.get("lost_writes", 0) for r in results for arm, ar in r["arms"].items() if arm == "sqlite"
+    sqlite_lost = sum(ar.get("lost_writes", 0) for r in results for arm, ar in r["arms"].items() if arm == "sqlite")
+    lines.append(
+        f"- Zero lost writes across all sqlite-arm workloads: {'PASS' if sqlite_lost == 0 else 'FAIL'} (total lost={sqlite_lost})"
     )
-    lines.append(f"- Zero lost writes across all sqlite-arm workloads: {'PASS' if sqlite_lost == 0 else 'FAIL'} (total lost={sqlite_lost})")
     recall_p95 = None
     for r in results:
         if r["name"] == "plain_writes_5000" and "sqlite" in r["arms"]:
             recall_p95 = r["arms"]["sqlite"]["timings"]["recall_similar_db_ms"]["p95"]
     if recall_p95 is not None:
-        lines.append(f"- p95 recall_similar (DB-only) < 50ms @5k: {'PASS' if recall_p95 < 50 else 'FAIL'} (measured {recall_p95:.3f}ms)")
+        lines.append(
+            f"- p95 recall_similar (DB-only) < 50ms @5k: {'PASS' if recall_p95 < 50 else 'FAIL'} (measured {recall_p95:.3f}ms)"
+        )
     for r in results:
         if r["kind"] == "crash":
             ar = r["arms"]["sqlite"]
@@ -752,7 +769,9 @@ def write_report(results: list[dict[str, Any]], *, commands: list[str]) -> Path:
         "injection point is deterministic; contention scenarios (duplicate/concurrent review, plain writes, "
         "namespace filter) use the full pool per spec §3 row G2."
     )
-    lines.append("- No live PostgreSQL/Redis run — their non-atomicity is documented from source only (spec explicitly excludes a live run from S2).")
+    lines.append(
+        "- No live PostgreSQL/Redis run — their non-atomicity is documented from source only (spec explicitly excludes a live run from S2)."
+    )
     lines.append("- U4 review-log retention policy is an open owner decision (see amendment.md).")
     lines.append(
         "- `sqlite_prototype.search_similar` does the namespace-filtered SQL query first (correct per spec §2) but "
