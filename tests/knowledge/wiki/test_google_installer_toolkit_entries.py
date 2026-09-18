@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 from parrot.knowledge.wiki.google import assets
+from parrot.knowledge.wiki.google.cli import google
 from parrot.knowledge.wiki.google.installer import (
     _install_mcp,
     reconcile_toolkit_entries,
@@ -220,3 +222,53 @@ def test_reconcile_updates_both_config_files(tmp_root_with_config: Path, mcp_con
     assert primary_servers["parrot-stub"] == plugin_servers["parrot-stub"]
     assert not warnings
     assert any("parrot-stub" in a for a in actions)
+
+
+class TestInstallCLIToolkitOptions:
+    """CLI-level coverage: hard-cut removal of --toolkits/--all-toolkits (AC9)."""
+
+    def test_toolkits_flag_is_rejected(self, tmp_path: Path):
+        # AC9 — hard cut: the flag must not be silently accepted.
+        runner = CliRunner()
+        result = runner.invoke(google, ["install", "--path", str(tmp_path), "--no-build", "--toolkits=memory"])
+        assert result.exit_code != 0
+        assert "no such option" in result.output.lower()
+
+    def test_all_toolkits_flag_is_rejected(self, tmp_path: Path):
+        # AC9 — hard cut: the flag must not be silently accepted.
+        runner = CliRunner()
+        result = runner.invoke(google, ["install", "--path", str(tmp_path), "--no-build", "--all-toolkits"])
+        assert result.exit_code != 0
+        assert "no such option" in result.output.lower()
+
+    def test_empty_toolkit_config_hints_at_new_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mcp_config_path: Path
+    ):
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        monkeypatch.setattr(assets, "default_mcp_config_path", lambda: mcp_config_path)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            google,
+            ["install", "--path", str(repo_root), "--no-build", "--no-bookstore", "--no-gitignore"],
+        )
+        assert result.exit_code == 0, result.output
+        assert "parrot toolkits install" in result.output
+
+    def test_install_command_still_reconciles_enabled_toolkits(
+        self, tmp_root_with_config: Path, mcp_config_path: Path
+    ):
+        """The flag cut must not break reconciliation for a repo with enabled sections."""
+        root = tmp_root_with_config
+
+        runner = CliRunner()
+        result = runner.invoke(
+            google,
+            ["install", "--path", str(root), "--no-build", "--no-bookstore", "--no-gitignore"],
+        )
+        assert result.exit_code == 0, result.output
+
+        servers = _config(mcp_config_path)["mcpServers"]
+        assert "parrot-stub" in servers
