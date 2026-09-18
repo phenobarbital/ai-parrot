@@ -55,7 +55,6 @@ from navigator_eventbus.lifecycle.subscribers.logging import LoggingSubscriber
 from parrot.core.events.lifecycle.subscribers.opentelemetry import OpenTelemetrySubscriber
 from navigator_eventbus.lifecycle.subscribers.webhook import WebhookSubscriber
 
-
 __all__ = [
     # Trace
     "TraceContext",

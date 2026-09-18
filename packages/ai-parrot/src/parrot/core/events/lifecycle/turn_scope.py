@@ -5,6 +5,7 @@
 ``TURN_SCOPE`` around a turn therefore lets a ``where=`` predicate isolate exactly the
 tool events that turn caused — in the CLI and in a multi-tenant server alike.
 """
+
 from __future__ import annotations
 
 import contextlib
