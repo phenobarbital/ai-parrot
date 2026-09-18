@@ -5,6 +5,7 @@ so core attaches a sibling top-level command instead (precedent: `mcp-local`).
 
 wikitoolkit is deliberately invisible here — it stays owned by `parrot claude install`.
 """
+
 from __future__ import annotations
 
 import sys
@@ -13,7 +14,9 @@ from pathlib import Path
 import click
 
 host_option = click.option(
-    "--host", "hosts_", multiple=True,
+    "--host",
+    "hosts_",
+    multiple=True,
     type=click.Choice(["claude", "codex", "google"]),
     help="Target host (repeatable). Default: every detected host.",
 )
@@ -196,7 +199,9 @@ def uninstall(names: tuple[str, ...], hosts_: tuple[str, ...], yes: bool) -> Non
         return
     for warning in _warn_user_global(hosts):
         click.secho(f"  ⚠ {warning}", fg="yellow")
-    prompt = f"Remove {', '.join(selected)} (config only — operator data is never deleted) from {[h.value for h in hosts]}?"
+    prompt = (
+        f"Remove {', '.join(selected)} (config only — operator data is never deleted) from {[h.value for h in hosts]}?"
+    )
     if not yes and not click.confirm(prompt):
         return
     report = uninstall_toolkits(root, selected, hosts)

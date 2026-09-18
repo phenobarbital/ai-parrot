@@ -1,4 +1,5 @@
 """`parrot toolkits` CLI (FEAT-570, TASK-3376)."""
+
 from __future__ import annotations
 
 from pathlib import Path
