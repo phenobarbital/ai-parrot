@@ -309,10 +309,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet)
+**Date**: 2026-09-18
+**Notes**: Added `_extract_toml_table` (excises a table's raw text verbatim, used
+to preserve wikitoolkit byte-for-byte), `_toolkit_sections` (shared
+enabled/non-colliding filter factored out of `_install_mcp`), and public
+`reconcile_toolkit_tables(root) -> tuple[list[str], list[str]]` — regenerates
+only the `[mcp_servers.parrot-<name>]` tables, preserves the wikitoolkit table
+verbatim, validates TOML before writing. `_install_mcp` now delegates to
+`_toolkit_sections`; its output is behavior-preserved (verified against
+`test_install_is_idempotent`'s byte-exact assertions). Created
+`tests/knowledge/wiki/test_codex_toolkit_reconcile.py` with 5 tests covering
+AC5 (wikitoolkit preservation), foreign-table preservation+warning, TOML
+validity (AC12), disabled-section removal, and idempotency.
+Validation: root `tests/` tree (211 tests incl. the new file) all green;
+`ruff check --no-cache` clean.
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
