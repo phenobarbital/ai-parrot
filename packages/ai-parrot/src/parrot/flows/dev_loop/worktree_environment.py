@@ -106,13 +106,49 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
     return POLICY_MESSAGE
 
 
+WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
+
+
+def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the primary checkout's worktree directory when ``root`` is a linked worktree.
+
+    Linked worktrees (feature and pool checkouts) live under the primary
+    checkout's ``.claude/worktrees``. ``/sdd-done`` run from inside one must
+    create a throwaway ledger-snapshot worktree there and remove the feature
+    worktree itself, and both operations write to that directory rather than
+    to the worktree being executed in. The rest of the primary checkout is
+    intentionally not returned so it stays read-only.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The existing admin directory to bind writable, or an empty tuple for
+        the primary checkout (already writable) and for linked checkouts whose
+        primary has no such directory.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    admin_dir = (primary / WORKTREE_ADMIN_DIR).resolve()
+    if not admin_dir.is_dir() or admin_dir.is_relative_to(root):
+        return ()
+    return (admin_dir,)
+
+
 def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     """Build a fail-closed Linux filesystem sandbox for a command and its children.
 
-    Only the checkout, Git administration directory, and private temporary
-    storage are writable. Existing shared environments remain read-only even
-    when the checkout is the primary repository. No host chmod or mount changes
-    are performed. Network isolation is outside this policy's scope.
+    Only the checkout, Git administration directory, the primary checkout's
+    worktree directory (``.claude/worktrees``, so a worktree agent can run
+    ``git worktree add/remove`` for ``/sdd-done``), and private temporary
+    storage are writable. The rest of the primary checkout and existing shared
+    environments remain read-only even when the checkout is the primary
+    repository. No host chmod or mount changes are performed. Network
+    isolation is outside this policy's scope.
     """
     if not argv:
         raise ValueError("A command is required.")
@@ -134,10 +170,15 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         "/dev",
         "--tmpfs",
         "/tmp",
-        "--bind",
-        str(root),
-        str(root),
     ]
+    admin_dirs = worktree_admin_dirs(root, git_dir)
+    for admin_dir in admin_dirs:
+        command.extend(["--bind", str(admin_dir), str(admin_dir)])
+    if not any(root.is_relative_to(admin_dir) for admin_dir in admin_dirs):
+        # A checkout inside a bound admin directory is already writable; binding
+        # it again would make it a mount point, and `git worktree remove` of the
+        # current worktree would then fail to delete the directory (EBUSY).
+        command.extend(["--bind", str(root), str(root)])
     if git_dir is not None and not git_dir.is_relative_to(root):
         command.extend(["--bind", str(git_dir), str(git_dir)])
     for environment in shared_environments(cwd):

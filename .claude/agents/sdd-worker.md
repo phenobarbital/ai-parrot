@@ -62,6 +62,10 @@ directory switching, no shared mutable state across features.
 - Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
   use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
   prompt instructions and executable allowlists alone are not an isolation boundary.
+- The primary checkout's `.claude/worktrees/` is the one writable exception outside your
+  worktree: it exists so `/sdd-done` can run from here (ledger-snapshot worktree, removal
+  of this worktree). Everything else in the primary checkout — `sdd/ledger/`, `sdd/tasks/`,
+  the `.venv` — stays read-only. Never `cd` to the primary checkout to work around that.
 
 ## ⛔ CARDINAL RULES — NEVER VIOLATE THESE
 
@@ -575,6 +579,9 @@ After all tasks are done:
 
    Next:
      - Run /sdd-done FEAT-<ID> for verification, PR, and cleanup
+       (it may run from inside this worktree — the sandbox allows worktree
+       administration under the primary checkout's .claude/worktrees/ — or
+       from the main repo)
    ```
 
 ## Structured Output Contract (dispatched runs)
