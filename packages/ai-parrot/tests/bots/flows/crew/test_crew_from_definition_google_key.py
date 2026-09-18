@@ -1,4 +1,5 @@
 """AgentCrew.from_definition credential injection (FEAT-575, TASK-3454)."""
+
 import pytest
 
 from parrot.bots.flows.crew import AgentCrew
