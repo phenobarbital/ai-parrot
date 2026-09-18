@@ -191,7 +191,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Modifies claude_code/installer.py — same file as TASK-3371; and its empty-config hint names the command TASK-3376 creates.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3377-claude-flag-cut.md"
+      "completed_at": "2026-09-18T06:42:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3377-claude-flag-cut.md"
     },
     {
       "id": "TASK-3378",
