@@ -342,10 +342,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via native seat `sonnet`
+**Date**: 2026-09-19
+**Notes**: Added `apply_google_api_key`/`get_crew_google_api_key` import to
+`handler.py`. Resolved `google_key = get_crew_google_api_key()` once above the
+agent-construction loop, called `apply_google_api_key(agent, google_key)`
+after each agent's system-prompt assignment, and passed
+`google_api_key=google_key` into the `AgentCrew(...)` construction. Did not
+touch `crew.py`/`manager.py`. Created `test_crew_handler_google_key.py`
+(3 tests: Google agent injected + OpenAI agent untouched + AgentCrew receives
+key; key never in `crew_def.model_dump()` (AC7); unset key → no-op). Test
+run: 3 passed. The merge's diff stat looked large (231 lines) because the
+engine's lint-autofix commit reformatted the whole pre-existing file with
+black (quote style, line wrapping) — the functional diff itself was the
+minimal 3-hunk change described above (verified via `git diff` against the
+pre-lint commit).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
