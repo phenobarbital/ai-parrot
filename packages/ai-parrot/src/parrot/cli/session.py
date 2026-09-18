@@ -3,6 +3,7 @@
 Only this module calls ``bot.ask`` / ``bot.ask_stream``. Both the inline REPL and
 the Textual workspace consume the ``TurnEvent`` stream produced here.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,11 +14,26 @@ from uuid import uuid4
 
 from parrot.cli.commands import ConversationTurn  # verified: commands.py:38
 from parrot.cli.events import (  # provided by TASK-3403
-    BackendCapabilities, PostTurnHook, TextDelta, ToolFailed, ToolFinished, ToolStarted,
-    TurnCancelled, TurnCompleted, TurnEvent, TurnFailed, TurnStarted, summarize_message_text)
+    BackendCapabilities,
+    PostTurnHook,
+    TextDelta,
+    ToolFailed,
+    ToolFinished,
+    ToolStarted,
+    TurnCancelled,
+    TurnCompleted,
+    TurnEvent,
+    TurnFailed,
+    TurnStarted,
+    summarize_message_text,
+)
 from parrot.cli.modes import save_session_pointer  # provided by TASK-3401
 from parrot.core.events.lifecycle import (  # verified: lifecycle/__init__.py:21-22, :39-41
-    AfterToolCallEvent, BeforeToolCallEvent, ToolCallFailedEvent, get_global_registry)
+    AfterToolCallEvent,
+    BeforeToolCallEvent,
+    ToolCallFailedEvent,
+    get_global_registry,
+)
 from parrot.core.events.lifecycle.turn_scope import in_turn_scope, turn_scope  # provided by TASK-3402
 from parrot.models.basic import ToolCall  # verified: models/basic.py:23
 from parrot.models.outputs import OutputMode  # verified: repl.py:24
@@ -61,8 +77,12 @@ class TurnRunner:
         caps = getattr(bot, "capabilities", None)
         if isinstance(caps, BackendCapabilities):
             return caps
-        return BackendCapabilities(streaming=True, live_tool_events=True, usage=True,
-                                   resume=callable(getattr(bot, "get_conversation_history", None)))
+        return BackendCapabilities(
+            streaming=True,
+            live_tool_events=True,
+            usage=True,
+            resume=callable(getattr(bot, "get_conversation_history", None)),
+        )
 
     @property
     def capabilities(self) -> BackendCapabilities:
@@ -128,6 +148,7 @@ class TurnRunner:
         yield TurnStarted(kind="started", turn_id=turn_id, seq=seq, query=query, streaming=self.config.streaming)
         try:
             if self.capabilities.live_tool_events:
+
                 async def _on_tool_started(event: BeforeToolCallEvent) -> None:
                     queue.put_nowait(
                         ToolStarted(
@@ -210,8 +231,14 @@ class TurnRunner:
             yield TurnCancelled(kind="cancelled", turn_id=turn_id, seq=seq + 1, partial_text=partial)
         except Exception as exc:  # noqa: BLE001 — presenters must never see a raw exception (AC19)
             self.logger.exception("turn %s failed", turn_id)
-            yield TurnFailed(kind="failed", turn_id=turn_id, seq=seq + 1, error_type=type(exc).__name__,
-                             error_message=str(exc), partial_text=partial)
+            yield TurnFailed(
+                kind="failed",
+                turn_id=turn_id,
+                seq=seq + 1,
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                partial_text=partial,
+            )
         finally:
             for sid in sub_ids:
                 registry.unsubscribe(sid)

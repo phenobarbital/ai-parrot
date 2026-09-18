@@ -1,4 +1,5 @@
 """Unit tests for parrot.cli.session.TurnRunner (FEAT-573 TASK-3404, spec §4)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,8 +9,14 @@ from typing import Any, List
 
 import pytest
 
-from parrot.cli.events import (TurnCancelled, TurnCompleted, TurnEventKind, TurnFailed,  # provided by TASK-3403
-                               ToolFinished, ToolStarted)
+from parrot.cli.events import (
+    TurnCancelled,
+    TurnCompleted,
+    TurnEventKind,
+    TurnFailed,  # provided by TASK-3403
+    ToolFinished,
+    ToolStarted,
+)
 from parrot.cli.session import TurnInProgressError, TurnRunner
 from parrot.core.events.lifecycle import scope  # verified: lifecycle/__init__.py:22
 from parrot.models.outputs import OutputMode  # verified: repl.py:24
@@ -30,7 +37,9 @@ def _config(**over: Any) -> SimpleNamespace:
 
 
 class _FakeBot:
-    def __init__(self, deltas: List[str], final: Any = None, tool: AbstractTool | None = None, fail_after: int | None = None):
+    def __init__(
+        self, deltas: List[str], final: Any = None, tool: AbstractTool | None = None, fail_after: int | None = None
+    ):
         self.deltas, self.final, self.tool, self.fail_after = deltas, final, tool, fail_after
         self.calls: List[dict] = []
         self.closed = False
