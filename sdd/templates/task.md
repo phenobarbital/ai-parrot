@@ -70,6 +70,43 @@ class ExistingClass(BaseClass):
 
 ---
 
+## Complexity Contract
+
+> **MANDATORY.** Declares the measurable targets and contract symbols used for
+> deterministic complexity routing (FEAT-561) before any coder is dispatched.
+> This is a declaration, not a hand-authored score — the evaluator computes
+> classification from measured evidence, never from this section's prose.
+> Legacy tasks without this section remain parseable but route conservatively
+> (unknown symbol coverage requires the complex-task route until upgraded).
+>
+> `targets` MUST match the "Files to Create / Modify" table exactly after
+> normalization (same paths, uppercase `"CREATE"` / `"MODIFY"` actions).
+> `contract_symbols` MUST list every exact `sym:<repo-relative-path>#<qualname>`
+> identifier the Codebase Contract above verified as an existing reference —
+> use `[]` (not `null`) when there are none; `null` means legacy/unknown
+> coverage and is only for tasks predating this section.
+
+```json
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "parrot/path/to/new_file.py",
+      "action": "CREATE"
+    },
+    {
+      "path": "parrot/path/to/existing.py",
+      "action": "MODIFY"
+    }
+  ],
+  "contract_symbols": [
+    "sym:parrot/path/to/existing.py#ExistingClass"
+  ]
+}
+```
+
+---
+
 ## Delegation Contract
 
 > **OPTIONAL.** Include this section ONLY when the task is
@@ -233,6 +270,15 @@ anchor unique` instead of a bare one-line anchor.
 - [ ] No linting errors: `ruff check parrot/<path>`
 - [ ] Imports work: `from parrot.<module> import <Component>`
 - [ ] Criterion N
+
+---
+
+## Validation Commands
+
+> File-level pytest only — no directories, no package roots.
+
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_mirror.py -q`
+- `pytest tests/sdd_scripts/test_check_task_graph.py::test_validation_contract_findings -q`
 
 ---
 

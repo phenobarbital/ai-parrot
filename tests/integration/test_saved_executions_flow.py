@@ -16,6 +16,7 @@ import pytest
 
 from parrot.bots.flows.core.storage.backends.base import ResultStorage
 from parrot.bots.flows.crew import AgentCrew
+from parrot.clients.base import AbstractClient
 from parrot.handlers.crew.models import ScheduleRequest
 from parrot.handlers.crew.saved_execution_service import SavedExecutionService
 
@@ -104,7 +105,26 @@ def _fake_agent(name: str = "agent1") -> MagicMock:
     agent.is_configured = True
     agent.description = "fake agent"
     agent.ask = AsyncMock(return_value=SimpleNamespace(content="agent output"))
+    # CrewAgentNode validates ``agent`` against the runtime-checkable
+    # ``AgentLike`` protocol, which (Python >= 3.12) resolves members via
+    # ``inspect.getattr_static`` — MagicMock's lazily-created attributes are
+    # invisible to it, so ``invoke`` must be set explicitly.
+    agent.invoke = AsyncMock(return_value=SimpleNamespace(content="agent output"))
     return agent
+
+
+def _fake_llm() -> MagicMock:
+    """Fake synthesis LLM client.
+
+    ``run_sequential()`` defaults to ``generate_summary=True``, and an
+    ``AgentCrew`` built without ``llm=`` falls back to a real Google client —
+    replaying would then make a live Gemini call. ``spec=AbstractClient``
+    satisfies the constructor's ``isinstance`` check.
+    """
+    llm = MagicMock(spec=AbstractClient)
+    llm.__aenter__.return_value = llm
+    llm.ask = AsyncMock(return_value=SimpleNamespace(content="synthesis"))
+    return llm
 
 
 def _real_crew(storage: InMemoryResultStorage) -> AgentCrew:
@@ -112,6 +132,7 @@ def _real_crew(storage: InMemoryResultStorage) -> AgentCrew:
     return AgentCrew(
         name="research-crew",
         agents=[_fake_agent()],
+        llm=_fake_llm(),
         persist_results=True,
         result_storage=storage,
     )

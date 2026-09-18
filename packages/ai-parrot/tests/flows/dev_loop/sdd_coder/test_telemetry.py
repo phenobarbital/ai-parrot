@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import subprocess
 import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -247,3 +248,145 @@ class TestSink:
 
         assert len(uids) == 20
         assert uids == {f"concurrent-uid-{i:02d}" for i in range(20)}
+
+
+def test_derives_main_checkout_from_worktree_base_not_process_cwd(tmp_path, monkeypatch):
+    """navconfig chdirs to its BASE_DIR on import; the root must follow the worktree base's repo."""
+    repo = tmp_path / "other-repo"
+    (repo / ".claude" / "worktrees").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    resolved = resolve_durable_root(None, worktree_base_path=str(repo / ".claude" / "worktrees"))
+
+    assert resolved == (repo / "artifacts" / "logs" / "sdd-coder-usage").resolve()
+
+
+class TestExecutionAttribution:
+    """FEAT-559: execution_id projection and legacy compatibility."""
+
+    def test_legacy_history_and_telemetry(self):
+        """Old records parse without rewriting history; execution_id defaults to empty."""
+        # Legacy row without execution_id
+        legacy_json = json.dumps(
+            {
+                "kind": "attempt",
+                "ts": "2026-09-12T00:00:00+00:00",
+                "attempt_uid": "a" * 32,
+                "job_id": "job-123",
+                "feature_id": "FEAT-554",
+                "task_id": "TASK-1",
+                "attempt": 1,
+                "seat_label": "seat-1",
+                "backend": "bedrock",
+                "configured_model": "anthropic.claude-3",
+                "resolved_model": "anthropic.claude-3",
+                "duration_s": 60.0,
+                "turns": 3,
+                "terminal": "completed",
+                "error_class": "",
+            }
+        )
+
+        # Parse and verify execution_id defaults to empty
+        row = AttemptUsageRow.model_validate_json(legacy_json)
+        assert row.execution_id == ""
+        assert row.attempt_uid == "a" * 32
+
+        # Same for outcome row
+        outcome_json = json.dumps(
+            {
+                "kind": "outcome",
+                "ts": "2026-09-12T00:00:00+00:00",
+                "attempt_uid": "a" * 32,
+                "job_id": "job-123",
+                "feature_id": "FEAT-554",
+                "task_id": "TASK-1",
+                "attempt": 1,
+                "event_seq": 1,
+                "outcome": "merged",
+            }
+        )
+        outcome = OutcomeRow.model_validate_json(outcome_json)
+        assert outcome.execution_id == ""
+
+    def test_execution_identity_projection(self):
+        """New usage/outcome JSON carries the same execution UUID as its attempt."""
+        # Create an AttemptRecord with execution_id
+        record = AttemptRecord(
+            attempt=1,
+            seat_label="seat-1",
+            backend="bedrock",
+            model="anthropic.claude-3",
+            started_at="2026-09-12T00:00:00+00:00",
+            ended_at="2026-09-12T00:01:00+00:00",
+            duration_s=60.0,
+            usage={"input_tokens": 100, "output_tokens": 50},
+        )
+        record.attempt_uid = "a" * 32
+        record.execution_id = "550e8400-e29b-41d4-a716-446655440000"
+        record.resolved_model = "anthropic.claude-3-resolved"
+        record.turns = 3
+        record.terminal = "completed"
+        record.error_class = ""
+        record.declared_files_known = True
+        record.turns_with_unknown_usage = 0
+        record.budget_report = {"accounting_complete": True}
+        record.turn_series = [(1, 50, 25)]
+
+        row = build_attempt_row(record, feature_id="FEAT-559", job_id="job-123", task_id="TASK-1", declared_files=5)
+
+        assert row.execution_id == "550e8400-e29b-41d4-a716-446655440000"
+        serialized = json.loads(row.model_dump_json())
+        assert serialized["execution_id"] == "550e8400-e29b-41d4-a716-446655440000"
+
+        # Verify outcome row also accepts execution_id
+        outcome = OutcomeRow(
+            ts="2026-09-12T00:00:00+00:00",
+            attempt_uid="a" * 32,
+            job_id="job-123",
+            feature_id="FEAT-559",
+            task_id="TASK-1",
+            attempt=1,
+            event_seq=1,
+            outcome="merged",
+            execution_id="550e8400-e29b-41d4-a716-446655440000",
+        )
+        assert outcome.execution_id == "550e8400-e29b-41d4-a716-446655440000"
+
+    def test_unknown_history_not_counted_as_zero_fix_baseline(self):
+        """Unknown history is not counted as a zero-fix baseline."""
+        # An empty execution_id means unknown historical attribution
+        row = _row()
+        assert row.execution_id == ""
+
+        # Verify that empty execution_id is distinct from a valid UUID
+        row_with_exec = _row(execution_id="550e8400-e29b-41d4-a716-446655440000")
+        assert row_with_exec.execution_id == "550e8400-e29b-41d4-a716-446655440000"
+        assert row.execution_id != row_with_exec.execution_id
+
+    @pytest.mark.asyncio
+    async def test_concurrent_appends_with_execution_id(self, tmp_path):
+        """Concurrent writes with execution_id maintain atomicity."""
+        sink = CoderTelemetrySink(tmp_path)
+        rows = [
+            _row(
+                attempt_uid=f"concurrent-uid-{i:02d}",
+                execution_id="550e8400-e29b-41d4-a716-446655440000",
+            )
+            for i in range(20)
+        ]
+
+        await asyncio.gather(*(sink.write_attempt(r) for r in rows))
+
+        file_path = tmp_path / "FEAT-554.jsonl"
+        assert file_path.exists()
+
+        lines = file_path.read_text("utf-8").splitlines()
+        assert len(lines) == 20
+
+        for line in lines:
+            data = json.loads(line)
+            assert data["execution_id"] == "550e8400-e29b-41d4-a716-446655440000"

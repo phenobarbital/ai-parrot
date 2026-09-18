@@ -1,0 +1,57 @@
+[
+  {
+    "title": "Epson - 502 EcoTank Ink Ultra-high Capacity Bottle Black & Color Bottle Combo Pack - Black/Cyan/Magenta/Yellow",
+    "url": "https://www.bestbuy.com/product/epson-502-ecotank-ink-ultra-high-capacity-bottle-black-color-bottle-combo-pack-black-cyan-magenta-yellow/J7JTY3S43S/sku/12236900",
+    "price": "$75.95",
+    "savings": "Save $19.82",
+    "rating": "Rating 4.6 out of 5 stars with 5 reviews",
+    "ink_format": "bottle",
+    "multipack": true,
+    "genuine_epson": true,
+    "deal_quality": 3
+  },
+  {
+    "title": "Epson - EcoTank 502 Ink Bottle - Black",
+    "url": "https://www.bestbuy.com/product/epson-ecotank-502-ink-bottle-black/J7JTY3S42G/sku/6079900",
+    "price": "$24.99",
+    "savings": null,
+    "rating": "Rating 4.9 out of 5 stars with 1086 reviews",
+    "ink_format": "bottle",
+    "multipack": false,
+    "genuine_epson": true,
+    "deal_quality": 0
+  },
+  {
+    "title": "Epson - 232 Claria Ink High Capacity Black & Standard Color Cartridge Combo Pack (T232XL-BCS) - Black/Cyan/Magenta/Yellow",
+    "url": "https://www.bestbuy.com/product/epson-232-claria-ink-high-capacity-black-standard-color-cartridge-combo-pack-t232xl-bcs-black-cyan-magenta-yellow/J7JTY3R2CK/sku/6516143",
+    "price": "$64.85",
+    "savings": null,
+    "rating": "Rating 4.6 out of 5 stars with 390 reviews",
+    "ink_format": "cartridge",
+    "multipack": true,
+    "genuine_epson": true,
+    "deal_quality": 0
+  },
+  {
+    "title": "Epson - T812XL/T812 4-Pack High-Yield Standard Capacity Ink Cartridges - Black/Cyan/Magenta/Yellow",
+    "url": "https://www.bestbuy.com/product/epson-t812xl-t812-4-pack-high-yield-standard-capacity-ink-cartridges-black-cyan-magenta-yellow/J7JTY36YXK/sku/6428376",
+    "price": "$95.95",
+    "savings": null,
+    "rating": "Rating 4.6 out of 5 stars with 359 reviews",
+    "ink_format": "cartridge",
+    "multipack": true,
+    "genuine_epson": true,
+    "deal_quality": 0
+  },
+  {
+    "title": "Epson - 232 Claria Ink Standard Capacity Cartridge (T232120-S) - Black",
+    "url": "https://www.bestbuy.com/product/epson-232-claria-ink-standard-capacity-cartridge-t232120-s-black/J7JTY3RC5R/sku/6516138",
+    "price": "$22.99",
+    "savings": null,
+    "rating": "Rating 4.5 out of 5 stars with 310 reviews",
+    "ink_format": "cartridge",
+    "multipack": false,
+    "genuine_epson": true,
+    "deal_quality": 0
+  }
+]

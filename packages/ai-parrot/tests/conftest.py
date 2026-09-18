@@ -1,26 +1,49 @@
 """Test configuration helpers for the parrot codebase."""
+
 from __future__ import annotations
 
 import logging
 import os
 import sys
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 import types
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 import pytest
 
 
 def pytest_collection_modifyitems(config, items):  # noqa: D401
     """Skip tests marked real_llm unless PARROT_TEST_REAL_LLM=1 is set."""
     if not os.environ.get("PARROT_TEST_REAL_LLM"):
-        skip_real_llm = pytest.mark.skip(
-            reason="Set PARROT_TEST_REAL_LLM=1 to run real LLM tests"
-        )
+        skip_real_llm = pytest.mark.skip(reason="Set PARROT_TEST_REAL_LLM=1 to run real LLM tests")
         for item in items:
             if "real_llm" in item.keywords:
                 item.add_marker(skip_real_llm)
+    _mark_by_directory(items)
+
+
+_DIRECTORY_MARKERS = {"integration": "integration", "e2e": "e2e"}
+
+
+def _mark_by_directory(items) -> None:
+    """Add ``integration``/``e2e`` markers from the test's directory (FEAT-563).
+
+    Only exact path segments below this ``tests`` directory count, so
+    ``integrations/`` (unit tests of integration packages) is never marked.
+    """
+    base = Path(__file__).resolve().parent
+    for item in items:
+        try:
+            parts = Path(str(item.path)).resolve().relative_to(base).parts[:-1]
+        except ValueError:
+            continue
+        for segment in parts:
+            marker = _DIRECTORY_MARKERS.get(segment)
+            if marker:
+                item.add_marker(getattr(pytest.mark, marker))
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +70,7 @@ def _reset_injection_engine_singleton():
     yield
     _pi_module._RESOLVED_INJECTION_ENGINE = _pi_module._UNSET
     _pi_module._WARMUP_DONE = False
+
 
 # Ensure the project root is importable as ``parrot`` when running tests without
 # installing the package.  Several tests import modules directly from the
@@ -75,6 +99,7 @@ def _install_navconfig_stub() -> None:
         import navconfig  # noqa: F401
         import navconfig.logging  # noqa: F401
         import navconfig.exceptions  # noqa: F401
+
         return
     except ImportError:
         pass
@@ -82,15 +107,18 @@ def _install_navconfig_stub() -> None:
     class _Config:
         def get(self, _key: str, fallback=None):  # noqa: D401
             import os
+
             return os.environ.get(_key, fallback)
 
         def getint(self, _key: str, fallback: int = 0) -> int:
             import os
+
             val = os.environ.get(_key)
             return int(val) if val is not None else int(fallback)
 
         def getboolean(self, _key: str, fallback: bool = False) -> bool:
             import os
+
             val = os.environ.get(_key)
             if val is None:
                 return bool(fallback)
@@ -102,9 +130,13 @@ def _install_navconfig_stub() -> None:
     # navigator.types (Cython) does `from navconfig import config, DEBUG`.
     # Honour PARROT_DEBUG / DEBUG env vars so tests can flip it.
     import os as _os
-    navconfig_module.DEBUG = _os.environ.get(
-        "PARROT_DEBUG", _os.environ.get("DEBUG", "")
-    ).lower() in ("1", "true", "yes", "on")
+
+    navconfig_module.DEBUG = _os.environ.get("PARROT_DEBUG", _os.environ.get("DEBUG", "")).lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
     # Add 'notice' level to standard logging (navconfig extends it)
     NOTICE_LEVEL = 25
@@ -202,9 +234,7 @@ def _install_navigator_stubs() -> None:
     _parrot_interfaces_file_abstract = types.ModuleType("parrot.interfaces.file.abstract")
     _parrot_interfaces_file_abstract.FileManagerInterface = _FileManagerInterface
     _parrot_interfaces_file_abstract.FileMetadata = _FileMetadata
-    sys.modules.setdefault(
-        "parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract
-    )
+    sys.modules.setdefault("parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract)
     _parrot_interfaces_file.abstract = _parrot_interfaces_file_abstract
 
     _parrot_interfaces_file_s3 = types.ModuleType("parrot.interfaces.file.s3")
@@ -268,6 +298,7 @@ def _install_navigator_stubs() -> None:
 
     def _user_session(func=None, **__):
         if func is None:
+
             def wrapper(inner):
                 return inner
 
@@ -288,29 +319,37 @@ def _install_navigator_stubs() -> None:
     navigator_views.View = type("View", (), {})
     navigator_views.BaseHandler = base_handler
     navigator_views.ModelView = type("ModelView", (), {})
-    navigator_views.BaseView = type("BaseView", (), {
-        "query_parameters": staticmethod(lambda req: {}),
-        "json_response": lambda self, data, **kw: data,
-        "error": lambda self, response, status=400: response,
-        "json_data": lambda self: {},
-    })
+    navigator_views.BaseView = type(
+        "BaseView",
+        (),
+        {
+            "query_parameters": staticmethod(lambda req: {}),
+            "json_response": lambda self, data, **kw: data,
+            "error": lambda self, response, status=400: response,
+            "json_data": lambda self: {},
+        },
+    )
     navigator_views.FormModel = type("FormModel", (), {})
 
     # AbstractModel stub used by ChatbotHandler
-    _abstract_model = type("AbstractModel", (navigator_views.BaseView,), {
-        "model": None,
-        "get_model": None,
-        "on_startup": None,
-        "on_shutdown": None,
-        "model_kwargs": {},
-        "name": "Model",
-        "driver": "pg",
-        "dsn": None,
-        "credentials": None,
-        "dbname": "nav.model",
-        "pk": None,
-        "handler": None,
-    })
+    _abstract_model = type(
+        "AbstractModel",
+        (navigator_views.BaseView,),
+        {
+            "model": None,
+            "get_model": None,
+            "on_startup": None,
+            "on_shutdown": None,
+            "model_kwargs": {},
+            "name": "Model",
+            "driver": "pg",
+            "dsn": None,
+            "credentials": None,
+            "dbname": "nav.model",
+            "pk": None,
+            "handler": None,
+        },
+    )
     navigator_views.AbstractModel = _abstract_model
 
     # Register navigator.views.abstract submodule
@@ -338,18 +377,28 @@ def _install_navigator_stubs() -> None:
     asyncdb_exceptions = types.ModuleType("asyncdb.exceptions")
     asyncdb_exceptions.__path__ = []  # treat as package to allow sub-imports
     for _exc_name in [
-        "NoDataFound", "ProviderError", "DriverError", "UninitializedError",
-        "ValidationError", "ConnectionMissing", "ConnectionTimeout", "DataError",
-        "DriverError", "EmptyStatement", "ModelError", "NotSupported",
-        "StatementError", "TooManyConnections", "UnknownPropertyError",
+        "NoDataFound",
+        "ProviderError",
+        "DriverError",
+        "UninitializedError",
+        "ValidationError",
+        "ConnectionMissing",
+        "ConnectionTimeout",
+        "DataError",
+        "DriverError",
+        "EmptyStatement",
+        "ModelError",
+        "NotSupported",
+        "StatementError",
+        "TooManyConnections",
+        "UnknownPropertyError",
     ]:
         setattr(asyncdb_exceptions, _exc_name, type(_exc_name, (Exception,), {}))
     # sub-module aliases so "from asyncdb.exceptions.exceptions import X" works
     asyncdb_exc_exc = types.ModuleType("asyncdb.exceptions.exceptions")
-    asyncdb_exc_exc.__dict__.update({
-        k: v for k, v in asyncdb_exceptions.__dict__.items()
-        if isinstance(v, type) and issubclass(v, Exception)
-    })
+    asyncdb_exc_exc.__dict__.update(
+        {k: v for k, v in asyncdb_exceptions.__dict__.items() if isinstance(v, type) and issubclass(v, Exception)}
+    )
     sys.modules.setdefault("asyncdb.exceptions", asyncdb_exceptions)
     sys.modules.setdefault("asyncdb.exceptions.exceptions", asyncdb_exc_exc)
 
@@ -500,11 +549,11 @@ def fake_parrot_bots(monkeypatch):
         def __init__(self, agent, **kwargs):
             self.agent = agent
             self.name = getattr(agent, "name", "Agent")
-        
+
         async def run(self, *args, **kwargs):
             # Simple mock implementation invoking the agent or returning a dummy response
             if hasattr(self.agent, "arun"):
-                 return await self.agent.arun(*args, **kwargs)
+                return await self.agent.arun(*args, **kwargs)
             return "Agent executed"
 
     tools_agent_module.AgentTool = _AgentTool
@@ -514,7 +563,7 @@ def fake_parrot_bots(monkeypatch):
     @dataclass
     class _AIMessage:
         def __init__(self, content: Optional[str] = None, **kwargs):
-            self.content = content or kwargs.get('output')
+            self.content = content or kwargs.get("output")
             for k, v in kwargs.items():
                 setattr(self, k, v)
 
@@ -577,9 +626,7 @@ def fake_parrot_bots(monkeypatch):
         @property
         def agent_results(self) -> Dict[str, Any]:
             return {
-                agent_id: self.results[idx]
-                for idx, agent_id in enumerate(self.agent_ids)
-                if idx < len(self.results)
+                agent_id: self.results[idx] for idx, agent_id in enumerate(self.agent_ids) if idx < len(self.results)
             }
 
         @property
@@ -656,6 +703,7 @@ def fake_parrot_bots(monkeypatch):
 
     class _VectorStoreProtocol:
         """Stub protocol for vector store."""
+
         def encode(self, texts):
             return []
 
@@ -681,24 +729,16 @@ _install_navigator_stubs()
 # ── Permission System Fixtures ─────────────────────────────────────────────────
 # These fixtures support FEAT-014: Granular Permissions System tests.
 
-import pytest
-
-
 # ── Dataset Manager Fixtures ────────────────────────────────────────────────
 # These fixtures support FEAT-021: DatasetManager Support tests.
-
-import pandas as pd
-from io import BytesIO
 
 
 @pytest.fixture
 def sample_dataframe():
     """Sample DataFrame for testing."""
-    return pd.DataFrame({
-        'name': ['Alice', 'Bob', 'Charlie'],
-        'age': [25, 30, 35],
-        'salary': [50000.0, 60000.0, 70000.0]
-    })
+    return pd.DataFrame(
+        {"name": ["Alice", "Bob", "Charlie"], "age": [25, 30, 35], "salary": [50000.0, 60000.0, 70000.0]}
+    )
 
 
 @pytest.fixture
@@ -729,6 +769,7 @@ def empty_session():
 def dataset_manager_with_data(sample_dataframe):
     """DatasetManager with pre-loaded data."""
     from parrot.tools.dataset_manager import DatasetManager
+
     dm = DatasetManager()
     dm.add_dataframe("test_df", sample_dataframe)
     return dm
@@ -738,6 +779,7 @@ def dataset_manager_with_data(sample_dataframe):
 def mock_pandas_agent(dataset_manager_with_data):
     """Mock PandasAgent with DatasetManager."""
     from unittest.mock import MagicMock
+
     agent = MagicMock()
     agent.name = "test-pandas-agent"
     agent._dataset_manager = dataset_manager_with_data
@@ -749,6 +791,7 @@ def mock_pandas_agent(dataset_manager_with_data):
 def mock_regular_agent():
     """Mock regular Agent (not PandasAgent)."""
     from unittest.mock import MagicMock
+
     agent = MagicMock()
     agent.name = "test-agent"
     # No _dataset_manager attribute
@@ -763,10 +806,10 @@ def mock_regular_agent():
 def jira_hierarchy():
     """Role hierarchy for Jira-style permissions."""
     return {
-        'jira.admin': {'jira.manage', 'jira.write', 'jira.read'},
-        'jira.manage': {'jira.write', 'jira.read'},
-        'jira.write': {'jira.read'},
-        'jira.read': set(),
+        "jira.admin": {"jira.manage", "jira.write", "jira.read"},
+        "jira.manage": {"jira.write", "jira.read"},
+        "jira.write": {"jira.read"},
+        "jira.read": set(),
     }
 
 
@@ -774,9 +817,9 @@ def jira_hierarchy():
 def simple_hierarchy():
     """Simple role hierarchy for basic permission tests."""
     return {
-        'admin': {'write', 'read'},
-        'write': {'read'},
-        'read': set(),
+        "admin": {"write", "read"},
+        "write": {"read"},
+        "read": set(),
     }
 
 
@@ -784,6 +827,7 @@ def simple_hierarchy():
 def permission_resolver(jira_hierarchy):
     """Default permission resolver with Jira hierarchy."""
     from parrot.auth.resolver import DefaultPermissionResolver
+
     return DefaultPermissionResolver(role_hierarchy=jira_hierarchy)
 
 
@@ -791,6 +835,7 @@ def permission_resolver(jira_hierarchy):
 def simple_resolver(simple_hierarchy):
     """Permission resolver with simple hierarchy."""
     from parrot.auth.resolver import DefaultPermissionResolver
+
     return DefaultPermissionResolver(role_hierarchy=simple_hierarchy)
 
 
@@ -798,39 +843,31 @@ def simple_resolver(simple_hierarchy):
 def admin_session():
     """User session with admin role."""
     from parrot.auth.permission import UserSession
-    return UserSession(
-        user_id="admin-user",
-        tenant_id="test-tenant",
-        roles=frozenset({'jira.admin'})
-    )
+
+    return UserSession(user_id="admin-user", tenant_id="test-tenant", roles=frozenset({"jira.admin"}))
 
 
 @pytest.fixture
 def reader_session():
     """User session with read-only role."""
     from parrot.auth.permission import UserSession
-    return UserSession(
-        user_id="reader-user",
-        tenant_id="test-tenant",
-        roles=frozenset({'jira.read'})
-    )
+
+    return UserSession(user_id="reader-user", tenant_id="test-tenant", roles=frozenset({"jira.read"}))
 
 
 @pytest.fixture
 def writer_session():
     """User session with write role."""
     from parrot.auth.permission import UserSession
-    return UserSession(
-        user_id="writer-user",
-        tenant_id="test-tenant",
-        roles=frozenset({'jira.write'})
-    )
+
+    return UserSession(user_id="writer-user", tenant_id="test-tenant", roles=frozenset({"jira.write"}))
 
 
 @pytest.fixture
 def admin_context(admin_session):
     """Permission context for admin user."""
     from parrot.auth.permission import PermissionContext
+
     return PermissionContext(session=admin_session, request_id="test-req-admin")
 
 
@@ -838,6 +875,7 @@ def admin_context(admin_session):
 def reader_context(reader_session):
     """Permission context for reader user."""
     from parrot.auth.permission import PermissionContext
+
     return PermissionContext(session=reader_session, request_id="test-req-reader")
 
 
@@ -845,4 +883,5 @@ def reader_context(reader_session):
 def writer_context(writer_session):
     """Permission context for writer user."""
     from parrot.auth.permission import PermissionContext
+
     return PermissionContext(session=writer_session, request_id="test-req-writer")

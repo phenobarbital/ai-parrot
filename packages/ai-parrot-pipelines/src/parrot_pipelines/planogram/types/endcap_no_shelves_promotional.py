@@ -395,7 +395,9 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                             planogram_description=planogram_description,
                         )
                     # Seed first so _extract_illumination_state uses first-match.
-                    visual_features = [roi_illumination]
+                    # ``None`` means the LLM check failed: leave features empty so
+                    # compliance skips the illumination penalty.
+                    visual_features = [roi_illumination] if roi_illumination is not None else []
                     self.logger.debug("Zone '%s': illumination_state=%s", prod_name, roi_illumination)
 
                 product = IdentifiedProduct(

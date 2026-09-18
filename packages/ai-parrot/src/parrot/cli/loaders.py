@@ -7,10 +7,11 @@ Provides two loading strategies:
 - ``ServerAgentProxy`` — proxies agent interactions to a running
   AI-Parrot server via HTTP.
 """
-import asyncio
+
 import difflib
+import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from urllib.parse import quote
 
 import aiohttp
@@ -19,6 +20,8 @@ import questionary
 from parrot.bots.abstract import AbstractBot
 from parrot.registry import agent_registry
 from parrot.registry.registry import BotMetadata
+from parrot.utils.tty import restore_stdin_blocking
+from parrot.cli.events import BackendCapabilities, ToolFailed, ToolFinished, ToolStarted
 
 
 class AgentLoadError(Exception):
@@ -51,6 +54,37 @@ class AgentLoadError(Exception):
         else:
             detail = f"Agent '{agent_name}' not found. No similar agents registered."
         super().__init__(detail)
+
+
+async def _iter_sse(resp: aiohttp.ClientResponse) -> AsyncIterator[str]:
+    """Yield the payload of each Server-Sent Event in ``resp``.
+
+    Joins consecutive ``data:`` lines until a blank line terminates the event.
+    ``error:`` lines are yielded prefixed with ``"error:"`` so the caller can
+    raise. Comment lines (``:``) and unknown fields are ignored.
+
+    Args:
+        resp: An open ``aiohttp.ClientResponse`` with ``text/event-stream`` body.
+
+    Yields:
+        The concatenated ``data:`` payload of one event (without the prefix).
+    """
+    buffer: List[str] = []
+    async for raw in resp.content:
+        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        if not line:
+            if buffer:
+                yield "\n".join(buffer)
+                buffer = []
+            continue
+        if line.startswith("data:"):
+            buffer.append(line[5:].lstrip())
+        elif line.startswith("error:"):
+            yield "error:" + line[6:].strip()
+        # Comment lines (":") and any other SSE field ("event:", "id:", "retry:")
+        # are outside the grammar this server emits (stream.py:90-106); ignore them.
+    if buffer:
+        yield "\n".join(buffer)
 
 
 class StandaloneAgentLoader:
@@ -157,10 +191,11 @@ class StandaloneAgentLoader:
                 "",
                 message="No agents are registered. Check your agents directory.",
             )
-        selected = await questionary.select(
-            "Select an agent to start:",
-            choices=agents,
-        ).ask_async()
+        with restore_stdin_blocking():
+            selected = await questionary.select(
+                "Select an agent to start:",
+                choices=agents,
+            ).ask_async()
         if selected is None:
             raise AgentLoadError("", message="No agent selected.")
         return selected
@@ -178,7 +213,12 @@ class _ServerBotProxy:
         _server_url: Base URL of the running AI-Parrot server.
         _session: Shared ``aiohttp.ClientSession``.
         _tools: Cached list of tool names.
+        capabilities: Static backend capabilities read by ``TurnRunner``.
     """
+
+    capabilities: BackendCapabilities = BackendCapabilities(
+        streaming=True, live_tool_events=True, usage=True, resume=False
+    )
 
     def __init__(
         self,
@@ -214,33 +254,34 @@ class _ServerBotProxy:
         output_mode: Any = None,
         **kwargs: Any,
     ) -> Any:
-        """Proxy an ask() call to the server.
+        """Proxy an ask() call to the server's AgentTalk endpoint.
 
         Args:
             question: The user's question.
             session_id: Optional session ID for conversation continuity.
-            user_id: Optional user ID.
-            output_mode: Output mode (passed as string to server).
-            **kwargs: Additional keyword arguments.
+            user_id: Unused -- identity comes only from the bearer token (Q8);
+                kept for signature parity with ``DaemonAgentProxy``.
+            output_mode: Output mode (unused by the JSON ask route).
+            **kwargs: Additional keyword arguments (unused).
 
         Returns:
-            A dict-like object with an ``output`` attribute populated from
+            A ``_ServerResponse`` with an ``output`` attribute populated from
             the server response JSON.
 
         Raises:
             AgentLoadError: On HTTP errors or connection failure.
         """
-        url = f"{self._server_url}/api/agent/{quote(self.name, safe='')}/ask"
+        url = f"{self._server_url}/api/v1/agents/chat/{quote(self.name, safe='')}"
         payload: Dict[str, Any] = {
-            "question": question,
+            "query": question,
             "session_id": session_id or "",
-            "user_id": user_id or "cli-user",
+            "stream": False,
         }
+        # Q8: identity comes from the bearer token only -- never send user_id.
         try:
             async with self._session.post(url, json=payload) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
-                # Return a simple namespace so callers can do response.output
                 return _ServerResponse(data)
         except aiohttp.ClientError as exc:
             raise AgentLoadError(
@@ -256,36 +297,58 @@ class _ServerBotProxy:
         output_mode: Any = None,
         **kwargs: Any,
     ):
-        """Proxy a streaming ask_stream() call to the server.
+        """Proxy a streaming ask_stream() call to the server's SSE endpoint.
 
-        Falls back to a single-chunk async generator from the server response
-        when the server does not support SSE streaming.
+        Consumes ``StreamHandler.stream_sse`` frames: plain ``content``
+        deltas are yielded as ``str``, ``tool_event`` frames are mapped to
+        ``ToolStarted``/``ToolFinished``/``ToolFailed``, and the terminal
+        ``ai_message`` frame becomes the final ``_ServerResponse``. Tolerates
+        a server without ``tool_event`` frames (older server, spec AC7).
 
         Args:
             question: The user's question.
             session_id: Optional session ID.
-            user_id: Optional user ID.
-            output_mode: Output mode.
-            **kwargs: Additional keyword arguments.
+            user_id: Unused -- identity comes only from the bearer token (Q8);
+                kept for signature parity with ``DaemonAgentProxy``.
+            output_mode: Unused; kept for signature parity.
+            **kwargs: Additional keyword arguments (unused).
 
         Yields:
-            Text chunks from the server response.
+            ``str`` text deltas, ``ToolStarted``/``ToolFinished``/``ToolFailed``
+            events, and finally a ``_ServerResponse`` with ``tool_calls``/``usage``.
+
+        Raises:
+            AgentLoadError: On HTTP errors, connection failure, or an
+                ``error:`` SSE line from the server.
         """
-        response = await self.ask(
-            question,
-            session_id=session_id,
-            user_id=user_id,
-            output_mode=output_mode,
-        )
-        output = response.output or ""
-        if isinstance(output, str):
-            # Simulate chunked streaming for server responses
-            chunk_size = 50
-            for i in range(0, len(output), chunk_size):
-                yield output[i : i + chunk_size]
-                await asyncio.sleep(0)
-        else:
-            yield str(output)
+        url = f"{self._server_url}/bots/{quote(self.name, safe='')}/stream/sse"
+        payload: Dict[str, Any] = {"prompt": question, "session_id": session_id or ""}
+        final: Optional[_ServerResponse] = None
+        try:
+            async with self._session.post(url, json=payload) as resp:
+                resp.raise_for_status()
+                async for event in _iter_sse(resp):
+                    if event.startswith("error:"):
+                        raise AgentLoadError(self.name, message=f"Server stream error: {event[6:]}")
+                    if event == "[DONE]":
+                        break
+                    frame = json.loads(event)
+                    if "content" in frame and "type" not in frame:
+                        yield frame["content"]
+                    elif frame.get("type") == "tool_event":
+                        yield _tool_event_from_frame(frame.get("data") or {})
+                    elif frame.get("type") == "ai_message":
+                        final = _ServerResponse(frame.get("data") or {})
+                    else:
+                        # Unknown/older-server frame type: log and skip (AC7).
+                        self.logger.debug("Ignoring unknown SSE frame type: %r", frame.get("type"))
+        except aiohttp.ClientError as exc:
+            raise AgentLoadError(
+                self.name,
+                message=f"Server request failed: {exc}",
+            ) from exc
+        if final is not None:
+            yield final
 
     def get_available_tools(self) -> List[str]:
         """Return cached list of tool names.
@@ -312,13 +375,75 @@ class _ServerBotProxy:
         return bool(self._tools)
 
 
+def _tool_event_from_frame(data: Dict[str, Any]) -> "ToolStarted | ToolFinished | ToolFailed":
+    """Map one ``tool_event`` frame payload to its typed TurnEvent.
+
+    Args:
+        data: The ``data`` object of a ``{"type": "tool_event", ...}`` frame
+            (``event`` is ``"started"`` | ``"finished"`` | ``"failed"``).
+
+    Returns:
+        ``ToolStarted``, ``ToolFinished`` or ``ToolFailed``.
+
+    Raises:
+        ValueError: On an unknown ``event`` value.
+    """
+    common = {
+        "turn_id": data.get("turn_id", ""),
+        "seq": int(data.get("seq", 0)),
+        "call_id": data["call_id"],
+        "tool_name": data["tool_name"],
+    }
+    kind = data.get("event")
+    if kind == "started":
+        return ToolStarted(kind="tool_started", args_summary=data.get("args_summary") or {}, **common)
+    if kind == "finished":
+        return ToolFinished(
+            kind="tool_finished",
+            duration_ms=float(data.get("duration_ms", 0.0)),
+            result_status=data.get("result_status", ""),
+            result_size_bytes=int(data.get("result_size_bytes", 0)),
+            **common,
+        )
+    if kind == "failed":
+        return ToolFailed(
+            kind="tool_failed",
+            duration_ms=float(data.get("duration_ms", 0.0)),
+            error_type=data.get("error_type", ""),
+            error_message=data.get("error_message", ""),
+            **common,
+        )
+    raise ValueError(f"unknown tool_event kind: {kind!r}")
+
+
+class _DictObj:
+    """Attribute-access wrapper over a plain dict, tolerant of missing keys.
+
+    Used to adapt ``ai_message`` frame dicts (``AIMessage.to_dict()`` is
+    ``model_dump()``) to the attribute-style reads performed by
+    ``ResponseRenderer._render_tool_calls``/``_render_usage``
+    (``tc.name``, ``usage.prompt_tokens``, etc.).
+
+    Args:
+        d: The source dictionary; its items become instance attributes.
+    """
+
+    def __init__(self, d: Dict[str, Any]) -> None:
+        """Copy ``d``'s items onto ``self.__dict__``."""
+        self.__dict__.update(d)
+
+    def __getattr__(self, name: str) -> Any:
+        """Return ``None`` for any attribute not present in the source dict."""
+        return None
+
+
 class _ServerResponse:
     """Lightweight wrapper for server JSON responses.
 
     Attributes:
         output: The response text output.
-        tool_calls: Empty list (server responses don't include tool calls in v1).
-        usage: None usage stats.
+        tool_calls: List of ``_DictObj`` tool-call wrappers (from ``ai_message``).
+        usage: ``_DictObj`` usage wrapper, or ``None`` when absent.
     """
 
     def __init__(self, data: Dict[str, Any]) -> None:
@@ -329,8 +454,8 @@ class _ServerResponse:
         """
         self.output: str = data.get("output") or data.get("response") or ""
         self.response: Optional[str] = data.get("response")
-        self.tool_calls: List[Any] = []
-        self.usage: Any = None
+        self.tool_calls: List[Any] = [_DictObj(tc) for tc in (data.get("tool_calls") or [])]
+        self.usage: Any = _DictObj(data["usage"]) if isinstance(data.get("usage"), dict) else None
         self._data = data
 
     def __repr__(self) -> str:
@@ -353,6 +478,8 @@ class ServerAgentProxy:
         self,
         server_url: str,
         timeout: int = 30,
+        *,
+        token: Optional[str] = None,
     ) -> None:
         """Initialise the server proxy.
 
@@ -360,9 +487,12 @@ class ServerAgentProxy:
             server_url: Base URL of the running AI-Parrot server
                         (e.g. ``http://localhost:8080``).
             timeout: Request timeout in seconds.
+            token: Optional bearer token sent as ``Authorization: Bearer <token>``
+                on every request.
         """
         self.server_url = server_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
+        self._token = token
         self._session: Optional[aiohttp.ClientSession] = None
         self.logger = logging.getLogger(__name__)
 
@@ -373,13 +503,14 @@ class ServerAgentProxy:
             The shared ``aiohttp.ClientSession``.
         """
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(timeout=self.timeout)
+            headers = {"Authorization": f"Bearer {self._token}"} if self._token else None
+            self._session = aiohttp.ClientSession(timeout=self.timeout, headers=headers)
         return self._session
 
     async def load(self, name: str) -> _ServerBotProxy:
         """Create a proxy bot for the named agent on the server.
 
-        Verifies the agent exists by hitting the server's agent info endpoint.
+        Verifies the agent exists by hitting the server's chatbot info endpoint.
 
         Args:
             name: Agent name as registered on the server.
@@ -391,7 +522,7 @@ class ServerAgentProxy:
             AgentLoadError: If the server is unreachable or agent not found.
         """
         session = self._get_session()
-        url = f"{self.server_url}/api/agent/{name}"
+        url = f"{self.server_url}/api/v1/chatbots/{quote(name, safe='')}"
         try:
             async with session.get(url) as resp:
                 if resp.status == 404:
@@ -400,39 +531,33 @@ class ServerAgentProxy:
         except aiohttp.ClientConnectorError as exc:
             raise AgentLoadError(
                 name,
-                message=(
-                    f"Cannot connect to server at {self.server_url}. "
-                    f"Is it running? ({exc})"
-                ),
+                message=(f"Cannot connect to server at {self.server_url}. " f"Is it running? ({exc})"),
             ) from exc
         except aiohttp.ClientError as exc:
-            raise AgentLoadError(
-                name, message=f"Server error: {exc}"
-            ) from exc
+            raise AgentLoadError(name, message=f"Server error: {exc}") from exc
         return _ServerBotProxy(name, self.server_url, session)
 
     async def list_agents(self) -> List[Dict[str, Any]]:
         """Fetch the list of agents from the server registry.
 
         Returns:
-            List of agent metadata dicts from the server.
+            List of agent metadata dicts from the server's
+            ``{"agents": [...], "total": N}`` payload (Q11).
 
         Raises:
             AgentLoadError: If the server is unreachable.
         """
         session = self._get_session()
-        url = f"{self.server_url}/api/agents"
+        url = f"{self.server_url}/api/v1/bots"
         try:
             async with session.get(url) as resp:
                 resp.raise_for_status()
-                return await resp.json()
+                payload = await resp.json()
+                return payload.get("agents", []) if isinstance(payload, dict) else list(payload)
         except aiohttp.ClientConnectorError as exc:
             raise AgentLoadError(
                 "",
-                message=(
-                    f"Cannot connect to server at {self.server_url}. "
-                    f"Is it running? ({exc})"
-                ),
+                message=(f"Cannot connect to server at {self.server_url}. " f"Is it running? ({exc})"),
             ) from exc
         except aiohttp.ClientError as exc:
             raise AgentLoadError("", message=f"Server error: {exc}") from exc
@@ -450,10 +575,11 @@ class ServerAgentProxy:
         if not agents:
             raise AgentLoadError("", message="No agents found on server.")
         names = [a.get("name", str(a)) for a in agents]
-        selected = await questionary.select(
-            "Select an agent to start:",
-            choices=names,
-        ).ask_async()
+        with restore_stdin_blocking():
+            selected = await questionary.select(
+                "Select an agent to start:",
+                choices=names,
+            ).ask_async()
         if selected is None:
             raise AgentLoadError("", message="No agent selected.")
         return selected

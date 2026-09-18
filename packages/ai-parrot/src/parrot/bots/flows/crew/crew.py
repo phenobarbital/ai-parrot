@@ -41,7 +41,15 @@ import contextlib
 import asyncio
 import re
 import uuid
-from tqdm.asyncio import tqdm as async_tqdm
+try:
+    from tqdm.asyncio import tqdm as async_tqdm
+except ImportError:  # pragma: no cover — exercised via sys.modules patching
+    # tqdm is a declared dependency (see packages/ai-parrot/pyproject.toml) and
+    # a cosmetic progress bar with a single, already-optional call site. This
+    # guard means a stripped or partially-installed environment degrades to the
+    # plain iterator instead of making `parrot.bots.flows` — and everything that
+    # transitively imports it — unimportable.
+    async_tqdm = None  # type: ignore[assignment]
 from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 
@@ -168,6 +176,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         tenant: Optional[str] = None,
         generate_infographic: bool = False,
         result_agent_name: str = "result-agent",
+        infographic_theme: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -197,6 +206,13 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 provided — matching ``CrewDefinition.tenant``'s own default.
                 ``from_definition()`` wires this automatically from the
                 definition's ``tenant`` field.
+            generate_infographic: Opt-in for the end-of-run multi-tab
+                infographic (FEAT-308).
+            result_agent_name: Registered ResultAgent that authors the
+                infographic's executive-summary tab.
+            infographic_theme: Optional design-system theme name for that
+                infographic (e.g. ``"light"``, ``"dark"``, ``"corporate"``).
+                ``None``/empty keeps the ResultAgent's default.
         """
         self.name = name or "AgentCrew"
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
@@ -279,6 +295,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         # when left at its default (False).
         self.generate_infographic: bool = generate_infographic
         self.result_agent_name: str = result_agent_name
+        # Optional design-system theme for that infographic; ``None`` keeps
+        # the ResultAgent's own default.
+        self.infographic_theme: Optional[str] = infographic_theme or None
 
         # Add agents if provided
         if agents:
@@ -594,10 +613,14 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 final_output=result.output,
                 exclude_node_id=self.result_agent_name,
             )
+            render_kwargs: Dict[str, Any] = {}
+            if self.infographic_theme:
+                render_kwargs["theme"] = self.infographic_theme
             render_result = await result_agent.generate_infographic(
                 summary=result.summary,
                 deterministic_blocks=det_blocks,
                 crew_name=self.name,
+                **render_kwargs,
             )
             result.infographic = render_result
         except Exception as exc:  # noqa: BLE001 — graceful degradation (spec G7)
@@ -792,6 +815,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             "result_agent_name",
             getattr(crew_def, "result_agent_name", "result-agent"),
         )
+        infographic_theme = kwargs.pop(
+            "infographic_theme",
+            getattr(crew_def, "infographic_theme", None),
+        )
         # Execution wiki wiring — read from the definition, allow call-time
         # overrides via kwargs (mirrors the infographic wiring above).
         enable_execution_wiki = kwargs.pop(
@@ -809,6 +836,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             tenant=tenant,
             generate_infographic=generate_infographic,
             result_agent_name=result_agent_name,
+            infographic_theme=infographic_theme,
             enable_execution_wiki=enable_execution_wiki,
             execution_wiki_path=execution_wiki_path,
             **kwargs,
@@ -4156,7 +4184,7 @@ Create a clear, well-structured response."""
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "crew_summary_user"
         # Progress tracking
-        if self.use_tqdm:
+        if self.use_tqdm and async_tqdm is not None:
             chunk_iterator = async_tqdm(enumerate(chunks, 1), total=len(chunks), desc="Summarizing chunks")
         else:
             chunk_iterator = enumerate(chunks, 1)

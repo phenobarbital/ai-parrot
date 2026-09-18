@@ -1,0 +1,20 @@
+{
+  "result": "passed",
+  "checks": [
+    "state schema",
+    "research plan schema",
+    "12 finding IDs exist",
+    "localization paths and symbols backed by findings",
+    "proposal finding references exist",
+    "relative links resolve",
+    "source preserved byte-for-byte",
+    "four unknowns",
+    "enrichment exclusivity",
+    "no direct task recommendation"
+  ],
+  "source_sha256": "4fe4fcde31eb63bba90569b3be06f7387d6b5eb5b5c6cd4e0b2d95a3d2840e8f",
+  "runtime_tests": "not run: documentation only",
+  "spikes": "not executed",
+  "review_gate": "proceeded: user answered proceed; unresolved policies retained",
+  "limitations": "Synthesis has no repository schema; structural checks and manual claim review performed. No exhaustive semantic proof of every prose claim."
+}

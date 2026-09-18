@@ -38,6 +38,11 @@ from parrot.outputs.a2ui_renderers._intercept import intercepts
 
 logger = logging.getLogger(__name__)
 
+#: The fitted-trend line's colour, shared with the interactive surface and the
+#: Svelte canvas. A mid-tone grey: in these reports a colour is a judgement,
+#: and a regression line is geometry that must not borrow one.
+_TREND_COLOR = "#94a3b8"
+
 _SURFACE_NAME = "echarts"
 
 #: The one (catalog_id, name) pair this renderer intercepts as a native
@@ -255,16 +260,37 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 }
             return base_option
 
+        # A combination is declared per series: `seriesTypes[i]` names the
+        # mark for one y column and the chart's own `type` covers the rest.
+        # Guarded, because `"right"` is a valid substring of a bare string:
+        # `seriesAxes: "right"` (an easy mistake, the description reads
+        # `'left' | 'right'`) made `"right" in series_axes` true and drew a
+        # second axis, while `series_axes[i] == "right"` was false for every
+        # series -- a phantom empty scale nothing was bound to.
+        series_types = props.get("seriesTypes")
+        series_types = list(series_types) if isinstance(series_types, (list, tuple)) else []
+        series_axes = props.get("seriesAxes")
+        series_axes = list(series_axes) if isinstance(series_axes, (list, tuple)) else []
+
         series = []
-        for col in y_cols:
+        for index, col in enumerate(y_cols):
             values = [row.get(col) for row in rows if isinstance(row, dict)]
-            series_entry: dict[str, Any] = {"name": col, "type": series_type, "data": values}
-            if chart_type == "area":
+            mark = series_types[index] if index < len(series_types) and series_types[index] else chart_type
+            series_entry: dict[str, Any] = {
+                "name": col,
+                "type": _SERIES_TYPE.get(mark, series_type),
+                "data": values,
+            }
+            if mark == "area":
                 series_entry["areaStyle"] = {}
             if chart_type == "donut":
                 series_entry["radius"] = ["40%", "70%"]
             if stacked:
                 series_entry["stack"] = "total"
+            # Only a series that asked sits on the right-hand axis; the rest
+            # keep index 0, which is the axis they had before any of this.
+            if index < len(series_axes) and series_axes[index] == "right":
+                series_entry["yAxisIndex"] = 1
             series.append(series_entry)
 
         if trendline and series:
@@ -272,15 +298,24 @@ class EChartsRenderer(AbstractA2UIRenderer):
             first_values = [row.get(first_col) for row in rows if isinstance(row, dict)]
             trend_values = self._linear_trend(first_values)
             if trend_values:
-                series.append(
-                    {
-                        "name": f"{first_col} Trend",
-                        "type": "line",
-                        "data": trend_values,
-                        "smooth": True,
-                        "symbol": "none",
-                    }
-                )
+                trend_entry: dict[str, Any] = {
+                    "name": f"{first_col} Trend",
+                    "type": "line",
+                    "data": trend_values,
+                    "smooth": True,
+                    "symbol": "none",
+                        # Grey on purpose, not the next colour off the palette:
+                        # a colour is a judgement in these reports and a
+                        # regression is geometry. Same tone as the interactive
+                        # surface and the Svelte canvas draw it in.
+                    "lineStyle": {"type": "dashed", "color": _TREND_COLOR},
+                    "itemStyle": {"color": _TREND_COLOR},
+                }
+                # The fit is computed over y[0]; drawn against a different
+                # scale it would render fine and say something untrue.
+                if series_axes and series_axes[0] == "right":
+                    trend_entry["yAxisIndex"] = 1
+                series.append(trend_entry)
 
         option: dict[str, Any] = {
             "title": {"text": props.get("title", "")},
@@ -330,7 +365,26 @@ class EChartsRenderer(AbstractA2UIRenderer):
                 if y_axis_label:
                     y_axis["name"] = y_axis_label
                 option["xAxis"] = x_axis
-                option["yAxis"] = y_axis
+                # The second scale appears only if a series asked for it: a
+                # rate and a count do not share a floor, and on one axis the
+                # rate lies flat along the bottom saying nothing.
+                #
+                # `yAxisLabels` names them, [left, right]. `yAxisLabel` names
+                # one, which was enough until a chart had two.
+                axis_names = props.get("yAxisLabels") or []
+                if axis_names and axis_names[0]:
+                    y_axis["name"] = axis_names[0]
+                if "right" in series_axes:
+                    right_axis: dict[str, Any] = {
+                        "type": "value",
+                        "position": "right",
+                        "splitLine": {"show": False},
+                    }
+                    if len(axis_names) > 1 and axis_names[1]:
+                        right_axis["name"] = axis_names[1]
+                    option["yAxis"] = [y_axis, right_axis]
+                else:
+                    option["yAxis"] = y_axis
         return option
 
     def _build_graph_option(self, props: dict[str, Any]) -> dict[str, Any]:

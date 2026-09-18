@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.integrations.oauth2.models import (
+from parrot.auth.oauth2.models import (
     IntegrationDescriptor,
     UserAgentToolkitRow,
     UsersIntegrationRow,
@@ -70,7 +70,7 @@ def allowed_origins(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 @pytest.fixture(autouse=True)
 def reset_registry() -> None:
     """Ensure a fresh OAuth2ProviderRegistry for each test."""
-    from parrot.integrations.oauth2.registry import OAuth2ProviderRegistry
+    from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
     OAuth2ProviderRegistry._reset()
     yield
@@ -96,8 +96,8 @@ def mock_jira_manager(jira_token_set_factory: Callable[..., Any]) -> MagicMock:
 @pytest.fixture
 def registered_jira_provider(mock_jira_manager: MagicMock) -> MagicMock:
     """Register a JiraOAuth2Provider backed by the mock manager."""
-    from parrot.integrations.oauth2.jira_provider import JiraOAuth2Provider
-    from parrot.integrations.oauth2.registry import OAuth2ProviderRegistry
+    from parrot.auth.oauth2.jira_provider import JiraOAuth2Provider
+    from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
     provider = JiraOAuth2Provider(manager=mock_jira_manager)
     OAuth2ProviderRegistry().register(provider)

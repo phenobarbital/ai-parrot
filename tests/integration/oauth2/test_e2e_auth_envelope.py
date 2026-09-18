@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from parrot.auth.exceptions import AuthorizationRequired
-from parrot.integrations.oauth2.models import AuthRequiredEnvelope
-from parrot.integrations.oauth2.service import IntegrationsService
+from parrot.auth.oauth2.models import AuthRequiredEnvelope
+from parrot.auth.oauth2.service import IntegrationsService
 
 
 from .helpers import make_mock_db as _make_mock_db
@@ -38,7 +38,7 @@ class TestE2EAuthRequiredEnvelopeWhenNotConnected:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             with pytest.raises(LookupError) as exc_info:
@@ -118,7 +118,7 @@ class TestE2EAuthRequiredEnvelopeWhenNotConnected:
         svc = IntegrationsService()
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             descriptors = await svc.list_for_user(

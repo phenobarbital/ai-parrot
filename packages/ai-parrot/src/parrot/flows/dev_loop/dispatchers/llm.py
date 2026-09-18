@@ -16,6 +16,7 @@ import difflib
 import json
 import logging
 import os
+from pathlib import Path
 import re
 import shlex
 import shutil
@@ -54,6 +55,8 @@ from parrot.flows.dev_loop.models.telemetry import (
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import DispatchEvent, DispatchLabels, LLMCodeDispatchProfile
 from parrot.flows.dev_loop.session_state import SessionHost
+from parrot.flows.dev_loop.worktree_environment import command_policy_error, protected_argv, validate_write_path
+from parrot.flows.dev_loop.test_scope.guard import GuardOutcome, guard_argv
 from parrot.models.basic import CompletionUsage
 from parrot.observability.context import usage_attribution
 
@@ -1600,7 +1603,7 @@ class LLMCodeDispatcher:
 
         command, backend = self._search_command(
             query=query,
-            rel_path=os.path.relpath(path, cwd),
+            rel_path=os.path.relpath(path, cwd),  # noqa: ASYNC240 — pure string math, no I/O
             file_glob=str(file_glob) if file_glob else None,
         )
         if command is None:
@@ -1733,6 +1736,7 @@ class LLMCodeDispatcher:
             raise ValueError("old_string must not be empty; use write_file to create a file")
         path = self._resolve_repo_path(cwd, str(args["path"]))
         rel_path = os.path.relpath(path, cwd)
+        validate_write_path(Path(cwd), Path(path))
         if not os.path.isfile(path):
             return {
                 "ok": False,
@@ -1822,6 +1826,7 @@ class LLMCodeDispatcher:
             raise ValueError("mode must be 'overwrite' or 'append'")
         path = self._resolve_repo_path(cwd, str(args["path"]))
         parent = os.path.dirname(path)
+        validate_write_path(Path(cwd), Path(path))
         if parent:
             os.makedirs(parent, exist_ok=True)
         existed = os.path.exists(path)
@@ -1925,7 +1930,7 @@ class LLMCodeDispatcher:
         run_cwd = cwd
         if args.get("cwd"):
             run_cwd = self._resolve_repo_path(cwd, str(args["cwd"]))
-            if not os.path.isdir(run_cwd):
+            if not await asyncio.to_thread(os.path.isdir, run_cwd):
                 return {
                     "ok": False,
                     "exit_code": None,
@@ -1936,6 +1941,18 @@ class LLMCodeDispatcher:
             int(args.get("timeout_seconds") or profile.command_timeout_seconds),
             profile.command_timeout_seconds,
         )
+        try:
+            outcome: Optional[GuardOutcome] = await asyncio.to_thread(guard_argv, argv, worktree=Path(cwd))
+        except Exception as exc:  # noqa: BLE001 — a broken guard must never break the seat's command
+            self.logger.warning("test-scope guard failed for %s: %s — running command unchanged", argv, exc)
+            outcome = None
+        if outcome is not None and outcome.action == "block":
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": outcome.message}
+        if outcome is not None and outcome.action == "rewrite":
+            self.logger.info("test-scope guard rewrote %s into %d invocation(s)", argv, len(outcome.argvs))
+            return await self._run_guarded_invocations(outcome.argvs, cwd=cwd, timeout=timeout, hint=outcome.message)
+        if policy_error := command_policy_error(Path(run_cwd), argv):
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": policy_error}
         result = await self._run_argv(argv, cwd=run_cwd, timeout=timeout)
         payload = {**result, "ok": result["exit_code"] == 0}
         if not payload["ok"]:
@@ -2022,10 +2039,9 @@ class LLMCodeDispatcher:
         ``python -c "open('/home/user/repo/x.py','w')..."`` and write there
         — which is how stray files appear outside a worktree.
 
-        This is a guard-rail, not a jail. The command still runs as this
-        process's user, and a script can build a path at runtime that no
-        static check can see. It closes the accidental route, which is the
-        one observed in practice; real isolation needs a container.
+        This supplies early feedback for accidental cross-checkout paths.
+        Scripts can compute paths dynamically; the independent Bubblewrap
+        runner enforces filesystem protection even when this check is disabled.
 
         Args:
             cwd: The worktree every command is confined to.
@@ -2116,6 +2132,48 @@ class LLMCodeDispatcher:
             "search_files / write_file / edit_file for file work."
         )
 
+    async def _run_guarded_invocations(
+        self,
+        argvs: Sequence[Sequence[str]],
+        *,
+        cwd: str,
+        timeout: int,
+        hint: str,
+    ) -> Dict[str, Any]:
+        """Run the guard's replacement pytest invocations in order.
+
+        Each invocation runs from the attempt worktree root (plan paths are
+        repo-relative) through ``_run_argv``, so sandboxing is unchanged.
+
+        Args:
+            argvs: Replacement argvs produced by ``guard_argv``.
+            cwd: The attempt worktree root.
+            timeout: Per-invocation timeout in seconds.
+            hint: The guard's explanation, surfaced to the seat.
+
+        Returns:
+            One ``run_command`` result: merged stdout/stderr, the first
+            non-zero exit code (0 when all passed), ``ok`` and ``hint``.
+        """
+        stdout_parts: List[str] = []
+        stderr_parts: List[str] = []
+        exit_code: Optional[int] = 0
+        for invocation in argvs:
+            result = await self._run_argv(list(invocation), cwd=cwd, timeout=timeout)
+            header = f"$ {shlex.join(invocation)}\n"
+            stdout_parts.append(header + (result.get("stdout") or ""))
+            stderr_parts.append(result.get("stderr") or "")
+            invocation_exit = result.get("exit_code")
+            if exit_code == 0 and invocation_exit != 0:
+                exit_code = invocation_exit if invocation_exit is not None else 1
+        return {
+            "ok": exit_code == 0,
+            "exit_code": exit_code,
+            "stdout": "\n".join(stdout_parts),
+            "stderr": "\n".join(p for p in stderr_parts if p),
+            "hint": hint,
+        }
+
     async def _run_argv(
         self,
         argv: Sequence[str],
@@ -2127,6 +2185,7 @@ class LLMCodeDispatcher:
         if not argv:
             raise ValueError("argv must not be empty")
         try:
+            argv = protected_argv(Path(cwd), argv)
             process = await asyncio.create_subprocess_exec(
                 *argv,
                 cwd=cwd,

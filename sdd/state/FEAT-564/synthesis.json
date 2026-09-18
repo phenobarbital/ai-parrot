@@ -1,0 +1,326 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-564",
+  "mode": "enrichment",
+  "summary_oneline": "Repair stage routing, timing, audio and errors with API-specific Veo profiles and shared Omni assembly.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
+      "symbol": "VideoReelHandler",
+      "lines": "119-335",
+      "role": "HTTP job entry point",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/google.py",
+      "symbol": "VideoReelRequest",
+      "lines": "399-453",
+      "role": "Request extensions",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+      "symbol": "generate_video_reel",
+      "lines": "1905-2032",
+      "role": "Shared orchestration",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py",
+      "symbol": "GoogleModel",
+      "lines": "41-69",
+      "role": "Model IDs",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/responses.py",
+      "symbol": "AIMessage",
+      "lines": "75-158",
+      "role": "Typed output extension points",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient.get_client",
+      "lines": "630-700",
+      "role": "Resource ownership",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-client-google/pyproject.toml",
+      "symbol": "dependencies",
+      "lines": "17",
+      "role": "SDK floor",
+      "evidence": [
+        "F006"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Core request models must remain provider independent.",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "Validate strings using satellite capabilities; keep lazy provider imports."
+    },
+    {
+      "statement": "AIMessage.files is Path-typed; metadata and artifacts already exist.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "Use additive typed artifact descriptors without changing shared Path semantics."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "Proposed normalized clip contract and Omni adapter",
+      "Proposed reel/scene video_model selection",
+      "Proposed authorized artifact download route",
+      "Explicit director/image routing and deprecated model alias with conflict validation",
+      "API-specific model capability registry; no substring-based feature grants",
+      "Music off/optional/required policy and structured status",
+      "R01-R11 acceptance matrix in revised proposal"
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-server/src/parrot/handlers/video_reel.py",
+        "symbol": "VideoReelHandler",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/models/google.py",
+        "symbol": "VideoReelRequest",
+        "evidence": [
+          "F001"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/generation.py",
+        "symbol": "generate_video_reel",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py",
+        "symbol": "GoogleModel",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/models/responses.py",
+        "symbol": "AIMessage",
+        "evidence": [
+          "F003"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+        "symbol": "GoogleGenAIClient.get_client",
+        "evidence": [
+          "F004"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-client-google/pyproject.toml",
+        "symbol": "dependencies",
+        "evidence": [
+          "F006"
+        ]
+      }
+    ],
+    "untouched": [
+      "Shared AbstractClient implementation",
+      "Automatic cross-model fallback",
+      "Conversational video editing and extension"
+    ],
+    "patterns": [
+      {
+        "statement": "Use async provider calls and existing job surface.",
+        "evidence": [
+          "F001",
+          "F004",
+          "F006"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "statement": "Live model access and download contract still require verification.",
+        "evidence": [
+          "F005",
+          "F006"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Reel entry points and request models are localized.",
+      "evidence": [
+        "F001",
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "Direct source and wiki reads."
+    },
+    {
+      "id": "C2",
+      "statement": "Prior probes reproduce URL, PCM and multipart defects.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "Persisted review and offline probe log."
+    },
+    {
+      "id": "C3",
+      "statement": "Installed SDK 2.23.0 exposes async Interactions and video output fields.",
+      "evidence": [
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "Introspection with dummy credentials; no network."
+    },
+    {
+      "id": "C4",
+      "statement": "Two adapters can feed shared local clip assembly.",
+      "evidence": [
+        "F002",
+        "F005",
+        "F006"
+      ],
+      "confidence": "medium",
+      "reasoning": "Proposed architecture; live outputs not tested."
+    },
+    {
+      "id": "C5",
+      "statement": "Veo 3.1 remains a documented backend.",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "Official documentation."
+    },
+    {
+      "id": "C6",
+      "statement": "Deployment access, URI behavior and Omni timing remain unverified.",
+      "evidence": [
+        "F005",
+        "F006"
+      ],
+      "confidence": "low",
+      "reasoning": "No live generation."
+    },
+    {
+      "id": "C7",
+      "statement": "Director/video stages hardcode models and scene duration is not propagated or trimmed.",
+      "evidence": ["F009"],
+      "confidence": "high",
+      "reasoning": "Fresh source trace; exact provider output duration is not assumed."
+    },
+    {
+      "id": "C8",
+      "statement": "Installed SDK 2.23.0 exposes generate_audio but rejects it in Developer API serialization.",
+      "evidence": ["F010"],
+      "confidence": "high",
+      "reasoning": "Installed metadata and transport source; no claim of 2.24.0 certification."
+    },
+    {
+      "id": "C9",
+      "statement": "Gemini preview and Vertex GA model IDs require separate capability profiles.",
+      "evidence": ["F010"],
+      "confidence": "high",
+      "reasoning": "Official API-specific docs and different Lite capabilities."
+    },
+    {
+      "id": "C10",
+      "statement": "Lyria RealTime is publicly documented as experimental; private-only failure predictions are unsupported.",
+      "evidence": ["F011"],
+      "confidence": "high",
+      "reasoning": "Official guide; deployment access and PCM contract remain unverified."
+    },
+    {
+      "id": "C11",
+      "statement": "Focused handler tests reproduce 20 read-only request fixture errors with 13 tests passing.",
+      "evidence": ["F012"],
+      "confidence": "high",
+      "reasoning": "Fresh pytest output saved under artifacts/logs."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Confirm default-plus-per-scene model selection versus one model per reel.",
+      "blocks_claims": [
+        "C4"
+      ],
+      "plausible_answers": [
+        "Default plus scene overrides",
+        "One model per reel"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U2",
+      "question": "Confirm deprecated model alias for director_model with conflict rejection and stage-specific defaults.",
+      "blocks_claims": [
+        "C4"
+      ],
+      "plausible_answers": [
+        "Accept proposed alias and defaults",
+        "Revise migration behavior"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U3",
+      "question": "Confirm optional music by default in separate mode with explicit off/required alternatives.",
+      "blocks_claims": ["C4"],
+      "plausible_answers": ["Preserve best-effort default", "Default music off"],
+      "ask_user": true
+    }
+  ],
+  "answers": [],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Reconcile the existing draft spec with the revised proposal before approval and task decomposition; this request authorizes proposal revision only."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012"
+    ],
+    "findings_unused": [],
+    "notes": "2026-09-17 Gemini-review revision: user requested complete proposal revision. Findings F009-F012 verify review claims and correct backend/version/access overstatements. Proposed policies remain review recommendations, not user answers. Existing spec is unchanged and requires reconciliation. No application edits or paid calls. Prior research counters remain historical; revision completed within a fresh loose-profile budget. Focused handler result: 13 passed, 20 errors, 8 warnings. Initial sandbox test was blocked by logging socket initialization and rerun with escalation."
+  }
+}

@@ -114,8 +114,19 @@ def _shutdown(proc: subprocess.Popen) -> None:
         proc.wait(timeout=5)
 
 
+def _write_memory_config(root: Path) -> None:
+    """Declare an explicit `memory:` section — nothing resolves implicitly (FEAT-570)."""
+    parrot_dir = root / ".parrot"
+    parrot_dir.mkdir(exist_ok=True)
+    (parrot_dir / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n  memory:\n    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit\n    kwargs: {}\n",
+        encoding="utf-8",
+    )
+
+
 def test_mcp_local_memory_e2e(tmp_path):
     """initialize -> tools/list -> store_result -> get_result round-trip."""
+    _write_memory_config(tmp_path)
     proc = _spawn(tmp_path, "mcp-local", "memory")
     try:
         _send(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
@@ -164,6 +175,7 @@ def test_mcp_local_memory_e2e(tmp_path):
 
 def test_memory_is_per_process(tmp_path):
     """Two consecutive server processes share no WorkingMemory state."""
+    _write_memory_config(tmp_path)
     first = _spawn(tmp_path, "mcp-local", "memory")
     try:
         _send(first, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
@@ -257,10 +269,32 @@ def test_example_config_parses():
     assert "browsing" in cfg.toolkits
 
 
+def _strip_navconfig_env_warnings(stderr: str) -> str:
+    """Drop NavConfig's own bootstrap warning about a missing ``etc/config.ini``.
+
+    ``etc/`` is gitignored, so on a fresh checkout (the CI runner) NavConfig
+    logs ``WARNING:root:Navconfig: INI file doesn't exists on path: .../config.ini``
+    at import time. That is environment noise from the host project, not
+    output from ``mcp-local`` itself; every other stderr line still counts.
+
+    Args:
+        stderr: Captured stderr of the ``mcp-local --list`` subprocess.
+
+    Returns:
+        ``stderr`` without those NavConfig INI-file warning lines.
+    """
+    return "".join(
+        line
+        for line in stderr.splitlines(keepends=True)
+        if not (line.startswith("WARNING:root:Navconfig: INI file doesn't exists on path:") and "config.ini" in line)
+    )
+
+
 @pytest.mark.parametrize("name", ["memory"])
-def test_mcp_local_list_shows_builtin(tmp_path, name):
+def test_mcp_local_list_shows_declared_section(tmp_path, name):
     """Sanity check that `--list` (a fast, non-serving path) still works
     over the same subprocess bootstrap used by the serving tests above."""
+    _write_memory_config(tmp_path)
     proc = subprocess.run(
         [sys.executable, "-c", _BOOTSTRAP, "mcp-local", "--list"],
         cwd=str(tmp_path),
@@ -271,4 +305,4 @@ def test_mcp_local_list_shows_builtin(tmp_path, name):
     )
     assert proc.returncode == 0, proc.stderr
     assert name in proc.stdout
-    assert proc.stderr == ""
+    assert _strip_navconfig_env_warnings(proc.stderr) == ""

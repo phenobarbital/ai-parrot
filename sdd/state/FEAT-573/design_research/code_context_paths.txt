@@ -1,0 +1,8 @@
+packages/ai-parrot-integrations/src/parrot/integrations/agentd/proxy.py
+packages/ai-parrot/pyproject.toml
+packages/ai-parrot/src/parrot/cli/agent_repl.py
+packages/ai-parrot/src/parrot/cli/commands.py
+packages/ai-parrot/src/parrot/cli/loaders.py
+packages/ai-parrot/src/parrot/cli/renderer.py
+packages/ai-parrot/src/parrot/cli/repl.py
+sdd/specs/new-cli-infra.spec.md

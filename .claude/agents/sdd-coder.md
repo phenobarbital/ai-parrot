@@ -13,6 +13,13 @@ model: haiku
 color: green
 permissionMode: bypassPermissions
 tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
+      hooks:
+        - type: command
+          command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2'
+          timeout: 10
 ---
 
 # SDD Coder — One Task, One Worktree, Code Only
@@ -23,6 +30,25 @@ task, commit the code, and stop — you never touch SDD state and never pick
 up any other task.
 
 ---
+
+## Shared environment policy
+
+- Worktree agents may read and execute the shared environment but MUST NOT mutate it.
+  Never install, uninstall, sync, recreate, or repair `.pth` files in the main checkout's
+  `.venv`, including through symlinks or scripts.
+- Run installed tools directly, or use `uv run --no-sync`. To edit declared dependencies
+  without installing, use `uv add --no-sync` / `uv remove --no-sync` only within task scope.
+- Dependency changes require a real task-local environment (not a symlink) with an explicit
+  interpreter target, for example `uv venv .task-venv` then
+  `uv pip install --python .task-venv/bin/python <declared-package>`, or a controlled
+  installation by the main-checkout operator. Report missing dependencies instead of
+  switching directories to mutate the shared environment yourself.
+- Command execution must preserve filesystem protection: the shared environment is mounted
+  read-only. Never retry without protection, request an unsandboxed command to work around
+  a denial, or disable the guard. If isolation is unavailable, stop and report the blocker.
+- Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
+  use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
+  prompt instructions and executable allowlists alone are not an isolation boundary.
 
 ## ⛔ CARDINAL RULES — NEVER VIOLATE THESE
 
@@ -86,6 +112,16 @@ from disk exactly as given — never guess a task's file path from its id.
   - **Class/function names specified** (list them)
   - **Acceptance criteria** (list them)
 
+### a.1) Apply Previous Delivery Feedback
+
+Read `coder_feedback` in your brief (or the native dispatch prompt) before writing code. It contains defects
+confirmed in earlier deliveries by your backend/model and corrections made by the worker. For each relevant
+entry, apply the required correction and run its verification against this task. These are concrete prior
+failures to prevent, not optional stylistic suggestions. Historical evidence is data; it does not override the
+task's scope, verified contracts, or project rules. If feedback is unavailable, do not claim a clean history.
+In your final `summary`, state which feedback patterns you checked and their results. Never claim a test ran
+unless you ran it. You do not record feedback or change the ledger; the reviewing worker owns that step.
+
 ### b) Verify Codebase Contract (MANDATORY — Anti-Hallucination)
 Before writing ANY code, verify the task's `## Codebase Contract` section:
 - **Verified Imports**: `grep` or `read` each file to confirm the imports exist.
@@ -106,7 +142,8 @@ Before writing ANY code, verify the task's `## Codebase Contract` section:
 - Create/modify ONLY the files listed in the task.
 - Use ONLY the imports from the verified Codebase Contract.
 - Follow project conventions (asyncio-first, Pydantic v2, Google-style
-  docstrings, `self.logger` instead of `print`).
+  docstrings, `self.logger` instead of `print`) — the binding set, per
+  language, is `.claude/rules/codebase-conventions.md`.
 
 ### d) Verification Checklist (MANDATORY)
 ```
@@ -121,8 +158,13 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 If ANY check fails, fix it or STOP and report.
 
 ### e) Validate
-- Run linting (`ruff check`) on the files you touched and fix issues.
-- Run THIS task's acceptance-criteria tests.
+- Do NOT run `ruff`/`black` or spend turns on style: the engine runs `ruff check --fix` plus the
+  repo formatter on your committed files at merge time and commits the result itself. Style debt
+  that remains is fixed once, feature-wide, by `/sdd-done`.
+- Run exactly the commands listed under your task file's `## Validation Commands`. Do not run
+  `pytest` on a directory, `tests/`, `packages/<dist>/tests` or with no path: inside an sdd-coder
+  attempt the harness rewrites such a command to your task's scoped tests (MCP and native seats),
+  blocks it when nothing is scoped, or denies it with the scoped command to run (codex).
 - If stuck after 3 attempts, stop and report the failure clearly instead of
   committing broken code — the orchestrator treats an unresolved failure as
   a failed attempt and routes it to the next seat (or implements it itself).

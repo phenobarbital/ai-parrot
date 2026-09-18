@@ -26,6 +26,8 @@ from typing import Any
 
 from parrot.outputs.a2ui.catalog.base import BasicNode
 
+from ._table_format import format_cell
+
 #: ``parrot_variant`` -> semantic ``Card`` class, appended to (never replacing)
 #: the pre-existing bare ``a2ui-card`` class. Variants without a dedicated
 #: entry degrade to a generic ``a2ui-card-<variant>`` class (never dropped).
@@ -113,6 +115,71 @@ def kpi_unit_html(node: BasicNode) -> str:
     return f'<span class="kpi-unit">{_esc(unit)}</span>'
 
 
+def humanize_key(name: str) -> str:
+    """``in_progress`` -> "In progress": a column key made readable.
+
+    A chart's series are named by the data column they came from, and both
+    the legend and the metric toggles printed that key verbatim — a report's
+    key read ``scheduled | in_progress | completed | unfulfilled``, which is
+    a schema, not a label.
+
+    First word capitalised only: "In progress", not "In Progress". These sit
+    in a legend, not in a heading.
+    """
+    words = str(name).replace("_", " ").replace("-", " ").split()
+    if not words:
+        return str(name)
+    return " ".join([words[0].capitalize()] + [w.lower() for w in words[1:]])
+
+
+def kpi_value_display(node: BasicNode, raw: Any) -> str:
+    """The display string for a ``value``-role Text, honouring ``parrot_value_format``.
+
+    A KPI value arrives as the number it is: a completion rate is ``0.683``,
+    not ``"68.3%"``. Both HTML renderers printed that straight through, so a
+    report card read ``0.6833333333333333`` — sixteen digits of float noise
+    where a reader wanted three characters.
+
+    The formatting is DECLARED, never guessed (``KPICard.format``, mirroring
+    ``TableColumn.format`` which these renderers already honour). Without a
+    declared format the value passes through as ``str(value)``, byte-identical
+    to before: a renderer that inferred meaning from the number would group a
+    year as ``2,026``.
+
+    Args:
+        node: The reconstructed ``value``-role ``Text`` :class:`BasicNode`.
+        raw: The node's already-resolved ``text`` value.
+
+    Returns:
+        The display string, unescaped — callers escape.
+    """
+    fmt = node_extensions(node).get("parrot_value_format")
+    if not fmt:
+        return "" if raw is None else str(raw)
+    # `format_cell` needs a numeric declared type to do anything; the format
+    # hint IS the declaration that this value is a number.
+    return format_cell(raw, col_type="number", col_format=fmt)
+
+
+def kpi_comparison_html(node: BasicNode) -> str:
+    """The ``<span class="kpi-comparison">`` markup for a kpi ``Card``'s baseline label.
+
+    ``KPICardComponent.lower`` has carried ``comparisonPeriod`` as a Card
+    extension since FEAT-527 and both HTML renderers dropped it, so a card
+    showed "+52.4%" without ever saying what it was 52.4% more THAN.
+
+    Args:
+        node: The reconstructed ``Card`` :class:`BasicNode`.
+
+    Returns:
+        The span markup, or ``""`` when the card declares no baseline.
+    """
+    period = node_extensions(node).get("parrot_comparison_period")
+    if not period:
+        return ""
+    return f'<span class="kpi-comparison">{_esc(period)}</span>'
+
+
 def trend_attr_html(node: BasicNode) -> str:
     """The `` data-trend="up|down|flat"`` attribute for a ``delta``-role Text's ``parrot_trend``.
 
@@ -121,13 +188,22 @@ def trend_attr_html(node: BasicNode) -> str:
 
     Returns:
         The leading-space-prefixed attribute string, or ``""`` (no
-        attribute) when no trend is set. ``components.css`` colours the
-        element based on this attribute's value.
+        attribute) when no trend is set. Carries ``data-sentiment`` too when
+        lowering supplied one; ``components.css`` colours by that and falls
+        back to ``data-trend``.
     """
-    trend = node_extensions(node).get("parrot_trend")
+    ext = node_extensions(node)
+    trend = ext.get("parrot_trend")
     if not trend:
         return ""
-    return f' data-trend="{_esc(trend)}"'
+    attrs = f' data-trend="{_esc(trend)}"'
+    # The direction is what the arrow shows; the sentiment is what the colour
+    # means. `components.css` prefers the sentiment and falls back to the
+    # direction, so a card lowered before this existed is unchanged.
+    sentiment = ext.get("parrot_sentiment")
+    if sentiment:
+        attrs += f' data-sentiment="{_esc(sentiment)}"'
+    return attrs
 
 
 def is_kpi_row(node: BasicNode) -> bool:

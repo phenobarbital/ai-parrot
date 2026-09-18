@@ -22,7 +22,9 @@ Promotion is always explicit — no ledger issue is ever auto-promoted.
   **Implementation Blueprint** (executor-ready per-file code blocks + why +
   `FILL IN` checklist, see §3). Blueprints stop at the mechanical parts;
   branches, edge cases and test bodies stay as `FILL IN` stubs.
-- Mark tasks that can run in parallel worktrees with `parallel: true`.
+- Build the task graph by §3's **Task graph rules** — `depends_on` is the only
+  ordering, `parallel: false` means *exclusive* — and run
+  `scripts/sdd/check_task_graph.py` on the index before committing (§4b).
 - **`TASK-<NNN>` numbers are reserved via `scripts/sdd/reserve_ids.py`
   (FEAT-387), never hand-computed by scanning existing files for the
   highest number in use.** That scan-and-increment approach has no lock
@@ -99,11 +101,37 @@ Analyze the spec and identify atomic tasks:
 - Order tasks to respect implementation dependencies.
 - Aim for tasks completable in 1–4 hours each.
 
-**Parallelism analysis:**
-- Identify tasks within the spec that share NO files or imports with other tasks.
-- Mark those tasks as `parallel: true` — they CAN run in separate worktrees.
-- Tasks that import/extend code from a prior task in the same spec are `parallel: false` (default).
-- Document the rationale in the `parallelism_notes` field.
+**Task graph rules (`depends_on`, `parallel`, `parallelism_notes`):**
+
+Every task runs in its own sub-worktree, dispatched by the `sdd-coder` engine as
+soon as its `depends_on` are done; tasks whose dependencies are met run
+**concurrently**. So the graph, not the prose, decides how long a feature takes
+(querysource FEAT-147: 18 tasks chained 1→2→…→18 with one copy-pasted
+rationale ran strictly in series for ~7 h).
+
+- **`depends_on` is the ONLY ordering.** Add `B depends_on A` only with evidence:
+  - B imports, calls, extends or tests a symbol A **creates**; or
+  - B consumes a file/table/config/fixture A creates; or
+  - B and A both **modify the same file** (serialize them: the lower id first).
+
+  Never add an edge because tasks share a module, a spec section or a "phase", or
+  "to be safe". A spec that says tasks run *sequentially* or *per-spec* means ONE
+  feature worktree — it is NOT a dependency chain. Transitive edges may be
+  omitted.
+- **`parallel` defaults to `true`.** Set `parallel: false` (*exclusive* — never
+  dispatched alongside any other task, even with its dependencies met) only when
+  the task mutates shared state **outside its declared files**: rebuilding
+  compiled extensions (Cython `make build-inplace`, maturin), editing dependency
+  manifests or lockfiles (`pyproject.toml`, `uv.lock`), running DDL/migrations
+  against a shared database, regenerating shared generated code, or changing a
+  `conftest.py` other tasks' tests load.
+- **`parallelism_notes` is per task and names its evidence**: for each
+  `depends_on` edge, the dependency id plus the symbol/file it needs
+  (`"imports TenantRegistry from TASK-716 (querysource/tenants.py)"`); for an
+  exclusive task, the shared resource. Identical notes on several tasks is a
+  defect.
+- Write `"parallel_semantics": "exclusive"` in the index header (see schema) —
+  without it the engine ignores every `parallel` flag.
 
 **CRITICAL — Codebase Contract per Task (Anti-Hallucination):**
 For EACH task, you MUST populate its `## Codebase Contract` section:
@@ -242,6 +270,8 @@ and ignored by all FEAT-145 commands). Schema:
   "base_branch": "dev",
   "created_at": "<ISO-8601>",
   "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
   "tasks": [
     {
       "id": "TASK-<NNN>",
@@ -254,8 +284,8 @@ and ignored by all FEAT-145 commands). Schema:
       "priority": "<high|medium|low>",
       "effort": "<S|M|L|XL>",
       "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "<rationale>",
+      "parallel": true,
+      "parallelism_notes": "<per-task evidence: 'needs <symbol> from TASK-<X> (<file>)' | exclusive resource>",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -268,7 +298,9 @@ and ignored by all FEAT-145 commands). Schema:
 **Header fields (`type`, `base_branch`)** are populated from the spec's
 frontmatter (resolved in §1 above). If `sdd/tasks/index/<feature>.json`
 already exists (created by the migration script for older specs), append
-the new tasks to its `tasks[]` array — do NOT overwrite the header.
+the new tasks to its `tasks[]` array — do NOT overwrite the header. Do not add
+`parallel_semantics` to an existing header whose tasks were written before these
+rules: their `parallel: false` meant something else and would serialize them.
 
 **Index location helper:**
 ```bash
@@ -301,6 +333,76 @@ complete. `design_complete: true` is a declaration the task author signs.
   only then re-runs `writer_generate`.
 - Omit the section entirely when the task is not eligible. Most tasks are not,
   and that is the normal, expected route.
+
+#### Validation Commands (mandatory, per task — FEAT-563)
+
+Every generated task MUST carry a `## Validation Commands` section placed right
+after `## Acceptance Criteria`: one bullet per command, each a backticked
+`pytest` invocation whose operands are **test files or node ids** — never a
+directory, never `tests/` or `packages/<dist>/tests`, never a bare `pytest`.
+
+```markdown
+## Validation Commands
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_mirror.py -q`
+- `pytest tests/sdd_scripts/test_check_task_graph.py::test_validation_contract_findings -q`
+```
+
+This is what the sdd-coder guard rewrites a broad pytest to. New per-spec index
+headers MUST include `"validation_contract": "required"`; `check_task_graph`
+then reports `missing-validation-commands`, `broad-validation-command` and
+`directory-validation-target` as errors (`validation-path-unknown` warns).
+
+#### Complexity Contract (mandatory, per task)
+
+Every generated task MUST carry a `## Complexity Contract` section containing
+a JSON block with `schema_version: 1`.
+- **`targets`**: A list of objects with `path` (repo-relative path) and
+  `action` (`"CREATE"` or `"MODIFY"`, uppercase) matching the "Files to
+  Create / Modify" table exactly.
+- **`contract_symbols`**: A list of exact symbol IDs referenced by the
+  Codebase Contract (e.g.,
+  `"sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py#RosterConfig"`).
+  If there are no existing symbol references, use an empty list `[]` (do not
+  omit the field — an absent list means legacy/unknown coverage).
+- Legacy tasks without this section default to unknown complexity.
+  Natural-language assurances cannot downgrade this — the deterministic
+  evaluator, not the task author's prose, decides classification.
+
+Example:
+```json
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/complexity.py",
+      "action": "MODIFY"
+    }
+  ],
+  "contract_symbols": []
+}
+```
+
+### 4b. Validate the Task Graph
+
+Run the deterministic graph check on the index you just wrote:
+
+```bash
+python -m scripts.sdd.check_task_graph sdd/tasks/index/<feature-slug>.json
+```
+
+- **Errors** (exit 1) block the commit: `file-overlap` (two tasks declare the
+  same file with no dependency path between them — they would run concurrently
+  and conflict), `unknown-dependency`, `cycle`. Fix the graph, re-run.
+- **Every warning is resolved, not ignored**: `unjustified-edge` → remove the
+  edge, or write its evidence in `parallelism_notes` (naming the dependency id);
+  `possible-missing-dependency` → add the edge or confirm the reference is not
+  a use; `duplicate-notes` / `exclusive-without-notes` → write per-task notes.
+- FEAT-563 validation-contract codes: `missing-validation-commands`,
+  `broad-validation-command`, `directory-validation-target` (errors when the
+  header requires the contract) and `validation-path-unknown` (warning) — add
+  or fix the task's `## Validation Commands` section.
+- Copy the report's first line (`<N> tasks, <W> waves, max width <M>`) into the
+  §6 output. A width of 1 on a multi-task feature needs a one-line justification.
 
 ### 5. Commit Tasks and Per-Spec Index to `<BASE>`
 
@@ -348,6 +450,7 @@ Tasks created:
   HOTFIX-<JIRA-KEY>-<N> — <title> [<priority>/<effort>]  # hotfix
 
 Blueprints: <N>/<N> tasks carry an Implementation Blueprint
+Graph:      <N> tasks, <W> waves, max width <M>; exclusive: <ids or "none">
 Delegated:  <D>/<N> tasks carry a Delegation Contract (targeted writer)
             TASK-<NNN>, TASK-<NNN>          # list them, or "none"
 

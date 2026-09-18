@@ -12,8 +12,17 @@ from click.testing import CliRunner
 from parrot.cli import cli
 
 
-def test_list_shows_builtins(monkeypatch, tmp_path):
-    """`--list` prints the three built-in names with enabled state."""
+def _write_memory_config(tmp_path: Path) -> None:
+    """Write an explicit `memory:` section — nothing resolves implicitly (FEAT-570)."""
+    parrot_dir = tmp_path / ".parrot"
+    parrot_dir.mkdir(exist_ok=True)
+    (parrot_dir / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n  memory:\n    class: parrot.tools.working_memory.tool.WorkingMemoryToolkit\n    kwargs: {}\n"
+    )
+
+
+def test_list_shows_nothing_on_bare_repo(monkeypatch, tmp_path):
+    """`--list` on a bare repo (no config file) lists nothing (FEAT-570)."""
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
 
@@ -21,7 +30,19 @@ def test_list_shows_builtins(monkeypatch, tmp_path):
 
     assert result.exit_code == 0, result.output
     for name in ("scraping", "browsing", "memory"):
-        assert name in result.output
+        assert name not in result.output
+
+
+def test_list_shows_declared_section(monkeypatch, tmp_path):
+    """`--list` prints a section declared in `.parrot/mcp-toolkits.yaml`."""
+    _write_memory_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["mcp-local", "--list"])
+
+    assert result.exit_code == 0, result.output
+    assert "memory" in result.output
     assert "enabled" in result.output
 
 
@@ -43,6 +64,7 @@ def test_list_does_not_import_toolkit_classes(monkeypatch, tmp_path):
 
 def test_unknown_name_nonzero(monkeypatch, tmp_path):
     """Unknown name exits non-zero; stderr lists resolvable names."""
+    _write_memory_config(tmp_path)
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
 
@@ -51,6 +73,49 @@ def test_unknown_name_nonzero(monkeypatch, tmp_path):
     assert result.exit_code != 0
     assert "Unknown toolkit name" in result.output
     assert "memory" in result.output  # resolvable names listed
+
+
+def test_unknown_name_names_the_install_command(monkeypatch, tmp_path):
+    """The hard cut's only migration aid (FEAT-570)."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["mcp-local", "browsing"])
+
+    assert result.exit_code != 0
+    assert "parrot toolkits install browsing" in result.output
+
+
+def test_missing_distribution_gets_a_different_message(monkeypatch, tmp_path):
+    """A configured toolkit whose distribution is missing is NOT told to
+    `parrot toolkits install` — that command cannot fix a missing extra."""
+    parrot_dir = tmp_path / ".parrot"
+    parrot_dir.mkdir()
+    (parrot_dir / "mcp-toolkits.yaml").write_text(
+        "toolkits:\n  ghost:\n    class: nonexistent_package.module.GhostToolkit\n    kwargs: {}\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["mcp-local", "ghost"])
+
+    assert result.exit_code != 0
+    assert "Cannot import toolkit" in result.output
+    assert "parrot toolkits install ghost" not in result.output
+
+
+def test_list_mentions_no_builtins(monkeypatch, tmp_path):
+    """`--list`'s output and help text contain no "built-in" language."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["mcp-local", "--list"])
+    assert result.exit_code == 0, result.output
+    assert "built-in" not in result.output.lower()
+
+    help_result = runner.invoke(cli, ["mcp-local", "--help"])
+    assert help_result.exit_code == 0, help_result.output
+    assert "built-in" not in help_result.output.lower()
 
 
 def test_missing_name_without_list_nonzero(monkeypatch, tmp_path):
@@ -95,6 +160,7 @@ def test_overrides_passed(monkeypatch, tmp_path):
         "parrot.mcp.local_cli.asyncio.run",
         lambda coro: getattr(coro, "close", lambda: None)(),
     )
+    _write_memory_config(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     custom_cfg = tmp_path / "custom.yaml"
@@ -148,6 +214,7 @@ def test_serve_path_stub_toolkit(monkeypatch, tmp_path):
 
 def test_keyboard_interrupt_clean_exit(monkeypatch, tmp_path):
     """A KeyboardInterrupt during serve exits cleanly with status 0."""
+    _write_memory_config(tmp_path)
     monkeypatch.chdir(tmp_path)
 
     def fake_factory(name, root, **overrides):

@@ -1,0 +1,3 @@
+- [ ] Exact JSON schema of `FixPlan` / `FixGroup` (the twin↔planner contract).
+- [ ] Group naming for the SDD lane's slug — derived from the dominant file's module, or
+- [ ] Whether the fast lane opens a PR or pushes straight to `dev` for a one-line comment

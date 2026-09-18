@@ -123,8 +123,17 @@ jobs:
         with:
           version: "latest"
 
-      - name: Sync core package
-        run: uv sync --package ai-parrot
+      # `tests/` exercises the whole workspace, not only core: the LLM clients
+      # ship as `ai-parrot-client-*` satellites, the handlers/scheduler as
+      # `ai-parrot-server`, etc. Syncing core alone left ~340 tests failing on
+      # `No module named 'parrot.clients.google'` / `apscheduler` / `mcp`.
+      # `scheduler` (apscheduler) is the one extra added: `parrot.scheduler` is
+      # imported by the crew/agent scheduling handlers and several agents, so
+      # without it ~140 tests error instead of exercising real code. Every
+      # other extra stays off on purpose — those seams are covered by the
+      # dedicated jobs below.
+      - name: Sync all workspace packages (+ scheduler extra)
+        run: uv sync --all-packages --extra scheduler
 
       # NavConfig refuses to import without an env/<environment>/.env file,
       # and env/ is gitignored — so the suite could never even be collected on
@@ -168,8 +177,15 @@ jobs:
       # grammar wheels together. Scoped to `tests/knowledge/wiki` — the
       # only area either extra affects — rather than re-running the
       # whole `tests/` suite a second time.
-      - name: Sync core package with wiki-languages + wiki-structural
-        run: uv sync --package ai-parrot --extra wiki-languages --extra wiki-structural
+      # `--extra wiki` is the one-shot wiki stack (graphindex + wiki-languages
+      # + wiki-structural + leiden + `ai-parrot-loaders[documents]`). The two
+      # extras below are already implied by it, kept explicit because this
+      # job's name and its Luau gate are about them. `documents` is what
+      # brings pymupdf/pymupdf4llm/python-docx, without which every FEAT-451
+      # `wikitoolkit ingest` test errored at fixture setup instead of
+      # exercising the loader-backed acquisition path this job exists to cover.
+      - name: Sync core package with the wiki stack (+ wiki-languages / wiki-structural)
+        run: uv sync --package ai-parrot --extra wiki --extra wiki-languages --extra wiki-structural
 
       - name: Scaffold NavConfig environment
         run: mkdir -p env/dev && touch env/dev/.env

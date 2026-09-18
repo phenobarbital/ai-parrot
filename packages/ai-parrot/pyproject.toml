@@ -15,19 +15,19 @@ authors = [
 ]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 keywords = ["asyncio", "asyncpg", "aioredis", "aiomcache", "artificial intelligence", "ai", "chatbot", "agents"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Environment :: Web Environment",
     "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: 3 :: Only",
     "Framework :: AsyncIO",
     "Typing :: Typed",
@@ -35,7 +35,7 @@ classifiers = [
 
 dependencies = [
     # Build tools
-    "Cython==3.0.11",
+    "Cython>=3.1.4",  # navconfig>=2.5.2 requires it
     # Core data / utilities
     "tabulate==0.9.0",
     "markdown2==2.5.4",
@@ -69,6 +69,17 @@ dependencies = [
     # tenacity above.
     "openai==3.3.1",
     "psutil>=5.9",
+    # `parrot/bots/flows/crew/crew.py` (AgentCrew, re-exported by
+    # `parrot.bots.flows.__init__`) does a module-level
+    # `from tqdm.asyncio import tqdm`, and `parrot/interfaces/onedrive.py`
+    # + `sharepoint.py` do `from tqdm import tqdm` — so a bare install
+    # could not `import parrot.bots.flows` at all (CI 2026-09-16: 99
+    # `ModuleNotFoundError: No module named 'tqdm'` in the core suite).
+    # It was previously only ever present transitively. Floor-only pin on
+    # purpose: querysource caps tqdm<=4.67.1 (see the `research` extra
+    # comment in packages/ai-parrot-tools/pyproject.toml), and 4.66.5 is
+    # the floor habanero 2.3.x needs.
+    "tqdm>=4.66.5",
     # Text splitters live in core (parrot.loaders.splitters) — Rust-backed
     # chunking used by AbstractLoader. Moved here from ai-parrot-loaders to
     # break the circular import (loaders depends on core).
@@ -85,14 +96,23 @@ dependencies = [
     # explicitly (was previously only present via transitive resolution).
     "regex>=2023.0",
     # Navigator stack (core)
-    "navconfig[default]>=2.2.2",
+    # navconfig/asyncdb/navigator-auth/navigator-session floors: older releases
+    # can't build on Python 3.13+ and navconfig/asyncdb carry a stalled-asyncio
+    # bug — never let the resolver fall back to them.
+    "navconfig[default]>=2.5.2",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
     # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
     # evaluation to fail-closed with a PyO3 TypeError. The latest AI-Parrot
-    # changes additionally require the 0.24.0 API surface. Loose upper
+    # changes additionally require the 0.24.0 API surface; 0.28.0 builds on
+    # Python 3.13+. Loose upper
     # bound on purpose; only the floor is enforced.
-    "navigator-auth>=0.24.0",
-    "navigator-session>=0.6.5",
+    "navigator-auth>=0.28.0",
+    "navigator-session>=1.0.1",
+    # navigator-auth>=0.28 pulls pysaml2; pysaml2 7.5.1+ caps pyopenssl<24.3,
+    # which lets a plain pip resolve down to pyopenssl 22.0 — broken against
+    # current cryptography (`lib has no attribute GEN_EMAIL`). The floor steers
+    # the resolver to pysaml2 7.5.0 (uncapped).
+    "pyopenssl>=24.3.0",
     # navigator-api 3.0.3+ ships the `navigator.utils.file` FileManager
     # interface AI-Parrot re-exports from `parrot.interfaces.file`; 3.1.2
     # fixes the aiohttp RequestHandler kwargs warning (invalid
@@ -103,12 +123,15 @@ dependencies = [
     # (that downgrade broke `parrot.tools.pythonrepl` imports on 2026-09-03).
     "navigator-api[uvloop,locale,google]>=3.2.2",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
-    "asyncdb>=2.11.6",
+    "asyncdb>=2.16.2",
     # AgentsFlow state checkpointing (FEAT-399) — binary checkpoint encoding,
     # native Pydantic/datetime/UUID serialization; never pickle.
     "ormsgpack>=1.5",
     # HTTP / networking
     "rich>=13.0",
+    # FEAT-573: Textual TUI framework for `parrot agent --ui tui` (core, not an extra;
+    # requires rich>=14.2 and python>=3.9 — both already satisfied).
+    "textual>=8.2,<9",
     # requests is otherwise transitive; pin to the 2.33 series — the intersection
     # of flowtask 5.12.3 (>=2.33.0) and arxiv>=3.0.0 (<2.34).
     "requests>=2.33,<2.34",
@@ -200,9 +223,9 @@ notify-all = [
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
 db = [
     "querysource>=4.1.11",
-    "psycopg-binary==3.2.6",
+    "psycopg-binary>=3.2.12",
     "jq==1.7.0",
-    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.12.0",
+    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.16.2",
 ]
 
 # Google BigQuery specific
@@ -249,7 +272,10 @@ flowtask = [
 # dependencies (FEAT-471) — wikitoolkit imports them unconditionally.
 graphindex = [
     "tree-sitter>=0.23",
-    "tree-sitter-languages>=1.10",
+    # tree-sitter-languages was removed: unmaintained (no py3.13+ wheels or
+    # sdist, ever) and unused — nothing in the codebase imports it, the
+    # per-language grammar wheels below (`wiki-languages`) already replaced
+    # it for the same reason.
     # FEAT-539: deterministic fuzzy matching for contract parent resolution
     # and party/title reconciliation. Also covers the previously undeclared
     # lazy import in `knowledge/ontology/discovery.py`.
@@ -620,6 +646,11 @@ meta = [
     "ai-parrot-client-meta",
 ]
 
+# TypeSafe AI System One (Jev) — typed decisions, not text generation.
+jev = [
+    "ai-parrot-client-jev",
+]
+
 # All 15 provider satellites this feature extracted. Each satellite pulls
 # its own SDK (e.g. ai-parrot-client-openai -> openai==3.3.1,
 # ai-parrot-client-groq -> groq==0.33.0, ...) — nothing else to list here.
@@ -639,6 +670,7 @@ llms = [
     "ai-parrot-client-openrouter",
     "ai-parrot-client-local",
     "ai-parrot-client-vllm",
+    "ai-parrot-client-jev",
 ]
 
 integrations = [
@@ -847,6 +879,12 @@ all-fast = [
     "ai-parrot-embeddings[huggingface,faiss,pgvector]",
 ]
 
+# Protected stores for navigator-session vault rotation / migration
+# (navigator-vault CLI). See navigator_session/vault/registry.py.
+[project.entry-points."navigator_session.vault_targets"]
+parrot_user_credentials = "parrot.vault_targets:user_credentials_factory"
+parrot_user_llm_keys = "parrot.vault_targets:user_llm_keys_factory"
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
@@ -882,6 +920,7 @@ ai-parrot-client-moonshot = { workspace = true }
 ai-parrot-client-openrouter = { workspace = true }
 ai-parrot-client-local = { workspace = true }
 ai-parrot-client-vllm = { workspace = true }
+ai-parrot-client-jev = { workspace = true }
 
 [tool.setuptools.dynamic]
 version = {attr = "parrot.version.__version__"}
@@ -972,11 +1011,16 @@ markers = [
     "real_llm: mark a test as requiring a live LLM provider",
     "network: mark a test as requiring live network access (e.g. spec drift checks)",
     "live: needs provider credentials; opt-in with -m live",
+    "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
+    "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
 ]
 
 [tool.cibuildwheel]
-build = "cp3{11,12,13,14}-manylinux_x86_64"
-skip = "pp*"
+build = "cp3{11,12,13,14}-*"
+skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32"
 
 [tool.cibuildwheel.linux]
 archs = ["x86_64"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]

@@ -12,6 +12,9 @@ Verifies that:
 - _resolve_agents_by_ids helper works correctly.
 """
 from unittest.mock import MagicMock, create_autospec
+
+import pytest
+from pydantic import ValidationError
 from parrot.models.crew_definition import (
     CrewDefinition,
     AgentDefinition,
@@ -94,7 +97,15 @@ class TestFromDefinition:
         )
         crew = AgentCrew.from_definition(crew_def, class_resolver=dummy_resolver)
         agent = crew.agents["A1"]
-        assert agent.system_prompt == "You are helpful."
+        # Since 6131cec94 the definition prompt is injected into the agent's
+        # PromptBuilder identity slot (the legacy ``system_prompt`` template is
+        # ignored by the builder path), plus a temporal-grounding layer.
+        builder = agent._prompt_builder
+        assert builder is not None
+        identity = builder.get("identity")
+        assert identity is not None
+        assert identity.template == "You are helpful."
+        assert builder.get("temporal_context") is not None
 
     def test_shared_tools_resolved(self):
         """Shared tools are added to the crew when tool_resolver is provided."""
@@ -223,17 +234,20 @@ class TestFromDefinition:
         assert "Agent One" in deps
         assert "Agent Two" in deps
 
-    def test_flow_relation_unknown_agent_silently_skipped(self):
-        """Flow relations referencing unknown agent names are silently skipped."""
-        crew_def = make_crew_def(
-            execution_mode=ExecutionMode.FLOW,
-            flow_relations=[
-                FlowRelation(source="Agent One", target="NONEXISTENT")
-            ],
-        )
-        # Should not raise; the bad relation is skipped because _resolve_agents_by_ids returns []
-        crew = AgentCrew.from_definition(crew_def, class_resolver=dummy_resolver)
-        assert crew is not None
+    def test_flow_relation_unknown_agent_rejected(self):
+        """Flow relations referencing unknown agent names fail validation.
+
+        Since 0e221d75c ("validate CrewDefinition instead of failing
+        silently") a dangling relation is rejected at definition time rather
+        than silently dropping the edge in ``from_definition``.
+        """
+        with pytest.raises(ValidationError, match="unknown crew members"):
+            make_crew_def(
+                execution_mode=ExecutionMode.FLOW,
+                flow_relations=[
+                    FlowRelation(source="Agent One", target="NONEXISTENT")
+                ],
+            )
 
     def test_partial_tool_resolution(self):
         """tool_resolver returning None for one tool skips that tool only."""

@@ -8,7 +8,7 @@
 [project]
 name = "ai-parrot-workspace"
 version = "0.0.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 description = "AI-Parrot monorepo workspace"
 dependencies = [
     "ai-parrot",
@@ -77,9 +77,12 @@ dev = [
 [tool.uv]
 # Project is Linux-only (see classifiers). Restricting the lock to Linux
 # avoids non-Linux resolution splits that pull incompatible dep combos
-# (e.g. async-notify[all]>=1.5.2 ships no macOS wheels).
+# (e.g. async-notify[all]>=1.5.2 ships no macOS wheels). aarch64 is excluded
+# too: async-notify has never published a linux/aarch64 wheel (or an sdist)
+# for any version, so that fork is permanently unresolvable while
+# async-notify>=1.6.0 is required; all release/CI targets are x86_64 anyway.
 environments = [
-    "sys_platform == 'linux'",
+    "sys_platform == 'linux' and platform_machine != 'aarch64'",
 ]
 
 # gemma4 conflicts REMOVED — the gemma4 extra was dropped from
@@ -103,6 +106,10 @@ conflicts = [
     # OOM on the 15+ otel-instrumentation sub-packages.
 ]
 override-dependencies = [
+    # asyncdb[uvloop] 2.16.2 pins uvloop==0.21.0, but navconfig[uvloop] 2.5.2
+    # requires uvloop>=0.22.1 (flowtask pulls both extras). Remove once
+    # asyncdb relaxes its exact pin.
+    "uvloop>=0.22.1",
     "moviepy==2.2.1",
     "av>=13.0.0,<14.0.0",
     "watchdog>=6.0.0",
@@ -160,6 +167,13 @@ override-dependencies = [
     "packaging>=26.2",
 ]
 constraint-dependencies = [
+    # Navigator stack floors for every resolution path (incl. transitive pulls
+    # from querysource/flowtask): older navigator-auth/navigator-session fail to
+    # build on Python 3.13+, older navconfig/asyncdb have a stalled-asyncio bug.
+    "navconfig>=2.5.2",
+    "asyncdb>=2.16.2",
+    "navigator-auth>=0.28.0",
+    "navigator-session>=1.0.1",
     # Keep the shared runtime on the Protobuf 6.31 line. This is required by
     # the pinned ortools/flowtask path and is supported by the Google SDKs.
     # LiveKit 1.1.18 still ships stubs generated with Protobuf 5.29.3; remove
@@ -232,10 +246,16 @@ filterwarnings = [
 markers = [
     "asyncio: mark a test as a coroutine that should be run by pytest-asyncio",
     "real_llm: mark a test as requiring a live LLM provider",
+    "live_google: Opt-in paid Google GenAI (Veo/Omni/Lyria) reel smoke tests. Require real credentials and PARROT_TEST_LIVE_GOOGLE=1; skipped by default, never run at collection time (FEAT-564 TASK-3335).",
 ]
 
 [tool.black]
 line-length = 120
+# Pinned to the floor of requires-python (>=3.11) plus the venv's 3.12. Without a
+# pin black targets py313 too and, run from the 3.12 venv, warns "Python 3.12
+# cannot parse code formatted for Python 3.13" and SKIPS its AST safety check.
+# Output formatted for 3.11 is valid on every supported interpreter.
+target-version = ["py311", "py312"]
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -250,6 +270,14 @@ exclude = '''
   | dist
 )/
 '''
+# Feature worktrees are second checkouts of the same files (mirrors ruff.toml).
+extend-exclude = '''
+/(
+    \.claude/worktrees
+  | artifacts
+)/
+'''
+# Ruff is configured in ruff.toml — a [tool.ruff] table here would be ignored.
 
 [tool.pylint.messages_control]
 disable = ["C0330", "C0326", "W1203"]

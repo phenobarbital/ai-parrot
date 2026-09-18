@@ -17,6 +17,7 @@ import asyncio
 import uuid
 import logging
 import sys
+from typing import Optional
 
 import pytest
 import pytest_asyncio
@@ -36,11 +37,47 @@ SESSION_ID = f"e2e_session_{uuid.uuid4().hex[:8]}"
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
+REDIS_URL = "redis://localhost:6379/3"
+
+
+def _live_prerequisites_missing() -> Optional[str]:
+    """Return a skip reason when Redis or the Google API key is unavailable.
+
+    This module talks to a real Redis and a real Gemini model; CI provides
+    neither, so the whole module skips instead of failing in its fixtures.
+
+    Returns:
+        The skip reason, or ``None`` when both prerequisites are present.
+    """
+    try:
+        import redis
+
+        client = redis.from_url(REDIS_URL, socket_connect_timeout=1)
+        client.ping()
+        client.close()
+    except Exception as exc:  # noqa: BLE001 — any driver error means "no Redis"
+        return f"Redis not reachable at {REDIS_URL} ({type(exc).__name__}: {exc})"
+    try:
+        from navconfig import config
+
+        if not config.get("GOOGLE_API_KEY"):
+            return "GOOGLE_API_KEY not configured (navconfig)"
+    except Exception as exc:  # noqa: BLE001
+        return f"navconfig unavailable ({type(exc).__name__}: {exc})"
+    return None
+
+
+_SKIP_REASON = _live_prerequisites_missing()
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(_SKIP_REASON is not None, reason=_SKIP_REASON or ""),
+]
+
 
 @pytest_asyncio.fixture
 async def redis_memory():
     """Create a RedisConversation with a unique prefix and clean up after."""
-    redis_url = "redis://localhost:6379/3"
+    redis_url = REDIS_URL
     mem = RedisConversation(
         redis_url=redis_url, use_hash_storage=True, key_prefix=TEST_PREFIX
     )

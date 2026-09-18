@@ -16,12 +16,40 @@ Example keys stored for a Jira auth:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Literal, Optional
 
 try:
-    from navigator_session.vault import SessionVault
+    from navigator_session.vault import SessionVault, VaultCryptoError
 except ImportError:  # pragma: no cover - optional dependency
     SessionVault = None  # type: ignore[assignment]
+
+    class VaultCryptoError(Exception):  # type: ignore[no-redef]
+        """Placeholder when navigator-session vault crypto is unavailable."""
+
+
+#: Outcome of a vault read: tokens present, absent, unreadable or no vault.
+TokenReadStatus = Literal["ok", "missing", "unreadable", "unavailable"]
+
+
+@dataclass(frozen=True)
+class VaultTokenRead:
+    """Typed result of :meth:`VaultTokenSync.read_tokens_result`.
+
+    Attributes:
+        tokens: Field → value mapping when ``status == "ok"``, else ``None``.
+        status: ``ok`` (readable), ``missing`` (no keys stored),
+            ``unreadable`` (stored but failed integrity/format checks) or
+            ``unavailable`` (vault could not be loaded).
+    """
+
+    tokens: Optional[Dict[str, Any]]
+    status: TokenReadStatus
+
+    @property
+    def needs_reconnect(self) -> bool:
+        """True when the provider must be re-linked (tokens exist but are unusable)."""
+        return self.status == "unreadable"
 
 logger = logging.getLogger(__name__)
 
@@ -111,10 +139,22 @@ class VaultTokenSync:
         self._redis = redis
         self._session_ttl = session_ttl
         self._session_scheme = session_scheme
+        self._vaults: Dict[str, Any] = {}
         self.logger = logger
 
+    def _invalidate_vault(self, nav_user_id: str) -> None:
+        """Drop the cached vault after a write/delete."""
+        self._vaults.pop(str(nav_user_id), None)
+
     async def _load_vault(self, nav_user_id: str) -> Optional[Any]:
-        """Load (or return None on failure) a SessionVault for ``nav_user_id``."""
+        """Load (or return None on failure) a SessionVault for ``nav_user_id``.
+
+        The vault is cached per instance, so listing several providers for one
+        user costs a single load (instances are short-lived, one per request).
+        """
+        cached = self._vaults.get(str(nav_user_id))
+        if cached is not None:
+            return cached
         if SessionVault is None:
             self.logger.warning(
                 "VaultTokenSync: navigator_session.vault.SessionVault "
@@ -129,6 +169,7 @@ class VaultTokenSync:
                 redis=self._redis,
                 session_ttl=self._session_ttl,
             )
+            self._vaults[str(nav_user_id)] = vault
             return vault
         except Exception:  # noqa: BLE001 - intentional broad catch
             self.logger.exception(
@@ -186,6 +227,7 @@ class VaultTokenSync:
                 provider,
             )
         finally:
+            self._invalidate_vault(nav_user_id)
             expected_keys = [key for key, _ in expected_items]
             missing_keys = [key for key in expected_keys if key not in written_keys]
             if missing_keys:
@@ -199,6 +241,56 @@ class VaultTokenSync:
                     missing_keys,
                 )
 
+    async def read_tokens_result(
+        self,
+        nav_user_id: str,
+        provider: str,
+    ) -> VaultTokenRead:
+        """Read all ``{provider}:*`` keys, distinguishing absent from unreadable.
+
+        Args:
+            nav_user_id: Navigator user identifier.
+            provider: Vault key prefix (provider id).
+
+        Returns:
+            :class:`VaultTokenRead` — ``ok`` with the tokens, ``missing`` when
+            nothing is stored, ``unreadable`` when a stored token fails the
+            vault's integrity/format checks (the provider must be re-linked),
+            or ``unavailable`` when the vault could not be loaded.
+        """
+        vault = await self._load_vault(nav_user_id)
+        if vault is None:
+            return VaultTokenRead(None, "unavailable")
+        prefix = f"{provider}:"
+        try:
+            all_keys = await vault.keys()
+            matches = [k for k in all_keys if k.startswith(prefix)]
+            if not matches:
+                return VaultTokenRead(None, "missing")
+            result: Dict[str, Any] = {}
+            for full_key in matches:
+                field = full_key[len(prefix):]
+                value = await vault.get(full_key)
+                if value is not None:
+                    result[field] = value
+            return VaultTokenRead(result, "ok") if result else VaultTokenRead(None, "missing")
+        except VaultCryptoError as err:
+            # NEVER log token material — only the failure class.
+            self.logger.error(
+                "VaultTokenSync: stored tokens are unreadable user=%s provider=%s error=%s",
+                nav_user_id,
+                provider,
+                type(err).__name__,
+            )
+            return VaultTokenRead(None, "unreadable")
+        except Exception:  # noqa: BLE001
+            self.logger.exception(
+                "VaultTokenSync: failed to read tokens user=%s provider=%s",
+                nav_user_id,
+                provider,
+            )
+            return VaultTokenRead(None, "unavailable")
+
     async def read_tokens(
         self,
         nav_user_id: str,
@@ -208,31 +300,10 @@ class VaultTokenSync:
 
         Returns:
             A dict of ``{field_name: value}`` (with provider prefix stripped),
-            or ``None`` if the vault is unavailable or no keys exist.
+            or ``None`` if the vault is unavailable, unreadable, or no keys
+            exist. Use :meth:`read_tokens_result` to tell those apart.
         """
-        vault = await self._load_vault(nav_user_id)
-        if vault is None:
-            return None
-        prefix = f"{provider}:"
-        try:
-            all_keys = await vault.keys()
-            matches = [k for k in all_keys if k.startswith(prefix)]
-            if not matches:
-                return None
-            result: Dict[str, Any] = {}
-            for full_key in matches:
-                field = full_key[len(prefix):]
-                value = await vault.get(full_key)
-                if value is not None:
-                    result[field] = value
-            return result or None
-        except Exception:  # noqa: BLE001
-            self.logger.exception(
-                "VaultTokenSync: failed to read tokens user=%s provider=%s",
-                nav_user_id,
-                provider,
-            )
-            return None
+        return (await self.read_tokens_result(nav_user_id, provider)).tokens
 
     async def delete_tokens(
         self,
@@ -259,3 +330,5 @@ class VaultTokenSync:
                 nav_user_id,
                 provider,
             )
+        finally:
+            self._invalidate_vault(nav_user_id)

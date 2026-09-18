@@ -25,6 +25,7 @@ Commands:
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import logging
 import os
@@ -91,7 +92,6 @@ from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStor
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.events import IssueKind
-from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -2656,8 +2656,8 @@ def ledger_open(
     body: str,
 ) -> None:
     """Open a new issue in the ledger."""
-    service = LedgerService.from_root()
     try:
+        service = LedgerService.from_root()
         issue_id = _run(
             service.open_issue(
                 title=title,
@@ -2672,6 +2672,10 @@ def ledger_open(
         click.echo(f"Opened {issue_id}")
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
+    except OSError as exc:
+        if exc.errno != errno.EROFS:
+            raise
+        click.echo(f"Ledger unavailable; NOT filed: shared ledger is read-only ({exc})")
 
 
 @ledger.command("ready")
@@ -2810,6 +2814,10 @@ def ledger_rebuild() -> None:
     ingestion is idempotent (upsert semantics), so this is safe to run
     even when nothing in sdd/ actually changed.
     """
+    # Imported lazily: SDD ingestion is only needed by the ledger commands,
+    # so a problem in it must never break every other ``wikitoolkit`` command.
+    from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
+
     service = LedgerService.from_root()
     try:
         _run(service.index.rebuild())
@@ -2827,6 +2835,8 @@ def ledger_rebuild() -> None:
 @ledger.command("ingest-sdd")
 def ledger_ingest_sdd() -> None:
     """Ingest SDD specs and task indexes into the ledger."""
+    from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
+
     service = LedgerService.from_root()
     try:
         ingester = SDDGraphIngest(service.store, service.shared_root)
@@ -4580,6 +4590,8 @@ def ingest(
         # spec §7 risk: never call it inside async code).
         import questionary
 
+        from parrot.utils.tty import restore_stdin_blocking
+
         for entry in entries:
             click.echo(f"\n{entry.source_uri}")
             click.echo(f"  briefing: {entry.briefing}")
@@ -4589,11 +4601,12 @@ def ingest(
                 f"durability={entry.scores.durability:.2f}"
             )
             click.echo(f"  composite: {entry.composite:.4f}  proposed: {entry.proposed_action}")
-            choice = questionary.select(
-                "Decision:",
-                choices=["admit", "archive", "discard"],
-                default=entry.proposed_action,
-            ).ask()
+            with restore_stdin_blocking():
+                choice = questionary.select(
+                    "Decision:",
+                    choices=["admit", "archive", "discard"],
+                    default=entry.proposed_action,
+                ).ask()
             entry.decision = choice or entry.proposed_action
             entry.decision_source = "human"
             if entry.decision != entry.proposed_action and charter.examples_file:

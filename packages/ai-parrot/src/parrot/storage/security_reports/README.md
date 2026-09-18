@@ -168,5 +168,3 @@ per report).
 - `sdd/proposals/security-report-catalog.proposal.md` -- research and proposals.
 - `packages/ai-parrot/src/parrot/storage/artifacts.py` -- FEAT-103 peer
   abstraction (conversation-scoped artifacts; different lifecycle).
-- `.claude/rules/aws-cost-optimization.md` -- referenced for the deferred
-  S3 lifecycle / Glacier tiering follow-up FEAT.

@@ -169,14 +169,14 @@ class TestCreateNetsuiteMcpServer:
     def test_auth_url_construction(self):
         """OAuth2 auth URL is correctly templated from account_id."""
         cfg = self._make_cfg()
-        assert cfg.auth_config["auth_url"] == (
+        assert cfg.oauth2.auth_url == (
             "https://4984231.app.netsuite.com/app/login/oauth2/authorize.nl"
         )
 
     def test_token_url_construction(self):
         """OAuth2 token URL is correctly templated from account_id."""
         cfg = self._make_cfg()
-        assert cfg.auth_config["token_url"] == (
+        assert cfg.oauth2.token_url == (
             "https://4984231.suitetalk.api.netsuite.com"
             "/services/rest/auth/oauth2/v1/token"
         )
@@ -184,7 +184,7 @@ class TestCreateNetsuiteMcpServer:
     def test_scopes_are_mcp_only(self):
         """Scopes are hard-coded to ['mcp']."""
         cfg = self._make_cfg()
-        assert cfg.auth_config["scopes"] == ["mcp"]
+        assert cfg.oauth2.scopes == ["mcp"]
 
     def test_transport_is_http(self):
         """Transport is set to 'http'."""
@@ -196,49 +196,51 @@ class TestCreateNetsuiteMcpServer:
         cfg = self._make_cfg()
         assert cfg.name == "netsuite"
 
-    def test_token_supplier_is_callable(self):
-        """token_supplier is set and callable."""
+    def test_auth_type_is_oauth2_without_legacy_supplier(self):
+        """auth_type is 'oauth2'; the legacy OAuthManager token_supplier is gone (TASK-1665)."""
         cfg = self._make_cfg()
-        assert cfg.token_supplier is not None
-        assert callable(cfg.token_supplier)
+        assert cfg.auth_type == "oauth2"
+        assert cfg.token_supplier is None
+        assert not hasattr(cfg, "_ensure_oauth_token")
 
-    def test_ensure_token_attached(self):
-        """_ensure_oauth_token attribute is attached and callable."""
+    def test_grant_type_is_authorization_code(self):
+        """The NetSuite preset uses the Authorization Code (+PKCE) grant."""
+        from parrot.mcp.oauth2_config import MCPOAuth2GrantType
+
         cfg = self._make_cfg()
-        assert hasattr(cfg, "_ensure_oauth_token")
-        assert callable(cfg._ensure_oauth_token)
+        assert cfg.oauth2.grant_type == MCPOAuth2GrantType.AUTHORIZATION_CODE
 
-    def test_token_supplier_set_when_no_store_given(self):
-        """When no token_store is provided the factory still wires a token_supplier."""
-        cfg = self._make_cfg()
-        # token_supplier is a bound method of OAuthManager; we verify it is
-        # present and callable (the store type is an internal OAuthManager detail).
-        assert cfg.token_supplier is not None
+    def test_provider_registered_in_oauth2_registry(self):
+        """The factory registers an 'mcp:<name>' provider in the unified registry."""
+        from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
-    def test_custom_token_store_accepted(self):
-        """A custom token_store (e.g. VaultTokenStore) can be injected."""
+        self._make_cfg()
+        provider = OAuth2ProviderRegistry().get("mcp:netsuite")
+        assert provider is not None
+        assert provider.default_scopes == ["mcp"]
+
+    def test_token_store_kwarg_removed(self):
+        """token_store is no longer accepted — storage moved to VaultMCPTokenStorage (TASK-1665)."""
         from parrot.mcp.oauth import VaultTokenStore
         from parrot.mcp.integration import create_netsuite_mcp_server
 
-        store = VaultTokenStore()
-        cfg = create_netsuite_mcp_server(
-            account_id="4984231",
-            client_id="test-client",
-            user_id="user@co.com",
-            token_store=store,
-        )
-        assert cfg.token_supplier is not None
+        with pytest.raises(TypeError):
+            create_netsuite_mcp_server(
+                account_id="4984231",
+                client_id="test-client",
+                user_id="user@co.com",
+                token_store=VaultTokenStore(),
+            )
 
-    def test_client_id_in_auth_config(self):
-        """client_id is included in auth_config."""
+    def test_client_id_in_oauth2_config(self):
+        """client_id is included in the OAuth2 config."""
         cfg = self._make_cfg()
-        assert cfg.auth_config["client_id"] == "test-client"
+        assert cfg.oauth2.client_id == "test-client"
 
-    def test_redirect_uri_in_auth_config(self):
-        """redirect_uri is present in auth_config."""
+    def test_redirect_path_in_oauth2_config(self):
+        """The OAuth2 callback is served by the unified MCP OAuth2 route."""
         cfg = self._make_cfg()
-        assert "redirect_uri" in cfg.auth_config
-        assert "127.0.0.1" in cfg.auth_config["redirect_uri"]
+        assert cfg.oauth2.redirect_path == "/api/auth/oauth2/mcp/callback"
 
     def test_custom_name_overrides_default(self):
         """Passing name= changes both cfg.name and the token-store scope key."""

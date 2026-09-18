@@ -7,7 +7,7 @@ name = "ai-parrot-embeddings"
 dynamic = ["version"]
 description = "Concrete embedding, vector-store, and reranker backends for AI-Parrot"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
@@ -74,9 +74,7 @@ bigquery = [
     "google-cloud-bigquery>=3.30.0",
 ]
 faiss = []  # faiss-cpu stays in core ai-parrot deps; this extra is a name-only opt-in
-chroma = [
-    "chromadb==0.6.3",
-]
+chroma = []  # reserved; chromadb removed due to unpatched CVEs (CVE-2026-45833/45831/45830)
 lancedb = [
     "lancedb==0.38.0",
 ]

@@ -51,7 +51,8 @@
                         "metadata": {
                           "extensions": {
                             "parrot_role": "value",
-                            "parrot_unit": null
+                            "parrot_unit": null,
+                            "parrot_value_format": null
                           }
                         },
                         "text": "100"

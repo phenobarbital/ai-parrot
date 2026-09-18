@@ -14,6 +14,8 @@ Modules:
     assets: Managed file templates and markers.
     installer: Idempotent install/uninstall/status operations.
     hook: PreToolUse hook runtime (fast, dependency-light).
+    compaction: fast-jev-compaction plugin wiring (Jev-guided verbatim
+        compaction; installed by default, ``--no-compaction`` to skip).
     cli: ``parrot claude`` click command group.
 """
 

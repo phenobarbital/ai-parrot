@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any
 
 import click
+from parrot.cli.console import get_console
+from parrot.cli.events import PostTurnHook
 from parrot.cli.renderer import ResponseRenderer
 from parrot.cli.repl import AgentREPL, REPLConfig
-from rich.console import Console
 from rich.markdown import Markdown
 
 from .client import AgentDaemonClient, DaemonNotRunning, RpcRemoteError, resolve_socket
@@ -27,7 +28,7 @@ from .mcp_server import run_mcp_proxy
 from .proxy import DaemonAgentProxy, register_daemon_commands
 from .service import AgentDaemon
 
-console = Console()
+console = get_console()
 
 __all__ = [
     "ask",
@@ -46,12 +47,8 @@ __all__ = [
 
 @click.command("serve")
 @click.argument("config_or_target")
-@click.option(
-    "--name", default=None, help="Service name (required for a module:attr target)."
-)
-@click.option(
-    "--socket", "socket_path", default=None, type=click.Path(), help="Explicit UDS socket path."
-)
+@click.option("--name", default=None, help="Service name (required for a module:attr target).")
+@click.option("--socket", "socket_path", default=None, type=click.Path(), help="Explicit UDS socket path.")
 @click.option("--dsn", default=None, help="Postgres DSN for schedule persistence.")
 @click.option(
     "--redis/--no-redis",
@@ -104,9 +101,7 @@ def _build_serve_config(
             cfg = cfg.model_copy(update={"name": name})
     else:
         if not name:
-            raise click.UsageError(
-                "--name is required when serving directly from a module:attr target."
-            )
+            raise click.UsageError("--name is required when serving directly from a module:attr target.")
         cfg = AgentServiceConfig.from_target(config_or_target, name=name)
 
     overrides: dict[str, Any] = {}
@@ -123,9 +118,7 @@ def _build_serve_config(
     if use_redis is not None:
         scheduler_overrides["redis"] = use_redis
     if scheduler_overrides:
-        cfg = cfg.model_copy(
-            update={"scheduler": cfg.scheduler.model_copy(update=scheduler_overrides)}
-        )
+        cfg = cfg.model_copy(update={"scheduler": cfg.scheduler.model_copy(update=scheduler_overrides)})
 
     return cfg
 
@@ -180,11 +173,9 @@ async def _run_attach(name_or_socket: str, no_stream: bool) -> None:
     config = REPLConfig(agent_name=display_name, streaming=not no_stream)
     repl = AgentREPL(bot=bot, config=config, renderer=renderer)
     register_daemon_commands(repl, proxy)
-    _wrap_with_event_drain(repl, proxy)
+    repl.add_post_turn_hook(_drain_events_hook(proxy))
 
-    console.print(
-        f"\n[bold green]Attached to daemon:[/bold green] [bold]{display_name}[/bold]"
-    )
+    console.print(f"\n[bold green]Attached to daemon:[/bold green] [bold]{display_name}[/bold]")
     console.print(
         "[dim]Type your message to chat.  Use /help for slash commands "
         "(including /status, /schedules, /invoke).  Ctrl+D or /quit to "
@@ -202,37 +193,24 @@ async def _run_attach(name_or_socket: str, no_stream: bool) -> None:
         await proxy.close()
 
 
-def _wrap_with_event_drain(repl: AgentREPL, proxy: DaemonAgentProxy) -> None:
-    """Flush queued job-event lines after each turn, never mid-stream.
+def _drain_events_hook(proxy: DaemonAgentProxy) -> PostTurnHook:
+    """Build the post-turn hook that flushes queued daemon job-event lines.
 
-    `AgentREPL.run()`'s loop is a monolithic method with no exposed
-    post-turn hook, and modifying `parrot.cli.repl` is out of scope for
-    this feature. Instead, this wraps `repl.send`/`repl.send_stream` at
-    the INSTANCE level (shadowing the class methods `run()` calls) so
-    queued events print right after a turn completes and before the next
-    prompt is shown -- the same seam the spec calls for, achieved without
-    touching core.
+    Runs after each COMPLETED turn, before the next prompt is shown — never
+    mid-stream — so job events never interleave with streamed tokens.
+
+    Args:
+        proxy: The attached ``DaemonAgentProxy`` whose ``drain_events()`` queue is flushed.
+
+    Returns:
+        An ``async def hook(ctx, turn) -> None`` suitable for ``AgentREPL.add_post_turn_hook``.
     """
-    original_send = repl.send
-    original_send_stream = repl.send_stream
 
-    async def _send_with_drain(query: str):
-        result = await original_send(query)
-        _print_drained_events(proxy)
-        return result
+    async def _hook(ctx: Any, turn: Any) -> None:  # noqa: ARG001 — turn unused by design
+        for line in proxy.drain_events():
+            ctx.renderer.print(f"[dim]{line}[/dim]")
 
-    async def _send_stream_with_drain(query: str) -> None:
-        await original_send_stream(query)
-        _print_drained_events(proxy)
-
-    repl.send = _send_with_drain
-    repl.send_stream = _send_stream_with_drain
-
-
-def _print_drained_events(proxy: DaemonAgentProxy) -> None:
-    """Print every queued job-event line, then clear the queue."""
-    for line in proxy.drain_events():
-        console.print(f"[dim]{line}[/dim]")
+    return _hook
 
 
 # --------------------------------------------------------------------------
@@ -263,9 +241,7 @@ async def _run_ask(name_or_socket: str, question: str) -> None:
 
     try:
         try:
-            result = await client.call(
-                "chat.send", prompt=question, stream=False, metadata={}
-            )
+            result = await client.call("chat.send", prompt=question, stream=False, metadata={})
         except RpcRemoteError as exc:
             click.echo(f"Error: {exc}", err=True)
             raise SystemExit(1) from exc

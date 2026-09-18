@@ -5,10 +5,13 @@ Verifies:
 - No reference to markdown_splitter.split_text() in _load()
 - Document content includes full markdown
 - Metadata preserved (author, version, title)
-- Document context header preserved
+- No context header in page_content (f0f09dc22: it lives in metadata only)
 """
 import pytest
 from pathlib import PurePath
+
+# python-docx ships with the ai-parrot-loaders[pdf|documents] extras only.
+pytest.importorskip("docx")
 from unittest.mock import patch, MagicMock, AsyncMock
 from parrot_loaders.docx import MSWordLoader
 from parrot.loaders.abstract import AbstractLoader
@@ -70,8 +73,12 @@ class TestMSWordLoaderFix:
     @pytest.mark.asyncio
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')
-    async def test_document_context_header(self, mock_device, mock_llm, tmp_path):
-        """Document content starts with context header."""
+    async def test_no_context_header_in_content(self, mock_device, mock_llm, tmp_path):
+        """File name / doctype live in metadata, not page_content.
+
+        f0f09dc22 stopped prepending the context header because it polluted
+        the embeddings.
+        """
         import docx as python_docx
         doc = python_docx.Document()
         doc.add_paragraph('Some content.')
@@ -83,10 +90,11 @@ class TestMSWordLoaderFix:
 
         assert len(docs) == 1
         content = docs[0].page_content
-        # Should start with the context header
-        assert 'File Name:' in content
-        assert 'Document Type:' in content
-        assert '======' in content
+        assert 'Some content.' in content
+        assert 'File Name:' not in content
+        assert 'Document Type:' not in content
+        assert docs[0].metadata['source'] == 'test_header.docx'
+        assert docs[0].metadata['type'] == loader.doctype
 
     @pytest.mark.asyncio
     @patch.object(AbstractLoader, '_setup_llm')
@@ -105,9 +113,11 @@ class TestMSWordLoaderFix:
         docs = await loader._load(PurePath(docx_path))
 
         assert len(docs) == 1
-        doc_meta = docs[0].metadata.get('document_meta', {})
-        assert doc_meta.get('author') == 'Test Author'
-        assert doc_meta.get('title') == 'Test Title'
+        metadata = docs[0].metadata
+        # TASK-857 (d31959725): title is canonical document_meta; author is a
+        # loader-specific extra at the top level.
+        assert metadata['document_meta'].get('title') == 'Test Title'
+        assert metadata.get('author') == 'Test Author'
 
     def test_no_split_text_in_load(self):
         """Verify _load() source code doesn't call markdown_splitter.split_text()."""

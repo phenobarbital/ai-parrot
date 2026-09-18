@@ -1,0 +1,24 @@
+=== FEAT-559 code-review CRITICAL/IMPORTANT fixes validation (2026-09-16T03:09:31Z) ===
+
+--- pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ ---
+  /home/jesuslara/proyectos/ai-parrot/.claude/worktrees/feat-FEAT-559-sdd-coder-execution-pool-suspensions/packages/ai-parrot/src/parrot/mcp/client.py:28: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AuthCredential(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+291 passed, 8 warnings in 38.15s
+
+--- pytest tests/knowledge/wiki/test_ledger_{events,log,service,integration}.py ---
+....................................                                     [100%]
+36 passed in 10.88s
+
+--- black --check ---
+All done! ✨ 🍰 ✨
+3 files would be left unchanged.
+
+--- git diff --check ---
+(exit 0)
+
+--- ruff check (pre-existing findings only, none on lines I edited -- verified via 'ruff check' line numbers vs my diff hunks) ---
+
+Found 10 errors.
+No fixes available (3 hidden fixes can be enabled with the `--unsafe-fixes` option).

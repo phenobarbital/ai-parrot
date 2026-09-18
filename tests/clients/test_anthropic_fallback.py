@@ -114,7 +114,11 @@ class TestAnthropicAskFallback:
     def _setup_client(self, model="claude-opus-4"):
         from parrot.clients.anthropic import AnthropicClient
 
-        client = AnthropicClient.__new__(AnthropicClient)
+        # A real __init__ is required: AbstractClient.client is a loop-local
+        # property backed by a per-loop cache, and the backend strategy
+        # (``_backend``) translates model ids. The SDK client is injected by
+        # overriding ``get_client()`` (see ``_inject_sdk``).
+        client = AnthropicClient(api_key="test-key")
         client._fallback_model = "claude-sonnet-4.5"
         client.enable_tools = False
         client.model = model
@@ -129,6 +133,14 @@ class TestAnthropicAskFallback:
             return_value=MagicMock(format_schema_instruction=MagicMock(return_value=""))
         )
         return client
+
+    @staticmethod
+    def _inject_sdk(client, create):
+        """Make ``get_client()`` return a fake SDK whose ``messages.create`` is ``create``."""
+        sdk = MagicMock()
+        sdk.messages.create = create
+        client.get_client = AsyncMock(return_value=sdk)
+        return sdk
 
     def _mock_response(self, model="claude-sonnet-4.5"):
         mock_resp = MagicMock()
@@ -148,8 +160,7 @@ class TestAnthropicAskFallback:
         mock_response = self._mock_response()
 
         mock_create = AsyncMock(side_effect=[rate_limit_error, mock_response])
-        client.client = MagicMock()
-        client.client.messages.create = mock_create
+        self._inject_sdk(client, mock_create)
 
         mock_ai_message = MagicMock()
         mock_ai_message.metadata = {}
@@ -171,8 +182,7 @@ class TestAnthropicAskFallback:
         client = self._setup_client()
         auth_error = Exception("Authentication failed")
 
-        client.client = MagicMock()
-        client.client.messages.create = AsyncMock(side_effect=auth_error)
+        self._inject_sdk(client, AsyncMock(side_effect=auth_error))
 
         with pytest.raises(Exception, match="Authentication failed"):
             await client.ask("Hello", model="claude-opus-4")
@@ -183,8 +193,7 @@ class TestAnthropicAskFallback:
         client = self._setup_client(model="claude-sonnet-4.5")
         error = _make_rate_limit_error()
 
-        client.client = MagicMock()
-        client.client.messages.create = AsyncMock(side_effect=error)
+        self._inject_sdk(client, AsyncMock(side_effect=error))
 
         with pytest.raises(RateLimitError):
             await client.ask("Hello", model="claude-sonnet-4.5")
@@ -209,8 +218,7 @@ class TestAnthropicAskFallback:
         final_response = self._mock_response()
 
         mock_create = AsyncMock(side_effect=[rate_limit_error, tool_response, final_response])
-        client.client = MagicMock()
-        client.client.messages.create = mock_create
+        self._inject_sdk(client, mock_create)
 
         # Mock tool execution
         client._execute_tool = AsyncMock(return_value="tool result")
@@ -236,7 +244,6 @@ class TestAnthropicSdkRetries:
     async def test_sdk_max_retries_preserved(self):
         from parrot.clients.anthropic import AnthropicClient
 
-        client = AnthropicClient.__new__(AnthropicClient)
-        client.api_key = "test-key"
+        client = AnthropicClient(api_key="test-key")
         sdk_client = await client.get_client()
         assert sdk_client.max_retries == 2

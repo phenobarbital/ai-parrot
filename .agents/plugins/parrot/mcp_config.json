@@ -11,7 +11,9 @@
       "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
       "args": [
         "mcp-local",
-        "browsing"
+        "browsing",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
       ],
       "cwd": "/home/jesuslara/proyectos/ai-parrot"
     },
@@ -19,7 +21,9 @@
       "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
       "args": [
         "mcp-local",
-        "memory"
+        "memory",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
       ],
       "cwd": "/home/jesuslara/proyectos/ai-parrot"
     },
@@ -27,7 +31,59 @@
       "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
       "args": [
         "mcp-local",
-        "scraping"
+        "scraping",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
+    },
+    "parrot-bounded-source": {
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
+      "args": [
+        "mcp-local",
+        "bounded-source",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
+    },
+    "parrot-database-query": {
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
+      "args": [
+        "mcp-local",
+        "database-query",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
+    },
+    "parrot-querysource": {
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
+      "args": [
+        "mcp-local",
+        "querysource",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
+    },
+    "parrot-sdd-coder": {
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
+      "args": [
+        "mcp-local",
+        "sdd-coder",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
+      ],
+      "cwd": "/home/jesuslara/proyectos/ai-parrot"
+    },
+    "parrot-targeted-writer": {
+      "command": "/home/jesuslara/proyectos/ai-parrot/.venv/bin/parrot",
+      "args": [
+        "mcp-local",
+        "targeted-writer",
+        "--config",
+        "/home/jesuslara/proyectos/ai-parrot/.parrot/mcp-toolkits.yaml"
       ],
       "cwd": "/home/jesuslara/proyectos/ai-parrot"
     }

@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-client-groq"
-version = "0.2.1"
+version = "0.2.4"
 description = "Groq LLM client for AI-Parrot (parrot.clients.groq)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot>=1.0.1",
+    "ai-parrot>=1.0.4",
     "groq==0.33.0",
 ]
 

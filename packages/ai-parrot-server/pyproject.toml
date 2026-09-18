@@ -7,7 +7,7 @@ name = "ai-parrot-server"
 dynamic = ["version"]
 description = "Server infrastructure (handlers, MCP/A2A transports, scheduler, autonomous) for AI-Parrot"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
@@ -87,6 +87,11 @@ all = [
 [project.scripts]
 parrot-fs = "parrot.autonomous.transport.filesystem.cli:main"
 
+# Protected stores for navigator-session vault rotation / migration
+# (navigator-vault CLI). See navigator_session/vault/registry.py.
+[project.entry-points."navigator_session.vault_targets"]
+parrot_users_bots = "parrot.handlers.models.vault_target:factory"
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
@@ -118,6 +123,8 @@ markers = [
     "requires_aioquic: requires the mcp extra (aioquic)",
     "requires_mcp_sdk: requires the official mcp SDK (mcp extra)",
     "live: hits live external services; opt-in, deselect with -m 'not live'",
+    "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
+    "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
 ]
 
 [tool.uv.sources]

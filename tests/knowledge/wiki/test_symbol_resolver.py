@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from parrot.knowledge.wiki.languages import astgrep
 from parrot.knowledge.wiki.repo_scan import (
     build_import_edges,
     build_symbol_edges,
@@ -18,6 +20,13 @@ def _write(root: Path, rel: str, content: str) -> Path:
     return path
 
 
+#: The resolver consumes Python ``calls``/``extends`` refs, which only the
+#: optional ast-grep seam (``ai-parrot[wiki-structural]``) extracts.
+requires_astgrep = pytest.mark.skipif(
+    not astgrep.is_available(), reason="ast-grep-py not installed (wiki-structural extra)"
+)
+
+
 class TestSymbolResolverThreeSteps:
     """a.py defines helper(); b.py imports a and calls helper() (step 1:
     same-file is trivially satisfied since the call site AND its own
@@ -27,6 +36,7 @@ class TestSymbolResolverThreeSteps:
     define dup() so a caller of dup() with no local/reachable resolution
     hits an ambiguous global name (no edge)."""
 
+    @requires_astgrep
     def test_resolver_steps(self, tmp_path: Path):
         _write(tmp_path, "a.py", "def helper():\n    return 1\n")
         _write(
@@ -47,6 +57,7 @@ class TestSymbolResolverThreeSteps:
         assert prov[("sym:c.py#go", "sym:d.py#unique_fn")] == "inferred"
         assert not any(dst.endswith("#dup") for (_src, dst) in prov)
 
+    @requires_astgrep
     def test_same_file_resolution_is_extracted(self, tmp_path: Path):
         _write(
             tmp_path,
@@ -57,6 +68,7 @@ class TestSymbolResolverThreeSteps:
         edges = [(s, d, p) for s, d, rel, p in scan.symbol_edges if rel == "calls"]
         assert ("sym:a.py#run", "sym:a.py#helper", "extracted") in edges
 
+    @requires_astgrep
     def test_extends_resolution(self, tmp_path: Path):
         _write(
             tmp_path,
@@ -74,6 +86,7 @@ class TestSymbolResolverThreeSteps:
         scan = scan_repository(tmp_path, use_git=False)
         assert not any(d.endswith("#dup") for _s, d, rel, _p in scan.symbol_edges if rel == "calls")
 
+    @requires_astgrep
     def test_build_symbol_edges_matches_scan_repository(self, tmp_path: Path):
         _write(tmp_path, "a.py", "def helper():\n    return 1\n")
         _write(

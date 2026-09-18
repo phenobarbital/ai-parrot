@@ -104,6 +104,7 @@ _DEFAULT_STATE_SHAPE = "rounded"
 _EDGE_OPS: dict[str, str] = {"solid": "-->", "dashed": "-.->", "thick": "==>"}
 _OPS_TO_KIND: dict[str, str] = {v: k for k, v in _EDGE_OPS.items()}
 _DEFAULT_EDGE_KIND = "solid"
+_FLOWCHART_EDGE_OPERATORS = tuple(_EDGE_OPS.values())
 
 _IDENT = r"[A-Za-z_][A-Za-z0-9_]*"
 
@@ -113,8 +114,6 @@ _FLOWCHART_MID_LABEL_RE = re.compile(rf"^(?P<from>{_IDENT})\s+--\s+(?P<label>.+?
 _FLOWCHART_EDGE_RE = re.compile(
     rf"^(?P<from>{_IDENT})\s+(?P<op>-->|-\.->|==>)(\|(?P<label>[^|]*)\|)?\s+(?P<to>{_IDENT})$"
 )
-_FLOWCHART_EDGE_OP_SEARCH_RE = re.compile(r"-->|-\.->|==>")
-
 _STATE_ALIAS_RE = re.compile(rf'^state\s+"(?P<label>.*)"\s+as\s+(?P<id>{_IDENT})$')
 _STATE_COMPOSITE_OPEN_RE = re.compile(rf"^state\s+(?P<id>{_IDENT})\s*\{{$")
 _STATE_EDGE_RE = re.compile(rf"^(?P<from>\[\*\]|{_IDENT})\s*-->\s*(?P<to>\[\*\]|{_IDENT})(\s*:\s*(?P<label>.+))?$")
@@ -443,7 +442,7 @@ def _parse_flowchart(lines: list[tuple[int, str]]) -> GraphSpec:
             current_group_members = None
             continue
 
-        if _FLOWCHART_EDGE_OP_SEARCH_RE.search(stripped):
+        if any(operator in stripped for operator in _FLOWCHART_EDGE_OPERATORS):
             edges.append(_parse_flowchart_edge_line(line_no, content, stripped))
             continue
 

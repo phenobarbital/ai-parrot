@@ -1,0 +1,3508 @@
+{
+  "generated_at": "2026-09-17T14:35:06+00:00",
+  "feature_commit": "615bc01d2686fc046278ac93c570685f377ec8bd",
+  "bots/abstract.py": {
+    "task": {
+      "tier": "task",
+      "invocations": [
+        {
+          "distribution": "ai-parrot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot/tests/bots"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot/tests/bots",
+              "distribution": "ai-parrot",
+              "reason": "mirror"
+            }
+          ]
+        }
+      ],
+      "escalated": [],
+      "notes": [],
+      "core_hits": [],
+      "skipped_escalations": []
+    },
+    "merge": {
+      "tier": "merge",
+      "invocations": [
+        {
+          "distribution": "ai-parrot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot/tests",
+              "distribution": "ai-parrot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-advisors",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-advisors/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-advisors/tests",
+              "distribution": "ai-parrot-advisors",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-amazon",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-amazon/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-amazon/tests",
+              "distribution": "ai-parrot-client-amazon",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-anthropic",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-anthropic/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-anthropic/tests",
+              "distribution": "ai-parrot-client-anthropic",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-gemma4",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-gemma4/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-gemma4/tests",
+              "distribution": "ai-parrot-client-gemma4",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-google",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-google/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-google/tests",
+              "distribution": "ai-parrot-client-google",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-grok",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-grok/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-grok/tests",
+              "distribution": "ai-parrot-client-grok",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-groq",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-groq/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-groq/tests",
+              "distribution": "ai-parrot-client-groq",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-hf",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-hf/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-hf/tests",
+              "distribution": "ai-parrot-client-hf",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-local",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-local/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-local/tests",
+              "distribution": "ai-parrot-client-local",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-meta",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-meta/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-meta/tests",
+              "distribution": "ai-parrot-client-meta",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-moonshot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-moonshot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-moonshot/tests",
+              "distribution": "ai-parrot-client-moonshot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-nvidia",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-nvidia/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-nvidia/tests",
+              "distribution": "ai-parrot-client-nvidia",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-openai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openai/tests",
+              "distribution": "ai-parrot-client-openai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openrouter",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-openrouter/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openrouter/tests",
+              "distribution": "ai-parrot-client-openrouter",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-vllm",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-vllm/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-vllm/tests",
+              "distribution": "ai-parrot-client-vllm",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-zai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-zai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-zai/tests",
+              "distribution": "ai-parrot-client-zai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-embeddings",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-embeddings/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-embeddings/tests",
+              "distribution": "ai-parrot-embeddings",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-integrations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-integrations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-integrations/tests",
+              "distribution": "ai-parrot-integrations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-loaders",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-loaders/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-loaders/tests",
+              "distribution": "ai-parrot-loaders",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-pipelines",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-pipelines/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-pipelines/tests",
+              "distribution": "ai-parrot-pipelines",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-server",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-server/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-server/tests",
+              "distribution": "ai-parrot-server",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-tools",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-tools/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-tools/tests",
+              "distribution": "ai-parrot-tools",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-visualizations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-visualizations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-visualizations/tests",
+              "distribution": "ai-parrot-visualizations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "parrot-formdesigner",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/parrot-formdesigner/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/parrot-formdesigner/tests",
+              "distribution": "parrot-formdesigner",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "root",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "tests/auth/test_a2a_credential_var.py",
+            "tests/auth/test_agent_guard.py",
+            "tests/auth/test_policy_rules_integration.py",
+            "tests/bots/flows/core/storage/test_agentcrew_lifecycle.py",
+            "tests/bots/flows/core/storage/test_agentsflow_lifecycle.py",
+            "tests/bots/flows/core/storage/test_base.py",
+            "tests/bots/flows/core/storage/test_crew_agent_persistence.py",
+            "tests/bots/flows/core/storage/test_documentdb_backend.py",
+            "tests/bots/flows/core/storage/test_execution_document.py",
+            "tests/bots/flows/core/storage/test_execution_wiki_wiring.py",
+            "tests/bots/flows/core/storage/test_factory.py",
+            "tests/bots/flows/core/storage/test_integration.py",
+            "tests/bots/flows/core/storage/test_persistence_mixin.py",
+            "tests/bots/flows/core/storage/test_postgres_backend.py",
+            "tests/bots/flows/core/storage/test_redis_backend.py",
+            "tests/bots/flows/core/test_result_serialisation.py",
+            "tests/bots/test_abstractbot_policy.py",
+            "tests/bots/test_no_double_retry.py",
+            "tests/bots/test_session_contextvar.py",
+            "tests/clients/test_client_fallback.py",
+            "tests/e2e/test_conversation_history_openai_e2e.py",
+            "tests/e2e/test_conversation_history_redis_e2e.py",
+            "tests/integration/test_claude_agent_tool_bridge.py",
+            "tests/integration/test_crew_infographic_e2e.py",
+            "tests/integration/test_navigator_toolkit_refactor.py",
+            "tests/integration/test_pg_recipe_store_replay.py",
+            "tests/integration/test_saved_executions_flow.py",
+            "tests/integrations/test_a2a_discovery.py",
+            "tests/integrations/test_a2a_startup.py",
+            "tests/integrations/test_msagent_startup.py",
+            "tests/integrations/test_msagentsdk/test_agent.py",
+            "tests/integrations/test_msagentsdk/test_credential_bridge.py",
+            "tests/integrations/test_msagentsdk/test_identity.py",
+            "tests/integrations/test_msagentsdk/test_integration.py",
+            "tests/integrations/test_msagentsdk/test_invoke_routing.py",
+            "tests/integrations/test_msagentsdk/test_manager_registration.py",
+            "tests/integrations/test_msagentsdk/test_signin_integration.py",
+            "tests/integrations/test_msagentsdk/test_wrapper.py",
+            "tests/integrations/test_msagentsdk/test_wrapper_auth.py",
+            "tests/integrations/test_msagentsdk/test_wrapper_wiring.py",
+            "tests/knowledge/wiki/test_bot_integration.py",
+            "tests/manager/test_botmanager_wiring.py",
+            "tests/mcp/test_obscura_mcp.py",
+            "tests/registry/test_botconfig_policies.py",
+            "tests/registry/test_registry_policy.py",
+            "tests/test_crew_hooks.py",
+            "tests/test_fireflies_obsidian_sync.py",
+            "tests/test_fireflies_wiki_agent.py",
+            "tests/test_telegram_crew/test_crew_wrapper.py",
+            "tests/test_telegram_crew/test_integration.py",
+            "tests/test_telegram_crew/test_transport.py",
+            "tests/tools/executors/test_agent_tool_envelope.py",
+            "tests/unit/bots/database/toolkits/test_acquire_conn_boundary.py",
+            "tests/unit/bots/database/toolkits/test_navigator_no_override.py",
+            "tests/unit/bots/database/toolkits/test_transaction_savepoint.py",
+            "tests/unit/bots/database/toolkits/test_warm_cache_params.py",
+            "tests/unit/test_agentcrew_from_definition.py",
+            "tests/unit/test_agentcrew_infographic.py",
+            "tests/unit/test_agentcrew_prompt_passthrough.py",
+            "tests/unit/test_agentcrew_tool_nodes_definition.py",
+            "tests/unit/test_botmanager_ephemeral.py",
+            "tests/unit/test_cache_manager.py",
+            "tests/unit/test_crud_helpers.py",
+            "tests/unit/test_database_agent.py",
+            "tests/unit/test_database_toolkit_base.py",
+            "tests/unit/test_dataset_result_model.py",
+            "tests/unit/test_documentdb_result_storage_read.py",
+            "tests/unit/test_ephemeral_handler.py",
+            "tests/unit/test_ephemeral_status.py",
+            "tests/unit/test_extended_router.py",
+            "tests/unit/test_flowresult_infographic.py",
+            "tests/unit/test_multi_dataset_injection.py",
+            "tests/unit/test_multi_dataset_serialization.py",
+            "tests/unit/test_navigator_toolkit_refactor.py",
+            "tests/unit/test_persistence_mixin_save.py",
+            "tests/unit/test_postgres_result_storage_read.py",
+            "tests/unit/test_postgres_toolkit.py",
+            "tests/unit/test_redis_result_storage_read.py",
+            "tests/unit/test_result_agent.py",
+            "tests/unit/test_result_storage_abc.py",
+            "tests/unit/test_retry_handler.py",
+            "tests/unit/test_run_loop_fsm_reset.py",
+            "tests/unit/test_skills_prompt_layer.py",
+            "tests/unit/test_sql_toolkit.py",
+            "tests/unit/test_tab_assembly.py",
+            "tests/unit/test_table_metadata_unique.py",
+            "tests/unit/test_telegram_attachments_feat120.py",
+            "tests/unit/test_telegram_document_handler_feat120.py",
+            "tests/unit/test_telegram_message_ids_feat120.py",
+            "tests/unit/test_telegram_reply_context_feat120.py",
+            "tests/unit/test_tool_node.py",
+            "tests/unit/test_toolkit_variants.py",
+            "tests/unit/test_warmup.py"
+          ],
+          "targets": [
+            {
+              "path": "tests/auth/test_a2a_credential_var.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/auth/test_agent_guard.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/auth/test_policy_rules_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_agentcrew_lifecycle.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_agentsflow_lifecycle.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_base.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_crew_agent_persistence.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_documentdb_backend.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_execution_document.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_execution_wiki_wiring.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_factory.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_persistence_mixin.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_postgres_backend.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/storage/test_redis_backend.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/flows/core/test_result_serialisation.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/test_abstractbot_policy.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/test_no_double_retry.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/test_session_contextvar.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_client_fallback.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/e2e/test_conversation_history_openai_e2e.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/e2e/test_conversation_history_redis_e2e.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_claude_agent_tool_bridge.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_crew_infographic_e2e.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_navigator_toolkit_refactor.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_pg_recipe_store_replay.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_saved_executions_flow.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_a2a_discovery.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_a2a_startup.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagent_startup.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_agent.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_credential_bridge.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_identity.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_invoke_routing.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_manager_registration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_signin_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_wrapper.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_wrapper_auth.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integrations/test_msagentsdk/test_wrapper_wiring.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/knowledge/wiki/test_bot_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/manager/test_botmanager_wiring.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/mcp/test_obscura_mcp.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/registry/test_botconfig_policies.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/registry/test_registry_policy.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/test_crew_hooks.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/test_fireflies_obsidian_sync.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/test_fireflies_wiki_agent.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/test_telegram_crew/test_crew_wrapper.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/test_telegram_crew/test_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/test_telegram_crew/test_transport.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/tools/executors/test_agent_tool_envelope.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/bots/database/toolkits/test_acquire_conn_boundary.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/bots/database/toolkits/test_navigator_no_override.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/bots/database/toolkits/test_transaction_savepoint.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/bots/database/toolkits/test_warm_cache_params.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_agentcrew_from_definition.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_agentcrew_infographic.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_agentcrew_prompt_passthrough.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_agentcrew_tool_nodes_definition.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_botmanager_ephemeral.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_cache_manager.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_crud_helpers.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_database_agent.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_database_toolkit_base.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_dataset_result_model.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_documentdb_result_storage_read.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_ephemeral_handler.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_ephemeral_status.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_extended_router.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_flowresult_infographic.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_multi_dataset_injection.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_multi_dataset_serialization.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_navigator_toolkit_refactor.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_persistence_mixin_save.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_postgres_result_storage_read.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_postgres_toolkit.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_redis_result_storage_read.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_result_agent.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_result_storage_abc.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_retry_handler.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_run_loop_fsm_reset.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_skills_prompt_layer.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_sql_toolkit.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_tab_assembly.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_table_metadata_unique.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_telegram_attachments_feat120.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_telegram_document_handler_feat120.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_telegram_message_ids_feat120.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_telegram_reply_context_feat120.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_tool_node.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_toolkit_variants.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_warmup.py",
+              "distribution": "root",
+              "reason": "import"
+            }
+          ]
+        }
+      ],
+      "escalated": [
+        "ai-parrot"
+      ],
+      "notes": [
+        "ai-parrot: 275 impacted tests exceed cap 150, escalated to suite"
+      ],
+      "core_hits": [
+        {
+          "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+          "module": "parrot.bots.abstract",
+          "fanin": 917,
+          "forced": true,
+          "distributions": [
+            "ai-parrot",
+            "ai-parrot-advisors",
+            "ai-parrot-client-amazon",
+            "ai-parrot-client-anthropic",
+            "ai-parrot-client-gemma4",
+            "ai-parrot-client-google",
+            "ai-parrot-client-grok",
+            "ai-parrot-client-groq",
+            "ai-parrot-client-hf",
+            "ai-parrot-client-local",
+            "ai-parrot-client-meta",
+            "ai-parrot-client-moonshot",
+            "ai-parrot-client-nvidia",
+            "ai-parrot-client-openai",
+            "ai-parrot-client-openrouter",
+            "ai-parrot-client-vllm",
+            "ai-parrot-client-zai",
+            "ai-parrot-embeddings",
+            "ai-parrot-integrations",
+            "ai-parrot-loaders",
+            "ai-parrot-pipelines",
+            "ai-parrot-server",
+            "ai-parrot-tools",
+            "ai-parrot-visualizations",
+            "parrot-formdesigner"
+          ]
+        }
+      ],
+      "skipped_escalations": []
+    },
+    "feature": {
+      "tier": "feature",
+      "invocations": [
+        {
+          "distribution": "ai-parrot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot/tests",
+              "distribution": "ai-parrot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-advisors",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-advisors/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-advisors/tests",
+              "distribution": "ai-parrot-advisors",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-amazon",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-amazon/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-amazon/tests",
+              "distribution": "ai-parrot-client-amazon",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-anthropic",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-anthropic/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-anthropic/tests",
+              "distribution": "ai-parrot-client-anthropic",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-gemma4",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-gemma4/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-gemma4/tests",
+              "distribution": "ai-parrot-client-gemma4",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-google",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-google/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-google/tests",
+              "distribution": "ai-parrot-client-google",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-grok",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-grok/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-grok/tests",
+              "distribution": "ai-parrot-client-grok",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-groq",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-groq/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-groq/tests",
+              "distribution": "ai-parrot-client-groq",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-hf",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-hf/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-hf/tests",
+              "distribution": "ai-parrot-client-hf",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-local",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-local/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-local/tests",
+              "distribution": "ai-parrot-client-local",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-meta",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-meta/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-meta/tests",
+              "distribution": "ai-parrot-client-meta",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-moonshot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-moonshot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-moonshot/tests",
+              "distribution": "ai-parrot-client-moonshot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-nvidia",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-nvidia/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-nvidia/tests",
+              "distribution": "ai-parrot-client-nvidia",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-openai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openai/tests",
+              "distribution": "ai-parrot-client-openai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openrouter",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-openrouter/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openrouter/tests",
+              "distribution": "ai-parrot-client-openrouter",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-vllm",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-vllm/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-vllm/tests",
+              "distribution": "ai-parrot-client-vllm",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-zai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-zai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-zai/tests",
+              "distribution": "ai-parrot-client-zai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-embeddings",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-embeddings/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-embeddings/tests",
+              "distribution": "ai-parrot-embeddings",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-integrations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-integrations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-integrations/tests",
+              "distribution": "ai-parrot-integrations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-loaders",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-loaders/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-loaders/tests",
+              "distribution": "ai-parrot-loaders",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-pipelines",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-pipelines/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-pipelines/tests",
+              "distribution": "ai-parrot-pipelines",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-server",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-server/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-server/tests",
+              "distribution": "ai-parrot-server",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-tools",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-tools/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-tools/tests",
+              "distribution": "ai-parrot-tools",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-visualizations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-visualizations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-visualizations/tests",
+              "distribution": "ai-parrot-visualizations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "parrot-formdesigner",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/parrot-formdesigner/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/parrot-formdesigner/tests",
+              "distribution": "parrot-formdesigner",
+              "reason": "core"
+            }
+          ]
+        }
+      ],
+      "escalated": [],
+      "notes": [],
+      "core_hits": [
+        {
+          "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+          "module": "parrot.bots.abstract",
+          "fanin": 917,
+          "forced": true,
+          "distributions": [
+            "ai-parrot",
+            "ai-parrot-advisors",
+            "ai-parrot-client-amazon",
+            "ai-parrot-client-anthropic",
+            "ai-parrot-client-gemma4",
+            "ai-parrot-client-google",
+            "ai-parrot-client-grok",
+            "ai-parrot-client-groq",
+            "ai-parrot-client-hf",
+            "ai-parrot-client-local",
+            "ai-parrot-client-meta",
+            "ai-parrot-client-moonshot",
+            "ai-parrot-client-nvidia",
+            "ai-parrot-client-openai",
+            "ai-parrot-client-openrouter",
+            "ai-parrot-client-vllm",
+            "ai-parrot-client-zai",
+            "ai-parrot-embeddings",
+            "ai-parrot-integrations",
+            "ai-parrot-loaders",
+            "ai-parrot-pipelines",
+            "ai-parrot-server",
+            "ai-parrot-tools",
+            "ai-parrot-visualizations",
+            "parrot-formdesigner"
+          ]
+        }
+      ],
+      "skipped_escalations": []
+    }
+  },
+  "clients/base.py": {
+    "task": {
+      "tier": "task",
+      "invocations": [
+        {
+          "distribution": "ai-parrot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot/tests/clients"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot/tests/clients",
+              "distribution": "ai-parrot",
+              "reason": "mirror"
+            }
+          ]
+        }
+      ],
+      "escalated": [],
+      "notes": [],
+      "core_hits": [],
+      "skipped_escalations": []
+    },
+    "merge": {
+      "tier": "merge",
+      "invocations": [
+        {
+          "distribution": "ai-parrot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot/tests",
+              "distribution": "ai-parrot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-advisors",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-advisors/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-advisors/tests",
+              "distribution": "ai-parrot-advisors",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-amazon",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-amazon/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-amazon/tests",
+              "distribution": "ai-parrot-client-amazon",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-anthropic",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-anthropic/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-anthropic/tests",
+              "distribution": "ai-parrot-client-anthropic",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-gemma4",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-gemma4/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-gemma4/tests",
+              "distribution": "ai-parrot-client-gemma4",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-google",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-google/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-google/tests",
+              "distribution": "ai-parrot-client-google",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-grok",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-grok/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-grok/tests",
+              "distribution": "ai-parrot-client-grok",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-groq",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-groq/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-groq/tests",
+              "distribution": "ai-parrot-client-groq",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-hf",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-hf/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-hf/tests",
+              "distribution": "ai-parrot-client-hf",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-local",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-local/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-local/tests",
+              "distribution": "ai-parrot-client-local",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-meta",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-meta/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-meta/tests",
+              "distribution": "ai-parrot-client-meta",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-moonshot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-moonshot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-moonshot/tests",
+              "distribution": "ai-parrot-client-moonshot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-nvidia",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-nvidia/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-nvidia/tests",
+              "distribution": "ai-parrot-client-nvidia",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-openai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openai/tests",
+              "distribution": "ai-parrot-client-openai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openrouter",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-openrouter/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openrouter/tests",
+              "distribution": "ai-parrot-client-openrouter",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-vllm",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-vllm/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-vllm/tests",
+              "distribution": "ai-parrot-client-vllm",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-zai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-client-zai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-zai/tests",
+              "distribution": "ai-parrot-client-zai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-embeddings",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-embeddings/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-embeddings/tests",
+              "distribution": "ai-parrot-embeddings",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-integrations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-integrations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-integrations/tests",
+              "distribution": "ai-parrot-integrations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-loaders",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-loaders/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-loaders/tests",
+              "distribution": "ai-parrot-loaders",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-pipelines",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-pipelines/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-pipelines/tests",
+              "distribution": "ai-parrot-pipelines",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-server",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-server/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-server/tests",
+              "distribution": "ai-parrot-server",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-tools",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-tools/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-tools/tests",
+              "distribution": "ai-parrot-tools",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-visualizations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/ai-parrot-visualizations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-visualizations/tests",
+              "distribution": "ai-parrot-visualizations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "parrot-formdesigner",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "packages/parrot-formdesigner/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/parrot-formdesigner/tests",
+              "distribution": "parrot-formdesigner",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "root",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence",
+            "tests/auth/test_policy_rules_integration.py",
+            "tests/bots/test_abstractbot_policy.py",
+            "tests/bots/test_session_contextvar.py",
+            "tests/clients/test_anthropic_fallback.py",
+            "tests/clients/test_anthropic_sdk_097.py",
+            "tests/clients/test_base_fallback.py",
+            "tests/clients/test_bridged_hitl.py",
+            "tests/clients/test_claude_agent.py",
+            "tests/clients/test_claude_agent_bridge.py",
+            "tests/clients/test_client_fallback.py",
+            "tests/clients/test_fallback_model_shadowing.py",
+            "tests/clients/test_google_fallback.py",
+            "tests/clients/test_google_function_name_sanitization.py",
+            "tests/clients/test_invoke_max_tokens.py",
+            "tests/clients/test_meta_client.py",
+            "tests/clients/test_meta_grounding.py",
+            "tests/clients/test_meta_models.py",
+            "tests/clients/test_meta_responses.py",
+            "tests/clients/test_meta_tool_search.py",
+            "tests/clients/test_moonshot_client.py",
+            "tests/clients/test_openai_base.py",
+            "tests/clients/test_openai_base_parity.py",
+            "tests/clients/test_openai_compatible_defaults.py",
+            "tests/clients/test_openai_fallback.py",
+            "tests/e2e/test_meta_live.py",
+            "tests/handlers/test_document_understanding_integration.py",
+            "tests/integration/test_claude_agent_tool_bridge.py",
+            "tests/integration/test_invoke.py",
+            "tests/integration/test_saved_executions_flow.py",
+            "tests/knowledge/wiki/test_bot_integration.py",
+            "tests/mcp/test_toolkit_server.py",
+            "tests/registry/test_registry_policy.py",
+            "tests/unit/test_anthropic_invoke.py",
+            "tests/unit/test_finish_reason_truncation.py",
+            "tests/unit/test_google_batch.py",
+            "tests/unit/test_google_document_understanding.py",
+            "tests/unit/test_google_invoke.py",
+            "tests/unit/test_grok_invoke.py",
+            "tests/unit/test_groq_invoke.py",
+            "tests/unit/test_invoke_helpers.py",
+            "tests/unit/test_localllm_invoke.py",
+            "tests/unit/test_openai_invoke.py",
+            "tests/unit/test_run_loop_fsm_reset.py",
+            "tests/unit/test_stream_contract.py"
+          ],
+          "targets": [
+            {
+              "path": "tests/auth/test_policy_rules_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/test_abstractbot_policy.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/bots/test_session_contextvar.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_anthropic_fallback.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_anthropic_sdk_097.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_base_fallback.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_bridged_hitl.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_claude_agent.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_claude_agent_bridge.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_client_fallback.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_fallback_model_shadowing.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_google_fallback.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_google_function_name_sanitization.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_invoke_max_tokens.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_meta_client.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_meta_grounding.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_meta_models.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_meta_responses.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_meta_tool_search.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_moonshot_client.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_openai_base.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_openai_base_parity.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_openai_compatible_defaults.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/clients/test_openai_fallback.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/e2e/test_meta_live.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/handlers/test_document_understanding_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_claude_agent_tool_bridge.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_invoke.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/integration/test_saved_executions_flow.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/knowledge/wiki/test_bot_integration.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/mcp/test_toolkit_server.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/registry/test_registry_policy.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_anthropic_invoke.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_finish_reason_truncation.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_google_batch.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_google_document_understanding.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_google_invoke.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_grok_invoke.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_groq_invoke.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_invoke_helpers.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_localllm_invoke.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_openai_invoke.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_run_loop_fsm_reset.py",
+              "distribution": "root",
+              "reason": "import"
+            },
+            {
+              "path": "tests/unit/test_stream_contract.py",
+              "distribution": "root",
+              "reason": "import"
+            }
+          ]
+        }
+      ],
+      "escalated": [],
+      "notes": [],
+      "core_hits": [
+        {
+          "path": "packages/ai-parrot/src/parrot/clients/base.py",
+          "module": "parrot.clients.base",
+          "fanin": 917,
+          "forced": true,
+          "distributions": [
+            "ai-parrot",
+            "ai-parrot-advisors",
+            "ai-parrot-client-amazon",
+            "ai-parrot-client-anthropic",
+            "ai-parrot-client-gemma4",
+            "ai-parrot-client-google",
+            "ai-parrot-client-grok",
+            "ai-parrot-client-groq",
+            "ai-parrot-client-hf",
+            "ai-parrot-client-local",
+            "ai-parrot-client-meta",
+            "ai-parrot-client-moonshot",
+            "ai-parrot-client-nvidia",
+            "ai-parrot-client-openai",
+            "ai-parrot-client-openrouter",
+            "ai-parrot-client-vllm",
+            "ai-parrot-client-zai",
+            "ai-parrot-embeddings",
+            "ai-parrot-integrations",
+            "ai-parrot-loaders",
+            "ai-parrot-pipelines",
+            "ai-parrot-server",
+            "ai-parrot-tools",
+            "ai-parrot-visualizations",
+            "parrot-formdesigner"
+          ]
+        }
+      ],
+      "skipped_escalations": []
+    },
+    "feature": {
+      "tier": "feature",
+      "invocations": [
+        {
+          "distribution": "ai-parrot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot/tests",
+              "distribution": "ai-parrot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-advisors",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-advisors/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-advisors/tests",
+              "distribution": "ai-parrot-advisors",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-amazon",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-amazon/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-amazon/tests",
+              "distribution": "ai-parrot-client-amazon",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-anthropic",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-anthropic/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-anthropic/tests",
+              "distribution": "ai-parrot-client-anthropic",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-gemma4",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-gemma4/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-gemma4/tests",
+              "distribution": "ai-parrot-client-gemma4",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-google",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-google/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-google/tests",
+              "distribution": "ai-parrot-client-google",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-grok",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-grok/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-grok/tests",
+              "distribution": "ai-parrot-client-grok",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-groq",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-groq/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-groq/tests",
+              "distribution": "ai-parrot-client-groq",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-hf",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-hf/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-hf/tests",
+              "distribution": "ai-parrot-client-hf",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-local",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-local/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-local/tests",
+              "distribution": "ai-parrot-client-local",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-meta",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-meta/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-meta/tests",
+              "distribution": "ai-parrot-client-meta",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-moonshot",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-moonshot/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-moonshot/tests",
+              "distribution": "ai-parrot-client-moonshot",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-nvidia",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-nvidia/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-nvidia/tests",
+              "distribution": "ai-parrot-client-nvidia",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-openai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openai/tests",
+              "distribution": "ai-parrot-client-openai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-openrouter",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-openrouter/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-openrouter/tests",
+              "distribution": "ai-parrot-client-openrouter",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-vllm",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-vllm/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-vllm/tests",
+              "distribution": "ai-parrot-client-vllm",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-client-zai",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-client-zai/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-client-zai/tests",
+              "distribution": "ai-parrot-client-zai",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-embeddings",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-embeddings/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-embeddings/tests",
+              "distribution": "ai-parrot-embeddings",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-integrations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-integrations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-integrations/tests",
+              "distribution": "ai-parrot-integrations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-loaders",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-loaders/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-loaders/tests",
+              "distribution": "ai-parrot-loaders",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-pipelines",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-pipelines/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-pipelines/tests",
+              "distribution": "ai-parrot-pipelines",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-server",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-server/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-server/tests",
+              "distribution": "ai-parrot-server",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-tools",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-tools/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-tools/tests",
+              "distribution": "ai-parrot-tools",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "ai-parrot-visualizations",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/ai-parrot-visualizations/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/ai-parrot-visualizations/tests",
+              "distribution": "ai-parrot-visualizations",
+              "reason": "core"
+            }
+          ]
+        },
+        {
+          "distribution": "parrot-formdesigner",
+          "argv": [
+            "pytest",
+            "-q",
+            "--tb=short",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "log_cli=false",
+            "-m",
+            "not e2e and not real_llm and not integration",
+            "--confcutdir",
+            "/tmp/feat563-evidence2",
+            "packages/parrot-formdesigner/tests"
+          ],
+          "targets": [
+            {
+              "path": "packages/parrot-formdesigner/tests",
+              "distribution": "parrot-formdesigner",
+              "reason": "core"
+            }
+          ]
+        }
+      ],
+      "escalated": [],
+      "notes": [],
+      "core_hits": [
+        {
+          "path": "packages/ai-parrot/src/parrot/clients/base.py",
+          "module": "parrot.clients.base",
+          "fanin": 917,
+          "forced": true,
+          "distributions": [
+            "ai-parrot",
+            "ai-parrot-advisors",
+            "ai-parrot-client-amazon",
+            "ai-parrot-client-anthropic",
+            "ai-parrot-client-gemma4",
+            "ai-parrot-client-google",
+            "ai-parrot-client-grok",
+            "ai-parrot-client-groq",
+            "ai-parrot-client-hf",
+            "ai-parrot-client-local",
+            "ai-parrot-client-meta",
+            "ai-parrot-client-moonshot",
+            "ai-parrot-client-nvidia",
+            "ai-parrot-client-openai",
+            "ai-parrot-client-openrouter",
+            "ai-parrot-client-vllm",
+            "ai-parrot-client-zai",
+            "ai-parrot-embeddings",
+            "ai-parrot-integrations",
+            "ai-parrot-loaders",
+            "ai-parrot-pipelines",
+            "ai-parrot-server",
+            "ai-parrot-tools",
+            "ai-parrot-visualizations",
+            "parrot-formdesigner"
+          ]
+        }
+      ],
+      "skipped_escalations": []
+    }
+  }
+}

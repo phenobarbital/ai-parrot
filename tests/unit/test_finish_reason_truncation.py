@@ -18,6 +18,19 @@ from parrot.exceptions import InvokeError, TruncatedResponseError
 from parrot.models.outputs import OutputFormat, StructuredOutputConfig
 
 
+def _bind_sdk_client(client, sdk_client, settable: bool = False) -> None:
+    """Make ``client.client`` return *sdk_client* for this instance only.
+
+    Swaps the instance onto a throwaway subclass that overrides the ``client``
+    property. Assigning ``type(client).client = property(...)`` instead would
+    mutate ``GoogleGenAIClient`` itself for the rest of the pytest process and
+    break every later test that relies on the real property.
+    """
+    cls = type(client)
+    prop = property(lambda self: sdk_client, (lambda self, val: None) if settable else None)
+    client.__class__ = type(cls.__name__, (cls,), {"client": prop})
+
+
 class Payload(BaseModel):
     """Fixture model for structured output."""
 
@@ -258,7 +271,7 @@ class TestGoogleInvokeTruncation:
         sdk_client.aio = MagicMock()
         sdk_client.aio.models = MagicMock()
         sdk_client.aio.models.generate_content = AsyncMock(return_value=response)
-        type(client).client = property(lambda self: sdk_client, lambda self, val: None)
+        _bind_sdk_client(client, sdk_client, settable=True)
 
         async def _ensure(model=None, **hints):
             return sdk_client

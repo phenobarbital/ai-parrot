@@ -6,10 +6,18 @@ from pathlib import Path
 
 import pytest
 from parrot.knowledge.wiki.cli import _ingest_files, _open_sources, _open_store
+from parrot.knowledge.wiki.languages import astgrep
 from parrot.knowledge.wiki.project import WikiProjectConfig, wiki_write_lock
 from parrot.knowledge.wiki.repo_scan import scan_repository
 from parrot.knowledge.wiki.structural import StructuralService
 from parrot.knowledge.wiki.symbols import SymbolKind
+
+#: Python ``calls`` refs (and thus every call/blast-radius edge) are only
+#: extracted by the optional ast-grep seam (``ai-parrot[wiki-structural]``);
+#: without it the symbol plane still has ``defines`` edges but no callers.
+requires_astgrep = pytest.mark.skipif(
+    not astgrep.is_available(), reason="ast-grep-py not installed (wiki-structural extra)"
+)
 
 
 def _write(root: Path, rel: str, content: str) -> Path:
@@ -120,6 +128,7 @@ class TestOutline:
 
 
 class TestBlastRadius:
+    @requires_astgrep
     @pytest.mark.asyncio
     async def test_finds_dependent_caller(self, built_repo):
         svc, _root = built_repo
@@ -147,6 +156,7 @@ class TestBlastRadius:
         assert out.root is None
         assert out.impacted == []
 
+    @requires_astgrep
     @pytest.mark.asyncio
     async def test_include_tests_false_filters_test_paths(self, tmp_path):
         svc, _root = await _build(
@@ -162,6 +172,7 @@ class TestBlastRadius:
         out_without_tests = await svc.blast_radius("sym:a.py#helper", include_tests=False)
         assert not any(imp.symbol.rel_path.startswith("tests/") for imp in out_without_tests.impacted)
 
+    @requires_astgrep
     @pytest.mark.asyncio
     async def test_include_inferred_false_drops_inferred_edges(self, tmp_path):
         svc, _root = await _build(

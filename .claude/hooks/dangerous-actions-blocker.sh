@@ -136,8 +136,12 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
     fi
 
     # Force-removing a worktree bypasses the live-worker check.
+    # This is a text match on the flag: the worktree's state is never
+    # inspected, and the message must say so -- otherwise the block reads as
+    # "your worktree is dirty" and sends the model chasing a non-problem.
     if echo "$SCAN" | grep -qE 'git\s+worktree\s+remove\s+[^;&|]*--force'; then
-        block "\`git worktree remove --force\` skips the dirty/unpushed checks and may be killing a live sdd-worker's checkout." \
+        block "the \`--force\` flag on \`git worktree remove\` is refused outright (the worktree's state was NOT inspected — it may well be clean). --force would bypass git's dirty check and could kill a live sdd-worker's checkout." \
+            "git worktree remove <path>                                # try without --force first: git refuses only if it is dirty" \
             "python scripts/remove_worktree.py list                    # see LIVE / dirty / unpushed" \
             "python scripts/remove_worktree.py remove <target> --dry-run" \
             "# or use the /remove-worktree command, which gates on all three."

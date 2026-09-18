@@ -71,6 +71,8 @@ class AttemptUsageRow(BaseModel):
     turns_with_unknown_usage: int = 0
     calibration_eligible: bool = False
     turn_series: List[Tuple[int, Optional[int], Optional[int]]] = Field(default_factory=list)
+    execution_id: str = Field("", max_length=64)
+    """FEAT-559: the execution this attempt ran under. Empty for historical records."""
 
 
 class OutcomeRow(BaseModel):
@@ -87,6 +89,8 @@ class OutcomeRow(BaseModel):
     outcome: str = Field(..., max_length=32)
     conflict_file_count: int = 0
     unexpected_file_count: int = 0
+    execution_id: str = Field("", max_length=64)
+    """FEAT-559: the execution this outcome belongs to. Empty for historical records."""
 
 
 def feature_file_name(feature_id: str) -> str:
@@ -116,20 +120,34 @@ def resolve_durable_root(configured: Optional[str], *, worktree_base_path: str) 
             raise ValueError(f"Configured telemetry path must be absolute: {configured!r}")
         resolved = path.resolve()
     else:
-        try:
-            res = subprocess.run(
-                ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            git_common_dir = Path(res.stdout.strip()).resolve()
-            # git_common_dir is usually /path/to/main/.git or similar.
-            # Its parent is the main checkout root.
-            main_checkout = git_common_dir.parent
+        # Ask git from *worktree_base_path* first, NOT only the process cwd: importing
+        # navconfig does `os.chdir(BASE_DIR)`, so an MCP server launched from another
+        # repo's venv (querysource served by ai-parrot's `parrot`) has its cwd moved to
+        # the venv's project and would file that repo's telemetry under the wrong
+        # checkout — where FEAT ids collide. The process cwd stays as the fallback.
+        anchor = Path(worktree_base_path)
+        while not anchor.exists() and anchor != anchor.parent:
+            anchor = anchor.parent
+        errors: List[str] = []
+        resolved = None
+        for cwd in (str(anchor), None):
+            try:
+                res = subprocess.run(
+                    ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    cwd=cwd,
+                )
+            except Exception as e:  # noqa: BLE001 - try the next anchor, report all at the end
+                errors.append(f"{cwd or os.getcwd()}: {e}")
+                continue
+            # git_common_dir is usually /path/to/main/.git; its parent is the main checkout root.
+            main_checkout = Path(res.stdout.strip()).resolve().parent
             resolved = (main_checkout / "artifacts" / "logs" / "sdd-coder-usage").resolve()
-        except Exception as e:
-            raise ValueError(f"Failed to resolve main checkout via git: {e}") from e
+            break
+        if resolved is None:
+            raise ValueError(f"Failed to resolve main checkout via git: {'; '.join(errors)}")
 
     wt_base = Path(worktree_base_path).resolve()
     # Reject when the resolved path == worktree_base_path or is under it
@@ -226,6 +244,7 @@ def build_attempt_row(
         turns_with_unknown_usage=turns_with_unknown_usage,
         calibration_eligible=calibration_eligible,
         turn_series=getattr(record, "turn_series", []),
+        execution_id=getattr(record, "execution_id", ""),
     )
 
 

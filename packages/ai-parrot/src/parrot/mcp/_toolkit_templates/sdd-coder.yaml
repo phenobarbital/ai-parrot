@@ -14,3 +14,21 @@
         - {label: gemini,      kind: mcp,    backend: google-compat, model: gemini-3.5-flash}
         - {label: codex-spark, kind: mcp,    backend: codex,         model: gpt-5.3-codex-spark}
         - {label: haiku,       kind: native, model: haiku}
+        # FEAT-561 strong seats for complex/unknown-classified tasks. A seat is
+        # eligible only because its exact (backend, model) is listed under
+        # complexity.strong_models below. `sonnet` is the model ID the Claude Code
+        # Agent tool accepts for the native seat (it resolves to the host's current
+        # Sonnet); the canonical policy name for it is `sonnet-5`.
+        - {label: gpt-5.6-terra, kind: mcp,  backend: codex,         model: gpt-5.6-terra}
+        - {label: sonnet,      kind: native, model: sonnet}
+      # FEAT-561 — strong-model allowlist (sdd/specs/complex-sdd-tasks.spec.md §2).
+      # Sibling of `roster`, forwarded to ComplexityPolicy.strong_models. Complex and
+      # unknown tasks may only run on a roster seat whose exact (backend, model) is
+      # listed here; an EMPTY list blocks every such task with
+      # complex_model_unavailable. `canonical_model` is the policy name, `model` is
+      # the exact ID the backend is invoked with — this operator-maintained mapping
+      # is the only place a canonical name may be tied to a deployed ID.
+      complexity:
+        strong_models:
+          - {canonical_model: gpt-5.6-terra, backend: codex, model: gpt-5.6-terra}
+          - {canonical_model: sonnet-5, backend: native, model: sonnet}

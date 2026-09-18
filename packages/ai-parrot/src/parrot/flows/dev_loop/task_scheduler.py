@@ -15,11 +15,18 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+#: Per-spec index header value (``"parallel_semantics": "exclusive"``) under which
+#: ``parallel: false`` means "exclusive — never dispatched alongside another task".
+#: Legacy indexes used ``parallel`` as a loose "could run in its own worktree" hint
+#: that defaulted to ``false`` on nearly every task, so without this header the
+#: flag is ignored and only ``depends_on`` shapes the waves.
+PARALLEL_SEMANTICS_EXCLUSIVE = "exclusive"
 
 
 class TaskRef(BaseModel):
@@ -32,12 +39,8 @@ class TaskRef(BaseModel):
 
     id: str = Field(..., description="e.g. 'TASK-1857'.")
     title: str = Field(default="", description="Human-readable task title.")
-    status: str = Field(
-        ..., description="'pending' | 'in-progress' | 'done' from the index."
-    )
-    depends_on: List[str] = Field(
-        default_factory=list, description="TASK-NNN ids this task depends on."
-    )
+    status: str = Field(..., description="'pending' | 'in-progress' | 'done' from the index.")
+    depends_on: List[str] = Field(default_factory=list, description="TASK-NNN ids this task depends on.")
     file: str = Field(
         default="",
         description=(
@@ -48,6 +51,67 @@ class TaskRef(BaseModel):
             "entry omits it."
         ),
     )
+    parallel: bool = Field(
+        default=True,
+        description=(
+            "False = exclusive: the task mutates shared state beyond its declared files "
+            "(extension rebuild, lockfile, migration) and must never share a dispatch with "
+            "another task. Read from the index only when its header declares "
+            "``parallel_semantics: exclusive``; otherwise always True."
+        ),
+    )
+
+
+def partition_wave(wave: Sequence[TaskRef]) -> List[List[TaskRef]]:
+    """Split a wave into ordered dispatch batches that respect exclusive tasks.
+
+    Each exclusive task (``parallel=False``) forms its own single-task batch, in
+    ascending id order, followed by one batch with every parallel task in
+    ascending id order. Exclusive batches come first so an exclusive task can
+    never starve behind parallel tasks that keep unblocking between rounds.
+
+    Args:
+        wave: Tasks whose dependencies are satisfied (``TaskScheduler.next_wave()``).
+
+    Returns:
+        The batches in dispatch order; ``[]`` for an empty wave. An all-parallel
+        wave returns exactly one batch (legacy indexes always do).
+    """
+    if not wave:
+        return []
+
+    # Sort by id to ensure deterministic ordering
+    sorted_wave = sorted(wave, key=lambda t: t.id)
+
+    exclusive_batches: List[List[TaskRef]] = []
+    parallel_batch: List[TaskRef] = []
+
+    for task in sorted_wave:
+        if not task.parallel:
+            exclusive_batches.append([task])
+        else:
+            parallel_batch.append(task)
+
+    # Combine: exclusive batches first, then parallel batch (if any)
+    result = exclusive_batches
+    if parallel_batch:
+        result.append(parallel_batch)
+
+    return result
+
+
+def parallel_width(wave: Sequence[TaskRef]) -> int:
+    """Number of tasks of ``wave`` that can run at the same time.
+
+    Returns:
+        The count of parallel tasks; ``1`` when the wave holds only exclusive
+        tasks; ``0`` for an empty wave.
+    """
+    if not wave:
+        return 0
+
+    parallel_count = sum(1 for task in wave if task.parallel)
+    return parallel_count if parallel_count > 0 else 1
 
 
 class TaskScheduler:
@@ -103,7 +167,11 @@ class TaskScheduler:
         try:
             raw = Path(path).read_text()
             data = json.loads(raw)
-            tasks = [TaskRef(**entry) for entry in data.get("tasks", [])]
+            exclusive = data.get("parallel_semantics") == PARALLEL_SEMANTICS_EXCLUSIVE
+            tasks = [
+                TaskRef(**{**entry, "parallel": bool(entry.get("parallel", True)) if exclusive else True})
+                for entry in data.get("tasks", [])
+            ]
         except FileNotFoundError:
             logger.warning("Per-spec task index not found at %s; degrading to single-agent.", path)
             return None
@@ -118,9 +186,7 @@ class TaskScheduler:
         return cls(tasks)
 
     @classmethod
-    def from_worktree(
-        cls, worktree_path: str, feature_slug: str
-    ) -> Optional["TaskScheduler"]:
+    def from_worktree(cls, worktree_path: str, feature_slug: str) -> Optional["TaskScheduler"]:
         """Convenience constructor resolving the index path from a worktree.
 
         Args:
@@ -141,7 +207,7 @@ class TaskScheduler:
         Raises:
             ValueError: If a cycle is found, naming the ids involved.
         """
-        in_degree: Dict[str, int] = {tid: 0 for tid in self._tasks}
+        in_degree: Dict[str, int] = dict.fromkeys(self._tasks, 0)
         dependents: Dict[str, List[str]] = {tid: [] for tid in self._tasks}
 
         for task in self._tasks.values():
@@ -169,9 +235,7 @@ class TaskScheduler:
 
         if visited != len(self._tasks):
             cycle_ids = sorted(tid for tid, deg in remaining.items() if deg > 0)
-            raise ValueError(
-                f"Cycle detected in depends_on graph among tasks: {cycle_ids}"
-            )
+            raise ValueError(f"Cycle detected in depends_on graph among tasks: {cycle_ids}")
 
     def next_wave(self) -> List[TaskRef]:
         """Return the tasks that are pending with all dependencies satisfied.

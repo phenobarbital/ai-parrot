@@ -158,3 +158,68 @@ class TestFormRetired:
     def test_form_not_registered(self):
         with pytest.raises(KeyError):
             get_component("Form")
+
+
+class TestKPICardSentiment:
+    """The delta's colour. The arrow reports the DIRECTION the number moved;
+    `parrot_sentiment` is the separate question of whether that is good news,
+    and the two are opposites for a metric where up is worse.
+    """
+
+    @staticmethod
+    def _sentiment_of(tree) -> str | None:
+        """The delta node's `parrot_sentiment`, read off the serialised tree.
+
+        Serialised rather than walked as models: the node types differ by
+        level (`child` vs `children`, `ComponentMetadata` vs `Extensions`),
+        and the wire shape is what a renderer actually receives anyway.
+        """
+
+        def walk(node):
+            if isinstance(node, list):
+                for each in node:
+                    found = walk(each)
+                    if found is not None:
+                        return found
+                return None
+            if not isinstance(node, dict):
+                return None
+            extensions = (node.get("metadata") or {}).get("extensions") or {}
+            if extensions.get("parrot_role") == "delta":
+                return extensions.get("parrot_sentiment")
+            for key in ("child", "children"):
+                found = walk(node.get(key))
+                if found is not None:
+                    return found
+            return None
+
+        return walk(tree.model_dump(mode="json"))
+
+    def _lowered(self, **props):
+        component = Component(
+            id="blk-001", component="KPICard", label="Metric", value=10, delta=5, **props
+        )
+        return kpicard.KPICardComponent().lower(component, {})
+
+    def test_a_rise_is_good_news_by_default(self):
+        assert self._sentiment_of(self._lowered(trend="up")) == "good"
+
+    def test_a_rise_in_a_metric_where_up_is_worse_is_bad_news(self):
+        # Missed visits, defects, cost: the arrow still points up.
+        assert self._sentiment_of(self._lowered(trend="up", higherIsBetter=False)) == "bad"
+        assert self._sentiment_of(self._lowered(trend="down", higherIsBetter=False)) == "good"
+
+    def test_a_metric_with_no_good_direction_is_not_judged(self):
+        # `higherIsBetter=None` is the author saying the question has no
+        # answer -- hours worked is an input, not an outcome, and fewer of
+        # them is efficiency or under-coverage depending on what was
+        # achieved. Neither colour would be true.
+        assert self._sentiment_of(self._lowered(trend="down", higherIsBetter=None)) == "neutral"
+        assert self._sentiment_of(self._lowered(trend="up", higherIsBetter=None)) == "neutral"
+
+    def test_omitted_and_null_are_not_the_same_thing(self):
+        # The distinction the `_UNDECLARED` sentinel exists for: `.get()`
+        # alone collapses them, and a metric that asked not to be judged
+        # would silently be painted as though rising were good.
+        assert self._sentiment_of(self._lowered(trend="down")) == "bad"
+        assert self._sentiment_of(self._lowered(trend="down", higherIsBetter=None)) == "neutral"

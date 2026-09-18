@@ -7,7 +7,7 @@ name = "ai-parrot-visualizations"
 dynamic = ["version"]
 description = "Visualization renderers for AI-Parrot outputs"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=1.0.1",
+    "ai-parrot>=1.0.4",
     # Imported unconditionally by outputs/formats/infographic_html.py (markdown
     # rendering, HTML escaping) and infographic.py (JSON serialization).
     "markdown-it-py>=3.0",

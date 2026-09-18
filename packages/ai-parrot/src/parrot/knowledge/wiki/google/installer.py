@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from parrot.knowledge.wiki.google import assets
 from parrot.knowledge.wiki.google.bookstore import bookstore_status, install_bookstore, uninstall_bookstore
@@ -136,16 +136,94 @@ def _install_skills(root: Path) -> list[str]:
     return actions
 
 
-def _install_mcp(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
-    """Write/refresh wikitoolkit and toolkit MCP entries in mcp_config.json and workspace plugin."""
+def toolkit_config_paths(root: Path, mcp_path: Optional[Path] = None) -> tuple[Path, ...]:
+    """Return the two files that carry Antigravity toolkit entries, primary first.
+
+    (1) the USER-GLOBAL config — `~/.gemini/config/mcp_config.json`
+        (verified: google/assets.py:59) — shared by every project on the machine,
+        which is why `parrot toolkits` warns before writing it (spec §8 Q1);
+    (2) the repo-local workspace plugin config
+        `<root>/.agents/plugins/parrot/mcp_config.json` (verified: installer.py:214).
+    """
+    primary = mcp_path or assets.default_mcp_config_path()
+    return (primary, root / assets.PLUGIN_DIR / "mcp_config.json")
+
+
+def reconcile_toolkit_entries(root: Path, mcp_path: Optional[Path] = None) -> tuple[list[str], list[str]]:
+    """Reconcile ONLY `parrot-<name>` entries, in BOTH Antigravity config files.
+
+    Never reads or writes the "wikitoolkit" key in either file (FEAT-570 AC5).
+    Upserts one entry per ENABLED section, preserves a `parrot-<name>` key whose
+    content is not our shape (reported as a warning), and deletes managed entries
+    whose section is disabled or gone.
+
+    Returns:
+        (actions, warnings) — human-readable strings.
+    """
     from parrot.mcp.toolkit_config import load_toolkits_config
 
+    cfg = load_toolkits_config(root)
+    enabled_toolkits = {name: section for name, section in cfg.toolkits.items() if section.enabled}
+    desired_toolkits = assets.toolkit_mcp_entries(root, enabled_toolkits)
+
+    all_actions: list[str] = []
+    all_warnings: list[str] = []
+
+    for path in toolkit_config_paths(root, mcp_path):
+        data = _load_mcp_config(path)
+        servers = data.setdefault("mcpServers", {})
+
+        changed = False
+        added: list[str] = []
+        updated: list[str] = []
+        removed: list[str] = []
+
+        for name, entry in desired_toolkits.items():
+            existing = servers.get(name)
+            if existing == entry:
+                continue
+            raw_name = name[len("parrot-") :]
+            if existing is not None and not _is_managed_toolkit_entry(existing, root, raw_name):
+                warning = (
+                    f"{path} — '{name}' already exists and was not written by "
+                    "`parrot google install`; leaving it untouched."
+                )
+                print(f"Warning: {warning}", file=sys.stderr)
+                all_warnings.append(warning)
+                continue
+            servers[name] = entry
+            changed = True
+            (updated if existing is not None else added).append(name)
+
+        # Clean up disabled/deleted toolkits
+        for name in list(servers.keys()):
+            if name != "wikitoolkit" and name.startswith("parrot-"):
+                raw_name = name[len("parrot-") :]
+                if raw_name not in enabled_toolkits and _is_managed_toolkit_entry(servers[name], root, raw_name):
+                    del servers[name]
+                    changed = True
+                    removed.append(name)
+
+        if changed:
+            _save_mcp_config(path, data)
+            if added:
+                all_actions.append(f"{path} — added {len(added)} toolkit(s): {', '.join(added)}")
+            if updated:
+                all_actions.append(f"{path} — updated {len(updated)} toolkit(s): {', '.join(updated)}")
+            if removed:
+                all_actions.append(f"{path} — removed {len(removed)} toolkit(s): {', '.join(removed)}")
+
+    return all_actions, all_warnings
+
+
+def _install_mcp(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
+    """Write/refresh wikitoolkit and toolkit MCP entries in mcp_config.json and workspace plugin."""
     actions: list[str] = []
     target_mcp = mcp_path or assets.default_mcp_config_path()
     mcp_data = _load_mcp_config(target_mcp)
     servers = mcp_data.setdefault("mcpServers", {})
 
-    # wikitoolkit entry
+    # wikitoolkit entry — never delegated to reconcile_toolkit_entries (FEAT-570 AC5)
     wiki_entry = assets.wikitoolkit_mcp_entry(root)
     existing_wiki = servers.get("wikitoolkit")
     changed_global = False
@@ -159,48 +237,12 @@ def _install_mcp(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
         changed_global = True
         actions.append(f"{target_mcp} — wikitoolkit MCP installed")
 
-    # Local toolkits from .parrot/mcp-toolkits.yaml
-    cfg = load_toolkits_config(root)
-    enabled_toolkits = {name: section for name, section in cfg.toolkits.items() if section.enabled}
-    desired_toolkits = assets.toolkit_mcp_entries(root, enabled_toolkits)
-
-    added_tk: list[str] = []
-    updated_tk: list[str] = []
-    removed_tk: list[str] = []
-
-    for name, entry in desired_toolkits.items():
-        existing = servers.get(name)
-        if existing == entry:
-            continue
-        raw_name = name[len("parrot-") :]
-        if existing is not None and not _is_managed_toolkit_entry(existing, root, raw_name):
-            print(
-                f"Warning: {target_mcp} — '{name}' already exists and was not written by "
-                "`parrot google install`; leaving it untouched.",
-                file=sys.stderr,
-            )
-            continue
-        servers[name] = entry
-        changed_global = True
-        (updated_tk if existing is not None else added_tk).append(name)
-
-    # Clean up disabled/deleted toolkits
-    for name in list(servers.keys()):
-        if name != "wikitoolkit" and name.startswith("parrot-"):
-            raw_name = name[len("parrot-") :]
-            if raw_name not in enabled_toolkits and _is_managed_toolkit_entry(servers[name], root, raw_name):
-                del servers[name]
-                changed_global = True
-                removed_tk.append(name)
-
     if changed_global:
         _save_mcp_config(target_mcp, mcp_data)
-        if added_tk:
-            actions.append(f"{target_mcp} — added {len(added_tk)} toolkit(s): {', '.join(added_tk)}")
-        if updated_tk:
-            actions.append(f"{target_mcp} — updated {len(updated_tk)} toolkit(s): {', '.join(updated_tk)}")
-        if removed_tk:
-            actions.append(f"{target_mcp} — removed {len(removed_tk)} toolkit(s): {', '.join(removed_tk)}")
+
+    # Toolkit entries — one reconciliation covering both config files (FEAT-570)
+    toolkit_actions, _toolkit_warnings = reconcile_toolkit_entries(root, mcp_path)
+    actions.extend(toolkit_actions)
 
     # Also maintain workspace plugin (.agents/plugins/parrot)
     plugin_dir = root / assets.PLUGIN_DIR
@@ -212,10 +254,11 @@ def _install_mcp(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
         actions.append(f"{manifest_file.relative_to(root)} — plugin manifest written")
 
     plugin_mcp_file = plugin_dir / "mcp_config.json"
-    plugin_servers = {"wikitoolkit": wiki_entry, **desired_toolkits}
-    plugin_mcp_content = json.dumps({"mcpServers": plugin_servers}, indent=2) + "\n"
-    if not plugin_mcp_file.exists() or plugin_mcp_file.read_text(encoding="utf-8") != plugin_mcp_content:
-        plugin_mcp_file.write_text(plugin_mcp_content, encoding="utf-8")
+    plugin_data = _load_mcp_config(plugin_mcp_file)
+    plugin_servers = plugin_data.setdefault("mcpServers", {})
+    if plugin_servers.get("wikitoolkit") != wiki_entry:
+        plugin_servers["wikitoolkit"] = wiki_entry
+        _save_mcp_config(plugin_mcp_file, plugin_data)
         actions.append(f"{plugin_mcp_file.relative_to(root)} — plugin MCP config written")
 
     return actions
@@ -242,14 +285,13 @@ def install_google_integration(
     gitignore: bool = True,
     bookstore: bool = True,
     mcp_config_path: Optional[Path] = None,
-    toolkits: Sequence[str] = (),
 ) -> list[str]:
     """Install Google Antigravity / Gemini CLI instructions, skills, and MCP configuration.
 
-    Args:
-        toolkits: Names to seed into `.parrot/mcp-toolkits.yaml` before MCP
-            reconciliation (FEAT-556); `()` seeds nothing. Seeding runs BEFORE
-            `_install_mcp` so the new sections produce entries in this pass.
+    Note:
+        Seeding `.parrot/mcp-toolkits.yaml` sections no longer happens here —
+        use `parrot toolkits install` (FEAT-570). This command only
+        reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
     config = config or load_effective_config(root).config
@@ -266,24 +308,12 @@ def install_google_integration(
     ]
     actions.extend(_install_skills(root))
 
-    if toolkits:
-        from parrot.mcp.toolkit_seed import seed_toolkit_sections
-
-        seeded = seed_toolkit_sections(root, toolkits)
-        if seeded.created_file:
-            actions.append(".parrot/mcp-toolkits.yaml — created")
-        if seeded.added:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — seeded {len(seeded.added)} section(s): {', '.join(seeded.added)}"
-            )
-        if seeded.skipped:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}"
-            )
-        if seeded.unknown:
-            actions.append(f".parrot/mcp-toolkits.yaml — unknown toolkit name(s) skipped: {', '.join(seeded.unknown)}")
-
     actions.extend(_install_mcp(root, mcp_path=mcp_config_path))
+
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    if not load_toolkits_config(root).toolkits:
+        actions.append("no local MCP toolkits configured — add them with: parrot toolkits install")
 
     if gitignore:
         actions.append(_install_gitignore(root))

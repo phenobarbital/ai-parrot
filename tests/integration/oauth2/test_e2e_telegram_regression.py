@@ -154,7 +154,7 @@ class TestE2ETelegramUnaffected:
         )
 
         with patch(
-            "parrot.integrations.oauth2.persistence.DocumentDb",
+            "parrot.auth.oauth2.persistence.DocumentDb",
             mock_db_cls,
         ):
             response = await jira_oauth_callback(request)
@@ -201,7 +201,7 @@ class TestE2ETelegramUnaffected:
             new_callable=AsyncMock,
         ) as mock_web_callback:
             with patch(
-                "parrot.integrations.oauth2.persistence.DocumentDb",
+                "parrot.auth.oauth2.persistence.DocumentDb",
                 mock_db_cls,
             ):
                 response = await jira_oauth_callback(request)

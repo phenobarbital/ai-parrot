@@ -8,9 +8,11 @@ Covers:
 - Assembly hybrid storage pattern
 - Backward compatibility
 """
+
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -24,9 +26,55 @@ from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
 
 
+def _resolve_real_file_manager_symbols():
+    """Resolve the REAL ``parrot.tools.filemanager.FileManagerFactory`` /
+    ``parrot.interfaces.file.FileManagerInterface``, bypassing a stale
+    ``conftest.py`` fixture that unconditionally poisons both modules
+    (TASK-3334 fixture-repair finding — reported, NOT fixed here: outside
+    this task's declared files).
+
+    ``packages/ai-parrot/tests/conftest.py``'s ``_install_navigator_stubs()``
+    calls ``sys.modules.setdefault("parrot.tools.filemanager", <fake>)`` /
+    ``sys.modules.setdefault("parrot.interfaces.file", <fake>)``
+    UNCONDITIONALLY at collection time (module-level, no version/capability
+    guard — only the comment claims it's meant for "navigator-api < 3.0.3").
+    This environment's real navigator-api ships the full interface (verified
+    directly: ``FileManagerFactory.create("temp")`` correctly returns
+    ``TempFileManager`` when imported fresh, outside pytest). But
+    ``setdefault`` means whichever module wins the race to be imported FIRST
+    in the whole pytest session stays cached for every subsequent import —
+    and conftest.py always wins, since it runs before any test module. The
+    fake ``FileManagerFactory.create()`` is `lambda *a, **kw:
+    _LocalFileManager()` — it ALWAYS returns a (also fake) LocalFileManager
+    regardless of the requested backend, and never raises for an invalid
+    one, silently masking exactly the behavior
+    ``TestFileManagerFactory``/``TestHandlerStorageConfig`` below assert.
+
+    Evicting the poisoned entries and re-importing forces the REAL modules
+    to resolve for every test in THIS file, without touching the shared
+    conftest.py (out of TASK-3334's declared scope; the fix belongs to
+    conftest.py's owner — this environment's navigator-api no longer needs
+    the compatibility stub at all).
+
+    Returns:
+        ``(FileManagerFactory, FileManagerInterface)`` — the real classes.
+    """
+    for _mod_name in ("parrot.tools.filemanager", "parrot.interfaces.file"):
+        _cached = sys.modules.get(_mod_name)
+        if _cached is not None and not hasattr(_cached, "__file__"):
+            del sys.modules[_mod_name]
+    import parrot.tools.filemanager as _real_fm_module
+    import parrot.interfaces.file as _real_file_module
+
+    return _real_fm_module.FileManagerFactory, _real_file_module.FileManagerInterface
+
+
+RealFileManagerFactory, RealFileManagerInterface = _resolve_real_file_manager_symbols()
+
 # ---------------------------------------------------------------------------
 # 1. Model field tests (TASK-289)
 # ---------------------------------------------------------------------------
+
 
 class TestVideoReelRequestStorageFields:
     """Verify storage_backend and storage_config fields on VideoReelRequest."""
@@ -90,6 +138,7 @@ class TestVideoReelRequestStorageFields:
 # 2. FileManager factory tests (TASK-290)
 # ---------------------------------------------------------------------------
 
+
 class TestFileManagerFactory:
     """Verify FileManagerFactory creates the right backend types."""
 
@@ -101,19 +150,20 @@ class TestFileManagerFactory:
 
     def test_create_temp(self):
         """'temp' backend creates a TempFileManager."""
-        fm = FileManagerFactory.create("temp")
-        assert isinstance(fm, FileManagerInterface)
+        fm = RealFileManagerFactory.create("temp")
+        assert isinstance(fm, RealFileManagerInterface)
         assert type(fm).__name__ == "TempFileManager"
 
     def test_create_invalid_raises(self):
         """Invalid backend type raises ValueError."""
         with pytest.raises((ValueError, KeyError)):
-            FileManagerFactory.create("invalid_backend")
+            RealFileManagerFactory.create("invalid_backend")
 
 
 # ---------------------------------------------------------------------------
 # 3. Handler storage configuration tests (TASK-294)
 # ---------------------------------------------------------------------------
+
 
 class TestHandlerStorageConfig:
     """Verify VideoReelHandler._create_file_manager reads env vars."""
@@ -146,10 +196,18 @@ class TestHandlerStorageConfig:
 
     def test_temp_backend(self, handler):
         """With temp backend, creates TempFileManager."""
-        with patch.dict(
-            os.environ,
-            {"VIDEO_REEL_STORAGE_BACKEND": "temp"},
-            clear=False,
+        # `video_reel.py`'s own module-level `FileManagerFactory` name was
+        # bound at ITS import time, which may have already resolved to the
+        # stale conftest.py stub (see _resolve_real_file_manager_symbols's
+        # docstring above) — patch it to the verified-real class for this
+        # assertion regardless of import order.
+        with (
+            patch("parrot.handlers.video_reel.FileManagerFactory", RealFileManagerFactory),
+            patch.dict(
+                os.environ,
+                {"VIDEO_REEL_STORAGE_BACKEND": "temp"},
+                clear=False,
+            ),
         ):
             fm = handler._create_file_manager()
         assert fm is not None
@@ -159,10 +217,7 @@ class TestHandlerStorageConfig:
         """S3 backend without bucket falls back to None."""
         env = {"VIDEO_REEL_STORAGE_BACKEND": "s3"}
         # Ensure no bucket env var
-        cleaned = {
-            k: v for k, v in os.environ.items()
-            if not k.startswith("VIDEO_REEL_STORAGE_BUCKET")
-        }
+        cleaned = {k: v for k, v in os.environ.items() if not k.startswith("VIDEO_REEL_STORAGE_BUCKET")}
         cleaned.update(env)
         with patch.dict(os.environ, cleaned, clear=True):
             fm = handler._create_file_manager()
@@ -189,6 +244,7 @@ class TestHandlerStorageConfig:
 # 4. Pipeline FileManager initialization tests (TASK-290)
 # ---------------------------------------------------------------------------
 
+
 class TestPipelineFileManagerInit:
     """Verify generate_video_reel() accepts and initializes FileManager."""
 
@@ -203,23 +259,27 @@ class TestPipelineFileManagerInit:
         assert "output_directory" in params
 
     def test_process_scene_signature(self):
-        """_process_scene has file_manager and job_prefix parameters."""
+        """FEAT-564 TASK-3330: _process_scene now takes a single `context`
+        keyword-only parameter (bundling file_manager/job_prefix/registry/etc.)
+        instead of separate file_manager/job_prefix parameters."""
         import inspect
         from parrot.clients.google.generation import GoogleGeneration
 
         sig = inspect.signature(GoogleGeneration._process_scene)
         params = list(sig.parameters.keys())
-        assert "file_manager" in params
-        assert "job_prefix" in params
+        assert "context" in params
+        assert "file_manager" not in params
+        assert "job_prefix" not in params
 
     def test_process_scene_returns_strings(self):
-        """_process_scene return annotation is tuple of optional strings."""
+        """FEAT-564 TASK-3330: _process_scene's return annotation is now the
+        typed ReelSceneResult, replacing the legacy tuple[Optional[str], Optional[str]]."""
         import inspect
         from parrot.clients.google.generation import GoogleGeneration
 
         sig = inspect.signature(GoogleGeneration._process_scene)
         ret = sig.return_annotation
-        assert "str" in str(ret), f"Expected str in return type, got {ret}"
+        assert "ReelSceneResult" in str(ret), f"Expected ReelSceneResult in return type, got {ret}"
 
     def test_generate_reel_music_returns_optional_str(self):
         """_generate_reel_music return annotation is Optional[str]."""
@@ -234,6 +294,7 @@ class TestPipelineFileManagerInit:
 # ---------------------------------------------------------------------------
 # 5. Assembly hybrid storage tests (TASK-293)
 # ---------------------------------------------------------------------------
+
 
 class TestAssemblyHybridStorage:
     """Verify _create_reel_assembly uses download→assemble→upload pattern."""
@@ -277,9 +338,7 @@ class TestAssemblyHybridStorage:
 
         with patch("parrot.clients.google.generation.asyncio") as mock_aio:
             # Make to_thread return the local_output path
-            mock_aio.to_thread = AsyncMock(
-                return_value=Path("/tmp/fake_output.mp4")
-            )
+            mock_aio.to_thread = AsyncMock(return_value=Path("/tmp/fake_output.mp4"))
             try:
                 result = await obj._create_reel_assembly(
                     scene_outputs=scene_outputs,
@@ -318,8 +377,24 @@ class TestAssemblyHybridStorage:
         fake_output = Path(tmp_path)
         fake_output.write_bytes(b"\x00" * 100)
 
-        with patch("parrot.clients.google.generation.asyncio") as mock_aio:
-            mock_aio.to_thread = AsyncMock(return_value=fake_output)
+        # FEAT-564 TASK-3329: _create_reel_assembly now delegates the actual
+        # encode to reel.assembly.assemble_reel (a managed-process call) and
+        # measures each scene's real duration via moviepy.VideoFileClip
+        # before building a TimelinePlan — mock both instead of the whole
+        # `asyncio` module (the old single asyncio.to_thread() call this test
+        # used to stub no longer exists; asyncio.to_thread is now used only
+        # for the per-scene duration probe, not for running the encode).
+        fake_clip = MagicMock()
+        fake_clip.duration = 1.0
+        fake_clip.close = MagicMock()
+
+        with (
+            patch("moviepy.VideoFileClip", return_value=fake_clip),
+            patch(
+                "parrot.clients.google.reel.assembly.assemble_reel",
+                new=AsyncMock(return_value=fake_output),
+            ),
+        ):
             result = await obj._create_reel_assembly(
                 scene_outputs=scene_outputs,
                 music_key=None,
@@ -350,6 +425,7 @@ class TestAssemblyHybridStorage:
 # 6. Backward compatibility tests
 # ---------------------------------------------------------------------------
 
+
 class TestBackwardCompatibility:
     """Ensure existing behavior is preserved when no storage config is set."""
 
@@ -357,10 +433,12 @@ class TestBackwardCompatibility:
         """VideoReelRequest without storage fields uses defaults."""
         req = VideoReelRequest(
             prompt="Test reel",
-            scenes=[{
-                "background_prompt": "Ocean",
-                "video_prompt": "Pan right",
-            }],
+            scenes=[
+                {
+                    "background_prompt": "Ocean",
+                    "video_prompt": "Pan right",
+                }
+            ],
         )
         assert req.storage_backend == "fs"
         assert req.storage_config is None

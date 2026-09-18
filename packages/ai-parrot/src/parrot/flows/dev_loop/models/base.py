@@ -475,6 +475,9 @@ class TaskScopedBrief(BaseModel):
 
     research: ResearchOutput
     task_id: str = Field(..., description="TASK-NNN id this dispatch must implement.")
+    coder_feedback: str = Field(
+        default="", description="Confirmed corrections from this coder model's prior deliveries."
+    )
     task_file: str = Field(
         default="",
         description=(

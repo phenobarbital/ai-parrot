@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-parrot-loaders"
 dynamic = ["version"]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 description = "Document loaders for AI-Parrot RAG pipelines"
 readme = "README.md"
 authors = [
@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=1.0.1",
+    "ai-parrot>=1.0.4",
     "decorator>=5",
     "openpyxl>=3.1",
     "tabulate>=0.9",

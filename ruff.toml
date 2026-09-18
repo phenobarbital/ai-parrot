@@ -36,18 +36,30 @@
 #
 # GRADUATION PATH
 # ---------------
-# The families below are deliberately NOT in `select` yet. Each is a
-# worthwhile cleanup, and each is large enough to deserve its own PR rather
-# than being smuggled in as a side effect of unrelated work. Counts measured
-# over `packages/` + `scripts/` with ruff 0.16.3:
+# GRADUATED 2026-09-15 — defect-finding families, paid down incrementally
+# (the sdd-coder engine auto-fixes what it can per task; `/sdd-done` Step 4.5
+# fixes the rest in the files each feature touches). Counts measured over
+# `packages/` + `scripts/` with ruff 0.16.3, after the ignores below:
 #
-#     UP   26005   pyupgrade — dominated by `Optional[X]` / `Dict[...]`
-#                  -> PEP 604 / PEP 585 rewrites
-#     RUF   3759   ruff-specific (unused `noqa`, mutable class defaults, ...)
-#     I     3154   import sorting — only meaningful once `src` (below) is set,
-#                  since `parrot*` are local workspace packages
-#     SIM   1041   flake8-simplify
-#     B      474   flake8-bugbear — smallest, and the best first candidate
+#     B      527   flake8-bugbear — real bugs (raise-without-from, loop vars)
+#     ASYNC  ~450  blocking calls inside `async def` — this repo's core rule
+#     PIE    176   no-op placeholders, duplicate enum values
+#     C4     ~60   comprehension misuse
+#     LOG     13   logging calls outside handlers / on the root logger
+#
+# Still deliberately NOT in `select` — each deserves its own PR rather than
+# being smuggled in as a side effect of unrelated work:
+#
+#     UP   30140   pyupgrade — dominated by `Optional[X]` / `Dict[...]`
+#                  -> PEP 604 / PEP 585 rewrites; auto-fixing it per task
+#                  would bury feature diffs under annotation churn
+#     RUF   4492   ruff-specific (unused `noqa`, mutable class defaults, ...)
+#     I     3306   import sorting — codebase-conventions.md: no import-sorting
+#                  step exists in this repo
+#     G     2568   logging f-strings
+#     BLE   2301   blind `except Exception` — often intentional at async
+#                  task / handler boundaries
+#     SIM   1188   flake8-simplify (style opinion)
 #
 # To graduate one: add the family, fix its findings in a dedicated PR, done.
 
@@ -98,7 +110,15 @@ extend-exclude = [
 # pyflakes (undefined names, unused imports, redefinitions, f-string
 # mistakes). These catch real defects rather than style opinions — the value
 # of pinning is that a NEW finding in changed code is now unambiguous.
-select = ["E4", "E7", "E9", "F", "TID251"]
+select = ["E4", "E7", "E9", "F", "TID251", "B", "ASYNC", "PIE", "C4", "LOG"]
+ignore = [
+    # `timeout` parameters on async APIs are part of this framework's public
+    # surface (clients, tools, dispatchers); asyncio.timeout() at every call
+    # site is not the convention here.
+    "ASYNC109",
+    # `dict(a=1)` vs `{"a": 1}` is taste, not a defect.
+    "C408",
+]
 
 # FEAT-553: forbidden modules (TID251). Substitutes are named in .agent/rules/codebase-conventions.md.
 # One entry per top-level name — banned-api has no globs, so `langchain` does NOT cover `langchain_core`.
@@ -124,7 +144,7 @@ select = ["E4", "E7", "E9", "F", "TID251"]
 # Test modules import fixtures/helpers for their side effects, shadow names
 # between parametrised cases, and bind values purely to keep an assertion
 # readable.
-"**/tests/**/*.py" = ["F401", "F811", "F841"]
+"**/tests/**/*.py" = ["F401", "F811", "F841", "B011", "B017", "ASYNC230", "ASYNC240"]
 "**/conftest.py" = ["F401", "F403"]
 
 # Examples are illustrative snippets, not shipped code.

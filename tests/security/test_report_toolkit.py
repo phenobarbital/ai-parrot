@@ -125,19 +125,21 @@ class TestRead:
 
 class TestListFrameworks:
     async def test_sorted_unique(self, toolkit: SecurityReportToolkit, store: AsyncMock) -> None:
-        """list_available_frameworks returns a sorted deduplicated list."""
-        refs = [
-            _ref(framework="SOC2"),
-            _ref(framework="HIPAA"),
-            _ref(framework="HIPAA"),  # duplicate
-            _ref(framework=None),     # excluded
-        ]
-        store.query = AsyncMock(return_value=refs)
+        """list_available_frameworks delegates DISTINCT to the store and returns a sorted list.
+
+        Deduplication and NULL exclusion moved into SQL
+        (``query_distinct_frameworks``) in commit 96c035a63; the toolkit must
+        not fall back to an unbounded ``query()`` scan.
+        """
+        store.query_distinct_frameworks = AsyncMock(return_value=["SOC2", "HIPAA"])
+        store.query = AsyncMock(return_value=[_ref(framework="PCI")])
         result = await toolkit.list_available_frameworks()
-        assert result == ["HIPAA", "SOC2"]  # sorted, unique, None excluded
+        assert result == ["HIPAA", "SOC2"]
+        store.query_distinct_frameworks.assert_awaited_once_with()
+        store.query.assert_not_called()
 
     async def test_empty_when_no_reports(self, toolkit: SecurityReportToolkit, store: AsyncMock) -> None:
-        store.query = AsyncMock(return_value=[])
+        store.query_distinct_frameworks = AsyncMock(return_value=[])
         result = await toolkit.list_available_frameworks()
         assert result == []
 

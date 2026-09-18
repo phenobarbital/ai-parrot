@@ -6,16 +6,18 @@ import json
 
 import pytest
 
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler
+from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler, partition_wave, parallel_width
+
+
+def _ref(task_id: str, *, parallel: bool = True, depends_on: list[str] | None = None) -> TaskRef:
+    return TaskRef(id=task_id, status="pending", depends_on=depends_on or [], parallel=parallel)
 
 
 @pytest.fixture
 def index_file(tmp_path):
     def _make(tasks):
         p = tmp_path / "feature.json"
-        p.write_text(
-            json.dumps({"feature": "f", "feature_id": "FEAT-999", "tasks": tasks})
-        )
+        p.write_text(json.dumps({"feature": "f", "feature_id": "FEAT-999", "tasks": tasks}))
         return p
 
     return _make
@@ -141,12 +143,103 @@ class TestTaskFile:
             ]
         )
         s = TaskScheduler.from_index_file(p)
-        assert (
-            s.next_wave()[0].file
-            == "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md"
-        )
+        assert s.next_wave()[0].file == "sdd/tasks/active/TASK-2719-tests-fable-research-primary.md"
 
     def test_file_defaults_to_empty_for_legacy_entries(self, index_file):
         p = index_file([{"id": "TASK-1", "status": "pending", "depends_on": []}])
         s = TaskScheduler.from_index_file(p)
         assert s.next_wave()[0].file == ""
+
+
+def _index(tmp_path, header: dict) -> TaskScheduler:
+    path = tmp_path / "index.json"
+    tasks = [
+        {"id": "TASK-1", "status": "pending", "depends_on": [], "parallel": False},
+        {"id": "TASK-2", "status": "pending", "depends_on": []},
+    ]
+    path.write_text(json.dumps({**header, "tasks": tasks}))
+    sched = TaskScheduler.from_index_file(path)
+    assert sched is not None
+    return sched
+
+
+def test_parallel_flag_ignored_without_exclusive_semantics(tmp_path):
+    """Legacy indexes defaulted `parallel: false` everywhere; it must not serialize them."""
+    wave = {t.id: t.parallel for t in _index(tmp_path, {}).next_wave()}
+    assert wave == {"TASK-1": True, "TASK-2": True}
+
+
+def test_parallel_flag_honoured_under_exclusive_semantics(tmp_path):
+    wave = {t.id: t.parallel for t in _index(tmp_path, {"parallel_semantics": "exclusive"}).next_wave()}
+    assert wave == {"TASK-1": False, "TASK-2": True}
+
+
+class TestPartitionWave:
+    def test_partition_wave_all_parallel_is_one_sorted_batch(self):
+        # Shuffled parallel tasks produce one ascending-id batch
+        wave = [_ref("TASK-3", parallel=True), _ref("TASK-1", parallel=True), _ref("TASK-2", parallel=True)]
+        batches = partition_wave(wave)
+        assert len(batches) == 1
+        assert [t.id for t in batches[0]] == ["TASK-1", "TASK-2", "TASK-3"]
+
+    def test_partition_wave_exclusive_first_each_alone(self):
+        # [P3, X2, P1, X4] produces [[X2], [X4], [P1, P3]]
+        wave = [
+            _ref("TASK-3", parallel=True),
+            _ref("TASK-2", parallel=False),
+            _ref("TASK-1", parallel=True),
+            _ref("TASK-4", parallel=False),
+        ]
+        batches = partition_wave(wave)
+        assert len(batches) == 3
+        assert [t.id for t in batches[0]] == ["TASK-2"]
+        assert [t.id for t in batches[1]] == ["TASK-4"]
+        assert [t.id for t in batches[2]] == ["TASK-1", "TASK-3"]
+
+    def test_partition_wave_only_exclusive(self):
+        # [X2, X1] produces [[X1], [X2]]
+        wave = [_ref("TASK-2", parallel=False), _ref("TASK-1", parallel=False)]
+        batches = partition_wave(wave)
+        assert len(batches) == 2
+        assert [t.id for t in batches[0]] == ["TASK-1"]
+        assert [t.id for t in batches[1]] == ["TASK-2"]
+
+    def test_partition_wave_empty(self):
+        # [] produces []
+        wave: list[TaskRef] = []
+        batches = partition_wave(wave)
+        assert batches == []
+
+    def test_partition_wave_preserves_caller_input_order(self):
+        # Caller input ordering is not mutated
+        wave = [_ref("TASK-3", parallel=True), _ref("TASK-2", parallel=False), _ref("TASK-1", parallel=True)]
+        original_ids = [t.id for t in wave]
+        partition_wave(wave)
+        assert [t.id for t in wave] == original_ids
+
+
+class TestParallelWidth:
+    def test_parallel_width_all_parallel(self):
+        # All-parallel wave returns the count of parallel tasks
+        wave = [_ref("TASK-1", parallel=True), _ref("TASK-2", parallel=True), _ref("TASK-3", parallel=True)]
+        assert parallel_width(wave) == 3
+
+    def test_parallel_width_mixed(self):
+        # Mixed wave returns the count of parallel tasks
+        wave = [
+            _ref("TASK-1", parallel=False),
+            _ref("TASK-2", parallel=True),
+            _ref("TASK-3", parallel=False),
+            _ref("TASK-4", parallel=True),
+        ]
+        assert parallel_width(wave) == 2
+
+    def test_parallel_width_only_exclusive(self):
+        # Exclusive-only wave returns 1
+        wave = [_ref("TASK-1", parallel=False), _ref("TASK-2", parallel=False)]
+        assert parallel_width(wave) == 1
+
+    def test_parallel_width_empty(self):
+        # Empty wave returns 0
+        wave: list[TaskRef] = []
+        assert parallel_width(wave) == 0

@@ -9,6 +9,179 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.4] — 2026-09-17
+
+Twelve core-line distributions move to `1.0.4`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.4` and are
+re-pinned to `ai-parrot>=1.0.4`.
+
+### Fixed
+
+- **`wikitoolkit` crashed at startup in every installed copy** (hotfix PR
+  #1410). `parrot.knowledge.wiki.ledger.sdd_ingest` imported the repo-local
+  `scripts.sdd.sdd_meta`, which no wheel ships. The parser now lives in
+  `parrot.knowledge.wiki.ledger.sdd_meta` (`scripts/sdd/sdd_meta.py` is a
+  re-export shim), and the CLI imports `SDDGraphIngest` lazily in the two
+  ledger commands that use it. New guard test: no `packages/*/src` module may
+  import `scripts.*`.
+- **parrot-formdesigner:** same packaging bug — `tools/snippet_authoring`
+  imported `scripts.check_snippet_conformance`. The gate moved to
+  `parrot_formdesigner.services.snippets.conformance` (old path kept as shim).
+- **`wikitoolkit ledger open`** on a read-only shared ledger now reports
+  "NOT filed" instead of raising.
+- **Crew execution history handler:** the authenticated user id was silently
+  dropped (`await self.session()` raised under `@user_session()`), so a
+  client-supplied `user_id` always won.
+- **`parrot.tools` redirector** aliased every `parrot_tools.*` module onto
+  `parrot.tools.*`, clobbering core `parrot.tools.abstract` once any
+  redirected tool was imported.
+- **NavigatorToolkit** could not be constructed (merge resurrected a second
+  `super().__init__` without `dsn`).
+- **CrewExecutionDocument** dropped FlowResult's `infographic` key.
+- **Planogram endcap:** a failed illumination check crashed detection.
+- **`parrot.interfaces.http`:** unused top-level `googleapiclient` imports
+  broke core import without that optional dependency.
+- **CI:** `test-core` installs the whole workspace; ~200 drifted tests
+  repaired, optional-extra / live-service tests skip cleanly.
+
+### Changed
+
+- **BREAKING — FEAT-558: `QuerysourceToolkit` replaces `QSourceTool`.**
+  `parrot_tools/qsource.py` is removed (hard cut). The new
+  `parrot_tools.querysource` toolkit offers `list_slugs`, `describe_slug`,
+  `execute_slug` (typed conditions), `run_multiquery` / `save_multiquery`,
+  `list_components`, `validate_pipeline` and `get_dialect_reference`, with
+  tenant guarding over `public.queries` and bounded JSON-safe results.
+  The `ai-parrot-tools[db]` extra now requires `querysource>=4.5.11`.
+- **sdd-codereview / sdd-worker** prompt updates.
+
+### Docs
+
+- SDD specs: FEAT-563 (scoped-test-selection), FEAT-564
+  (video-reel Omni/Veo reliability).
+
+---
+
+## [1.0.3] — 2026-09-17
+
+Twelve core-line distributions move to `1.0.3`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.3` and are
+re-pinned to `ai-parrot>=1.0.3`.
+
+### Added
+
+- **FEAT-561: Task complexity measurement for sdd-coder.** Typed complexity
+  evidence/policy/response contracts, Ruff+wiki+scope+dependency evidence
+  collection, deterministic complexity evaluation, complexity-restricted
+  dispatch and routing, MCP diagnostics surface, and measurable task contracts
+  in both SDD authoring hosts.
+- **FEAT-559: Execution pool suspensions for sdd-coder.** Private execution
+  pool with atomic admission, durable suspension records with strict ledger
+  replay, failure-classified dispatch gating, execution lifecycle (begin/end)
+  with history-gated startup, execution attribution in telemetry and review
+  history, and execution lifecycle MCP tools.
+- **FEAT-560: Exclusive-task wave scheduling in dev-loop.** Shared
+  exclusive-wave partition helpers, dispatch exclusive tasks alone in pool
+  rounds, and parallel-width pool sizing from the task graph.
+- **FEAT-526: Meta (Llama) LLM client.** `ai-parrot-client-meta` wired into
+  the client satellite matrix with `search_tools` mapped to native
+  `tool_search`.
+- **FEAT-540: GraphIndex core-seams** — spec approved + 13 tasks committed
+  (implementation pending).
+- **Configurable infographic theme** on `CrewDefinition`/`AgentCrew`.
+
+### Fixed
+
+- **Security:** upgrade Vite 5→6, svelte-vite-plugin 4→5 (CVE-2026-53571);
+  remove chromadb dependency (CVE-2026-45833/45831/45830).
+- **FormDesigner:** upload gates rejected every file the presets allow;
+  fixed-format text labeling; image-pair count gate; fourth gate exact-match
+  defect.
+- **Codex dispatch stdin isolation** (hotfix PR #1391): isolated Codex stdin
+  and bounded subprocess diagnostics with offline regression suite.
+- **CI:** declare `tqdm` as core dependency; install wiki stack in
+  `test-wiki-extras`.
+- **sdd-worker:** restore FEAT-543 delegated step; scope FEAT-549 absence
+  tests; protect shared environments from worker mutations.
+- **F4: Telegram/CLI token persistence.** `SessionVault` rejected `:` in key
+  names, so `VaultTokenSync.store_tokens()` silently stored nothing (the error
+  was swallowed). Vault keys may contain `:` now and the tokens are persisted.
+
+### Changed
+
+- **BREAKING — Vault crypto hardening (FEAT-099).** Requires
+  `navigator-session>=1.0.0` and the offline vault migration
+  (`navigator-vault migrate`; see navigator-session
+  `docs/vault/migration-runbook.md`).
+  - `parrot.security.credentials_utils` seals credentials with envelope v2
+    bound to their document and field: `encrypt_credential(credential, context,
+    keyring)` / `decrypt_credential(encrypted, context, keyring)` with
+    `credential_context(user_id, name)` and `llm_key_context(user_id, provider)`.
+    A credential copied to another user, name or provider no longer decrypts.
+  - `parrot.security.vault_utils.get_vault_keyring()` replaces `load_vault_keys()`,
+    which was removed.
+  - `users_bots.mcp_config` / `tools_config` bind their context through AEAD
+    instead of the in-plaintext `_ctx` envelope.
+  - `user_credentials`, `user_llm_keys` and `users_bots` are registered as vault
+    targets for rotation and migration.
+  - `VaultTokenSync.read_tokens_result()` distinguishes missing from unreadable
+    tokens; integrations report `status: needs_reconnect` when stored tokens
+    cannot be used.
+- Navigator stack deps pinned to Python 3.13+ builds.
+
+---
+
+## [1.0.2] — 2026-09-15
+
+Twelve core-line distributions move to `1.0.2`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.2` and are
+re-pinned to `ai-parrot>=1.0.2`.
+
+### Added
+
+- **FEAT-566: Shared SDD work ledger.** An append-only, atomic ledger log
+  (`wikitoolkit ledger` CLI group + MCP tools) that ingests SDD spec/task
+  graphs, reduces events with a replay cursor and atomic claim, and adds
+  federation overlay namespace routing so ledgers from different repos don't
+  collide. Wired into `/sdd-start`, `/sdd-next`, `/sdd-done`, and Claude/Codex/
+  Antigravity review twins; a worktree structural-hook guard installs it
+  post-merge. Retrofitted with async I/O and fsync durability.
+- **FEAT-557: SQLite reliability for wikitoolkit.** A `SQLitePragmaPolicy`
+  model and typed `WikiStoreBusy` error, a `_open`/`_read`/`_write` connection
+  policy using `BEGIN IMMEDIATE`, non-fatal WAL checkpoints, and a busy
+  timeout with explicit write transactions on `SourceCollectionManager`. All
+  21 store call sites migrated off the old `_connect` path. `wikitoolkit
+  status` gains a SQLite diagnostics block, and a multiprocess contention
+  test covers the read path.
+- **FEAT-551: MS Teams FormDesigner renderer.** New `TeamsFormRenderer` and
+  `TeamsSubmitEnvelope`, a `_formdesigner` branch in
+  `MSTeamsAgentWrapper._handle_card_submission`, bot-side pure submit
+  helpers, and Teams upload-field posture (`Action.OpenUrl` +
+  `RenderWarning`, since Teams cards can't accept file uploads directly).
+  Registered via `setup_form_api` with tenant pass-through. Existing
+  `AdaptiveCardRenderer` output is unchanged (verified via a byte-identical
+  golden fixture); its hooks are now overridable for renderer subclasses.
+- **A2UI / report charts.** Combined bar+line charts, a KPI card that states
+  what its number means (including "no good direction" metrics), and a
+  chart key rendered in words under the chart instead of only in color.
+
+### Fixed
+
+- **Printed/exported reports:** charts now size from a CSS box instead of
+  the measuring moment, keep their proportion instead of being boxed,
+  survive being printed, and no longer waste whole sheets or force
+  horizontal scrolling on a phone-width table. The trend line, KPI values,
+  and chart grid column count now match between the live app and the
+  exported/print surface.
+- **hotfix/WIKI-FTS-RESCAN:** external-content FTS5 indexing so re-ingesting
+  a wiki source no longer rescans the entire index.
+- **ci(release):** restored the eight client-satellite publish legs that had
+  dropped out of `release.yml`.
+- **stores/kb:** dropped an unused `duckdb` import and repaired the stale
+  tests it was masking.
+
+---
+
 ## [1.0.1] — 2026-09-13
 
 Everything in this release is additive or opt-in. No public API was removed.

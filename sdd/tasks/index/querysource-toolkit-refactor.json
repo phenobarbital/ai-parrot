@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-15T02:02:19Z",
-  "completed_at": null,
+  "completed_at": "2026-09-17T00:52:56+00:00",
   "tasks": [
     {
       "id": "TASK-3245",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Creates the new package; no shared files with other tasks, but everything depends on it \u2014 run first.",
+      "parallelism_notes": "Creates the new package; no shared files with other tasks, but everything depends on it — run first.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3245-qs-lazy-imports-and-errors.md"
+      "started_at": "2026-09-16T23:52:18+00:00",
+      "completed_at": "2026-09-16T23:52:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3245-qs-lazy-imports-and-errors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3246",
@@ -32,16 +33,17 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only touches models.py + its test; no imports from sibling tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3246-qs-models.md"
+      "started_at": "2026-09-16T23:53:32+00:00",
+      "completed_at": "2026-09-16T23:53:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3246-qs-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3247",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,9 +62,10 @@
       "parallel": true,
       "parallelism_notes": "Only touches dialect.py + test; independent of catalog/results.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3247-qs-dialect-reference.md"
+      "started_at": "2026-09-16T23:56:39+00:00",
+      "completed_at": "2026-09-16T23:56:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3247-qs-dialect-reference.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3248",
@@ -71,7 +74,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,9 +84,10 @@
       "parallel": true,
       "parallelism_notes": "Only touches catalog.py + conftest/test; independent of dialect/results.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3248-qs-slug-catalog-tenant-guard.md"
+      "started_at": "2026-09-16T23:59:38+00:00",
+      "completed_at": "2026-09-16T23:59:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3248-qs-slug-catalog-tenant-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3249",
@@ -92,27 +96,28 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
         "TASK-3248"
       ],
       "parallel": false,
-      "parallelism_notes": "Appends to catalog.py written by TASK-3248 \u2014 same file.",
+      "parallelism_notes": "Appends to catalog.py written by TASK-3248 — same file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3249-qs-pipeline-normalizer.md"
+      "started_at": "2026-09-17T00:01:31+00:00",
+      "completed_at": "2026-09-17T00:01:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3249-qs-pipeline-normalizer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3250",
       "slug": "qs-results-shaping",
-      "title": "Result shaping \u2014 DataFrame to bounded JSON-safe ExecutionResult",
+      "title": "Result shaping — DataFrame to bounded JSON-safe ExecutionResult",
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -121,18 +126,19 @@
       "parallel": true,
       "parallelism_notes": "Only touches results.py + test.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3250-qs-results-shaping.md"
+      "started_at": "2026-09-17T00:04:05+00:00",
+      "completed_at": "2026-09-17T00:04:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3250-qs-results-shaping.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3251",
       "slug": "qs-toolkit-core-and-catalog-tools",
-      "title": "QuerysourceToolkit class \u2014 lifecycle, get_dialect_reference, list_slugs, describe_slug, exports",
+      "title": "QuerysourceToolkit class — lifecycle, get_dialect_reference, list_slugs, describe_slug, exports",
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,18 +151,19 @@
       "parallel": false,
       "parallelism_notes": "Creates toolkit.py and __init__ exports; later tasks insert into toolkit.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3251-qs-toolkit-core-and-catalog-tools.md"
+      "started_at": "2026-09-17T00:06:17+00:00",
+      "completed_at": "2026-09-17T00:06:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3251-qs-toolkit-core-and-catalog-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3252",
       "slug": "qs-execute-slug",
-      "title": "execute_slug tool \u2014 typed conditions to QS payload to bounded result",
+      "title": "execute_slug tool — typed conditions to QS payload to bounded result",
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -165,9 +172,10 @@
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py after describe_slug.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3252-qs-execute-slug.md"
+      "started_at": "2026-09-17T00:08:45+00:00",
+      "completed_at": "2026-09-17T00:08:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3252-qs-execute-slug.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3253",
@@ -176,7 +184,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,9 +194,10 @@
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py after execute_slug; needs normalize_pipeline.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3253-qs-components-and-validate-pipeline.md"
+      "started_at": "2026-09-17T00:11:02+00:00",
+      "completed_at": "2026-09-17T00:11:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3253-qs-components-and-validate-pipeline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3254",
@@ -197,7 +206,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -206,9 +215,10 @@
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py after validate_pipeline; reuses _policy_check.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3254-qs-run-and-save-multiquery.md"
+      "started_at": "2026-09-17T00:13:38+00:00",
+      "completed_at": "2026-09-17T00:13:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3254-qs-run-and-save-multiquery.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3255",
@@ -217,7 +227,7 @@
       "feature_id": "FEAT-558",
       "feature": "querysource-toolkit-refactor",
       "spec": "sdd/specs/querysource-toolkit-refactor.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -226,9 +236,10 @@
       "parallel": false,
       "parallelism_notes": "Must run last: registry scan needs the finished class; integrity test needs the old module gone.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3255-qs-hard-cut-registry-docs.md"
+      "started_at": "2026-09-17T00:20:17+00:00",
+      "completed_at": "2026-09-17T00:20:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3255-qs-hard-cut-registry-docs.md",
+      "verification": "verified"
     }
   ]
 }

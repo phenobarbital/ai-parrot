@@ -65,6 +65,18 @@ _COMPONENTS_CSS: str = _read_asset("components.css") or ""
 #: asset constant here), never crashes the import.
 _TAILWIND_CSS: str = _read_asset("tailwind.generated.css") or ""
 
+#: The document's voice — masthead, section marks, KPI cards, tables.
+#: Composed AFTER the generated Tailwind primitives (which it refines) and
+#: BEFORE the layout sheet (which may still override it).
+_EDITORIAL_CSS: str = _read_asset("editorial.css") or ""
+
+#: What a SCREEN surface does when the reader presses Ctrl+P: an
+#: `@media print` block, inert until then. Composed for every layout EXCEPT
+#: `print`, which is the PDF renderer's own paged layout and already carries
+#: paged rules of its own — two sources deciding one margin is worse than
+#: one. Missing file degrades to `""` like every other asset here.
+_PRINT_MEDIA_CSS: str = _read_asset("print-media.css") or ""
+
 #: One entry per declared layout name. A missing file is ``None`` here and
 #: handled as a warn-and-fall-back case by ``DesignSystem._resolve_layout``
 #: — this keeps the composer importable even if a layout asset is absent
@@ -89,10 +101,16 @@ class DesignSystem:
     DEFAULT_LAYOUT: ClassVar[str] = "analytics"
 
     #: Composed sheets, cached per ``(theme_name, layout_name)`` pair.
-    _cache: ClassVar[dict[tuple[str, str], str]] = {}
+    _cache: ClassVar[dict[tuple[str, str, bool], str]] = {}
 
     @classmethod
-    def stylesheet(cls, theme: "str | ThemeConfig | None" = None, layout: str | None = None) -> str:
+    def stylesheet(
+        cls,
+        theme: "str | ThemeConfig | None" = None,
+        layout: str | None = None,
+        *,
+        paged: bool | None = None,
+    ) -> str:
         """Return the composed CSS for a ``(theme, layout)`` pair.
 
         Args:
@@ -108,7 +126,16 @@ class DesignSystem:
         theme_config, theme_key = cls._resolve_theme(theme)
         layout_key, layout_css = cls._resolve_layout(layout)
 
-        cache_key = (theme_key, layout_key)
+        # Whether the OUTPUT is paginated, which is not the same question as
+        # which layout was resolved. A caller that paginates (the PDF
+        # renderer, via weasyprint) says so explicitly; inferring it from
+        # `layout_key == "print"` was wrong, because an envelope declaring
+        # `parrot_layout: "analytics"` outranks the renderer's own default in
+        # `DesignSystem.resolve`, and the browser print sheet would then be
+        # composed into a document weasyprint renders with media="print".
+        paged_medium = layout_key == "print" if paged is None else paged
+
+        cache_key = (theme_key, layout_key, paged_medium)
         cached = cls._cache.get(cache_key)
         if cached is not None:
             return cached
@@ -120,7 +147,9 @@ class DesignSystem:
                 _BASE_CSS,
                 _COMPONENTS_CSS,
                 _TAILWIND_CSS,
+                _EDITORIAL_CSS,
                 layout_css or "",
+                "" if paged_medium else _PRINT_MEDIA_CSS,
             )
             if part
         )

@@ -53,6 +53,14 @@ def master_keys(master_key):
     return {1: master_key}
 
 
+@pytest.fixture
+def keyring(master_keys):
+    """Vault key ring patched into the handler (FEAT-099)."""
+    from navigator_session.vault import KeyRing
+
+    return KeyRing(master_keys, 1)
+
+
 _MISSING = object()  # sentinel for "use default session"
 
 
@@ -146,7 +154,7 @@ class TestSessionVaultHelpers:
 
 class TestPost:
     @pytest.mark.asyncio
-    async def test_post_creates_credential(self, sample_credential, user_id, master_key, master_keys):
+    async def test_post_creates_credential(self, sample_credential, user_id, master_key, master_keys, keyring):
         session: dict = {"user_id": user_id}
         handler = _make_handler(user_id, session=session)
         handler.request.json = AsyncMock(return_value=sample_credential)
@@ -157,8 +165,7 @@ class TestPost:
         mock_db.save_background = MagicMock()
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.post()
 
         assert response.status == 201
@@ -166,7 +173,7 @@ class TestPost:
         assert f"_credentials:{sample_credential['name']}" in session
 
     @pytest.mark.asyncio
-    async def test_post_duplicate_returns_409(self, sample_credential, user_id, master_key, master_keys):
+    async def test_post_duplicate_returns_409(self, sample_credential, user_id, master_key, master_keys, keyring):
         handler = _make_handler(user_id)
         handler.request.json = AsyncMock(return_value=sample_credential)
 
@@ -176,31 +183,28 @@ class TestPost:
         mock_db.close = AsyncMock()
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.post()
 
         assert response.status == 409
 
     @pytest.mark.asyncio
-    async def test_post_invalid_payload_returns_400(self, user_id, master_key, master_keys):
+    async def test_post_invalid_payload_returns_400(self, user_id, master_key, master_keys, keyring):
         handler = _make_handler(user_id)
         # Missing 'driver' field
         handler.request.json = AsyncMock(return_value={"name": "test"})
 
-        with patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+        with patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.post()
 
         assert response.status == 400
 
     @pytest.mark.asyncio
-    async def test_post_invalid_json_returns_400(self, user_id, master_key, master_keys):
+    async def test_post_invalid_json_returns_400(self, user_id, master_key, master_keys, keyring):
         handler = _make_handler(user_id)
         handler.request.json = AsyncMock(side_effect=Exception("bad json"))
 
-        with patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+        with patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.post()
 
         assert response.status == 400
@@ -210,15 +214,14 @@ class TestPost:
         handler = _make_handler(user_id)
         handler.request.json = AsyncMock(return_value=sample_credential)
 
-        with patch("parrot.handlers.credentials._load_vault_keys",
-                   side_effect=RuntimeError("No vault keys")):
+        with patch("parrot.handlers.credentials._vault_keyring", side_effect=RuntimeError("No vault keys")):
             response = await handler.post()
 
         assert response.status == 500
 
     @pytest.mark.asyncio
     async def test_post_calls_save_background_not_write(
-        self, sample_credential, user_id, master_key, master_keys
+        self, sample_credential, user_id, master_key, master_keys, keyring
     ):
         """POST must use save_background (fire-and-forget), not write."""
         handler = _make_handler(user_id)
@@ -230,8 +233,7 @@ class TestPost:
         mock_db.save_background = MagicMock(return_value=MagicMock())
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             await handler.post()
 
         mock_db.save_background.assert_called_once()
@@ -244,13 +246,14 @@ class TestPost:
 
 class TestGet:
     @pytest.mark.asyncio
-    async def test_get_all_returns_dict(self, user_id, master_key, master_keys):
+    async def test_get_all_returns_dict(self, user_id, master_key, master_keys, keyring):
         handler = _make_handler(user_id)
         handler.request.match_info.get = MagicMock(return_value=None)  # no name
 
+        from parrot.handlers.credentials_utils import credential_context
         from parrot.handlers.credentials_utils import encrypt_credential as real_encrypt
-        enc1 = real_encrypt({"driver": "pg", "params": {}}, 1, master_key)
-        enc2 = real_encrypt({"driver": "mysql", "params": {}}, 1, master_key)
+        enc1 = real_encrypt({"driver": "pg", "params": {}}, credential_context(user_id, "pg-cred"), keyring)
+        enc2 = real_encrypt({"driver": "mysql", "params": {}}, credential_context(user_id, "mysql-cred"), keyring)
 
         mock_db_cm = AsyncMock()
         mock_db_cm.__aenter__ = AsyncMock(return_value=mock_db_cm)
@@ -261,8 +264,7 @@ class TestGet:
         ])
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db_cm), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.get()
 
         assert response.status == 200
@@ -270,12 +272,16 @@ class TestGet:
         assert "mysql-cred" in response.data
 
     @pytest.mark.asyncio
-    async def test_get_single_returns_credential(self, user_id, master_key, master_keys):
+    async def test_get_single_returns_credential(self, user_id, master_key, master_keys, keyring):
         handler = _make_handler(user_id)
         handler.request.match_info.get = MagicMock(return_value="my-pg")
 
+        from parrot.handlers.credentials_utils import credential_context
         from parrot.handlers.credentials_utils import encrypt_credential as real_encrypt
-        enc = real_encrypt({"driver": "pg", "params": {"host": "localhost"}}, 1, master_key)
+        enc = real_encrypt(
+            {"driver": "pg", "params": {"host": "localhost"}},
+            credential_context(user_id, "my-pg"), keyring,
+        )
 
         mock_db_cm = AsyncMock()
         mock_db_cm.__aenter__ = AsyncMock(return_value=mock_db_cm)
@@ -283,15 +289,14 @@ class TestGet:
         mock_db_cm.read_one = AsyncMock(return_value={"name": "my-pg", "credential": enc})
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db_cm), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.get()
 
         assert response.status == 200
         assert response.data["name"] == "my-pg"
 
     @pytest.mark.asyncio
-    async def test_get_nonexistent_returns_404(self, user_id, master_key, master_keys):
+    async def test_get_nonexistent_returns_404(self, user_id, master_key, master_keys, keyring):
         handler = _make_handler(user_id)
         handler.request.match_info.get = MagicMock(return_value="no-such-cred")
 
@@ -301,8 +306,7 @@ class TestGet:
         mock_db_cm.read_one = AsyncMock(return_value=None)
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db_cm), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.get()
 
         assert response.status == 404
@@ -314,7 +318,7 @@ class TestGet:
 
 class TestPut:
     @pytest.mark.asyncio
-    async def test_put_updates_credential(self, sample_credential, user_id, master_key, master_keys):
+    async def test_put_updates_credential(self, sample_credential, user_id, master_key, master_keys, keyring):
         session: dict = {"user_id": user_id}
         handler = _make_handler(user_id, session=session)
         handler.request.match_info.get = MagicMock(return_value=sample_credential["name"])
@@ -326,14 +330,13 @@ class TestPut:
         mock_db.save_background = MagicMock()
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.put()
 
         assert response.status == 200
 
     @pytest.mark.asyncio
-    async def test_put_nonexistent_returns_404(self, sample_credential, user_id, master_key, master_keys):
+    async def test_put_nonexistent_returns_404(self, sample_credential, user_id, master_key, master_keys, keyring):
         handler = _make_handler(user_id)
         handler.request.match_info.get = MagicMock(return_value="no-such-cred")
         handler.request.json = AsyncMock(return_value=sample_credential)
@@ -344,8 +347,7 @@ class TestPut:
         mock_db.close = AsyncMock()
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=mock_db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, master_key, master_keys)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=keyring):
             response = await handler.put()
 
         assert response.status == 404
@@ -357,7 +359,7 @@ class TestPut:
 
 class TestDelete:
     @pytest.mark.asyncio
-    async def test_delete_removes_credential(self, user_id, master_key, master_keys):
+    async def test_delete_removes_credential(self, user_id, master_key, master_keys, keyring):
         session: dict = {
             "user_id": user_id,
             "_credentials:my-pg": {"driver": "pg", "params": {}},

@@ -1,0 +1,35 @@
+{
+  "summary_oneline": "CI has 3 currently-red jobs driven by 6 distinct, independently-verified root causes; the P0 resolver issue Copilot found is already fixed on dev.",
+  "mode": "investigation",
+  "overall_confidence": "high",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/bots/flows/crew/crew.py", "symbol": "module import (line 44) / CrewClass.summarize (line ~4159)", "role": "unconditional tqdm import gates all of parrot.bots.flows", "evidence": ["F002"]},
+    {"path": ".github/workflows/ci.yml", "symbol": "test-core job", "role": "syncs bare ai-parrot only, then sweeps root tests/ which needs 15 client satellites + scheduler/oauth2/mcp extras", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "bookstore extra / dependencies", "role": "pymupdf/pymupdf4llm placement contradicts FEAT-451 spec's 'already a core dependency' claim", "evidence": ["F004"]},
+    {"path": ".claude/agents/sdd-worker.md", "symbol": "Fallback: Sequential Loop, step b/c boundary", "role": "missing '### b2) Delegated implementation' section required by FEAT-543 contract tests", "evidence": ["F005"]},
+    {"path": "tests/knowledge/wiki/test_store_migration_v2.py", "symbol": "test_open_v1_db_migrates_to_v2", "role": "hardcodes stale target SCHEMA_VERSION '2' vs. live '3'", "evidence": ["F006"]},
+    {"path": "tests/test_infographic_html.py", "symbol": "BASE_CSS import + assertions", "role": "tests a symbol removed by FEAT-493's DesignSystem.stylesheet() refactor", "evidence": ["F006"]}
+  ],
+  "constraints": [
+    {"statement": "pyproject.toml already restricts uv's lock environments to linux/non-aarch64 specifically because of async-notify's wheel gap; this is the mechanism that already fixed the resolver-unsat issue.", "evidence": ["F001"]},
+    {"statement": "test-wiki-extras / test-wiki-luau-fallback already establish the precedent this fix should follow: one job proves graceful degradation without an extra, a second job installs it and asserts nothing was silently skipped.", "evidence": ["F003"]},
+    {"statement": "TargetedWriterToolkit (FEAT-543/TASK-3090) is a live, tested, documented feature in .claude/commands/sdd-start.md and .agents/skills/sdd-start/SKILL.md; only sdd-worker.md's copy regressed.", "evidence": ["F005"]}
+  ],
+  "hypotheses": [
+    {"id": "H1", "statement": "P0 (async-notify/aarch64 resolver unsat) is already fixed on dev as of commit 6e10be590 (today).", "confidence": "high", "supporting": ["F001"], "contradicting": []},
+    {"id": "H2", "statement": "test-core's mass collection failures are caused by two independent bugs: (a) an unconditional tqdm import in core crew.py, and (b) ci.yml never being updated after FEAT-523 split 15 LLM-client packages out of core.", "confidence": "high", "supporting": ["F002", "F003"], "contradicting": []},
+    {"id": "H3", "statement": "test-wiki-extras' pymupdf failures stem from a genuine mismatch between the FEAT-451 spec (which assumes pymupdf is a core dependency) and pyproject.toml (which only exposes it via the bookstore extra) — needs a spec-time decision, not a unilateral fix.", "confidence": "medium-high", "supporting": ["F004"], "contradicting": []},
+    {"id": "H4", "statement": "test-tool-optimizations' 4 failures are a documentation regression: FEAT-549's Orchestrator Loop rewrite of sdd-worker.md dropped FEAT-543's Delegated-implementation section that its sibling host docs still carry.", "confidence": "high", "supporting": ["F005"], "contradicting": []},
+    {"id": "H5", "statement": "Two additional test-wiki-extras/test-core failures (schema-version literal, BASE_CSS symbol) are ordinary test staleness from later, unrelated features (FEAT-557, FEAT-493) and are fixable without touching source.", "confidence": "high", "supporting": ["F006"], "contradicting": []}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "Should pymupdf/pymupdf4llm become unconditional core dependencies of ai-parrot (matching the FEAT-451 spec's stated assumption), or should wiki PDF ingestion degrade gracefully and the spec's claim be corrected?", "resolves": ["H3"]},
+    {"id": "U2", "question": "Should the new CI coverage for the 15 ai-parrot-client-* satellites be one combined job (sync all + run tests/clients/) or per-provider jobs matching the existing test-tools/test-loaders granularity?", "resolves": ["H2"]},
+    {"id": "U3", "question": "Should the F006c stale-symbol drift bugs (DatabaseAgentToolkit, DatabaseAgent, 'flows' from parrot.bots, FAISSStore) get their own dedicated investigation/task, or be folded into the same spec as F006a/b?", "resolves": []}
+  ],
+  "recommended_next_command": {
+    "command": "/sdd-spec FEAT-568",
+    "rationale": "Six root causes are independently localized with high confidence and are individually small, well-bounded fixes (one lazy-import guard, one new CI job + several importorskip guards, one dependency-placement decision, one doc restoration, two stale-test corrections). This is task decomposition, not architecture exploration."
+  },
+  "budget_status": {"truncated": false, "truncation_reason": null}
+}

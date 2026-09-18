@@ -50,6 +50,8 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from aiohttp import web
+
+from ..core.mime_match import file_type_allowed
 from pydantic import TypeAdapter
 
 from ..core.resolution import find_field_by_uid
@@ -212,8 +214,10 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         part_name = part.name or ""
         if part_name == "file" and file_bytes is None:
             detected_mime = part.headers.get("Content-Type", "application/octet-stream")
-            # MIME validation
-            if allowed_mimes and detected_mime not in allowed_mimes:
+            # `file_type_allowed`, not `detected_mime in allowed_mimes`: the Form
+            # Designer's presets are wildcards (`image/*`), and an exact test
+            # rejects every real file against one.
+            if not file_type_allowed(allowed_mimes, detected_mime, part.filename):
                 raise web.HTTPUnsupportedMediaType(
                     text=f"MIME type {detected_mime!r} is not allowed. " f"Allowed: {allowed_mimes}"
                 )

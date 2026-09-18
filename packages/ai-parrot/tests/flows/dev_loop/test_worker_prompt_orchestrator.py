@@ -12,6 +12,23 @@ TOOLS = [
 ]
 
 
+def _orchestrator_loop(body: str) -> str:
+    """Return just the `## Orchestrator Loop (FEAT-549)` section of the prompt.
+
+    The absence assertions below are scoped to this section rather than to the
+    whole document. FEAT-562 Module 4 restored FEAT-543's `### b2) Delegated
+    implementation` step to the "## Fallback: Sequential Loop" — the branch
+    where this agent implements a task ITSELF, and where delegating patch
+    drafting to `parrot-targeted-writer` (with mandatory hunk review) is the
+    point. TASK-3124 had asserted those strings were absent from the entire
+    body, which silently made the FEAT-543 contract unrestorable; what that
+    test actually means to guard is that the ORCHESTRATOR path dispatches
+    `sdd-coder` seats and never the writer route. Scoping preserves that
+    guarantee without re-breaking `test_sdd_contracts.py`.
+    """
+    return body.split("\n## Orchestrator Loop (FEAT-549)", 1)[1].split("\n## Fallback: Sequential Loop", 1)[0]
+
+
 def _repo_agents_dir() -> Path:
     for parent in Path(__file__).resolve().parents:
         candidate = parent / ".claude" / "agents"
@@ -24,7 +41,7 @@ def test_worker_prompt_has_orchestrator_loop():
     body = load_subagent_definition("sdd-worker")
     assert "## Orchestrator Loop (FEAT-549)" in body
     assert "## Fallback: Sequential Loop" in body
-    assert "writer_generate" not in body
+    assert "writer_generate" not in _orchestrator_loop(body)
     assert "Seats:" in body
     assert "Seat: " in body
 
@@ -36,12 +53,18 @@ def test_worker_prompt_tools_list_mcp_names():
     assert "Agent" in tools_line
 
 
-def test_worker_prompt_no_delegation_contract_step():
-    body = load_subagent_definition("sdd-worker")
-    assert "writer_apply" not in body
-    assert "parrot-targeted-writer" not in body
-    assert "Delegation Contract" not in body
-    assert "### b2)" not in body
+def test_worker_prompt_no_delegation_contract_step_in_the_orchestrator_loop():
+    """The dispatch path uses `sdd-coder` seats — never the targeted writer.
+
+    Scoped to the Orchestrator Loop on purpose: the Fallback loop legitimately
+    carries `### b2)` again (FEAT-562 Module 4 / FEAT-543), which
+    `test_sdd_contracts.py` asserts. See `_orchestrator_loop`.
+    """
+    loop = _orchestrator_loop(load_subagent_definition("sdd-worker"))
+    assert "writer_apply" not in loop
+    assert "parrot-targeted-writer" not in loop
+    assert "Delegation Contract" not in loop
+    assert "### b2)" not in loop
 
 
 def test_worker_prompt_still_has_per_spec_index_wording():
@@ -60,12 +83,18 @@ def test_worker_prompt_has_new_stop_conditions():
     assert "merge_conflict" in stop_section
 
 
+def test_worker_prompt_preserves_read_only_ledger_findings():
+    """Shared-ledger failures must be reported without bypassing the sandbox."""
+    body = load_subagent_definition("sdd-worker")
+    assert "shared ledger is read-only" in body
+    assert "worktree-local" in body
+
+
 def test_orchestrator_loop_describes_background_native_agents():
     """Regression (FEAT-555 incident): the loop must tell the orchestrator that a native `Agent`
     runs in the background, that its result arrives as a notification, that it must never be
     re-dispatched, and that `coder_cleanup` waits for every native task to go through `coder_merge`."""
-    body = load_subagent_definition("sdd-worker")
-    loop = body.split("\n## Orchestrator Loop (FEAT-549)", 1)[1].split("\n## Fallback: Sequential Loop", 1)[0]
+    loop = _orchestrator_loop(load_subagent_definition("sdd-worker"))
     assert "background" in loop
     assert "notification" in loop
     assert "Never call `Agent` again for the same task" in loop

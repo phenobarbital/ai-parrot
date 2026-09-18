@@ -301,22 +301,22 @@ def _install_permissions(root: Path) -> list[str]:
     return actions
 
 
-def _managed_server_names(root: Path) -> list[str]:
-    """Return the `.mcp.json` server names this installer manages.
+def toolkit_server_names(root: Path) -> list[str]:
+    """Return the `parrot-<name>` keys in .mcp.json confirmed managed by us.
 
-    Always includes ``"wikitoolkit"`` (unconditionally reconciled by
-    `_install_mcp_json`, never subject to a foreign-collision check) plus
-    one `parrot-<name>` per ENABLED toolkit section whose *current*
-    `.mcp.json` entry is confirmed ours via `_is_managed_toolkit_entry`.
+    Deliberately EXCLUDES "wikitoolkit": `parrot toolkits` must never authorize or
+    de-authorize the wiki server (FEAT-570 AC5). `_managed_server_names` prepends
+    it for the full-integration path.
 
     A name derived purely from the enabled toolkit config (the pre-FEAT-556
-    behavior) can disagree with what `_install_mcp_json` actually wrote: a
-    foreign `parrot-<name>` entry that collides with an enabled section's
-    name is deliberately left untouched (installer.py:490-496, warning
-    emitted) — approving that name here would silently authorize a
-    third-party server the operator never wrote, with no approval prompt.
-    Must be called AFTER `_install_mcp_json` has reconciled `.mcp.json` so
-    the entry-shape check reflects the final state.
+    behavior) can disagree with what `_install_mcp_json` / `reconcile_toolkit_entries`
+    actually wrote: a foreign `parrot-<name>` entry that collides with an
+    enabled section's name is deliberately left untouched (warning emitted)
+    — approving that name here would silently authorize a third-party
+    server the operator never wrote, with no approval prompt.
+
+    Must be called AFTER `.mcp.json` has been reconciled, so the entry-shape
+    check reflects the final state.
     """
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -329,12 +329,27 @@ def _managed_server_names(root: Path) -> list[str]:
     servers = servers if isinstance(servers, dict) else {}
 
     cfg = load_toolkits_config(root)
-    names = ["wikitoolkit"]
+    names: list[str] = []
     for name, section in sorted(cfg.toolkits.items()):
         key = f"parrot-{name}"
         if section.enabled and _is_managed_toolkit_entry(servers.get(key), root, name):
             names.append(key)
     return names
+
+
+def _managed_server_names(root: Path) -> list[str]:
+    """Return the `.mcp.json` server names this installer manages.
+
+    Always includes ``"wikitoolkit"`` (unconditionally reconciled by
+    `_install_mcp_json`, never subject to a foreign-collision check) plus
+    one `parrot-<name>` per ENABLED toolkit section whose *current*
+    `.mcp.json` entry is confirmed ours via `_is_managed_toolkit_entry`
+    (see :func:`toolkit_server_names`).
+
+    Must be called AFTER `_install_mcp_json` has reconciled `.mcp.json` so
+    the entry-shape check reflects the final state.
+    """
+    return ["wikitoolkit", *toolkit_server_names(root)]
 
 
 def _install_mcp_approval(root: Path) -> str:
@@ -417,6 +432,84 @@ def _uninstall_mcp_approval(root: Path, removed_toolkit_names: Sequence[str] = (
     return f".claude/settings.local.json — {len(to_remove)} MCP server approval(s) removed"
 
 
+def uninstall_toolkit_approvals(root: Path, removed_toolkit_names: Sequence[str]) -> Optional[str]:
+    """Remove exactly `removed_toolkit_names` from `enabledMcpjsonServers`.
+
+    Toolkit-only sibling of `_uninstall_mcp_approval` for `parrot toolkits`
+    uninstall/disable (FEAT-570 TASK-3375 via `hosts.ClaudeAdapter.sync_approvals`).
+    Unlike `_uninstall_mcp_approval` — which always ALSO strips `"wikitoolkit"`
+    because it backs the FULL `parrot claude uninstall` path — this NEVER
+    touches `"wikitoolkit"`: `parrot toolkits` must never de-authorize the wiki
+    server (FEAT-570 AC5; mirrors `toolkit_server_names`'s exclusion above).
+
+    Args:
+        root: Repository root.
+        removed_toolkit_names: The exact `parrot-<name>` keys just removed
+            from `.mcp.json` by the toolkit-only reconcile.
+
+    Returns:
+        An action string, or None when there was nothing to remove.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    try:
+        local = _load_settings(local_path)
+    except RuntimeError:
+        local = None
+    if not isinstance(local, dict):
+        return None
+
+    names = local.get("enabledMcpjsonServers")
+    if not isinstance(names, list):
+        return None
+
+    candidates = set(removed_toolkit_names)
+    to_remove = {n for n in names if n in candidates}
+    if not to_remove:
+        return None
+
+    kept = [n for n in names if n not in to_remove]
+    if kept:
+        local["enabledMcpjsonServers"] = kept
+    else:
+        local.pop("enabledMcpjsonServers", None)
+
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(to_remove)} MCP server approval(s) removed"
+
+
+def install_toolkit_approvals(root: Path) -> Optional[str]:
+    """Merge ONLY toolkit-managed server names into `enabledMcpjsonServers`.
+
+    Toolkit-only sibling of `_install_mcp_approval` for `parrot toolkits`
+    install/enable (FEAT-570). Unlike `_install_mcp_approval` — which merges
+    `_managed_server_names(root)`, and that helper UNCONDITIONALLY prepends
+    `"wikitoolkit"` regardless of whether a wikitoolkit `.mcp.json` entry
+    actually exists (spec §7 Known Risk S3) — this merges `toolkit_server_names(root)`
+    only, so `parrot toolkits` never pre-authorizes a wikitoolkit approval that
+    was never installed (FEAT-570 AC5).
+
+    Must be called AFTER `.mcp.json` has been reconciled, so the entry-shape
+    check reflects the final state (same precondition as `toolkit_server_names`).
+
+    Returns:
+        An action string, or None when nothing needed authorizing.
+    """
+    local_path = root / ".claude" / "settings.local.json"
+    local = _load_settings(local_path) or {}
+    names = local.get("enabledMcpjsonServers")
+    if names is None:
+        names = local["enabledMcpjsonServers"] = []
+    if not isinstance(names, list):
+        raise RuntimeError(f"{local_path}: 'enabledMcpjsonServers' is not a list")
+
+    missing = [n for n in toolkit_server_names(root) if n not in names]
+    if not missing:
+        return None
+    names.extend(missing)
+    _write_settings(local_path, local)
+    return f".claude/settings.local.json — {len(missing)} MCP server(s) authorized ({', '.join(missing)})"
+
+
 def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     """Whether a ``parrot-<name>`` ``.mcp.json`` entry was written by us.
 
@@ -459,6 +552,83 @@ def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool:
     return True
 
 
+def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
+    """Reconcile ONLY the `parrot-<name>` keys of .mcp.json from the toolkit config.
+
+    Never reads or writes the "wikitoolkit" key, and never touches any other
+    foreign key (FEAT-570 AC5). Upserts one entry per ENABLED section, skips a
+    `parrot-<name>` key whose content is not our shape (reported as a warning),
+    and deletes managed entries whose section is disabled or gone.
+
+    Returns:
+        (actions, warnings) — human-readable strings.
+    """
+    path = root / ".mcp.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+    else:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        servers = data["mcpServers"] = {}
+
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    cfg = load_toolkits_config(root)
+    enabled_names = {name for name, section in cfg.toolkits.items() if section.enabled}
+
+    changed = False
+    added: list[str] = []
+    updated: list[str] = []
+    removed: list[str] = []
+    warnings: list[str] = []
+
+    for name in sorted(enabled_names):
+        key = f"parrot-{name}"
+        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name])
+        existing = servers.get(key)
+        if existing == toolkit_entry:
+            continue
+        if existing is not None and not _is_managed_toolkit_entry(existing, root, name):
+            warning = (
+                f".mcp.json — '{key}' already exists and was not written by "
+                "`parrot claude install`; leaving it untouched."
+            )
+            print(f"Warning: {warning}", file=sys.stderr)
+            warnings.append(warning)
+            continue
+        servers[key] = toolkit_entry
+        changed = True
+        (updated if existing is not None else added).append(key)
+
+    for key in [k for k in servers if k != "wikitoolkit" and k.startswith("parrot-")]:
+        name = key[len("parrot-") :]
+        if name in enabled_names:
+            continue
+        if _is_managed_toolkit_entry(servers[key], root, name):
+            del servers[key]
+            changed = True
+            removed.append(key)
+
+    if changed:
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    actions: list[str] = []
+    if added:
+        actions.append(f"{len(added)} toolkit entry(s) added ({', '.join(added)})")
+    if updated:
+        actions.append(f"{len(updated)} toolkit entry(s) updated ({', '.join(updated)})")
+    if removed:
+        actions.append(f"{len(removed)} toolkit entry(s) removed ({', '.join(removed)})")
+    return actions, warnings
+
+
 def _install_mcp_json(root: Path) -> str:
     """Write/refresh the wikitoolkit entry plus one managed entry per
     enabled toolkit section in the project's .mcp.json (FEAT-485).
@@ -467,7 +637,8 @@ def _install_mcp_json(root: Path) -> str:
     may already carry entries for other MCP servers. Reconciliation only
     ever touches the ``"wikitoolkit"`` key (unchanged, byte-identical
     behavior) and managed ``"parrot-<name>"`` keys — see
-    :func:`_is_managed_toolkit_entry` for the detection rule. Any other
+    :func:`_is_managed_toolkit_entry` for the detection rule and
+    :func:`reconcile_toolkit_entries` for the toolkit half. Any other
     entry, and any ``parrot-<name>`` entry that does not match the managed
     shape, is left completely untouched; a colliding foreign
     ``parrot-<name>`` name is reported as a warning and skipped instead of
@@ -498,54 +669,16 @@ def _install_mcp_json(root: Path) -> str:
         servers["wikitoolkit"] = entry
         changed = True
 
-    # --- toolkit reconciliation (FEAT-485) --------------------------------
-    from parrot.mcp.toolkit_config import load_toolkits_config
+    if changed:
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    cfg = load_toolkits_config(root)
-    enabled_names = {name for name, section in cfg.toolkits.items() if section.enabled}
+    # --- toolkit reconciliation (FEAT-485), delegated (FEAT-570) ----------
+    toolkit_actions, _warnings = reconcile_toolkit_entries(root)
 
-    added: list[str] = []
-    updated: list[str] = []
-    removed: list[str] = []
-
-    for name in sorted(enabled_names):
-        key = f"parrot-{name}"
-        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name])
-        existing = servers.get(key)
-        if existing == toolkit_entry:
-            continue
-        if existing is not None and not _is_managed_toolkit_entry(existing, root, name):
-            print(
-                f"Warning: .mcp.json — '{key}' already exists and was not written by "
-                "`parrot claude install`; leaving it untouched.",
-                file=sys.stderr,
-            )
-            continue
-        servers[key] = toolkit_entry
-        changed = True
-        (updated if existing is not None else added).append(key)
-
-    for key in [k for k in servers if k != "wikitoolkit" and k.startswith("parrot-")]:
-        name = key[len("parrot-") :]
-        if name in enabled_names:
-            continue
-        if _is_managed_toolkit_entry(servers[key], root, name):
-            del servers[key]
-            changed = True
-            removed.append(key)
-
-    if not changed:
+    if not changed and not toolkit_actions:
         return f".mcp.json — {wikitoolkit_status}"
 
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-
-    parts = [wikitoolkit_status]
-    if added:
-        parts.append(f"{len(added)} toolkit entry(s) added ({', '.join(added)})")
-    if updated:
-        parts.append(f"{len(updated)} toolkit entry(s) updated ({', '.join(updated)})")
-    if removed:
-        parts.append(f"{len(removed)} toolkit entry(s) removed ({', '.join(removed)})")
+    parts = [wikitoolkit_status, *toolkit_actions]
     return ".mcp.json — " + "; ".join(parts)
 
 
@@ -773,8 +906,10 @@ def install_claude_integration(
     git_hook: bool = True,
     gitignore: bool = True,
     bookstore: bool = True,
-    toolkits: Sequence[str] = (),
     approve_mcp: bool = True,
+    compaction: bool = False,
+    typesafe_api_key: Optional[str] = None,
+    plugin_cli: bool = True,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -785,14 +920,24 @@ def install_claude_integration(
         gitignore: Add ``.parrot/`` to .gitignore.
         bookstore: Install the Bookstore MCP server and skill when an
             indexed library exists (no indexing performed).
-        toolkits: Toolkit template names to seed into
-            `.parrot/mcp-toolkits.yaml` before `.mcp.json` reconciliation.
-            Empty seeds nothing (spec §8 Q1: opt-in).
         approve_mcp: Authorize the managed servers in
             `.claude/settings.local.json` after reconciliation.
+        compaction: Install the ``fast-jev-compaction`` Claude Code plugin
+            wiring (Jev-guided verbatim compaction); see
+            :mod:`parrot.knowledge.wiki.claude_code.compaction`.
+        typesafe_api_key: TypeSafe API key to store in the git-ignored
+            ``.claude/settings.local.json`` for the plugin; ``None`` leaves
+            it to ``TYPESAFE_API_KEY``.
+        plugin_cli: Let the compaction installer also run the ``claude
+            plugin`` CLI when it is on ``PATH``.
 
     Returns:
         Human-readable list of actions performed.
+
+    Note:
+        Seeding `.parrot/mcp-toolkits.yaml` sections no longer happens
+        here — use `parrot toolkits install` (FEAT-570). This command
+        only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
     config = config or load_effective_config(root).config
@@ -815,24 +960,12 @@ def install_claude_integration(
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
     actions.extend(_install_permissions(root))
-    if toolkits:
-        from parrot.mcp.toolkit_seed import seed_toolkit_sections
-
-        seeded = seed_toolkit_sections(root, toolkits)
-        if seeded.created_file:
-            actions.append(".parrot/mcp-toolkits.yaml — created")
-        if seeded.added:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — added {len(seeded.added)} section(s) ({', '.join(seeded.added)})"
-            )
-        if seeded.skipped:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present "
-                f"({', '.join(seeded.skipped)})"
-            )
-        if seeded.unknown:
-            actions.append(f".parrot/mcp-toolkits.yaml — unknown template(s) skipped ({', '.join(seeded.unknown)})")
     actions.append(_install_mcp_json(root))
+
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    if not load_toolkits_config(root).toolkits:
+        actions.append("no local MCP toolkits configured — add them with: parrot toolkits install")
     if approve_mcp:
         actions.append(_install_mcp_approval(root))
     actions.append(_install_slash_command(root))
@@ -849,6 +982,10 @@ def install_claude_integration(
         from .bookstore import install_bookstore
 
         actions.extend(install_bookstore(root))
+    if compaction:
+        from .compaction import install_compaction
+
+        actions.extend(install_compaction(root, api_key=typesafe_api_key, plugin_cli=plugin_cli))
     return actions
 
 
@@ -868,8 +1005,10 @@ def uninstall_claude_integration(root: Path) -> list[str]:
     actions: list[str] = []
 
     from .bookstore import uninstall_bookstore
+    from .compaction import uninstall_compaction
 
     actions.extend(uninstall_bookstore(root))
+    actions.extend(uninstall_compaction(root))
 
     claude_md = root / "CLAUDE.md"
     if claude_md.exists():
@@ -1058,9 +1197,11 @@ def integration_status(root: Path) -> dict[str, Any]:
                 pass
 
     from .bookstore import bookstore_status
+    from .compaction import compaction_status
 
     return {
         **bookstore_status(root),
+        **compaction_status(root),
         "root": str(root),
         "config": config_path(root).exists(),
         "wiki_built": config.is_built(root),

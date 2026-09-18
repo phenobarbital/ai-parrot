@@ -105,7 +105,7 @@ def register_codec(cls: type) -> type:
             f"(existing: {_CODEC_REGISTRY[codec_name]!r}, new: {cls!r})"
         )
     _CODEC_REGISTRY[codec_name] = cls
-    logger.debug("Registered compression codec '%s' -> %s", codec_name, cls)
+    # logger.debug("Registered compression codec '%s' -> %s", codec_name, cls)
     return cls
 
 

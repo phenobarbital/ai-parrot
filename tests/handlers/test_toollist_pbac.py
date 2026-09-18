@@ -68,7 +68,7 @@ class TestToolListPBAC:
         mock_tools = {"tool_a": "path.a", "tool_b": "path.b"}
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
              patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
             await handler.get()
@@ -103,7 +103,7 @@ class TestToolListPBAC:
         mock_tools = {"tool_a": "path.a", "tool_b": "path.b"}
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
              patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
             # Should NOT raise — fail-open on evaluator errors
@@ -126,7 +126,7 @@ class TestToolListPBAC:
         mock_tools = {"tool_a": "path.a", "tool_b": "path.b"}
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
              patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
             await handler.get()

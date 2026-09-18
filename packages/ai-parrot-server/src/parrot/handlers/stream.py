@@ -1,13 +1,66 @@
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Set
 import asyncio
 import logging
+import uuid
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navigator.views import BaseHandler
 from parrot.bots import AbstractBot
 from parrot.models.responses import AIMessage
+from parrot.core.events.lifecycle import (
+    AfterToolCallEvent,
+    BeforeToolCallEvent,
+    ToolCallFailedEvent,
+    get_global_registry,
+)
+from parrot.core.events.lifecycle.turn_scope import in_turn_scope, turn_scope  # provided by TASK-3402
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_event_frame(event: Any, *, turn_id: str, seq: int) -> Dict[str, Any]:
+    """Build the ``tool_event`` SSE frame body for one lifecycle tool event.
+
+    Args:
+        event: ``BeforeToolCallEvent`` | ``AfterToolCallEvent`` | ``ToolCallFailedEvent``.
+        turn_id: The streamed turn this event belongs to.
+        seq: Monotonic per-turn sequence number.
+
+    Returns:
+        ``{"type": "tool_event", "data": {...}}`` per spec §3 Module 10.
+    """
+    data: Dict[str, Any] = {
+        "call_id": event.trace_context.span_id,
+        "tool_name": event.tool_name,
+        "turn_id": turn_id,
+        "seq": seq,
+        "at": event.timestamp.isoformat(),
+    }
+    if isinstance(event, BeforeToolCallEvent):
+        data.update(event="started", args_summary=dict(event.args_summary or {}))
+    elif isinstance(event, AfterToolCallEvent):
+        data.update(
+            event="finished",
+            duration_ms=event.duration_ms,
+            result_status=event.result_status,
+            result_size_bytes=event.result_size_bytes,
+        )
+    else:
+        data.update(
+            event="failed",
+            duration_ms=event.duration_ms,
+            error_type=event.error_type,
+            error_message=event.error_message,
+        )
+    return {"type": "tool_event", "data": data}
+
+
+async def _drain(queue: "asyncio.Queue[Dict[str, Any]]", response: web.StreamResponse) -> None:
+    """Write every queued tool_event frame to ``response`` (non-blocking on an empty queue)."""
+    while not queue.empty():
+        frame = queue.get_nowait()
+        await response.write(f"data: {json_encoder(frame)}\n\n".encode("utf-8"))
+        await response.drain()
 
 
 class StreamHandler(BaseHandler):
@@ -30,6 +83,7 @@ class StreamHandler(BaseHandler):
     doesn't understand the ``Sec-WebSocket-Protocol`` JWT convention WS
     clients without a session cookie rely on.
     """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.active_connections: Set[web.WebSocketResponse] = set()
@@ -37,27 +91,23 @@ class StreamHandler(BaseHandler):
     def _get_botmanager(self, request: web.Request):
         """Retrieve the bot manager from the application context."""
         try:
-            return request.app['bot_manager']
+            return request.app["bot_manager"]
         except KeyError as e:
-            raise web.HTTPInternalServerError(
-                reason="Bot manager not found in application."
-            ) from e
+            raise web.HTTPInternalServerError(reason="Bot manager not found in application.") from e
 
     async def _get_bot(self, request: web.Request) -> AbstractBot:
         """Retrieve the bot instance based on bot_id from the request."""
         bot_manager = self._get_botmanager(request)
-        bot_id = request.match_info.get('bot_id')
+        bot_id = request.match_info.get("bot_id")
         bot = await bot_manager.get_bot(bot_id)
         if bot is None:
-            raise web.HTTPNotFound(
-                reason=f"Bot with ID '{bot_id}' not found."
-            )
+            raise web.HTTPNotFound(reason=f"Bot with ID '{bot_id}' not found.")
         return bot
 
     def _extract_stream_params(self, payload: Dict[str, Any], *extra_ignored_keys: str):
         """Split incoming payload into prompt and kwargs for ask_stream."""
         ignored_keys = {"prompt", *extra_ignored_keys}
-        prompt = payload.get('prompt', '')
+        prompt = payload.get("prompt", "")
         kwargs = {k: v for k, v in payload.items() if k not in ignored_keys}
         return prompt, kwargs
 
@@ -71,42 +121,68 @@ class StreamHandler(BaseHandler):
         bot = await self._get_bot(request)
         response = web.StreamResponse(
             status=200,
-            reason='OK',
+            reason="OK",
             headers={
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-                'X-Accel-Buffering': 'no',  # Disable nginx buffering
-            }
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+            },
         )
         await response.prepare(request)
+        turn_id = str(uuid.uuid4())
+        queue: "asyncio.Queue[Dict[str, Any]]" = asyncio.Queue()
+        seq = {"n": 0}
+        registry = get_global_registry()
+
+        async def _enqueue(event: Any) -> None:
+            seq["n"] += 1
+            queue.put_nowait(_tool_event_frame(event, turn_id=turn_id, seq=seq["n"]))
+
+        predicate = in_turn_scope(turn_id)
+        sub_ids = [
+            registry.subscribe(BeforeToolCallEvent, _enqueue, where=predicate),
+            registry.subscribe(AfterToolCallEvent, _enqueue, where=predicate),
+            registry.subscribe(ToolCallFailedEvent, _enqueue, where=predicate),
+        ]
         try:
             ai_message = None
-            async for chunk in bot.ask_stream(prompt, **ask_kwargs):
-                if isinstance(chunk, AIMessage):
-                    ai_message = chunk
-                    continue
-                sse_data = f"data: {json_encoder({'content': chunk})}\n\n"
-                await response.write(sse_data.encode('utf-8'))
-                await response.drain()
+            with turn_scope(turn_id):
+                async for chunk in bot.ask_stream(prompt, **ask_kwargs):
+                    if isinstance(chunk, AIMessage):
+                        ai_message = chunk
+                        continue
+                    await _drain(queue, response)
+                    sse_data = f"data: {json_encoder({'content': chunk})}\n\n"
+                    await response.write(sse_data.encode("utf-8"))
+                    await response.drain()
+                # BeforeToolCallEvent reaches this subscription through TWO nested
+                # loop.create_task hops (EventRegistry.emit_nowait schedules the tool's
+                # own registry emit(), whose forward-to-global step schedules a second
+                # task), while AfterToolCallEvent/ToolCallFailedEvent need only one. A
+                # tool whose _execute() has no real await of its own never gives the
+                # loop a natural turn between Before/After, so a single sleep(0) can
+                # still miss a ToolStarted right before the terminal [DONE] frame --
+                # matching session.py's TurnRunner._flush_pending (same race, same fix).
+                for _ in range(3):
+                    await asyncio.sleep(0)
+                await _drain(queue, response)
 
             if ai_message is not None:
                 meta_event = f"data: {json_encoder({'type': 'ai_message', 'data': ai_message.to_dict()})}\n\n"
-                await response.write(meta_event.encode('utf-8'))
+                await response.write(meta_event.encode("utf-8"))
                 await response.drain()
             await response.write(b"data: [DONE]\n\n")
             await response.drain()
         except asyncio.CancelledError as e:
-            raise web.HTTPInternalServerError(
-                reason="Client disconnected during streaming."
-            ) from e
+            raise web.HTTPInternalServerError(reason="Client disconnected during streaming.") from e
         except Exception as e:
             logger.error("SSE stream error: %s", e, exc_info=True)
-            await response.write(
-                b"error: Internal streaming error\n\n"
-            )
+            await response.write(b"error: Internal streaming error\n\n")
         finally:
+            for sid in sub_ids:
+                registry.unsubscribe(sid)
             await response.write_eof()
         return response
 
@@ -120,13 +196,13 @@ class StreamHandler(BaseHandler):
         bot = await self._get_bot(request)
         response = web.StreamResponse(
             status=200,
-            reason='OK',
+            reason="OK",
             headers={
-                'Content-Type': 'application/x-ndjson',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-            }
+                "Content-Type": "application/x-ndjson",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            },
         )
         await response.prepare(request)
         try:
@@ -135,33 +211,33 @@ class StreamHandler(BaseHandler):
                 if isinstance(chunk, AIMessage):
                     ai_message = chunk
                     continue
-                line = json_encoder({
-                    'type': 'content',
-                    'data': chunk,
-                    'timestamp': asyncio.get_event_loop().time()
-                }) + '\n'
-                await response.write(line.encode('utf-8'))
+                line = (
+                    json_encoder({"type": "content", "data": chunk, "timestamp": asyncio.get_event_loop().time()})
+                    + "\n"
+                )
+                await response.write(line.encode("utf-8"))
                 await response.drain()
 
             if ai_message is not None:
-                meta_line = json_encoder({
-                    'type': 'ai_message',
-                    'data': ai_message.to_dict(),
-                }) + '\n'
-                await response.write(meta_line.encode('utf-8'))
+                meta_line = (
+                    json_encoder(
+                        {
+                            "type": "ai_message",
+                            "data": ai_message.to_dict(),
+                        }
+                    )
+                    + "\n"
+                )
+                await response.write(meta_line.encode("utf-8"))
                 await response.drain()
-            await response.write(
-                json_encoder({'done': True}).encode('utf-8') + b'\n'
-            )
+            await response.write(json_encoder({"done": True}).encode("utf-8") + b"\n")
             await response.drain()
         except asyncio.CancelledError as e:
-            raise web.HTTPInternalServerError(
-                reason="Client disconnected during streaming."
-            ) from e
+            raise web.HTTPInternalServerError(reason="Client disconnected during streaming.") from e
         except Exception as e:
             logger.error("NDJSON stream error: %s", e, exc_info=True)
-            error_line = json_encoder({'error': 'Internal streaming error'}) + '\n'
-            await response.write(error_line.encode('utf-8'))
+            error_line = json_encoder({"error": "Internal streaming error"}) + "\n"
+            await response.write(error_line.encode("utf-8"))
         finally:
             await response.write_eof()
         return response
@@ -176,14 +252,14 @@ class StreamHandler(BaseHandler):
         bot = await self._get_bot(request)
         response = web.StreamResponse(
             status=200,
-            reason='OK',
+            reason="OK",
             headers={
-                'Content-Type': 'text/plain; charset=utf-8',
-                'Transfer-Encoding': 'chunked',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-            }
+                "Content-Type": "text/plain; charset=utf-8",
+                "Transfer-Encoding": "chunked",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            },
         )
         await response.prepare(request)
         try:
@@ -192,19 +268,15 @@ class StreamHandler(BaseHandler):
                 if isinstance(chunk, AIMessage):
                     ai_message = chunk
                     continue
-                await response.write(chunk.encode('utf-8'))
+                await response.write(chunk.encode("utf-8"))
                 await response.drain()
 
             if ai_message is not None:
-                separator = b'\n\x00'
-                await response.write(
-                    separator + json_encoder(ai_message.to_dict()).encode('utf-8')
-                )
+                separator = b"\n\x00"
+                await response.write(separator + json_encoder(ai_message.to_dict()).encode("utf-8"))
                 await response.drain()
         except asyncio.CancelledError as e:
-            raise web.HTTPInternalServerError(
-                reason="Client disconnected during streaming."
-            ) from e
+            raise web.HTTPInternalServerError(reason="Client disconnected during streaming.") from e
         except Exception as e:
             logger.error("Chunked stream error: %s", e, exc_info=True)
             await response.write(b"\n[ERROR]: Internal streaming error\n")
@@ -221,13 +293,13 @@ class StreamHandler(BaseHandler):
         # the WS handshake — once prepare() runs we can no longer return 401.
         # Client sends: new WebSocket(url, ["jwt", token])
         # Header received: Sec-WebSocket-Protocol: jwt, <token>
-        protocol_header = request.headers.get('Sec-WebSocket-Protocol')
+        protocol_header = request.headers.get("Sec-WebSocket-Protocol")
         ws_protocols: tuple = ()
 
         if protocol_header:
-            parts = [p.strip() for p in protocol_header.split(',') if p.strip()]
-            if 'jwt' in parts:
-                parts.remove('jwt')
+            parts = [p.strip() for p in protocol_header.split(",") if p.strip()]
+            if "jwt" in parts:
+                parts.remove("jwt")
                 if not parts:
                     raise web.HTTPUnauthorized(reason="Missing Token")
                 token = parts[0]
@@ -235,7 +307,7 @@ class StreamHandler(BaseHandler):
                     raise web.HTTPUnauthorized(reason="Invalid or expired Token")
                 # Advertise 'jwt' as the supported subprotocol; aiohttp will
                 # echo it back to the client during the handshake.
-                ws_protocols = ('jwt',)
+                ws_protocols = ("jwt",)
 
         ws = web.WebSocketResponse(
             heartbeat=30.0,  # Send ping every 30s
@@ -248,11 +320,9 @@ class StreamHandler(BaseHandler):
         bot = await self._get_bot(request)
 
         try:
-            await ws.send_json({
-                'type': 'connection',
-                'status': 'connected',
-                'message': 'WebSocket connection established'
-            })
+            await ws.send_json(
+                {"type": "connection", "status": "connected", "message": "WebSocket connection established"}
+            )
 
             async for msg in ws:
                 if msg.type == web.WSMsgType.TEXT:
@@ -261,17 +331,12 @@ class StreamHandler(BaseHandler):
                         data = json_decoder(msg.data)
                         await self._handle_message(ws, data, bot, request)
                     except Exception:
-                        await ws.send_json({
-                            'type': 'error',
-                            'message': 'Invalid JSON'
-                        })
+                        await ws.send_json({"type": "error", "message": "Invalid JSON"})
                 elif msg.type == web.WSMsgType.ERROR:
                     # Handle errors
                     self.logger.error("WebSocket error: %s", ws.exception())
         except Exception as e:
-            raise web.HTTPInternalServerError(
-                reason="Error occurred during WebSocket communication."
-            ) from e
+            raise web.HTTPInternalServerError(reason="Error occurred during WebSocket communication.") from e
         finally:
             self.active_connections.discard(ws)
         return ws
@@ -286,19 +351,13 @@ class StreamHandler(BaseHandler):
         """
         if not token:
             return False
-        auth = request.app.get('auth')
+        auth = request.app.get("auth")
         if auth is None:
-            self.logger.warning(
-                "navigator-auth is not registered on this app — "
-                "cannot validate WebSocket token."
-            )
+            self.logger.warning("navigator-auth is not registered on this app — " "cannot validate WebSocket token.")
             return False
-        idp = getattr(auth, '_idp', None)
-        if idp is None or not hasattr(idp, 'decode_token'):
-            self.logger.warning(
-                "navigator-auth IdP missing decode_token — "
-                "cannot validate WebSocket token."
-            )
+        idp = getattr(auth, "_idp", None)
+        if idp is None or not hasattr(idp, "decode_token"):
+            self.logger.warning("navigator-auth IdP missing decode_token — " "cannot validate WebSocket token.")
             return False
         try:
             _, payload = idp.decode_token(code=token)
@@ -346,19 +405,15 @@ class StreamHandler(BaseHandler):
             The downstream handler's response.
         """
         if (
-            request.method == 'GET'
-            and request.path.endswith('/stream/ws')
-            and 'Sec-WebSocket-Protocol' in request.headers
+            request.method == "GET"
+            and request.path.endswith("/stream/ws")
+            and "Sec-WebSocket-Protocol" in request.headers
         ):
-            parts = [
-                p.strip()
-                for p in request.headers['Sec-WebSocket-Protocol'].split(',')
-                if p.strip()
-            ]
-            if 'jwt' in parts:
-                parts.remove('jwt')
+            parts = [p.strip() for p in request.headers["Sec-WebSocket-Protocol"].split(",") if p.strip()]
+            if "jwt" in parts:
+                parts.remove("jwt")
                 if parts and await self._validate_token(request, parts[0]):
-                    request['authenticated'] = True
+                    request["authenticated"] = True
         return await handler(request)
 
     async def _handle_message(
@@ -382,58 +437,41 @@ class StreamHandler(BaseHandler):
             bot: The AbstractBot instance bound to this agent session.
             request: The originating aiohttp request (carries app context).
         """
-        msg_type = data.get('type')
-        if msg_type == 'auth':
-            auth_header = data.get('authorization', '')
-            token = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+        msg_type = data.get("type")
+        if msg_type == "auth":
+            auth_header = data.get("authorization", "")
+            token = auth_header.replace("Bearer ", "") if auth_header.startswith("Bearer ") else None
 
             if await self._validate_token(request, token):
                 ws._authenticated = True
-                await ws.send_json({'type': 'auth_success', 'message': 'Authentication successful'})
+                await ws.send_json({"type": "auth_success", "message": "Authentication successful"})
             else:
-                await ws.send_json({'type': 'auth_error', 'message': 'Invalid or expired token'})
+                await ws.send_json({"type": "auth_error", "message": "Invalid or expired token"})
             return
 
-        if msg_type == 'stream_request':
-            prompt, ask_kwargs = self._extract_stream_params(data, 'type')
+        if msg_type == "stream_request":
+            prompt, ask_kwargs = self._extract_stream_params(data, "type")
 
             # Send acknowledgment
-            await ws.send_json({
-                'type': 'stream_start',
-                'prompt': prompt
-            })
+            await ws.send_json({"type": "stream_start", "prompt": prompt})
 
             try:
                 async for chunk in bot.ask_stream(prompt, **ask_kwargs):
                     if isinstance(chunk, AIMessage):
-                        await ws.send_json({
-                            'type': 'ai_message',
-                            'data': chunk.to_dict()
-                        })
+                        await ws.send_json({"type": "ai_message", "data": chunk.to_dict()})
                         continue
-                    await ws.send_json({
-                        'type': 'content',
-                        'data': chunk
-                    })
+                    await ws.send_json({"type": "content", "data": chunk})
 
-                await ws.send_json({
-                    'type': 'stream_complete'
-                })
+                await ws.send_json({"type": "stream_complete"})
 
             except Exception as e:
-                await ws.send_json({
-                    'type': 'error',
-                    'message': str(e)
-                })
+                await ws.send_json({"type": "error", "message": str(e)})
 
-        elif msg_type == 'ping':
-            await ws.send_json({'type': 'pong'})
+        elif msg_type == "ping":
+            await ws.send_json({"type": "pong"})
 
         else:
-            await ws.send_json({
-                'type': 'error',
-                'message': f'Unknown message type: {msg_type}'
-            })
+            await ws.send_json({"type": "error", "message": f"Unknown message type: {msg_type}"})
 
     async def broadcast(self, message: dict):
         """Broadcast message to all connected clients"""
@@ -464,13 +502,13 @@ class StreamHandler(BaseHandler):
         the route is no longer excluded — see that method's docstring.
         """
         # sse endpoint
-        app.router.add_post('/bots/{bot_id}/stream/sse', self.stream_sse)
+        app.router.add_post("/bots/{bot_id}/stream/sse", self.stream_sse)
         # ndjson endpoint
-        app.router.add_post('/bots/{bot_id}/stream/ndjson', self.stream_ndjson)
+        app.router.add_post("/bots/{bot_id}/stream/ndjson", self.stream_ndjson)
         # chunked endpoint
-        app.router.add_post('/bots/{bot_id}/stream/chunked', self.stream_chunked)
+        app.router.add_post("/bots/{bot_id}/stream/chunked", self.stream_chunked)
         # websocket endpoint
-        app.router.add_get('/bots/{bot_id}/stream/ws', self.stream_websocket)
+        app.router.add_get("/bots/{bot_id}/stream/ws", self.stream_websocket)
 
         # Code-review fix: insert at index 0 so this always runs before
         # navigator-auth's auth_middleware, regardless of whether

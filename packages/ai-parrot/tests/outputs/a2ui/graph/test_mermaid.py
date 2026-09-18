@@ -176,6 +176,14 @@ class TestMermaidRejectsUnsupportedConstruct:
             from_mermaid(text)
         assert exc.value.line_no == 4
 
+    def test_mermaid_rejects_html_comment_end_bang_sequence(self):
+        """The unsupported HTML comment terminator cannot be parsed as an edge."""
+        text = "flowchart TB\nn1[A]\nn2[B]\nn1 --!> n2\n"
+        with pytest.raises(MermaidCodecError) as exc:
+            from_mermaid(text)
+        assert exc.value.line_no == 4
+        assert exc.value.reason == "unrecognized flowchart statement"
+
 
 class TestMermaidIgnoresCommentsAndBlankLines:
     def test_mermaid_ignores_comments_and_blank_lines(self):

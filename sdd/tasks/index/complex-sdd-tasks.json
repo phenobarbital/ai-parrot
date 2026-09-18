@@ -1,0 +1,222 @@
+{
+  "feature": "complex-sdd-tasks",
+  "feature_id": "FEAT-561",
+  "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "parallel_semantics": "exclusive",
+  "created_at": "2026-09-16T00:01:34+00:00",
+  "completed_at": "2026-09-16T10:30:03+00:00",
+  "tasks": [
+    {
+      "id": "TASK-3286",
+      "slug": "complexity-models",
+      "title": "Typed complexity evidence, policy and response contracts",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root deliverable creates the types consumed by TASK-3287; finishes shared models.py/test_models.py edits before integration tasks.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T00:26:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3286-complexity-models.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3287",
+      "slug": "complexity-contract-evaluator",
+      "title": "Parse task contracts and evaluate deterministic complexity",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3286"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3286 for its exact Pydantic schemas. Creates only complexity.py/test_complexity.py; collectors, roster and authoring can fan out after this task.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T00:37:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3287-complexity-contract-evaluator.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3288",
+      "slug": "complexity-metric-collectors",
+      "title": "Collect bounded Ruff, wiki, scope and dependency evidence",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3287"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3287 parser/evaluator and TASK-3286 types. Parallel with TASK-3289 roster and TASK-3293 authoring: all target files are disjoint.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T00:56:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3288-complexity-metric-collectors.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3289",
+      "slug": "complexity-roster-routing",
+      "title": "Constrain chunk assignment and retries by measured eligibility",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3287"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3287 classification semantics and upstream models. Parallel with TASK-3288 and TASK-3293; only owns roster.py/test_roster.py.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T00:56:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3289-complexity-roster-routing.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3290",
+      "slug": "complexity-plan-audit",
+      "title": "Plan tasks from persisted assessments and validate plan snapshots",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3288",
+        "TASK-3289"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Fan-in from TASK-3288 collectors and TASK-3289 assignment. Begins ordered engine.py edits; TASK-3291 must wait. Shared fixture changes land before dispatch/regression changes.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T01:36:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3290-complexity-plan-audit.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3291",
+      "slug": "complexity-dispatch-admission",
+      "title": "Enforce complexity restrictions at every actual coder attempt",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3290"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3290 helpers and fixtures; serializes engine.py and test_engine_plan_merge.py edits. Toolkit/prompt work consumes the final admission behavior.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T01:51:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3291-complexity-dispatch-admission.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3292",
+      "slug": "complexity-mcp-policy",
+      "title": "Expose complexity policy and diagnostics through the existing MCP surface",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3291"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3291 final engine behavior for adapter integration tests; owns toolkit.py/test_toolkit.py only.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T02:00:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3292-complexity-mcp-policy.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3293",
+      "slug": "complexity-task-authoring",
+      "title": "Emit measurable task contracts in both SDD authoring hosts",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3287"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3287 parser schema. Parallel with TASK-3288/TASK-3289 and subsequent engine tasks because its three documentation targets are disjoint.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T01:01:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3293-complexity-task-authoring.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3294",
+      "slug": "complexity-worker-policy",
+      "title": "Apply measured routing in worker prompt twins and operator configuration",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3292",
+        "TASK-3293"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3292 actual MCP fields and TASK-3293 authoring protocol; edits prompt twins/example/docs only.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T02:17:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3294-complexity-worker-policy.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3295",
+      "slug": "complexity-integration-regressions",
+      "title": "Verify end-to-end routing, bypass prevention and all acceptance criteria",
+      "feature_id": "FEAT-561",
+      "feature": "complex-sdd-tasks",
+      "spec": "sdd/specs/complex-sdd-tasks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3294"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Final gate depends on TASK-3294 final prompts/config and transitively every runtime task plus TASK-3293 authoring. All shared test-file edits are ordered after their owning implementation tasks.",
+      "assigned_to": null,
+      "started_at": "2026-09-16T00:12:22+00:00",
+      "completed_at": "2026-09-16T02:44:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3295-complexity-integration-regressions.md",
+      "verification": "verified"
+    }
+  ]
+}

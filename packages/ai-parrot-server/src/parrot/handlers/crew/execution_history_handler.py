@@ -112,7 +112,14 @@ class CrewExecutionHistoryHandler(BaseView):
             The authenticated user id, or ``None`` if unavailable.
         """
         try:
-            session = await self.session()
+            # ``@user_session()`` replaces the ``BaseView.session()`` method
+            # with the resolved session *object* on the instance; calling it
+            # would raise and silently drop the authenticated identity
+            # (letting a client-supplied ``user_id`` win). Only call it when
+            # it is still the undecorated method.
+            session = self.session
+            if callable(session):
+                session = await session()
             if not session:
                 return None
             return await self.get_userid(session)

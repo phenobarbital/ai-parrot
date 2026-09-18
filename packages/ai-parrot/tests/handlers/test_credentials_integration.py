@@ -35,6 +35,13 @@ USER_B_ID = "user-bbb-222"
 MASTER_KEY = os.urandom(32)
 MASTER_KEYS = {1: MASTER_KEY}
 
+
+def _keyring():
+    """Vault key ring used by the patched handler (FEAT-099)."""
+    from navigator_session.vault import KeyRing
+
+    return KeyRing(MASTER_KEYS, 1)
+
 SESSION_A: dict[str, Any] = {"user_id": USER_A_ID}
 SESSION_B: dict[str, Any] = {"user_id": USER_B_ID}
 
@@ -49,9 +56,11 @@ SAMPLE_CREDENTIAL = {
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_encrypted(cred_dict: dict) -> str:
-    """Produce a real encrypted string for fixture data."""
-    return encrypt_credential(cred_dict, key_id=1, master_key=MASTER_KEY)
+def _make_encrypted(cred_dict: dict, user_id: str, name: str) -> str:
+    """Produce a real encrypted string bound to (user_id, name) for fixtures."""
+    from parrot.security.credentials_utils import credential_context
+
+    return encrypt_credential(cred_dict, credential_context(user_id, name), _keyring())
 
 
 def _inject_session(request: web.Request, session: dict) -> None:
@@ -148,8 +157,7 @@ class TestCredentialsCRUDLifecycle:
         session = dict(SESSION_A)
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
 
             # Build handler manually (bypassing aiohttp dispatch)
             from parrot.handlers.credentials import CredentialsHandler
@@ -218,8 +226,7 @@ class TestCredentialsPerUserIsolation:
         cred = {"name": "shared-name", "driver": "pg", "params": {}}
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
 
             # User A creates credential
             ha = _make_test_handler(session_a, db)
@@ -251,17 +258,16 @@ class TestCredentialsPerUserIsolation:
         db._docs.append({
             "user_id": USER_A_ID,
             "name": "cred-a",
-            "credential": _make_encrypted(cred_a),
+            "credential": _make_encrypted(cred_a, USER_A_ID, "cred-a"),
         })
         db._docs.append({
             "user_id": USER_B_ID,
             "name": "cred-b",
-            "credential": _make_encrypted(cred_b),
+            "credential": _make_encrypted(cred_b, USER_B_ID, "cred-b"),
         })
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
 
             # User A lists credentials
             handler = _make_test_handler(dict(SESSION_A), db)
@@ -284,8 +290,7 @@ class TestCredentialsErrorCases:
         cred = {"name": "dup-test", "driver": "pg", "params": {}}
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
 
             # First POST — should succeed
             h1 = _make_test_handler(session, db)
@@ -307,8 +312,7 @@ class TestCredentialsErrorCases:
         db = _FakeDB()
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(dict(SESSION_A), db)
             handler.request.match_info.get = MagicMock(return_value="nope")
             resp = await handler.get()
@@ -320,8 +324,7 @@ class TestCredentialsErrorCases:
         db = _FakeDB()
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(dict(SESSION_A), db)
             handler.request.json = AsyncMock(return_value={"name": "x"})  # missing driver
             handler.request.match_info.get = MagicMock(return_value=None)
@@ -334,8 +337,7 @@ class TestCredentialsErrorCases:
         db = _FakeDB()
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(dict(SESSION_A), db)
             handler.request.match_info.get = MagicMock(return_value="no-such")
             handler.request.json = AsyncMock(return_value=SAMPLE_CREDENTIAL)
@@ -364,8 +366,7 @@ class TestFireAndForget:
         session = dict(SESSION_A)
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(session, db)
             handler.request.json = AsyncMock(return_value=SAMPLE_CREDENTIAL)
             handler.request.match_info.get = MagicMock(return_value=None)
@@ -392,8 +393,7 @@ class TestFireAndForget:
         db.save_background = slow_save_background
 
         with patch("parrot.handlers.credentials.DocumentDb", return_value=db), \
-             patch("parrot.handlers.credentials._load_vault_keys",
-                   return_value=(1, MASTER_KEY, MASTER_KEYS)):
+             patch("parrot.handlers.credentials._vault_keyring", return_value=_keyring()):
             handler = _make_test_handler(session, db)
             handler.request.json = AsyncMock(return_value=SAMPLE_CREDENTIAL)
             handler.request.match_info.get = MagicMock(return_value=None)

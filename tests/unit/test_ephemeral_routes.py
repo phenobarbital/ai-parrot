@@ -12,6 +12,7 @@ they inspect the router's URL map directly.
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -50,7 +51,7 @@ def _parrot_source(relative: str) -> Path:
         if _candidate.is_file():
             return _candidate
     raise FileNotFoundError(
-        f"{{relative!r}} not found under any packages/*/src in the workspace"
+        f"{relative!r} not found under any packages/*/src in the workspace"
     )
 
 
@@ -66,6 +67,17 @@ def _load_direct(module_name: str, rel_path: str):
     sys.modules[module_name] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+def _quoted_route_pos(source: str, route: str) -> int:
+    """Return the offset of *route* as a complete string literal in *source*.
+
+    Matches either quote style (manager.py is black-formatted, so literals use
+    double quotes) and requires the closing quote, so ``/…/{chatbot_id}`` does
+    not match ``/…/{chatbot_id}/status``. Returns ``-1`` when absent.
+    """
+    match = re.search(r"""(["'])""" + re.escape(route) + r"\1", source)
+    return match.start() if match else -1
 
 
 class TestRouteRegistration:
@@ -117,8 +129,8 @@ class TestRouteRegistration:
         manager_src = (
             _SRC / "parrot" / "manager" / "manager.py"
         ).read_text()
-        assert "'/api/v1/user_agents'" in manager_src
-        assert "'/api/v1/user_agents/{chatbot_id}'" in manager_src
+        assert _quoted_route_pos(manager_src, "/api/v1/user_agents") != -1
+        assert _quoted_route_pos(manager_src, "/api/v1/user_agents/{chatbot_id}") != -1
 
     def test_handler_imports_in_manager_source(self):
         """manager.py imports EphemeralUserAgentHandler and ToolCatalogHandler."""
@@ -140,8 +152,8 @@ class TestRouteRegistration:
         ).read_text()
 
         # Find positions
-        status_pos = manager_src.find("/api/v1/agents/user/{chatbot_id}/status")
-        bare_pos = manager_src.find("'/api/v1/agents/user/{chatbot_id}'")
+        status_pos = _quoted_route_pos(manager_src, "/api/v1/agents/user/{chatbot_id}/status")
+        bare_pos = _quoted_route_pos(manager_src, "/api/v1/agents/user/{chatbot_id}")
 
         assert status_pos != -1, "Status route not found in manager.py"
         assert bare_pos != -1, "Bare chatbot_id route not found in manager.py"

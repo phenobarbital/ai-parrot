@@ -7,7 +7,7 @@ name = "ai-parrot-integrations"
 dynamic = ["version"]
 description = "Messaging channel integrations for AI-Parrot (Slack, Telegram, MS Teams, WhatsApp, Matrix, Voice)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = "MIT"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}

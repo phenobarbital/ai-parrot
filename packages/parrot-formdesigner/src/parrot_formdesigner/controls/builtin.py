@@ -191,7 +191,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     },
     FieldType.IMAGE: {
         "label": "Image",
-        "description": "Image upload.",
+        "description": "Upload one image.",
         "category": "media",
         "icon": "image",
         "render_hint": "upload",
@@ -323,8 +323,11 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supported_operations": ["copy", "lookup", "reload_options"],
     },
     FieldType.TRANSFER_LIST: {
-        "label": "Transfer List",
-        "description": "Dual-list widget to move items between available and selected.",
+        "label": "Two-List Picker",
+        "description": (
+            "Pick several items by moving them between two side-by-side lists, "
+            "available and selected. Suits long lists of choices."
+        ),
         "category": "selection",
         "icon": "transfer",
         "render_hint": "transfer-list",
@@ -472,8 +475,11 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supported_operations": ["copy", "lookup", "reload_options"],
     },
     FieldType.MASKED: {
-        "label": "Masked Input",
-        "description": "Text input rendered with an input mask (raw or masked, per config).",
+        "label": "Fixed-Format Text",
+        "description": (
+            "Text that must follow a fixed format you define — a phone number, "
+            "an ID, a postcode. The mask guides typing and rejects what does not fit."
+        ),
         "category": "basic",
         "icon": "masked",
         "render_hint": "input",
@@ -520,8 +526,11 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supported_operations": _TEXT_OPERATIONS,
     },
     FieldType.TREE_SELECT: {
-        "label": "Tree Select",
-        "description": "Hierarchical picker; single mode yields the node value, multi mode a list.",
+        "label": "Nested Picker",
+        "description": (
+            "Pick from a hierarchy — a category and the choices under it — "
+            "instead of a flat list. Single mode yields one node, multi mode a list."
+        ),
         "category": "selection",
         "icon": "tree",
         "render_hint": "select",
@@ -560,7 +569,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     },
     FieldType.IMAGE_DROPZONE: {
         "label": "Image Dropzone",
-        "description": "Drag-and-drop image upload; a single file or a list of files.",
+        "description": "Upload one or several images.",
         "category": "media",
         "icon": "image-dropzone",
         "render_hint": "upload",

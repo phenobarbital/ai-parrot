@@ -1,0 +1,51 @@
+{
+  "feature": "codex-dispatch-stdin-isolation",
+  "feature_id": "codex-dispatch-stdin-isolation",
+  "spec": "sdd/specs/codex-dispatch-stdin-isolation.spec.md",
+  "type": "hotfix",
+  "base_branch": "main",
+  "created_at": "2026-09-16",
+  "completed_at": "2026-09-18T05:52:48+00:00",
+  "parallel_semantics": "exclusive",
+  "identity_kind": "user-authorized-slug",
+  "tasks": [
+    {
+      "id": "HOTFIX-codex-dispatch-stdin-isolation-1",
+      "slug": "isolate-input-and-bound-lifecycle",
+      "title": "Isolate Codex input and bound subprocess diagnostics",
+      "feature_id": "codex-dispatch-stdin-isolation",
+      "feature": "codex-dispatch-stdin-isolation",
+      "spec": "sdd/specs/codex-dispatch-stdin-isolation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent production module; no shared resource mutation outside its declared file.",
+      "assigned_to": null,
+      "started_at": "2026-09-15T22:16:52+00:00",
+      "completed_at": "2026-09-15T22:16:52+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-codex-dispatch-stdin-isolation-1-isolate-input-and-bound-lifecycle.md"
+    },
+    {
+      "id": "HOTFIX-codex-dispatch-stdin-isolation-2",
+      "slug": "offline-regressions",
+      "title": "Verify stdin EOF and timeout lifecycle offline",
+      "feature_id": "codex-dispatch-stdin-isolation",
+      "feature": "codex-dispatch-stdin-isolation",
+      "spec": "sdd/specs/codex-dispatch-stdin-isolation.spec.md",
+      "status": "done-with-issues",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "HOTFIX-codex-dispatch-stdin-isolation-1"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Tests the new stdin isolation, stderr tail and cleanup behavior from HOTFIX-codex-dispatch-stdin-isolation-1 (packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/codex.py).",
+      "assigned_to": null,
+      "started_at": "2026-09-15T23:05:44+00:00",
+      "completed_at": "2026-09-15T23:05:44+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-codex-dispatch-stdin-isolation-2-offline-regressions.md"
+    }
+  ]
+}

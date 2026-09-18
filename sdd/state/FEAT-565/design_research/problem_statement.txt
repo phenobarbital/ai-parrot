@@ -1,0 +1,66 @@
+We need an **autonomous** script — `examples/planogram/planogram_check.py` — that
+takes the photos of one store fixture plus a planogram definition and returns a
+structured JSON with detected products, names, prices, empty slots, occupancy by
+brand, and a planogram-compliance score (overall and per shelf). No human review
+step, no model training.
+
+The intended procedure (from the request) has five steps:
+
+1. Detect prominent, easy-to-find shapes that are later confirmed as **price tags**.
+2. Use the tags as **anchors** to derive product areas and occupancy; OCR the tag
+   for price (and any other readable feature).
+3. **Compare** every detected product with the planogram definition; when a
+   product cannot be read, **infer** it from the planogram reference.
+4. Compute occupancy, empty areas and **share of occupation by brand**; brand +
+   product identification is done by a vision LLM that is constrained to the
+   detected areas (photo + JSON of areas) so it cannot report products outside them.
+5. Compare the composed ("as-observed") planogram with the definition and **score** it.
+
+Two assets already exist and both stop short of this goal:
+
+- `white_label_detector/detect_price_labels.py` solves step 1 well — on
+  `image_01` it finds **56 tag candidates in 5 consistent rows** plus 6
+  unassigned — but by design does no OCR, no product recognition, no scoring.
+- `inkcheck/` implements steps 1, 2 and 5 but **its autonomous mode produces a
+  0 % result**. Verified in `results/auto-run2/report.json`: 117 regions
+  processed, `unmapped_regions: 117`, `status_counts: {"unknown": 104}`,
+  `occupancy_coverage: 0.0`. Two root causes:
+  1. **No registration.** `Region.facing_id` is only ever set by the manual
+     `review.html` editor; `compare()` ignores observations without a reviewed
+     `facing_id`, so an unattended run can never score a single facing.
+  2. **Per-crop identification with a 1.6 B local model is too weak**: 94 of 117
+     detections graded `low`; `catalog.resolve()` deliberately refuses to use
+     shelf expectations, so nothing is ever inferred (the opposite of step 3).
+
+The gap this feature closes is therefore **automatic registration + planogram-aware
+identification + inference + scoring**, on top of the tag detector that already works.
+
+**Who is affected**: developers evaluating a label-first compliance algorithm as
+an alternative to the pure-LLM `parrot_pipelines.planogram` pipeline; downstream,
+field-merchandising users who get compliance from raw store-visit photos.
+
+### Facts established during research (they shape every option)
+
+- **Fixture/photo geometry.** Tags sit on the shelf edge *below* their products.
+  `image_01` (4032×3024) shows 5 tag rows; the 6th (bottom) shelf is visible —
+  Brother boxes — but **its tags are out of frame**. The planogram has 6 shelves.
+- **Tag crops are small**: ~200×110 px at full resolution. The large dollar
+  amount is legible ($68, $43, $47); the product-name line and the QR code are
+  **not** readable. Tag OCR realistically yields **price only** — product
+  identity must come from the package.
+- **Local OCR probe** (RapidOCR 3.9.2, 4× bicubic upscale, all 56 crops of
+  `image_01`): digits found in **40/56 crops (71 %)**, 33 s on CPU. Whole
+  dollars are right, but the superscript cents are garbled (`'59"`, `45%`,
+  `54"`) — the VLM in inkcheck read the same tag as `$45.99`. So local OCR is a
+  good first pass for dollars; cents and the remaining ~29 % need the LLM fallback.
+- **The planogram identifies products by manufacturer part number**
+  (`C2P04AN#140`, `T212XL120-S`), with `brand`, `segment`, `slot`, `facings`,
+  `confidence`, `read_method`, `notes`. It has **no consumer-facing name**
+  ("HP 62 Black"), **no price**, **no physical width**. Packages show the
+  consumer name, not the part number — an identity bridge is required.
+  40 of 102 positions are `read_method: inferred` (the reference itself is a draft).
+- **Brand sequences alone cannot register a photo**: shelves 1–5 all start with
+  9 HP positions in the left segment. Registration needs vertical order,
+  product-family evidence (60/61/62/64/67/902/910…), and the HP→Epson/Canon
+  segment boundary.
+- The two photos in `images/` **overlap** and neither covers the whole 8 ft gondola.

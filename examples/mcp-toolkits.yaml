@@ -1,21 +1,24 @@
-# examples/mcp-toolkits.yaml — annotated example for FEAT-485
-# "Expose Toolkits as Local MCP".
+# examples/mcp-toolkits.yaml — annotated example for FEAT-485/FEAT-570
+# "Expose Toolkits as Local MCP" / "parrot toolkits" installer.
 #
 # Copy the sections you need into your project's OWN
 # `.parrot/mcp-toolkits.yaml` (relative to the directory the MCP host —
 # Claude Code, Codex — starts `parrot mcp-local <name>` in). This file is
-# NOT read automatically; it only documents the schema and shows how to
-# override the three zero-config built-ins (`scraping`, `browsing`,
-# `memory`) and how to add an arbitrary toolkit of your own.
+# NOT read automatically; it only documents the schema and shows the
+# packaged toolkit templates (`scraping`, `browsing`, `memory` — normally
+# seeded via `parrot toolkits install <name>`, reproduced here explicitly)
+# plus how to add an arbitrary toolkit of your own.
+#
+# FEAT-570 hard cut: NOTHING resolves implicitly. A name is only
+# resolvable if it is declared as a section below (or in your own copy).
 #
 # See docs/mcp-local-toolkits.md for the full reference and a
 # "trust note" you should read before pointing `class:` at code you did
 # not write.
 
 toolkits:
-  # --- built-ins (work with NO config file at all) ------------------------
-  # Listing a built-in name here REPLACES its defaults wholesale — kwargs
-  # are not merged with the built-in's kwargs, they are overwritten.
+  # --- packaged toolkit templates (declared explicitly here; nothing ------
+  # --- resolves unless a section like this exists in YOUR config file) ----
 
   scraping:
     class: parrot_tools.scraping.toolkit.WebScrapingToolkit
@@ -68,12 +71,12 @@ toolkits:
   #   env:
   #     MY_TOOLKIT_API_KEY: "${MY_TOOLKIT_API_KEY}"
 
-  # --- disabling a built-in without deleting it ----------------------------
+  # --- disabling a section without deleting it -----------------------------
   # `enabled: false` keeps the section around for inspection (`parrot
   # mcp-local --list` still shows it, with "disabled" state) and hides it
-  # from `parrot claude install` / `parrot codex install`'s managed
-  # entries. It does NOT block a direct `parrot mcp-local <name>` — the
-  # installers are what respect `enabled`, not the serve path itself.
+  # from `parrot toolkits install/enable`'s managed host entries. It does
+  # NOT block a direct `parrot mcp-local <name>` — `parrot toolkits` is
+  # what respects `enabled`, not the serve path itself.
 
   # browsing:
   #   class: parrot_tools.browsing.toolkit.WebBrowsingToolkit

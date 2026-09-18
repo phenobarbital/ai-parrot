@@ -67,9 +67,17 @@ def _get_allowed_origins() -> List[str]:
 class IntegrationsService:
     """Orchestrates OAuth2 provider registry, persistence, and PBAC checks.
 
-    All public methods are coroutines.  The service is stateless — instantiate
-    once per request or once per application lifetime.
+    All public methods are coroutines. Instantiate once per request: the
+    service memoizes the ``VaultTokenSync`` used to probe stored tokens, so one
+    listing loads each user's vault only once.
+
+    Args:
+        vault_token_sync: Optional pre-built token reader (tests / callers that
+            already hold one).
     """
+
+    def __init__(self, vault_token_sync: Any = None) -> None:
+        self._vault_token_sync = vault_token_sync
 
     async def list_for_user(
         self,
@@ -119,12 +127,15 @@ class IntegrationsService:
                 continue
 
             integration_row = await get_users_integration(user_id, provider.provider_id)
+            status = "disconnected"
+            if integration_row is not None:
+                status = await self._token_status(user_id, provider.provider_id, request)
             descriptor = IntegrationDescriptor(
                 provider=provider.provider_id,
                 display_name=provider.display_name,
                 icon=provider.icon,
                 default_scopes=provider.default_scopes,
-                connected=integration_row is not None,
+                status=status,
                 enabled_on_agent=provider.provider_id in enabled_provider_ids,
                 account_id=integration_row.account_id if integration_row else None,
                 display_account_name=(
@@ -136,6 +147,60 @@ class IntegrationsService:
             result.append(descriptor)
 
         return result
+
+    def _vault_sync(self, request: Any) -> Any:
+        """One ``VaultTokenSync`` per request (loads each user's vault once).
+
+        Returns:
+            A ``VaultTokenSync`` bound to the app's pools, or ``None`` when the
+            service/app cannot provide them.
+        """
+        if self._vault_token_sync is not None:
+            return self._vault_token_sync
+        app = getattr(request, "app", None)
+        if app is None:
+            return None
+        try:
+            from parrot.services.vault_token_sync import VaultTokenSync
+        except ImportError:  # pragma: no cover - server package not installed
+            return None
+        db_pool = app.get("authdb")
+        if db_pool is None:
+            return None
+        self._vault_token_sync = VaultTokenSync(db_pool=db_pool, redis=app.get("redis"))
+        return self._vault_token_sync
+
+    async def _token_status(self, user_id: str, provider_id: str, request: Any) -> str:
+        """Status of a connected provider based on its stored vault tokens.
+
+        A ``users_integrations`` row only says the user linked the provider; the
+        tokens live in the Session Vault. When they are missing or fail the
+        vault's integrity checks the UI must offer a re-connect instead of
+        showing the integration as usable.
+
+        Returns:
+            ``"connected"`` or ``"needs_reconnect"``. Falls back to
+            ``"connected"`` when the vault cannot be probed, so a vault outage
+            never hides working integrations.
+        """
+        sync = self._vault_sync(request)
+        if sync is None:
+            return "connected"
+        try:
+            result = await sync.read_tokens_result(user_id, provider_id)
+        except Exception:  # noqa: BLE001 - probing must never break the listing
+            logger.warning(
+                "Integrations: token probe failed for user=%s provider=%s",
+                user_id, provider_id,
+            )
+            return "connected"
+        if result.status in ("missing", "unreadable"):
+            logger.info(
+                "Integrations: provider=%s needs reconnect for user=%s (%s)",
+                provider_id, user_id, result.status,
+            )
+            return "needs_reconnect"
+        return "connected"
 
     async def start_connect(
         self,

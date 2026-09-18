@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure
-from parrot.flows.dev_loop.sdd_coder.models import CoderResult
+from parrot.flows.dev_loop.sdd_coder.models import CoderResult, RosterConfig
 from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
 from parrot.mcp.adapter import MCPToolAdapter
 
@@ -17,18 +17,29 @@ def _toolkit(three_seat_roster):
     return SddCoderToolkit(roster=three_seat_roster)
 
 
-def test_toolkit_exposes_seven_tools(three_seat_roster):
+EXPECTED_TOOLS = {
+    "coder_plan",
+    "coder_run_chunk",
+    "coder_prepare_native",
+    "coder_merge",
+    "coder_wait",
+    "coder_status",
+    "coder_cleanup",
+    "coder_record_feedback",
+    "coder_record_review",
+    "coder_feedback_report",
+    # FEAT-559 M4: the three new execution lifecycle/suspension tools.
+    "coder_begin_execution",
+    "coder_end_execution",
+    "coder_suspend_model",
+}
+
+
+def test_toolkit_exposes_execution_lifecycle_tools(three_seat_roster):
+    """Actual registered tool set contains the ten existing plus three new tools; no helper leaks into MCP."""
     toolkit = _toolkit(three_seat_roster)
     names = {t.name for t in toolkit.get_tools()}
-    assert names == {
-        "coder_plan",
-        "coder_run_chunk",
-        "coder_prepare_native",
-        "coder_merge",
-        "coder_wait",
-        "coder_status",
-        "coder_cleanup",
-    }
+    assert names == EXPECTED_TOOLS
 
 
 def test_toolkit_accepts_roster_as_list_of_dicts():
@@ -36,10 +47,101 @@ def test_toolkit_accepts_roster_as_list_of_dicts():
     assert toolkit._engine.roster.seats[0].label == "a"
 
 
+def test_toolkit_accepts_complexity_config_with_list_roster():
+    """Both configuration paths deliver the same policy to the engine."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    complexity_config = {
+        "version": "v1",
+        "strong_models": [
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+            {"canonical_model": "sonnet-5", "backend": "claude", "model": "claude-sonnet-5"},
+        ],
+    }
+    toolkit = SddCoderToolkit(
+        roster=[{"label": "a", "backend": "nova"}],
+        complexity=complexity_config,
+    )
+    assert toolkit._engine.roster.complexity.version == "v1"
+    assert len(toolkit._engine.roster.complexity.strong_models) == 2
+
+
+def test_toolkit_preserves_roster_config_complexity():
+    """With RosterConfig and complexity omitted: preserve that object's policy."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    original_policy = ComplexityPolicy(
+        version="v1",
+        strong_models=[
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+        ],
+    )
+    roster_config = RosterConfig(
+        seats=[{"label": "a", "backend": "nova"}],
+        complexity=original_policy,
+    )
+    toolkit = SddCoderToolkit(roster=roster_config)
+    assert toolkit._engine.roster.complexity.version == "v1"
+    assert len(toolkit._engine.roster.complexity.strong_models) == 1
+
+
+def test_toolkit_validates_complexity_override():
+    """With both object and explicit complexity: validate a copied config with the explicit override."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    original_policy = ComplexityPolicy(
+        version="v1",
+        strong_models=[
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+        ],
+    )
+    roster_config = RosterConfig(
+        seats=[{"label": "a", "backend": "nova"}],
+        complexity=original_policy,
+    )
+    # Valid override
+    complexity_config = {
+        "version": "v1",
+        "strong_models": [
+            {"canonical_model": "sonnet-5", "backend": "claude", "model": "claude-sonnet-5"},
+        ],
+    }
+    toolkit = SddCoderToolkit(roster=roster_config, complexity=complexity_config)
+    assert toolkit._engine.roster.complexity.version == "v1"
+    assert len(toolkit._engine.roster.complexity.strong_models) == 1
+    # Original config should be unchanged
+    assert len(original_policy.strong_models) == 1
+
+
+def test_toolkit_rejects_malformed_complexity_config():
+    """Malformed policy raises validation error."""
+    from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy
+
+    malformed_config = {
+        "version": "v1",
+        "strong_models": [
+            {"canonical_model": "gpt-5.6-terra", "backend": "codex", "model": "gpt-5.6-terra"},
+        ],
+        "bands": {"cyclomatic_max": (-1, 10)},  # Negative band bound
+    }
+    with pytest.raises(ValidationError):
+        SddCoderToolkit(
+            roster=[{"label": "a", "backend": "nova"}],
+            complexity=malformed_config,
+        )
+
+
+VALID_EXECUTION_ID = "11111111-1111-4111-8111-111111111111"
+
+
 async def test_toolkit_pre_execute_rejects_bad_args(three_seat_roster):
+    """A bad (non-execution_id) field, e.g. a relative worktree, is still `invalid_arguments`
+    even with a valid execution_id present."""
     toolkit = _toolkit(three_seat_roster)
     with pytest.raises(CoderFailure) as excinfo:
-        await toolkit._pre_execute("coder_run_chunk", feature="f", worktree="rel", task_ids=["TASK-1"])
+        await toolkit._pre_execute(
+            "coder_run_chunk", feature="f", worktree="rel", task_ids=["TASK-1"], execution_id=VALID_EXECUTION_ID
+        )
     assert excinfo.value.code == "invalid_arguments"
 
 
@@ -48,7 +150,49 @@ async def test_toolkit_pre_execute_ignores_permission_context(three_seat_roster)
     toolkit.py:176-182) even for toolkits that don't use it — `_pre_execute`
     must not reject valid args just because that key is present."""
     toolkit = _toolkit(three_seat_roster)
-    await toolkit._pre_execute("coder_plan", feature="f", worktree="/abs", _permission_context=None)  # must not raise
+    await toolkit._pre_execute(
+        "coder_plan", feature="f", worktree="/abs", execution_id=VALID_EXECUTION_ID, _permission_context=None
+    )  # must not raise
+
+
+async def test_missing_execution_rejected(three_seat_roster):
+    """A missing execution_id maps to `execution_required`, not the generic `invalid_arguments` --
+    before any model work (probe/dispatch) could ever occur."""
+    toolkit = _toolkit(three_seat_roster)
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute("coder_plan", feature="f", worktree="/abs")
+    assert excinfo.value.code == "execution_required"
+
+    # An invalid (non-UUID) execution_id is still the generic invalid_arguments, not execution_required.
+    with pytest.raises(CoderFailure) as excinfo2:
+        await toolkit._pre_execute("coder_plan", feature="f", worktree="/abs", execution_id="not-a-uuid")
+    assert excinfo2.value.code == "invalid_arguments"
+
+    # coder_feedback_report never requires (or accepts) an execution_id at all.
+    await toolkit._pre_execute("coder_feedback_report", feature="f", worktree="/abs")
+
+
+def test_registered_schemas_require_execution_identity(three_seat_roster):
+    """The seven scoped orchestration/review tool schemas mark execution_id required;
+    coder_wait/coder_status/coder_feedback_report never do."""
+    toolkit = _toolkit(three_seat_roster)
+    scoped = {
+        "coder_plan",
+        "coder_run_chunk",
+        "coder_prepare_native",
+        "coder_merge",
+        "coder_cleanup",
+        "coder_record_feedback",
+        "coder_record_review",
+    }
+    unscoped = {"coder_wait", "coder_status", "coder_feedback_report"}
+    for tool in toolkit.get_tools():
+        parameters = tool.get_schema()["parameters"]
+        required = set(parameters.get("required", []))
+        if tool.name in scoped:
+            assert "execution_id" in required, f"{tool.name} schema must require execution_id"
+        elif tool.name in unscoped:
+            assert "execution_id" not in parameters.get("properties", {}), f"{tool.name} must not expose execution_id"
 
 
 async def test_toolkit_pre_execute_via_full_execute_path_never_reaches_engine(three_seat_roster, monkeypatch):
@@ -78,7 +222,7 @@ async def test_toolkit_maps_failure_to_error_result(three_seat_roster, monkeypat
         raise CoderFailure("feature_not_found", "x")
 
     monkeypatch.setattr(toolkit._engine, "plan", _raise)
-    result = await toolkit.coder_plan(feature="nope", worktree="/abs")
+    result = await toolkit.coder_plan(feature="nope", worktree="/abs", execution_id=VALID_EXECUTION_ID)
     assert result.status == "error"
     assert result.error.code == "feature_not_found"
 
@@ -112,7 +256,7 @@ async def test_toolkit_result_is_json_serialisable_via_post_execute(three_seat_r
 
     monkeypatch.setattr(toolkit._engine, "plan", _raise)
     tool = next(t for t in toolkit.get_tools() if t.name == "coder_plan")
-    raw = await tool._execute(feature="f", worktree="/abs")
+    raw = await tool._execute(feature="f", worktree="/abs", execution_id=VALID_EXECUTION_ID)
     assert isinstance(raw, str)  # _post_execute serialises CoderResult -> JSON string
     parsed = CoderResult.model_validate_json(raw)
     assert parsed.status == "error" and parsed.error.code == "feature_not_found"
@@ -134,15 +278,7 @@ def test_mcp_local_serves_sdd_coder(monkeypatch, tmp_path):
     assert config_path.is_file(), config_path
     server = create_toolkit_mcp_server("sdd-coder", root=tmp_path, config_path=str(config_path))
     names = set(server.tools)
-    assert names == {
-        "coder_plan",
-        "coder_run_chunk",
-        "coder_prepare_native",
-        "coder_merge",
-        "coder_wait",
-        "coder_status",
-        "coder_cleanup",
-    }
+    assert names == EXPECTED_TOOLS
 
 
 async def test_toolkit_status_and_wait_carry_the_per_seat_rollup(three_seat_roster, monkeypatch):
@@ -174,7 +310,11 @@ async def test_toolkit_status_and_wait_carry_the_per_seat_rollup(three_seat_rost
             )
         ],
     )
-    monkeypatch.setattr(toolkit._engine, "status", lambda job_id: job)
+
+    async def _status(job_id):
+        return job
+
+    monkeypatch.setattr(toolkit._engine, "status", _status)
 
     async def _wait(job_id, timeout_seconds):
         return job
