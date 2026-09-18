@@ -1,10 +1,12 @@
 """Unit tests for UnifiedMemoryManager — mocked subsystems."""
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, create_autospec
 
 from parrot.memory.unified.manager import UnifiedMemoryManager
 from parrot.memory.unified.models import MemoryConfig
-from parrot.memory.episodic.models import MemoryNamespace
+from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
+from parrot.memory.episodic.store import EpisodicMemoryStore
 
 
 @pytest.fixture
@@ -13,10 +15,10 @@ def namespace() -> MemoryNamespace:
 
 
 @pytest.fixture
-def mock_episodic() -> AsyncMock:
-    store = AsyncMock()
-    store.get_failure_warnings = AsyncMock(return_value="Warning: API rate limit hit")
-    store.record_tool_episode = AsyncMock()
+def mock_episodic() -> MagicMock:
+    """Autospecced store: a call with keywords the real store lacks raises TypeError instead of passing silently."""
+    store = create_autospec(EpisodicMemoryStore, instance=True)
+    store.get_failure_warnings.return_value = "Warning: API rate limit hit"
     store.configure = AsyncMock()
     store.cleanup = AsyncMock()
     return store
@@ -25,9 +27,7 @@ def mock_episodic() -> AsyncMock:
 @pytest.fixture
 def mock_skills() -> AsyncMock:
     registry = AsyncMock()
-    registry.get_relevant_skills = AsyncMock(
-        return_value="Skill: use pagination for large queries"
-    )
+    registry.get_relevant_skills = AsyncMock(return_value="Skill: use pagination for large queries")
     registry.configure = AsyncMock()
     registry.cleanup = AsyncMock()
     return registry
@@ -72,13 +72,28 @@ class TestUnifiedMemoryManager:
     @pytest.mark.asyncio
     async def test_record_interaction_safe(self, namespace, mock_episodic):
         """record_interaction does not raise when episodic raises."""
-        mock_episodic.record_tool_episode.side_effect = Exception("Redis down")
+        mock_episodic.record_episode.side_effect = Exception("Redis down")
         manager = UnifiedMemoryManager(
             namespace=namespace,
             episodic_store=mock_episodic,
         )
         # Should not raise
         await manager.record_interaction("query", MagicMock(), [], "user1", "session1")
+
+    @pytest.mark.asyncio
+    async def test_record_interaction_calls_record_episode(self, namespace, mock_episodic):
+        """record_interaction records ONE PARTIAL query episode via record_episode (FEAT-571 M0)."""
+        manager = UnifiedMemoryManager(namespace=namespace, episodic_store=mock_episodic)
+        await manager.record_interaction("what now?", "do this", [], "user1", "session1")
+        mock_episodic.record_episode.assert_awaited_once()
+        kwargs = mock_episodic.record_episode.await_args.kwargs
+        assert kwargs["outcome"] == EpisodeOutcome.PARTIAL
+        assert kwargs["category"] == EpisodeCategory.QUERY_RESOLUTION
+        assert kwargs["situation"] == "what now?"
+        assert "do this" in kwargs["action_taken"]
+        assert kwargs["namespace"].user_id == "user1"
+        assert kwargs["namespace"].session_id == "session1"
+        mock_episodic.record_tool_episode.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_all_none_subsystems(self, namespace):
@@ -88,9 +103,7 @@ class TestUnifiedMemoryManager:
         assert ctx.tokens_used == 0
 
     @pytest.mark.asyncio
-    async def test_configure_calls_subsystems(
-        self, namespace, mock_episodic, mock_skills
-    ):
+    async def test_configure_calls_subsystems(self, namespace, mock_episodic, mock_skills):
         """configure() calls configure on each subsystem that has it."""
         manager = UnifiedMemoryManager(
             namespace=namespace,
@@ -102,9 +115,7 @@ class TestUnifiedMemoryManager:
         mock_skills.configure.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_cleanup_calls_subsystems(
-        self, namespace, mock_episodic, mock_skills
-    ):
+    async def test_cleanup_calls_subsystems(self, namespace, mock_episodic, mock_skills):
         """cleanup() calls cleanup on each subsystem that has it."""
         manager = UnifiedMemoryManager(
             namespace=namespace,
@@ -128,9 +139,7 @@ class TestUnifiedMemoryManager:
         assert ctx.tokens_used <= 500
 
     @pytest.mark.asyncio
-    async def test_conversation_formatted_as_turns(
-        self, namespace, mock_conversation
-    ):
+    async def test_conversation_formatted_as_turns(self, namespace, mock_conversation):
         """Conversation turns are formatted as User/Assistant lines."""
         turn = MagicMock()
         turn.user_message = "hello"
@@ -159,4 +168,5 @@ class TestUnifiedMemoryManager:
     def test_import(self):
         """Import path works as specified."""
         from parrot.memory.unified.manager import UnifiedMemoryManager as UMM  # noqa: F401
+
         assert UMM is UnifiedMemoryManager

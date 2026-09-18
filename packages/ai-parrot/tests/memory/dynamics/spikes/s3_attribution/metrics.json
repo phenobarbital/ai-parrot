@@ -1,0 +1,280 @@
+{
+  "corpus": {
+    "judge": "model:claude-sonnet-5",
+    "real": 0,
+    "synthetic": 50,
+    "total": 50
+  },
+  "strategies": {
+    "cited": {
+      "1": {
+        "attributed_count": 35.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.3,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 35.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "3": {
+        "attributed_count": 35.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.3,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 35.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "5": {
+        "attributed_count": 35.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.3,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 35.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "unbounded": {
+        "attributed_count": 35.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.3,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 35.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      }
+    },
+    "combined": {
+      "1": {
+        "attributed_count": 46.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "3": {
+        "attributed_count": 50.0,
+        "collision_rate": 0.08,
+        "false_reinforcement": 0.08,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 0.92,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "5": {
+        "attributed_count": 50.0,
+        "collision_rate": 0.08,
+        "false_reinforcement": 0.08,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 0.92,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "unbounded": {
+        "attributed_count": 50.0,
+        "collision_rate": 0.08,
+        "false_reinforcement": 0.08,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 0.92,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      }
+    },
+    "overlap_error_signature": {
+      "1": {
+        "attributed_count": 22.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.56,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 22.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "3": {
+        "attributed_count": 22.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.56,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 22.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "5": {
+        "attributed_count": 22.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.56,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 22.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "unbounded": {
+        "attributed_count": 22.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.56,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 22.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      }
+    },
+    "overlap_tokens": {
+      "1": {
+        "attributed_count": 46.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "3": {
+        "attributed_count": 50.0,
+        "collision_rate": 0.08,
+        "false_reinforcement": 0.08,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 0.92,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "5": {
+        "attributed_count": 50.0,
+        "collision_rate": 0.08,
+        "false_reinforcement": 0.08,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 0.92,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "unbounded": {
+        "attributed_count": 50.0,
+        "collision_rate": 0.08,
+        "false_reinforcement": 0.08,
+        "items_count": 50.0,
+        "missed_attribution": 0.08,
+        "not_relevant_total": 50.0,
+        "precision": 0.92,
+        "relevant_total": 50.0,
+        "true_positive": 46.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      }
+    },
+    "recovery_linkage": {
+      "1": {
+        "attributed_count": 14.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.72,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 14.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "3": {
+        "attributed_count": 14.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.72,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 14.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "5": {
+        "attributed_count": 14.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.72,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 14.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      },
+      "unbounded": {
+        "attributed_count": 14.0,
+        "collision_rate": 0.0,
+        "false_reinforcement": 0.0,
+        "items_count": 50.0,
+        "missed_attribution": 0.72,
+        "not_relevant_total": 50.0,
+        "precision": 1.0,
+        "relevant_total": 50.0,
+        "true_positive": 14.0,
+        "unknown_attributed": 0.0,
+        "unknown_count": 50.0
+      }
+    }
+  }
+}

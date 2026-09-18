@@ -55,6 +55,16 @@ U3 (precision target) are **owner acceptance decisions**; S3 collects the number
   default/cap, recovery predicate, evidence schema fields, receipt adapters, acceptance
   rubric; U1/U3 marked decided or pending). Logs → `artifacts/logs/`.
 
+> **Amendment (sdd-worker, 2026-09-18): all spike artifacts (`judgments.jsonl`, REPORT.md,
+> metrics.json, amendment.md) are relocated from `sdd/state/FEAT-571/spikes/s3-attribution/`
+> to `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/` throughout this file.
+> The FEAT-549 sdd-coder engine's fidelity gate (`check_fidelity()`) unconditionally rejects
+> any coder-committed path starting with `sdd/`, regardless of what a task's own contract
+> lists — so these gate deliverables must live in a directory the coder already owns. The
+> orchestrator (sdd-worker) is responsible for mirroring the final REPORT.md/metrics.json/
+> amendment.md/judgments.jsonl into `sdd/state/FEAT-571/spikes/s3-attribution/` as a
+> post-merge step for owner review.
+
 **NOT in scope**: changing `EpisodicMemoryMixin`, `EpisodicMemoryToolkit`, the unified
 manager/context or the coder engine (M3/M5); creating `parrot/memory/dynamics/*` (M1);
 implementing `cite_memory` (M3); editing the spec (owner applies `amendment.md`);
@@ -69,10 +79,10 @@ deciding U1/U3 (owner).
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/__init__.py` | CREATE | package marker |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/harness.py` | CREATE | manifest/citation/overlap models, strategies, metrics, corpus IO, report writer |
 | `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/test_s3_harness.py` | CREATE | fast strategy/metric tests + env-gated corpus evaluation |
-| `sdd/state/FEAT-571/spikes/s3-attribution/judgments.jsonl` | CREATE | 50 judged items (hashes, labels, provenance — no transcripts) |
-| `sdd/state/FEAT-571/spikes/s3-attribution/REPORT.md` | CREATE | reproducible gate report |
-| `sdd/state/FEAT-571/spikes/s3-attribution/metrics.json` | CREATE | raw per-strategy/per-cap metrics |
-| `sdd/state/FEAT-571/spikes/s3-attribution/amendment.md` | CREATE | proposed attribution/evidence-schema amendment |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/judgments.jsonl` | CREATE | 50 judged items (hashes, labels, provenance — no transcripts) |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/REPORT.md` | CREATE | reproducible gate report |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/metrics.json` | CREATE | raw per-strategy/per-cap metrics |
+| `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/amendment.md` | CREATE | proposed attribution/evidence-schema amendment |
 
 ---
 
@@ -156,10 +166,10 @@ class DevelopmentOutput(BaseModel): files_changed, commit_shas, summary, incompl
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/__init__.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/harness.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/test_s3_harness.py", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s3-attribution/judgments.jsonl", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s3-attribution/REPORT.md", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s3-attribution/metrics.json", "action": "CREATE"},
-    {"path": "sdd/state/FEAT-571/spikes/s3-attribution/amendment.md", "action": "CREATE"}
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/judgments.jsonl", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/REPORT.md", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/metrics.json", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/amendment.md", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/memory/episodic/mixin.py#EpisodicMemoryMixin._safe_record_ask",
@@ -231,8 +241,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 
 logger = logging.getLogger(__name__)
-REPO_ROOT = Path(__file__).resolve().parents[7]
-SPIKE_DIR = REPO_ROOT / "sdd" / "state" / "FEAT-571" / "spikes" / "s3-attribution"
+SPIKE_DIR = Path(__file__).resolve().parent  # coder-owned spike package dir — sdd-coder fidelity gate forbids commits under sdd/
 Label = Literal["relevant", "not_relevant", "unknown"]
 GradeRow = Literal["no_review", "again", "easy", "good_capped", "hard", "good"]
 
@@ -395,7 +404,7 @@ def test_corpus_evaluation_writes_report() -> None:
 ```
 **Why**: the fast tests pin the admission rules the amendment freezes; the gated test produces the numbers behind U1/U3.
 
-### `sdd/state/FEAT-571/spikes/s3-attribution/amendment.md` (CREATE)
+### `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/amendment.md` (CREATE)
 ```markdown
 # Proposed spec amendment — S3 (TASK-3384) · status: PROPOSED (owner review; U1/U3 decisions)
 
@@ -474,10 +483,34 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated native `sonnet` delivery)
+**Date**: 2026-09-18
+**Notes**: 50-item judgment corpus (0 real / 50 synthetic — declared gate limitation, no
+coder-review ledger or episodic-store snapshot was available in this worktree to mine real
+traces) exercising every grade-table branch and attribution edge case. Metrics per
+strategy×cap: `cited` holds precision=1.000 at every cap (missed_attribution=0.300,
+false_reinforcement=0.000); `overlap_tokens` trades precision for recall
+(1.000→0.920 as cap grows from 1→3/5, false_reinforcement/collision_rate rising to 0.080).
+U1 (citations-first vs both) and U3 (precision target) explicitly marked PENDING — owner
+acceptance decisions, not resolved by this gate. `amendment.md` proposes `cited`-only
+default, overlap cap 3/threshold 0.3, the structural recovery-linkage predicate (never
+prose equality), the evidence-schema field mapping, and 2 trusted-receipt adapters
+(tool_runtime, coder_engine) plus the untrusted-source list. Fast tests (5 passed, 1
+env-gated skip) verified green post-merge in the feature worktree; `judgments.jsonl`
+confirmed 50 rows, zero transcript-shaped keys.
+Full REPORT.md/metrics.json/amendment.md/judgments.jsonl:
+`packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/` (mirrored by the
+orchestrator to `sdd/state/FEAT-571/spikes/s3-attribution/` for owner/architecture review —
+the gate itself is NOT passed until that review happens and U1/U3 are decided).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: Task's own "Files to Create / Modify" list originally placed
+`judgments.jsonl`/REPORT.md/metrics.json/amendment.md under
+`sdd/state/FEAT-571/spikes/s3-attribution/`; amended by sdd-worker (2026-09-18, Option A,
+user-approved) to `packages/ai-parrot/tests/memory/dynamics/spikes/s3_attribution/` because
+the FEAT-549 sdd-coder engine's fidelity gate unconditionally rejects any coder-committed
+path under `sdd/`. No other deviation from the blueprint (one added fast test,
+`test_metrics_ignores_unknown_labels`, scoped strictly to the `metrics()` contract already
+in scope).
 
-**Deviations from spec**: none | describe if any
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~672s ·
+Tokens: n/a (native — usage not tracked by the engine)
