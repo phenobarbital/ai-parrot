@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3421
@@ -451,7 +451,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+comparison/ package: Descriptors (+ described / sufficient helpers), FacingDefinition, ShelfDefinition, ZoneDefinition, RuleBinding, SlotsDefinition, SlotsDefinitionError; load_slots_definition (dict | str | Path; native or page1 layout — page1 detected by a top-level 'planogram' key or dict 'products'; ids shelf_<n> / p<position:03d>_f<index>; ValidationError/OSError/JSONDecodeError wrapped; shelves sorted by shelf_number, facings by (slot, facing_index)); _validate in the stated order (duplicate shelf/zone/facing ids, slots exactly 1..n on distinct slot values, shelf with neither facings nor zones, conflicting DESCRIBED descriptors per product, zero described); definition_coverage (display_name or identifiers; described elsewhere counts for the same product; never raises); validate_bindings (absent key -> [], malformed/duplicate/dangling/ambiguous raise; a zone-only shelf needs a rule targeting the shelf or one of its zones).
+Tests: test_slots_definition.py 16 passed; ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
