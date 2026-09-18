@@ -74,7 +74,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -82,8 +82,8 @@
       "parallelism_notes": "No dependencies — owns knowledge/wiki/claude_code/installer.py exclusively at this stage.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3371-claude-toolkit-only-reconciler.md"
+      "completed_at": "2026-09-18T00:27:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3371-claude-toolkit-only-reconciler.md"
     },
     {
       "id": "TASK-3372",
