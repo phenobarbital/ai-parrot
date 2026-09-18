@@ -58,7 +58,7 @@ from ...agent import BasicAgent
 from ...abstract import AbstractBot, _resolve_supported_client
 from ....clients import AbstractClient
 from ....clients.factory import SUPPORTED_CLIENTS
-from .credentials import GOOGLE_PROVIDER_KEYS
+from .credentials import GOOGLE_PROVIDER_KEYS, apply_google_api_key
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
 from ....tools.abstract import AbstractTool, ToolResult
@@ -784,6 +784,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         *,
         class_resolver: Callable[[str], Optional[type]],
         tool_resolver: Optional[Callable[[str], Optional[AbstractTool]]] = None,
+        google_api_key: Optional[str] = None,
         **kwargs,
     ) -> "AgentCrew":
         """Create an AgentCrew from a CrewDefinition.
@@ -796,6 +797,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             tool_resolver: Optional callable that maps tool name str to an
                 ``AbstractTool`` instance. When ``None`` shared tools are
                 skipped.
+            google_api_key: When set, every Google agent without its own
+                credential receives it, and it is forwarded to
+                ``AgentCrew.__init__``. ``None`` -> today's behaviour
+                (``GOOGLE_API_KEY``).
             **kwargs: Extra kwargs forwarded to ``AgentCrew.__init__``
                 (e.g. ``llm``, ``auto_configure``).
 
@@ -813,6 +818,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 **agent_def.config,
             )
             cls._apply_definition_prompt(agent, agent_def.system_prompt)
+            apply_google_api_key(agent, google_api_key)
             agents.append(agent)
 
         # Allow callers to override max_parallel_tasks/tenant via kwargs.
@@ -853,6 +859,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             infographic_theme=infographic_theme,
             enable_execution_wiki=enable_execution_wiki,
             execution_wiki_path=execution_wiki_path,
+            google_api_key=google_api_key,
             **kwargs,
         )
 
