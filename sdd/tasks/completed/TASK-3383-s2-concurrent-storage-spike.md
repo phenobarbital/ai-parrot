@@ -544,10 +544,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrated native `sonnet` delivery)
+**Date**: 2026-09-18
+**Notes**: Full spike delivered and gate report produced. SQLite/WAL backend prototype
+(`SQLiteEpisodeBackend`) implements the full `AbstractEpisodeBackend` protocol plus
+`apply_review`/`search_text`/`replay`; 8-process spawn-based harness ran the full matrix
+(plain writes 5k/10k, duplicate/concurrent review, 3 crash-injection points + replay,
+namespace/model_id filter, feedback-import batch) against both the sqlite prototype and
+`FAISSBackend`. PASS: zero lost writes at 5k/10k (sqlite), all 3 crash/replay scenarios
+converged, feedback-import idempotent. FAIL: p95 `recall_similar` (DB-only) ≈126-257ms vs
+the <50ms@5k bar — a disclosed prototype-scaling gap (brute-force cosine over the shared
+table, no ANN index), not a correctness bug; flagged as an open M2 decision in
+`amendment.md`. FAISS arm lost the majority-to-all of its writes and repeatedly corrupted
+its own snapshot under 8-process contention — real, reproducible evidence backing the
+"reject FAISS for the review-transaction role" freeze. Fast tests (5 passed, 1 env-gated
+skip) verified green post-merge in the feature worktree.
+Full REPORT.md/metrics.json/amendment.md: `packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/`
+(mirrored by the orchestrator to `sdd/state/FEAT-571/spikes/s2-concurrent-storage/` for
+owner/architecture review — the gate itself is NOT passed until that review happens).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: Task's own "Files to Create / Modify" list originally placed
+REPORT.md/metrics.json/amendment.md under `sdd/state/FEAT-571/spikes/s2-concurrent-storage/`;
+amended by sdd-worker (2026-09-18, Option A, user-approved) to
+`packages/ai-parrot/tests/memory/dynamics/spikes/s2_storage/` because the FEAT-549
+sdd-coder engine's fidelity gate unconditionally rejects any coder-committed path under
+`sdd/` — confirmed via a real `fidelity_violation` on the coder's first delivery attempt.
+No other deviation from the blueprint.
 
-**Deviations from spec**: none | describe if any
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~2583s ·
+Tokens: n/a (native — usage not tracked by the engine)

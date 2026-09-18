@@ -35,7 +35,7 @@
       "feature_id": "FEAT-571",
       "feature": "memory-dynamics",
       "spec": "sdd/specs/memory-dynamics.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [],
@@ -43,8 +43,8 @@
       "parallelism_notes": "graph root (gate G2): writes only tests/memory/dynamics/spikes/s2_storage/* and sdd/state/FEAT-571/spikes/s2-concurrent-storage/*; the 8-process load runs against tmp_path SQLite/FAISS files only (no shared .parrot/ state, no DDL on a shared DB), so it is not exclusive; documents PG/Redis non-atomicity from source without live runs",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3383-s2-concurrent-storage-spike.md"
+      "completed_at": "2026-09-18T11:39:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3383-s2-concurrent-storage-spike.md"
     },
     {
       "id": "TASK-3384",
