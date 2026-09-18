@@ -1,4 +1,5 @@
 """Widget tests for parrot.cli.tui.widgets (FEAT-573, spec §4)."""
+
 from __future__ import annotations
 
 from typing import Any, List
@@ -51,9 +52,7 @@ async def test_tool_rows_only_from_tool_started():
         assert panel._tools.display is False
         assert len(panel._tools._rows) == 0
 
-        await view.apply(
-            ToolStarted(kind=TurnEventKind.TOOL_STARTED, turn_id="t1", seq=2, call_id="c1", tool_name="X")
-        )
+        await view.apply(ToolStarted(kind=TurnEventKind.TOOL_STARTED, turn_id="t1", seq=2, call_id="c1", tool_name="X"))
         await pilot.pause()
         assert panel._tools.display is True
         assert len(panel._tools._rows) == 1

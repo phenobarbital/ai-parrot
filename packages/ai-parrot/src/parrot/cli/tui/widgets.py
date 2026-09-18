@@ -1,4 +1,5 @@
 """Widgets for the ``parrot agent`` Textual workspace (spec §3 Module 11)."""
+
 from __future__ import annotations
 
 import logging
@@ -13,15 +14,21 @@ from textual.reactive import reactive  # verified: textual 8.2.8 probe
 from textual.widgets import Collapsible, Markdown, RichLog, Static, TextArea  # verified: textual 8.2.8 probe
 from textual.widgets._markdown import MarkdownStream  # verified: textual 8.2.8 probe
 
-from parrot.cli.commands import ConversationTurn  # verified: commands.py:38
 from parrot.cli.events import (  # provided by TASK-3403 (parrot/cli/events.py)
-    TextDelta, ToolFailed, ToolFinished, ToolStarted, TurnCancelled, TurnCompleted, TurnEvent,
-    TurnFailed, TurnStarted,
+    TextDelta,
+    ToolFailed,
+    ToolFinished,
+    ToolStarted,
+    TurnCancelled,
+    TurnCompleted,
+    TurnEvent,
+    TurnFailed,
+    TurnStarted,
 )
 
 logger = logging.getLogger(__name__)
 
-MAX_PANELS = 200          # spec §3 M11 "Caps"
+MAX_PANELS = 200  # spec §3 M11 "Caps"
 MAX_TURN_TEXT = 512 * 1024
 TRUNCATION_MARKER = "\n\n*… output truncated at 512 KiB (use /export for the full text)*"
 
@@ -259,7 +266,8 @@ class Composer(TextArea):
 
     def _on_key(self, event: events.Key) -> None:  # type: ignore[override]
         if event.key == "enter":
-            event.prevent_default(); event.stop()
+            event.prevent_default()
+            event.stop()
             text = self.text.strip()
             if text:
                 self._history.append_string(text)
@@ -268,13 +276,15 @@ class Composer(TextArea):
                 self.clear()
             return
         if event.key in ("ctrl+j", "shift+enter"):
-            event.prevent_default(); event.stop()
+            event.prevent_default()
+            event.stop()
             self.insert("\n")
             return
         row, _col = self.cursor_location
         line_count = self.text.count("\n") + 1
         if event.key == "up" and row == 0:
-            event.prevent_default(); event.stop()
+            event.prevent_default()
+            event.stop()
             entries = self._history.get_strings()
             if entries:
                 if self._history_pos is None:
@@ -284,7 +294,8 @@ class Composer(TextArea):
                 self.load_text(entries[self._history_pos])
             return
         if event.key == "down" and row == line_count - 1:
-            event.prevent_default(); event.stop()
+            event.prevent_default()
+            event.stop()
             if self._history_pos is not None:
                 entries = self._history.get_strings()
                 self._history_pos += 1
@@ -295,7 +306,8 @@ class Composer(TextArea):
                     self.load_text(entries[self._history_pos])
             return
         if event.key == "tab" and self.text.startswith("/") and "\n" not in self.text:
-            event.prevent_default(); event.stop()
+            event.prevent_default()
+            event.stop()
             prefix = self.text
             matches = [candidate for candidate in self._completions() if candidate.startswith(prefix)]
             if len(matches) == 1:

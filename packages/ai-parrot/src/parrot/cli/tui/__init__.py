@@ -5,6 +5,7 @@ lazily and only when the resolved UI mode is TUI (AC22). This package module
 therefore re-exports its public names through ``__getattr__`` so importing the
 package itself never imports ``textual``.
 """
+
 from __future__ import annotations
 
 from typing import Any
