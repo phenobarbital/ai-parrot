@@ -1,4 +1,5 @@
 """Interaction tests for AgentWorkspaceApp (FEAT-573, spec §4 TUI rows)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,15 @@ pytest.importorskip("textual")
 from prompt_toolkit.history import InMemoryHistory  # verified: repl.py:16
 
 from parrot.cli.commands import SlashCommandDispatcher  # verified: commands.py:70
-from parrot.cli.events import TextDelta, ToolFinished, ToolStarted, TurnCancelled, TurnCompleted, TurnEventKind, TurnStarted
+from parrot.cli.events import (
+    TextDelta,
+    ToolFinished,
+    ToolStarted,
+    TurnCancelled,
+    TurnCompleted,
+    TurnEventKind,
+    TurnStarted,
+)
 from parrot.cli.repl import REPLConfig  # verified: repl.py:61
 from parrot.cli.tui.app import AgentWorkspaceApp
 from parrot.cli.tui.widgets import Composer, LogDrawer, StatusBar, ToolActivity, TranscriptView, TurnPanel
@@ -179,7 +188,9 @@ async def test_slash_quit_exits_zero_and_logs_routed():
 @pytest.mark.asyncio
 async def test_resize_narrow_collapses_tools():
     """A narrow resize (< 60 cols) forces every tool panel collapsed; the composer stays mounted."""
-    script: List[Any] = [ToolStarted(kind=TurnEventKind.TOOL_STARTED, turn_id="t", seq=1, call_id="c1", tool_name="search")]
+    script: List[Any] = [
+        ToolStarted(kind=TurnEventKind.TOOL_STARTED, turn_id="t", seq=1, call_id="c1", tool_name="search")
+    ]
     script += _deltas("done")
     app = _app(_FakeRunner(script))
     async with app.run_test(size=(80, 24)) as pilot:

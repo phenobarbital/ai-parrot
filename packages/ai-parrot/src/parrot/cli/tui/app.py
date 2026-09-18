@@ -1,4 +1,5 @@
 """Full-screen Textual workspace for ``parrot agent`` (spec §3 Module 11)."""
+
 from __future__ import annotations
 
 import logging
@@ -37,8 +38,16 @@ class AgentWorkspaceApp(App[int]):
         Binding("ctrl+l", "clear_session", "Clear", priority=True),
     ]
 
-    def __init__(self, *, bot: Any, config: REPLConfig, runner: TurnRunner, dispatcher: SlashCommandDispatcher,
-                 history: History, resume_turns: Optional[List[ConversationTurn]] = None) -> None:
+    def __init__(
+        self,
+        *,
+        bot: Any,
+        config: REPLConfig,
+        runner: TurnRunner,
+        dispatcher: SlashCommandDispatcher,
+        history: History,
+        resume_turns: Optional[List[ConversationTurn]] = None,
+    ) -> None:
         """Initialise the workspace with its already-constructed collaborators.
 
         Args:
