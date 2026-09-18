@@ -47,6 +47,8 @@ is absent or declares nothing (spec §8, resolved).
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py` | MODIFY | Delete both options and their parameters |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py` | MODIFY | Delete the `toolkits` parameter + seeding; add the hint |
 | `tests/knowledge/wiki/test_codex_toolkit_reconcile.py` | MODIFY | Drop flag coverage; assert the flags are rejected |
+| `tests/knowledge/wiki/test_codex_installer_toolkit_entries.py` | MODIFY | Correction (post-implementation): the only pre-existing caller of `install_codex_integration(toolkits=...)` — a TypeError after this task's own mandated cut. Fix mirrors TASK-3377's sibling pattern: seed the toolkit YAML directly instead of via the removed kwarg. |
+| `tests/knowledge/wiki/test_codex_integration.py` | MODIFY | Correction (post-implementation): one assertion hardcoded `len(actions) == 6`; this task's own mandated hint adds a 7th action when the toolkit config is empty. Updated the expected count. |
 
 ---
 

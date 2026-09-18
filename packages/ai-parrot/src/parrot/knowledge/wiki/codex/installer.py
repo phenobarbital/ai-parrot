@@ -6,7 +6,7 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from parrot.knowledge.wiki.codex import assets
 from parrot.knowledge.wiki.project import WikiProjectConfig, config_path, load_effective_config, save_project_config
@@ -318,14 +318,23 @@ def install_codex_integration(
     config: Optional[WikiProjectConfig] = None,
     gitignore: bool = True,
     bookstore: bool = True,
-    toolkits: Sequence[str] = (),
 ) -> list[str]:
     """Install project-scoped Codex instructions, skill, MCP, and rules.
 
     Args:
-        toolkits: Names to seed into `.parrot/mcp-toolkits.yaml` before MCP
-            reconciliation (FEAT-556); `()` seeds nothing. Seeding runs BEFORE
-            `_install_mcp` so the new sections produce entries in this pass.
+        root: Repository root.
+        config: Wiki project config; loaded from `root` when omitted.
+        gitignore: Add `.parrot/` to .gitignore.
+        bookstore: Install the Bookstore MCP server and skill when an
+            indexed library exists (no indexing performed).
+
+    Returns:
+        Human-readable list of actions performed.
+
+    Note:
+        Seeding `.parrot/mcp-toolkits.yaml` sections no longer happens
+        here — use `parrot toolkits install` (FEAT-570). This command
+        only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
     config = config or load_effective_config(root).config
@@ -341,30 +350,6 @@ def install_codex_integration(
         _install_skill(root),
     ]
 
-    if toolkits:
-        from parrot.mcp.toolkit_seed import seed_toolkit_sections
-
-        seeded = seed_toolkit_sections(root, toolkits)
-        if seeded.created_file:
-            actions.append(".parrot/mcp-toolkits.yaml — created")
-        if seeded.added:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — seeded {len(seeded.added)} section(s): {', '.join(seeded.added)}"
-            )
-        if seeded.skipped:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}"
-            )
-        if seeded.drift:
-            for section, keys in seeded.drift.items():
-                actions.append(
-                    f".parrot/mcp-toolkits.yaml — WARNING: '{section}' lacks template key(s) {', '.join(keys)} "
-                    f"(existing sections are never rewritten; copy them from "
-                    f"parrot/mcp/_toolkit_templates/{section}.yaml)"
-                )
-        if seeded.unknown:
-            actions.append(f".parrot/mcp-toolkits.yaml — unknown toolkit name(s) skipped: {', '.join(seeded.unknown)}")
-
     actions.append(_install_mcp(root))
     actions.append(_install_rules(root))
     if gitignore:
@@ -373,6 +358,11 @@ def install_codex_integration(
         from .bookstore import install_bookstore
 
         actions.extend(install_bookstore(root))
+
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    if not load_toolkits_config(root).toolkits:
+        actions.append("no local MCP toolkits configured — add them with: parrot toolkits install")
     return actions
 
 

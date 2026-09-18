@@ -1,12 +1,18 @@
-"""Codex toolkit-only reconciliation (FEAT-570, TASK-3372)."""
+"""Codex toolkit-only reconciliation (FEAT-570, TASK-3372, TASK-3378)."""
 
 from __future__ import annotations
 
 import tomllib
 from pathlib import Path
 
+from click.testing import CliRunner
 from parrot.knowledge.wiki.codex import assets
-from parrot.knowledge.wiki.codex.installer import _install_mcp, reconcile_toolkit_tables
+from parrot.knowledge.wiki.codex.cli import codex
+from parrot.knowledge.wiki.codex.installer import (
+    _install_mcp,
+    install_codex_integration,
+    reconcile_toolkit_tables,
+)
 
 
 def _write_toolkits_yaml(root: Path, *, memory_enabled: bool = True) -> None:
@@ -102,3 +108,36 @@ def test_reconcile_is_idempotent(tmp_path):
     assert config_path.read_bytes() == before
     assert warnings == []
     assert actions == [".codex/config.toml — toolkit tables already current"]
+
+
+class TestInstallCLIToolkitOptions:
+    """CLI-level coverage: hard-cut removal of --toolkits/--all-toolkits (AC9)."""
+
+    def test_toolkits_flag_is_rejected(self, tmp_path):
+        # AC9 — hard cut: the flag must not be silently accepted.
+        runner = CliRunner()
+        result = runner.invoke(codex, ["install", "--path", str(tmp_path), "--no-build", "--toolkits=memory"])
+        assert result.exit_code != 0
+        assert "no such option" in result.output.lower()
+
+    def test_all_toolkits_flag_is_rejected(self, tmp_path):
+        # AC9 — hard cut: the flag must not be silently accepted.
+        runner = CliRunner()
+        result = runner.invoke(codex, ["install", "--path", str(tmp_path), "--no-build", "--all-toolkits"])
+        assert result.exit_code != 0
+        assert "no such option" in result.output.lower()
+
+    def test_install_cli_still_reconciles_enabled_sections(self, tmp_path):
+        # Removing the seeding flags must not break reconciliation of an
+        # already-declared toolkit config via `parrot codex install`.
+        _write_toolkits_yaml(tmp_path, memory_enabled=True)
+        runner = CliRunner()
+        result = runner.invoke(codex, ["install", "--path", str(tmp_path), "--no-build", "--no-bookstore"])
+        assert result.exit_code == 0, result.output
+        assert "parrot-memory" in _config(tmp_path)["mcp_servers"]
+
+
+def test_empty_toolkit_config_hints_at_new_command(tmp_path):
+    # AC9 — an absent/empty toolkit config surfaces the replacement command.
+    actions = install_codex_integration(tmp_path, gitignore=False, bookstore=False)
+    assert any("parrot toolkits install" in action for action in actions)
