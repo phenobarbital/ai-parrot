@@ -274,7 +274,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -287,8 +287,8 @@
       "parallelism_notes": "Drives the finished CLI across all three hosts, so every host flag cut must have landed first: TASK-3377 (claude_code/cli.py), TASK-3378 (codex/cli.py) and TASK-3379 (google/cli.py) each remove --toolkits, and this suite asserts those flags are rejected; TASK-3380 supplies the mcp-local error text it checks.",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3381-cross-host-test-matrix.md"
+      "completed_at": "2026-09-18T07:43:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3381-cross-host-test-matrix.md"
     }
   ]
 }
