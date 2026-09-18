@@ -122,8 +122,8 @@ unset. But authenticated routes are **not** usable in this profile —
 `GET /api/v1/agent_tools` → 500 `RuntimeError: Missing Configuration of
 Session Storage` (navigator-session not configured by
 `docker/integrations/server.py`). The `botmanager` target therefore needs a
-session-storage setup (or an explicit "unauthenticated routes only" scope) in
-the spec.
+session-storage setup. **Decided**: the minimal entrypoint configures
+navigator-session storage (see Open Questions).
 
 **Conclusion for the spec**: an MCP-exposed toolkit is a **sub-2-second**
 target and the minimal `BotManager` is a **~3.5-second** target (warm, no
@@ -155,8 +155,9 @@ second**. Cause: `HttpMCPServer.start()` (`transports/http.py:38-92`) returns
 after `await self.site.start()`; `_run_standalone_server()` (`mcp/cli.py:138-181`)
 does `await server.start()` then falls into `finally: await server.stop()`.
 The stdio transport only "works" because its `start()` loops on
-`sys.stdin.readline()` (`transports/stdio.py:44-50`). Unix transport
-(`transports/unix.py:43`) needs the same check in the spike.
+`sys.stdin.readline()` (`transports/stdio.py:44-50`). The Unix transport
+is **not** affected: its `start()` awaits `serve_forever()`
+(`transports/unix.py:69-72`, verified 2026-09-19).
 A serve-forever wrapper (`await server.start(); await asyncio.Event().wait()`)
 makes the HTTP target reachable — the fix is one `await` in
 `_run_standalone_server`, and it is a **prerequisite task** for this feature.
@@ -191,6 +192,28 @@ makes the HTTP target reachable — the fix is one `await` in
   sub-agent with the skill body as prompt; `allowed-tools` pre-approves tools.
   An `/e2e` skill can therefore be the *user-facing* entry point and fork into
   `e2e-api-tester`.
+
+### S5. Detached-process survival (verified 2026-09-19, this dev machine)
+
+A `subprocess.Popen([...], start_new_session=True)` child was spawned
+(a) from a Bash tool call in the main session and (b) from a sub-agent that
+then gave its final response. **Both processes were still alive** afterwards,
+reparented (`PPID`) to the Claude Code process, which acts as the subreaper,
+in their own session (`SID == PID`). Consequences:
+
+- `parrot e2e up` can return right after readiness, and the target outlives
+  the Bash call and the calling sub-agent. The two-step `up` … `down`
+  flow works even when `up` and `down` run in different tool calls or
+  different agents.
+- For the same reason, nothing reaps a forgotten target before session exit.
+  The `SubagentStop` frontmatter hook plus `parrot e2e down --stale` is the
+  **primary** orphan defence, not just a safety net. Claude Code's
+  session-exit cleanup is the last layer.
+- Test (b) ran as a background-launched sub-agent (this harness's default).
+  A strictly foreground sub-agent is expected to behave the same for a
+  `setsid`-detached grandchild, because the documented kill targets the
+  sub-agent's own shell commands. The TASK-0 spike should re-check this
+  from `qa-runner`.
 
 ### S4. Browser tooling (verified)
 
@@ -420,7 +443,8 @@ implemented as `ShellCriterion(command="parrot e2e run ...")`.
 - `parrot e2e up <target> [--config cfg.yaml] [--run-id X] [--timeout 60]`
   boots a target, waits for readiness, prints one JSON line
   (`base_url`, `pid`, `log`, `run_id`) and exits 0. On failure exits non-zero
-  with the log tail on stderr. Targets: `mcp`, `mcp-stdio`, `botmanager`,
+  with the log tail on stderr. Targets: `mcp-toolkit`, `mcp-agent`,
+  `mcp-stdio`, `botmanager` (`--profile minimal|full`, default `minimal`),
   `ui`, `browser`.
 - `parrot e2e status [run-id]`, `parrot e2e logs <run-id> [--tail N]`,
   `parrot e2e down <run-id> | --all | --stale`.
@@ -446,7 +470,9 @@ implemented as `ShellCriterion(command="parrot e2e run ...")`.
    `start_new_session=True`, stdout+stderr to `<state>/<run-id>.log`, free
    port from an ephemeral bind, env injected (`PORT`, `MCP_SERVER_PORT`,
    `PUBLIC_API_URL`, `E2E_RUN_ID`, `LLM_MODEL=<cheap>`). Readiness probes:
-   `mcp` → `GET {base}/mcp/info`; `botmanager` → `GET /healthz`;
+   `mcp-toolkit` / `mcp-agent` → `GET {base}/mcp/info`; `botmanager` →
+   `GET /healthz` (the minimal profile configures navigator-session storage,
+   so authenticated `/api` routes work too; `--profile full` boots `run.py`);
    `ui` → `GET /admin/` returns 200; `browser` → Obscura `/json/version`;
    `mcp-stdio` → `initialize` round-trip. Shutdown: `SIGTERM` to the process
    group, wait, `SIGKILL`; `--stale` walks the state dir and kills PIDs that
@@ -461,7 +487,11 @@ implemented as `ShellCriterion(command="parrot e2e run ...")`.
    assertions; optional `judge` step through a cheap model for semantic
    checks), always runs `down`, writes `e2e-verdict.json`
    (`{feature, run_id, target, passed, scenarios[], failures[], candidates[]}`)
-   and candidate tests. `e2e-ui-tester` additionally runs
+   and candidate tests. Budget: `model` / `max_llm_calls` from the
+   `e2e-plan.md` frontmatter, overridden by `E2E_MODEL` /
+   `E2E_MAX_LLM_CALLS` env vars; with neither set, a cheap default and a
+   hard cap apply. Candidates are **never auto-promoted**. A human moves
+   them to `tests/e2e/` after `/pr-review`. `e2e-ui-tester` additionally runs
    `parrot e2e up browser` + `up ui`, then drives the page through
    `chrome-devtools-mcp` (`navigate_page` → `take_snapshot` → `click`/`fill` →
    `list_console_messages` + `list_network_requests` after every step;
@@ -481,8 +511,10 @@ implemented as `ShellCriterion(command="parrot e2e run ...")`.
   config silently.
 - **Port race**: free-port allocation then bind; if the target reports
   `EADDRINUSE`, `up` retries once with a new port.
-- **Readiness timeout**: default 60 s (`botmanager` may need more — spike
-  decides); on timeout, kill the process group and fail loudly.
+- **Readiness timeout**: default 60 s; on timeout, kill the process group
+  and fail loudly. `--profile full` enters the dev-loop tier only if the
+  spike measures ≤ 15 s warm boot and ≤ 10 s SIGTERM exit; otherwise it is
+  nightly/opt-in only.
 - **Missing keys**: deterministic tier skips per test; exploratory tier marks
   scenarios `skipped_missing_credential` and the verdict is `passed: true`
   only if no *required* scenario was skipped.
@@ -508,10 +540,11 @@ implemented as `ShellCriterion(command="parrot e2e run ...")`.
 ## Capabilities
 
 ### New Capabilities
-- `e2e-harness-cli`: `parrot e2e up|status|logs|down` with target registry,
+- `e2e-harness-cli`: `parrot e2e up|status|logs|down` (in `ai-parrot-server`, lazily registered in core) with target registry,
   run-state files, readiness probes and process-group teardown.
 - `e2e-pytest-tier`: `e2e` marker, `PARROT_TEST_E2E` gate, session fixtures
-  over the harness, first tests for `mcp` (HTTP + stdio) and `botmanager`.
+  over the harness, first tests for `mcp-toolkit`, `mcp-stdio` and
+  `botmanager` (minimal); `mcp-agent` tests skip without a key; nightly CI job.
 - `e2e-api-tester-agent`: exploratory API/MCP sub-agent producing
   `e2e-verdict.json` + candidate tests.
 - `e2e-ui-tester-agent`: exploratory UI sub-agent over Obscura +
@@ -521,8 +554,9 @@ implemented as `ShellCriterion(command="parrot e2e run ...")`.
   skill.
 
 ### Modified Capabilities
-- `mcp-server-cli` (`parrot mcp serve`): standalone HTTP/Unix transports must
-  serve forever (S2 fix) — prerequisite.
+- `mcp-server-cli` (`parrot mcp serve`): the standalone HTTP transport must
+  serve forever (S2 fix, TASK-0); Unix already blocks (S5).
+- `skills-parsers`: lazy tiktoken encoder (S2b fix, TASK-0).
 - `sdd-spec` template: new *E2E Scenarios* subsection under § 4 Test
   Specification.
 - `sdd-done`: evidence step reads the e2e verdict.
@@ -545,7 +579,8 @@ implemented as `ShellCriterion(command="parrot e2e run ...")`.
 | `.claude/skills/e2e/SKILL.md` | new | `context: fork`, `agent: e2e-api-tester` |
 | `.claude/hooks/e2e-teardown.sh` | new | `SessionEnd`/`SubagentStop` teardown, documented for local settings |
 | `package.json` / `Makefile:948` | depends on | `chrome-devtools-mcp` already declared; `make install-chrome-devtools` exists |
-| CI (`.github/workflows/ci.yml`) | extends | optional nightly job `PARROT_TEST_E2E=1 pytest -m e2e` with secrets |
+| CI (`.github/workflows/ci.yml`) | extends | nightly job `PARROT_TEST_E2E=1 pytest -m e2e`, **deterministic tier only**, one cheap-model secret (`GROQ_API_KEY`); lands with this feature |
+| `packages/ai-parrot/src/parrot/skills/parsers.py:29` | modifies | S2b fix (TASK-0): lazy `tiktoken` encoder on first `_count_tokens` call |
 
 No breaking changes. New runtime dependency: none (psutil, click, aiohttp,
 httpx already present). New dev/CI dependency: Node ≥ 20.19 for the UI tier.
@@ -678,7 +713,9 @@ from navconfig import config                                 # used at tests/e2e
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: high. Four independent lanes once the harness
+- **Internal parallelism**: high. TASK-0 (S2 + S2b fixes with their
+  regression tests, plus the full-profile spike measurement) goes first.
+  Four independent lanes follow once the harness
   contract (`RunState` JSON + `up/down` CLI) is fixed in TASK-1:
   (1) harness CLI + S2 fix, (2) pytest tier (`conftest`, marker, first tests),
   (3) `e2e-api-tester` agent + `/e2e` skill + `qa-runner`/`sdd-done`/`sdd-spec`
@@ -707,14 +744,14 @@ from navconfig import config                                 # used at tests/e2e
 - [x] Harness home — *Owner: Jesus*: `parrot e2e up|down|status` CLI
 - [x] Ratchet — *Owner: Jesus*: verdict JSON + candidate pytest tests under `e2e` marker
 - [x] Gate force — *Owner: Jesus*: blocking only when spec declares `e2e: required`
-- [ ] **Spike gate**: boot-to-ready and clean-shutdown time of the *full* profile (`run.py`, real Postgres/Redis, `ENABLE_REGISTRY_BOTS` default) on the dev machine — threshold to accept for the dev-loop tier (proposal: ≤ 15 s warm, SIGTERM exit ≤ 10 s); minimal profile already measured at ~3.5 s / 0.7 s — *Owner: Jesus*
-- [ ] **Prerequisite fixes** discovered by the spike: (S2) `_run_standalone_server` serve-forever for http/unix; (S2b) lazy tiktoken encoder in `parrot/skills/parsers.py:29` or `TIKTOKEN_CACHE_DIR` pre-warm in the harness — ship as TASK-0 of this feature or as a separate hotfix? — *Owner: Jesus*
-- [ ] `botmanager` target scope: configure navigator-session storage in the minimal entrypoint (authenticated routes 500 today with `Missing Configuration of Session Storage`) or restrict the target to unauthenticated routes + MCP mount? — *Owner: Jesus*
-- [ ] **Spike gate**: does a `parrot e2e up`-spawned process (`start_new_session=True`) survive (a) the Bash call returning, (b) a *foreground* sub-agent returning? Docs say sub-agent-started commands stop at final response; confirm whether that covers detached grandchildren. Design assumes *no* — *Owner: Jesus*
-- [ ] Should the `mcp` target boot a **real agent** (LLM-backed, `AgentMCPMount`/FEAT-477 path with a cheap model) or a **toolkit** (`WorkingMemoryToolkit`, no LLM)? Proposal: both as separate targets `mcp-toolkit` / `mcp-agent`; the agent one is the "real keys" tier — *Owner: Jesus*
-- [ ] Where does `parrot.e2e` live: `ai-parrot-server` (has aiohttp, Obscura, MCP transports) vs `ai-parrot` core (has the CLI)? Proposal: `ai-parrot-server`, registered lazily with an install hint like agentd — *Owner: Jesus*
-- [ ] Unix transport: does `UnixMCPServer.start()` block or return like HTTP (S2)? Verify in the spike — *Owner: sdd-worker*
-- [ ] Budget knobs: `E2E_MODEL`, `E2E_MAX_LLM_CALLS` — env vs `sdd/state/<FEAT>/e2e-plan.md` frontmatter? — *Owner: Jesus*
-- [ ] Candidate-test promotion policy: does `sdd-worker` auto-promote candidates that pass twice, or is promotion always a human review in `/pr-review`? — *Owner: Jesus*
-- [ ] CI: add a nightly `e2e` job with secrets now, or after the first two features declare `e2e: required`? — *Owner: Jesus*
-- [ ] `run.py` vs `docker/integrations/server.py` as the `botmanager` target: the former exercises `QuerySource`/auth/PBAC (realistic, heavy), the latter is minimal. Proposal: minimal by default, `--profile full` opt-in — *Owner: Jesus*
+- [x] **Spike gate (full profile thresholds)** — *Owner: Jesus*: accept `--profile full` into the dev-loop tier iff **≤ 15 s warm boot-to-ready and ≤ 10 s SIGTERM exit**, measured on the dev machine with real Postgres/Redis and `ENABLE_REGISTRY_BOTS` default. If it misses either, `full` stays nightly/opt-in only; the minimal profile (~3.5 s / 0.7 s, S1) remains the dev-loop default. The measurement itself is a spike task of this feature.
+- [x] **Prerequisite fixes** — *Owner: Jesus*: ship as **TASK-0 of this feature** (no separate hotfix). (S2) `_run_standalone_server` waits forever after `start()` for **http only** (Unix already blocks, see S5); (S2b) lazy tiktoken encoder in `parrot/skills/parsers.py:29`. Each carries its own `e2e` regression test ("http serve stays up", "botmanager boots with network disabled").
+- [x] `botmanager` target scope — *Owner: Jesus*: **configure navigator-session storage in the minimal entrypoint** so authenticated `/api` routes are testable by default (not just unauthenticated routes + MCP mount). The spec picks the backend; prefer one with no external service if navigator-session supports it, else Redis with a skip when unreachable.
+- [x] **Spike gate (process survival)** — *Owner: Jesus, verified 2026-09-19*: **yes, it survives both.** See S5. The design assumption ("no") was wrong; the design still holds because `up` is quick-return, but orphan prevention matters more (hooks + `--stale`).
+- [x] `mcp` target — *Owner: Jesus*: **both**, as separate targets `mcp-toolkit` (`WorkingMemoryToolkit`, no LLM, deterministic gate) and `mcp-agent` (`AgentMCPMount`/FEAT-477 path with a cheap model, the "real keys" tier).
+- [x] `parrot.e2e` home — *Owner: Jesus*: **`ai-parrot-server`**, registered lazily in core `cli._lazy_commands` with an install hint in `_lazy_extras` (agentd pattern).
+- [x] Unix transport — *verified 2026-09-19*: `UnixMCPServer.start()` **blocks**. It awaits `self.server.serve_forever()` (`transports/unix.py:69-72`), so S2 affects only the HTTP transport.
+- [x] Budget knobs — *Owner: Jesus*: **`e2e-plan.md` frontmatter holds the per-feature default; env vars (`E2E_MODEL`, `E2E_MAX_LLM_CALLS`) override it** (CI/operator caps win). With neither set, the harness falls back to a cheap model and a hard call cap.
+- [x] Candidate-test promotion — *Owner: Jesus*: **always human review.** `sdd-worker` never auto-promotes; candidates are listed in the `/sdd-done` evidence table and in `/pr-review`, and a human moves them from `tests/e2e/candidates/` to `tests/e2e/`.
+- [x] CI — *Owner: Jesus*: **add the nightly job now, deterministic tier only** (`PARROT_TEST_E2E=1 pytest -m e2e`, one cheap key secret, e.g. `GROQ_API_KEY`). Exploratory agents do not run in CI.
+- [x] `botmanager` profile — *Owner: Jesus*: **minimal by default** (`docker/integrations/server.py`-style + session storage, above); `run.py` is `--profile full`, opt-in, governed by the full-profile spike gate above.
