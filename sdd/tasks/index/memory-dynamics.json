@@ -89,7 +89,7 @@
       "feature_id": "FEAT-571",
       "feature": "memory-dynamics",
       "spec": "sdd/specs/memory-dynamics.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -97,8 +97,8 @@
       "parallelism_notes": "graph root (M0, spec §3 'no dynamics dependency'): sole writer of memory/unified/manager.py, tests/memory/unified/test_manager.py and the new test_manager_real_store.py within this feature; imports only existing episodic models/store/FAISS backend; delegation-eligible (Delegation Contract present)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3386-m0-unified-recording-repair.md"
+      "completed_at": "2026-09-18T14:01:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3386-m0-unified-recording-repair.md"
     }
   ]
 }
