@@ -1,4 +1,5 @@
 """CrewHandler applies CREW_AI_KEY to handler-built crews (FEAT-575, TASK-3456)."""
+
 import pytest
 
 from parrot.handlers.crew.handler import CrewHandler
