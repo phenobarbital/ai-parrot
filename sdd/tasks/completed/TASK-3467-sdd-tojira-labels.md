@@ -162,10 +162,20 @@ and record it in the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (nova, mistral.devstral-2-123b), via sdd-worker orchestration (FEAT-549)
+**Date**: 2026-09-19
+**Notes**: Added spec Module 7 to `.claude/commands/sdd-tojira.md` + its `.agent/
+workflows` and `.agents/skills` twins: extraction table row (`projects ∪ tags` →
+Jira `labels`, sorted/deduped via a `parse_taxonomy` one-liner), `"labels": [...]`
+in both MCP and curl CREATE examples, and an additive-only `update_fields`/`update`
+labels merge on the UPDATE path (never removes existing ticket labels).
 
-**Completed by**:
-**Date**:
-**Notes**:
+Attempt history: attempt 1 (glm) exceeded max_turns without a final_output
+(infra/model timeout, not a confirmed defect); attempt 2 (mistral) succeeded and
+merged.
+
+Review: no defects found (`coder-review:907ef4649294caca42b10002`), fix_commits=[].
+
+Seat: mistral (nova) · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 2 · Duration: 348.4s · Tokens: 2893774/17309
 
 **Deviations from spec**: none

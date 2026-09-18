@@ -176,7 +176,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -186,8 +186,8 @@
       "parallelism_notes": "label one-liner calls parse_taxonomy from TASK-3459 (scripts/sdd/sdd_meta.py)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3467-sdd-tojira-labels.md"
+      "completed_at": "2026-09-18T23:09:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3467-sdd-tojira-labels.md"
     },
     {
       "id": "TASK-3468",
