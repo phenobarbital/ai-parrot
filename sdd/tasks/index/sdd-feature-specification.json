@@ -90,7 +90,7 @@
     {
       "id": "TASK-3473",
       "slug": "intake-retention",
-      "title": "Intake staging retention — prune_intake.py + /sdd-status Step 0 + gitignore",
+      "title": "Intake staging pruner — prune_intake.py with a once-a-day gate + gitignore",
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
@@ -139,14 +139,35 @@
       "priority": "low",
       "effort": "S",
       "depends_on": [
-        "TASK-3470"
+        "TASK-3470",
+        "TASK-3476"
       ],
       "parallel": true,
-      "parallelism_notes": "links sdd/templates/intake.procedure.md created by TASK-3470",
+      "parallelism_notes": "links sdd/templates/intake.procedure.md created by TASK-3470 and documents the `python -m scripts.sdd.install_hooks` command created by TASK-3476",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3475-intake-docs.md"
+    },
+    {
+      "id": "TASK-3476",
+      "slug": "daily-prune-hook-installer",
+      "title": "Daily prune git-hook installer — install_hooks.py",
+      "feature_id": "FEAT-577",
+      "feature": "sdd-feature-specification",
+      "spec": "sdd/specs/sdd-feature-specification.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3473"
+      ],
+      "parallel": true,
+      "parallelism_notes": "the hook block calls `scripts.sdd.prune_intake --daily --apply` created by TASK-3473 (scripts/sdd/prune_intake.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3476-daily-prune-hook-installer.md"
     }
   ]
 }

@@ -140,7 +140,7 @@ first; merge on top of it).
 Runs only when §1's trigger rule selects it. Follow
 `sdd/templates/intake.procedure.md` §0–§8 end to end. It stages everything
 under `sdd/state/.intake/<slug>-<RUN_ID>/` (git-ignored; pruned after 10 days
-by `/sdd-status`), validated by `sdd/templates/intake.schema.json`, and returns
+by a daily git hook), validated by `sdd/templates/intake.schema.json`, and returns
 one of two outcomes:
 
 - **handed off** (`phase: handed_off`) — the user chose `/sdd-brainstorm`; stop

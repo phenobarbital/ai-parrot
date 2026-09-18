@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: low
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-3470
+**Depends-on**: TASK-3470, TASK-3476
 **Assigned-to**: unassigned
 
 ---
@@ -52,6 +52,7 @@ Edit `sdd/WORKFLOW.md`, and do not touch the stale copy.
   ``| `/sdd-spec` | `sdd-spec` | Scaffold a formal Feature Specification from exploration or direct request |`` (occurs once).
 - Flags and behavior to document: spec §2 "New Public Interfaces", trigger rule, research depths, brainstorm hand-off (G12), retention (G13), resume.
 - `sdd/templates/intake.procedure.md` — created by TASK-3470 (link to it rather than duplicating it).
+- `python -m scripts.sdd.install_hooks` / `--uninstall` — created by TASK-3476 (document the one-time install step and the `core.hooksPath` refusal).
 
 ### Does NOT Exist
 - ~~A `/sdd-feature` command~~ — do not document one.
@@ -95,7 +96,7 @@ directly. The full procedure is `sdd/templates/intake.procedure.md`.
 
 # FILL IN: a short flow line (intake → research → rounds → spec), a flags table (--interview, --no-interview,
 # --resume [<staging-dir>], --research, --no-gate, --budget), the brainstorm hand-off (G12), staging + 10-day
-# pruning by /sdd-status (G13), "unattended lanes always pass --no-interview", and when to prefer /sdd-brainstorm
+# pruning by a once-a-day git hook, installed once with `python -m scripts.sdd.install_hooks` (G13; /sdd-status stays read-only), "unattended lanes always pass --no-interview", and when to prefer /sdd-brainstorm
 # or /sdd-proposal instead — bounded by spec §2; ≤ 60 lines
 
 # occurrences: 1 (verified: grep -cF '| `/sdd-spec` | `sdd-spec` |' sdd/WORKFLOW.md)
@@ -151,7 +152,7 @@ See the blueprint test module.
 
 ## Agent Instructions
 
-1. Confirm TASK-3470 is done (the procedure exists).
+1. Confirm TASK-3470 and TASK-3476 are done (the procedure and the installer exist).
 2. Implement; run the Validation Commands.
 3. Move this file to `sdd/tasks/completed/` and set the index status to `done`.
 

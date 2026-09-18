@@ -1,4 +1,4 @@
-# TASK-3473: Intake staging retention — `prune_intake.py` + `/sdd-status` Step 0 + gitignore
+# TASK-3473: Intake staging pruner — `prune_intake.py` with a once-a-day gate + gitignore
 
 **Feature**: FEAT-577 — `/sdd-spec` Intake Mode — Interview-Driven Spec Creation
 **Spec**: `sdd/specs/sdd-feature-specification.spec.md`
@@ -12,27 +12,24 @@
 
 ## Context
 
-Implements spec §3 **Module 9** (G13) and the `.gitignore` half of **Module 8**.
-The user resolved in spec review that `sdd/state/.intake/` is git-ignored and
-that staged runs older than 10 days are pruned during `/sdd-status`. This is
-the one documented exception to `/sdd-status`'s read-only guardrail. It is
-limited to untracked children of `sdd/state/.intake/`.
+Implements spec §3 **Module 9** (G13, revision 0.3). `sdd/state/.intake/` is
+git-ignored, and staged intake runs older than 10 days are pruned automatically
+**by a git hook that runs at most once a day**. The hook itself is installed by
+TASK-3476. This task provides the script the hook calls:
+`python -m scripts.sdd.prune_intake --daily --apply`. **`/sdd-status` stays
+read-only and is not touched.**
 
 ---
 
 ## Scope
 
 - Create `scripts/sdd/prune_intake.py` with the Module 9 interface: dry-run by
-  default, `--apply` deletes, strict root safety.
+  default, `--apply` deletes, strict root safety, and the `--daily` stamp gate.
 - Create `tests/sdd_scripts/test_prune_intake.py`.
-- Add **Step 0 — Prune stale intake staging** to `.claude/commands/sdd-status.md`
-  and to `.agent/workflows/sdd-status.md` (same body; that twin differs only by
-  frontmatter), and amend their Guardrail line 18.
-- Amend `.agents/skills/sdd-status/SKILL.md` (guardrail + workflow step).
 - Add `sdd/state/.intake/` to `.gitignore`.
 
-**NOT in scope**: pruning `sdd/state/.design_research/` (it stays manual), and
-anything that writes intake runs (TASK-3470/3471).
+**NOT in scope**: installing git hooks (TASK-3476); any change to
+`/sdd-status` (it must stay read-only); pruning `sdd/state/.design_research/`.
 
 ---
 
@@ -40,11 +37,8 @@ anything that writes intake runs (TASK-3470/3471).
 
 | File | Action | Description |
 |---|---|---|
-| `scripts/sdd/prune_intake.py` | CREATE | stale-run finder + pruner CLI |
-| `tests/sdd_scripts/test_prune_intake.py` | CREATE | unit tests + sdd-status contract |
-| `.claude/commands/sdd-status.md` | MODIFY | Step 0 + guardrail exception |
-| `.agent/workflows/sdd-status.md` | MODIFY | identical body edit |
-| `.agents/skills/sdd-status/SKILL.md` | MODIFY | guardrail exception + step |
+| `scripts/sdd/prune_intake.py` | CREATE | stale-run finder + pruner CLI with `--daily` gate |
+| `tests/sdd_scripts/test_prune_intake.py` | CREATE | unit tests |
 | `.gitignore` | MODIFY | ignore `sdd/state/.intake/` |
 
 ---
@@ -54,20 +48,20 @@ anything that writes intake runs (TASK-3470/3471).
 ### Verified Imports
 ```python
 from pydantic import BaseModel  # verified: scripts/sdd/id_ledger.py:25 (scripts/sdd already uses pydantic)
-# stdlib only otherwise: argparse, json, logging, shutil, datetime, pathlib
+# stdlib only otherwise: argparse, json, logging, shutil, subprocess, datetime, pathlib
 ```
 
 ### Existing Signatures / Anchors
 - CLI pattern: `scripts/sdd/check_task_graph.py:445` `def main(argv: list[str] | None = None) -> int:` and `:460` `if __name__ == "__main__":`; tests import `from scripts.sdd.check_task_graph import ...` (`tests/sdd_scripts/test_check_task_graph.py:6`).
-- `.claude/commands/sdd-status.md` (104 lines): `:18` `- Read-only — do not modify any files.` (once); `:21` `## Steps`; `:23` `### 1. Read All Per-Spec Indexes (FEAT-145)` (once). `.agent/workflows/sdd-status.md` differs **only** at frontmatter line 2 (`description:` vs `model: haiku`).
-- `.agents/skills/sdd-status/SKILL.md`: `:18` `- Read-only: never modifies any files.` (once); `:24` `1. Load all per-spec indexes:` (once).
-- `.gitignore:406-407` — `# FEAT-545: id-independent staging for /sdd-spec §3b; …` / `sdd/state/.design_research/` (once).
+- `.gitignore:406-407` — `# FEAT-545: id-independent staging for /sdd-spec §3b; …` / `sdd/state/.design_research/` (`grep -cxF 'sdd/state/.design_research/' .gitignore` = 1).
 - `intake.json.updated_at` — `"format": "date-time"` string (TASK-3469, `sdd/templates/intake.schema.json`).
+- `git rev-parse --git-common-dir` — prints the shared `.git` dir (same for every linked worktree). It may be relative to the cwd, so resolve it.
+- `.claude/commands/sdd-status.md:18` — "- Read-only — do not modify any files." **Must remain unchanged** (spec AC).
 
 ### Does NOT Exist
 - ~~`scripts/sdd/prune_intake.py`~~ — created here.
 - ~~Any existing SDD script that deletes directories~~ — this is the first. Keep the safety checks strict.
-- ~~A parity test for `sdd-status`~~ — none. Keep the two copies identical anyway.
+- ~~A `/sdd-status` prune step~~ — explicitly not added.
 
 ---
 
@@ -79,9 +73,6 @@ from pydantic import BaseModel  # verified: scripts/sdd/id_ledger.py:25 (scripts
   "targets": [
     {"path": "scripts/sdd/prune_intake.py", "action": "CREATE"},
     {"path": "tests/sdd_scripts/test_prune_intake.py", "action": "CREATE"},
-    {"path": ".claude/commands/sdd-status.md", "action": "MODIFY"},
-    {"path": ".agent/workflows/sdd-status.md", "action": "MODIFY"},
-    {"path": ".agents/skills/sdd-status/SKILL.md", "action": "MODIFY"},
     {"path": ".gitignore", "action": "MODIFY"}
   ],
   "contract_symbols": []
@@ -97,31 +88,37 @@ from pydantic import BaseModel  # verified: scripts/sdd/id_ledger.py:25 (scripts
   a path that has been checked to be a direct, non-symlink child directory of a
   root whose resolved path ends with `sdd/state/.intake`. Anything else raises
   `ValueError` (CLI exit 2).
+- **Daily gate**: the stamp defaults to `<git-common-dir>/sdd-intake-prune.stamp`,
+  so all worktrees share one budget. Touch the stamp **before** pruning so two
+  near-simultaneous hook runs can't both prune. A stamp younger than 24 h ⇒ exit
+  0 silently. If `git rev-parse` fails (not a repo), `--daily` exits 0 and does
+  nothing: the hook must never fail.
 - Age source: `intake.json.updated_at` (ISO-8601; treat a naive timestamp as
-  UTC). Fall back to the directory mtime when the file is missing, unreadable,
-  or unparsable.
-- The CLI is dry-run by default. `/sdd-status` passes `--apply`.
-- Logging via `logging.getLogger(__name__)`. The CLI prints its report lines
-  (matching the other `scripts/sdd` CLIs); the library functions never print.
+  UTC). Fall back to the dir mtime when the file is missing, unreadable, or
+  unparsable.
+- The CLI is dry-run by default; the hook passes `--daily --apply`. The library
+  functions never print; `main` prints the report lines.
 
 ---
 
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. Write `prune_intake.py`. *Why*: deterministic and testable, instead of a `find -delete` in a prompt.
-2. Write the tests with a `tmp_path`-based fake root at `tmp_path/"sdd"/"state"/".intake"`. *Why*: exercises the suffix check without touching the repo.
-3. Add Step 0 and the guardrail exception to `sdd-status` (both copies + skill). *Why*: G13.
-4. Add the `.gitignore` line. *Why*: G5/G13, staging never gets committed.
+1. Write `prune_intake.py`. *Why*: deterministic and testable, instead of a `find -delete` in a hook.
+2. Write the tests with a `tmp_path` fake root at `tmp_path/"sdd"/"state"/".intake"`
+   and an explicit `--stamp`/`stamp=` path. *Why*: exercises the suffix check and
+   the gate without touching the repo or its `.git`.
+3. Add the `.gitignore` line. *Why*: G5/G13, staging never gets committed.
 
 ### `scripts/sdd/prune_intake.py` (CREATE)
 ```python
 """``prune_intake.py`` — prune stale /sdd-spec intake staging (FEAT-577).
 
 Staged intake runs live under ``sdd/state/.intake/<slug>-<RUN_ID>/`` (git-ignored).
-``/sdd-status`` calls this with ``--apply`` to delete runs older than 10 days.
-Dry-run by default; only direct, non-symlink child directories of a root that
-resolves to ``.../sdd/state/.intake`` are ever deleted.
+A git hook (installed by ``scripts/sdd/install_hooks.py``) calls this with
+``--daily --apply`` on checkout/merge/commit; ``--daily`` lets it run at most once
+per 24 h. Dry-run by default; only direct, non-symlink child directories of a
+root that resolves to ``.../sdd/state/.intake`` are ever deleted.
 """
 
 from __future__ import annotations
@@ -130,6 +127,7 @@ import argparse
 import json
 import logging
 import shutil
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -139,6 +137,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ROOT: Path = Path("sdd/state/.intake")
 DEFAULT_MAX_AGE_DAYS: int = 10
+DAILY_INTERVAL: timedelta = timedelta(hours=24)
+STAMP_NAME: str = "sdd-intake-prune.stamp"
 
 
 class StaleIntake(BaseModel):
@@ -159,8 +159,8 @@ def _check_root(root: Path) -> Path:
 
 def run_age(run_dir: Path, now: datetime) -> tuple[timedelta, str]:
     """Age from intake.json ``updated_at``; falls back to the dir mtime when missing/unparsable."""
-    # FILL IN: read run_dir/"intake.json"; parse updated_at with datetime.fromisoformat (accept a trailing "Z";
-    # naive ⇒ UTC); on OSError/ValueError/KeyError/json error fall back to
+    # FILL IN: parse run_dir/"intake.json" updated_at via datetime.fromisoformat (accept trailing "Z"; naive ⇒ UTC);
+    # on OSError/ValueError/KeyError/TypeError/json.JSONDecodeError use
     # datetime.fromtimestamp(run_dir.stat().st_mtime, tz=timezone.utc) with source "mtime" — bounded by spec M9
 
 
@@ -170,8 +170,8 @@ def find_stale(root: Path, max_age_days: int = DEFAULT_MAX_AGE_DAYS, now: dateti
         return []
     resolved = _check_root(root)
     now = now or datetime.now(timezone.utc)
-    # FILL IN: iterate sorted(resolved.iterdir()); skip non-dirs and symlinks (is_symlink() before is_dir());
-    # compute run_age; keep age > timedelta(days=max_age_days) — bounded by spec M9 tests
+    # FILL IN: iterate sorted(resolved.iterdir()); skip symlinks (check is_symlink() before is_dir()) and non-dirs;
+    # keep runs whose age > timedelta(days=max_age_days) — bounded by spec §4 M9 rows
 
 
 def prune(
@@ -181,74 +181,56 @@ def prune(
     stale = find_stale(root, max_age_days, now)
     if apply:
         for run in stale:
-            # FILL IN: re-assert run.path.parent == _check_root(root) and not run.path.is_symlink() before
-            # shutil.rmtree(run.path); logger.info each deletion — bounded by "Safety first"
+            # FILL IN: re-assert run.path.parent == _check_root(root) and not run.path.is_symlink(), then
+            # shutil.rmtree(run.path); logger.info("pruned %s", run.path) — bounded by "Safety first"
             pass
     return stale
 
 
+def default_stamp() -> Path | None:
+    """``$(git rev-parse --git-common-dir)/sdd-intake-prune.stamp`` (shared by all worktrees); None outside a repo."""
+    # FILL IN: subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True, check=False);
+    # non-zero ⇒ None; else Path(out.strip()).resolve() / STAMP_NAME — bounded by "hook must never fail"
+
+
+def claim_daily_slot(stamp: Path, now: datetime | None = None) -> bool:
+    """True (and touch the stamp) when the last run was ≥ 24 h ago or never; False otherwise."""
+    # FILL IN: missing stamp or now - mtime >= DAILY_INTERVAL ⇒ stamp.parent.mkdir(parents=True, exist_ok=True),
+    # stamp.touch(), os.utime to `now` when given (tests), return True; else False — bounded by "touch before prune"
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI: --root, --older-than-days (default 10), --apply. Prints one line per run; exit 0, or 2 on an unsafe root."""
+    """CLI: --root, --older-than-days (default 10), --apply, --daily, --stamp. Exit 0; 2 on an unsafe root."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--older-than-days", type=int, default=DEFAULT_MAX_AGE_DAYS)
     parser.add_argument("--apply", action="store_true", help="delete (default: dry-run)")
+    parser.add_argument("--daily", action="store_true", help="run at most once per 24 h (git hook mode)")
+    parser.add_argument("--stamp", type=Path, default=None, help="daily stamp file (default: <git-common-dir>/" + STAMP_NAME + ")")
     args = parser.parse_args(argv)
-    # FILL IN: call prune; on ValueError print the message and return 2; print "<pruned|would prune> <name>
-    # (<age_days:.1f>d, <age_source>)" per run; return 0 — bounded by spec M9 CLI contract
+    # FILL IN: when --daily: stamp = args.stamp or default_stamp(); None or not claim_daily_slot(stamp) ⇒ return 0.
+    # Then prune(); ValueError ⇒ print message, return 2; print "<pruned|would prune> <name> (<age:.1f>d, <source>)"
+    # per run; return 0 — bounded by spec M9 CLI contract
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
 ```
-**Why this shape**: signatures are fixed by spec §3 Module 9. `_check_root` is
-the private helper that makes the unsafe-root test and the per-deletion
-re-check share one rule.
-
-### `.claude/commands/sdd-status.md` (MODIFY) — and `.agent/workflows/sdd-status.md` identically
-```markdown
-# occurrences: 1 (verified: grep -cF -- '- Read-only — do not modify any files.' .claude/commands/sdd-status.md) — line 18
-# REPLACE with:
-- Read-only — do not modify any files, **except** Step 0's pruning of git-ignored `sdd/state/.intake/` staging (FEAT-577).
-
-# occurrences: 1 (verified: grep -cF '### 1. Read All Per-Spec Indexes (FEAT-145)' .claude/commands/sdd-status.md) — line 23
-# BEFORE — insert above it:
-### 0. Prune Stale Intake Staging (FEAT-577)
-
-```bash
-python -m scripts.sdd.prune_intake --older-than-days 10 --apply
-```
-
-If it prunes anything, print one line before the board:
-`🧹 Pruned N stale intake run(s) (>10 days): <names>`. Otherwise stay silent.
-A non-zero exit is reported in one line, and the board is still shown.
-
-```
-**Why**: G13 (the user's resolution). The exception is written into the
-guardrail itself so no reader mistakes it for a violation.
-
-### `.agents/skills/sdd-status/SKILL.md` (MODIFY)
-```markdown
-# occurrences: 1 (verified: grep -cF -- '- Read-only: never modifies any files.' .agents/skills/sdd-status/SKILL.md) — line 18
-# REPLACE with:
-- Read-only: never modifies any files, except pruning git-ignored `sdd/state/.intake/` runs older than 10 days (FEAT-577).
-# occurrences: 1 (verified: grep -cF '1. Load all per-spec indexes:' .agents/skills/sdd-status/SKILL.md) — line 24
-# BEFORE — insert above it (and renumber the following steps +1):
-1. Prune stale intake staging: `python -m scripts.sdd.prune_intake --older-than-days 10 --apply`.
-# FILL IN: renumber the existing numbered steps — bounded by keeping the list consistent
-```
+**Why this shape**: spec §3 Module 9 fixes the signatures. `_check_root` makes
+the unsafe-root check and the per-deletion re-check share one rule. The gate
+lives here, not in shell, so it is unit-testable.
 
 ### `.gitignore` (MODIFY)
 ```gitignore
 # occurrences: 1 (verified: grep -cxF 'sdd/state/.design_research/' .gitignore) — line 407
 # AFTER — insert below it:
-# FEAT-577: id-less /sdd-spec intake staging; promoted to sdd/state/<FEAT-ID>/intake/ on commit, pruned after 10 days by /sdd-status
+# FEAT-577: id-less /sdd-spec intake staging; promoted to sdd/state/<FEAT-ID>/intake/ on commit, pruned after 10 days by a daily git hook (scripts/sdd/install_hooks.py)
 sdd/state/.intake/
 ```
 
 ### `tests/sdd_scripts/test_prune_intake.py` (CREATE)
 ```python
-"""Tests for scripts/sdd/prune_intake.py and the /sdd-status wiring (FEAT-577, spec §4 Module 9)."""
+"""Tests for scripts/sdd/prune_intake.py (FEAT-577, spec §4 Module 9)."""
 
 from __future__ import annotations
 
@@ -259,7 +241,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.sdd.prune_intake import find_stale, main, prune
+from scripts.sdd.prune_intake import claim_daily_slot, find_stale, main, prune
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _NOW = datetime(2026, 9, 19, 12, 0, tzinfo=timezone.utc)
@@ -282,26 +264,27 @@ def _run(root: Path, name: str, age_days: float | None) -> Path:
     return d
 
 
-# FILL IN: test_find_stale_uses_updated_at (11d stale, 9d not), test_find_stale_falls_back_to_mtime
-# (no/corrupt intake.json + os.utime), test_prune_dry_run_deletes_nothing, test_prune_apply_deletes_only_stale_children
-# (fresh run, root-level file, symlinked dir survive), test_prune_rejects_unsafe_root (ValueError; main(["--root", ...]) == 2),
-# test_prune_missing_root_is_noop, test_sdd_status_prunes_intake_first (both sdd-status copies contain
-# "scripts.sdd.prune_intake" and "FEAT-577"), test_gitignore_ignores_intake_staging — bounded by spec §4 M9 rows
+# FILL IN: test_find_stale_uses_updated_at, test_find_stale_falls_back_to_mtime, test_prune_dry_run_deletes_nothing,
+# test_prune_apply_deletes_only_stale_children (fresh run, root-level file, symlinked dir survive),
+# test_prune_rejects_unsafe_root (ValueError; main(["--root", str(tmp_path)]) == 2), test_prune_missing_root_is_noop,
+# test_daily_gate_skips_within_24h, test_daily_gate_first_run_creates_stamp (use tmp_path stamp + os.utime),
+# test_gitignore_ignores_intake_staging, test_sdd_status_stays_read_only (neither .claude/commands/sdd-status.md
+# nor .agent/workflows/sdd-status.md mentions "prune_intake") — bounded by spec §4 M9 rows
 ```
 
 ### FILL IN checklist
-- [ ] `run_age`, `find_stale` loop, `prune` re-check + rmtree, `main` body
-- [ ] SKILL.md renumbering
-- [ ] the eight tests
+- [ ] `run_age`, `find_stale` loop, `prune` re-check + rmtree
+- [ ] `default_stamp`, `claim_daily_slot`, `main` body
+- [ ] the ten tests
 
 ---
 
 ## Acceptance Criteria
 
 - [ ] `prune_intake.py` is dry-run by default and deletes only stale, direct, non-symlink children of a `.../sdd/state/.intake` root
+- [ ] `--daily` runs at most once per 24 h per repository (stamp in the git common dir), and exits 0 silently otherwise or outside a repo
 - [ ] An unsafe `--root` exits 2 and deletes nothing
-- [ ] `/sdd-status` (both copies + skill) runs Step 0 with `--apply`, and its guardrail names the FEAT-577 exception
-- [ ] `sdd/state/.intake/` is git-ignored
+- [ ] `sdd/state/.intake/` is git-ignored; `/sdd-status` is unchanged
 - [ ] `pytest tests/sdd_scripts/test_prune_intake.py -q` passes; `ruff check scripts/sdd/prune_intake.py` is clean
 
 ---
@@ -320,7 +303,7 @@ See the blueprint test module.
 
 ## Agent Instructions
 
-1. Read spec §2 "Staging retention" and §3 Module 9.
+1. Read spec §2 "Staging retention" and §3 Module 9 (revision 0.3).
 2. Confirm TASK-3469 is done (the `updated_at` field is defined).
 3. Implement; run the Validation Commands and `ruff check scripts/sdd/prune_intake.py`.
 4. Move this file to `sdd/tasks/completed/` and set the index status to `done`.

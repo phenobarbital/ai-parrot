@@ -31,7 +31,7 @@ hand-off to `/sdd-spec` §2d–§6, Jira, resume, and failure handling.
   `test_intake_procedure_offers_brainstorm_handoff`).
 
 **NOT in scope**: editing `/sdd-spec` (TASK-3471), `/sdd-brainstorm` (TASK-3474),
-`/sdd-status` or the pruning script (TASK-3473), and the WORKFLOW doc (TASK-3475).
+the pruning script and hook installer (TASK-3473, TASK-3476), and the WORKFLOW doc (TASK-3475).
 Do **not** paraphrase `/sdd-proposal` Phases 1–3. Reference them by path and
 section (spec §7 "Reuse, don't copy").
 
@@ -105,7 +105,7 @@ import pytest              # test deps
   renamed once the slug is confirmed. Never write under `sdd/state/<FEAT-ID>/`
   before §5.
 - Retention: state that staging is git-ignored and pruned after 10 days by
-  `/sdd-status` (G13). That behavior itself is TASK-3473's.
+  a once-a-day git hook (G13). That behavior itself belongs to TASK-3473/TASK-3476; `/sdd-status` stays read-only.
 
 ---
 
@@ -135,7 +135,7 @@ import pytest              # test deps
 
 ## 1. Staging
 <!-- FILL IN: RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"; STAGE=sdd/state/.intake/<slug>-${RUN_ID} (or _pending-${RUN_ID});
-     initial intake.json (phase started); git-ignored; pruned after 10 days by /sdd-status — bounded by G5, G13 -->
+     initial intake.json (phase started); git-ignored; pruned after 10 days by the daily git hook (G13; installed separately) — bounded by G5, G13 -->
 
 ## 2. Round 0 + fixed intake batch
 <!-- FILL IN: one batch — flow type/base branch; feature name/slug; related project(s) (KNOWN_PROJECTS choices +
