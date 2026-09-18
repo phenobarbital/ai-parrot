@@ -258,10 +258,23 @@ def test_backfill_dry_run_writes_nothing(tmp_path: Path) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, sonnet), via sdd-worker orchestration (FEAT-549)
+**Date**: 2026-09-19
+**Notes**: Created `scripts/sdd/backfill_taxonomy.py` per spec Module 8:
+`infer_projects()` (regex path→project mapping table, ordered by first mention,
+only `KNOWN_PROJECTS` values), `plan_edit()` (dry-run text-insertion — never a
+YAML re-dump — never overwrites non-empty `projects`, same byte-0 `---` rule as
+`parse()`), `main()` (`--apply` to write, default dry run, never commits). Wrote
+`tests/sdd_scripts/test_backfill_taxonomy.py` per the spec's Test Specification.
 
-**Completed by**:
-**Date**:
-**Notes**:
+Verification: `pytest tests/sdd_scripts/test_backfill_taxonomy.py -q` → 4 passed.
+`ruff check` clean. Real-repo dry-run count: `794 docs would change`;
+`git status --porcelain` immediately after confirmed zero writes (only the 2 new
+task files present as untracked, nothing under `sdd/` touched). `--apply` was
+never run against the real repo (out of scope, per spec Non-Goals).
+
+Review: no defects found (`coder-review:dfafa242bb09a0031abcfdb6`), fix_commits=[].
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a
 
 **Deviations from spec**: none

@@ -94,7 +94,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "imports KNOWN_PROJECTS + parse_taxonomy from TASK-3459 (scripts/sdd/sdd_meta.py)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3463-backfill-taxonomy-script.md"
+      "completed_at": "2026-09-18T23:03:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3463-backfill-taxonomy-script.md"
     },
     {
       "id": "TASK-3464",
@@ -156,7 +156,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -166,8 +166,8 @@
       "parallelism_notes": "commands invoke python -m scripts.sdd.doc_taxonomy --paths-only/--json created by TASK-3461 (scripts/sdd/doc_taxonomy.py)",
       "assigned_to": null,
       "started_at": "2026-09-18T22:32:44+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3466-status-next-taxonomy-filters.md"
+      "completed_at": "2026-09-18T23:03:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3466-status-next-taxonomy-filters.md"
     },
     {
       "id": "TASK-3467",
