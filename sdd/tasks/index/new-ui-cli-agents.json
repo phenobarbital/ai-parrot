@@ -16,14 +16,14 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Exclusive: edits packages/ai-parrot/pyproject.toml and uv.lock (shared dependency manifest/lockfile) and sdd/specs/new-cli-infra.spec.md. Root of the graph; TASK-3410/3411/3412/3413 import textual and are serialized behind it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3399-dependency-and-feat519-supersession.md"
     },
@@ -34,14 +34,14 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root: creates parrot/cli/console.py (get_console, set_console, LiveRegion). Imports nothing from other tasks. Consumers: TASK-3405, 3407, 3414 (LiveRegion), TASK-3415 (get_console).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3400-shared-console-live-region.md"
     },
@@ -52,14 +52,14 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root: creates parrot/cli/modes.py (UIMode, resolve_ui_mode, cli_state_dir, history_path, SessionPointer helpers). No imports from other tasks. Consumers: TASK-3404 (save_session_pointer), 3406 (load_session_pointer), 3407 (history_path), 3413 (resolve_ui_mode).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3401-ui-modes-and-state-paths.md"
     },
@@ -70,14 +70,14 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root: creates parrot/core/events/lifecycle/turn_scope.py and exports it from lifecycle/__init__.py (sole editor of that file). Consumers: TASK-3404 and TASK-3409 import turn_scope/in_turn_scope.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3402-lifecycle-turn-scope.md"
     },
@@ -88,14 +88,14 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root: creates parrot/cli/events.py. Imports only the existing ConversationTurn (commands.py:38). Consumers: TASK-3404, 3405, 3406, 3408, 3410, 3415.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3403-turn-event-model.md"
     },
@@ -106,7 +106,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -117,7 +117,7 @@
       "parallel": true,
       "parallelism_notes": "Imports save_session_pointer from TASK-3401 (cli/modes.py), turn_scope/in_turn_scope from TASK-3402 (core/events/lifecycle/turn_scope.py), and the TurnEvent family + BackendCapabilities + PostTurnHook from TASK-3403 (cli/events.py). Creates cli/session.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3404-turn-runner-session.md"
     },
@@ -128,7 +128,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -138,7 +138,7 @@
       "parallel": true,
       "parallelism_notes": "Imports get_console/LiveRegion from TASK-3400 (cli/console.py) and TurnEvent subclasses from TASK-3403 (cli/events.py). Sole editor of cli/renderer.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3405-renderer-live-region-streaming.md"
     },
@@ -149,7 +149,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -159,7 +159,7 @@
       "parallel": true,
       "parallelism_notes": "Imports load_session_pointer from TASK-3401 (cli/modes.py); /resume and /clear call TurnRunner.load_history/reset_session from TASK-3404 (cli/session.py). Sole editor of cli/commands.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3406-command-context-and-resume.md"
     },
@@ -170,7 +170,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -183,7 +183,7 @@
       "parallel": true,
       "parallelism_notes": "Imports get_console from TASK-3400, history_path/UIMode from TASK-3401, TurnRunner from TASK-3404, the renderer's region/render_turn_event from TASK-3405, and CommandContext + dispatch_async(ctx) from TASK-3406. Sole editor of cli/repl.py and tests/cli/test_integration.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3407-agent-repl-on-turn-runner.md"
     },
@@ -194,7 +194,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -203,7 +203,7 @@
       "parallel": true,
       "parallelism_notes": "Imports ToolStarted/ToolFinished/ToolFailed/BackendCapabilities from TASK-3403 (cli/events.py). Sole editor of cli/loaders.py. Parses the frame grammar TASK-3409 emits but does not import from it (tolerates servers without tool_event frames).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3408-server-proxy-canonical-routes.md"
     },
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": true,
       "parallelism_notes": "Imports turn_scope/in_turn_scope from TASK-3402 (core/events/lifecycle/turn_scope.py). Sole editor of ai-parrot-server handlers/stream.py. No import from TASK-3408.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3409-server-sse-tool-event-frames.md"
     },
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -244,7 +244,7 @@
       "parallel": true,
       "parallelism_notes": "Imports textual (declared by TASK-3399 in pyproject.toml/uv.lock) and TurnEvent subclasses from TASK-3403 (cli/events.py). Creates cli/tui/__init__.py, widgets.py, app.tcss.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3410-tui-widgets.md"
     },
@@ -255,7 +255,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -265,7 +265,7 @@
       "parallel": true,
       "parallelism_notes": "Implements CommandContext/RendererProtocol from TASK-3406 (cli/commands.py) and imports TranscriptView/LogDrawer from TASK-3410 (cli/tui/widgets.py). Creates cli/tui/adapter.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3411-tui-command-adapter.md"
     },
@@ -276,7 +276,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -287,7 +287,7 @@
       "parallel": true,
       "parallelism_notes": "Imports TurnRunner from TASK-3404 (cli/session.py), the widgets from TASK-3410 (cli/tui/widgets.py) and TUICommandContext/DrawerLogHandler from TASK-3411 (cli/tui/adapter.py). Creates cli/tui/app.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3412-tui-workspace-app.md"
     },
@@ -298,7 +298,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -311,7 +311,7 @@
       "parallel": true,
       "parallelism_notes": "Imports resolve_ui_mode/UIMode/load_session_pointer from TASK-3401, TurnRunner from TASK-3404, AgentREPL.run_batch + new REPLConfig fields from TASK-3407 (cli/repl.py), ServerAgentProxy(token=) from TASK-3408 (cli/loaders.py) and lazily AgentWorkspaceApp from TASK-3412 (cli/tui/app.py). Sole editor of cli/agent_repl.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3413-agent-command-entry-point.md"
     },
@@ -322,7 +322,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -331,7 +331,7 @@
       "parallel": true,
       "parallelism_notes": "Imports LiveRegion from TASK-3400 (cli/console.py). Sole editor of cli/devloop/renderer.py and cli/devloop/console.py; existing tests/cli/devloop/test_renderer.py must stay green untouched.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3414-devloop-live-region-convergence.md"
     },
@@ -342,7 +342,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -353,7 +353,7 @@
       "parallel": true,
       "parallelism_notes": "Imports BackendCapabilities from TASK-3403 (cli/events.py), CommandContext typing from TASK-3406 (cli/commands.py) and AgentREPL.add_post_turn_hook from TASK-3407 (cli/repl.py). Sole editor of ai-parrot-integrations agentd/cli.py and agentd/proxy.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3415-agentd-post-turn-hook-migration.md"
     },
@@ -364,7 +364,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -377,7 +377,7 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: edits packages/ai-parrot/tests/cli/conftest.py, which every other CLI test module loads. Exercises AgentREPL.run_batch (TASK-3407), _ServerBotProxy SSE parsing (TASK-3408) against StreamHandler tool frames (TASK-3409), AgentWorkspaceApp (TASK-3412) and the Click command (TASK-3413).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3416-end-to-end-integration-tests.md"
     },
@@ -388,7 +388,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -398,7 +398,7 @@
       "parallel": true,
       "parallelism_notes": "Documents the option surface fixed by TASK-3413 (cli/agent_repl.py) and the attach hook from TASK-3415 (agentd/cli.py). Creates docs/cli/parrot-agent.md, edits docs/agentd.md; a doc-presence test file is its validation target.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T05:16:16+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3417-docs-parrot-agent.md"
     }
