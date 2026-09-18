@@ -105,8 +105,34 @@ as a drop-in replacement, with the type-specific parts expressed per
 - **Model benchmark is a deliverable** (user decision): reproducible
   speed + detection-quality comparison of `gemini-3.5-flash` vs Claude Sonnet 5
   decides the default.
-- **Provider-neutral.** Must run on both Google and Anthropic clients. Today it
-  cannot — see Code Context (`no_memory`, `detect_objects`, `roi_client`).
+- **Slots definition source** (user decision, round 4): the definition may come
+  from a **new JSONB column on `troc.planograms_configurations`** *or* from a
+  JSON file — "JSON on disk" and "JSONB from Postgres" are the same thing to
+  `PlanogramConfig`, which receives a dict (or a path it loads). This is what
+  gives the fine granularity: how many shelves, slots and products a given
+  fixture has.
+- **Prompts become optional** (user decision, round 4):
+  `roi_detection_prompt` and `object_identification_prompt` are required today
+  but object detection — and potentially the ROI — is now done zero-shot by
+  OpenCV. They stay accepted (the adapter path of unmigrated types still uses
+  them) but are no longer mandatory.
+- **Provider-neutral, by homologating the clients** (user decision, round 4).
+  Must run on both Google and Anthropic clients. In scope of this spec:
+  add `no_memory` to `AnthropicClient.ask_to_image`, and add a
+  `detect_objects` to `AnthropicClient` with the same signature and return
+  shape as Google's. See Code Context.
+- **No hard-coded models or Google client** (user decision, round 4). Every
+  `model="gemini-3.5-flash"` literal and the unconditional
+  `GoogleGenAIClient` `roi_client` in `AbstractPipeline` go away; provider and
+  model come from the pipeline's `llm` / `llm_provider` / `llm_model`, so either
+  client can drive the whole run.
+- **`ProductOnShelves` tests are a deliverable** (user decision, round 4):
+  characterization tests for the currently untested compliance, fact-tag OCR
+  and illumination logic are built as part of this feature, before migrating it.
+- **Benchmark needs no labelled ground truth** (user decision, round 4). It
+  reports, per backend and per photo: identification **confidence**, compliance
+  **scoring**, **number of objects detected**, and **duration**. The user
+  judges the default from those numbers; there is no automated pass bar.
 - Repo rules: async-first, no blocking I/O on the event loop (OpenCV/OCR go
   through `asyncio.to_thread`), Pydantic v2 models, `self.logger`, `aiohttp`
   only, Google-style docstrings, no new `requests`/`httpx`.
@@ -349,8 +375,14 @@ What we trade off, honestly:
 - `PlanogramConfig` gains a way to point at / embed a **slots definition JSON**.
 - Installing `ai-parrot-pipelines[planogram]` enables local OCR; without it the
   pipeline still runs and reports that local OCR was unavailable.
-- A benchmark script compares LLM backends on the example photos and prints
-  latency, cost and agreement; its result fixes the default model.
+- `PlanogramConfig` no longer requires `roi_detection_prompt` /
+  `object_identification_prompt`.
+- The same run works with a Google or an Anthropic client — no model name or
+  provider is hard-coded anywhere in the pipeline or the types.
+- A benchmark script runs the same photos through each backend and reports, per
+  photo and aggregated: identification confidence, compliance scoring, number
+  of objects detected (CV shapes, identified, LLM-added) and duration per stage.
+  No ground truth is required; the user picks the default from that report.
 
 ### Internal Behavior
 
@@ -439,7 +471,10 @@ hook.
 - `planogram-slots-definition`: JSON definition of shelves/slots/products/descriptors, loadable from `PlanogramConfig`.
 - `planogram-registration-scoring`: row→shelf registration, per-facing decision, multi-photo merge, strict/lenient, per-shelf and global scores, projection to `ComplianceResult`.
 - `planogram-type-ink-wall`: new `InkWall` type.
-- `planogram-llm-benchmark`: reproducible backend comparison that fixes the default model.
+- `planogram-llm-benchmark`: reproducible backend comparison (confidence, scoring, object counts, duration) that informs the default model; no ground truth.
+- `anthropic-vision-parity`: `AnthropicClient.ask_to_image(no_memory=...)` and a new `AnthropicClient.detect_objects(...)` matching the Google client's contract.
+- `planogram-provider-neutral-llm`: removal of hard-coded model literals and of the unconditional Google `roi_client`; provider/model resolved from the pipeline.
+- `product-on-shelves-characterization-tests`: offline tests pinning today's `check_planogram_compliance`, fact-tag OCR/corroboration, shelf assignment and illumination behaviour.
 
 ### Modified Capabilities
 - `planogram-compliance-modular` (FEAT-048): `PlanogramCompliance.run()` cycle replaced; `AbstractPlanogramType` contract extended with adapter defaults.
@@ -457,9 +492,12 @@ hook.
 | `parrot_pipelines/planogram/types/product_on_shelves.py` | modifies | overrides new hooks; legacy LLM detection becomes the fallback |
 | `parrot_pipelines/planogram/types/ink_wall.py` | new | price-tag anchored type |
 | `parrot_pipelines/planogram/<perception subpackage>` | new | shapes, rows, slots, OCR, vision adapter, reference, registration, scoring |
-| `parrot_pipelines/models.py` (`PlanogramConfig`) | extends | slots-definition field; `roi_detection_prompt` / `object_identification_prompt` are **required** today and unused by the new cycle |
-| `parrot_pipelines/abstract.py` (`AbstractPipeline`) | modifies | unconditional `GoogleGenAIClient` `roi_client` blocks provider-neutrality |
-| `parrot_pipelines/handlers/planogram_compliance.py` | depends on | reads 4 keys — must stay; DB row `troc.planograms_configurations` must carry/point to the slots JSON |
+| `parrot_pipelines/models.py` (`PlanogramConfig`) | extends | slots-definition field (dict or path); `roi_detection_prompt` / `object_identification_prompt` become optional |
+| `parrot_pipelines/abstract.py` (`AbstractPipeline`) | modifies | remove the unconditional `GoogleGenAIClient` `roi_client`; auxiliary vision calls go through the pipeline's own client |
+| `parrot_pipelines/planogram/types/*.py` (all six) | modifies | replace every hard-coded `model="gemini-3.5-flash"` / `self.pipeline.roi_client` use — touches the four unmigrated types too, minimally |
+| `parrot_pipelines/handlers/planogram_compliance.py` | modifies | reads 4 keys — must stay; `_build_planogram_config` reads the new JSONB column and tolerates missing prompts; stops hard-coding `GoogleGenAIClient(model=DEFAULT_LLM_MODEL)` |
+| `troc.planograms_configurations` (Postgres) | extends | new nullable JSONB column for the slots definition; check the package's shipped `*.sql` |
+| `packages/ai-parrot-client-anthropic/.../anthropic/client.py` | extends | `ask_to_image(no_memory=...)`; new `detect_objects(image, prompt, reference_images, output_dir) -> List[Dict[str, Any]]` |
 | `parrot_pipelines/__init__.py` (`PIPELINE_REGISTRY`) | extends | add `InkWall` (3 existing types are already missing from it) |
 | `packages/ai-parrot-pipelines/pyproject.toml` | extends | first `[project.optional-dependencies]` section; declare `numpy` |
 | `packages/ai-parrot/src/parrot/models/detections.py`, `compliance.py` | depends on / maybe extends | core package — extend only if projection needs a field |
@@ -679,6 +717,44 @@ segment_slot, product, brand, shelf, facings, confidence, read_method, notes` +
 descriptors `display_name, family, xl, colors, pack, identifiers, aliases,
 price`. **Only 2 of 102 positions are described today.**
 
+Provider-neutrality worklist (verified by literal count, 2026-09-18) —
+occurrences of `model="gemini…"`, `roi_client`, `GoogleGenAIClient`,
+`llm.detect_objects` or `no_memory` under `parrot_pipelines/`:
+
+| File | Count |
+|---|---|
+| `planogram/types/endcap_backlit_multitier.py` | 18 |
+| `planogram/types/graphic_panel_display.py` | 12 |
+| `planogram/types/product_on_shelves.py` | 7 |
+| `planogram/types/product_counter.py` | 6 |
+| `planogram/types/endcap_no_shelves_promotional.py` | 6 |
+| `planogram/types/abstract.py` | 3 |
+| `planogram/plan.py` | 3 |
+| `abstract.py` | 2 |
+| `handlers/planogram_compliance.py` | 2 (`GoogleGenAIClient(model=DEFAULT_LLM_MODEL)` L146; `DEFAULT_LLM_MODEL` from `parrot.conf` L16) |
+| `planogram/grid/detector.py` | 1 (`self.llm.detect_objects`, L130) |
+
+So removing the hard-coding touches **all six types**, not only the two being
+migrated — 60 call sites in 10 files.
+
+```sql
+-- packages/ai-parrot-pipelines/src/parrot_pipelines/table.sql  (shipped as package-data "*.sql")
+-- CREATE TABLE troc.planograms_configurations (               -- L3
+--     planogram_config JSONB NOT NULL,                        -- L13
+--     roi_detection_prompt TEXT NOT NULL,                     -- L16
+--     object_identification_prompt TEXT NOT NULL,             -- L17
+--     reference_images JSONB DEFAULT '{}',                    -- L20
+-- GIN index on planogram_config                               -- L56
+-- There is NO planogram_type-independent slots column today.
+```
+
+```python
+# packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/models.py
+class ClaudeModel:  SONNET_5 = "claude-sonnet-5"   # L15   (exists)
+                    SONNET_4 = "claude-sonnet-4-20250514"   # L33
+# .../anthropic/client.py: ask_to_image default model = ClaudeModel.SONNET_4  (L1312) — stale default
+```
+
 #### Verified Imports
 ```python
 from parrot_pipelines.planogram import PlanogramCompliance, AbstractPlanogramType   # planogram/__init__.py L4-22 (lazy __getattr__)
@@ -708,8 +784,9 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - ~~`InkWall` / `ink_wall` class or module~~ — only docstrings and a config string; `planogram_type="ink_wall"` raises `ValueError` today.
 - ~~`InkWallAnalysis`~~ — referenced in a docstring (`parrot/interfaces/images/plugins/analisys.py:65`), never defined.
 - ~~`AbstractClient.ask_to_image`~~ — not declared in `parrot/clients/base.py`; per-provider convention only.
-- ~~`no_memory` on Anthropic `ask_to_image`~~ — Google-only kwarg.
-- ~~`detect_objects` on Anthropic / OpenAI clients~~ — Google-only (`analysis.py:1234`).
+- ~~`no_memory` on Anthropic `ask_to_image`~~ — Google-only kwarg **today; this feature adds it**.
+- ~~`detect_objects` on Anthropic / OpenAI clients~~ — Google-only (`analysis.py:1234`) **today; this feature adds the Anthropic one** (OpenAI stays out of scope).
+- ~~A slots/facings column on `troc.planograms_configurations`~~ — none; this feature adds it.
 - ~~`ClaudeAgentClient.ask_to_image`~~ — raises `NotImplementedError`.
 - ~~`[project.optional-dependencies]` in `ai-parrot-pipelines/pyproject.toml`~~ — section absent; no extras exist.
 - ~~`rapidocr` in any workspace `pyproject.toml`~~ — installed in the venv, declared nowhere.
@@ -736,7 +813,12 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
   definition loader + `PlanogramConfig` field, (e) registration + scoring.
   `InkWall`, the `ProductOnShelves` migration, the `run()` rewrite and the
   benchmark are sequential on top of those. `ProductOnShelves`
-  characterization tests can start immediately, in parallel with everything.
+  characterization tests can start immediately, in parallel with everything —
+  and so can the Anthropic client parity work (`no_memory`, `detect_objects`),
+  which lives in a different distribution (`ai-parrot-client-anthropic`) and
+  shares no file with the pipeline. The hard-coding removal (60 call sites, 10
+  files) should land **after** the characterization tests and **before** the
+  `ProductOnShelves` migration, as its own mechanical task.
 - **Cross-feature independence**: no in-flight feature touches
   `parrot_pipelines/planogram/` (open indexes: FEAT-481, 536, 539, 540, 569,
   572 — all other subsystems). Shared-file risk is limited to
@@ -764,15 +846,21 @@ from parrot.pipelines.planogram.plan import PlanogramCompliance                 
 - [x] Output contract — *Owner: Jesus Lara*: same keys + new additive keys.
 - [x] CV/OCR dependencies — *Owner: Jesus Lara*: optional extra, lazy import.
 - [x] Model benchmark — *Owner: Jesus Lara*: deliverable of this feature; fixes the default.
-- [ ] **How does the slots JSON reach a DB-driven config?** The handler builds `PlanogramConfig` from `troc.planograms_configurations`. New JSONB column, a path resolved against `PLANOGRAM_FOLDER` (like reference images), or embedded inside `planogram_config`? Needs a DB migration decision. — *Owner: Jesus Lara*
+- [x] **How does the slots JSON reach a DB-driven config?** — *Owner: Jesus Lara*: both sources are valid and equivalent — a **new JSONB column** on `troc.planograms_configurations` (DB-driven configs) or a JSON file (scripts/examples). `PlanogramConfig` names the type; the slots JSON gives the fine granularity (shelves, slots, products). `table.sql` needs the new nullable column.
+- [ ] **Name and nullability of the new column / field** (e.g. `slots_definition JSONB NULL`), and the `ALTER TABLE` for already-deployed databases — `table.sql` is a `DROP TABLE … CREATE TABLE` script, not a migration. — *Owner: Jesus Lara*
 - [ ] **Generic shape detection is unproven.** Only price tags are detected today. What recall is acceptable for ProductOnShelves products/boxes/backlit with classical CV before we consider Option C behind the same hook? Should the spec time-box a spike first? — *Owner: Jesus Lara*
 - [ ] **May the LLM add shapes the CV missed?** Recommended yes, flagged `source="llm_added"`, so a recall miss lowers confidence instead of losing a product — but it re-introduces LLM localisation for those items. — *Owner: Jesus Lara*
-- [ ] **Exact model ids.** The request says `gemini-3.5-flash`; `plancheck` defaults to `google:gemini-3.8-flash`; `AbstractPipeline.roi_client` uses `gemini-3-flash-preview`; Anthropic `ask_to_image` defaults to `ClaudeModel.SONNET_4`. Which two ids does the benchmark compare, and is `claude-sonnet-5` present in `ClaudeModel`? — *Owner: Jesus Lara*
-- [ ] **Benchmark ground truth.** No labelled data exists. Who labels how many photos, and what is the pass bar (agreement %, latency, cost per photo)? — *Owner: Jesus Lara*
+- [x] **Hard-coded models / Google client** — *Owner: Jesus Lara*: eliminate them; either client must be able to drive the whole run. 60 call sites in 10 files (see Code Context worklist).
+- [x] **Client homologation** — *Owner: Jesus Lara*: in scope of this spec — add `no_memory` to `AnthropicClient.ask_to_image` and add `detect_objects` to `AnthropicClient`, matching the Google client.
+- [x] **`ProductOnShelves` tests** — *Owner: Jesus Lara*: must be built in this feature.
+- [x] **Benchmark ground truth** — *Owner: Jesus Lara*: none. The benchmark reports confidence, scoring, number of objects detected and duration per backend; the user judges from those numbers. No automated pass bar.
+- [ ] **Which Gemini id does the benchmark use?** `ClaudeModel.SONNET_5 = "claude-sonnet-5"` exists. On the Google side the request says `gemini-3.5-flash`, `plancheck` defaults to `google:gemini-3.8-flash`, and `roi_client` uses `gemini-3-flash-preview`. — *Owner: Jesus Lara*
+- [ ] **Where does the default provider/model live once literals are gone?** `parrot.conf.DEFAULT_LLM_MODEL` (used by the handler), a `PlanogramConfig` field, or a per-row DB column so each planogram can pin its backend? — *Owner: Jesus Lara*
+- [ ] **`AnthropicClient.ask_to_image` defaults to `ClaudeModel.SONNET_4`** (also at L1490, L1560). Bump the default to `SONNET_5` as part of the homologation, or leave it and always pass the model explicitly? — *Owner: Jesus Lara*
 - [ ] **`planogram_page1.json` has 2/102 positions described** and is git-ignored. Who fills the descriptors, and where does the production definition live? — *Owner: Jesus Lara*
 - [ ] **ProductOnShelves slots JSON.** Which real planogram/client is it authored from, and does it replace or complement `planogram_config.shelves[].products` (`quantity_range`, `visual_features`, `text_requirements`)? — *Owner: Jesus Lara*
-- [ ] **`roi_detection_prompt` / `object_identification_prompt` are required fields** but unused by the new cycle. Make them optional (touches DB-backed configs and `test_planogram_types.py`) or keep them required for the adapter path? — *Owner: Jesus Lara*
-- [ ] **`AbstractPipeline.roi_client` is always Google.** Remove, make lazy, or route through the vision adapter? It is used by `_check_illumination` and fact-tag OCR. — *Owner: Jesus Lara*
+- [x] **`roi_detection_prompt` / `object_identification_prompt` required?** — *Owner: Jesus Lara*: no longer mandatory — OpenCV does object detection (and potentially the ROI) zero-shot. They become optional on `PlanogramConfig`; `table.sql` has them `TEXT NOT NULL` (L16-17) and must relax too. Unmigrated types that still need them must fail with a clear message when absent.
+- [x] **`AbstractPipeline.roi_client` is always Google** — *Owner: Jesus Lara*: remove the hard-coding; auxiliary calls (`_check_illumination`, fact-tag OCR) go through the pipeline's own client.
 - [ ] **Multi-image API shape**: widen `image` to accept a list, or add `images=`? Does the handler's multipart upload accept several files in this feature? — *Owner: Jesus Lara*
 - [ ] **Registration assumes strictly increasing shelves** (gondola). Fine for InkWall; is it right for ProductOnShelves endcaps with a header/backlit zone? — *Owner: Jesus Lara*
 - [ ] **What happens to `examples/planogram/plancheck/`** once the package has its own implementation — keep as an independent tool, turn `planogram_check.py` into a thin CLI over the package, or delete? — *Owner: Jesus Lara*
