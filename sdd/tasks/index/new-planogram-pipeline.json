@@ -16,14 +16,14 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates the perception package (profiles.py, shapes.py) using only opencv/numpy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3418-perception-shape-proposer.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "Imports propose_shapes and ShapeProfile from TASK-3418 (planogram/perception/shapes.py, profiles.py) to measure them.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3419-perception-spike-harness.md"
     },
@@ -54,14 +54,14 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "EXCLUSIVE: creates packages/ai-parrot-pipelines/tests/conftest.py, a conftest every other task's tests in that tree load.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3420-test-conftest-fake-vision.md"
     },
@@ -72,14 +72,14 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: new contracts module plus one additive optional field in parrot/models/compliance.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3421-cycle-contracts.md"
     },
@@ -90,14 +90,14 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: sync method tested with MagicMock pipeline; creates only its own test file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3422-pos-compliance-characterization.md"
     },
@@ -108,7 +108,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -117,7 +117,7 @@
       "parallel": true,
       "parallelism_notes": "Uses the fake_vision_client fixture created by TASK-3420 (tests/conftest.py) to fake ask_to_image answers.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3423-pos-facttag-illumination-characterization.md"
     },
@@ -128,7 +128,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -137,7 +137,7 @@
       "parallel": true,
       "parallelism_notes": "Uses fake_vision_client and synthetic_shelf_image fixtures from TASK-3420 (tests/conftest.py) to drive run() offline.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3424-legacy-run-orchestration-characterization.md"
     },
@@ -148,14 +148,14 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: different distribution (ai-parrot-client-anthropic), shares no file with the pipeline tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3425-anthropic-vision-parity.md"
     },
@@ -166,14 +166,14 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: models.py, new planogram/backend.py and the SQL files are touched by no other root task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3426-config-fields-backend-sql.md"
     },
@@ -184,7 +184,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -193,7 +193,7 @@
       "parallel": true,
       "parallelism_notes": "Imports UNSET, resolve_backend and ResolvedBackend from TASK-3426 (planogram/backend.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3427-pipeline-base-sentinel-open-image.md"
     },
@@ -204,7 +204,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -213,7 +213,7 @@
       "parallel": false,
       "parallelism_notes": "EXCLUSIVE: edits the dependency manifest packages/ai-parrot-pipelines/pyproject.toml (single owner of that file in this feature). Adds ocr.py inside the planogram/perception package whose __init__.py TASK-3418 creates.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3428-ocr-reader-packaging.md"
     },
@@ -224,7 +224,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -237,7 +237,7 @@
       "parallel": true,
       "parallelism_notes": "Edits code whose behaviour must be pinned first: TASK-3422 (check_planogram_compliance tests), TASK-3423 (fact-tag/illumination tests exercising the _check_illumination call site this task rewrites) and TASK-3424 (run() orchestration test exercising the plan.py promo-OCR site this task rewrites); passes no_memory to Anthropic, accepted only after TASK-3425 (anthropic client.py); reads pipeline.resolved_backend added by TASK-3427 (abstract.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3429-neutral-callsites-core.md"
     },
@@ -248,7 +248,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -257,7 +257,7 @@
       "parallel": true,
       "parallelism_notes": "Calls AbstractPlanogramType._vision_kwargs created by TASK-3429 (planogram/types/abstract.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3430-neutral-callsites-shelf-types.md"
     },
@@ -268,7 +268,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -277,7 +277,7 @@
       "parallel": true,
       "parallelism_notes": "Calls AbstractPlanogramType._vision_kwargs created by TASK-3429 (planogram/types/abstract.py); disjoint files from TASK-3430.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3431-neutral-callsites-panel-types.md"
     },
@@ -288,7 +288,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -298,7 +298,7 @@
       "parallel": true,
       "parallelism_notes": "roi_client can only be deleted from abstract.py after TASK-3430 and TASK-3431 removed its last users in the type files; same file as TASK-3427 (reached through TASK-3429).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3432-remove-roi-client.md"
     },
@@ -309,7 +309,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -319,7 +319,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes ShapeCandidate from TASK-3418 (perception/profiles.py) and returns Slot/DetectionBox contracts from TASK-3421 (planogram/contracts.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3433-perception-rows-slots.md"
     },
@@ -330,7 +330,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -339,7 +339,7 @@
       "parallel": true,
       "parallelism_notes": "Adds executor.py inside the planogram/perception package whose __init__.py TASK-3418 creates.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3434-cpu-executor.md"
     },
@@ -350,7 +350,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -359,7 +359,7 @@
       "parallel": true,
       "parallelism_notes": "RuleBinding outcomes and enums come from TASK-3421 (planogram/contracts.py: RuleOutcome, FacingStatus).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3435-slots-definition-bindings.md"
     },
@@ -370,7 +370,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -381,7 +381,7 @@
       "parallel": true,
       "parallelism_notes": "Takes ResolvedBackend from TASK-3426 (planogram/backend.py); tests use fake_vision_client from TASK-3420 (tests/conftest.py); error sink is CycleContext from TASK-3421.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3436-vision-adapter.md"
     },
@@ -392,7 +392,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -402,7 +402,7 @@
       "parallel": true,
       "parallelism_notes": "Operates on Shape and FixtureMembership from TASK-3421 (planogram/contracts.py) inside the perception package created by TASK-3418.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3437-fixture-membership.md"
     },
@@ -413,7 +413,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -425,7 +425,7 @@
       "parallel": true,
       "parallelism_notes": "Uses strip_box/to_strip_norm/from_strip_norm from TASK-3433 (perception/slots.py), VisionAdapter from TASK-3436 (identification/vision.py), descriptor vocabulary from TASK-3435 (comparison/definition.py) and assign_membership from TASK-3437 (perception/membership.py) to revalidate additions.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3438-identify-strategies.md"
     },
@@ -436,7 +436,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -447,7 +447,7 @@
       "parallel": true,
       "parallelism_notes": "Calls VisionAdapter.ask from TASK-3436 (identification/vision.py), picks distractors from SlotsDefinition of TASK-3435 (comparison/definition.py) and applies assign_membership from TASK-3437 to fallback shapes.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3439-llm-detector-verify.md"
     },
@@ -458,7 +458,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -467,7 +467,7 @@
       "parallel": true,
       "parallelism_notes": "Aligns slots against ShelfDefinition/FacingDefinition from TASK-3435 (comparison/definition.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3440-registration.md"
     },
@@ -478,7 +478,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -487,7 +487,7 @@
       "parallel": true,
       "parallelism_notes": "Consumes ImageRegistration from TASK-3440 (comparison/registration.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3441-scoring-projection.md"
     },
@@ -498,7 +498,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -509,7 +509,7 @@
       "parallel": true,
       "parallelism_notes": "Hook signatures use PerceptionResult/CycleContext from TASK-3421 (planogram/contracts.py); moves the orchestration pinned by TASK-3424's test; edits planogram/types/abstract.py after TASK-3429 (same file).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3442-type-hooks-legacy-adapter.md"
     },
@@ -520,7 +520,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -534,7 +534,7 @@
       "parallel": true,
       "parallelism_notes": "Builds CycleContext from OcrReader (TASK-3428 perception/ocr.py), CpuExecutor (TASK-3434 perception/executor.py), usable_shapes (TASK-3437), llm_detect_shapes (TASK-3439 identification/detector.py); calls the hooks of TASK-3442; uses open_image(enhance=) and UNSET ctor from TASK-3427. Also flips the single empty-results test in test_legacy_run_orchestration.py created by TASK-3424 (ancestor through TASK-3442).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3443-run-template.md"
     },
@@ -545,7 +545,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -557,7 +557,7 @@
       "parallel": true,
       "parallelism_notes": "Composes group_rows/build_slots (TASK-3433), identify_strips (TASK-3438 identification/identify.py), merge_positions/summarize (TASK-3441 comparison/scoring.py); edits planogram/plan.py after TASK-3443 (same file).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3444-ink-wall-type.md"
     },
@@ -568,7 +568,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -580,7 +580,7 @@
       "parallel": true,
       "parallelism_notes": "Reads the spike outcome and accepted profiles recorded by TASK-3419 (docs/pipelines/planogram-perception-spike.md); same file as TASK-3430 (product_on_shelves.py); uses identify_full_image from TASK-3438 and is exercised through run() from TASK-3443.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3445-pos-migration-perceive-identify.md"
     },
@@ -591,7 +591,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -601,7 +601,7 @@
       "parallel": true,
       "parallelism_notes": "Same file as TASK-3445 (product_on_shelves.py); feeds RuleOutcome into score_shelves/project_compliance from TASK-3441 (comparison/scoring.py, projection.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3446-pos-migration-compare-rules.md"
     },
@@ -612,7 +612,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -621,7 +621,7 @@
       "parallel": true,
       "parallelism_notes": "Reads the additive result keys (assessment_status, coverage, errors) produced by run() in TASK-3443 (planogram/plan.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3447-handler-update.md"
     },
@@ -632,7 +632,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -642,7 +642,7 @@
       "parallel": true,
       "parallelism_notes": "Validates candidates with load_slots_definition/validate_bindings from TASK-3435 (comparison/definition.py); documents the ALTER script shipped by TASK-3426.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3448-config-migration-tooling-runbook.md"
     },
@@ -653,7 +653,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -664,7 +664,7 @@
       "parallel": true,
       "parallelism_notes": "File becomes trackable through the .gitignore negation added by TASK-3419; uses SlotsDefinition (TASK-3435) and VisionAdapter (TASK-3436 identification/vision.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3449-descriptor-assistant.md"
     },
@@ -675,7 +675,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -686,7 +686,7 @@
       "parallel": true,
       "parallelism_notes": "File becomes trackable through the .gitignore negation added by TASK-3419; benchmarks the two migrated types delivered by TASK-3444 (types/ink_wall.py) and TASK-3446 (product_on_shelves.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3450-backend-benchmark.md"
     }
