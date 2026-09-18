@@ -32,7 +32,9 @@ def _make_pipeline() -> MagicMock:
     pipeline = MagicMock()
     pipeline.logger = MagicMock()
     pipeline._downscale_image = MagicMock(return_value=_make_image(512, 640))
-    pipeline.roi_client = MagicMock()
+    pipeline.llm = MagicMock()
+    pipeline.roi_client = pipeline.llm  # same object until TASK-3432 removes roi_client
+    pipeline.resolved_backend = MagicMock(provider="google", model=None)
     return pipeline
 
 

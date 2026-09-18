@@ -822,12 +822,11 @@ class ProductOnShelves(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=Detections,
                         max_tokens=8192,
                     )
@@ -1354,12 +1353,11 @@ class ProductOnShelves(AbstractPlanogramType):
                     "commas (e.g. 'ES-C220, RR-60, ES-400'). "
                     "If no fact tags are readable, return 'UNKNOWN'."
                 )
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=row_img,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         max_tokens=128,
                     )
                 raw = (msg.output or "").strip() if msg else ""

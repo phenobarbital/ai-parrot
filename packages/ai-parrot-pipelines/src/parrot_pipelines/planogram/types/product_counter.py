@@ -105,12 +105,11 @@ class ProductCounter(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=Detections,
                         max_tokens=8192,
                     )
@@ -220,12 +219,11 @@ class ProductCounter(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=Detections,
                         max_tokens=8192,
                     )
