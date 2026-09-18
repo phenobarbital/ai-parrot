@@ -364,10 +364,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt ac7f46b1ebca4ebd90eec44439cdc416)
+**Date**: 2026-09-18
+**Notes**: Implemented `parrot/cli/modes.py` exactly per blueprint —
+`UIMode`, `UIModeError`, `SessionPointer`, `resolve_ui_mode` (never returns
+`AUTO`; explicit `TUI` on a non-TTY raises), `is_interactive`,
+`cli_state_dir` (`0o700`), `agent_slug` (sanitize + collapse `_` + strip
+leading dots, empty → `"agent"`), `history_path` (`0o600` when present,
+never creates the file), `load_session_pointer`/`save_session_pointer`
+(atomic tmp+`os.replace`, `0o600`). Guard test covers the mode matrix,
+non-TTY `UIModeError`, path/permission behaviour under a monkeypatched
+`PARROT_HOME`, slug edge cases, and pointer round-trip/corrupt-JSON.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Merge was clean (`coder_merge` outcome=merged, no unexpected files); engine
+lint autofix (black) applied automatically. The native attempt could not
+itself run the mandated `pytest` (its sandboxed sub-worktree lacks the
+compiled `parrot.utils.types` Cython extension — a pre-existing,
+documented worktree limitation, not a defect); it reported `blocked`
+without committing after independently sanity-checking the logic via a
+standalone module load. The orchestrator verified the delivered content
+line-by-line against the blueprint, committed it in the sub-worktree,
+merged it, and ran `pytest packages/ai-parrot/tests/cli/test_modes.py -v`
+in the top-level worktree (which has the compiled extension): **14
+passed**.
 
-**Deviations from spec**: none | describe if any
+**Feedback recorded**: none — clean, correct delivery; the stop was a
+confirmed environment limitation, not a modeling defect.
+**Deviations from spec**: none.
