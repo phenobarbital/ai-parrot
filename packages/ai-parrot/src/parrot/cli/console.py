@@ -3,6 +3,7 @@
 Extracts the pause/resume pattern proven in ``parrot.cli.devloop.renderer.RunView``
 (devloop/renderer.py:82-107): exactly one writer owns the terminal at a time.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -11,7 +12,7 @@ import threading
 from typing import Any, Iterator, Optional
 
 from rich.console import Console  # verified: parrot/cli/renderer.py:13
-from rich.live import Live        # verified: parrot/cli/devloop/renderer.py:15
+from rich.live import Live  # verified: parrot/cli/devloop/renderer.py:15
 
 _console: Optional[Console] = None
 _console_lock = threading.Lock()
@@ -45,7 +46,9 @@ class LiveRegion:
     sequentially, and ``modal()`` is a no-op — piping stays clean.
     """
 
-    def __init__(self, console: Optional[Console] = None, *, refresh_per_second: int = 8, transient: bool = False) -> None:
+    def __init__(
+        self, console: Optional[Console] = None, *, refresh_per_second: int = 8, transient: bool = False
+    ) -> None:
         self.console = console or get_console()
         self._refresh_per_second = refresh_per_second
         self._transient = transient

@@ -1,4 +1,5 @@
 """Unit tests for parrot.cli.console (FEAT-573 TASK-3400)."""
+
 from __future__ import annotations
 
 import io
