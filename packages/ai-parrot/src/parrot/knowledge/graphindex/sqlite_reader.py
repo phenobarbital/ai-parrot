@@ -105,7 +105,17 @@ class SQLiteGraphReader:
             f"file:{self._db_path}?mode=ro", uri=True
         )
         self._conn.row_factory = aiosqlite.Row
+        try:
+            await self._load_graph()
+        except BaseException:
+            # An open aiosqlite connection owns a non-daemon worker thread; leaving
+            # it behind after a failed load keeps the interpreter alive forever.
+            await self.close()
+            raise
 
+    async def _load_graph(self) -> None:
+        """Read nodes and edges from the open connection into the in-memory graph."""
+        assert self._conn is not None
         async with self._conn.execute(
             "SELECT node_id, kind, title, source_uri, parent_id, summary,"
             " content_ref, provenance, domain_tags FROM nodes"
