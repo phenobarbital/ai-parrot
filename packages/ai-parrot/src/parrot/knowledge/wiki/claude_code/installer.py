@@ -873,7 +873,6 @@ def install_claude_integration(
     git_hook: bool = True,
     gitignore: bool = True,
     bookstore: bool = True,
-    toolkits: Sequence[str] = (),
     approve_mcp: bool = True,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
@@ -885,14 +884,16 @@ def install_claude_integration(
         gitignore: Add ``.parrot/`` to .gitignore.
         bookstore: Install the Bookstore MCP server and skill when an
             indexed library exists (no indexing performed).
-        toolkits: Toolkit template names to seed into
-            `.parrot/mcp-toolkits.yaml` before `.mcp.json` reconciliation.
-            Empty seeds nothing (spec §8 Q1: opt-in).
         approve_mcp: Authorize the managed servers in
             `.claude/settings.local.json` after reconciliation.
 
     Returns:
         Human-readable list of actions performed.
+
+    Note:
+        Seeding `.parrot/mcp-toolkits.yaml` sections no longer happens
+        here — use `parrot toolkits install` (FEAT-570). This command
+        only reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
     config = config or load_effective_config(root).config
@@ -915,31 +916,12 @@ def install_claude_integration(
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
     actions.extend(_install_permissions(root))
-    if toolkits:
-        from parrot.mcp.toolkit_seed import seed_toolkit_sections
-
-        seeded = seed_toolkit_sections(root, toolkits)
-        if seeded.created_file:
-            actions.append(".parrot/mcp-toolkits.yaml — created")
-        if seeded.added:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — added {len(seeded.added)} section(s) ({', '.join(seeded.added)})"
-            )
-        if seeded.skipped:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present "
-                f"({', '.join(seeded.skipped)})"
-            )
-        if seeded.drift:
-            for section, keys in seeded.drift.items():
-                actions.append(
-                    f".parrot/mcp-toolkits.yaml — WARNING: '{section}' lacks template key(s) {', '.join(keys)} "
-                    f"(existing sections are never rewritten; copy them from "
-                    f"parrot/mcp/_toolkit_templates/{section}.yaml)"
-                )
-        if seeded.unknown:
-            actions.append(f".parrot/mcp-toolkits.yaml — unknown template(s) skipped ({', '.join(seeded.unknown)})")
     actions.append(_install_mcp_json(root))
+
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    if not load_toolkits_config(root).toolkits:
+        actions.append("no local MCP toolkits configured — add them with: parrot toolkits install")
     if approve_mcp:
         actions.append(_install_mcp_approval(root))
     actions.append(_install_slash_command(root))
