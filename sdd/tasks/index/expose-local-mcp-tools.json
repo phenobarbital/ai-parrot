@@ -150,7 +150,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -161,8 +161,8 @@
       "parallelism_notes": "Imports HostKind/detect_hosts/get_adapter from TASK-3374 (parrot/mcp/hosts.py) and ToolkitTemplate.requires_dist from TASK-3370 (toolkit_seed.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3375-install-orchestration.md"
+      "completed_at": "2026-09-18T06:14:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3375-install-orchestration.md"
     },
     {
       "id": "TASK-3376",
