@@ -125,8 +125,10 @@ class JevClient(AbstractClient):
             lazily, on the first request.
         base_url: API origin. Falls back to ``TYPESAFE_BASE_URL``, then
             :data:`DEFAULT_BASE_URL`.
-        model: Model route. Falls back to ``TYPESAFE_DEFAULT_MODEL``, then
-            ``jev-latest``.
+        model: Model name or alias (see :class:`JevModel`). Falls back to
+            ``TYPESAFE_DEFAULT_MODEL``, then ``jev-latest``. Versioned IDs such
+            as ``jev-1.13.0`` are accepted even when ``list_models()`` only
+            lists the aliases.
         timeout: Per-request timeout in seconds (default 10).
         max_retries: Retries after the initial attempt on 408/429/5xx and
             connection errors (default 2; ``0`` disables retries).
@@ -431,6 +433,11 @@ class JevClient(AbstractClient):
     ) -> SystemOneResponse:
         """Ask Jev a set of typed questions about ``state`` (``POST /v1/systemone``).
 
+        Jev accepts text only: a string, a JSON object, or an array of text
+        values (pre-process images, audio or binaries into text first). The
+        documented budget is 64k tokens for ``state`` plus all questions, and
+        32k for ``state`` plus the single longest question.
+
         Args:
             state: Text, a JSON object/array, or a Pydantic model describing
                 the situation the questions are about.
@@ -468,11 +475,15 @@ class JevClient(AbstractClient):
     async def list_models(self, *, timeout: Optional[float] = None) -> List[ModelMetadata]:
         """List the models available to the account (``GET /v1/models``).
 
+        The API currently lists the aliases (``jev-latest``, ``jev-preview``);
+        versioned IDs such as ``jev-1.13.0`` are accepted by the ``model``
+        field whether or not they appear here.
+
         Args:
             timeout: Per-call timeout override, in seconds.
 
         Returns:
-            The available models.
+            One :class:`ModelMetadata` per model or alias.
         """
         data, _ = await self._request("GET", MODELS_PATH, timeout=timeout)
         try:

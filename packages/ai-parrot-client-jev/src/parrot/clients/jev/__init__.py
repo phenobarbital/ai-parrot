@@ -14,6 +14,9 @@ from .exceptions import (
     JevServerError,
 )
 from .models import (
+    MAX_REQUEST_TOKENS,
+    MAX_STATE_PLUS_QUESTION_TOKENS,
+    MODEL_ALIASES,
     Choice,
     ChoiceAnswer,
     JevModel,
@@ -32,6 +35,9 @@ from .schema import answers_to_type, questions_from_type
 __all__ = [
     "JevClient",
     "JevModel",
+    "MODEL_ALIASES",
+    "MAX_REQUEST_TOKENS",
+    "MAX_STATE_PLUS_QUESTION_TOKENS",
     "Choice",
     "Noul",
     "NoulCriteria",

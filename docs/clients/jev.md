@@ -39,34 +39,66 @@ connection errors, honouring `retry-after` / `retry-after-ms`.
 
 ## Raw API: `system_one()`
 
+The official quickstart, verbatim (the same request/response bodies are
+asserted in `tests/clients/test_jev_client.py`):
+
 ```python
 from parrot.clients.jev import JevClient, Choice, Noul, Score
 
 client = JevClient()                      # TYPESAFE_API_KEY from the environment
+ticket = (
+    "Hi, I've been trying to connect my Stripe account for 3 days and it keeps "
+    "failing. I'm losing sales. Please help ASAP."
+)
 response = await client.system_one(
-    state={"ticket": "I was charged twice. Please fix this ASAP."},
+    state=ticket,
     questions={
-        "category": Choice(
-            instructions="What is `ticket` about?",
-            criteria={"billing": "Payments, invoices, refunds", "technical": None, "other": None},
+        "department": Choice(
+            instructions="Which team should handle this",
+            criteria={
+                "billing": "Payment or subscription issues",
+                "technical": "Bugs or integration problems",
+                "sales": "Pricing or account questions",
+            },
         ),
-        "urgent": Noul(instructions="Does the customer need an answer today?"),
-        "severity": Score(
-            instructions="How badly is the customer affected?",
-            criteria=["Cosmetic", "Degraded but usable", "Blocked, no workaround"],
+        "frustration": Score(
+            instructions="How frustrated the customer appears",
+            criteria=["Calm, just stating facts", "Frustrated but civil", "Very angry, strong language"],
         ),
+        "is_urgent": Noul(instructions="The message conveys urgency or time-sensitivity"),
     },
 )
-response.choices["category"].choice          # "billing"
-response.choices["category"].probabilities   # {"billing": 0.91, "technical": 0.06, "other": 0.03}
-response.nouls["urgent"].noul                # 0.82
-response.scores["severity"].level            # 2
-response.values()                            # {"category": "billing", "urgent": 0.82, "severity": 1.6}
+response.answers["department"].choice          # "billing"
+response.choices["department"].probabilities   # {"billing": 0.84, "technical": 0.159, "sales": 0.001}
+response.scores["frustration"].score           # 1.035  (legend: 0 calm, 1 frustrated, 2 very angry)
+response.nouls["is_urgent"].noul               # 0.999
+response.values()                              # {"department": "billing", "frustration": 1.035, "is_urgent": 0.999}
 ```
 
 Questions may also be plain dicts (`{"type": "choice", "criteria": {...}}`);
 extra fields are forwarded untouched so new API options need no client
 release.
+
+## Models
+
+All models are served by the same endpoint; the `model` field (or
+`JevClient(model=...)`) selects one. `JevModel` enumerates them:
+
+| Name          | Kind      | Notes                                                                 |
+|---------------|-----------|-----------------------------------------------------------------------|
+| `jev-latest`  | alias     | Most recent stable release; the default. Currently `jev-1.13.0`.      |
+| `jev-preview` | alias     | Most recent release, preview or not. Currently the same as `jev-latest`. |
+| `jev-1.13.0`  | versioned | Jev 1.13. Pin this when confidence thresholds were tuned against it.  |
+
+Jev 1.13: text input only (string, JSON object, or array of text values);
+64k tokens per request for `state` plus all questions, 32k for `state` plus
+the longest question; charged per input token ($0.042 / Mtok), output free;
+rate limits of 250k tokens/s and 1,200 requests/min return `429`, which the
+client retries with backoff honouring `retry-after`. `MODEL_ALIASES`,
+`MAX_REQUEST_TOKENS` and `MAX_STATE_PLUS_QUESTION_TOKENS` expose these as
+constants. `list_models()` (`GET /v1/models`) currently returns the aliases;
+versioned IDs are accepted whether or not they are listed, and the
+response's `model` field always reports the versioned ID that answered.
 
 ## `AbstractClient` surface
 

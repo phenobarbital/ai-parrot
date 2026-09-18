@@ -26,6 +26,7 @@ from parrot.clients.jev import (
     JevClient,
     JevConfigurationError,
     JevModel,
+    MODEL_ALIASES,
     JevRateLimitError,
     JevSchemaError,
     JevServerError,
@@ -209,6 +210,94 @@ def test_system_one_response_parses_and_groups_answers():
     assert response.usage.input_tokens == 42
 
 
+#: Verbatim request questions / response body from the TypeSafe quickstart
+#: (https://docs.typesafe.ai/quickstart). Note the score answer carries no
+#: ``probabilities`` key.
+DOCS_STATE = (
+    "Hi, I've been trying to connect my Stripe account for 3 days and it keeps failing. "
+    "I'm losing sales. Please help ASAP."
+)
+DOCS_QUESTIONS = {
+    "department": {
+        "type": "choice",
+        "instructions": "Which team should handle this",
+        "criteria": {
+            "billing": "Payment or subscription issues",
+            "technical": "Bugs or integration problems",
+            "sales": "Pricing or account questions",
+        },
+    },
+    "frustration": {
+        "type": "score",
+        "instructions": "How frustrated the customer appears",
+        "criteria": ["Calm, just stating facts", "Frustrated but civil", "Very angry, strong language"],
+    },
+    "is_urgent": {"type": "noul", "instructions": "The message conveys urgency or time-sensitivity"},
+}
+DOCS_RESPONSE = {
+    "model": "jev-latest",
+    "answers": {
+        "department": {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {"billing": 0.84, "technical": 0.159, "sales": 0.001},
+            "confidence": 0.596,
+        },
+        "frustration": {
+            "type": "score",
+            "score": 1.035,
+            "legend": {
+                "0": "Calm, just stating facts",
+                "1": "Frustrated but civil",
+                "2": "Very angry, strong language",
+            },
+            "confidence": 0.842,
+        },
+        "is_urgent": {"type": "noul", "noul": 0.999},
+    },
+    "usage": {"input_tokens": 312, "output_tokens": 48},
+}
+
+
+def test_quickstart_questions_serialize_exactly_as_documented():
+    wire = normalize_questions(
+        {
+            "department": Choice(
+                instructions="Which team should handle this",
+                criteria={
+                    "billing": "Payment or subscription issues",
+                    "technical": "Bugs or integration problems",
+                    "sales": "Pricing or account questions",
+                },
+            ),
+            "frustration": Score(
+                instructions="How frustrated the customer appears",
+                criteria=["Calm, just stating facts", "Frustrated but civil", "Very angry, strong language"],
+            ),
+            "is_urgent": Noul(instructions="The message conveys urgency or time-sensitivity"),
+        }
+    )
+    assert wire == DOCS_QUESTIONS
+
+
+def test_quickstart_response_parses_including_score_without_probabilities():
+    response = SystemOneResponse.model_validate(DOCS_RESPONSE)
+    assert response.answers["department"].choice == "billing"
+    assert response.answers["frustration"].score == 1.035
+    assert response.answers["frustration"].probabilities == {}
+    assert response.answers["frustration"].legend[1] == "Frustrated but civil"
+    assert response.answers["is_urgent"].noul == 0.999
+    assert response.usage.input_tokens == 312 and response.usage.output_tokens == 48
+
+
+def test_model_enum_and_aliases_follow_the_models_page():
+    assert JevModel.JEV_LATEST.value == "jev-latest"
+    assert JevModel.JEV_PREVIEW.value == "jev-preview"
+    assert JevModel.JEV_1_13.value == "jev-1.13.0"
+    assert MODEL_ALIASES == {"jev-latest": "jev-1.13.0", "jev-preview": "jev-1.13.0"}
+    assert JevClient(api_key="k", model=JevModel.JEV_1_13).model == "jev-1.13.0"
+
+
 def test_system_one_response_skips_unknown_answer_types():
     body = _sample_response(answers={**SAMPLE_ANSWERS, "novel": {"type": "future", "payload": 1}})
     response = SystemOneResponse.model_validate(body)
@@ -340,7 +429,7 @@ def test_factory_registration():
     client = LLMFactory.create("jev:jev-latest", api_key="k")
     assert isinstance(client, JevClient)
     assert client.model == "jev-latest"
-    assert LLMFactory.list_models("jev")["active"] == ["jev-latest"]
+    assert LLMFactory.list_models("jev")["active"] == ["jev-latest", "jev-preview", "jev-1.13.0"]
 
 
 def test_session_headers_and_retry_helpers():
@@ -422,6 +511,23 @@ async def test_ask_posts_state_and_questions_and_builds_message(stub_api):
     assert message.metadata["request_id"] == "req-123"
     assert message.metadata["answers"]["category"]["probabilities"]["billing"] == 0.91
     assert message.finish_reason == "completed"
+
+
+async def test_ask_round_trips_the_documented_quickstart_exchange(stub_api):
+    async def quickstart(request):
+        return web.json_response(DOCS_RESPONSE)
+
+    server, calls = await stub_api(quickstart)
+    client = _client(server)
+    try:
+        message = await client.ask(DOCS_STATE, questions=DOCS_QUESTIONS)
+    finally:
+        await client.close()
+    assert calls[0]["body"] == {"state": DOCS_STATE, "model": "jev-latest", "questions": DOCS_QUESTIONS}
+    assert message.data == {"department": "billing", "frustration": 1.035, "is_urgent": 0.999}
+    assert message.usage.prompt_tokens == 312
+    assert message.usage.completion_tokens == 48
+    assert message.usage.total_tokens == 360
 
 
 async def test_ask_builds_json_state_from_system_prompt_and_history(stub_api):

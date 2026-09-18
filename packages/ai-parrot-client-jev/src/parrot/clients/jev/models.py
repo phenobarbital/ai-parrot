@@ -29,12 +29,40 @@ MAX_CHOICE_OPTIONS = 255
 
 
 class JevModel(str, Enum):
-    """TypeSafe System One model routes.
+    """TypeSafe System One model names accepted by the ``model`` field.
 
-    String-valued so members interchange with raw model strings.
+    String-valued so members interchange with raw model strings. Every model
+    is served by the same ``POST /v1/systemone`` endpoint. Aliases move when
+    a new release ships; the response's ``model`` field always reports the
+    versioned ID that answered, so pin a version (``JEV_1_13``) when you have
+    tuned confidence thresholds against it.
     """
 
     JEV_LATEST = "jev-latest"
+    """Alias: the most recent stable, official release (SDK default). Currently ``jev-1.13.0``."""
+    JEV_PREVIEW = "jev-preview"
+    """Alias: the most recent release, preview or not. Currently the same as ``jev-latest``."""
+    JEV_1_13 = "jev-1.13.0"
+    """Jev 1.13 — versioned ID, accepted whether or not ``GET /v1/models`` lists it."""
+
+
+#: Alias → versioned model ID, as documented on https://docs.typesafe.ai/models.
+MODEL_ALIASES: Dict[str, str] = {
+    JevModel.JEV_LATEST.value: JevModel.JEV_1_13.value,
+    JevModel.JEV_PREVIEW.value: JevModel.JEV_1_13.value,
+}
+
+#: Documented Jev 1.13 limits. Input is charged per token; output tokens are free.
+MAX_REQUEST_TOKENS = 64_000
+"""Context budget per request: ``state`` plus all questions combined (64k)."""
+MAX_STATE_PLUS_QUESTION_TOKENS = 32_000
+"""Budget for ``state`` plus the single longest question (32k)."""
+PRICE_USD_PER_MTOK = 0.042
+"""List price per million input tokens (output is free)."""
+RATE_LIMIT_TOKENS_PER_SECOND = 250_000
+"""Documented token rate limit; exceeding it returns ``429 Too Many Requests``."""
+RATE_LIMIT_REQUESTS_PER_MINUTE = 1_200
+"""Documented request rate limit; exceeding it returns ``429 Too Many Requests``."""
 
 
 # --------------------------------------------------------------------------- #

@@ -24,22 +24,39 @@ export TYPESAFE_API_KEY=...
 ```
 
 ```python
-from parrot.clients.jev import JevClient, Choice, Noul
+from parrot.clients.jev import JevClient, Choice, Noul, Score
 
-client = JevClient()
+client = JevClient()  # reads TYPESAFE_API_KEY; calls jev-latest by default
+ticket = (
+    "Hi, I've been trying to connect my Stripe account for 3 days and it keeps "
+    "failing. I'm losing sales. Please help ASAP."
+)
 response = await client.system_one(
-    state={"document": "I was charged twice. Please fix this ASAP."},
+    state=ticket,
     questions={
-        "category": Choice(
-            instructions="What is this ticket about?",
-            criteria={"billing": None, "technical": None, "other": None},
+        "department": Choice(
+            instructions="Which team should handle this",
+            criteria={
+                "billing": "Payment or subscription issues",
+                "technical": "Bugs or integration problems",
+                "sales": "Pricing or account questions",
+            },
         ),
-        "urgent": Noul(instructions="Does the customer need an answer today?"),
+        "frustration": Score(
+            instructions="How frustrated the customer appears",
+            criteria=["Calm, just stating facts", "Frustrated but civil", "Very angry, strong language"],
+        ),
+        "is_urgent": Noul(instructions="The message conveys urgency or time-sensitivity"),
     },
 )
-response.choices["category"].choice   # "billing"
-response.nouls["urgent"].noul         # 0.93
+response.answers["department"].choice   # "billing"
+response.answers["frustration"].score   # 1.035
+response.answers["is_urgent"].noul      # 0.999
 ```
+
+Models (`JevModel`): `jev-latest` (default alias, stable), `jev-preview`
+(alias, newest build), `jev-1.13.0` (versioned). Text input only; 64k tokens
+per request. Output tokens are free.
 
 Registers itself with `LLMFactory` under the `jev` and `typesafe` provider
 keys via the `parrot.clients` entry-point group.
