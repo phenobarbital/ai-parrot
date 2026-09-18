@@ -1,5 +1,6 @@
 # tests/sdd_scripts/test_backfill_taxonomy.py
 """Tests for scripts.sdd.backfill_taxonomy (FEAT-576)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,7 +16,12 @@ def test_infer_projects() -> None:
         "scripts/sdd/reserve_ids.py, packages/ai-parrot-server/ui/src/App.svelte, parrot/bots/abstract.py"
     )
     assert infer_projects(text) == [
-        "parrot-formdesigner", "ai-parrot-tools", "sdd-tooling", "ai-parrot-server", "admin-ui", "ai-parrot",
+        "parrot-formdesigner",
+        "ai-parrot-tools",
+        "sdd-tooling",
+        "ai-parrot-server",
+        "admin-ui",
+        "ai-parrot",
     ]
 
 
@@ -32,7 +38,9 @@ def test_plan_edit_preserves_bytes(tmp_path: Path) -> None:
 
 def test_plan_edit_never_overwrites(tmp_path: Path) -> None:
     p = tmp_path / "b.spec.md"
-    p.write_text("---\ntype: feature\nbase_branch: dev\nprojects: [docs]\n---\npackages/ai-parrot/x\n", encoding="utf-8")
+    p.write_text(
+        "---\ntype: feature\nbase_branch: dev\nprojects: [docs]\n---\npackages/ai-parrot/x\n", encoding="utf-8"
+    )
     assert plan_edit(p) is None
 
 
