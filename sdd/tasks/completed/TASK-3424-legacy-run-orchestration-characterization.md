@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3420
@@ -576,7 +576,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+10 public-level characterization tests driving PlanogramCompliance(...).run() with spies on instances only (handler + pipeline + fake.ask_to_image), GoogleGenAIClient patched during construction, roi_client is llm (same fake). Pinned: step order incl. promo OCR between detect_objects and _generate_virtual_shelves; single _enhance_image; detect_objects(roi=<endcap>, macro_objects=None); detect_objects_roi never called; promo OCR enrichment (crop 600x180, no_memory, max_tokens=1024, prompt lines, one call only); OCR failure swallowed; virtual shelves ['header','top'] replace detector shelves; poster-text/brand-logo injection before compliance with exact boxes; fact-tag gating (use_y1_assignment False/True); compute_roi failure swallowed (roi=None, no injections); aggregation mean + all-COMPLIANT; empty-results quirk isolated in test_legacy_empty_results_is_compliant_today; eight keys, same list object, render/debug file naming with/without image_id, no output_dir => overlay_path None.
+Deviation from the blueprint expectation: the poster-text product's ocr_text is None; the stripped 'Hello Savings' is on text.detection_box.ocr_text (plan.py builds DetectionBox(..., ocr_text=...)). Pinned as observed.
+Note: the task's contract still describes AbstractPipeline.__init__ with llm_provider='google'; TASK-3427 already changed it (sentinel). Irrelevant here since llm=fake is injected.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
