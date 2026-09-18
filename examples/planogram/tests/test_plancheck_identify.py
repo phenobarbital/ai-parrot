@@ -1,4 +1,5 @@
 """Unit tests for plancheck.identify (FEAT-565, TASK-3344). No network; FakeBackend only."""
+
 from __future__ import annotations
 
 import asyncio
@@ -89,7 +90,7 @@ def test_plan_calls_cloud_and_local(_row_slots):
             origin=slot.origin,
         )
         many_slots.append(new_slot)
-    
+
     calls = _plan_calls(many_slots, is_local=True)
     assert len(calls) == 2  # 12 slots, ceil(12/8) = 2 chunks
     assert len(calls[0]) == 6
@@ -118,7 +119,7 @@ def test_plan_calls_cloud_and_local(_row_slots):
             origin=slot.origin,
         )
         very_many_slots.append(new_slot)
-    
+
     calls = _plan_calls(very_many_slots, is_local=False)
     expected_chunks = math.ceil(len(very_many_slots) / SUBSTRIP_MAX_SLOTS)
     assert len(calls) == expected_chunks
@@ -152,7 +153,7 @@ def test_apply_reading_rules_drop_unknown(_row_slots, mini_catalog):
     """Unknown slot ids are dropped; missing ids become uncertain."""
     slot = _row_slots[0]
     unknown_slot_id = "unknown_slot_id"
-    
+
     # Answer with unknown slot id
     answer = RowReading(
         slots=[
@@ -172,7 +173,7 @@ def test_apply_reading_rules_drop_unknown(_row_slots, mini_catalog):
             ),
         ]
     )
-    
+
     observations, unknown_ids = _apply_reading_rules([slot], answer, mini_catalog)
     assert len(observations) == 1
     assert unknown_ids == [unknown_slot_id]
@@ -184,7 +185,7 @@ def test_apply_reading_rules_missing_becomes_uncertain(_row_slots, mini_catalog)
     slot = _row_slots[0]
     # Empty answer
     answer = RowReading(slots=[])
-    
+
     observations, unknown_ids = _apply_reading_rules([slot], answer, mini_catalog)
     assert len(observations) == 1
     assert unknown_ids == []
@@ -206,7 +207,7 @@ def test_apply_reading_rules_empty_downgraded(_row_slots, mini_catalog):
             )
         ]
     )
-    
+
     observations, unknown_ids = _apply_reading_rules([slot], answer, mini_catalog)
     assert len(observations) == 1
     assert unknown_ids == []
@@ -227,7 +228,7 @@ def test_apply_reading_rules_empty_full_unchanged(_row_slots, mini_catalog):
             )
         ]
     )
-    
+
     observations, unknown_ids = _apply_reading_rules([slot], answer, mini_catalog)
     assert len(observations) == 1
     assert unknown_ids == []
@@ -238,7 +239,7 @@ def test_apply_reading_rules_empty_full_unchanged(_row_slots, mini_catalog):
 def test_identify_marks_flag(shelf_image, _row_slots, mini_catalog, fake_backend):
     """marks=False changes the cache key (via the rendered strip)."""
     semaphore = asyncio.Semaphore(1)
-    
+
     # With marks
     fake_backend.queue[IDENTIFY_STAGE] = [
         RowReading(
@@ -253,11 +254,11 @@ def test_identify_marks_flag(shelf_image, _row_slots, mini_catalog, fake_backend
             ]
         )
     ]
-    
+
     obs_with_marks, _ = asyncio.run(
         identify_rows(shelf_image, _row_slots[:1], fake_backend, mini_catalog, semaphore, marks=True)
     )
-    
+
     # Without marks
     fake_backend.queue[IDENTIFY_STAGE] = [
         RowReading(
@@ -272,11 +273,11 @@ def test_identify_marks_flag(shelf_image, _row_slots, mini_catalog, fake_backend
             ]
         )
     ]
-    
+
     obs_without_marks, _ = asyncio.run(
         identify_rows(shelf_image, _row_slots[:1], fake_backend, mini_catalog, semaphore, marks=False)
     )
-    
+
     # Both should succeed
     assert len(obs_with_marks) == 1
     assert len(obs_without_marks) == 1
@@ -298,10 +299,10 @@ def test_identify_substrips_on_local(shelf_image, mini_catalog, fake_backend):
                 origin="gap_filled",
             )
         )
-    
+
     # Set backend as local
     fake_backend.is_local = True
-    
+
     # Queue responses for each sub-strip - make sure we only include the slots for each chunk
     calls = _plan_calls(slots, is_local=True)
     fake_backend.queue[IDENTIFY_STAGE] = []
@@ -319,12 +320,10 @@ def test_identify_substrips_on_local(shelf_image, mini_catalog, fake_backend):
                 ]
             )
         )
-    
+
     semaphore = asyncio.Semaphore(2)
-    observations, errors = asyncio.run(
-        identify_rows(shelf_image, slots, fake_backend, mini_catalog, semaphore)
-    )
-    
+    observations, errors = asyncio.run(identify_rows(shelf_image, slots, fake_backend, mini_catalog, semaphore))
+
     assert len(observations) == 12
     # Filter out any errors about unknown slot IDs (these are expected in testing)
     actual_errors = [e for e in errors if "dropped unknown slot ids" not in e]
@@ -336,7 +335,7 @@ def test_identify_substrips_on_local(shelf_image, mini_catalog, fake_backend):
 #     """A failed call -> all its slots uncertain + one error; other rows unaffected."""
 #     # Create a single slot for the first row
 #     first_slot = _row_slots[0]
-#     
+#
 #     # Add a second row to test isolation
 #     second_row_slots = [
 #         Slot(
@@ -348,12 +347,12 @@ def test_identify_substrips_on_local(shelf_image, mini_catalog, fake_backend):
 #             origin="gap_filled",
 #         )
 #     ]
-#     
+#
 #     all_slots = [first_slot] + second_row_slots
-#     
+#
 #     # Set backend as local to ensure predictable splitting
 #     fake_backend.is_local = True
-#     
+#
 #     # Queue responses - first call fails, second succeeds
 #     fake_backend.queue[IDENTIFY_STAGE] = [
 #         RuntimeError("Test error"),  # First call fails (for row 1)
@@ -368,16 +367,16 @@ def test_identify_substrips_on_local(shelf_image, mini_catalog, fake_backend):
 #             ]
 #         ),  # Second call succeeds (for row 2)
 #     ]
-#     
+#
 #     semaphore = asyncio.Semaphore(1)
-#     
+#
 #     observations, errors = asyncio.run(
 #         identify_rows(shelf_image, all_slots, fake_backend, mini_catalog, semaphore)
 #     )
-#     
+#
 #     # Should have observations for both slots
 #     assert len(observations) == 2
-#     
+#
 #     # Find the observation for the first slot (row 1) and second slot (row 2)
 #     # Observations are sorted by (row, index), so row 1 should come first
 #     first_obs = None
@@ -387,18 +386,18 @@ def test_identify_substrips_on_local(shelf_image, mini_catalog, fake_backend):
 #             first_obs = obs
 #         elif obs.slot.row == 2:
 #             second_obs = obs
-#     
+#
 #     # Make sure we found both observations
 #     assert first_obs is not None
 #     assert second_obs is not None
-#     
+#
 #     # First slot should be uncertain due to failure
 #     assert first_obs.reading.occupancy == "uncertain"
 #     assert "identify_failed" in first_obs.issues
-#     
+#
 #     # Second slot should be processed normally
 #     assert second_obs.reading.occupancy == "occupied"
-#     
+#
 #     # Should have one error message
 #     assert len(errors) == 1
 #     assert "Test error" in errors[0]
@@ -419,12 +418,12 @@ def test_identify_facing_id_unset(_row_slots, mini_catalog, fake_backend):
             ]
         )
     ]
-    
+
     semaphore = asyncio.Semaphore(1)
     observations, _ = asyncio.run(
         identify_rows(np.zeros((100, 100, 3), dtype=np.uint8), _row_slots[:1], fake_backend, mini_catalog, semaphore)
     )
-    
+
     assert len(observations) == 1
     assert observations[0].facing_id is None
 
@@ -432,7 +431,7 @@ def test_identify_facing_id_unset(_row_slots, mini_catalog, fake_backend):
 def test_identify_input_image_unchanged(shelf_image, _row_slots, mini_catalog, fake_backend):
     """The input image is not mutated."""
     original_image = shelf_image.copy()
-    
+
     fake_backend.queue[IDENTIFY_STAGE] = [
         RowReading(
             slots=[
@@ -445,11 +444,9 @@ def test_identify_input_image_unchanged(shelf_image, _row_slots, mini_catalog, f
             ]
         )
     ]
-    
+
     semaphore = asyncio.Semaphore(1)
-    asyncio.run(
-        identify_rows(shelf_image, _row_slots[:1], fake_backend, mini_catalog, semaphore)
-    )
-    
+    asyncio.run(identify_rows(shelf_image, _row_slots[:1], fake_backend, mini_catalog, semaphore))
+
     # Check that the image is unchanged
     assert np.array_equal(shelf_image, original_image)
