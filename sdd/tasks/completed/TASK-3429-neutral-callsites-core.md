@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3422, TASK-3423, TASK-3424, TASK-3425, TASK-3427
@@ -423,7 +423,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+AbstractPlanogramType._vision_kwargs(**extra) added (no_memory=True + model only when the resolved backend pins a non-empty str). Closed worklist rewritten (two lines out, one in per site): types/abstract.py _check_illumination -> async with self.pipeline.llm, **self._vision_kwargs(); plan.py promo OCR -> async with self.llm, **self._type_handler._vision_kwargs(); legacy.py _find_poster -> inline _vision_kwargs dict + async with self.llm. No prompt/max_tokens/structured_output change. test_planogram_types.py mock_pipeline: roi_client aliases llm, resolved_backend = MagicMock(provider='google', model=None).
+Tests: test_vision_kwargs.py 6 passed; test_planogram_types.py 26; characterization suites of TASK-3422/3423/3424 13/17/10 passed unchanged (none asserted the literal gemini model). ruff: no new findings vs origin/dev in planogram/ (all 38 pre-existing).
+Accepted consequence (per task): these calls now use the pipeline client's own temperature/retry/timeout settings instead of roi_client's (temperature 0.0, max_retries 2, timeout 20).
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1

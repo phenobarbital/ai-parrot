@@ -224,7 +224,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -238,8 +238,8 @@
       "parallelism_notes": "Edits code whose behaviour must be pinned first: TASK-3422 (check_planogram_compliance tests), TASK-3423 (fact-tag/illumination tests exercising the _check_illumination call site this task rewrites) and TASK-3424 (run() orchestration test exercising the plan.py promo-OCR site this task rewrites); passes no_memory to Anthropic, accepted only after TASK-3425 (anthropic client.py); reads pipeline.resolved_backend added by TASK-3427 (abstract.py).",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3429-neutral-callsites-core.md"
+      "completed_at": "2026-09-18T23:47:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3429-neutral-callsites-core.md"
     },
     {
       "id": "TASK-3430",
