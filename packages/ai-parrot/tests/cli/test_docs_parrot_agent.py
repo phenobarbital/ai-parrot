@@ -1,4 +1,5 @@
 """AC26 — the `parrot agent` guide exists and names the feature's flags and keys (FEAT-573)."""
+
 from __future__ import annotations
 
 from pathlib import Path
