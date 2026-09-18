@@ -171,7 +171,7 @@
       "feature_id": "FEAT-570",
       "feature": "expose-local-mcp-tools",
       "spec": "sdd/specs/expose-local-mcp-tools.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -181,8 +181,8 @@
       "parallelism_notes": "Imports inventory/install_toolkits/uninstall_toolkits/set_toolkits_enabled from TASK-3375 (parrot/mcp/toolkit_install.py).",
       "assigned_to": null,
       "started_at": "2026-09-17T23:36:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3376-toolkits-cli-group.md"
+      "completed_at": "2026-09-18T06:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3376-toolkits-cli-group.md"
     },
     {
       "id": "TASK-3377",
