@@ -144,7 +144,8 @@ class DatabaseQueryToolkit(AbstractToolkit):     # line 115
     {"path": "packages/ai-parrot/src/parrot/mcp/_toolkit_templates/browsing.yaml", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/mcp/_toolkit_templates/memory.yaml", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/mcp/toolkit_seed.py", "action": "MODIFY"},
-    {"path": "tests/mcp/test_toolkit_templates.py", "action": "CREATE"}
+    {"path": "tests/mcp/test_toolkit_templates.py", "action": "CREATE"},
+    {"path": "tests/mcp/test_toolkit_seed.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/mcp/toolkit_seed.py#ToolkitTemplate",
