@@ -1,9 +1,18 @@
 """Tests for the FEAT-574 cycle contracts."""
+
 import pytest
 from parrot.models.compliance import ComplianceResult, ComplianceStatus, ShelfAssessment
 from parrot_pipelines.planogram.contracts import (
-    AssessmentStatus, ComparisonResult, CreditPolicy, CycleContext, EvidenceWeights,
-    FacingStatus, Identification, IdentificationResponse, ObservationSource, PerceptionResult,
+    AssessmentStatus,
+    ComparisonResult,
+    CreditPolicy,
+    CycleContext,
+    EvidenceWeights,
+    FacingStatus,
+    Identification,
+    IdentificationResponse,
+    ObservationSource,
+    PerceptionResult,
 )
 
 

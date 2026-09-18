@@ -1,4 +1,5 @@
 """Shared Pydantic contracts of the perceive → identify → compare cycle (FEAT-574)."""
+
 from __future__ import annotations
 
 from enum import Enum
@@ -54,8 +55,8 @@ class Shape(BaseModel):
     kind: ShapeKind = ShapeKind.UNKNOWN
     box: DetectionBox
     profile: Optional[str] = None
-    row_index: Optional[int] = None          # 0-based, top → bottom
-    slot_index: Optional[int] = None         # 1..n inside its row
+    row_index: Optional[int] = None  # 0-based, top → bottom
+    slot_index: Optional[int] = None  # 1..n inside its row
     ocr_text: Optional[str] = None
     ocr_confidence: Optional[float] = None
     source: ObservationSource = ObservationSource.CV
@@ -66,7 +67,7 @@ class Shape(BaseModel):
 class Slot(BaseModel):
     """A product position derived from shapes (or gap-filled)."""
 
-    slot_id: str                             # "<image_id>:r<row_index>:s<slot_index>"
+    slot_id: str  # "<image_id>:r<row_index>:s<slot_index>"
     image_id: str
     row_index: int
     slot_index: int
@@ -86,12 +87,12 @@ class PerceptionResult(BaseModel):
     """Stage-1 output for one image."""
 
     image_id: str = "img0"
-    image_size: Tuple[int, int] = (0, 0)     # (width, height)
+    image_size: Tuple[int, int] = (0, 0)  # (width, height)
     shapes: List[Shape] = Field(default_factory=list)
     slots: List[Slot] = Field(default_factory=list)
     zones: List[Shape] = Field(default_factory=list)
     row_count: int = 0
-    detection_source: str = "cv"             # "cv" | "llm" | "legacy_llm"
+    detection_source: str = "cv"  # "cv" | "llm" | "legacy_llm"
     ocr_available: bool = False
     legacy: Optional[LegacyPayload] = None
     errors: List[str] = Field(default_factory=list)
@@ -100,23 +101,23 @@ class PerceptionResult(BaseModel):
 class Identification(BaseModel):
     """Stage-2 output for one shape or slot. Also the item type the LLM returns."""
 
-    shape_id: str                            # a Shape.shape_id OR a Slot.slot_id
-    image_id: Optional[str] = None           # pipeline-owned: overwritten after validation
+    shape_id: str  # a Shape.shape_id OR a Slot.slot_id
+    image_id: Optional[str] = None  # pipeline-owned: overwritten after validation
     product: Optional[str] = None
     brand: Optional[str] = None
-    text: Optional[str] = None               # OCR text confirmed / corrected by the LLM
+    text: Optional[str] = None  # OCR text confirmed / corrected by the LLM
     descriptors: Dict[str, Any] = Field(default_factory=dict)
-    occupancy: str = "unknown"               # "occupied" | "empty" | "unknown"
-    raw_confidence: float = Field(default=0.0, ge=0.0, le=1.0)   # model-reported, NEVER modified
+    occupancy: str = "unknown"  # "occupied" | "empty" | "unknown"
+    raw_confidence: float = Field(default=0.0, ge=0.0, le=1.0)  # model-reported, NEVER modified
     evidence: List[str] = Field(default_factory=list)
-    source: ObservationSource = ObservationSource.CV             # pipeline-owned
+    source: ObservationSource = ObservationSource.CV  # pipeline-owned
     uncertain: bool = False
 
 
 class AddedShape(BaseModel):
     """A shape the LLM proposes that perception missed. Has no authority over existing ids."""
 
-    box_norm: List[int]                      # [ymin, xmin, ymax, xmax], 0-1000, relative to the image/strip sent
+    box_norm: List[int]  # [ymin, xmin, ymax, xmax], 0-1000, relative to the image/strip sent
     kind: ShapeKind = ShapeKind.UNKNOWN
     product: Optional[str] = None
     brand: Optional[str] = None
@@ -138,7 +139,7 @@ class IdentificationResult(BaseModel):
 
     image_id: str = "img0"
     identifications: List[Identification] = Field(default_factory=list)
-    added: List[Shape] = Field(default_factory=list)   # accepted additions, pipeline-owned ids, source=LLM_ADDED
+    added: List[Shape] = Field(default_factory=list)  # accepted additions, pipeline-owned ids, source=LLM_ADDED
     errors: List[str] = Field(default_factory=list)
 
 
@@ -207,8 +208,8 @@ class ShelfScore(BaseModel):
     expected_facings: int = 0
     facing_strict: float = 0.0
     facing_lenient: float = 0.0
-    strict_score: float = 0.0                # shelf_compliance(s, strict)
-    lenient_score: float = 0.0               # shelf_compliance(s, lenient)
+    strict_score: float = 0.0  # shelf_compliance(s, strict)
+    lenient_score: float = 0.0  # shelf_compliance(s, lenient)
     coverage: float = 0.0
     visible_fraction: float = 0.0
     occupied_fraction: float = 0.0
@@ -310,7 +311,7 @@ class RenderRecord(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     image_id: str
-    rendered_image: Optional[Any] = None     # PIL.Image.Image
+    rendered_image: Optional[Any] = None  # PIL.Image.Image
     overlay_path: Optional[str] = None
 
 
@@ -319,11 +320,11 @@ class CycleContext(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    vision: Any = None                       # VisionAdapter
-    executor: Any = None                     # CpuExecutor
-    ocr: Any = None                          # OcrReader
-    definition: Optional[Any] = None         # SlotsDefinition
-    bindings: List[Any] = Field(default_factory=list)   # RuleBinding
+    vision: Any = None  # VisionAdapter
+    executor: Any = None  # CpuExecutor
+    ocr: Any = None  # OcrReader
+    definition: Optional[Any] = None  # SlotsDefinition
+    bindings: List[Any] = Field(default_factory=list)  # RuleBinding
     credit_policy: CreditPolicy = Field(default_factory=CreditPolicy.default)
     evidence_weights: EvidenceWeights = Field(default_factory=EvidenceWeights)
     output_dir: Optional[Path] = None
