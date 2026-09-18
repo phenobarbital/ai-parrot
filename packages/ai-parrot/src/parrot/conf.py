@@ -377,6 +377,9 @@ ENABLE_AZURE_BOT = config.getboolean("ENABLE_AZURE_BOT", fallback=True)
 
 ## Google Services:
 GOOGLE_API_KEY = config.get("GOOGLE_API_KEY")
+# Default Google credential for crews built by the AgentCrew HTTP handlers
+# (FEAT-575). Unset -> crew Google clients fall back to GOOGLE_API_KEY.
+CREW_AI_KEY = config.get("CREW_AI_KEY")
 ### Google Service Credentials:
 GA_SERVICE_ACCOUNT_NAME = config.get("GA_SERVICE_ACCOUNT_NAME", fallback="google.json")
 GA_SERVICE_PATH = config.get("GA_SERVICE_PATH", fallback="env/google/")
