@@ -1,4 +1,5 @@
 """TUI adapters: renderer, command context and log handler (spec §3 Module 12)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -140,8 +141,15 @@ class TUIRenderer:
 class TUICommandContext:
     """``CommandContext`` implementation for the workspace app."""
 
-    def __init__(self, app: "App[Any]", bot: Any, config: REPLConfig, runner: TurnRunner,
-                 dispatcher: SlashCommandDispatcher, renderer: TUIRenderer) -> None:
+    def __init__(
+        self,
+        app: "App[Any]",
+        bot: Any,
+        config: REPLConfig,
+        runner: TurnRunner,
+        dispatcher: SlashCommandDispatcher,
+        renderer: TUIRenderer,
+    ) -> None:
         self.app = app
         self.bot = bot
         self.config = config

@@ -1,4 +1,5 @@
 """Tests for parrot.cli.tui.adapter (FEAT-573, spec §4 rows test_tui_logs_routed_to_drawer, test_dispatcher_uses_command_context)."""
+
 from __future__ import annotations
 
 import logging
