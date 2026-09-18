@@ -13,8 +13,9 @@ the linked Jira ticket to "Done" / "Resolved".
 **This command runs on the spec's `base_branch`** — read from the spec's
 YAML frontmatter (FEAT-145). For `type: feature` that is `dev` (default)
 or `staging` (during a release freeze); for `type: hotfix` that is `main`.
-NOT inside a worktree. It looks INTO the worktree to verify work, but
-modifies state only on `base_branch`.
+It may be invoked from the main repo or from inside the feature worktree
+(the `sdd-worker` agent does the latter). It looks INTO the worktree to
+verify work, but modifies state only on `base_branch`.
 
 ## Usage
 ```
@@ -31,7 +32,7 @@ modifies state only on `base_branch`.
 ```
 
 ## Guardrails
-- **Must run on the spec's `base_branch`** (read from spec frontmatter — `dev` for features, `main` for hotfixes), not inside a worktree.
+- **Targets the spec's `base_branch`** (read from spec frontmatter — `dev` for features, `main` for hotfixes). From the main repo it must be checked out on that branch; from inside the feature worktree (`IN_WORKTREE=1`, Step 1) every primary-checkout path goes through `$MAIN_ROOT` / `$WORKTREES_DIR`.
 - Do NOT mark tasks as done unless evidence exists in the worktree (commits, files).
 - Do NOT modify the spec — only task statuses and task files.
 - If a task has no evidence of implementation, flag it explicitly.
@@ -60,19 +61,33 @@ META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import par
 TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 CURRENT_BRANCH=$(git branch --show-current)
+
+# /sdd-done runs either from the main repo or from inside the feature worktree
+# (the sdd-worker agent runs it from its own worktree). Resolve the primary
+# checkout once and address it ONLY through these variables afterwards.
+MAIN_ROOT=$(cd "$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd)
+WORKTREES_DIR="$MAIN_ROOT/.claude/worktrees"
+IN_WORKTREE=0
+if [[ "$(git rev-parse --path-format=absolute --git-dir)" != "$(git rev-parse --path-format=absolute --git-common-dir)" ]]; then
+    IN_WORKTREE=1
+fi
 ```
 
-If `CURRENT_BRANCH != BASE_BRANCH`, abort:
+If `IN_WORKTREE=0` and `CURRENT_BRANCH != BASE_BRANCH`, abort:
 ```
 ⚠️  /sdd-done must run on the spec's base_branch (got <CURRENT_BRANCH>, expected <BASE_BRANCH>).
    Switch: git checkout <BASE_BRANCH>
 ```
 
-If currently inside a worktree (path contains `.claude/worktrees/`), abort:
-```
-⚠️  /sdd-done must run from the main repo, not inside a worktree.
-   cd back to the main repo and re-run.
-```
+If `IN_WORKTREE=1`, the current branch is the feature branch — that is expected,
+skip the base-branch check. Only the PR flow is available from here: `--merge`
+and `--sync-down` are refused in Steps 9.2 / 9.5 because they need a writable
+checkout of `BASE_BRANCH`. The worktree sandbox keeps the primary checkout
+read-only except its `.git` and `$WORKTREES_DIR`, so: never `cd` to
+`$MAIN_ROOT`, never write anywhere else under it, and reference every
+primary-checkout path through `$MAIN_ROOT` / `$WORKTREES_DIR` (never relative
+to the worktree's cwd). Ledger writes that need the primary checkout fall back
+to `(NOT filed: shared ledger is read-only)` as documented in `sdd-worker`.
 
 ### 2. Resolve the Feature
 1. Glob `sdd/tasks/index/*.json` (excluding `_orphans.json`) and find the
@@ -207,7 +222,7 @@ field and the feature-level `completed_at`.
 > would create duplicate state that conflicts on merge (FEAT-414).
 
 ```bash
-WORKTREE_PATH=".claude/worktrees/feat-<FEAT-ID>-<slug>"
+WORKTREE_PATH="$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"   # absolute: valid from the main repo and from inside the worktree
 INDEX="sdd/tasks/index/${FEATURE_SLUG}.json"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 
@@ -278,7 +293,10 @@ feature branch. Bounded retry on a rejected push; never fails `/sdd-done`.
 if [[ "$TYPE" != "hotfix" ]]; then
     git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
 
-    TEMP_WORKTREE=".claude/worktrees/_ledger-snapshot-$$"
+    # Absolute path under the primary checkout: from inside a feature worktree a
+    # relative path would land inside that worktree, and the sandbox only lets
+    # worktree agents write to $WORKTREES_DIR outside their own checkout.
+    TEMP_WORKTREE="$WORKTREES_DIR/_ledger-snapshot-$$"
     git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
     # No --force: the throwaway checkout only ever touches issues.jsonl, so
     # restoring that one file leaves it clean and a plain remove succeeds
@@ -392,10 +410,29 @@ If `gh` is not installed or not authenticated, print the manual command:
 
 **Feature flow with `--merge` — direct merge (old behavior):**
 
-When `--merge` is explicitly passed, perform a direct merge instead of a PR:
+When `--merge` is explicitly passed, perform a direct merge instead of a PR.
+
+**Hard refusal — `IN_WORKTREE=1`:** a direct merge needs a writable checkout of
+`BASE_BRANCH`, and inside the feature worktree HEAD *is* the feature branch:
+the merge below would be a no-op self-merge and `git push origin "$BASE_BRANCH"`
+would publish a stale base branch without the feature commits, while the
+command still reports success and removes the worktree. Refuse and fall back
+to the PR flow above:
 
 ```bash
-# We're already on $BASE_BRANCH (verified in Step 1)
+if [[ "$IN_WORKTREE" == "1" && "$MERGE_FLAG" == "--merge" ]]; then
+    cat <<EOF
+⚠️  --merge is not available from inside the feature worktree (HEAD is the
+   feature branch, and the primary checkout is read-only here).
+   Either re-run /sdd-done from the main repo checked out on $BASE_BRANCH,
+   or drop --merge to open a PR instead.
+EOF
+    exit 1
+fi
+```
+
+```bash
+# We're on $BASE_BRANCH in the main repo (verified in Step 1, IN_WORKTREE=0)
 git merge --no-edit feat-<FEAT-ID>-<slug>
 ```
 
@@ -431,6 +468,18 @@ This sub-step runs ONLY when the user passes `--sync-down` (or the deprecated
 `--sync-dev` alias) AND `TYPE == "hotfix"`. It propagates a hotfix that has just
 been merged into `main` (via the manual PR from §9) back into `staging` and `dev`
 so both stay in sync.
+
+**Hard refusal — `IN_WORKTREE=1`:** the sync-down below runs `git checkout
+staging` / `git checkout dev` and merges in the current checkout. Inside a
+worktree those branches are checked out elsewhere (the primary checkout) and
+`git checkout` fails, so refuse and point at the main repo:
+
+```bash
+if [[ "$IN_WORKTREE" == "1" ]]; then
+    echo "⚠️  --sync-down must run from the main repo, not inside a worktree: cd to \$MAIN_ROOT and re-run."
+    exit 1
+fi
+```
 
 If `--sync-dev` is used instead of `--sync-down`, first emit:
 ```
@@ -625,8 +674,13 @@ done
 
 ### 11. Cleanup the Worktree
 ```bash
-git worktree remove .claude/worktrees/feat-<FEAT-ID>-<slug>
+git worktree remove "$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"
 ```
+This also works with `IN_WORKTREE=1` (git allows removing the current
+worktree, and the sandbox binds `$WORKTREES_DIR` writable), but the shell's
+cwd disappears with it — make this the LAST filesystem step and run any
+remaining git command as `git -C "$MAIN_ROOT" ...`.
+
 If there are uncommitted changes in the worktree, warn:
 ```
 ⚠️  Worktree has uncommitted changes. Force remove? (y/N)
@@ -634,12 +688,12 @@ If there are uncommitted changes in the worktree, warn:
 
 If the worktree was already removed, prune stale metadata:
 ```bash
-git worktree prune
+git -C "$MAIN_ROOT" worktree prune
 ```
 
 Optionally delete the local feature branch (it's been merged):
 ```bash
-git branch -d feat-<FEAT-ID>-<slug>
+git -C "$MAIN_ROOT" branch -d feat-<FEAT-ID>-<slug>
 ```
 
 ### 12. Output

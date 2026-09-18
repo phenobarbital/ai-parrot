@@ -302,3 +302,82 @@ def test_real_native_hook_keeps_primary_environment_read_only(tmp_path: Path) ->
     assert result.returncode != 0
     assert "Read-only file system" in result.stderr
     assert target.read_text() == "original\n"
+
+
+def _registered_feature_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """Model a feature worktree registered under the primary checkout's ``.claude/worktrees``."""
+    main = tmp_path / "main"
+    git_dir = main / ".git"
+    admin = git_dir / "worktrees" / "feat-x"
+    admin.mkdir(parents=True)
+    (admin / "commondir").write_text("../..\n")
+    worktree = main / ".claude" / "worktrees" / "feat-x"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text(f"gitdir: {admin}\n")
+    return main, worktree
+
+
+def _writable_binds(argv: list[str]) -> list[Path]:
+    return [Path(argv[index + 1]) for index, token in enumerate(argv) if token == "--bind"]
+
+
+def test_feature_worktree_binds_primary_worktree_admin_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worktree agent may administer sibling worktrees, but the rest of the primary checkout stays read-only."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / ".claude" / "worktrees").resolve() in binds
+    assert (main / ".git").resolve() in binds
+    assert main.resolve() not in binds
+
+
+def test_primary_checkout_has_no_extra_worktree_admin_bind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    (main / ".claude" / "worktrees").mkdir(parents=True)
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [main.resolve()]
+
+
+def test_linked_checkout_without_admin_dir_binds_nothing_extra(
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    worktree, env = checkout
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert binds == [worktree.resolve(), (env.parent / ".git").resolve()]
+
+
+def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout(tmp_path: Path) -> None:
+    """`/sdd-done` run from inside a feature worktree needs `git worktree add/remove` under the primary checkout."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    admin_dir = main / ".claude" / "worktrees"
+    admin_dir.mkdir(parents=True)
+    feature = admin_dir / "feat-x"
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    def sandboxed(argv: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(policy.protected_argv(feature, argv), capture_output=True, text=True, timeout=20)
+
+    snapshot = admin_dir / "_ledger-snapshot"
+    result = sandboxed(["git", "worktree", "add", "--detach", str(snapshot), "HEAD"])
+    assert result.returncode == 0, result.stderr
+    assert (snapshot / ".git").is_file()
+    result = sandboxed(["git", "worktree", "remove", str(snapshot)])
+    assert result.returncode == 0, result.stderr
+    assert not snapshot.exists()
+
+    # pytest's tmp_path lives under /tmp, which the sandbox replaces with a
+    # private tmpfs, so only the host view proves the primary checkout stayed
+    # read-only: the probe must never reach the real directory.
+    sandboxed(["touch", str(main / "stray-file")])
+    assert not (main / "stray-file").exists()
+
+    result = sandboxed(["git", "worktree", "remove", str(feature)])
+    assert result.returncode == 0, result.stderr
+    assert not feature.exists()
