@@ -2,6 +2,7 @@
 
 Synchronous, cv2-only. The pipeline calls :func:`write_report` through ``asyncio.to_thread``.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -151,9 +152,7 @@ def write_report(
             if obs.slot.tag_box is not None and obs.slot.tag_id is not None:
                 tag_box = _clip(obs.slot.tag_box, width, height)
                 if tag_box is None:
-                    logger.debug(
-                        "Tag %s box clips to nothing in image %s; skipping crop", obs.slot.tag_id, image_id
-                    )
+                    logger.debug("Tag %s box clips to nothing in image %s; skipping crop", obs.slot.tag_id, image_id)
                     continue
                 tx1, ty1, tx2, ty2 = tag_box
                 _write_image(output / "tags" / f"{obs.slot.tag_id}.png", image[ty1:ty2, tx1:tx2])

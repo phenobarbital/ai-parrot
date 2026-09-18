@@ -1,4 +1,5 @@
 """Unit tests for plancheck.report (FEAT-565, TASK-3348)."""
+
 from __future__ import annotations
 
 import json
