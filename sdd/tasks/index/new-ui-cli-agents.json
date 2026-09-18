@@ -298,7 +298,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -312,8 +312,8 @@
       "parallelism_notes": "Imports resolve_ui_mode/UIMode/load_session_pointer from TASK-3401, TurnRunner from TASK-3404, AgentREPL.run_batch + new REPLConfig fields from TASK-3407 (cli/repl.py), ServerAgentProxy(token=) from TASK-3408 (cli/loaders.py) and lazily AgentWorkspaceApp from TASK-3412 (cli/tui/app.py). Sole editor of cli/agent_repl.py.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3413-agent-command-entry-point.md"
+      "completed_at": "2026-09-18T09:15:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3413-agent-command-entry-point.md"
     },
     {
       "id": "TASK-3414",
