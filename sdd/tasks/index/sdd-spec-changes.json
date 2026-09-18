@@ -16,14 +16,14 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root of the graph: creates DocTaxonomy/parse_taxonomy/KNOWN_PROJECTS in sdd_meta.py that every other task consumes; touches only sdd_meta.py (+ shim) and its own test",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3459-taxonomy-parser.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "its test imports parse_taxonomy/DocTaxonomy from TASK-3459 (scripts/sdd/sdd_meta.py re-export)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3460-templates-taxonomy-keys.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "imports parse_taxonomy, normalize_project, normalize_tag from TASK-3459 (scripts/sdd/sdd_meta.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3461-doc-taxonomy-cli.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": true,
       "parallelism_notes": "sdd_ingest.py imports DocTaxonomy + parse_taxonomy from TASK-3459 (parrot/knowledge/wiki/ledger/sdd_meta.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3462-wiki-ingest-taxonomy-summary.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "imports KNOWN_PROJECTS + parse_taxonomy from TASK-3459 (scripts/sdd/sdd_meta.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3463-backfill-taxonomy-script.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,7 +124,7 @@
       "parallel": true,
       "parallelism_notes": "command prose cites KNOWN_PROJECTS created by TASK-3459 (sdd_meta.py) and the projects/tags template block added by TASK-3460 (sdd/templates/brainstorm.md, proposal.md)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3464-authoring-commands-fill-taxonomy.md"
     },
@@ -135,7 +135,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -145,7 +145,7 @@
       "parallel": true,
       "parallelism_notes": "sanity-check snippet calls parse_taxonomy from TASK-3459 (scripts/sdd/sdd_meta.py); §5 frontmatter shape mirrors the sdd/templates/spec.md block from TASK-3460",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3465-sdd-spec-carry-forward-and-ideation.md"
     },
@@ -156,7 +156,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -165,7 +165,7 @@
       "parallel": true,
       "parallelism_notes": "commands invoke python -m scripts.sdd.doc_taxonomy --paths-only/--json created by TASK-3461 (scripts/sdd/doc_taxonomy.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3466-status-next-taxonomy-filters.md"
     },
@@ -176,7 +176,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -185,7 +185,7 @@
       "parallel": true,
       "parallelism_notes": "label one-liner calls parse_taxonomy from TASK-3459 (scripts/sdd/sdd_meta.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3467-sdd-tojira-labels.md"
     },
@@ -196,7 +196,7 @@
       "feature_id": "FEAT-576",
       "feature": "sdd-spec-changes",
       "spec": "sdd/specs/sdd-spec-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -207,7 +207,7 @@
       "parallel": true,
       "parallelism_notes": "documents KNOWN_PROJECTS/PROJECT_ALIASES from TASK-3459 (sdd_meta.py), the doc_taxonomy flags from TASK-3461 (scripts/sdd/doc_taxonomy.py) and the backfill flags from TASK-3463 (scripts/sdd/backfill_taxonomy.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-18T22:32:44+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3468-workflow-docs-taxonomy.md"
     }
