@@ -381,10 +381,38 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt c3d9302a89564e54b858bcdc444a06bf)
+**Date**: 2026-09-18
+**Notes**: Implemented `turn_scope.py` (`TURN_SCOPE` ContextVar, `turn_scope()`
+context manager, `in_turn_scope()` predicate factory) verbatim per blueprint;
+re-exported from `lifecycle/__init__.py`. Guard test covers set/reset,
+survival across `asyncio.create_task`, and a real `AbstractTool.execute()`
+round-trip reaching a scope-filtered global subscriber.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Merge clean (`coder_merge` outcome=merged); engine lint autofix (black)
+applied. `pytest test_turn_scope.py + test_global_registry.py +
+test_tool_lifecycle.py`: 22 passed (orchestrator, top-level worktree — the
+sandboxed sub-worktree lacked the compiled `parrot.utils.types` extension,
+same pre-existing limitation as prior tasks).
 
-**Deviations from spec**: none | describe if any
+**Deviation from spec (reviewed and confirmed correct)**: the blueprint's
+third test asserted a strict order
+`["BeforeToolCallEvent", "AfterToolCallEvent"]` after two `asyncio.sleep(0)`
+yields. The coder traced this as deterministically false against the real
+navigator-eventbus 0.3.0 registry (`BeforeToolCallEvent` goes through
+`emit_nowait()` — one extra `create_task` hop — while `AfterToolCallEvent`'s
+directly-awaited `emit()` schedules its forward synchronously, so After can
+legitimately land in the subscriber's list first). Changed the assertion to
+membership/count (`sorted(...)`) and to a type-based span_id lookup instead
+of fixed indices, preserving the test's actual purpose. Verified against
+this task's own AC (line 335: only requires the event reaches the
+scope-filtered subscriber and is excluded outside scope — no ordering
+requirement) — the original blueprint assertion was itself incorrect about
+an async-scheduling guarantee the library does not provide. Orchestrator
+CONFIRMED this correction; no fix commit needed since it landed in the
+delivery commit itself.
+
+**Feedback recorded**: none — the historical TASK-3374 pattern
+(unscoped-removal-reuses-full-uninstall-helper) supplied via `coder_feedback`
+was correctly judged not applicable (this task creates net-new primitives,
+wraps nothing).

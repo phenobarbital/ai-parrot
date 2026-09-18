@@ -70,7 +70,7 @@
       "feature_id": "FEAT-573",
       "feature": "new-ui-cli-agents",
       "spec": "sdd/specs/new-ui-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -78,8 +78,8 @@
       "parallelism_notes": "Root: creates parrot/core/events/lifecycle/turn_scope.py and exports it from lifecycle/__init__.py (sole editor of that file). Consumers: TASK-3404 and TASK-3409 import turn_scope/in_turn_scope.",
       "assigned_to": null,
       "started_at": "2026-09-18T05:16:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3402-lifecycle-turn-scope.md"
+      "completed_at": "2026-09-18T06:28:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3402-lifecycle-turn-scope.md"
     },
     {
       "id": "TASK-3403",
