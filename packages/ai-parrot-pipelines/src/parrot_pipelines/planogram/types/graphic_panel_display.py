@@ -135,12 +135,11 @@ class GraphicPanelDisplay(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=Detections,
                         max_tokens=8192,
                     )
@@ -592,12 +591,11 @@ class GraphicPanelDisplay(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=Detections,
                         max_tokens=8192,
                     )
@@ -696,12 +694,11 @@ class GraphicPanelDisplay(AbstractPlanogramType):
 
         raw_answer = ""
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=roi_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     max_tokens=16,
                 )
             raw_answer = (msg.output or "").strip().upper()
@@ -790,12 +787,11 @@ class GraphicPanelDisplay(AbstractPlanogramType):
 
         visual_features: List[str] = []
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=zone_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     max_tokens=512,
                 )
             raw_output = msg.output or ""
