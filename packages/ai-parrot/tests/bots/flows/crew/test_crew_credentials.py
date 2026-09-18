@@ -6,6 +6,7 @@ import pytest
 
 from parrot.bots.flows.crew.credentials import (
     GOOGLE_PROVIDER_KEYS,
+    apply_google_api_key,
     get_crew_google_api_key,
     is_google_llm,
 )
@@ -91,3 +92,82 @@ def test_get_key_warns_once_when_unset(no_crew_key, caplog):
 
     for record in caplog.records:
         assert "crew-test-key" not in record.getMessage()
+
+
+class _FakeAgent:
+    """Minimal stand-in for a constructed, unconfigured AbstractBot."""
+
+    _default_llm = "google"
+
+    def __init__(self, llm=None, llm_kwargs=None):
+        self._llm_raw = llm
+        # Mirror abstract.py:516 — assignment BY REFERENCE, not a copy.
+        self._llm_kwargs = llm_kwargs if llm_kwargs is not None else {}
+
+
+def test_apply_injects_for_google_without_credential(crew_key):
+    agent = _FakeAgent(llm="google:gemini-3.5-flash")
+    assert apply_google_api_key(agent, crew_key) is True
+    assert agent._llm_kwargs["api_key"] == crew_key
+
+
+def test_apply_does_not_mutate_definition_dict(crew_key):
+    # The dict an AgentDefinition would own, passed in by reference.
+    definition_llm_kwargs = {"temperature": 0.1}
+    agent = _FakeAgent(llm="google", llm_kwargs=definition_llm_kwargs)
+    assert apply_google_api_key(agent, crew_key) is True
+    # AC7: the credential must never reach the definition's dict. NOTE: this
+    # asserts only the absence of api_key — AbstractBot itself writes
+    # temperature/max_tokens into this same dict (abstract.py:517-518), so the
+    # dict is NOT otherwise pristine and must not be compared for equality.
+    assert "api_key" not in definition_llm_kwargs
+    assert agent._llm_kwargs is not definition_llm_kwargs
+
+
+@pytest.mark.parametrize(
+    "llm_kwargs",
+    [
+        {"api_key": "own"},
+        {"credentials_file": "/tmp/sa.json"},
+        {"credentials": object()},
+        {"vertexai": True},
+    ],
+)
+def test_apply_respects_explicit_credential(crew_key, llm_kwargs):
+    original = dict(llm_kwargs)
+    agent = _FakeAgent(llm="google", llm_kwargs=llm_kwargs)
+    assert apply_google_api_key(agent, crew_key) is False
+    assert agent._llm_kwargs == original
+
+
+def test_apply_skips_non_google_and_falsy_key(crew_key):
+    non_google_agent = _FakeAgent(llm="openai:gpt-5")
+    assert apply_google_api_key(non_google_agent, crew_key) is False
+
+    google_agent = _FakeAgent(llm="google")
+    assert apply_google_api_key(google_agent, None) is False
+
+
+def test_apply_class_level_llm_declaration(crew_key):
+    class _ClassLevelLlmAgent(_FakeAgent):
+        llm = "google:gemini-3.5-flash"
+
+        def __init__(self, llm=None, llm_kwargs=None):
+            # Mirror abstract.py:448-452 — a class-level `llm` attribute is
+            # honoured when no `llm` arg arrives.
+            if llm is None:
+                _cls_llm = getattr(type(self), "llm", None)
+                if _cls_llm is not None and not isinstance(_cls_llm, property):
+                    llm = _cls_llm
+            super().__init__(llm=llm, llm_kwargs=llm_kwargs)
+
+    agent = _ClassLevelLlmAgent()
+    assert apply_google_api_key(agent, crew_key) is True
+    assert agent._llm_kwargs["api_key"] == crew_key
+
+
+def test_apply_ignores_non_abstractbot_agent(crew_key):
+    class _NotAnAgent:
+        pass
+
+    assert apply_google_api_key(_NotAnAgent(), crew_key) is False
