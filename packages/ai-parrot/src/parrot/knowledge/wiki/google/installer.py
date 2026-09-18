@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from parrot.knowledge.wiki.google import assets
 from parrot.knowledge.wiki.google.bookstore import bookstore_status, install_bookstore, uninstall_bookstore
@@ -285,14 +285,13 @@ def install_google_integration(
     gitignore: bool = True,
     bookstore: bool = True,
     mcp_config_path: Optional[Path] = None,
-    toolkits: Sequence[str] = (),
 ) -> list[str]:
     """Install Google Antigravity / Gemini CLI instructions, skills, and MCP configuration.
 
-    Args:
-        toolkits: Names to seed into `.parrot/mcp-toolkits.yaml` before MCP
-            reconciliation (FEAT-556); `()` seeds nothing. Seeding runs BEFORE
-            `_install_mcp` so the new sections produce entries in this pass.
+    Note:
+        Seeding `.parrot/mcp-toolkits.yaml` sections no longer happens here —
+        use `parrot toolkits install` (FEAT-570). This command only
+        reconciles whatever the toolkit config already declares.
     """
     root = root.resolve()
     config = config or load_effective_config(root).config
@@ -309,31 +308,12 @@ def install_google_integration(
     ]
     actions.extend(_install_skills(root))
 
-    if toolkits:
-        from parrot.mcp.toolkit_seed import seed_toolkit_sections
-
-        seeded = seed_toolkit_sections(root, toolkits)
-        if seeded.created_file:
-            actions.append(".parrot/mcp-toolkits.yaml — created")
-        if seeded.added:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — seeded {len(seeded.added)} section(s): {', '.join(seeded.added)}"
-            )
-        if seeded.skipped:
-            actions.append(
-                f".parrot/mcp-toolkits.yaml — {len(seeded.skipped)} section(s) already present: {', '.join(seeded.skipped)}"
-            )
-        if seeded.drift:
-            for section, keys in seeded.drift.items():
-                actions.append(
-                    f".parrot/mcp-toolkits.yaml — WARNING: '{section}' lacks template key(s) {', '.join(keys)} "
-                    f"(existing sections are never rewritten; copy them from "
-                    f"parrot/mcp/_toolkit_templates/{section}.yaml)"
-                )
-        if seeded.unknown:
-            actions.append(f".parrot/mcp-toolkits.yaml — unknown toolkit name(s) skipped: {', '.join(seeded.unknown)}")
-
     actions.extend(_install_mcp(root, mcp_path=mcp_config_path))
+
+    from parrot.mcp.toolkit_config import load_toolkits_config
+
+    if not load_toolkits_config(root).toolkits:
+        actions.append("no local MCP toolkits configured — add them with: parrot toolkits install")
 
     if gitignore:
         actions.append(_install_gitignore(root))
