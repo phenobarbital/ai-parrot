@@ -468,10 +468,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder native `sonnet` seat (attempt f831350e038c4c2aa136c46ef3f93d0d)
+**Date**: 2026-09-18
+**Notes**: `StreamHandler.stream_sse` mints a `turn_id`, subscribes
+Before/After/Failed tool-call events on `get_global_registry()` scoped via
+`in_turn_scope(turn_id)`, runs `bot.ask_stream` inside `turn_scope`, drains
+a per-request queue into `tool_event` SSE frames before each text frame and
+once more at stream end, unsubscribing in `finally` on every exit path.
+Applied the `unscoped-removal-reuses-full-uninstall-helper` feedback
+pattern directly: read `EventRegistry.emit`/`emit_nowait`/
+`_forward_to_global_safely` source before trusting the blueprint's assumed
+frame order, which surfaced a real fire-and-forget forwarding-task race in
+the test fixture's timing (not production code) — fixed with a realistic
+inter-token latency, verified stable across 5 runs.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Merge clean (`coder_merge` outcome=merged, 0 residual lint). Orchestrator
+ran `pytest test_stream_tool_events.py`: 3 passed. Confirmed 2 pre-existing
+failures in `test_agent_a2ui_stream.py` are unrelated (target `agent.py`,
+a different, explicitly out-of-scope file — string-literal assertions,
+untouched by this diff).
 
-**Deviations from spec**: none | describe if any
+**Feedback recorded**: none new — both historical patterns checked;
+`unisolated-real-home-in-tests` correctly judged not applicable (no
+PARROT_HOME code here), `unscoped-removal-reuses-full-uninstall-helper`
+was applicable and correctly applied (see above).
+**Deviations from spec**: test-fixture-only timing adjustment (documented
+above); production `stream.py` matches the blueprint verbatim.
