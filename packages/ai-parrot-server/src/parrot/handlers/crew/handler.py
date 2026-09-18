@@ -18,6 +18,7 @@ from navconfig.logging import logging
 from .models import CrewDefinition, ExecutionMode
 from ._tenancy import resolve_session_tenant
 from parrot.bots.flows.crew import AgentCrew
+from parrot.bots.flows.crew.credentials import apply_google_api_key, get_crew_google_api_key
 
 
 @is_authenticated()
@@ -107,6 +108,9 @@ class CrewHandler(BaseView):
         """
         # Create agents
         agents = []
+        # FEAT-575: default Google credential for handler-built crews. None when
+        # CREW_AI_KEY is unset, which makes every use below a no-op.
+        google_key = get_crew_google_api_key()
         for agent_def in crew_def.agents:
             # Get agent class from BotManager registry
             agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
@@ -136,13 +140,16 @@ class CrewHandler(BaseView):
             if agent_def.system_prompt:
                 agent.system_prompt = agent_def.system_prompt
 
+            apply_google_api_key(agent, google_key)
+
             agents.append(agent)
 
         # Create crew
         crew = AgentCrew(
             name=crew_def.name,
             agents=agents,
-            max_parallel_tasks=crew_def.max_parallel_tasks
+            max_parallel_tasks=crew_def.max_parallel_tasks,
+            google_api_key=google_key
         )
 
         # Add shared tools
