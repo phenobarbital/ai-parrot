@@ -38,6 +38,29 @@ nonsecret fixture toggle from a credential-shaped value placed there ahead
 of that validation. Only each target's ``kind``/``profile`` (fixed,
 schema-validated enums) are folded into the fingerprint as a target/tool
 identity signal.
+
+``verify_evidence()`` (TASK-3523) is this module's read-only counterpart: it
+validates a previously persisted :class:`~parrot.e2e.models.E2EVerdict`
+against the plan's declared coverage, its own artifact hashes and a freshly
+recomputed :class:`SourceIdentity`, per spec §2 "Evidence Identity and Gate
+Evaluation" and "New Public Interfaces". It never executes pytest or a
+target adapter itself -- those are the M3 runner's (``parrot.e2e.runner``,
+not yet implemented) responsibility, including *writing*
+``sdd/state/<feature_id>/e2e/latest.json`` (an atomically-written pointer,
+``{"run_id": ...}``, updated only once teardown/cleanup for that run is
+verified complete) and
+``sdd/state/<feature_id>/e2e/runs/<run_id>/e2e-verdict.json``. Both paths
+already fall inside ``capture_identity``'s own excluded
+``sdd/state/<feature_id>/e2e/`` manifest prefix, so persisting or reading
+evidence never perturbs the very identity it is validated against.
+
+Two distinct failure shapes are used deliberately: a normal, absent, or
+objectively-failed/blocked run returns a :class:`VerificationResult`
+(``MISSING``/``FAIL``/``BLOCKED``) -- "MISSING is synthesized by
+verification, not a fabricated successful run" -- while a *malformed,
+tampered or stale* evidence blob that cannot be trusted at all raises
+:class:`~parrot.e2e.errors.E2EEvidenceError` ("fails closed"), matching
+that exception class's own documented contract.
 """
 
 from __future__ import annotations
@@ -47,15 +70,19 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-from parrot.e2e.errors import E2EConfigError
-from parrot.e2e.models import E2EPlan, SourceIdentity
+from pydantic import ValidationError
 
-__all__ = ["capture_identity"]
+from parrot.e2e.errors import E2EConfigError, E2EEvidenceError
+from parrot.e2e.models import E2EPlan, E2EVerdict, SourceIdentity, VerificationResult
+from parrot.e2e.plan import load_plan
+
+__all__ = ["capture_identity", "verify_evidence"]
 
 _GIT_BINARY = "git"
 
@@ -441,3 +468,314 @@ def _hash_file(path: Path) -> str:
         The lowercase hex SHA-256 digest of the file's content.
     """
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# verify_evidence (TASK-3523)
+# ---------------------------------------------------------------------------
+
+# spec §2: "Persist immutable per-run evidence under
+# sdd/state/<FEAT-ID>/e2e/runs/<run-id>/; atomically update e2e-verdict.json
+# only after shutdown." A per-feature pointer, updated only once a run's
+# cleanup is verified complete, is how verify_evidence -- which takes no
+# run_id -- locates "the" run to validate for a given plan.
+_RUNS_DIRNAME = "runs"
+_POINTER_FILENAME = "latest.json"
+_VERDICT_FILENAME = "e2e-verdict.json"
+
+# Mirrors parrot.e2e.models._SAFE_ID_RE (private there; re-declared here per
+# this module's existing containment-check convention, see TASK-3522).
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+# spec §2 exit table: 130/143 are SIGINT/SIGTERM interruption; "Partial/
+# interrupted runs may be inspected but cannot validate."
+_INTERRUPTED_EXIT_CODES = frozenset({130, 143})
+
+
+async def verify_evidence(plan_path: Path, *, worktree: Path) -> VerificationResult:
+    """Validate immutable run artifacts and current implementation identity.
+
+    Locates the plan's feature-scoped evidence pointer, loads and schema-
+    validates the persisted :class:`E2EVerdict` it names, verifies every
+    referenced artifact's hash, confirms the run's own before/after source
+    identity never changed mid-execution, recomputes the *current*
+    :class:`SourceIdentity` via :func:`capture_identity` and requires it to
+    match the recorded one (spec §2: "accept only matching commit or
+    content-identical descendant" -- content hashes, not the commit SHA
+    itself, gate acceptance), then evaluates exact node coverage, required
+    per-node pytest phase outcomes and target/runner cleanup.
+
+    Args:
+        plan_path: Path to the ``e2e-plan.md`` document (see
+            :func:`parrot.e2e.plan.load_plan`); its resolved location must
+            lie inside ``worktree``.
+        worktree: Candidate worktree root; must already exist and be a Git
+            checkout with at least one commit.
+
+    Returns:
+        A :class:`VerificationResult`:
+
+        * ``PASS`` -- policy ``none`` (explicit exemption, no execution
+          fabricated), or every required codified node passed with a clean
+          setup/call/teardown and verified cleanup.
+        * ``MISSING`` -- no evidence pointer/verdict found yet, or the
+          recorded run was interrupted (SIGINT/SIGTERM) and therefore
+          cannot be validated at all.
+        * ``BLOCKED`` -- zero nodes were collected, or every collected node
+          was merely skipped (a no-test/all-skipped run is never a PASS).
+        * ``FAIL`` -- a required node did not pass (including a skip/xfail/
+          xpass/missing outcome or a failed setup/call/teardown phase), or
+          recorded target/runner cleanup was not verified complete.
+
+    Raises:
+        E2EConfigError: If ``worktree``/``plan_path`` cannot be resolved, or
+            the plan itself fails :func:`parrot.e2e.plan.load_plan`
+            validation (propagated unchanged).
+        E2EEvidenceError: If the located evidence is malformed (invalid
+            JSON, failed :class:`E2EVerdict` schema validation, an unsafe
+            pointer ``run_id``, a ``feature_id`` mismatch), tampered (an
+            artifact's content no longer matches its recorded hash, or
+            ``selected_node_ids``/``collected_node_ids`` disagree with the
+            plan's own current declared/selected node IDs), records a
+            source identity mutation *during* its own execution (before !=
+            after), or its recorded identity no longer matches the current
+            implementation (stale: source, spec, plan or environment
+            changed since the run) -- this "fails closed" per spec §2.
+    """
+    resolved_worktree = _resolve_root(worktree)
+    plan = load_plan(plan_path, worktree=resolved_worktree)
+
+    if plan.policy == "none":
+        return VerificationResult(
+            status="PASS",
+            gate_satisfied=True,
+            reason_codes=["policy_none_no_execution"],
+        )
+
+    evidence_root = resolved_worktree / "sdd" / "state" / plan.feature_id / "e2e"
+    pointer_path = evidence_root / _POINTER_FILENAME
+    if not pointer_path.is_file():
+        return VerificationResult(status="MISSING", gate_satisfied=False, reason_codes=["evidence_pointer_missing"])
+
+    run_id = _read_pointer_run_id(pointer_path)
+    if run_id is None:
+        return VerificationResult(status="MISSING", gate_satisfied=False, reason_codes=["evidence_pointer_malformed"])
+
+    verdict_dir = _resolve_run_dir(evidence_root, run_id)
+    if verdict_dir is None:
+        raise E2EEvidenceError(
+            f"E2E evidence pointer {pointer_path} references an unsafe or escaping run_id: {run_id!r}",
+            reason_code="evidence_run_id_unsafe",
+        )
+
+    verdict_path = verdict_dir / _VERDICT_FILENAME
+    if not verdict_path.is_file():
+        return VerificationResult(status="MISSING", gate_satisfied=False, reason_codes=["evidence_verdict_missing"])
+
+    verdict = _load_verdict(verdict_path)
+
+    if verdict.feature_id != plan.feature_id:
+        raise E2EEvidenceError(
+            f"E2E verdict {verdict_path} feature_id {verdict.feature_id!r} does not match plan feature_id "
+            f"{plan.feature_id!r}",
+            reason_code="evidence_feature_mismatch",
+        )
+
+    if verdict.exit_code in _INTERRUPTED_EXIT_CODES:
+        return VerificationResult(status="MISSING", gate_satisfied=False, reason_codes=["run_interrupted"])
+
+    if verdict.source_identity_before != verdict.source_identity_after:
+        raise E2EEvidenceError(
+            f"E2E verdict {verdict_path} records a source identity change between its own before/after capture "
+            "(a mutation occurred during execution)",
+            reason_code="source_identity_changed_during_run",
+        )
+
+    _verify_artifact_hashes(verdict_dir, verdict.artifact_hashes)
+
+    current_identity = await capture_identity(plan, worktree=resolved_worktree)
+    recorded_identity = verdict.source_identity_after
+    if (
+        current_identity.manifest_sha256 != recorded_identity.manifest_sha256
+        or current_identity.spec_sha256 != recorded_identity.spec_sha256
+        or current_identity.plan_sha256 != recorded_identity.plan_sha256
+        or current_identity.environment_sha256 != recorded_identity.environment_sha256
+    ):
+        raise E2EEvidenceError(
+            f"E2E verdict {verdict_path} source identity no longer matches the current implementation "
+            "(source, spec, plan or environment changed since the recorded run; a new run is required)",
+            reason_code="source_identity_stale",
+        )
+
+    all_codified_node_ids = {
+        node_id for scenario in plan.scenarios if scenario.tier != "exploratory" for node_id in scenario.node_ids
+    }
+    selected = set(verdict.selected_node_ids)
+    if all_codified_node_ids and selected != all_codified_node_ids:
+        raise E2EEvidenceError(
+            f"E2E verdict {verdict_path} selected_node_ids does not match the plan's current codified node IDs",
+            reason_code="selected_nodes_mismatch",
+        )
+
+    collected = set(verdict.collected_node_ids)
+    if collected - selected:
+        raise E2EEvidenceError(
+            f"E2E verdict {verdict_path} collected_node_ids includes nodes outside its own selection",
+            reason_code="collected_nodes_unselected",
+        )
+
+    if verdict.cleanup_results and not all(verdict.cleanup_results.values()):
+        return VerificationResult(status="FAIL", gate_satisfied=False, reason_codes=["cleanup_incomplete"])
+
+    # spec §2 / this task's own scope: "no-test/all-skipped is BLOCKED". A
+    # *failing* (or xfailed/xpassed) required node still means pytest ran
+    # and reported something -- that is a coverage FAIL below, not BLOCKED.
+    # BLOCKED is reserved for "nothing was actually collected/executed at
+    # all" (zero collection, or every collected node merely skipped).
+    outcomes = [result.outcome for result in verdict.results]
+    all_skipped = bool(outcomes) and all(outcome == "skipped" for outcome in outcomes)
+    if all_codified_node_ids and (not collected or all_skipped):
+        return VerificationResult(
+            status="BLOCKED", gate_satisfied=False, reason_codes=["no_codified_scenario_executed"]
+        )
+
+    required_node_ids = {
+        node_id
+        for scenario in plan.scenarios
+        if scenario.required and scenario.tier != "exploratory"
+        for node_id in scenario.node_ids
+    }
+    results_by_node = {result.node_id: result for result in verdict.results}
+    reason_codes: list[str] = []
+    for node_id in sorted(required_node_ids):
+        result = results_by_node.get(node_id)
+        if result is None:
+            reason_codes.append(f"required_node_missing:{node_id}")
+            continue
+        if result.outcome != "passed":
+            reason_codes.append(f"required_node_not_passed:{node_id}:{result.outcome}")
+            continue
+        if result.setup_outcome not in (None, "passed"):
+            reason_codes.append(f"required_node_setup_failure:{node_id}")
+        if result.call_outcome not in (None, "passed"):
+            reason_codes.append(f"required_node_call_failure:{node_id}")
+        if result.teardown_outcome not in (None, "passed"):
+            reason_codes.append(f"required_node_teardown_failure:{node_id}")
+
+    if reason_codes:
+        return VerificationResult(status="FAIL", gate_satisfied=False, reason_codes=reason_codes)
+
+    return VerificationResult(status="PASS", gate_satisfied=True, reason_codes=[])
+
+
+def _read_pointer_run_id(pointer_path: Path) -> Optional[str]:
+    """Read and validate the ``run_id`` named by a per-feature evidence pointer.
+
+    Args:
+        pointer_path: Path to the ``latest.json`` pointer file.
+
+    Returns:
+        The pointed-to ``run_id`` if the pointer is valid JSON, is a
+        mapping, and names a safe slug; ``None`` if the pointer is
+        malformed in any way (never raises -- a malformed pointer is
+        reported by the caller as :class:`VerificationResult` ``MISSING``,
+        not treated as tampering).
+    """
+    try:
+        raw = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    run_id = raw.get("run_id")
+    if not isinstance(run_id, str) or not _RUN_ID_RE.match(run_id):
+        return None
+    return run_id
+
+
+def _resolve_run_dir(evidence_root: Path, run_id: str) -> Optional[Path]:
+    """Resolve one run's evidence directory, rejecting any path escape.
+
+    Args:
+        evidence_root: Resolved ``sdd/state/<feature_id>/e2e`` directory.
+        run_id: Already slug-validated candidate run ID.
+
+    Returns:
+        The resolved, contained run evidence directory, or ``None`` if it
+        cannot be resolved or escapes ``evidence_root/runs``.
+    """
+    runs_root = evidence_root / _RUNS_DIRNAME
+    candidate = runs_root / run_id
+    try:
+        resolved_candidate = candidate.resolve(strict=False)
+        resolved_runs_root = runs_root.resolve(strict=False)
+    except OSError:
+        return None
+    if resolved_candidate != resolved_runs_root and resolved_runs_root not in resolved_candidate.parents:
+        return None
+    return resolved_candidate
+
+
+def _load_verdict(verdict_path: Path) -> E2EVerdict:
+    """Read and schema-validate one persisted :class:`E2EVerdict`.
+
+    Args:
+        verdict_path: Path to the run's ``e2e-verdict.json`` file.
+
+    Returns:
+        The validated :class:`E2EVerdict`.
+
+    Raises:
+        E2EEvidenceError: If the file cannot be read, is not valid JSON, or
+            fails :class:`E2EVerdict` schema validation -- an unknown or
+            malformed schema "fails closed" per spec §2.
+    """
+    try:
+        raw = json.loads(verdict_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise E2EEvidenceError(
+            f"E2E verdict file could not be read or is not valid JSON: {verdict_path}: {exc}",
+            reason_code="evidence_verdict_invalid_json",
+        ) from exc
+    try:
+        return E2EVerdict.model_validate(raw)
+    except ValidationError as exc:
+        raise E2EEvidenceError(
+            f"E2E verdict file failed schema validation: {verdict_path}: {exc}",
+            reason_code="evidence_verdict_malformed",
+        ) from exc
+
+
+def _verify_artifact_hashes(verdict_dir: Path, artifact_hashes: dict[str, str]) -> None:
+    """Verify every recorded artifact still exists, is contained, and hashes match.
+
+    Args:
+        verdict_dir: The run's resolved evidence directory; every artifact
+            path is relative to it.
+        artifact_hashes: :class:`E2EVerdict.artifact_hashes` -- relative
+            path to expected lowercase hex SHA-256 digest.
+
+    Raises:
+        E2EEvidenceError: If an artifact is missing, its resolved path
+            escapes ``verdict_dir``, or its current content hash does not
+            match the recorded digest (tampered or corrupted).
+    """
+    for relative_path, expected_digest in artifact_hashes.items():
+        candidate = verdict_dir / relative_path
+        try:
+            resolved = candidate.resolve(strict=True)
+        except OSError as exc:
+            raise E2EEvidenceError(
+                f"E2E evidence artifact is missing: {relative_path}: {exc}",
+                reason_code="evidence_artifact_missing",
+            ) from exc
+        if resolved != verdict_dir and verdict_dir not in resolved.parents:
+            raise E2EEvidenceError(
+                f"E2E evidence artifact path escapes its run directory: {relative_path}",
+                reason_code="evidence_artifact_path_escape",
+            )
+        if _hash_file(resolved) != expected_digest:
+            raise E2EEvidenceError(
+                f"E2E evidence artifact hash mismatch (tampered or corrupted): {relative_path}",
+                reason_code="evidence_artifact_tampered",
+            )
