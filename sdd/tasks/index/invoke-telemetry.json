@@ -16,7 +16,7 @@
       "feature_id": "FEAT-579",
       "feature": "invoke-telemetry",
       "spec": "sdd/specs/invoke-telemetry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "No dependencies: uses only _emit_before_call/_emit_after_call/_emit_failed_call_safe, which already exist on AbstractClient (base.py:559/696/790) and are not created by any task here. Touches only packages/ai-parrot-client-jev/src/parrot/clients/jev/client.py and tests/clients/test_jev_client.py — neither is touched by TASK-3478. Not exclusive: no lockfile, migration, generated code or conftest.py change.",
       "assigned_to": null,
       "started_at": "2026-09-19T00:14:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3477-jev-invoke-telemetry.md"
+      "completed_at": "2026-09-19T00:23:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3477-jev-invoke-telemetry.md"
     },
     {
       "id": "TASK-3478",

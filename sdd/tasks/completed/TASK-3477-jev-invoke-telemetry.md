@@ -482,10 +482,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-coder (native, Sonnet), orchestrated by sdd-worker (FEAT-549)
+**Date**: 2026-09-19
 **Notes**:
+Restructured `JevClient.invoke()` into three segments (input resolution →
+provider dispatch → parse), mirroring `ask()`'s telemetry shape. Dispatch is
+now wrapped by `_emit_before_call` / `_emit_after_call` / `_emit_failed_call_safe`.
+`self._usage_from(response)` is computed exactly once and reused for both the
+after-event and `_build_invoke_result` (AC-4). Extended the `invoke()`
+docstring with the emission contract; signature and `Args:`/`Returns:`
+sections unchanged. Added 6 new tests to `tests/clients/test_jev_client.py`:
+`test_invoke_emits_before_and_after_with_usage` (AC-1),
+`test_invoke_api_error_emits_failed_and_raises_invokeerror` (AC-2),
+`test_invoke_missing_questions_emits_nothing` (AC-6), and
+`test_invoke_exactly_one_terminal_event` parametrized over
+success/api_error/parse_error (AC-6).
 
-**Deviations from spec**: none | describe if any
+Validation: `PYTHONPATH=packages/ai-parrot-client-jev/src pytest
+tests/clients/test_jev_client.py -q` → `1 failed, 53 passed` (AC-8 baseline
+preserved — the sole failure is the pre-existing `test_factory_registration`,
+`KeyError: 'jev'`, unrelated to this task); the two pre-existing invoke tests
+(`test_invoke_derives_questions_and_parses_output_type`,
+`test_invoke_without_output_type_returns_response_and_wraps_errors`) still
+pass (AC-7); `ruff check` clean on both modified files (AC-9). `git diff
+--name-only` confirms `clients/base.py` untouched (AC-5).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 ·
+Duration: 332s · Tokens: 125331 (subagent total, in/out not split by the
+native harness)
+
+**Deviations from spec**: none. One correction made during test authoring
+(not a deviation from the delivered code): the `parse_error` scenario needed
+a Pydantic model shape whose failure surfaces in the post-dispatch
+`answers_to_type` parse segment rather than the pre-dispatch
+`_resolve_questions` segment — verified before delivery.
