@@ -183,5 +183,45 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `build_mcp_toolkit_adapter()` (`mcp-toolkit`:
+launches the real `parrot mcp serve <private-yaml> --transport http --port
+<port>` exposing `WorkingMemoryToolkit`; `ready()` polls `GET
+<base_url>/mcp/info` — real route is `/mcp/info` not `/info`, a genuine
+`parrot.mcp.cli`/`MCPServerConfig` `base_path="/mcp"` default discovered
+and verified independently of this adapter's own code — rejects any
+mismatched server name, then does a live `initialize`/`tools/list` JSON-RPC
+round trip) and `build_mcp_stdio_adapter()` (`mcp-stdio`: launches
+`parrot mcp-local memory --config <private-yaml>`; `ready()` is always
+True by design since `E2ESupervisor._await_ready` never calls it for a
+stdio launch — protocol handshake proven via the supervisor's own
+`request_stdio()`). Both write private per-run config YAML under
+`e2e_state.run_dir()` (mode-0700). `build_mcp_agent_adapter` intentionally
+NOT implemented here — confirmed owned by TASK-3540 (M6, live-agent scope).
+
+Two documented environment findings (not worked around by weakening any
+assertion): (1) `parrot.mcp.cli`/navconfig bootstrap causes an HTTP-transport
+child to self-exit within ~1-2s when `cwd` isn't a real on-disk project
+checkout root — isolated to exactly one real-subprocess test using this
+worktree's own root with full artifact cleanup in `finally`; the `mcp-stdio`
+path is unaffected (no HTTP transport) and stays on `tmp_path`. (2) importing
+`parrot.tools` transitively triggers `uvloop.install()`, silently replacing
+the caller's event loop policy — an in-process toolkit-importability
+precheck that hit this was removed; importability is now proven only by the
+child actually starting in its own isolated process.
+
+Sibling-merge integration fallout (flagged by this task, fixed by the
+orchestrator in a separate commit, not a defect here): TASK-3525's
+`test_get_target_adapter_raises_prerequisite_error_for_unimplemented_kind`
+asserted all six kinds were unimplemented; narrowed to the four kinds still
+genuinely unimplemented (mcp-agent, botmanager, ui, browser) since
+mcp-toolkit/mcp-stdio now resolve for real. See commit 9f4e3eb08.
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_mcp_targets.py -q`
+→ 24 passed. Full-directory regression (after the sibling-test fix):
+`pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 278 passed
+(254+24), no regression against TASK-3524/3525/3526/3527/3528.
+
+No unresolved limitations beyond the two documented environment findings.
+AC2/AC3/AC6 demonstrated by the contract tests.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 2528.7s · Tokens: 419326 (combined)
