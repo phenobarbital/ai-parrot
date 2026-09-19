@@ -258,8 +258,7 @@ def _resolve_ui_dir(worktree: Path) -> Path:
     ui_dir = worktree / _UI_RELATIVE_DIR
     if not ui_dir.is_dir():
         raise E2EPrerequisiteError(
-            f"UI project directory not found at {ui_dir}; this worktree does not contain the admin "
-            "UI source tree",
+            f"UI project directory not found at {ui_dir}; this worktree does not contain the admin " "UI source tree",
             reason_code="ui_dir_missing",
         )
     if not (ui_dir / "node_modules").is_dir():

@@ -384,9 +384,7 @@ class _BrowserAdapter:
                 f"options['host'] must be a nonempty string, got {host!r}", reason_code="invalid_option"
             )
 
-        obscura_config = ObscuraProcessConfig(
-            binary_path=_OBSCURA_BINARY_NAME, port=port, host=host, attach_only=True
-        )
+        obscura_config = ObscuraProcessConfig(binary_path=_OBSCURA_BINARY_NAME, port=port, host=host, attach_only=True)
         self._endpoints[run_id] = _BrowserEndpoint(manager=ObscuraProcessManager(obscura_config), adopted=True)
         self.logger.debug("browser prepare (adopted): run_id=%s host=%s port=%s", run_id, host, port)
         return LaunchSpec(argv=[sys.executable, "-c", _SENTINEL_SCRIPT], cwd=worktree, stdio=False)

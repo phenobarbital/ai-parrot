@@ -450,9 +450,7 @@ async def test_browser_owned_real_subprocess_supervisor_ready_then_stop(make_sup
 
 
 @_SKIP_NO_OBSCURA
-async def test_browser_adopted_real_subprocess_never_killed_by_supervisor_stop(
-    make_supervisor, worktree: Path
-) -> None:
+async def test_browser_adopted_real_subprocess_never_killed_by_supervisor_stop(make_supervisor, worktree: Path) -> None:
     """Core acceptance test for this task's Scope item 2: adoption never
     transfers kill ownership to the supervisor (spec §2: "Adopted browser
     processes are never signaled.")."""
@@ -734,9 +732,7 @@ async def test_ui_ready_false_when_admin_route_ok_but_backend_unreachable(
         await runner.cleanup()
 
 
-async def test_ui_ready_true_when_admin_route_ok_and_backend_reachable(
-    worktree: Path, fake_ui_project: Path
-) -> None:
+async def test_ui_ready_true_when_admin_route_ok_and_backend_reachable(worktree: Path, fake_ui_project: Path) -> None:
     async def _admin(_request: web.Request) -> web.Response:
         return web.Response(status=200, text="<html></html>")
 
@@ -817,9 +813,7 @@ def test_run_ui_entrypoint_builds_then_execs_preview(monkeypatch: pytest.MonkeyP
     ]
 
 
-def test_run_ui_entrypoint_raises_systemexit_when_build_fails(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_run_ui_entrypoint_raises_systemexit_when_build_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import parrot.e2e.targets.ui as ui_module
 
     ui_dir = tmp_path / "ui"
