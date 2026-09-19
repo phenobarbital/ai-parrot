@@ -237,7 +237,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -249,8 +249,8 @@
       "parallelism_notes": "calls DecisionRepository.inventory from TASK-3485, verify_freshness from TASK-3487 (decisions/evidence.py) and pack_dossier from TASK-3488 (decisions/render.py); imports nothing from decisions/ingest.py by design",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3490-decision-service-retrieval.md"
+      "completed_at": "2026-09-19T21:09:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3490-decision-service-retrieval.md"
     },
     {
       "id": "TASK-3491",

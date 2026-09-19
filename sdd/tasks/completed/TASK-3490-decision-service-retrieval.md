@@ -554,10 +554,29 @@ class TestOffline:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop —
+`parrot-sdd-coder` MCP server unresponsive throughout this task)
+**Date**: 2026-09-19
+**Notes**: `_hit_from_record` reduces freshness to the worst outcome
+across the record's evidence (`missing > stale > unverified > current`);
+a record with zero evidence is vacuously `current` when a local root is
+available (nothing on disk contradicts it), but `root is None` always
+yields `unverified` regardless of evidence count, matching
+`verify_freshness`'s own hard rule. `_resolve_symbol` uses
+`SymbolHit.qualname` directly (exact or bare-name-suffix match) rather
+than round-tripping through `parse_sym_id`, since `StructuralService.lookup`
+already exposes `qualname` on every hit. `for_symbol` and `why` both admit
+a record only via its OWN `links` (never `store.neighbors`/edges), matching
+the "edges are a cache" guarantee. `why`'s score combines the spec's
+4/3/1/1 weighted distinct-token-overlap sum with a small (0.5, below the
+lowest field weight of 1) symbol-link bonus so it can only ever act as a
+secondary tie-break, never override token-overlap ordering; `decision_id`
+breaks remaining ties in the caller's sort key. 17 tests: all six
+`for_symbol` cases (exact id, file-scope, ambiguous, empty, no-call-graph-
+inheritance, edge-alone-never-applies), the 4/3/1/1 weighting and
+distinct-token dedup, three-tier group ordering, candidates-never-in-
+documented, stable tie-breaking, history hidden/shown, unknown displayed
+not elevated, budget truncation, zero-LLM-calls, and both orchestration
+stubs raising `NotImplementedError`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
