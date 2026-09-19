@@ -157,13 +157,18 @@ class TestNoIoOnConstructionAndListing:
 
         tools = toolkit.get_tools()
         names = sorted(tool.name for tool in tools)
-        assert names == ["lsp_definition", "lsp_references"]
+        assert names == ["lsp_definition", "lsp_diagnostic_delta", "lsp_diagnostics", "lsp_references"]
         assert sorted(toolkit.list_tool_names()) == names
 
     def test_construction_accepts_a_plain_mapping(self, tmp_path: Path) -> None:
         toolkit = LSPToolkit({"repo_root": tmp_path, "environment_id": "env-1"})
         assert toolkit._config.environment_id == "env-1"
-        assert sorted(toolkit.list_tool_names()) == ["lsp_definition", "lsp_references"]
+        assert sorted(toolkit.list_tool_names()) == [
+            "lsp_definition",
+            "lsp_diagnostic_delta",
+            "lsp_diagnostics",
+            "lsp_references",
+        ]
 
 
 # ---------------------------------------------------------------------------

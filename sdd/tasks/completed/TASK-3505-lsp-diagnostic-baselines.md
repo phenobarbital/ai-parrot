@@ -138,4 +138,26 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Implemented `lsp_diagnostics`/`lsp_diagnostic_delta` in
+`packages/ai-parrot-tools/src/parrot_tools/lsp/toolkit.py` with an
+eight-entry LRU of complete-only baselines (30-minute TTL), scope/identity
+validation, and full path/source/code/severity/message+count comparison
+(ranges excluded from comparison, preserved in evidence). Added
+`packages/ai-parrot-tools/tests/lsp/test_diagnostic_baselines.py` covering
+scope/count deltas, TTL+LRU+config-change invalidation, incomplete-diagnostic
+rejection, and the exactly-four-tool schema check.
+
+Consequence fix: `packages/ai-parrot-tools/tests/lsp/test_navigation.py`
+(owned by TASK-3504) asserted an exactly-two-tool list; updated its two
+assertions to the now-correct four-tool list
+(`lsp_definition`, `lsp_diagnostic_delta`, `lsp_diagnostics`, `lsp_references`)
+since this task legitimately grew the toolkit's tool count — no behavior
+change to that file, assertion-only.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_diagnostic_baselines.py
+packages/ai-parrot-tools/tests/lsp/test_navigation.py -q` → 21 passed.
+
+Seat: attributed to prior sdd-coder delivery (branch already merged into
+the feature branch before this session resumed); SDD state closure and the
+test_navigation.py consequence-fix performed by the resuming sdd-worker
+session.
