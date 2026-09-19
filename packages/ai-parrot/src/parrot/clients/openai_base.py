@@ -1605,37 +1605,75 @@ class OpenAIBaseClient(AbstractClient):
             # rejects the finalize dispatch as a foreign owner.
             _budget_call_id = str(uuid.uuid4())
             _BUDGET_CALL_CTX.set({"call_id": _budget_call_id, "round_number": 1, "phase": "work"})
+            _lc_tc = self._emit_before_call(
+                client_name=self.client_name,
+                model=resolved_model,
+                temperature=temperature,
+                system_prompt=resolved_prompt,
+                has_tools="tools" in kwargs,
+                parent_trace=None,
+            )
+            _lc_t0 = time.perf_counter()
+            _lc_terminal = False
             try:
-                response = await self._chat_completion(
-                    model=resolved_model, messages=messages, use_tools=True, **kwargs
-                )
-            except BudgetExhausted:
-                # invoke() is a single-shot call: the frame is the payload
-                # without tools; owner finalization still applies (spec §2.3).
                 try:
-                    response = await self._finalize_budgeted_chat(
-                        messages,
-                        model_str=resolved_model,
-                        args=kwargs,
-                        all_tool_calls=[],
-                        pending_tool_calls=[],
-                        partial_text="",
-                        stream=False,
+                    response = await self._chat_completion(
+                        model=resolved_model, messages=messages, use_tools=True, **kwargs
                     )
-                    _budget_forced = True
-                except BudgetExhausted as bx2:
-                    _scope = current_budget_scope()
-                    partial = (bx2.report or {}).pop("partial_text", "") or ""
-                    invoke_result = InvokeResult(
-                        output=partial,
-                        output_type=None,
-                        model=resolved_model,
-                        usage=CompletionUsage(),
-                        raw_response=None,
-                    )
-                    if _scope is not None:
-                        invoke_result.budget_report = (await _scope.ledger.report()).model_dump()
-                    return invoke_result
+                except BudgetExhausted:
+                    # invoke() is a single-shot call: the frame is the payload
+                    # without tools; owner finalization still applies (spec §2.3).
+                    try:
+                        response = await self._finalize_budgeted_chat(
+                            messages,
+                            model_str=resolved_model,
+                            args=kwargs,
+                            all_tool_calls=[],
+                            pending_tool_calls=[],
+                            partial_text="",
+                            stream=False,
+                        )
+                        _budget_forced = True
+                    except BudgetExhausted as bx2:
+                        _scope = current_budget_scope()
+                        partial = (bx2.report or {}).pop("partial_text", "") or ""
+                        invoke_result = InvokeResult(
+                            output=partial,
+                            output_type=None,
+                            model=resolved_model,
+                            usage=CompletionUsage(),
+                            raw_response=None,
+                        )
+                        if _scope is not None:
+                            invoke_result.budget_report = (await _scope.ledger.report()).model_dump()
+                        _lc_terminal = True
+                        await self._emit_after_call(
+                            _lc_tc,
+                            client_name=self.client_name,
+                            model=resolved_model,
+                            duration_ms=(time.perf_counter() - _lc_t0) * 1000,
+                            input_tokens=None,
+                            output_tokens=None,
+                            finish_reason="budget_exhausted",
+                        )
+                        return invoke_result
+            except Exception as exc:  # noqa: BLE001 — re-raised untouched below
+                if not _lc_terminal:
+                    _lc_terminal = True
+                    await self._emit_failed_call_safe(_lc_tc, self.client_name, resolved_model, _lc_t0, exc)
+                raise
+
+            _lc_usage = CompletionUsage.from_openai(response.usage)
+            _lc_terminal = True
+            await self._emit_after_call(
+                _lc_tc,
+                client_name=self.client_name,
+                model=resolved_model,
+                duration_ms=(time.perf_counter() - _lc_t0) * 1000,
+                input_tokens=_lc_usage.prompt_tokens,
+                output_tokens=_lc_usage.completion_tokens,
+                finish_reason="budget_exhausted" if _budget_forced else self._extract_finish_reason(response),
+            )
 
             raw_text = response.choices[0].message.content or ""
 
@@ -1657,7 +1695,7 @@ class OpenAIBaseClient(AbstractClient):
                 if _scope is not None:
                     await _scope.ledger.set_answer_complete(False)
 
-            usage = CompletionUsage.from_openai(response.usage)
+            usage = _lc_usage
             invoke_result = self._build_invoke_result(
                 output if not _budget_forced else raw_text,
                 None if _budget_forced else output_type,
