@@ -64,8 +64,8 @@ async def _amain(argv: list[str] | None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
 
-    manifest = _load_manifest(args.manifest)
-    prices = _load_prices(args.prices)
+    manifest = await asyncio.to_thread(_load_manifest, args.manifest)
+    prices = await asyncio.to_thread(_load_prices, args.prices)
 
     if not args.live:
         matrix = build_attempt_matrix(manifest)
@@ -78,7 +78,7 @@ async def _amain(argv: list[str] | None) -> int:
 
     report = await run_pilot(manifest, args.output_dir)
     document = build_report_document(report, prices)
-    json_path, md_path = write_reports(document, args.output_dir)
+    json_path, md_path = await asyncio.to_thread(write_reports, document, args.output_dir)
     gate = document["gate"]
     print(f"decision: {gate['decision']}")
     print(f"reasons: {json.dumps(gate['reasons'])}")

@@ -200,6 +200,30 @@ async def test_arm_filters_and_isolated_working_states(fake_seat: Path, tmp_path
         assert attempt.usage[0].attempt_id == attempt.attempt_id
         assert attempt.usage[0].seat_id == attempt.arm
 
+    # --- Raw evidence survives the accepted-attempt scratch-dir cleanup:
+    # regression for a confirmed defect where an accepted attempt's
+    # trace.jsonl was deleted with no durable copy or persisted report
+    # anywhere, leaving raw_trace_refs pointing at a file that no longer
+    # existed (spec §3 M5: "preserving diagnostic evidence").
+    output_dir = tmp_path / "out"
+    for attempt in report.attempts:
+        assert len(attempt.raw_trace_refs) == 1
+        archived_path = Path(attempt.raw_trace_refs[0])
+        assert archived_path.is_file(), f"archived evidence missing for {attempt.attempt_id}"
+        assert archived_path.is_relative_to(output_dir / "evidence" / attempt.attempt_id)
+        # The disposable scratch working directory is gone.
+        assert not (output_dir / "attempts" / attempt.attempt_id).exists()
+
+    # The full report -- every attempt, not just the aggregated gate/arm
+    # summaries -- is itself persisted for audit.
+    persisted_path = output_dir / "pilot_report.json"
+    assert persisted_path.is_file()
+    from benchmarks.sdd_lsp.models import PilotReport
+
+    persisted_report = PilotReport.model_validate_json(persisted_path.read_text(encoding="utf-8"))
+    assert len(persisted_report.attempts) == len(report.attempts)
+    assert {a.attempt_id for a in persisted_report.attempts} == {a.attempt_id for a in report.attempts}
+
 
 # ---------------------------------------------------------------------------
 # test_budget_unknown_cost_and_timeout_stop
@@ -257,23 +281,44 @@ async def test_budget_unknown_cost_and_timeout_stop(fake_seat: Path, tmp_path: P
 
 @pytest.mark.asyncio
 async def test_trace_coverage_and_failed_attempts_retained(fake_seat: Path, tmp_path: Path) -> None:
-    """A missing trace is recorded as coverage, never dropped; failures are retained too."""
-    # --- Missing trace: acceptance still succeeds, coverage records the gap.
+    """A missing trace is recorded as coverage, never dropped, and never priced as free.
+
+    An attempt with no observed trace at all -- whether it happened to
+    pass acceptance (``no_trace`` mode) or crashed outright (``crash``
+    mode) -- has genuinely UNKNOWN cost, not a known zero: this must halt
+    further launches (spec §5: unknown cost stops the run so the spending
+    ceiling stays meaningful), exactly like an explicit unpriceable-usage
+    record does. Every planned attempt, launched or not, is still
+    retained in the report -- never silently dropped.
+    """
+    # --- Missing trace on an otherwise-accepted attempt: recorded as
+    # coverage, and treated as unknown cost, not a free ride.
     no_trace_manifest = _manifest(fake_seat, mode="no_trace")
     no_trace_report = await run_pilot(no_trace_manifest, tmp_path / "no_trace")
 
     assert len(no_trace_report.attempts) == 180
-    assert all(attempt.accepted for attempt in no_trace_report.attempts)
-    assert all(attempt.usage == [] for attempt in no_trace_report.attempts)
-    assert all(attempt.raw_trace_refs == [] for attempt in no_trace_report.attempts)
-    assert no_trace_report.coverage_manifest["missing_trace"] == 180
+    executed = [a for a in no_trace_report.attempts if not (a.failure_reason or "").startswith("not_launched")]
+    not_launched = [a for a in no_trace_report.attempts if (a.failure_reason or "").startswith("not_launched")]
+    assert len(executed) == 1
+    assert len(not_launched) == 179
+    assert executed[0].accepted is True
+    assert executed[0].usage == []
+    assert executed[0].raw_trace_refs == []
+    assert all(not attempt.accepted for attempt in not_launched)
+    assert no_trace_report.coverage_manifest["missing_trace"] == 1
+    assert no_trace_report.coverage_manifest["not_launched"] == 179
 
-    # --- A seat that crashes outright still yields a retained, unaccepted
-    # AttemptRecord for every planned attempt -- never silently dropped.
+    # --- A seat that crashes outright before ever producing a trace is
+    # equally unknown cost (it may have crashed AFTER an expensive call),
+    # so it halts the run the same way -- never assumed free.
     crash_manifest = _manifest(fake_seat, mode="crash")
     crash_report = await run_pilot(crash_manifest, tmp_path / "crash")
 
     assert len(crash_report.attempts) == 180
+    crash_executed = [a for a in crash_report.attempts if not (a.failure_reason or "").startswith("not_launched")]
+    crash_not_launched = [a for a in crash_report.attempts if (a.failure_reason or "").startswith("not_launched")]
+    assert len(crash_executed) == 1
+    assert len(crash_not_launched) == 179
     assert all(not attempt.accepted for attempt in crash_report.attempts)
-    assert all(attempt.failure_reason for attempt in crash_report.attempts)
+    assert crash_executed[0].failure_reason == "seat exited with code 1"
     assert crash_report.coverage_manifest["accepted"] == 0

@@ -28,7 +28,14 @@ double — this module defines the contract, never a live seat):
   one JSON object per line, each parseable as a
   :class:`~benchmarks.sdd_lsp.models.ModelUsage`. A missing trace file is
   recorded honestly in the report's ``coverage_manifest`` — never silently
-  dropped, and never a reason to fabricate zero-cost usage.
+  dropped, and never treated as zero cost for budget/gate purposes (see
+  :func:`effective_attempt_cost_usd`).
+- Before its scratch directory is removed, a present trace is archived to
+  the durable ``output_dir/evidence/<attempt_id>/trace.jsonl`` (never
+  cleaned up), and ``AttemptRecord.raw_trace_refs`` points at that durable
+  copy, not the disposable working directory. The full :class:`PilotReport`
+  (every attempt, accepted or not) is itself persisted to
+  ``output_dir/pilot_report.json`` before :func:`run_pilot` returns.
 """
 
 from __future__ import annotations
@@ -56,7 +63,13 @@ from benchmarks.sdd_lsp.models import (
     SeatSpec,
 )
 
-__all__ = ("ARM_TOOL_FILTER", "AttemptSpec", "build_attempt_matrix", "run_pilot")
+__all__ = (
+    "ARM_TOOL_FILTER",
+    "AttemptSpec",
+    "build_attempt_matrix",
+    "effective_attempt_cost_usd",
+    "run_pilot",
+)
 
 #: The one fixed task that simulates its semantic server being entirely
 #: unavailable, regardless of which arm runs it (spec §2: "The
@@ -81,6 +94,34 @@ ARM_TOOL_FILTER: dict[ArmName, tuple[str, ...]] = {
 
 _TRACE_FILENAME = "trace.jsonl"
 _ANSWER_FILENAME = "answer.json"
+_EVIDENCE_DIRNAME = "evidence"
+_PILOT_REPORT_FILENAME = "pilot_report.json"
+
+
+def effective_attempt_cost_usd(record: AttemptRecord, prices: PriceBook) -> float | None:
+    """Cost for budget/gate purposes -- distinct from :func:`accounting.attempt_cost_usd`.
+
+    ``accounting.attempt_cost_usd`` treats "no usage records at all" as a
+    real, known zero -- correct for its own general contract (a seat that
+    truthfully reports it made no billable calls). But the complete
+    ABSENCE of any observed trace at all (the seat crashed before flushing
+    one, or never wired up cost reporting) is not evidence of a free
+    attempt: it is no evidence whatsoever, and must never let the
+    budget/adoption-gate logic treat it as zero cost (spec §2: "if ... any
+    cost unknown, metric/gate is inconclusive"; §5: "Unknown cost during
+    execution stops launching further live attempts").
+
+    Args:
+        record: The attempt to price.
+        prices: The configured cache-aware price table.
+
+    Returns:
+        ``None`` when no trace was ever observed for this attempt (unknown,
+        never zero); otherwise delegates to :func:`accounting.attempt_cost_usd`.
+    """
+    if not record.raw_trace_refs and not record.usage:
+        return None
+    return attempt_cost_usd(record, prices)
 
 
 class AttemptSpec:
@@ -209,6 +250,24 @@ def _prepare_attempt_dir(fixture: ScenarioFixture, attempt_dir: Path) -> None:
     fixture.materialize(attempt_dir)
 
 
+def _archive_trace(attempt_dir: Path, evidence_dir: Path) -> str:
+    """Blocking: copy the raw trace to a durable evidence dir; return its archived path.
+
+    The per-attempt working directory under ``output_dir/attempts/`` is
+    disposable scratch space that is removed once an attempt finishes
+    (accepted, or failed with ``keep_failed=False``) so a re-run never
+    trips over a stale directory. The raw trace is the one piece of it
+    worth keeping for audit (spec §3 M5: "preserving diagnostic
+    evidence"), so it is copied to a durable, never-cleaned-up
+    ``output_dir/evidence/<attempt_id>/`` location BEFORE that removal,
+    regardless of whether the attempt was accepted.
+    """
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    destination = evidence_dir / _TRACE_FILENAME
+    shutil.copy2(attempt_dir / _TRACE_FILENAME, destination)
+    return str(destination)
+
+
 def _check_acceptance(
     fixture: ScenarioFixture, task_id: str, attempt_dir: Path, timeout_s: float
 ) -> tuple[bool, str | None]:
@@ -278,7 +337,8 @@ async def _run_one_attempt(
     elapsed_ms = int((time.monotonic() - started_at) * 1000)
 
     usage, trace_present = await asyncio.to_thread(_read_trace, attempt_dir, spec.attempt_id, spec.seat.arm)
-    raw_trace_refs = [str(attempt_dir / _TRACE_FILENAME)] if trace_present else []
+    evidence_dir = output_dir / _EVIDENCE_DIRNAME / spec.attempt_id
+    raw_trace_refs = [await asyncio.to_thread(_archive_trace, attempt_dir, evidence_dir)] if trace_present else []
 
     accepted = False
     if failure_reason is None:
@@ -374,7 +434,7 @@ async def run_pilot(manifest: PilotManifest, output_dir: Path) -> PilotReport:
         record = await _run_one_attempt(spec, output_dir)
         attempts.append(record)
 
-        cost = attempt_cost_usd(record, prices)
+        cost = effective_attempt_cost_usd(record, prices)
         if cost is None:
             stopped_reason = f"unknown cost after attempt {spec.attempt_id!r}: refusing to launch further attempts"
             continue
@@ -390,4 +450,8 @@ async def run_pilot(manifest: PilotManifest, output_dir: Path) -> PilotReport:
         "accepted": sum(1 for a in attempts if a.accepted),
     }
 
-    return PilotReport(manifest=manifest, attempts=attempts, coverage_manifest=coverage_manifest, synthetic=True)
+    report = PilotReport(manifest=manifest, attempts=attempts, coverage_manifest=coverage_manifest, synthetic=True)
+    await asyncio.to_thread(
+        (output_dir / _PILOT_REPORT_FILENAME).write_text, report.model_dump_json(indent=2), encoding="utf-8"
+    )
+    return report

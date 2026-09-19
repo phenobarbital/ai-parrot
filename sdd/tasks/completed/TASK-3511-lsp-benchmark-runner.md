@@ -219,3 +219,55 @@ Contract's anti-hallucination discipline.
 Seat: sonnet (native, no MCP seat) — implemented directly by the
 sdd-worker orchestrator per the human-authorized exception (see
 TASK-3508's completion note for the full blocker context).
+
+**Review-fix round (post-merge adversarial review, two independent
+reviewers, both CONFIRM):**
+- 🔴 CRITICAL, fixed: an attempt with NO trace ever observed (seat
+  crashed before flushing `trace.jsonl`, or a well-behaved seat's
+  attempt that simply never produced one) was priced at `0.0` by
+  `accounting.attempt_cost_usd`'s general "no usage = known zero"
+  contract, not `None` — this defeated the budget/unknown-cost stop
+  entirely and, at the report layer, could fabricate a false 100% cost
+  reduction / `"go"`. **Correction to this file's earlier claim**: the
+  original completion note above said a missing trace is "never treated
+  as zero cost" — that was false at the time, per direct reproduction
+  during review. Fixed with a new `runner.effective_attempt_cost_usd()`
+  wrapper (used by both the budget loop and `report.py`'s cohort cost
+  math) that returns `None` whenever no trace was ever observed,
+  reserving `accounting.attempt_cost_usd`'s `0.0` for a trace that was
+  present and explicitly reported zero-cost categories. Regression tests:
+  rewrote `test_trace_coverage_and_failed_attempts_retained`'s two
+  scenarios (`no_trace` and `crash` modes) to assert the run now halts
+  after the first untraced attempt instead of completing all 180 with a
+  fabricated zero-cost/accepted result; added
+  `test_missing_trace_is_never_priced_as_free` in
+  `test_benchmark_report.py` reproducing the exact false-`"go"` scenario
+  end to end.
+- 🔴 CRITICAL, fixed: an accepted attempt's `trace.jsonl` was deleted
+  with its scratch directory and never persisted anywhere else — the
+  returned `AttemptRecord.raw_trace_refs` pointed at a file that no
+  longer existed, and the full `PilotReport` (all per-attempt records)
+  was never written to disk, only the aggregated `report.json`/`report.md`.
+  Fixed: the trace is now archived to a durable
+  `output_dir/evidence/<attempt_id>/trace.jsonl` before any cleanup
+  (`raw_trace_refs` points at that durable copy), and `run_pilot` writes
+  the complete `PilotReport` to `output_dir/pilot_report.json` before
+  returning. New assertions added to
+  `test_arm_filters_and_isolated_working_states` proving the evidence
+  survives cleanup and the persisted report round-trips.
+- 🟠 IMPORTANT, deferred to ledger (`issue:65185c6c4f4a`): `tool_calls`,
+  `lsp_operations`, `correction_cycles`, and `retries` are never
+  populated on `AttemptRecord` by this runner — they silently default to
+  `0`. Fixing this needs a seat-protocol addition (a way for the seat to
+  report these back), out of scope for a same-session review fix.
+- 🟠 IMPORTANT, fixed: `benchmarks/sdd_lsp/__main__.py`'s `_amain` called
+  `path.read_text()`/`write_reports()` synchronously inside an `async
+  def`, inconsistent with this module's own `asyncio.to_thread`
+  discipline. Wrapped both in `asyncio.to_thread`.
+
+Full `packages/ai-parrot-tools/tests/lsp/` regression after these fixes:
+133 passed, 3 skipped (real-Pyright, unrelated). `black -l 120`/
+`ruff check` clean. Feedback NOT recorded via `coder_record_feedback`
+(this attempt has no resolvable `attempt_uid` — see TASK-3511's original
+completion note; the parrot-sdd-coder MCP server never dispatched this
+task).

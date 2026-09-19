@@ -25,7 +25,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
 
-from benchmarks.sdd_lsp.accounting import attempt_cost_usd
 from benchmarks.sdd_lsp.models import (
     ARM_NAMES,
     REPETITIONS,
@@ -35,6 +34,7 @@ from benchmarks.sdd_lsp.models import (
     PilotReport,
     PriceBook,
 )
+from benchmarks.sdd_lsp.runner import effective_attempt_cost_usd
 
 __all__ = (
     "build_report_document",
@@ -72,7 +72,7 @@ def cohort_cost_per_accepted_task(attempts: list[AttemptRecord], prices: PriceBo
         return None
     total = Decimal("0")
     for attempt in attempts:
-        cost = attempt_cost_usd(attempt, prices)
+        cost = effective_attempt_cost_usd(attempt, prices)
         if cost is None:
             return None
         total += Decimal(str(cost))

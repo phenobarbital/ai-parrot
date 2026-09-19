@@ -188,3 +188,15 @@ collected, 125 passed, 3 skipped (unrelated real-Pyright tests). `black
 Seat: sonnet (native, no MCP seat) — implemented directly by the
 sdd-worker orchestrator per the human-authorized exception (see
 TASK-3508's completion note for the full blocker context).
+
+**Review-fix round (post-merge adversarial review):** `cohort_cost_per_
+accepted_task` used `accounting.attempt_cost_usd` directly, inheriting a
+confirmed CRITICAL defect (an attempt with no trace ever observed priced
+at `0.0` instead of unknown, able to fabricate a false 100% cost
+reduction / `"go"`). Full root cause, fix (new `runner.
+effective_attempt_cost_usd()`, now used here instead), and regression
+tests (`test_missing_trace_is_never_priced_as_free`) are documented in
+TASK-3511's completion note — this file only imports the corrected
+helper. Also fixed here: `__main__.py`'s `_amain` now wraps its
+`read_text`/`write_reports` calls in `asyncio.to_thread` (was blocking
+I/O in an async function). Full suite after fixes: 133 passed, 3 skipped.

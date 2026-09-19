@@ -53,9 +53,10 @@ def _attempt(
     elapsed_ms: int = 100,
     cold_start: bool = False,
     launched: bool = True,
+    missing_trace: bool = False,
 ) -> AttemptRecord:
     attempt_id = f"{task_id}::{arm}::rep{repetition}"
-    usage = [_usage(attempt_id, actual_cost_usd=cost)] if launched else []
+    usage = [_usage(attempt_id, actual_cost_usd=cost)] if launched and not missing_trace else []
     return AttemptRecord(
         attempt_id=attempt_id,
         task_id=task_id,
@@ -65,6 +66,7 @@ def _attempt(
         accepted=accepted,
         failure_reason=None if launched else "not_launched: test",
         usage=usage,
+        raw_trace_refs=[],
         elapsed_ms=elapsed_ms if launched else None,
         cold_start=cold_start,
     )
@@ -192,6 +194,35 @@ def test_incomplete_and_zero_success_are_inconclusive() -> None:
     # sanity check the positive path still returns "go" alongside these.
     lsp_good = _full_cohort("lsp_combined", cost=0.01, elapsed_ms=90)
     assert evaluate_gate(wiki + lsp_good, prices).decision == "go"
+
+
+def test_missing_trace_is_never_priced_as_free() -> None:
+    """A fully-accepted cohort with NO observed trace at all must stay inconclusive.
+
+    Regression for a confirmed defect: every ``lsp_combined`` attempt
+    accepted with ``usage=[]`` and no trace ever observed used to be
+    priced at cohort cost ``0.0`` (not ``None``), which sailed past
+    ``cohort_cost_per_accepted_task``'s ``is None`` guard and fabricated a
+    100% cost reduction / false ``"go"`` against a real-cost ``wiki_ast``
+    cohort. A trace never observed is unknown cost, never a free ride
+    (spec §2: "if ... any cost unknown, metric/gate is inconclusive").
+    """
+    prices = PriceBook()
+    wiki = _full_cohort("wiki_ast", cost=0.05)
+    lsp_no_trace = [
+        _attempt(task_id, "lsp_combined", repetition, missing_trace=True)
+        for task_id in SCENARIO_IDS
+        for repetition in range(1, REPETITIONS + 1)
+    ]
+    assert all(attempt.usage == [] and attempt.raw_trace_refs == [] for attempt in lsp_no_trace)
+    assert all(attempt.accepted for attempt in lsp_no_trace)
+
+    assert cohort_cost_per_accepted_task(lsp_no_trace, prices) is None
+
+    gate = evaluate_gate(wiki + lsp_no_trace, prices)
+    assert gate.decision == "inconclusive"
+    assert gate.decision != "go"
+    assert any("unknown" in reason for reason in gate.reasons)
 
 
 # ---------------------------------------------------------------------------
