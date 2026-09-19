@@ -47,6 +47,13 @@ Run `git worktree list` to identify which feature worktrees are currently active
 Map each active worktree to its feature ID by matching the worktree name pattern
 `feat-<FEAT-ID>-<slug>` or `task-<TASK-ID>-<slug>`.
 
+Additionally, call the worktree status library for richer data:
+```bash
+WT_REPORTS=$(python -m scripts.sdd.worktree_status --json 2>/dev/null || echo "[]")
+```
+Build a lookup from `feature_slug` → `WorktreeReport`. This provides task progress
+counts and `ready_for_done` flags that the bare `git worktree list` cannot give.
+
 ### 3. Compute Unblocked Tasks
 For each task with `status: "pending"`:
 - Check that every task in `depends_on` has `status: "done"`.
@@ -59,6 +66,20 @@ Group unblocked tasks by feature. For each task, determine:
 - **Needs new worktree**: no active worktree for this feature → show the
   `git worktree add` command.
 - **Parallel task**: marked `parallel: true` → can use its own worktree.
+
+For features with a `WorktreeReport`:
+- If `ready_for_done: true`: do NOT suggest new tasks. Instead show:
+  ```
+  FEAT-550 — Token Budget Bedrock
+    ✅ All 14 tasks done — ready for /sdd-done FEAT-550
+  ```
+- If tasks are partially done: annotate the feature header with progress:
+  ```
+  FEAT-582 — SDD Status Worktrees  (3/5 done in worktree)
+    🟢 Active worktree: feat-FEAT-582-sdd-status-worktrees
+  ```
+
+The progress count comes from: `done_count = sum(1 for t in report.tasks if t.status in ("done", "done-with-issues"))`.
 
 ### 5. Sort and Present
 Sort unblocked tasks by priority, then effort. Output:
