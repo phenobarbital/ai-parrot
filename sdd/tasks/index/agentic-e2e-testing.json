@@ -253,7 +253,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -263,8 +263,8 @@
       "parallelism_notes": "TASK-3527 owns its declared files for M3. TASK-3526 supplies implement private supervisor control and stdio rpc channel. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3527-e2e-supervisor.md"
+      "completed_at": "2026-09-19T18:44:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3527-e2e-supervisor.md"
     },
     {
       "id": "TASK-3528",

@@ -188,5 +188,58 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `E2ESupervisor` with the exact fixed
+interfaces: `async start(target_id, config) -> RunState`,
+`async request_stdio(run_id, payload) -> dict`, `async stop(run_id) ->
+RunState`. Spawns each target in its own process group, captures
+`ProcessIdentity`, and persists the initial `starting` `RunState` BEFORE
+polling readiness (per TASK-3517's research). Non-stdio targets poll
+`TargetAdapter.ready()`; `stdio` targets use supervisor-owned pipe
+liveness — every readiness verdict cross-checked against real
+`psutil`-observed liveness and `process_identity_matches`. Exactly one
+port-collision retry within the original startup deadline. Teardown:
+SIGTERM → wait ≤10s → SIGKILL → bounded reap, re-validated via
+`is_authorized_to_signal` immediately before every signal — never signals
+an adopted/foreign/reused-PID run; unresolved cleanup persists as `failed`,
+never a fabricated `stopped`. Each run gets its own `ControlServer` (from
+TASK-3526) exposing `status`/`stop`/`stdio` back into this same instance.
+Strips model-credential env vars from every spawned target's environment
+(unconditional superset), sets `PYTHONDONTWRITEBYTECODE=1`, records
+argv/cwd/pythonpath (never env values) per-run under `artifacts/logs/e2e/`.
+
+Two documented, necessary deviations (both reviewed and CONFIRMED — not
+scope creep):
+1. AF_UNIX control-socket path: this worktree's own path already exceeds
+   the 108-byte `sun_path` limit before any run_id is appended (verified
+   directly), so `_resolve_control_socket_path` falls back to a short,
+   still mode-0700 path under the system temp dir when the spec-literal
+   path would not fit.
+2. `RunState.endpoint` is always persisted as `None` — neither
+   `TargetAdapter.prepare()`/`ready()` gives this module an HTTP endpoint;
+   this matches the field's documented valid meaning pending concrete M4
+   adapter work, no interface invented.
+3. Deferred control-server teardown on remote `stop`: `ControlServer.stop()`
+   is scheduled via `asyncio.create_task` rather than awaited inline when
+   `stop` is invoked as that same server's own RPC handler (awaiting inline
+   deadlocks — `wait_closed()` would wait for the very connection running
+   the handler). Verified fixed with a real socket round-trip test.
+
+During implementation, found and fixed two genuine correctness gaps (not
+test artifacts) surfaced by a real ~35%-flaky readiness race: (a)
+`asyncio`'s child-watcher-driven `returncode` is not reliably resolved
+under load across pytest-asyncio's per-test event loops, so `_await_ready`
+now cross-checks real `psutil` liveness; (b) the test's own fake adapter
+was unconditionally claiming readiness — fixed in the test, not production.
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_supervisor.py -q`
+→ 19 passed (stable over 15 repeats after the readiness-race fix). Full-dir
+regression: `pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 245
+passed (226+19), no regression against TASK-3520/3521/3524/3525/3526.
+`ruff check`: 1 real ASYNC230 finding (blocking `open()` in async code)
+fixed via `asyncio.to_thread`, not suppressed.
+
+No unresolved limitations beyond the two documented deviations above.
+AC3/AC5/AC6 demonstrated by the contract tests. Watchdog spawn/heartbeat
+explicitly deferred to TASK-3528, per this task's own scope note.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 2096.8s · Tokens: 323802 (combined)
