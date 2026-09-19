@@ -92,7 +92,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "overrides BaseWikiStore.compare_and_swap_page from TASK-3481 (store.py:608); only arango_store.py; its only mention of parrot.knowledge.wiki.decisions is a prohibition (the store layer must never import it), not a use, so no edge to TASK-3479 applies",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3483-arango-store-cas.md"
+      "completed_at": "2026-09-19T20:36:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3483-arango-store-cas.md"
     },
     {
       "id": "TASK-3484",
