@@ -31,16 +31,26 @@ class TestCommandSurface:
 
     def test_review_requires_attribution(self, runner):
         """Attribution is mandatory — no anonymous acceptance (spec §2)."""
-        result = runner.invoke(wiki, ["adr", "review", "adr:candidate:a", "--action", "accept",
-                                      "--expected-revision", "1"])
+        result = runner.invoke(
+            wiki, ["adr", "review", "adr:candidate:a", "--action", "accept", "--expected-revision", "1"]
+        )
         assert result.exit_code == 2  # click: missing --actor
 
     def test_revise_requires_an_edit_file(self, runner, adr_repo):
         result = runner.invoke(
             wiki,
             [
-                "adr", "review", "adr:candidate:x", "--action", "revise",
-                "--expected-revision", "1", "--actor", "human:m", "--path", str(adr_repo),
+                "adr",
+                "review",
+                "adr:candidate:x",
+                "--action",
+                "revise",
+                "--expected-revision",
+                "1",
+                "--actor",
+                "human:m",
+                "--path",
+                str(adr_repo),
             ],
         )
         assert result.exit_code == 2, result.output
@@ -49,8 +59,17 @@ class TestCommandSurface:
         result = runner.invoke(
             wiki,
             [
-                "adr", "review", "adr:candidate:x", "--action", "link",
-                "--expected-revision", "1", "--actor", "human:m", "--path", str(adr_repo),
+                "adr",
+                "review",
+                "adr:candidate:x",
+                "--action",
+                "link",
+                "--expected-revision",
+                "1",
+                "--actor",
+                "human:m",
+                "--path",
+                str(adr_repo),
             ],
         )
         assert result.exit_code == 2, result.output
@@ -93,9 +112,7 @@ class TestExitCodes:
         before ever resolving a model."""
         monkeypatch.delenv("WIKI_ADR_LLM", raising=False)
         _build(runner, adr_repo)
-        result = runner.invoke(
-            wiki, ["adr", "generate", "src/citing_module.py", "--json", "--path", str(adr_repo)]
-        )
+        result = runner.invoke(wiki, ["adr", "generate", "src/citing_module.py", "--json", "--path", str(adr_repo)])
         assert result.exit_code == 1, result.output
         payload = json.loads(result.stderr or result.output)
         assert payload["error"]["code"] == "ADR_MODEL_UNCONFIGURED"
@@ -191,7 +208,9 @@ class _FakeGenerationClient:
         from parrot.knowledge.wiki.decisions.models import CandidateBatch, CandidateDraft
 
         batch = CandidateBatch(
-            candidates=[CandidateDraft(decision="Adopt a small in-process cache for repeated lookups.", evidence_indexes=[0])]
+            candidates=[
+                CandidateDraft(decision="Adopt a small in-process cache for repeated lookups.", evidence_indexes=[0])
+            ]
         )
         return type("InvokeResult", (), {"output": batch, "model": "fake", "usage": {}})()
 
@@ -229,8 +248,19 @@ class TestAcceptance:
         review = runner.invoke(
             wiki,
             [
-                "adr", "review", decision_id, "--action", "accept", "--expected-revision", "1",
-                "--actor", "human:m", "--reason", "ok", "--path", str(adr_repo),
+                "adr",
+                "review",
+                decision_id,
+                "--action",
+                "accept",
+                "--expected-revision",
+                "1",
+                "--actor",
+                "human:m",
+                "--reason",
+                "ok",
+                "--path",
+                str(adr_repo),
             ],
         )
         assert review.exit_code == 0, review.output
@@ -259,8 +289,18 @@ class TestAcceptance:
         result = runner.invoke(
             wiki,
             [
-                "adr", "review", decision_id, "--action", "accept", "--expected-revision", "999",
-                "--actor", "human:m", "--path", str(adr_repo), "--json",
+                "adr",
+                "review",
+                decision_id,
+                "--action",
+                "accept",
+                "--expected-revision",
+                "999",
+                "--actor",
+                "human:m",
+                "--path",
+                str(adr_repo),
+                "--json",
             ],
         )
         assert result.exit_code == 1, result.output

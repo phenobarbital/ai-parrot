@@ -818,7 +818,9 @@ async def _ingest_files(
     return {"written": written, "unchanged": unchanged, "written_rel_paths": written_rel_paths}
 
 
-async def _refresh_adr_plane(store: BaseWikiStore, root: Path, config: WikiProjectConfig, paths: list[str] | None = None) -> None:
+async def _refresh_adr_plane(
+    store: BaseWikiStore, root: Path, config: WikiProjectConfig, paths: list[str] | None = None
+) -> None:
     """Refresh the ADR decision plane after ordinary ingestion (FEAT-578).
 
     A no-op when the feature is disabled or no ADR source exists. NEVER
