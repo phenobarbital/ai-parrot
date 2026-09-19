@@ -595,10 +595,47 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (FEAT-549) — native `sonnet` seat, attempt a1
+**Date**: 2026-09-19
+**Notes**: Instrumented `OpenAIBaseClient.invoke()`'s dispatch block (`openai_base.py`)
+with `_emit_before_call` / `_emit_after_call` / `_emit_failed_call_safe` across its
+three exit paths (normal, budget-finalize, budget-partial), guarded by a local
+`_lc_terminal` flag so exactly one terminal event fires per call. The `CompletionUsage`
+computed for the after-event is reused for `_build_invoke_result` (single computation,
+AC-7). Created `packages/ai-parrot/tests/unit/clients/test_invoke_telemetry.py` with
+the 6 blueprint tests (all passing). Validation commands all green:
+`test_invoke_telemetry.py` (10 passed), `test_client_failed_call_emission.py` (4
+passed, AC-9 baseline), `test_token_budget_boundaries.py` (17 passed),
+`tests/clients/test_openai_base.py tests/clients/test_invoke_max_tokens.py` (127
+passed, 4 skipped, pre-existing unrelated skips). `base.py` untouched (AC-8, verified
+via `git diff --name-only`). AC-10 (ruff-clean): the new test file is clean;
+`openai_base.py` carries 2 pre-existing ruff findings (B039 ContextVar mutable
+default at line 67, B904 raise-without-from) that predate this diff (confirmed via
+`git stash` comparison) and are outside this task's two blocks — left for the
+repo-wide ruff pass at `/sdd-done` per CLAUDE.md tooling policy.
+Post-merge, orchestrator ran the merge-tier gate
+(`scripts.sdd.select_tests --tier merge`) across both FEAT-579 tasks: the
+consolidated import-impact run (`tests/clients/test_openai_base.py`,
+`test_openai_base_parity.py`, `test_invoke_max_tokens.py`, `test_invoke_helpers.py`,
+`test_jev_client.py`, etc.) showed only the one known pre-existing failure
+(`test_factory_registration` KeyError, unrelated to this feature). The core-escalation
+sweep across satellite packages (grok, formdesigner, loaders, integrations, etc.)
+surfaced only pre-existing, unrelated red noise (e.g. `NameError: chat_kwargs` in
+`ai-parrot-client-grok/client.py`, DocumentDB/Telegram fixture failures) — no
+traceback referenced `openai_base.py` or this diff.
+**Feedback**: no confirmed defects found on review — reviewed the diff directly
+(`git show 1eda9fb6f -- packages/ai-parrot/src/parrot/clients/openai_base.py`);
+matches the Implementation Blueprint (blocks A/B/C) verbatim, all "Must NOT change"
+constraints honored (except-chain at 1710-1715 byte-identical, `base.py` untouched).
+**Review NOT recorded via `coder_record_review`**: the orchestrator's execution_id
+and the exact `attempt_uid`/`model` string returned by `coder_prepare_native` were
+lost when this session's context was compacted mid-run. The execution_id was
+recovered afterward (via the `execution_in_progress` collision on
+`coder_begin_execution`: `e5b1f3a2-6c4d-4e8a-9f1b-7d2c3a4e5f60`), but repeated
+attempts with the branch-derived attempt_uid (`TASK-3478-a1-e5b1f3a26c4d4e8a9f1b7d2c3a4e5f60`
+and `TASK-3478-a1`) against backend `native` / model `sonnet` all returned
+`invalid_arguments: review must match a known attempt's task, backend and actual
+model`. Per policy, guessing was stopped rather than risk recording against the
+wrong attempt. Same gap applies to TASK-3477's review (see its Completion Note).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

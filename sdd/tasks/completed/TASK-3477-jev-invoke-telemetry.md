@@ -516,3 +516,15 @@ native harness)
 a Pydantic model shape whose failure surfaces in the post-dispatch
 `answers_to_type` parse segment rather than the pre-dispatch
 `_resolve_questions` segment — verified before delivery.
+
+**Review recording status**: attempted `coder_record_review` post-compaction
+(execution_id recovered via `coder_begin_execution`'s `execution_in_progress`
+collision: `e5b1f3a2-6c4d-4e8a-9f1b-7d2c3a4e5f60`); repeated attempts with the
+branch-derived attempt_uid (`TASK-3477-a1-e5b1f3a26c4d4e8a9f1b7d2c3a4e5f60` and
+`TASK-3477-a1`) against backend `native` / model `sonnet` returned
+`invalid_arguments: review must match a known attempt's task, backend and
+actual model` — the exact attempt_uid/model string `coder_prepare_native`
+originally returned was lost when this session's context was compacted
+mid-run. Review **NOT recorded** in the quality-measurement plane; the manual
+review above (diff read in full against the blueprint, zero defects) stands
+as the record of what was checked.
