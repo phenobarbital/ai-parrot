@@ -34,12 +34,10 @@ def test_brainstorm_twins_differ_only_by_worktree_line() -> None:
 
     # Normalize the worktree-policy line
     claude_normalized = claude_text.replace(
-        "Worktree policy: `CLAUDE.md` (section \"Worktree Policy\")",
-        "Worktree policy: PLACEHOLDER"
+        'Worktree policy: `CLAUDE.md` (section "Worktree Policy")', "Worktree policy: PLACEHOLDER"
     )
     agent_normalized = agent_text.replace(
-        "Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`",
-        "Worktree policy: PLACEHOLDER"
+        "Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`", "Worktree policy: PLACEHOLDER"
     )
 
     # The files should be identical after normalizing the worktree-policy line
