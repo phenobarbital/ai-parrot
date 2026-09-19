@@ -330,6 +330,43 @@ class TestLifecycleCancelIdleShutdown:
         assert toolkit._session is None
 
     @pytest.mark.asyncio
+    async def test_naturally_firing_idle_task_does_not_cancel_itself(
+        self, closing_toolkit, git_repo: Path, fake_session: type[FakeSession]
+    ) -> None:
+        """The real ``_reset_idle_timer -> fire -> _close_session_locked`` path.
+
+        Unlike ``test_idle_shutdown_closes_the_owned_session`` above (which
+        calls ``_idle_shutdown()`` directly, so ``toolkit._idle_task`` is
+        ``None`` and the self-cancellation branch never runs), this drives
+        the task through the real scheduling entry point so
+        ``self._idle_task`` IS the task executing ``_close_session_locked``
+        when it fires. Before the fix, ``_close_session_locked`` cancelled
+        this same task on itself, which asyncio then reports as the task's
+        own outcome once it finishes -- so awaiting it raised
+        ``CancelledError`` even though the body had already run to
+        completion. The fix must let it complete cleanly instead.
+        """
+        toolkit = closing_toolkit()
+        mod_text = (git_repo / "pkg" / "mod.py").read_text()
+        FakeSession.response = None
+
+        await toolkit.lsp_definition(path="pkg/mod.py", line=1, column=1, expected_sha256=_sha256(mod_text))
+        session = toolkit._session
+        assert session is not None
+
+        # Reschedule with a fast delay through the real production entry
+        # point instead of waiting out the real (>=30s) idle_timeout_s.
+        toolkit._config.idle_timeout_s = 0.01
+        toolkit._reset_idle_timer()
+        idle_task = toolkit._idle_task
+        assert idle_task is not None
+
+        await idle_task  # must complete cleanly, never raise CancelledError
+
+        assert session.closed is True
+        assert toolkit._session is None
+
+    @pytest.mark.asyncio
     async def test_cancellation_releases_the_operation_lock(
         self, closing_toolkit, git_repo: Path, fake_session: type[FakeSession]
     ) -> None:

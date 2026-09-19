@@ -294,6 +294,51 @@ async def test_concurrent_repeated_stop_is_idempotent():
     assert toolkit.cleanup_count == 1
 
 
+class _StopOnlyToolkit(AbstractToolkit):
+    """A toolkit that releases its real resource via ``stop()`` only.
+
+    Matches the pattern already shipping in this repo: ``WebScrapingToolkit``,
+    ``RSSFeedReaderToolkit``, and ``MassiveToolkit`` all override ``stop()``
+    to release a real resource, without ever overriding ``cleanup()`` (which
+    stays the inherited, concrete no-op from ``AbstractToolkit``).
+    """
+
+    auto_open = True
+
+    def __init__(self) -> None:
+        self.stop_count = 0
+        super().__init__()
+
+    async def _open(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        self.stop_count += 1
+
+    async def echo(self, x: str) -> str:
+        """Echo the input back."""
+        return x
+
+
+@pytest.mark.asyncio
+async def test_stop_only_toolkit_is_still_released() -> None:
+    """A toolkit overriding only ``stop()`` (not ``cleanup()``) must still be released.
+
+    Regression for FEAT-580 code review Critical #4: ``getattr(toolkit,
+    "cleanup", None) or getattr(toolkit, "stop", None)`` always resolves to
+    the first, concrete no-op ``AbstractToolkit.cleanup()`` -- which is
+    never falsy -- so the ``or stop`` branch could never run, silently
+    skipping every already-shipping toolkit that only overrides ``stop()``.
+    """
+    toolkit = _StopOnlyToolkit()
+    await toolkit._ensure_open()
+
+    server = _ToolkitStdioMCPServer(LocalServerConfig(name="test"), toolkit)
+    await server.stop()
+
+    assert toolkit.stop_count == 1
+
+
 # --------------------------------------------------------------------------- #
 # 4. Cleanup is bounded, never hangs on a stuck toolkit (unit).
 # --------------------------------------------------------------------------- #

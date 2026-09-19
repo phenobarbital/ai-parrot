@@ -114,14 +114,24 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             finally:
                 toolkit._opened = False
 
-        cleanup_fn = getattr(toolkit, "cleanup", None) or getattr(toolkit, "stop", None)
-        if callable(cleanup_fn):
+        # AbstractToolkit.cleanup() AND .stop() are both concrete no-op hooks
+        # (never absent), so `getattr(toolkit, "cleanup", None) or
+        # getattr(toolkit, "stop", None)` always short-circuits on the first
+        # branch and never reaches an existing toolkit's stop()-only
+        # override (e.g. WebScrapingToolkit, RSSFeedReaderToolkit,
+        # MassiveToolkit release their real resources exclusively via
+        # stop()). Call both hooks, independently error-isolated, so a
+        # subclass overriding either one still gets released.
+        for hook_name in ("cleanup", "stop"):
+            cleanup_fn = getattr(toolkit, hook_name, None)
+            if not callable(cleanup_fn):
+                continue
             try:
                 result = cleanup_fn()
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as exc:  # noqa: BLE001 -- isolated shutdown logging
-                self.logger.error("Error cleaning up owned toolkit %s: %s", type(toolkit).__name__, exc)
+                self.logger.error("Error in %s() for owned toolkit %s: %s", hook_name, type(toolkit).__name__, exc)
 
 
 def create_toolkit_mcp_server(

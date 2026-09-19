@@ -221,6 +221,30 @@ class TestStartupTimeoutAndPartialCleanup:
         finally:
             await session.close()
 
+    @pytest.mark.asyncio
+    async def test_external_cancellation_during_handshake_reaps_the_process(self, tmp_path: Path) -> None:
+        """Cancelling ``start()`` itself (not an internal timeout) must still reap the child.
+
+        ``asyncio.CancelledError`` is a ``BaseException`` (not ``Exception``)
+        since Python 3.8: an ``except Exception`` guard around the startup
+        body would let external cancellation skip ``_cleanup_partial_startup``
+        entirely, orphaning an already-spawned process.
+        """
+        session = PyrightSession()
+        config = _make_config(tmp_path, scenario="delay_response", startup_timeout_s=30.0)
+        start_task = asyncio.ensure_future(session.start(config, generation=1))
+        await _wait_until(lambda: session._process is not None, timeout=2.0)
+        proc = session._process
+        assert proc is not None
+
+        start_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await start_task
+
+        await _wait_until(lambda: proc.returncode is not None, timeout=2.0)
+        assert session._process is None
+        assert session._started is False
+
 
 # ---------------------------------------------------------------------------
 # test_request_cancel_cleans_pending_futures
@@ -307,3 +331,77 @@ class TestShutdownEscalationAndReaping:
         assert proc.returncode is not None
         assert session._process is None
         assert session._pending == {}
+
+
+# ---------------------------------------------------------------------------
+# test_pinned_python_analysis_configuration
+# ---------------------------------------------------------------------------
+
+
+class TestPinnedPythonAnalysisConfiguration:
+    """Pure, process-free checks of the pinned ``python``/``python.analysis``
+    settings per spec §2 point 2: ``pythonPath``, ``extraPaths`` (derived
+    from ``source_roots``), ``diagnosticMode="openFilesOnly"`` and
+    ``typeCheckingMode="standard"`` must be both proactively sent in
+    ``initializationOptions`` and answered on a ``workspace/configuration``
+    pull — a session never needs a live process for these to be checked.
+    """
+
+    def test_initialize_params_include_pinned_analysis_settings(self, tmp_path: Path) -> None:
+        source_root = tmp_path / "packages" / "pkg-a" / "src"
+        source_root.mkdir(parents=True)
+        config = LSPConfig(repo_root=tmp_path, source_roots=[source_root], environment_id="test-env")
+        session = PyrightSession()
+
+        params = session._build_initialize_params(config)
+
+        assert params["initializationOptions"]["python"] == {"pythonPath": str(config.python_path)}
+        assert params["initializationOptions"]["python.analysis"] == {
+            "extraPaths": [str(source_root)],
+            "diagnosticMode": "openFilesOnly",
+            "typeCheckingMode": "standard",
+        }
+
+    def test_configuration_pull_answers_python_and_python_analysis(self, tmp_path: Path) -> None:
+        source_root = tmp_path / "packages" / "pkg-a" / "src"
+        source_root.mkdir(parents=True)
+        config = LSPConfig(repo_root=tmp_path, source_roots=[source_root], environment_id="test-env")
+        session = PyrightSession()
+        session._config = config
+
+        assert session._resolve_configuration_item({"section": "python"}) == {"pythonPath": str(config.python_path)}
+        assert session._resolve_configuration_item({"section": "python.analysis"}) == {
+            "extraPaths": [str(source_root)],
+            "diagnosticMode": "openFilesOnly",
+            "typeCheckingMode": "standard",
+        }
+        assert session._resolve_configuration_item({"section": "unrelated"}) == {}
+        assert session._resolve_configuration_item({"section": "python"}) != {}  # sanity: config was consulted
+
+    def test_configuration_pull_before_start_returns_empty(self) -> None:
+        """No config yet (session never started) must never raise or fabricate settings."""
+        session = PyrightSession()
+        assert session._resolve_configuration_item({"section": "python"}) == {}
+        assert session._resolve_configuration_item({"section": "python.analysis"}) == {}
+
+    def test_workspace_folders_includes_repo_root_and_source_roots_without_duplication(self, tmp_path: Path) -> None:
+        """``source_roots`` are additional folders, never a replacement for ``repo_root``."""
+        source_root = tmp_path / "packages" / "pkg-a" / "src"
+        source_root.mkdir(parents=True)
+        config = LSPConfig(repo_root=tmp_path, source_roots=[source_root], environment_id="test-env")
+        session = PyrightSession()
+
+        folders = session._workspace_folders(config)
+
+        uris = [folder["uri"] for folder in folders]
+        assert len(uris) == 2
+        assert any(tmp_path.name in uri or str(tmp_path) in uri for uri in uris)
+        assert any("src" in uri for uri in uris)
+
+    def test_workspace_folders_with_no_source_roots_is_just_repo_root(self, tmp_path: Path) -> None:
+        config = LSPConfig(repo_root=tmp_path, environment_id="test-env")
+        session = PyrightSession()
+
+        folders = session._workspace_folders(config)
+
+        assert len(folders) == 1

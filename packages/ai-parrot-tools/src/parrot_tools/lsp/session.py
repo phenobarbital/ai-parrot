@@ -192,7 +192,10 @@ class PyrightSession:
             await self._spawn_process(config)
             self._start_draining()
             await self._handshake(config)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
+            # asyncio.CancelledError is a BaseException (not Exception) since
+            # Python 3.8: external cancellation of start() mid-startup must
+            # still reap an already-spawned process, not just Exception paths.
             await self._cleanup_partial_startup()
             raise
 
@@ -475,12 +478,45 @@ class PyrightSession:
                     "publishDiagnostics": {"relatedInformation": True},
                 },
             },
-            "initializationOptions": {},
+            # Proactively mirror the settings shape workspace/configuration
+            # answers with (below), so python.pythonPath and the pinned
+            # python.analysis.* settings are known from initialize itself
+            # rather than depending solely on a later configuration pull.
+            "initializationOptions": {
+                "python": self._python_settings(config),
+                "python.analysis": self._python_analysis_settings(config),
+            },
         }
 
     def _workspace_folders(self, config: LSPConfig) -> list[dict[str, str]]:
-        roots = config.source_roots or [config.repo_root]
-        return [{"uri": _path_to_file_uri(root), "name": root.name or str(root)} for root in roots]
+        # repo_root is always a workspace folder; source_roots (when set)
+        # are additional canonical in-root folders, never a replacement —
+        # dropping repo_root from the list would leave it unmonitored.
+        seen: set[Path] = set()
+        folders: list[dict[str, str]] = []
+        for root in (config.repo_root, *config.source_roots):
+            if root in seen:
+                continue
+            seen.add(root)
+            folders.append({"uri": _path_to_file_uri(root), "name": root.name or str(root)})
+        return folders
+
+    def _python_settings(self, config: LSPConfig) -> dict[str, Any]:
+        return {"pythonPath": str(config.python_path)}
+
+    def _python_analysis_settings(self, config: LSPConfig) -> dict[str, Any]:
+        """Pinned ``python.analysis`` settings per spec §2 point 2.
+
+        ``extraPaths`` is derived from the canonical in-root
+        ``source_roots`` (PEP 420 namespace roots); ``diagnosticMode`` and
+        ``typeCheckingMode`` are fixed, non-configurable pinned values, not
+        operator-tunable knobs.
+        """
+        return {
+            "extraPaths": [str(root) for root in config.source_roots],
+            "diagnosticMode": "openFilesOnly",
+            "typeCheckingMode": "standard",
+        }
 
     async def _cleanup_partial_startup(self) -> None:
         """Undo whatever :meth:`start` had already done before it failed."""
@@ -560,8 +596,12 @@ class PyrightSession:
     def _resolve_configuration_item(self, item: Any) -> Any:
         """Resolve one ``workspace/configuration`` item to a settings value."""
         section = item.get("section") if isinstance(item, Mapping) else None
-        if section == "python" and self._config is not None:
-            return {"pythonPath": str(self._config.python_path)}
+        if self._config is None:
+            return {}
+        if section == "python":
+            return self._python_settings(self._config)
+        if section == "python.analysis":
+            return self._python_analysis_settings(self._config)
         return {}
 
     async def _stderr_loop(self) -> None:

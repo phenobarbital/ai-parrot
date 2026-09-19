@@ -453,8 +453,17 @@ class LSPToolkit(AbstractToolkit):
         Callers must already hold ``self._operation_lock`` — this method
         never acquires it itself, avoiding recursive acquisition from
         :meth:`_close`, :meth:`_acquire_session`, and the idle-timeout task.
+
+        When a naturally-firing idle-shutdown task calls this method itself
+        (no intervening call reset the timer), ``self._idle_task`` IS the
+        task currently executing this coroutine. Cancelling it here would
+        deliver ``CancelledError`` at the next ``await`` (inside
+        ``session.close()`` below) before process cleanup runs, orphaning
+        the child process — so the currently-running task is never
+        cancelled, only a genuinely stale/foreign one.
         """
-        if self._idle_task is not None and not self._idle_task.done():
+        current_task = asyncio.current_task()
+        if self._idle_task is not None and not self._idle_task.done() and self._idle_task is not current_task:
             self._idle_task.cancel()
         self._idle_task = None
         session = self._session
