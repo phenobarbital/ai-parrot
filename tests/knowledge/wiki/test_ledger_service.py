@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -201,6 +203,92 @@ class TestContextAndBlockers:
         await ledger_service.acknowledge(issue_id, "accepted risk", actor="human:jesus")
 
         assert await ledger_service.merge_blockers("FEAT-100") == []
+
+
+async def _state_of(service: LedgerService, issue_id: str) -> dict:
+    return dict(await service._all_issues())[issue_id]
+
+
+def _log_line_count(service: LedgerService) -> int:
+    path = Path(service.log.path)
+    if not path.exists():
+        return 0
+    return len(path.read_text(encoding="utf-8").splitlines())
+
+
+class TestCloseEvidence:
+    async def test_close_issue_persists_resolved_by(self, ledger_service):
+        issue_id = await ledger_service.open_issue(title="Evidence", body="b", discovered_from="task:TASK-1")
+        assert await ledger_service.close_issue(issue_id, "fixed", "agent:sdd-fix", resolved_by="commit:abc123") is True
+        assert (await _state_of(ledger_service, issue_id))["resolved_by"] == "commit:abc123"
+
+    async def test_close_issue_without_resolved_by_unchanged(self, ledger_service):
+        issue_id = await ledger_service.open_issue(title="Evidence", body="b", discovered_from="task:TASK-1")
+
+        assert await ledger_service.close_issue(issue_id, "fixed", "agent:sdd-fix") is True
+
+        assert (await _state_of(ledger_service, issue_id))["resolved_by"] is None
+        last_line = Path(ledger_service.log.path).read_text(encoding="utf-8").splitlines()[-1]
+        payload = json.loads(last_line)["payload"]
+        assert set(payload.keys()) == {"reason", "closed_by"}
+
+    async def test_close_issue_rejects_unknown_issue(self, ledger_service):
+        before = _log_line_count(ledger_service)
+
+        assert await ledger_service.close_issue("issue:nope", "fixed", "agent:sdd-fix") is False
+
+        assert _log_line_count(ledger_service) == before
+
+    async def test_close_issue_rejects_already_closed(self, ledger_service):
+        issue_id = await ledger_service.open_issue(title="Evidence", body="b", discovered_from="task:TASK-1")
+        assert await ledger_service.close_issue(issue_id, "fixed", "agent:sdd-fix") is True
+
+        assert await ledger_service.close_issue(issue_id, "fixed again", "agent:sdd-fix") is False
+
+        assert _log_line_count(ledger_service) == 2
+
+
+class TestUnclaim:
+    async def test_unclaim_appends_event_and_syncs(self, ledger_service):
+        issue_id = await ledger_service.open_issue(title="Claim me", body="b", discovered_from="task:TASK-1")
+        assert await ledger_service.claim(issue_id, "agent:sdd-fix") is True
+        assert await ledger_service.ready_work() == []
+        assert await ledger_service.unclaim(issue_id, "not fixed", "agent:sdd-fix") is True
+        assert [r["issue_id"] for r in await ledger_service.ready_work()] == [issue_id]
+
+    async def test_unclaim_on_open_issue_returns_false_without_appending(self, ledger_service):
+        issue_id = await ledger_service.open_issue(title="Not claimed", body="b", discovered_from="task:TASK-1")
+        before = _log_line_count(ledger_service)
+
+        assert await ledger_service.unclaim(issue_id, "not fixed", "agent:sdd-fix") is False
+
+        assert _log_line_count(ledger_service) == before
+
+
+class TestFeatureIndexStatus:
+    def _write_index(self, tmp_path, name, feature_id, completed_at):
+        index_dir = tmp_path / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True, exist_ok=True)
+        (index_dir / f"{name}.json").write_text(
+            json.dumps({"feature_id": feature_id, "completed_at": completed_at, "tasks": []}), encoding="utf-8"
+        )
+
+    async def test_feature_index_status_scans_index_dir_once(self, ledger_service, tmp_path):
+        self._write_index(tmp_path, "a", "FEAT-1", None)
+        self._write_index(tmp_path, "b", "FEAT-2", "2026-09-15T00:00:00Z")
+        (tmp_path / "sdd" / "tasks" / "index" / "broken.json").write_text("{not json", encoding="utf-8")
+        with patch.object(Path, "glob", autospec=True, side_effect=Path.glob) as spy:
+            status = await ledger_service.feature_index_status(["FEAT-1", "FEAT-2", "FEAT-3"])
+        assert spy.call_count == 1
+        assert status == {"FEAT-1": None, "FEAT-2": "2026-09-15T00:00:00Z"}
+
+    async def test_feature_index_status_omits_features_without_index(self, ledger_service, tmp_path):
+        self._write_index(tmp_path, "a", "FEAT-1", "2026-09-15T00:00:00Z")
+
+        status = await ledger_service.feature_index_status(["FEAT-1", "FEAT-9"])
+
+        assert "FEAT-9" not in status
+        assert status == {"FEAT-1": "2026-09-15T00:00:00Z"}
 
 
 class TestExportSnapshot:
