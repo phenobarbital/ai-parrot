@@ -56,6 +56,9 @@ Validation:
 1. Parse input:
    - feature slug in kebab-case
    - notes after `--`
+   - `intake: <staging-dir>` in the notes (FEAT-577): read its `intake.json` /
+     `synthesis.json`, treat the intake facts as answered, seed Round 1 from
+     the synthesis unknowns.
    - optional `--type feature|hotfix`
    - optional `--base-branch <branch>`
 2. Run at least two Q&A rounds:
