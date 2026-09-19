@@ -172,5 +172,38 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `parrot.e2e.evidence.verify_evidence(
+plan_path, *, worktree) -> VerificationResult` (modifying the already-merged
+evidence.py), reusing `capture_identity` for the "current" identity side of
+the comparison. Returns `MISSING` when no pointer/verdict exists yet
+(synthesized, not a fabricated PASS); raises `E2EEvidenceError` (exit 4,
+fails closed) for untrustworthy evidence (malformed schema, feature_id
+mismatch, mutated before/after identity, tampered/missing artifact hash,
+stale source/spec/plan/environment identity); otherwise returns an
+objectively-evaluated `PASS`/`FAIL`/`BLOCKED` (BLOCKED only for zero-
+collection or all-skipped; FAIL for any genuinely-reported failed/xfailed/
+xpassed/incomplete-cleanup required node) — separate from the advisory
+feature policy, which stays the SDD consumer's concern.
+
+Design note flagged for reviewer/M3 confirmation: no production writer for
+`E2EVerdict`/the run pointer exists yet (M3's `runner.py` lands later), so
+the implementing agent inferred and documented the read-side contract this
+function depends on: `sdd/state/<feature_id>/e2e/latest.json` (`{"run_id":
+...}`) and `sdd/state/<feature_id>/e2e/runs/<run_id>/e2e-verdict.json` —
+both already excluded from `capture_identity`'s manifest. This is the
+executable contract the future M3 runner must satisfy; not a pre-specified
+fixed interface, so it needs M3-task-owner confirmation. Also flagged: AC8
+is implemented as hash-only comparison (never the git commit SHA itself,
+verified by a dedicated bookkeeping-descendant-commit test); a verdict's
+`policy` field isn't cross-checked against the current plan directly (relies
+on `plan_sha256` catching any drift) — a minor theoretical gap for reviewer
+judgment.
+
+Tests: `packages/ai-parrot-server/tests/unit/e2e/test_evidence.py` (new, 31
+tests, same env-isolation fixture convention as TASK-3522's tests).
+`pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 133 passed (102
+pre-existing + 31 new, no regressions).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 ·
+Duration: 946.3s · Tokens: 214176 (subagent, in+out combined; native
+usage_known=false in engine seats roll-up).
