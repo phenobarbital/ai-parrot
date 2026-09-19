@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-18T22:48:10+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-19T00:42:49+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "needs the --no-interview flag documented in .claude/commands/sdd-spec.md by TASK-3471",
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3472-unattended-no-interview.md"
+      "completed_at": "2026-09-19T00:42:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3472-unattended-no-interview.md"
     },
     {
       "id": "TASK-3473",
@@ -135,7 +135,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -146,8 +146,8 @@
       "parallelism_notes": "links sdd/templates/intake.procedure.md created by TASK-3470 and documents the `python -m scripts.sdd.install_hooks` command created by TASK-3476",
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3475-intake-docs.md"
+      "completed_at": "2026-09-19T00:42:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3475-intake-docs.md"
     },
     {
       "id": "TASK-3476",
