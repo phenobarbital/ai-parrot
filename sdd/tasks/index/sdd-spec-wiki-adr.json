@@ -324,7 +324,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -334,8 +334,8 @@
       "parallelism_notes": "binds DecisionService from TASK-3490; rewrites decisions/__init__.py which TASK-3479 created (dependency path 3479->3480->3485->3490->3494)",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3494-decision-tools-toolkit-mcp.md"
+      "completed_at": "2026-09-19T21:23:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3494-decision-tools-toolkit-mcp.md"
     },
     {
       "id": "TASK-3495",

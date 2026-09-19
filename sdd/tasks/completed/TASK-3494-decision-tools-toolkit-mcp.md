@@ -637,10 +637,53 @@ class TestToolkit:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop —
+`parrot-sdd-coder` MCP server unresponsive throughout this run)
+**Date**: 2026-09-19
+**Notes**: Read `structural/tools.py` and `structural/toolkit.py` in full
+as the templates. `create_decision_tools`'s `service_factory` rejects
+`namespace='all'` with `ADR_INVALID_ARGUMENT` before `_scoped_store` ever
+sees it (single-namespace in v1), converts `_scoped_store`'s `KeyError`
+into a `ValueError` (matching `structural/tools.py`'s own contract), and
+each tool's `_execute` catches both `ValueError` and `DecisionError` into
+a structured error `ToolResult` — never an escaping exception.
+`wiki_decision_generate` is appended only when
+`config.decisions.generation_enabled` and `root is not None`. There is no
+review/accept tool anywhere: the absence is structural, not a disabled
+flag (AC11 made executable, matching the blueprint's own framing).
+`DecisionToolkit` mirrors `CodeStructuralToolkit`'s constructor
+(`find_project_root`/`load_effective_config`/`_build_store`) and exposes
+exactly `decision_for_symbol`/`decision_why`.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Real defect found and fixed, outside the blueprint's own analysis**:
+the blueprint's `decisions/__init__.py` used eager module-level imports
+(mirroring `structural/__init__.py`), but this creates a genuine circular
+import: `project.py` imports `decisions.models` directly, which — like
+any `pkg.submodule` import — runs `decisions/__init__.py` first; eagerly
+importing `decisions.service` there pulls in `structural.service` ->
+`wiki.cli` -> `wiki.federation` -> `wiki.project`, the very module
+already mid-import. Confirmed via a full traceback
+(`ImportError: cannot import name 'FederatedWikiStore' from partially
+initialized module ... (most likely due to a circular import)`) when
+running `test_mcp_server_namespaces.py`. Fixed with PEP 562 lazy
+attribute resolution (module `__getattr__` + a name->submodule map,
+caching into `globals()` on first access) — `decisions.models` stays
+importable standalone, exactly as it was before this task, while
+`from parrot.knowledge.wiki.decisions import DecisionService` etc. still
+works for anyone who actually accesses those names.
 
-**Deviations from spec**: none | describe if any
+Verified via `git stash`/pop against unmodified HEAD that
+`test_mcp_server.py` (2 failures: stale `sqlite_policy` metadata
+expectations) and `test_mcp_server_namespaces.py` (2 failures: a
+hardcoded `BASE_TOOLS` constant already missing FEAT-498's
+`wiki_symbol_lookup`/`wiki_code_outline`/`wiki_blast_radius`, now also
+missing this task's 2 decision tools) fail identically with and without
+this task's changes — pre-existing, unrelated test debt, not a
+regression. All 10 new `test_tools.py` tests pass; full `decisions/`
+suite re-verified at 174/174.
+
+**Deviations from spec**: the `decisions/__init__.py` lazy-resolution
+mechanism (PEP 562 `__getattr__`) instead of the blueprint's literal
+eager-import block — required to avoid the circular import described
+above; the public surface (`__all__`, every re-exported name, `review.py`
+deliberately absent) is otherwise identical to the blueprint.
