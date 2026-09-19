@@ -65,7 +65,7 @@ def install(hooks: Path, block: str, events: tuple[str, ...] = HOOK_EVENTS) -> l
     """Add or replace the block in each hook; create + chmod +x missing hooks. Raises FileNotFoundError when ``hooks`` is missing."""
     if not hooks.is_dir():
         raise FileNotFoundError(hooks)
-    
+
     modified_paths: list[Path] = []
     for event in events:
         hook_path = hooks / event
@@ -73,19 +73,19 @@ def install(hooks: Path, block: str, events: tuple[str, ...] = HOOK_EVENTS) -> l
             content = hook_path.read_text(encoding="utf-8")
         else:
             content = SHEBANG
-        
+
         stripped = _strip_block(content)
         if not stripped.endswith("\n") and stripped != "":
             stripped += "\n"
-        
+
         new_content = stripped + block
         hook_path.write_text(new_content, encoding="utf-8")
-        
+
         # Add execute permissions
         current_mode = hook_path.stat().st_mode
         hook_path.chmod(current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         modified_paths.append(hook_path)
-        
+
     return modified_paths
 
 
@@ -94,20 +94,20 @@ def uninstall(hooks: Path, events: tuple[str, ...] = HOOK_EVENTS) -> list[Path]:
     modified_paths: list[Path] = []
     if not hooks.is_dir():
         return modified_paths
-        
+
     for event in events:
         hook_path = hooks / event
         if not hook_path.exists():
             continue
-        
+
         content = hook_path.read_text(encoding="utf-8")
         if MARKER_BEGIN not in content:
             continue
-            
+
         stripped = _strip_block(content)
         hook_path.write_text(stripped, encoding="utf-8")
         modified_paths.append(hook_path)
-        
+
     return modified_paths
 
 
@@ -117,18 +117,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--uninstall", action="store_true")
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     args = parser.parse_args(argv)
-    
+
     repo_root = args.repo_root.resolve()
     try:
         hooks = hooks_dir(repo_root)
     except Exception:
         # Fallback if git command fails or we are not in a git repo
         hooks = repo_root / ".git" / "hooks"
-        
+
     if not hooks.is_dir():
-        print(f"hooks directory {hooks} does not exist — check `git config core.hooksPath`; nothing installed", file=sys.stderr)
+        print(
+            f"hooks directory {hooks} does not exist — check `git config core.hooksPath`; nothing installed",
+            file=sys.stderr,
+        )
         return 2
-        
+
     if args.uninstall:
         uninstalled = uninstall(hooks)
         for p in uninstalled:
@@ -138,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         installed = install(hooks, block)
         for p in installed:
             print(f"Installed prune hook to {p}")
-            
+
     return 0
 
 
