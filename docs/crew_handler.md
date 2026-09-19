@@ -583,9 +583,9 @@ curl -X DELETE "http://localhost:8080/api/v1/crew?name=research_crew"
 An explicit credential always wins:
 
 - `llm_kwargs.api_key`
-- `credentials_file`
-- `credentials`
-- A truthy `vertexai` in an agent's config
+- `llm_kwargs.credentials_file`
+- `llm_kwargs.credentials`
+- A truthy `llm_kwargs.vertexai`
 - Passing an `AbstractClient` instance as `llm`
 
 A top-level `api_key` in an agent's `config` is **NOT** a credential — only `llm_kwargs.api_key` counts.
@@ -613,10 +613,11 @@ An agent class that builds its client inside `__init__`, or that overrides `conf
   "name": "research_crew",
   "agents": [
     {
+      "agent_id": "researcher",
       "name": "researcher",
-      "llm": {
-        "provider": "google",
-        "model": "gemini-1.5-flash",
+      "agent_class": "BasicAgent",
+      "config": {
+        "llm": "google:gemini-1.5-flash",
         "llm_kwargs": {
           "api_key": "my_own_google_key"
         }
