@@ -175,5 +175,41 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `parrot.e2e.pytest_plugin`, loaded only via
+explicit `-p parrot.e2e.pytest_plugin` (no `pytest11` entry point — never
+touches env/context at collection time). Invented and documented (nothing
+fixed these names) the env-var contract `PARROT_E2E_RUN_ID`/`_OWNER_ID`/
+`_CONTROL_SOCKET`/`_RESULTS_PATH` for the future M3 runner (TASK-3533) to
+set. `load_run_context()` + `e2e_run_context`/`e2e_control_client` fixtures
+consume context lazily at test setup, raising `E2EConfigError`
+(`reason_code=run_context_missing`) naming every missing variable —
+`--collect-only` succeeds regardless, and constructing `ControlClient`
+never opens a socket. Hooks capture selected vs. collected node IDs,
+per-phase (setup/call/teardown) outcomes, xfail/xpass/skip classification,
+durations, collection errors, and exit status into an atomically-written
+(tempfile+fsync+`os.replace`, mode 0600) JSON report when
+`PARROT_E2E_RESULTS_PATH` is set. Outcome classification never lets a
+teardown failure hide behind a passing call — verified via a real
+subprocess test.
+
+Bridge-report JSON schema (schema_version 1) documented in the module
+docstring for TASK-3533: `run_id`, `owner_id`, `argv`, `selected_node_ids`,
+`collected_node_ids`, `collection_errors`, `results[]`, `counts`,
+`exit_status`, `started_at`, `completed_at`. `selected_node_ids` are raw
+`::`-containing invocation-arg tokens (duplicates preserved);
+`collected_node_ids` are pytest's final post-deselection `session.items` —
+matches the subset invariant `parrot.e2e.evidence.verify_evidence` already
+enforces. The plugin never synthesizes `blocked`/`missing` outcomes — only
+what one pytest session directly observed.
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_pytest_plugin.py -q`
+→ 18 passed, every subprocess-boundary scenario (empty collection,
+collection error, deselection, duplicates, teardown failure, required
+skip/xfail/xpass) exercised via a real `sys.executable -m pytest -p
+parrot.e2e.pytest_plugin ...` subprocess. Full-directory regression:
+`pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 372 passed, 4
+skipped, no regression against TASK-3524–3531. No sibling-merge fallout.
+
+No unresolved limitations. AC7/AC11 demonstrated by the contract tests.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1292.0s · Tokens: 246324 (combined)
