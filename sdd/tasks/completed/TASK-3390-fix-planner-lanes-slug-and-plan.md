@@ -378,10 +378,19 @@ class TestParents:       # 3 tests
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid 5578890c60c94ef4a966cfa92433d40f)
+**Date**: 2026-09-19
+**Notes**: Appended `decide_lane` (5-rule predicate, S7 override guard), `suggest_slug`
+(dominant-file/kind kebab-case, lexicographic tie-break), `_parents_for` (`spec:FEAT-<NNN>`-only
+extraction), and `plan_fix_batch` to `fix_planner.py` per blueprint verbatim. Added
+`TestDecideLane`(7) + `TestSuggestSlug`(3) + `TestPlanFixBatch`(5) + `TestParents`(3) = 19 new
+tests (26 total in the file). Followed the orchestrator's STALE-DATA correction (commit
+`6421c4a0e`) exactly: the snapshot-backed plan test asserts structural invariants only
+(well-formed `total_open`, severity-ordered groups, vulnerability→sdd, fast-lane ⊆
+single-file/tech_debt/minor-or-low), and the dominant-file slug test uses synthetic
+`_issue()`-built rows, not the live snapshot.
+Validation: `pytest tests/knowledge/wiki/test_ledger_fix_planner.py -q` → 26 passed. `ruff check` clean; `black` applied by the merge-time engine formatter.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 278.4s · Tokens: n/a (native, no usage telemetry)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — implementation is an unmodified realization of the blueprint;
+only the task's own stale snapshot-fact documentation was corrected beforehand by the orchestrator.

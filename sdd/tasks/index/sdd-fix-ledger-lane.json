@@ -74,7 +74,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "depends_on TASK-3389: appends to fix_planner.py and test_ledger_fix_planner.py it created and imports FixGroup/FixIssue/FixPlan/ParentFeature/files_for/group_issues from it.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3390-fix-planner-lanes-slug-and-plan.md"
+      "completed_at": "2026-09-19T22:36:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3390-fix-planner-lanes-slug-and-plan.md"
     },
     {
       "id": "TASK-3391",
