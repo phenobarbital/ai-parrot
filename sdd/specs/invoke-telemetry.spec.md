@@ -8,7 +8,7 @@ base_branch: dev
 
 # Feature Specification: Lifecycle Telemetry for `invoke()` (JevClient + OpenAIBaseClient)
 
-**Feature ID**: FEAT-<NNN>
+**Feature ID**: FEAT-579
 **Date**: 2026-09-19
 **Author**: Jesus Lara
 **Status**: approved
