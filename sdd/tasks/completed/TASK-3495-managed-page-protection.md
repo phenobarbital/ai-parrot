@@ -421,7 +421,40 @@ parameter (they derive their own id deterministically); the blueprint's
 literal "call with concept_id=..." instruction was infeasible, so the test
 pre-computes the exact derived id and seeds an ADR page at it instead.
 
-**Note for future task authoring**: this delivery was originally left
-un-finalized in the per-spec index (still `in-progress`, file pointing at
-`active/`) despite the code being merged — a bookkeeping slip by the
-orchestrator, corrected here retroactively with no code changes.
+**CORRECTION (recorded during TASK-3496, 2026-09-19)**: the note below was
+wrong. This task's SDD state was finalized (moved to `completed/`, index
+marked `done`) while the actual CODE commit (`df2b8b3f6`) had in fact
+**never been merged into the feature branch at all** — not a bookkeeping-
+only slip as first believed. The orchestrator had called `coder_merge` for
+this task earlier in the run and, under load from repeated MCP-server
+timeouts elsewhere, moved on without verifying the merge actually landed;
+the retroactive fix a few tasks later corrected the index/file-location
+mismatch but never re-checked whether the underlying commit was reachable
+from `HEAD`. This went undetected for TASK-3496's entire prerequisite
+chain (3489/3493/3494 all built and tested successfully with the guard
+*artifacts* absent from the tree, since nothing in those tasks' own tests
+exercised `context.py`'s `adr` id-kind or the `tools.py`/`toolkit.py`
+guards) until TASK-3496 needed to insert its own CLI-side guard right next
+to TASK-3495's and discovered `_reject_managed_page` did not exist
+anywhere in the checked-out source.
+
+Recovered by running `git merge --no-ff df2b8b3f6` directly against the
+still-reachable (but unmerged) commit object — a clean merge, no
+conflicts, all 217 `decisions/`+`test_wiki_tools.py` tests pass afterward
+including the 12 recovered `test_managed_page_protection.py` tests. Pushed
+immediately as its own commit.
+
+**Lesson for the orchestrator role**: `coder_merge` returning success is
+not sufficient evidence a task's code is actually in the branch — a
+follow-up `git log --oneline --all | grep <commit-hash>` plus
+`git merge-base --is-ancestor <hash> HEAD` check (or simply confirming the
+expected files/symbols exist on disk) should be part of every "finalize
+SDD state" step, not assumed from an earlier tool response under time
+pressure.
+
+**Note for future task authoring (original, since superseded by the above)**:
+this delivery was originally left un-finalized in the per-spec index
+(still `in-progress`, file pointing at `active/`) despite the code being
+merged — a bookkeeping slip by the orchestrator, corrected here
+retroactively with no code changes. *(This description was itself
+incomplete — see the CORRECTION above.)*
