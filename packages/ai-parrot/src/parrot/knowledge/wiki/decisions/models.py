@@ -288,9 +288,7 @@ class ReviewRequest(_Strict):
         if self.action == "link" and self.documented_decision_id is None:
             raise ValueError("action='link' requires `documented_decision_id`")
         if self.action != "link" and self.documented_decision_id is not None:
-            raise ValueError(
-                f"`documented_decision_id` is only valid for action='link', got action={self.action!r}"
-            )
+            raise ValueError(f"`documented_decision_id` is only valid for action='link', got action={self.action!r}")
         return self
 
 

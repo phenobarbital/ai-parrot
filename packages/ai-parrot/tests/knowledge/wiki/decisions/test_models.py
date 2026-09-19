@@ -19,8 +19,13 @@ from parrot.knowledge.wiki.project import WikiProjectConfig
 def _evidence(**overrides) -> EvidenceRef:
     """Build a valid EvidenceRef, overriding single fields per test."""
     base = dict(
-        page_id="file:a.py", rel_path="a.py", start_line=1, end_line=3,
-        source_sha1="d0", excerpt="x", kind="code",
+        page_id="file:a.py",
+        rel_path="a.py",
+        start_line=1,
+        end_line=3,
+        source_sha1="d0",
+        excerpt="x",
+        kind="code",
     )
     return EvidenceRef(**{**base, **overrides})
 
@@ -86,7 +91,11 @@ class TestDecisionRecord:
                 decision="d",
                 origin="documented",
                 evidence=[_evidence()],
-                links=[DecisionLink(target_id="adr:doc:y", relation="explains", provenance="extracted", evidence_indexes=[5])],
+                links=[
+                    DecisionLink(
+                        target_id="adr:doc:y", relation="explains", provenance="extracted", evidence_indexes=[5]
+                    )
+                ],
             )
 
     def test_extra_fields_are_forbidden(self):
