@@ -13,6 +13,7 @@ source: authored
 <skill instructions body>
 """
 import logging
+import threading
 from pathlib import Path
 from typing import Iterable, List
 
@@ -25,13 +26,35 @@ from .models import SkillDefinition, SkillSource
 _LOGGER = logging.getLogger(__name__)
 
 
-# Reuse encoder across calls for performance
-_ENCODING = tiktoken.get_encoding("cl100k_base")
+# Reuse encoder across calls for performance. Left unset at import time so
+# importing this module never fetches tokenizer data; it is lazily created
+# on first use by ``_get_encoding()`` and cached for every call after that.
+_ENCODING = None
+_ENCODING_LOCK = threading.Lock()
+
+
+def _get_encoding():
+    """Lazily create and cache the cl100k_base tiktoken encoder.
+
+    The encoder is not acquired at import time — only on first use — so a
+    bare ``import parrot.skills.parsers`` never triggers a tokenizer data
+    fetch. A failed acquisition does not poison the cache: ``_ENCODING``
+    stays unset and a subsequent call retries.
+
+    Returns:
+        The cached ``tiktoken.Encoding`` instance for cl100k_base.
+    """
+    global _ENCODING
+    if _ENCODING is None:
+        with _ENCODING_LOCK:
+            if _ENCODING is None:
+                _ENCODING = tiktoken.get_encoding("cl100k_base")
+    return _ENCODING
 
 
 def _count_tokens(text: str) -> int:
     """Count tokens using cl100k_base encoding (GPT-4 tokenizer)."""
-    return len(_ENCODING.encode(text))
+    return len(_get_encoding().encode(text))
 
 
 def parse_skill_file(file_path: Path) -> SkillDefinition:
