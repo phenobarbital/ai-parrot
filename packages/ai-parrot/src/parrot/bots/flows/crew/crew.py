@@ -1329,7 +1329,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         # Process results and handle errors
         execution_results = {}
-        for agent_name, result in zip(agent_name_map, results):
+        for agent_name, result in zip(agent_name_map, results, strict=True):
             node = self.workflow_graph[agent_name]
             if isinstance(result, Exception):
                 context.errors[agent_name] = result
@@ -2727,7 +2727,7 @@ Current task: {current_input}"""
         # Process results from all parallel executions
         parallel_results = {}
 
-        for i, (result, metadata) in enumerate(zip(results, task_metadata)):
+        for i, (result, metadata) in enumerate(zip(results, task_metadata, strict=True)):
             agent_id = metadata["agent_id"]
             agent_name = metadata["agent_name"]
             agent_ids.append(agent_id)

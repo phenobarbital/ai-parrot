@@ -3116,7 +3116,7 @@ Available documentation UIs:
             "crews": [],
         }
 
-        for name, (crew, crew_def) in self._crews.items():
+        for _name, (crew, crew_def) in self._crews.items():
             mode = crew_def.execution_mode.value
             stats["crews_by_mode"][mode] = stats["crews_by_mode"].get(mode, 0) + 1
             stats["total_agents"] += len(crew.agents)
