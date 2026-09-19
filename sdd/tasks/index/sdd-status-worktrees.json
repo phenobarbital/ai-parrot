@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-19T22:30:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-19T14:46:18+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": "2026-09-19T14:10:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3549-worktree-status-library.md"
+      "file": "sdd/tasks/completed/TASK-3549-worktree-status-library.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3550",
@@ -45,7 +46,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": "2026-09-19T14:23:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3550-worktree-status-tests.md"
+      "file": "sdd/tasks/completed/TASK-3550-worktree-status-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3551",
@@ -65,7 +67,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": "2026-09-19T14:19:17+00:00",
-      "file": "sdd/tasks/completed/TASK-3551-sdd-status-worktree-panel.md"
+      "file": "sdd/tasks/completed/TASK-3551-sdd-status-worktree-panel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3552",
@@ -85,7 +88,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": "2026-09-19T14:19:17+00:00",
-      "file": "sdd/tasks/completed/TASK-3552-sdd-status-skill-update.md"
+      "file": "sdd/tasks/completed/TASK-3552-sdd-status-skill-update.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3553",
@@ -105,7 +109,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": "2026-09-19T14:19:17+00:00",
-      "file": "sdd/tasks/completed/TASK-3553-sdd-next-worktree-annotations.md"
+      "file": "sdd/tasks/completed/TASK-3553-sdd-next-worktree-annotations.md",
+      "verification": "verified"
     }
   ]
 }
