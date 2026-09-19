@@ -299,13 +299,12 @@ async def test_standard_task_uses_normal_rotation(
     # Could be any seat depending on rotation
 
 
-async def test_unknown_task_blocked_without_strong_models(
+async def test_unknown_task_uses_full_roster(
     git_sandbox_feature, weak_roster, noop_probe, strong_policy, monkeypatch
 ):
-    """Test that unknown tasks are blocked when no strong models are available."""
+    """unknown = classifier could not determine complexity; task uses full roster, not blocked."""
     worktree, feature_branch, base_path, index_path = git_sandbox_feature
 
-    # Mock the complexity assessment to return an unknown task
     mock_assessment = create_mock_assessment("TASK-0001", "unknown")
 
     async def mock_compute_assessment(self, ctx, task, task_file):
@@ -320,13 +319,12 @@ async def test_unknown_task_blocked_without_strong_models(
         dispatcher_builder=fake_complexity_builder_factory({}),
     )
 
-    # Planning should succeed but block the unknown task
     plan = await engine.plan("demo", str(worktree))
 
-    # The unknown task should be blocked
     blocked_tasks = [block for block in plan.routing_blocks if block.task_id == "TASK-0001"]
-    assert len(blocked_tasks) == 1
-    assert blocked_tasks[0].code == "complex_model_unavailable"
+    assert len(blocked_tasks) == 0
+    task_chunks = [chunk for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"]
+    assert len(task_chunks) == 1
 
 
 async def test_hard_limit_triggers_complex_classification(

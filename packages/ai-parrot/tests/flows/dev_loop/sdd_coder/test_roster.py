@@ -156,7 +156,8 @@ def test_eligible_seats_complex_restricts_to_strong_models():
     assert [s.label for s in res] == ["c", "h"]
 
 
-def test_eligible_seats_unknown_restricts_like_complex():
+def test_eligible_seats_unknown_returns_all_seats():
+    """unknown = classifier could not determine complexity; default to full roster."""
     policy = ComplexityPolicy(
         strong_models=(StrongModelIdentity(canonical_model="sonnet-5", backend="codex", model="claude-3-5-sonnet"),)
     )
@@ -165,7 +166,7 @@ def test_eligible_seats_unknown_restricts_like_complex():
         RosterSeat(label="c", backend="codex", model="claude-3-5-sonnet"),
     ]
     res = eligible_seats(_assessment("unknown"), seats, policy)
-    assert [s.label for s in res] == ["c"]
+    assert res == seats
 
 
 def test_eligible_seats_no_alias_match():
