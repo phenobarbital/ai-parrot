@@ -179,9 +179,17 @@ def test_get_target_adapter_rejects_unknown_kind() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("kind", sorted(TARGET_KINDS))
+_STILL_UNIMPLEMENTED_KINDS = sorted(TARGET_KINDS - {"mcp-toolkit", "mcp-stdio"})
+
+
+@pytest.mark.parametrize("kind", _STILL_UNIMPLEMENTED_KINDS)
 def test_get_target_adapter_raises_prerequisite_error_for_unimplemented_kind(kind: str) -> None:
-    """Every kind's adapter module genuinely does not exist yet in this checkout."""
+    """Every kind whose adapter module genuinely does not exist yet in this checkout.
+
+    `mcp-toolkit`/`mcp-stdio` are excluded here since TASK-3529 implemented
+    real adapters for them in `parrot.e2e.targets.mcp` (see
+    `test_mcp_targets.py` for their own prerequisite-error-free coverage).
+    """
     with pytest.raises(E2EPrerequisiteError) as excinfo:
         get_target_adapter(kind)
     assert excinfo.value.exit_code == EXIT_BLOCKED
