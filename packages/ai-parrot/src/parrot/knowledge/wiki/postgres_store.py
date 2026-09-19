@@ -890,7 +890,7 @@ class PostgresWikiStore(BaseWikiStore):
         """
         if not concept_ids:
             return {}
-        out: dict[str, Optional[str]] = {cid: None for cid in concept_ids}
+        out: dict[str, Optional[str]] = dict.fromkeys(concept_ids)
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
