@@ -452,10 +452,17 @@ def test_spec_parent_ids_only_feat_form(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid a6935fa922a644cf89436f4917643706)
+**Date**: 2026-09-19
+**Notes**: Added `_load_ledger_snapshot`, `_spec_parent_ids`, `_dedupe_slugs` helpers, `plan-fix`
+and `unclaim` commands, and `--resolved-by` on `close` to `cli.py` per blueprint verbatim.
+Created `test_cli_plan_fix.py` (8 tests) following the orchestrator's STALE-DATA note exactly
+(commit `6421c4a0e`): no hardcoded `len(plan.groups) == N`, synthetic vulnerability row
+injected for the refusal test. Two narrow, test-only fixes discovered while making tests
+pass (not blueprint deviations): `WikiStoreBusy` needs 3 ctor args
+(`db_path, operation, waited_seconds`), and Click 8.5 interleaves stdout/stderr in
+`result.output` so two tests parse `result.stdout` directly.
+Validation: `pytest tests/knowledge/wiki/test_cli_plan_fix.py tests/knowledge/wiki/test_cli_ledger.py -q` → 36 passed. 14 residual lint findings (B905/ASYNC240/B904/E741) are pre-existing style debt, left for `/sdd-done` per policy.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 381.1s · Tokens: n/a (native, no usage telemetry)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -115,7 +115,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "depends_on TASK-3390: imports plan_fix_batch/FixPlan/Lane from ledger/fix_planner.py; depends_on TASK-3391: calls LedgerService.unclaim, close_issue(resolved_by=), feature_index_status. Owns cli.py and new test_cli_plan_fix.py.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3392-cli-plan-fix-unclaim-resolved-by.md"
+      "completed_at": "2026-09-19T22:51:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3392-cli-plan-fix-unclaim-resolved-by.md"
     },
     {
       "id": "TASK-3393",
