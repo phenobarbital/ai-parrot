@@ -14,6 +14,25 @@ from parrot.models.compliance import ComplianceResult, ComplianceStatus
 from parrot.models.detections import BoundingBox, Detection, DetectionBox, IdentifiedProduct, ShelfRegion
 from parrot_pipelines.models import PlanogramConfig
 from parrot_pipelines.planogram import PlanogramCompliance
+from parrot_pipelines.planogram.types import ProductOnShelves
+from parrot_pipelines.planogram.types.abstract import AbstractPlanogramType
+
+
+class _LegacyProductOnShelves(ProductOnShelves):
+    """ProductOnShelves pinned to the LEGACY adapter.
+
+    Since FEAT-574 (TASK-3445/3446) ProductOnShelves runs the migrated cycle; this suite pins the legacy
+    ROI-first sequence that the default hooks (legacy adapter) still provide to unmigrated types, so the
+    subclass restores the base-class hooks and drops the slots-definition requirement.
+    """
+
+    requires_slots_definition = False
+    min_usable_shapes = 0
+    uses_enhanced_image = True
+    perceive = AbstractPlanogramType.perceive
+    identify = AbstractPlanogramType.identify
+    compare = AbstractPlanogramType.compare
+    fallback_detection_prompt = AbstractPlanogramType.fallback_detection_prompt
 
 
 def raw_config(**flags: Any) -> Dict[str, Any]:
@@ -112,7 +131,10 @@ def build_pipeline(
         roi_detection_prompt="roi",
         object_identification_prompt="objects",
     )
-    with patch("parrot.clients.google.GoogleGenAIClient", MagicMock()):
+    with (
+        patch("parrot.clients.google.GoogleGenAIClient", MagicMock()),
+        patch.dict(PlanogramCompliance._PLANOGRAM_TYPES, {"product_on_shelves": _LegacyProductOnShelves}),
+    ):
         pipeline = PlanogramCompliance(planogram_config=cfg, llm=fake)
     pipeline.roi_client = fake  # SAME object as pipeline.llm — refactor-proof
     handler = pipeline._type_handler

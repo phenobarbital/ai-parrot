@@ -78,6 +78,20 @@ def sample_planogram_config():
     }
 
 
+#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise legacy methods
+#: directly, so a minimal valid definition satisfies construction.
+_MIN_SLOTS_DEFINITION = {
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {"facing_id": "f1", "shelf_id": "shelf_1", "slot": 1, "product": "P", "descriptors": {"display_name": "P"}}
+            ],
+        }
+    ]
+}
+
 @pytest.fixture
 def planogram_config_obj(sample_planogram_config):
     """PlanogramConfig Pydantic model instance."""
@@ -87,6 +101,7 @@ def planogram_config_obj(sample_planogram_config):
         planogram_config=sample_planogram_config,
         roi_detection_prompt="Detect the endcap for {brand}.",
         object_identification_prompt="Identify products.",
+        slots_definition=_MIN_SLOTS_DEFINITION,
     )
 
 

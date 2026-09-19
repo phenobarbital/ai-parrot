@@ -34,6 +34,27 @@ RAW_CONFIG = {
 }
 
 
+#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise the legacy
+#: methods directly, so any valid minimal definition satisfies construction.
+_MIN_SLOTS_DEFINITION = {
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {
+                    "facing_id": "f1",
+                    "shelf_id": "shelf_1",
+                    "slot": 1,
+                    "product": "P",
+                    "descriptors": {"display_name": "P"},
+                }
+            ],
+        }
+    ]
+}
+
+
 def box(x1: int, y1: int, x2: int, y2: int) -> DetectionBox:
     """A detection box with confidence 0.9."""
     return DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2, confidence=0.9)
@@ -70,6 +91,7 @@ def handler(fake_vision_client: Any) -> ProductOnShelves:
         planogram_config=RAW_CONFIG,
         roi_detection_prompt="roi",
         object_identification_prompt="objects",
+        slots_definition=_MIN_SLOTS_DEFINITION,
     )
     pipeline = MagicMock()
     pipeline.logger = logging.getLogger("test.pos.helpers")

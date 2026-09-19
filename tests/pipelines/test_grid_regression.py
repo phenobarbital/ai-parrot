@@ -15,6 +15,21 @@ from parrot_pipelines.planogram.types.product_on_shelves import ProductOnShelves
 from parrot.models.detections import IdentifiedProduct, DetectionBox
 
 
+
+#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise legacy methods
+#: directly, so a minimal valid definition satisfies construction.
+_MIN_SLOTS_DEFINITION = {
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {"facing_id": "f1", "shelf_id": "shelf_1", "slot": 1, "product": "P", "descriptors": {"display_name": "P"}}
+            ],
+        }
+    ]
+}
+
 def _make_image(w: int = 800, h: int = 600) -> Image.Image:
     return Image.new("RGB", (w, h))
 
@@ -48,6 +63,7 @@ def _legacy_config(**overrides) -> PlanogramConfig:
         roi_detection_prompt="Find the endcap.",
         object_identification_prompt="Identify all products.",
         reference_images={"ES-C220": "/fake/ref.jpg"},
+        slots_definition=_MIN_SLOTS_DEFINITION,
     )
     base.update(overrides)
     return PlanogramConfig(**base)

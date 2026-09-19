@@ -25,6 +25,21 @@ def _make_image(w: int = 800, h: int = 600) -> Image.Image:
     return Image.new("RGB", (w, h), color=(128, 128, 128))
 
 
+#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise legacy methods
+#: directly, so a minimal valid definition satisfies construction.
+_MIN_SLOTS_DEFINITION = {
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {"facing_id": "f1", "shelf_id": "shelf_1", "slot": 1, "product": "P", "descriptors": {"display_name": "P"}}
+            ],
+        }
+    ]
+}
+
+
 def _make_3_shelf_planogram_config() -> dict:
     """Return a planogram_config dict with 3 shelves and known products."""
     return {
@@ -101,6 +116,7 @@ def planogram_config_with_grid():
         planogram_config=_make_3_shelf_planogram_config(),
         roi_detection_prompt="Find the product shelf endcap.",
         object_identification_prompt="Identify all products visible.",
+        slots_definition=_MIN_SLOTS_DEFINITION,
         reference_images={
             "ES-C220": "/fake/es_c220.jpg",
             "ES-580W": "/fake/es_580w.jpg",
@@ -120,6 +136,7 @@ def planogram_config_no_grid():
         planogram_config=_make_3_shelf_planogram_config(),
         roi_detection_prompt="Find the product shelf endcap.",
         object_identification_prompt="Identify all products visible.",
+        slots_definition=_MIN_SLOTS_DEFINITION,
         reference_images={
             "ES-C220": "/fake/es_c220.jpg",
         },

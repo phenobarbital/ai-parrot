@@ -7,7 +7,7 @@ poster/header panels and shelved products below).
 import asyncio
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 from collections import defaultdict
 from parrot_pipelines.planogram.grid.models import DetectionGridConfig, GridType
 from parrot_pipelines.planogram.grid.horizontal_bands import HorizontalBands
@@ -15,6 +15,25 @@ from parrot_pipelines.planogram.grid.detector import GridDetector
 from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGrid
 from PIL import Image
 from .abstract import AbstractPlanogramType
+import numpy as np
+from ..contracts import (
+    CycleContext,
+    IdentificationResult,
+    IdentifyStrategy,
+    ObservationSource,
+    PerceptionResult,
+    Shape,
+    ShapeKind,
+    Slot,
+)
+from ..identification.detector import llm_detect_shapes
+from ..identification.identify import identify_full_image
+from ..perception.membership import assign_membership
+from ..perception.ocr import read_crop
+from ..perception.profiles import ShapeCandidate, ShapeProfile
+from ..perception.rows import detect_shelf_edges
+from ..perception.shapes import propose_shapes
+from ..perception.slots import AnchorRule, build_slots, candidate_shape_id
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -43,6 +62,12 @@ class ProductOnShelves(AbstractPlanogramType):
         pipeline: Parent PlanogramCompliance instance.
         config: The PlanogramConfig for this compliance run.
     """
+
+    identify_strategy: ClassVar[IdentifyStrategy] = IdentifyStrategy.FULL_IMAGE
+    requires_slots_definition: ClassVar[bool] = True
+    min_usable_shapes: ClassVar[int] = 3
+    uses_enhanced_image: ClassVar[bool] = False
+    DEFAULT_PERCEPTION_MODE: ClassVar[Literal["cv", "llm_detector"]] = "llm_detector"
 
     def __init__(self, pipeline: Any, config: Any) -> None:
         super().__init__(pipeline, config)
@@ -220,6 +245,294 @@ class ProductOnShelves(AbstractPlanogramType):
         # ── end illumination enrichment ───────────────────────────────────────
 
         return identified_products, shelf_regions
+
+    # ------------------------------------------------------------------
+    # FEAT-574 cycle hooks (perceive / identify). Legacy methods above/below are unchanged.
+    # ------------------------------------------------------------------
+
+    def _perception_mode(self) -> str:
+        """Return the perception mode of this configuration.
+
+        Returns:
+            ``"cv"`` or ``"llm_detector"``.
+
+        Raises:
+            ValueError: When planogram_config["perception_mode"] is not "cv" or "llm_detector".
+        """
+        raw = (self.config.planogram_config or {}).get("perception_mode", self.DEFAULT_PERCEPTION_MODE)
+        if raw not in ("cv", "llm_detector"):
+            raise ValueError(f"Invalid perception_mode '{raw}'. Use 'cv' or 'llm_detector'.")
+        return raw
+
+    def get_shape_profiles(self) -> List[ShapeProfile]:
+        """Shape profiles for product bodies, boxes, fact tags and the backlit/poster zone.
+
+        PROVISIONAL (spike: inconclusive) — docs/pipelines/planogram-perception-spike.md accepted no profile,
+        so these are the spike's candidate values; ``DEFAULT_PERCEPTION_MODE`` stays ``"llm_detector"``.
+
+        Returns:
+            The profiles evaluated by ``propose_shapes`` in ``"cv"`` mode.
+        """
+        return [
+            ShapeProfile(
+                name="product_body",
+                kind=ShapeKind.PRODUCT.value,
+                min_width=0.06,
+                max_width=0.30,
+                min_height=0.08,
+                max_height=0.45,
+                min_aspect=0.5,
+                max_aspect=2.5,
+                polarity="edge",
+                min_rectangularity=0.70,
+                min_contrast_std=5.0,
+            ),
+            ShapeProfile(
+                name="product_box",
+                kind=ShapeKind.BOX.value,
+                min_width=0.04,
+                max_width=0.20,
+                min_height=0.05,
+                max_height=0.25,
+                min_aspect=0.4,
+                max_aspect=2.0,
+                polarity="edge",
+                min_rectangularity=0.80,
+                min_contrast_std=5.0,
+            ),
+            ShapeProfile(
+                name="fact_tag",
+                kind=ShapeKind.FACT_TAG.value,
+                min_width=0.03,
+                max_width=0.12,
+                min_height=0.02,
+                max_height=0.08,
+                min_aspect=1.2,
+                max_aspect=4.0,
+                polarity="bright",
+            ),
+            ShapeProfile(
+                name="backlit_zone",
+                kind=ShapeKind.ZONE.value,
+                min_width=0.40,
+                max_width=1.0,
+                min_height=0.06,
+                max_height=0.35,
+                min_aspect=1.5,
+                max_aspect=12.0,
+                polarity="bright",
+                min_rectangularity=0.80,
+                min_contrast_std=5.0,
+                thresholds=(200, 220, 240),
+            ),
+        ]
+
+    def fallback_detection_prompt(self) -> Optional[str]:
+        """Prompt for the LLM detector: the legacy product-hint prompt (see _detect_legacy).
+
+        The hint wording is duplicated from ``_detect_legacy`` (which must not be modified); the output part asks
+        for the ``Detections`` fields the detector parses. Hints are sorted so the prompt (and the vision cache
+        key) is deterministic. A configured ``object_identification_prompt`` replaces the hint section.
+
+        Returns:
+            The detection prompt.
+        """
+        try:
+            description = self.config.get_planogram_description()
+            shelves = getattr(description, "shelves", None) or []
+        except Exception:  # noqa: BLE001 - migrated configs may not describe shelves the legacy way
+            shelves = []
+        hints = sorted({p.name for s in shelves for p in (getattr(s, "products", None) or []) if getattr(p, "name", "")})
+        hints_str = ", ".join(hints)
+        instructions = getattr(self.config, "object_identification_prompt", None) or (
+            "Detect all retail products, empty slots, and shelf regions in this image.\n"
+            "Use the provided reference images to identify specific products.\n\n"
+            "IMPORTANT:\n"
+            '- If you see a cardboard box containing a product image/name, label it as "[Product Name] box".\n'
+            '- If you see the bare product itself (e.g. a loose printer), label it as "[Product Name]".\n'
+            f"- Prefer the following product names if they match: {hints_str}\n"
+            '- If an item is NOT in the list, provide a descriptive name (e.g. "Ink Bottle", "Printer") '
+            'rather than just "unknown".\n'
+            '- Do not output "unknown" unless strictly necessary.\n'
+        )
+        kinds = ", ".join(kind.value for kind in ShapeKind)
+        return (
+            f"{instructions}\n"
+            "Return one detection per physical object: label = one of "
+            f"{kinds}; content = the product name as described above (or the legible text); bbox = x1, y1, x2, y2 "
+            "normalised to 0..1; confidence 0..1."
+        )
+
+    async def perceive(self, image: Image.Image, image_id: str, ctx: CycleContext) -> PerceptionResult:
+        """Stage 1 on the untouched full-resolution image (no ROI gate).
+
+        ``"cv"`` mode proposes shapes with the (provisional) profiles through ``ctx.executor``;
+        ``"llm_detector"`` mode asks the vision adapter for boxes. Both converge on the same tail:
+        zones split from products, rows (shelf edges, then row consensus), one slot per product shape,
+        optional OCR of fact tags and zones, and fixture membership.
+
+        Args:
+            image: Untouched full-resolution image.
+            image_id: Image identifier.
+            ctx: Per-run services.
+
+        Returns:
+            The perception result.
+        """
+        arr = np.asarray(image.convert("RGB"))[:, :, ::-1].copy()  # BGR for OpenCV
+        size = (image.width, image.height)
+        mode = self._perception_mode()
+        if mode == "cv":
+            candidates = await ctx.executor.run(propose_shapes, arr, self.get_shape_profiles())
+            shapes = [self._candidate_to_shape(image_id, c) for c in candidates]
+            detection_source = ObservationSource.CV.value
+        else:
+            shapes = await llm_detect_shapes(arr, image_id, ctx, prompt=self.fallback_detection_prompt() or "")
+            detection_source = ObservationSource.LLM.value
+        zones = [s for s in shapes if s.kind == ShapeKind.ZONE]
+        others = [s for s in shapes if s.kind != ShapeKind.ZONE]
+        edges = await ctx.executor.run(detect_shelf_edges, arr)
+        others, slots, row_count = self._rows_and_slots(image_id, others, edges, size)
+        ocr_available = bool(getattr(ctx.ocr, "available", False))
+        if ocr_available:
+            others, zones = await self._ocr_tags_and_zones(arr, others, zones, ctx)
+        others = assign_membership(others, zones, size)
+        self.logger.debug("perceive[%s] mode=%s shapes=%d slots=%d", image_id, mode, len(others), len(slots))
+        return PerceptionResult(
+            image_id=image_id,
+            image_size=size,
+            shapes=others,
+            slots=slots,
+            zones=zones,
+            row_count=row_count,
+            detection_source=detection_source,
+            ocr_available=ocr_available,
+            legacy=None,
+            errors=[],
+        )
+
+    @staticmethod
+    def _candidate_to_shape(image_id: str, candidate: ShapeCandidate) -> Shape:
+        """CV candidate -> Shape with the id scheme ``build_slots`` uses for anchors."""
+        try:
+            kind = ShapeKind(candidate.kind)
+        except ValueError:
+            kind = ShapeKind.UNKNOWN
+        return Shape(
+            shape_id=candidate_shape_id(image_id, candidate),
+            image_id=image_id,
+            kind=kind,
+            box=DetectionBox(
+                x1=candidate.x1,
+                y1=candidate.y1,
+                x2=candidate.x2,
+                y2=candidate.y2,
+                confidence=max(0.0, min(1.0, candidate.score)),
+            ),
+            profile=candidate.profile,
+            source=ObservationSource.CV,
+        )
+
+    def _rows_and_slots(
+        self, image_id: str, shapes: List[Shape], edges: Sequence[int], size: Tuple[int, int]
+    ) -> Tuple[List[Shape], List[Slot], int]:
+        """Rows of product shapes (between shelf edges, else by vertical centre) and one slot per product.
+
+        Fact tags never become slots. Returns the shapes with ``row_index`` / ``slot_index`` set.
+        """
+        products = [s for s in shapes if s.kind in (ShapeKind.PRODUCT, ShapeKind.BOX, ShapeKind.UNKNOWN)]
+        if not products:
+            return shapes, [], 0
+
+        def centre_y(shape: Shape) -> float:
+            return (shape.box.y1 + shape.box.y2) / 2
+
+        bands: Dict[int, List[Shape]] = {}
+        if edges:
+            bounds = [0, *sorted(edges), size[1]]
+            for shape in products:
+                band = next((i for i in range(len(bounds) - 1) if bounds[i] <= centre_y(shape) < bounds[i + 1]), 0)
+                bands.setdefault(band, []).append(shape)
+        else:
+            ordered = sorted(products, key=lambda s: (centre_y(s), s.box.x1))
+            height = sorted(s.box.y2 - s.box.y1 for s in ordered)[len(ordered) // 2]
+            band = 0
+            bands[band] = [ordered[0]]
+            for shape in ordered[1:]:
+                if abs(centre_y(shape) - centre_y(bands[band][-1])) > height / 2:
+                    band += 1
+                    bands[band] = []
+                bands[band].append(shape)
+        by_candidate: Dict[str, str] = {}
+        rows: List[List[ShapeCandidate]] = []
+        for band in sorted(bands):
+            row: List[ShapeCandidate] = []
+            for shape in sorted(bands[band], key=lambda s: s.box.x1):
+                candidate = ShapeCandidate(
+                    profile=shape.profile or "shape",
+                    kind=shape.kind.value,
+                    x1=shape.box.x1,
+                    y1=shape.box.y1,
+                    x2=shape.box.x2,
+                    y2=shape.box.y2,
+                    score=shape.box.confidence,
+                )
+                by_candidate[candidate_shape_id(image_id, candidate)] = shape.shape_id
+                row.append(candidate)
+            rows.append(row)
+        slots = build_slots(rows, size, image_id=image_id, rule=AnchorRule.SHAPE_IS_SLOT, fill_gaps=False)
+        slots = [
+            s.model_copy(update={"anchor_shape_id": by_candidate.get(s.anchor_shape_id or "", s.anchor_shape_id)})
+            for s in slots
+        ]
+        position = {s.anchor_shape_id: (s.row_index, s.slot_index) for s in slots}
+        updated = [
+            s.model_copy(update={"row_index": position[s.shape_id][0], "slot_index": position[s.shape_id][1]})
+            if s.shape_id in position
+            else s
+            for s in shapes
+        ]
+        return updated, slots, len(rows)
+
+    @staticmethod
+    async def _ocr_tags_and_zones(
+        arr: np.ndarray, shapes: List[Shape], zones: List[Shape], ctx: CycleContext
+    ) -> Tuple[List[Shape], List[Shape]]:
+        """Local OCR of fact tags and zones through the CPU executor (text never read here otherwise)."""
+
+        async def read(shape: Shape) -> Shape:
+            crop = arr[shape.box.y1 : shape.box.y2, shape.box.x1 : shape.box.x2]
+            text, conf = await ctx.executor.run(read_crop, crop)
+            return shape.model_copy(update={"ocr_text": text or None, "ocr_confidence": conf if text else None})
+
+        tags = [s for s in shapes if s.kind == ShapeKind.FACT_TAG]
+        read_tags = {s.shape_id: s for s in await asyncio.gather(*(read(s) for s in tags))}
+        read_zones = list(await asyncio.gather(*(read(z) for z in zones)))
+        return [read_tags.get(s.shape_id, s) for s in shapes], read_zones
+
+    async def identify(self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext) -> IdentificationResult:
+        """Stage 2: one full-image call (image + stage-1 JSON).
+
+        The vocabulary is the list of ``Descriptors`` field NAMES the definition uses — never an expected SKU.
+
+        Args:
+            image: Untouched full-resolution image.
+            perception: Stage-1 output.
+            ctx: Per-run services.
+
+        Returns:
+            The identification result.
+        """
+        arr = np.asarray(image.convert("RGB"))[:, :, ::-1].copy()
+        vocabulary: List[str] = []
+        if ctx.definition is not None:
+            facings = ctx.definition.all_facings()
+            vocabulary = [
+                name
+                for name in ("family", "colors", "pack", "xl")
+                if any(getattr(f.descriptors, name) not in (None, [], "") for f in facings)
+            ]
+        return await identify_full_image(arr, perception, ctx, vocabulary=vocabulary)
 
     async def _detect_with_grid(
         self,

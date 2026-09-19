@@ -17,6 +17,26 @@ from parrot.models.detections import DetectionBox, IdentifiedProduct
 from parrot_pipelines.models import PlanogramConfig
 from parrot_pipelines.planogram.types import ProductOnShelves
 
+#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise the legacy
+#: methods directly, so any valid minimal definition satisfies construction.
+_MIN_SLOTS_DEFINITION = {
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {
+                    "facing_id": "f1",
+                    "shelf_id": "shelf_1",
+                    "slot": 1,
+                    "product": "P",
+                    "descriptors": {"display_name": "P"},
+                }
+            ],
+        }
+    ]
+}
+
 
 def shelf(level: str, products: List[Dict[str, Any]], **extra: Any) -> Dict[str, Any]:
     """Raw shelf dict; ``extra`` carries compliance_threshold, allow_extra_products, *_weight…"""
@@ -51,6 +71,7 @@ def make_handler(shelves: List[Dict[str, Any]], **top_level: Any) -> ProductOnSh
         planogram_config=raw,
         roi_detection_prompt="roi",
         object_identification_prompt="objects",
+        slots_definition=_MIN_SLOTS_DEFINITION,
     )
     pipeline = MagicMock()
     pipeline.logger = logging.getLogger("test.pos.characterization")
