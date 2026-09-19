@@ -45,6 +45,22 @@ SPECS=$(python -m scripts.sdd.doc_taxonomy --kind spec --paths-only --project <p
 ALL=$(jq -s --arg specs "$SPECS" '[.[] | select(.spec as $s | ($specs | split("\n")) | index($s))]' sdd/tasks/index/*.json)
 ```
 
+### 1.5. Discover Worktree State (FEAT-582)
+
+Run the worktree status library to get the real task state from active worktrees:
+
+```bash
+WT_REPORTS=$(python -m scripts.sdd.worktree_status --json 2>/dev/null || echo "[]")
+```
+
+Build a lookup map from `feature_slug` → `WorktreeReport`. For each feature in §2,
+if a worktree report exists with `index_found: true`, use its `tasks[]` array
+instead of the dev-branch index for that feature's task lines.
+
+Label the source: append `(from worktree: <branch>)` after the feature header
+when using worktree data. When `index_found: false`, note
+`(worktree exists but index not found — using dev branch)`.
+
 ### 2. Group and Display
 
 The task `status` field has **exactly four** valid values — match each
@@ -82,7 +98,7 @@ Projects: <a, b> · Tags: <x, y>
      TASK-<NNN> — <title>
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Summary: <N> done / <N> done-with-issues / <N> in-progress / <N> pending / <N> total
+Summary: <N> done / <N> done-with-issues / <N> in-progress / <N> pending / <N> total | <W> worktrees (<R> ready for /sdd-done)
 ```
 
 ### 3. Highlight Blockers
@@ -109,6 +125,48 @@ Consider relocating them via /sdd-task or removing them.
 ```
 
 If `_orphans.json` does not exist or has an empty `tasks[]` array, skip this panel silently.
+
+### 5. Show Worktree Summary (FEAT-582)
+
+After the orphan panel, show a worktree health panel for all SDD worktrees
+from the `WT_REPORTS` data:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🌳 Worktrees (N active):
+
+  feat-FEAT-550-token-budget-bedrock
+    Branch: feat-FEAT-550-token-budget-bedrock
+    Tasks: 14/14 done  |  Health: clean  |  ✅ Ready for /sdd-done
+
+  feat-FEAT-582-sdd-status-worktrees
+    Branch: feat-FEAT-582-sdd-status-worktrees
+    Tasks: 2/5 done  |  Health: 3 dirty, 1 unpushed  |  🔄 In progress
+
+  chore-ruff-config  (non-SDD)
+    Branch: chore-ruff-config
+    Health: clean
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Health flags:
+- `clean` = dirty_count == 0 AND unpushed_count == 0
+- `N dirty` = dirty_count > 0
+- `N unpushed` = unpushed_count > 0
+- `N live processes` = live_process_count > 0
+
+Ready-for-done flag:
+- `✅ Ready for /sdd-done` when `ready_for_done: true`
+- `🔄 In progress` when tasks are not all done
+- `⚠️ Done but needs cleanup` when all done but dirty/unpushed
+
+Non-SDD worktrees (those with no parsed feature_id) show health only, no task
+counts.
+
+Update the Summary line to include:
+```
+Summary: <N> done / ... / <N> total | <W> worktrees (<R> ready for /sdd-done)
+```
 
 ## Reference
 - Per-spec index files: `sdd/tasks/index/*.json`
