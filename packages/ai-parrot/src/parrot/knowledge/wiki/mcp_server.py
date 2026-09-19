@@ -208,6 +208,15 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
 
     tools = tools + create_structural_tools(read_store, root, config)
 
+    # FEAT-578: decision-plane tools (wiki_decisions_for_symbol,
+    # wiki_decision_why) share the same read_store, so they honour the same
+    # federated namespaces. wiki_decision_generate is added by the factory
+    # only when generation is enabled AND a local project is available; there
+    # is no review tool — acceptance is a maintainer CLI action (AC11).
+    from parrot.knowledge.wiki.decisions import create_decision_tools
+
+    tools = tools + create_decision_tools(read_store, root, config)
+
     # Obsidian vault exposure: when the project has a vault (explicit
     # `vault_dir` in wiki.json, or the root itself is a vault), register
     # the full ObsidianToolkit plus the wiki-side vault_ingest tool.
