@@ -47,7 +47,7 @@ def _make_config(planogram_config: dict | None = None) -> MagicMock:
         "illumination_expected": "ON",
     }
     config.roi_detection_prompt = "Find the promotional endcap area"
-    config.object_identification_prompt = None
+    config.object_identification_prompt = "Identify the endcap zones"  # required since FEAT-574 (TASK-3442)
     config.get_planogram_description.return_value = MagicMock(brand="Epson")
     return config
 

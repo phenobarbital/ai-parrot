@@ -17,7 +17,7 @@ def _make_config(detection_grid=None) -> MagicMock:
     """Build a mock PlanogramConfig."""
     config = MagicMock()
     config.detection_grid = detection_grid
-    config.object_identification_prompt = None
+    config.object_identification_prompt = "Identify the products"  # required since FEAT-574 (TASK-3442)
     config.get_planogram_description.return_value = MagicMock(shelves=[])
     return config
 

@@ -40,8 +40,9 @@ def _config():
     config.get_planogram_description.return_value = SimpleNamespace(
         brand="TestBrand", tags=[], advertisement_endcap=None, shelves=[]
     )
-    config.roi_detection_prompt = ""
-    config.object_identification_prompt = ""
+    # Legacy types require both prompts at construction (TASK-3442 validate_contract).
+    config.roi_detection_prompt = "Find the display area"
+    config.object_identification_prompt = "Identify the products"
     config.planogram_config = {"brand": "TestBrand", "shelves": []}
     return config
 
