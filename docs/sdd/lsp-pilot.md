@@ -245,6 +245,75 @@ hidden, by the pilot's evaluation harness.
   managed SDD skill outside the explicit `parrot toolkits install lsp`
   action described above.
 
+## Operator run checklist (pre-M6)
+
+Spec §8 "Open Questions" leaves one item explicitly unresolved: *"Which
+concrete CLI/model versions, immutable environment IDs, real task
+commits, price basis, and spending ceiling should the live run manifest
+use?"* — an execution prerequisite for the M6 live run, not a blocker on
+the deterministic toolkit/harness contracts (M1–M5, all implemented).
+Before running `python -m benchmarks.sdd_lsp --manifest <path>
+--output-dir <dir> --live`, the operator must fill in every item below in
+a real `PilotManifest` JSON file — none of these has a safe default, and
+none is invented by the toolkit or the CLI:
+
+- **Immutable environment IDs.** One per arm's seat, matching the
+  `LSPConfig.environment_id` convention above (never the
+  `operator-unconfigured` sentinel for a live run) — an environment
+  change invalidates baselines and requires a new ID, never a reused one.
+- **Pinned task commit.** `PilotManifest.pinned_commit`: the exact
+  repository commit the pilot measures, reviewed against the 12 fixed
+  tasks in `benchmarks/sdd_lsp/tasks.yaml` and their pinned
+  `fixture_sha256` values.
+- **Actual prices and cache semantics.** `PilotManifest.price_provenance`
+  (console, contract, or published rate card — never invented) and
+  `cache_semantics` (how each seat's provider reports cache read/write
+  classes). `benchmarks.sdd_lsp.models.PriceBook` ships empty on purpose;
+  an operator-supplied price file is required for a priced gate — see
+  `--prices` on the CLI.
+- **Spending ceiling and per-attempt reservation.**
+  `spending_ceiling_usd` and `per_attempt_cost_reservation_usd` — the
+  runner (`benchmarks/sdd_lsp/runner.py`) stops launching further
+  attempts once the remaining budget cannot cover the next reservation,
+  or once any attempt's cost comes back unknown; every already-launched
+  attempt stays in the report, every skipped one is recorded explicitly
+  as `not_launched`, never silently dropped.
+- **Reviewed ground-truth checklist for the 180-attempt matrix.** Before
+  launching: (1) `task_ids` is exactly the fixed 12-task set from
+  `benchmarks/sdd_lsp/fixtures/scenarios.py::SCENARIO_IDS`; (2)
+  `repetitions == 3` and `arms` is exactly the five fixed arms; (3) every
+  arm has a `SeatSpec` with a real, reviewed `argv` (never a placeholder)
+  and a bounded `timeout_s`; (4) seat visibility for **every**
+  research/coding/review role has been independently verified through the
+  real CLI host (see "Seat-specific visibility checks" above) — a
+  server-level `tools/list` success is not sufficient proof; a role that
+  cannot see the tools, or has no provisioned environment, is recorded as
+  **fallback-only**, not silently treated as available.
+
+### Opting into the live seat-readiness check
+
+`packages/ai-parrot-tools/tests/lsp/test_seat_visibility.py`'s default
+tests use fake CLI hosts and the scripted `fake_server.py` fixture only —
+they spend nothing and never require a real host. To additionally verify
+**real** research/coding/review CLI hosts (their actual tool access, root
+isolation, and fallback behavior — never a real Pyright/paid run by
+itself), set `PARROT_LSP_LIVE_MANIFEST` to the path of an operator-authored
+JSON file before running the suite:
+
+```json
+{
+  "seats": {
+    "research": {"argv": ["<real-cli>", "..."], "timeout_s": 30.0},
+    "coding":   {"argv": ["<real-cli>", "..."], "timeout_s": 30.0},
+    "review":   {"argv": ["<real-cli>", "..."], "timeout_s": 30.0}
+  }
+}
+```
+
+Absence of `PARROT_LSP_LIVE_MANIFEST` means the live seat check is **not
+executed** — it is never silently reported as passing. Only an explicit,
+reviewed manifest exercises the real hosts.
+
 ## Evaluation status
 
 The approved five-arm (`current`, `wiki_ast`, `lsp_navigation`,
