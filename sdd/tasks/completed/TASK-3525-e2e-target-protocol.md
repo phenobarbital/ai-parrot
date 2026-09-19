@@ -190,5 +190,35 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `LaunchSpec` (Pydantic v2: `argv`/`env`/`cwd`/
+`stdio`; `argv` validated nonempty with nonempty tokens; `env` redacted from
+`repr`/`str`/`model_dump`/`model_dump_json` via `Field(repr=False)` +
+`__repr__`/`__str__` overrides + a `@field_serializer`) and the `TargetAdapter`
+`runtime_checkable` `Protocol` (`async prepare(...)`, `async ready(...)`)
+matching spec §3, importing only `parrot.e2e.models` — resolves the M3/M4
+import cycle. Added a lazy fixed `_ADAPTER_REGISTRY` for all six target kinds
+(derived `TARGET_KINDS` from the M2 `TargetConfig.kind` annotation so it
+cannot drift); `get_target_adapter(kind)` lazily imports only the requested
+module, raising `E2EConfigError` for an unknown kind and
+`E2EPrerequisiteError` (reason_code `target_adapter_unavailable`) for a
+missing module/factory — no raw `ImportError` escapes.
+
+Design note for the reviewer: the concrete `(module, factory_attr)` naming
+convention inside `_ADAPTER_REGISTRY` (e.g. `build_mcp_toolkit_adapter`) is a
+bounded implementation choice — no prior task fixed the adapter-module wiring
+convention, only `TargetAdapter`/`LaunchSpec` themselves. Future M4 tasks
+implementing `mcp.py`/`botmanager.py`/`ui.py`/`browser.py` must match these
+factory names, or adjust this registry alongside them.
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_target_registry.py -q`
+→ 23 passed (LaunchSpec construction/rejection, env redaction across all
+serialization surfaces, two real-subprocess boundary tests, protocol
+conformance, exact six-kind registry check, per-kind real
+`E2EPrerequisiteError` against current repo state, import-scoping spy,
+missing-factory-attribute case, injected-fake-adapter success path).
+Full-directory regression: `pytest packages/ai-parrot-server/tests/unit/e2e/ -q`
+→ 156 passed, no regression against TASK-3520/3521.
+
+No unresolved limitations. AC2/AC6 demonstrated by the contract tests.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 515.8s · Tokens: 150411 (combined)

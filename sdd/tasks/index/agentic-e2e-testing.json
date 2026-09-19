@@ -212,7 +212,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -222,8 +222,8 @@
       "parallelism_notes": "TASK-3525 owns its declared files for M4. TASK-3521 supplies load contained feature plans and enforce spec consistency. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3525-e2e-target-protocol.md"
+      "completed_at": "2026-09-19T17:35:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3525-e2e-target-protocol.md"
     },
     {
       "id": "TASK-3526",
