@@ -492,10 +492,31 @@ class TestExport:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop —
+`parrot-sdd-coder` MCP server unresponsive throughout this run)
+**Date**: 2026-09-19
+**Notes**: `apply_review` checks the revision precondition first (no
+mutation is even built against a stale `expected_revision`), dispatches
+the four actions into an `updates` dict, copies the record with the
+bumped revision, then asserts every `IMMUTABLE_FIELDS` value is
+byte-identical to the pre-transform record before appending one
+`ReviewEvent` whose `before_sha1`/`after_sha1` bracket the change via
+`review_fingerprint` (excludes `review_history`, so the audit hash never
+depends on itself). `accept`/`reject` touch only `review_status`,
+preserving `origin='inferred'`/`source_status='unknown'` forever — the
+Q3/AC11 invariant. `revise` applies `CandidateEdit`'s six fields and
+resets `review_status` to `'unreviewed'`. `link` appends an
+`asserted`-provenance `DecisionLink` without touching `origin`.
+`validate_link_target` is deliberately store-free and NOT called from
+inside `apply_review` — this module never touches a store at all;
+TASK-3493's service orchestration owns fetching the target record and
+calling `validate_link_target` before invoking `apply_review`. Every
+action returns a brand-new record via `model_copy`; the input is never
+mutated, so a caller can retry from what it originally read after a
+conflict. 16 tests covering the full AC11 acceptance matrix, reject/
+revise/link semantics, immutability assertions, append-only history
+(two sequential reviews), non-mutation of the input, `CandidateEdit`'s
+closed six-field surface, and export rendering (`INFERRED` label +
+separate Observations/Hypotheses sections).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

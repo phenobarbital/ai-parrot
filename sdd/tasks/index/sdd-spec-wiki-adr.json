@@ -280,7 +280,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -291,8 +291,8 @@
       "parallelism_notes": "calls review_fingerprint/render_markdown from TASK-3480 (decisions/codec.py); its output is persisted by TASK-3485's DecisionRepository",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3492-decision-review.md"
+      "completed_at": "2026-09-19T21:11:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3492-decision-review.md"
     },
     {
       "id": "TASK-3493",
