@@ -483,10 +483,20 @@ every accepted candidate would be regenerated as a new record.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, backend=native, model=sonnet), orchestrated by sdd-worker
+**Date**: 2026-09-19
+**Notes**: Implemented `decisions/codec.py` exactly per blueprint — canonical JSON serialization,
+`content_fingerprint`/`review_fingerprint` (deterministic evidence sort, correct key exclusions),
+`normalize_rel_path`, `candidate_decision_id` (unit-separator join, whitespace-collapsed decision
+text), `status_labels`, `render_markdown` (observations/hypotheses kept as separate lists per
+AC4), and `decision_from_page` (category checked first as the definitive signal, then
+marker/JSON validation, wrapping both `json.JSONDecodeError` and `pydantic.ValidationError` into
+one `ADR_SCHEMA_UNSUPPORTED`). Codebase Contract re-verified against current HEAD before coding.
+All 3 historical feedback patterns checked — none applicable (pure/sync module, no filesystem
+touches, no helper-wrapping). `pytest packages/ai-parrot/tests/knowledge/wiki/decisions/test_codec.py`:
+14 passed → 13 passed after lint's black reformat (no logic change). `ruff check`: clean.
+Merge-tier: this task added zero MODIFY targets (pure new file); wiki-scoped regression suite
+(`packages/ai-parrot/tests/knowledge/wiki`) re-run after merge.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 295.7s · Tokens: 126974 (subagent total, in/out not separately reported by native path)
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

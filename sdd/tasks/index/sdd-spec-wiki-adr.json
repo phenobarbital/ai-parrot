@@ -34,7 +34,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "imports DecisionRecord/DecisionError/ADR_* constants from TASK-3479 (decisions/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3480-decision-codec-and-identity.md"
+      "completed_at": "2026-09-19T18:32:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3480-decision-codec-and-identity.md"
     },
     {
       "id": "TASK-3481",
