@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3435, TASK-3436, TASK-3437
@@ -452,7 +452,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+identification/detector.py: DETECT_PROMPT_VERSION, GENERIC_DETECTION_PROMPT (labels = ShapeKind values; no expected products), picklable downscale_and_encode (<= 2048, never upscale) via ctx.executor, llm_detect_shapes through VisionAdapter.ask(Detections) -> source-pixel Shapes (get_pixel_coordinates of the SOURCE size, clamped, degenerate dropped), ids '<image_id>:llm:<n>', source llm, profile llm_detector, ocr_text = content; zones split and passed to assign_membership; VisionError -> [] + one ctx.errors entry.
+identification/verify.py: VERIFY_PROMPT_VERSION, CHOICE_OTHER/CHOICE_CANNOT_TELL, VerificationAnswer, pick_candidates (partial read required: brand and/or descriptors; brand match + no contradicting family/xl/pack; one facing per product, described first, <= n+1), option_order (sha256-seeded), _evidence_supports (a token from identifiers/aliases/family/display-name words that is NOT shared with another offered option must appear in visible_text), crop_and_encode (padded, clamped, picklable), verify_unresolved (new list same order/length; per-target isolation; accepted copy sets product, uncertain False, evidence += 'verify: ...', raw_confidence = answer confidence; source unchanged).
+Tests: test_detector_verify.py 14 passed. ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1

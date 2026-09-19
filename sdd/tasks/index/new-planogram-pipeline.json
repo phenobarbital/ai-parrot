@@ -436,7 +436,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -448,8 +448,8 @@
       "parallelism_notes": "Calls VisionAdapter.ask from TASK-3436 (identification/vision.py), picks distractors from SlotsDefinition of TASK-3435 (comparison/definition.py) and applies assign_membership from TASK-3437 to fallback shapes.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3439-llm-detector-verify.md"
+      "completed_at": "2026-09-19T00:02:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3439-llm-detector-verify.md"
     },
     {
       "id": "TASK-3440",
