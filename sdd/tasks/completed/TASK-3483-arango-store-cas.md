@@ -338,11 +338,12 @@ sweep after this task's predecessors showed 325 passed / 38 failed / 28 errors,
 all pre-existing (Postgres "No route to host", unrelated installer/MCP tests) —
 none touching `arango_store.py` or `decisions/`.
 
-Feedback recorded: none — the delivered CAS logic itself was correct; the
-hang was a test-infrastructure gap the coder flagged as a "Known Limitation"
-but could not fully diagnose from inside its own delivery, and the
-orchestrator fixed it directly per the merge-consolidation rules (defect
-confirmed at merge time, not a repeat model-behavior pattern).
+Feedback NOT recorded: attempted `coder_record_feedback` (pattern
+`skip-condition-not-reachability-checked`, backend=native/haiku,
+attempt_uid=745644c6b66a4b27b5cb213a792b1aa1) but the `parrot-sdd-coder` MCP
+server had gone unresponsive by this point (see below) and the call never
+returned within this session. The full finding is preserved above for a
+future recording attempt.
 
 **Deviations from spec**: none in the CAS implementation itself. The test
 fixture's skip mechanism was hardened beyond the blueprint's literal design
