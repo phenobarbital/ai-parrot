@@ -497,10 +497,20 @@ class TestFreshness:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, backend=native, model=sonnet), orchestrated by sdd-worker
+**Date**: 2026-09-19
+**Notes**: Implemented `decisions/evidence.py` exactly per blueprint — `_symbol_ranges` (dotted
+qualnames from FunctionDef/AsyncFunctionDef/ClassDef), `_owner_for_line` (innermost containing
+span), `extract_python_citations` (tokenize COMMENT tokens + `ast.get_docstring` on
+Module/Function/AsyncFunction/Class only — executable string literals never counted),
+`build_evidence` (exact-span SHA-1), `_resolve_confined` (post-resolution containment,
+`ADR_PATH_OUTSIDE_ROOT`), `verify_freshness` (current/stale/missing/unverified,
+`asyncio.to_thread` offloading, never mutates). Reused `ADR_REFERENCE_RE`/`normalize_adr_alias`
+from TASK-3486's parser.py — no second regex. Independence verified: no import of
+`decisions.store`/`decisions.repository` (grep-confirmed) — only TASK-3479/3486 prerequisites,
+both already merged. Fixed one blueprint bug found during implementation: `tokenize.TokenizeError`
+does not exist in stdlib; correct name is `tokenize.TokenError` (verified interactively).
+`pytest test_evidence.py`: 15 passed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: One blueprint correction — `tokenize.TokenizeError` → `tokenize.TokenError`
+(the blueprint's exception name was wrong; stdlib has no `TokenizeError`). No behavioral deviation.
