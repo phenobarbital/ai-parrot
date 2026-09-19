@@ -635,10 +635,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, backend=native, model=sonnet), orchestrated by sdd-worker
+**Date**: 2026-09-19
+**Notes**: Implemented Module 1 exactly per blueprint — `decisions/__init__.py` (docstring-only,
+no re-exports), `decisions/models.py` (all Pydantic v2 models from spec §2, `extra="forbid"`
+via a shared `_Strict` base, plus the 19 `ADR_*` error-code constants), and the additive
+`decisions: DecisionConfig` field on `WikiProjectConfig` immediately after `structural_backend`.
+Filled in all blueprint FILL-IN markers (EvidenceRef range/path validation, DecisionRecord
+inferred/unknown invariant for AC11, DecisionLink evidence-index bounds for AC4, ReviewRequest
+cross-validation for revise/link actions). `pytest packages/ai-parrot/tests/knowledge/wiki/decisions/test_models.py`:
+14 passed. `pytest packages/ai-parrot/tests/knowledge/wiki/test_cli.py`: 16 passed, 3
+pre-existing failures verified unrelated via `git stash`. Merge-tier validation: blast-radius
+of `WikiProjectConfig` (this task's only externally-visible new call site) confirmed every
+caller lives inside `packages/ai-parrot/tests/knowledge/wiki/` / `tests/knowledge/wiki/`,
+which the merge-tier "root" import-impact suite ran clean (exit 0). The "core" ai-parrot
+escalation suite and the ai-parrot-server/ai-parrot-tools/ai-parrot-integrations suites showed
+extensive pre-existing failures (missing `fakeredis`, DB "no route to host" in this sandbox,
+`byok.load_master_keys` missing, pulumi fixture files absent, graphindex uvloop event-loop
+errors, unrelated file-layout assertions) — none reference `decisions/`, `models.py`, or
+`DecisionConfig`, confirming this task did not regress them.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 368.7s · Tokens: 121882 (subagent total, in/out not separately reported by native path)
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
