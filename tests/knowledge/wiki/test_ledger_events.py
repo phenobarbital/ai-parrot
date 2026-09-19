@@ -1,9 +1,13 @@
+from typing import get_args
+
 import pytest
 from pydantic import ValidationError
 from parrot.knowledge.wiki.ledger.events import (
     LedgerEvent,
+    LedgerEventKind,
     IssueOpenedPayload,
     IssueClaimedPayload,
+    IssueUnclaimedPayload,
     IssueAcknowledgedPayload,
     IssueClosedPayload,
     InsightRecordedPayload,
@@ -104,3 +108,23 @@ def test_insight_recorded_payload():
     )
     assert insight.category == "note"
     assert insight.fact == "This is a fact"
+
+
+def test_issue_unclaimed_payload():
+    payload = IssueUnclaimedPayload(unclaimed_by="agent:sdd-fix", reason="released: not fixed in this lane")
+    assert payload.unclaimed_by == "agent:sdd-fix"
+    assert payload.reason.startswith("released")
+
+
+def test_ledger_event_kind_has_twelve_members_including_unclaimed():
+    members = get_args(LedgerEventKind)
+    assert len(members) == 12
+    assert "issue.unclaimed" in members
+
+
+def test_issue_unclaimed_event_validates():
+    event = LedgerEvent(
+        kind="issue.unclaimed", subject="issue:abc", actor="agent:sdd-fix",
+        payload={"unclaimed_by": "agent:sdd-fix", "reason": "released"},
+    )
+    assert event.event_id  # computed by model_post_init

@@ -340,6 +340,72 @@ class TestAtomicClaim:
 
 
 @pytest.mark.slow
+def _unclaimed_event(issue_id: str, actor: str = "agent:sdd-fix") -> LedgerEvent:
+    return LedgerEvent(
+        kind="issue.unclaimed", subject=issue_id, actor=actor,
+        payload={"unclaimed_by": actor, "reason": "released by test"},
+    )
+
+
+async def _read_state(index: LedgerIndex, issue_id: str) -> dict | None:
+    async with index.store.ledger_transaction("test-read") as conn:
+        return await index._read_issue(conn, issue_id)
+
+
+class TestUnclaim:
+    async def test_unclaimed_reverts_status_and_clears_claimed_by(self, ledger_index):
+        e1 = _opened_event("Releasable issue")
+        ledger_index.log.append(e1)
+        await ledger_index.sync()
+        assert await ledger_index.claim_issue(e1.subject, "task:TASK-A") is True
+
+        ledger_index.log.append(_unclaimed_event(e1.subject))
+        await ledger_index.sync()
+
+        state = await _read_state(ledger_index, e1.subject)
+        assert state["status"] == "open"
+        assert state["claimed_by"] is None
+
+    async def test_unclaimed_on_open_issue_is_noop(self, ledger_index):
+        e1 = _opened_event("Never claimed issue")
+        ledger_index.log.append(e1)
+        await ledger_index.sync()
+
+        ledger_index.log.append(_unclaimed_event(e1.subject))
+        await ledger_index.sync()
+
+        state = await _read_state(ledger_index, e1.subject)
+        assert state["status"] == "open"
+        assert state["claimed_by"] is None
+
+    async def test_unclaimed_on_closed_issue_is_noop(self, ledger_index):
+        e1 = _opened_event("Closed then unclaimed issue")
+        ledger_index.log.append(e1)
+        await ledger_index.sync()
+        assert await ledger_index.claim_issue(e1.subject, "task:TASK-A") is True
+
+        close = LedgerEvent(
+            kind="issue.closed",
+            subject=e1.subject,
+            actor="human:jesus",
+            payload={"reason": "fixed", "closed_by": "human:jesus"},
+        )
+        ledger_index.log.append(close)
+        await ledger_index.sync()
+
+        ledger_index.log.append(_unclaimed_event(e1.subject))
+        await ledger_index.sync()
+
+        state = await _read_state(ledger_index, e1.subject)
+        assert state["status"] == "closed"
+
+    async def test_unknown_event_kind_still_ignored(self, ledger_index):
+        unknown = LedgerEvent(kind="task.started", subject="task:TASK-1", actor="agent:x", payload={})
+        ledger_index.log.append(unknown)
+
+        await ledger_index.sync()
+
+
 class TestBusyBehaviour:
     """AC: a busy claim appends no issue.claimed; a busy open remains replayable."""
 
