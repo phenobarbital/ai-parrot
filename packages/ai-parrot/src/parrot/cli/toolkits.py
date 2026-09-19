@@ -55,6 +55,7 @@ def _resolve_names(root: Path, names: tuple[str, ...], hosts) -> list[str]:
     import questionary
 
     from parrot.mcp.toolkit_install import ToolkitState, inventory
+    from parrot.utils.tty import restore_stdin_blocking
 
     rows = inventory(root, hosts)
     choices = [
@@ -65,7 +66,9 @@ def _resolve_names(root: Path, names: tuple[str, ...], hosts) -> list[str]:
         )
         for row in rows
     ]
-    selected = questionary.checkbox("Select toolkits:", choices=choices).ask()
+    # Without the restore, the click.confirm() that follows reads EOF and aborts.
+    with restore_stdin_blocking():
+        selected = questionary.checkbox("Select toolkits:", choices=choices).ask()
     return selected or []
 
 

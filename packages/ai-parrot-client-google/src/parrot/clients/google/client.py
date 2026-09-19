@@ -186,7 +186,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
 
-        self.api_key = kwargs.pop("api_key", config.get("GOOGLE_API_KEY"))
+        _resolved_api_key = kwargs.pop("api_key", config.get("GOOGLE_API_KEY"))
 
         # Suppress httpcore logs as requested
         logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -194,6 +194,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
 
         super().__init__(**kwargs)
+        self.api_key = _resolved_api_key
         self.max_tokens = kwargs.get("max_tokens", None)
         # Resolve reformat_model: explicit kwarg > class default. Accepts
         # both ``GoogleModel`` enum members and raw strings.

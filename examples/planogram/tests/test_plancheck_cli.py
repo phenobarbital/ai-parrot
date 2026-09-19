@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import planogram_check
-from plancheck.models import Catalog
+from plancheck.reference import DESCRIPTOR_FIELDS
 
 
 def _fake_report(errors: list[str]) -> types.SimpleNamespace:
@@ -43,16 +43,11 @@ def _run_args(tmp_path: Path) -> list[str]:
     planogram_file = tmp_path / "planogram.json"
     planogram_file.write_text('{"planogram": {}, "shelves": []}', encoding="utf-8")
 
-    catalog_file = tmp_path / "catalog.json"
-    catalog_file.write_text('{"items": []}', encoding="utf-8")
-
     return [
         "--images-dir",
         str(img_dir),
         "--planogram",
         str(planogram_file),
-        "--catalog",
-        str(catalog_file),
         "--output",
         str(tmp_path / "out"),
         "--cache-dir",
@@ -60,22 +55,9 @@ def _run_args(tmp_path: Path) -> list[str]:
     ]
 
 
-def test_cli_requires_catalog(tmp_path, monkeypatch, caplog) -> None:
-    args = [
-        "--images-dir",
-        str(tmp_path / "imgs"),
-        "--planogram",
-        str(tmp_path / "planogram.json"),
-        "--output",
-        str(tmp_path / "out"),
-    ]
-    (tmp_path / "imgs").mkdir()
-    (tmp_path / "planogram.json").write_text('{"planogram": {}, "shelves": []}', encoding="utf-8")
-
-    caplog.set_level(logging.ERROR)
-    code = planogram_check.main(args)
-    assert code == 1
-    assert "--emit-catalog-template" in caplog.text
+def test_cli_has_no_catalog_option(tmp_path) -> None:
+    code = planogram_check.main(["--catalog", str(tmp_path / "catalog.json")])
+    assert code == 1  # unknown option: descriptors live in the planogram now
 
 
 def test_cli_exit_codes(tmp_path, monkeypatch) -> None:
@@ -181,13 +163,10 @@ def test_cli_empty_images_dir(tmp_path, monkeypatch) -> None:
         str(empty_dir),
         "--planogram",
         str(tmp_path / "planogram.json"),
-        "--catalog",
-        str(tmp_path / "catalog.json"),
         "--output",
         str(tmp_path / "out"),
     ]
     (tmp_path / "planogram.json").write_text('{"planogram": {}, "shelves": []}', encoding="utf-8")
-    (tmp_path / "catalog.json").write_text('{"items": []}', encoding="utf-8")
 
     seen = _patch_run(monkeypatch, errors=[])
     code = planogram_check.main(args)
@@ -200,35 +179,18 @@ def test_cli_empty_images_dir(tmp_path, monkeypatch) -> None:
     assert code == 1
 
 
-def test_cli_emit_catalog_template(tmp_path, monkeypatch, mini_planogram_data, mini_planogram) -> None:
-    # Write mini_planogram_data to a file
+def test_cli_init_descriptors(tmp_path, mini_planogram_data) -> None:
+    for shelf in mini_planogram_data["shelves"]:
+        for product in shelf["products"].values():
+            for name in DESCRIPTOR_FIELDS:
+                product.pop(name, None)
     planogram_file = tmp_path / "planogram.json"
     planogram_file.write_text(json.dumps(mini_planogram_data), encoding="utf-8")
 
-    out_file = tmp_path / "template.json"
-    args = ["--planogram", str(planogram_file), "--emit-catalog-template", str(out_file)]
+    assert planogram_check.main(["--planogram", str(planogram_file), "--init-descriptors"]) == 0
+    written = json.loads(planogram_file.read_text(encoding="utf-8"))
+    positions = [p for shelf in written["shelves"] for p in shelf["products"].values()]
+    assert all(p[name] is None for p in positions for name in DESCRIPTOR_FIELDS)
 
-    code = planogram_check.main(args)
-    assert code == 0
-
-    # Verify the template was written
-    assert out_file.exists()
-    template_data = json.loads(out_file.read_text(encoding="utf-8"))
-    assert "items" in template_data
-
-    # Verify it lists every identity-required SKU
-    catalog = Catalog.model_validate(template_data)
-    expected_skus = {f.sku for f in mini_planogram.facings if f.identity_required}
-    actual_skus = {item.sku for item in catalog.items}
-    assert actual_skus == expected_skus
-
-    # Test overwrite refusal
-    code = planogram_check.main(args)
-    assert code == 1
-
-
-def test_catalog_example_is_valid_and_synthetic() -> None:
-    path = Path(planogram_check.__file__).resolve().parent / "catalog.example.json"
-    catalog = Catalog.model_validate(json.loads(path.read_text(encoding="utf-8")))
-    assert {item.brand for item in catalog.items} == {"Acme"}
-    assert all("synthetic" in (item.provenance or "") for item in catalog.items)
+    missing = tmp_path / "nope.json"
+    assert planogram_check.main(["--planogram", str(missing), "--init-descriptors"]) == 1

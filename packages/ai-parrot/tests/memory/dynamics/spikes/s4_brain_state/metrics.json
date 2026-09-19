@@ -1,0 +1,153 @@
+{
+  "designs": {
+    "A-frontmatter": {
+      "copy_and_edit": {
+        "design": "A-frontmatter",
+        "survives_copy_page_to": true,
+        "survives_remember_rewrite": true
+      },
+      "redistill_5x": {
+        "concept_ids": [
+          "mem-b19b774a37cb-8a390c8d70",
+          "mem-b19b774a37cb-5cfc02861a",
+          "mem-b19b774a37cb-c6360bf9d7",
+          "mem-b19b774a37cb-852e25082b",
+          "mem-b19b774a37cb-04d9a976b8"
+        ],
+        "design": "A-frontmatter",
+        "distinct_versions": true,
+        "family_id": "mem-b19b774a37cb",
+        "old_versions_excluded_from_search": true,
+        "state_preserved_per_version": true,
+        "versions": [
+          "8a390c8d702668f077eaab098a491eb3e6e07d38",
+          "5cfc02861aef4a6a6de3ae7c893d8a04ff76882d",
+          "c6360bf9d79cdb5f7795cdb0bfa467904788c348",
+          "852e25082b73e27ed4d0a054f4261d36c6a9b87c",
+          "04d9a976b8595f957c032d89e733db980b74afa3"
+        ]
+      },
+      "search_drift": {
+        "design": "A-frontmatter",
+        "hits": [
+          "mem-f766aa1675c4",
+          "mem-95dede2923ed"
+        ],
+        "packed_token_cost_with_state": 43,
+        "packed_token_cost_without_state": 43,
+        "score_with_state": 4.291619175321086,
+        "score_without_state": 4.847120071927352,
+        "with_state_hit": true,
+        "without_state_hit": true
+      }
+    },
+    "B-sidecar": {
+      "copy_and_edit": {
+        "design": "B-sidecar",
+        "survives_copy_page_to": false,
+        "survives_remember_rewrite": true
+      },
+      "redistill_5x": {
+        "concept_ids": [
+          "mem-6fa0dfe2a5ca-8f9df4f2e2",
+          "mem-6fa0dfe2a5ca-72855ec697",
+          "mem-6fa0dfe2a5ca-b07d67c504",
+          "mem-6fa0dfe2a5ca-32006aae2b",
+          "mem-6fa0dfe2a5ca-3ce6a03cd0"
+        ],
+        "design": "B-sidecar",
+        "distinct_versions": true,
+        "family_id": "mem-6fa0dfe2a5ca",
+        "old_versions_excluded_from_search": true,
+        "state_preserved_per_version": true,
+        "versions": [
+          "8f9df4f2e257b33bdcff4456e654fe6617146dbc",
+          "72855ec697dcad4ff2d21378790bad6096e53be1",
+          "b07d67c5049740acfe5166ab59b2a438972fe6c3",
+          "32006aae2b4601b5e85182c239d7e0623852f53c",
+          "3ce6a03cd02220622764a615d2a493b870ed84a4"
+        ]
+      },
+      "search_drift": {
+        "design": "B-sidecar",
+        "hits": [
+          "mem-2daaf632091f",
+          "mem-89a073061206"
+        ],
+        "packed_token_cost_with_state": 43,
+        "packed_token_cost_without_state": 42,
+        "score_with_state": 7.98934032777442,
+        "score_without_state": 7.98934032777442,
+        "with_state_hit": true,
+        "without_state_hit": true
+      }
+    },
+    "C-metadata-column(simulated)": {
+      "copy_and_edit": {
+        "design": "C-metadata-column(simulated)",
+        "survives_copy_page_to": false,
+        "survives_remember_rewrite": true
+      },
+      "redistill_5x": {
+        "concept_ids": [
+          "mem-ff6e5fafb2d7-fda609cbf7",
+          "mem-ff6e5fafb2d7-6df47434a9",
+          "mem-ff6e5fafb2d7-eebf5491da",
+          "mem-ff6e5fafb2d7-c42c3c2585",
+          "mem-ff6e5fafb2d7-333c5c75fb"
+        ],
+        "design": "C-metadata-column(simulated)",
+        "distinct_versions": true,
+        "family_id": "mem-ff6e5fafb2d7",
+        "old_versions_excluded_from_search": true,
+        "state_preserved_per_version": true,
+        "versions": [
+          "fda609cbf77af2901803916b8d06f86b4c3b33f2",
+          "6df47434a993a0a7249888e617f67ec31b168458",
+          "eebf5491da6415d4af3414d426b6fa9164c5649e",
+          "c42c3c2585024f3fc4408f275658921e1052d13d",
+          "333c5c75fbe271eaebae5fa05c31fd4abca1e1a4"
+        ]
+      },
+      "search_drift": {
+        "design": "C-metadata-column(simulated)",
+        "hits": [
+          "mem-376178f9eb9e",
+          "mem-65a1c5766986"
+        ],
+        "packed_token_cost_with_state": 44,
+        "packed_token_cost_without_state": 44,
+        "score_with_state": 4.332506609739196,
+        "score_without_state": 4.332506609739196,
+        "with_state_hit": true,
+        "without_state_hit": true
+      }
+    }
+  },
+  "lineage": {
+    "A-frontmatter": {
+      "canonical_of_oldest_is_newest": true,
+      "duplicate_forwarding_one_credit": true
+    },
+    "B-sidecar": {
+      "canonical_of_oldest_is_newest": true,
+      "duplicate_forwarding_one_credit": true
+    },
+    "C-metadata-column(simulated)": {
+      "canonical_of_oldest_is_newest": true,
+      "duplicate_forwarding_one_credit": true
+    }
+  },
+  "watermark_recovery": {
+    "eligible_ids": [
+      "new-eligible"
+    ],
+    "excluded_by_watermark_ids": [
+      "old-unconsolidated",
+      "old-consolidated",
+      "below-threshold"
+    ],
+    "last_run": "2026-09-18T12:41:04.718756+00:00",
+    "recovery_path": "Episodes with created_at <= state.last_run are invisible to the ordinary next cycle (runner.py:253-256 \u2014 `since` is a lower bound on get_recent). Recovering them requires an explicit backfill query that bypasses `since` (e.g. a one-off get_recent(since=None) scoped by episode_id, or a dedicated scan for metadata['consolidated_into'] absent), never a `last_run` rewind \u2014 rewinding `last_run` would re-collect already-consolidated episodes too, since DreamState carries a single scalar cursor, not a per-episode watermark."
+  }
+}

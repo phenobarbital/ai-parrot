@@ -15,7 +15,10 @@ See `sdd/specs/obscura-new-browser-headless.spec.md` (FEAT-530), Module 1.
 """
 
 import asyncio
+import atexit
 import logging
+import os
+import signal
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -86,6 +89,83 @@ class ObscuraProcessManager:
         self.logger = logger or logging.getLogger("ObscuraProcessManager")
         self.process: Optional[asyncio.subprocess.Process] = None
         self._owns_process = False
+        self._owned_pid: Optional[int] = None
+        self._atexit_registered = False
+        self._prev_sigint = None
+        self._prev_sigterm = None
+
+    async def __aenter__(self) -> "ObscuraProcessManager":
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type: type, exc_val: BaseException, exc_tb: object) -> None:
+        await self.stop()
+
+    def _sync_kill_owned_process(self) -> None:
+        """Synchronous last-resort kill of the owned Obscura PID.
+
+        Called from atexit or a signal handler when the event loop is
+        unavailable. Sends SIGTERM, waits briefly, then SIGKILL.
+        """
+        pid = self._owned_pid
+        if pid is None:
+            return
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+        self.logger.info("atexit/signal: terminating orphaned Obscura PID %d", pid)
+        try:
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(50):
+                try:
+                    os.waitpid(pid, os.WNOHANG)
+                    os.kill(pid, 0)
+                except (ChildProcessError, OSError):
+                    self._owned_pid = None
+                    return
+                import time
+                time.sleep(0.1)
+            os.kill(pid, signal.SIGKILL)
+            try:
+                os.waitpid(pid, 0)
+            except (ChildProcessError, OSError):
+                pass
+        except OSError:
+            pass
+        self._owned_pid = None
+
+    def _register_cleanup_hooks(self) -> None:
+        """Register atexit and signal handlers that kill the owned process."""
+        if self._atexit_registered:
+            return
+        atexit.register(self._sync_kill_owned_process)
+        self._atexit_registered = True
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            prev = signal.getsignal(sig)
+            if sig == signal.SIGINT:
+                self._prev_sigint = prev
+            else:
+                self._prev_sigterm = prev
+
+            def _handler(signum: int, frame: object, _prev: object = prev) -> None:
+                self._sync_kill_owned_process()
+                if callable(_prev) and _prev not in (signal.SIG_DFL, signal.SIG_IGN):
+                    _prev(signum, frame)
+                elif _prev == signal.SIG_DFL:
+                    signal.signal(signum, signal.SIG_DFL)
+                    os.kill(os.getpid(), signum)
+
+            signal.signal(sig, _handler)
+
+    def _unregister_cleanup_hooks(self) -> None:
+        """Restore previous signal handlers after a clean stop."""
+        if self._prev_sigint is not None:
+            signal.signal(signal.SIGINT, self._prev_sigint)
+            self._prev_sigint = None
+        if self._prev_sigterm is not None:
+            signal.signal(signal.SIGTERM, self._prev_sigterm)
+            self._prev_sigterm = None
 
     @property
     def endpoint(self) -> str:
@@ -209,6 +289,8 @@ class ObscuraProcessManager:
             raise RuntimeError(f"Failed to launch Obscura: {exc}") from exc
 
         self._owns_process = True
+        self._owned_pid = self.process.pid
+        self._register_cleanup_hooks()
 
         deadline = asyncio.get_running_loop().time() + self.config.startup_timeout
         poll_interval = 0.2
@@ -224,6 +306,8 @@ class ObscuraProcessManager:
                 )
                 self.process = None
                 self._owns_process = False
+                self._owned_pid = None
+                self._unregister_cleanup_hooks()
                 message = f"Obscura exited early (code {returncode}) before its CDP endpoint became ready"
                 if stderr:
                     message += f": {stderr}"
@@ -280,6 +364,8 @@ class ObscuraProcessManager:
             await self.process.wait()
         self.process = None
         self._owns_process = False
+        self._owned_pid = None
+        self._unregister_cleanup_hooks()
 
     async def status(self) -> dict[str, object]:
         """Report this manager's current view of the Obscura process.

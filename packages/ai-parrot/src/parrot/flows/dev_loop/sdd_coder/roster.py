@@ -243,16 +243,18 @@ def eligible_seats(
 ) -> List[RosterSeat]:
     """Filter `seats` to those permitted for `assessment`'s classification (spec §2).
 
-    `standard` tasks may use any of the supplied seats, unchanged and in order
-    ("Standard tasks retain the configured roster rotation behavior"). `complex`
-    and `unknown` tasks are restricted to seats whose exact `(backend, model)`
-    pair -- `backend="native"` for `kind="native"` seats -- matches one of
+    `standard` and `unknown` tasks may use any of the supplied seats, unchanged
+    and in order ("Standard tasks retain the configured roster rotation
+    behavior").  `unknown` means the classifier could not determine complexity,
+    so we default to the full roster rather than restricting to strong models.
+    `complex` tasks are restricted to seats whose exact `(backend, model)` pair
+    -- `backend="native"` for `kind="native"` seats -- matches one of
     `policy.strong_models`'s configured identities. Never matches a seat
     nickname or an inferred alias, and never overrides seat availability or
     suspension: `seats` is expected to already be the caller's
     available/unsuspended subset.
     """
-    if assessment.classification == "standard":
+    if assessment.classification in ("standard", "unknown"):
         return list(seats)
 
     strong_keys = {(sm.backend, sm.model) for sm in policy.strong_models}

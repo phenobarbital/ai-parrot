@@ -20,6 +20,8 @@ Fetch requirements from a Jira ticket, structure them, conduct targeted Q&A, res
 - Always commit the brainstorm file to git upon generation.
 - Never write implementation code in the brainstorm document.
 - Set flow type in frontmatter: `type: feature, base_branch: dev` (or `hotfix`/`main` for bug tickets).
+- Fill frontmatter `projects` (parts of the codebase, vocabulary `KNOWN_PROJECTS` in
+  `scripts/sdd/sdd_meta.py`; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Workflow
 

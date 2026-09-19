@@ -4,6 +4,12 @@
 # - type: hotfix              → base_branch MUST be: main
 type: feature
 base_branch: dev
+# projects: parts of the codebase this doc concerns. Use `packages/*` dir names
+#   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
+#   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
+projects: []
+# tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
+tags: []
 ---
 
 # Brainstorm: <Title>

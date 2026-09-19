@@ -269,6 +269,8 @@ Evaluate the feature's decomposition potential for parallel development:
    # or component matches a hotfix label your team uses).
    type: feature
    base_branch: dev
+   projects: [ai-parrot-tools]      # FEAT-576 — parts of the codebase (see /sdd-brainstorm §10 mapping)
+   tags: [jira, oauth]              # FEAT-576 — 2–6 kebab-case keywords
    jira: NAV-8036
    jira_summary: "Add OAuth 2.0 support for JiraToolkit"
    jira_type: Story
@@ -280,6 +282,7 @@ Evaluate the feature's decomposition potential for parallel development:
    ```
    Validation rule: `type: hotfix` REQUIRES `base_branch: main`. The user
    can adjust the values before running `/sdd-spec`.
+   Fill projects/tags per /sdd-brainstorm §10 (FEAT-576) — Jira components are NOT projects.
 4. Set `Status: exploration`.
 5. **Commit:**
    ```bash
@@ -306,6 +309,7 @@ Evaluate the feature's decomposition potential for parallel development:
    AC coverage: <met>/<total> criteria addressed
    Worktree isolation: <per-spec|mixed>
    Open questions: <count>
+   Projects: <list>   Tags: <list>
 
 Next steps:
   1. Review the generated brainstorm options.

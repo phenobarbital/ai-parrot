@@ -14,6 +14,7 @@ from dataclasses import asdict
 from typing import Any, Dict, Optional, Union
 
 from .drivers.abstract import AbstractDriver
+from .toolkit_models import resolve_browser_binary
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,9 @@ class DriverFactory:
                   connects over Chromium CDP (Obscura speaks CDP as a
                   Chromium-compatible engine).
                 - ``headless``: Whether to run headless (default: ``True``)
+                - ``browser_binary``: Browser executable to launch; for
+                  Chrome-family browsers it defaults to the
+                  ``DEFAULT_CHROME_EXECUTABLE_PATH`` setting.
                 - ``cdp_endpoint_url``, ``obscura_binary``,
                   ``obscura_port``, ``obscura_stealth``,
                   ``obscura_allow_private_network``: forwarded to
@@ -100,6 +104,7 @@ class DriverFactory:
             )
 
             pw_browser = DriverFactory._map_browser_to_playwright(browser)
+            channel = config.get("browser_channel") or config.get("channel")
             pw_config = PlaywrightConfig(
                 browser_type=pw_browser,
                 headless=headless,
@@ -114,7 +119,10 @@ class DriverFactory:
                 ignore_https_errors=config.get("ignore_https_errors", False),
                 storage_state=config.get("storage_state"),
                 user_data_dir=config.get("user_data_dir"),
-                channel=config.get("browser_channel") or config.get("channel"),
+                channel=channel,
+                executable_path=resolve_browser_binary(
+                    config.get("browser_binary") or config.get("executable_path"), browser, channel
+                ),
             )
             logger.info("Creating PlaywrightDriver (browser=%s)", pw_browser)
             return PlaywrightDriver(pw_config)
@@ -164,6 +172,9 @@ class DriverFactory:
                 selenium_options["user_data_dir"] = config["user_data_dir"]
             if config.get("profile_directory"):
                 selenium_options["profile_directory"] = config["profile_directory"]
+            browser_binary = resolve_browser_binary(config.get("browser_binary"), browser)
+            if browser_binary:
+                selenium_options["browser_binary"] = browser_binary
             extra_kwargs: Dict[str, Any] = {"options": selenium_options} if selenium_options else {}
 
             logger.info("Creating SeleniumDriver (browser=%s)", browser)

@@ -1079,7 +1079,10 @@ class InteractiveDecisionNode(Node):
                     "questionary is required for InteractiveDecisionNode. "
                     "Install it with: pip install questionary"
                 ) from exc
-            return questionary.select(self.question, choices=self.options).ask()
+            from parrot.utils.tty import restore_stdin_blocking  # noqa: PLC0415
+
+            with restore_stdin_blocking():
+                return questionary.select(self.question, choices=self.options).ask()
 
         selected_option = await loop.run_in_executor(None, _prompt_user)
 

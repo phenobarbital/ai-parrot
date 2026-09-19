@@ -4,6 +4,7 @@ Orchestrates parallel retrieval from episodic memory, skill registry, and
 conversation memory, then passes results through ContextAssembler for
 token-budgeted context assembly.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
 
 from parrot.memory.abstract import ConversationMemory
-from parrot.memory.episodic.models import MemoryNamespace
+from parrot.memory.episodic.models import EpisodeCategory, EpisodeOutcome, MemoryNamespace
 from parrot.memory.episodic.store import EpisodicMemoryStore
 
 from .context import ContextAssembler
@@ -197,13 +198,9 @@ class UnifiedMemoryManager:
         """
         try:
             if self.episodic is not None:
-                await self._record_episodic(
-                    query, response, tool_calls, user_id, session_id
-                )
+                await self._record_episodic(query, response, tool_calls, user_id, session_id)
         except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "record_interaction: episodic recording failed — %s", exc
-            )
+            self.logger.warning("record_interaction: episodic recording failed — %s", exc)
 
     # ------------------------------------------------------------------
     # Private retrieval helpers
@@ -268,7 +265,7 @@ class UnifiedMemoryManager:
 
                 cross_results = await asyncio.gather(*cross_ns_tasks, return_exceptions=True)
 
-                for agent_id, result in zip(relevant_agents, cross_results):
+                for agent_id, result in zip(relevant_agents, cross_results, strict=True):
                     if isinstance(result, Exception):
                         self.logger.warning(
                             "Cross-domain retrieval from %s failed: %s",
@@ -277,9 +274,7 @@ class UnifiedMemoryManager:
                         )
                         continue
                     if result and isinstance(result, str):
-                        cross_domain_parts.append(
-                            f"[cross-domain: {agent_id}]\n{result}"
-                        )
+                        cross_domain_parts.append(f"[cross-domain: {agent_id}]\n{result}")
 
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Cross-domain routing failed: %s", exc)
@@ -387,16 +382,28 @@ class UnifiedMemoryManager:
             agent_id=self.namespace.agent_id,
             user_id=user_id,
             session_id=session_id,
+            room_id=self.namespace.room_id,
+            crew_id=self.namespace.crew_id,
         )
-        response_text = (
-            response if isinstance(response, str)
-            else getattr(response, "content", str(response))
+        response_text = response if isinstance(response, str) else getattr(response, "content", str(response))
+        if not isinstance(response_text, str):
+            response_text = str(response_text)
+        # ``tool_calls`` is accepted for signature compatibility only: tool calls
+        # are not proof of success and their own hooks record tool episodes
+        # (FEAT-571 M0). A conversation turn has no verified outcome here, so it
+        # is recorded as PARTIAL and no memory review is emitted.
+        self.logger.debug(
+            "_record_episodic: recording query episode for %s/%s (tool_calls=%d ignored)",
+            user_id,
+            session_id,
+            len(tool_calls or []),
         )
-        await self.episodic.record_tool_episode(  # type: ignore[union-attr]
+        await self.episodic.record_episode(  # type: ignore[union-attr]
             namespace=ns,
-            query=query,
-            response=response_text,
-            tool_calls=tool_calls,
+            situation=query[:500],
+            action_taken=f"Responded: {response_text}",
+            outcome=EpisodeOutcome.PARTIAL,
+            category=EpisodeCategory.QUERY_RESOLUTION,
         )
 
     # ------------------------------------------------------------------

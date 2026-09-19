@@ -4590,6 +4590,8 @@ def ingest(
         # spec §7 risk: never call it inside async code).
         import questionary
 
+        from parrot.utils.tty import restore_stdin_blocking
+
         for entry in entries:
             click.echo(f"\n{entry.source_uri}")
             click.echo(f"  briefing: {entry.briefing}")
@@ -4599,11 +4601,12 @@ def ingest(
                 f"durability={entry.scores.durability:.2f}"
             )
             click.echo(f"  composite: {entry.composite:.4f}  proposed: {entry.proposed_action}")
-            choice = questionary.select(
-                "Decision:",
-                choices=["admit", "archive", "discard"],
-                default=entry.proposed_action,
-            ).ask()
+            with restore_stdin_blocking():
+                choice = questionary.select(
+                    "Decision:",
+                    choices=["admit", "archive", "discard"],
+                    default=entry.proposed_action,
+                ).ask()
             entry.decision = choice or entry.proposed_action
             entry.decision_source = "human"
             if entry.decision != entry.proposed_action and charter.examples_file:

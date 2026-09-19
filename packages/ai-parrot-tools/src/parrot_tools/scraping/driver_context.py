@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Callable, Dict, Optional
 
 from .drivers.abstract import AbstractDriver
-from .toolkit_models import DriverConfig
+from .toolkit_models import DriverConfig, resolve_browser_binary
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,9 @@ class _SeleniumSetupAdapter:
             options["user_data_dir"] = self._config.user_data_dir
         if self._config.profile_directory:
             options["profile_directory"] = self._config.profile_directory
+        browser_binary = resolve_browser_binary(self._config.browser_binary, self._config.browser)
+        if browser_binary:
+            options["browser_binary"] = browser_binary
 
         driver = SeleniumDriver(
             browser=self._config.browser,
@@ -194,6 +197,9 @@ class _PlaywrightSetup:
             ),
             user_data_dir=self._config.user_data_dir,
             channel=self._config.browser_channel,
+            executable_path=resolve_browser_binary(
+                self._config.browser_binary, browser, self._config.browser_channel
+            ),
         )
         driver = PlaywrightDriver(pw_config)
         await driver.start()

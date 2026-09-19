@@ -31,6 +31,8 @@ $sdd-brainstorm -> review -> $sdd-spec -> $sdd-task -> $sdd-start
   numbers.
 - Verify packages in project dependency files before recommending them.
 - Commit only the brainstorm file unless the user explicitly asks otherwise.
+- Fill frontmatter `projects` (parts of the codebase, vocabulary `KNOWN_PROJECTS` in
+  `scripts/sdd/sdd_meta.py`; unknown values warn) and `tags` (2–6 kebab-case keywords) — FEAT-576.
 
 ## Flow Type
 

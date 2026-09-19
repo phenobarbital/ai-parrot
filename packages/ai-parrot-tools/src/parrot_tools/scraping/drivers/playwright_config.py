@@ -50,6 +50,10 @@ class PlaywrightConfig:
             ``"msedge"``). Required to open a real Google Chrome profile
             with its keyring-encrypted data; only meaningful for
             ``browser_type="chromium"``.
+        executable_path: Path to a browser executable to launch instead of
+            the bundled engine or the channel's hardcoded install location
+            (e.g. ``"/opt/google/chrome-beta/google-chrome-beta"``). Takes
+            precedence over ``channel`` for locating the binary.
         engine: Connection engine — ``"playwright"`` (default) launches a
             local browser as before; ``"obscura"`` connects to a
             supervised Obscura CDP endpoint via
@@ -93,6 +97,7 @@ class PlaywrightConfig:
     storage_state: Optional[str] = None
     user_data_dir: Optional[str] = None
     channel: Optional[str] = None
+    executable_path: Optional[str] = None
     engine: str = "playwright"
     cdp_endpoint_url: Optional[str] = None
     obscura_binary: Optional[str] = None

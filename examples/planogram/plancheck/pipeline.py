@@ -19,7 +19,7 @@ from .grid import build_slots, row_pitch
 from .identify import IDENTIFY_PROMPT_VERSION, identify_rows
 from .models import Catalog, ComplianceReport, ImageInfo, PlanogramRef, PriceReading, RunInfo, Settings, SlotObservation
 from .prices import PRICE_PROMPT_VERSION, TagOcr, read_prices
-from .reference import load_catalog, load_planogram, load_prices
+from .reference import load_descriptors, load_planogram, load_prices
 from .registration import apply_registration, register_image
 from .report import write_report
 from .scoring import brand_shares, merge_positions, shelf_scores, summarize
@@ -54,7 +54,6 @@ def absolutize(settings: Settings) -> Settings:
     update: dict[str, Any] = {
         "images": [str(Path(p).expanduser().resolve()) for p in settings.images],
         "planogram": str(Path(settings.planogram).expanduser().resolve()),
-        "catalog": str(Path(settings.catalog).expanduser().resolve()),
         "output": str(Path(settings.output).expanduser().resolve()),
         "cache_dir": str(Path(settings.cache_dir).expanduser().resolve()),
     }
@@ -170,7 +169,7 @@ async def run_check(settings: Settings, *, backend_factory: Callable[..., Any] |
 
     Raises:
         FileExistsError: ``settings.output`` already exists (checked before any work).
-        FileNotFoundError / ValueError: Invalid inputs (planogram, catalog, prices, images).
+        FileNotFoundError / ValueError: Invalid inputs (planogram and its descriptors, prices, images).
     """
     started = datetime.now(timezone.utc).isoformat(timespec="seconds")
     settings = absolutize(settings)  # BEFORE any backend construction (first parrot import)
@@ -182,8 +181,15 @@ async def run_check(settings: Settings, *, backend_factory: Callable[..., Any] |
     if await asyncio.to_thread(_check_output_exists, Path(settings.output)):
         raise FileExistsError(f"Output directory already exists: {settings.output}")
     planogram = load_planogram(Path(settings.planogram))
-    catalog, missing = load_catalog(Path(settings.catalog), planogram)
-    expected_prices = load_prices(Path(settings.prices)) if settings.prices else None
+    catalog, missing, planogram_prices = load_descriptors(Path(settings.planogram), planogram)
+    if not catalog.items:
+        raise ValueError(
+            "No planogram position is described (display_name + descriptor fields). "
+            "Run --init-descriptors on the planogram, fill in the fields, then re-run."
+        )
+    # --prices overrides the planogram's own ``price`` fields SKU by SKU.
+    file_prices = load_prices(Path(settings.prices)) if settings.prices else {}
+    expected_prices = {**planogram_prices, **file_prices} or None
     factory = backend_factory or _default_backend_factory
     ocr = TagOcr()
 
@@ -269,7 +275,7 @@ async def run_check(settings: Settings, *, backend_factory: Callable[..., Any] |
         started_at=started,
         finished_at=finished,
         errors=all_errors,
-        catalog_missing_skus=missing,
+        undescribed_skus=missing,
         reference_provisional=reference_provisional,
         local_ocr_available=ocr.available,
     )

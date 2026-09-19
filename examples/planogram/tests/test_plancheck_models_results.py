@@ -22,7 +22,7 @@ from plancheck.models import (
 
 
 def _settings(**overrides) -> Settings:
-    base = {"images": ["/a.jpg"], "planogram": "/p.json", "catalog": "/c.json", "output": "/out", "cache_dir": "/cache"}
+    base = {"images": ["/a.jpg"], "planogram": "/p.json", "output": "/out", "cache_dir": "/cache"}
     return Settings(**{**base, **overrides})
 
 
@@ -103,7 +103,7 @@ def test_report_roundtrip_json(mini_planogram) -> None:
             started_at="2026-09-18T00:00:00Z",
             finished_at="2026-09-18T00:01:00Z",
             errors=[],
-            catalog_missing_skus=[],
+            undescribed_skus=[],
         ),
         images=[],
         slots=[],
@@ -145,7 +145,7 @@ def test_run_info_constants() -> None:
         started_at="2026-09-18T00:00:00Z",
         finished_at="2026-09-18T00:01:00Z",
         errors=[],
-        catalog_missing_skus=[],
+        undescribed_skus=[],
     )
     assert run.registration_method == "auto_alignment"
 
@@ -159,7 +159,7 @@ def test_run_info_constants() -> None:
             started_at="2026-09-18T00:00:00Z",
             finished_at="2026-09-18T00:01:00Z",
             errors=[],
-            catalog_missing_skus=[],
+            undescribed_skus=[],
             registration_method="manual",  # type: ignore[arg-type]
         )
 

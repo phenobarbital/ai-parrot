@@ -1,4 +1,4 @@
-"""Reference side of the planogram check: planogram, catalog, prices, identity resolution (FEAT-565).
+"""Reference side of the planogram check: planogram + its product descriptions, prices, identity resolution.
 
 Pure module: no parrot import, no network. ``resolve_identity`` never sees planogram expectations.
 """
@@ -91,42 +91,116 @@ def load_planogram(path: Path) -> PlanogramRef:
     )
 
 
-def load_catalog(path: Path, planogram: PlanogramRef) -> tuple[Catalog, list[str]]:
-    """Load the user-supplied catalog and report planogram SKUs it does not cover.
+# Per-position product description, filled in by hand in the planogram JSON (``--init-descriptors`` adds
+# them as ``null``). ``display_name`` is what marks a position as described.
+DESCRIPTOR_FIELDS: tuple[str, ...] = (
+    "display_name",
+    "family",
+    "xl",
+    "colors",
+    "pack",
+    "identifiers",
+    "aliases",
+    "price",
+)
 
-    Args:
-        path: JSON file shaped as ``Catalog`` (``{"items": [CatalogItem, ...]}``).
-        planogram: Loaded reference, used only to compute coverage.
 
-    Returns:
-        ``(catalog, missing)`` where ``missing`` lists, in planogram order and without repeats, the
-        identity-required SKUs that have no catalog item. Missing SKUs are returned, never raised.
+def _descriptor(product: dict, sku: str) -> tuple[CatalogItem, Decimal | None]:
+    """Build the ``CatalogItem`` (and expected price) of one described planogram position.
 
     Raises:
-        ValueError: Invalid catalog file or duplicate ``sku`` entries.
+        ValueError: The position has no brand, or a malformed descriptor field.
     """
+    brand = product.get("brand")
+    if not brand:
+        raise ValueError(f"Position {product.get('position')} ({sku}) has a display_name but no brand")
+    extra_ids = [str(i) for i in product.get("identifiers") or []]
     try:
-        text = Path(path).read_text(encoding="utf-8")
-        catalog = Catalog.model_validate_json(text)
-    except Exception as e:
-        raise ValueError(f"Invalid catalog file {path}: {e}") from e
-    # Check for duplicate SKUs
-    seen_skus = set()
-    for item in catalog.items:
-        if item.sku in seen_skus:
-            raise ValueError(f"Duplicate SKU in catalog: {item.sku}")
-        seen_skus.add(item.sku)
-    # Compute missing SKUs
-    missing_skus: list[str] = []
-    seen_in_catalog = set()
-    for facing in planogram.facings:
-        if facing.identity_required and facing.sku not in seen_in_catalog:
-            if catalog.by_sku(facing.sku) is None:
-                missing_skus.append(facing.sku)
-            seen_in_catalog.add(facing.sku)
-    if missing_skus:
-        logger.warning(f"Catalog missing {len(missing_skus)} identity-required SKUs: {missing_skus}")
-    return catalog, missing_skus
+        item = CatalogItem(
+            sku=sku,
+            brand=str(brand),
+            display_name=str(product["display_name"]),
+            family=product.get("family"),
+            xl=bool(product.get("xl") or False),
+            colors=product.get("colors") or [],
+            pack=int(product.get("pack") or 1),
+            identifiers=list(dict.fromkeys([sku, *extra_ids])),
+            aliases=product.get("aliases") or [],
+            provenance="planogram",
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Position {product.get('position')} ({sku}): invalid descriptor: {exc}") from exc
+    price = product.get("price")
+    if price is None:
+        return item, None
+    try:
+        return item, Decimal(str(price))
+    except InvalidOperation as exc:
+        raise ValueError(f"Position {product.get('position')} ({sku}): non-numeric price {price!r}") from exc
+
+
+def load_descriptors(path: Path, planogram: PlanogramRef) -> tuple[Catalog, list[str], dict[str, Decimal]]:
+    """Read the product descriptions embedded in the planogram positions.
+
+    A position is *described* when its ``display_name`` is non-empty; its ``family``/``xl``/``colors``/
+    ``pack``/``identifiers``/``aliases`` feed identity resolution and ``price`` the expected price. The SKU
+    itself is always an identifier. A SKU placed in several positions may be described in any of them, but
+    every described occurrence must agree.
+
+    Args:
+        path: The planogram JSON (same file as :func:`load_planogram`).
+        planogram: Loaded reference, used for the identity-required SKU order.
+
+    Returns:
+        ``(catalog, undescribed, prices)``: one catalog item per described SKU, the identity-required SKUs
+        with no description (planogram order, no repeats — returned, never raised) and ``{sku: price}``.
+
+    Raises:
+        ValueError: A described position without brand, a malformed field, or conflicting descriptions.
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    items: dict[str, CatalogItem] = {}
+    prices: dict[str, Decimal] = {}
+    for shelf in data.get("shelves") or []:
+        for product in shelf["products"].values():
+            sku = str(product["product"])
+            if sku.upper() == CLOSEOUT or not str(product.get("display_name") or "").strip():
+                continue
+            item, price = _descriptor(product, sku)
+            if sku in items and items[sku] != item:
+                raise ValueError(f"SKU {sku} is described differently in two planogram positions")
+            if sku in prices and price is not None and prices[sku] != price:
+                raise ValueError(f"SKU {sku} has conflicting prices in the planogram: {prices[sku]} vs {price}")
+            items[sku] = item
+            if price is not None:
+                prices[sku] = price
+    order = list(dict.fromkeys(f.sku for f in planogram.facings if f.identity_required))
+    undescribed = [sku for sku in order if sku not in items]
+    if undescribed:
+        logger.warning("Planogram has %d undescribed SKUs (no display_name): %s", len(undescribed), undescribed)
+    return Catalog(items=[items[sku] for sku in order if sku in items]), undescribed, prices
+
+
+def init_descriptor_fields(path: Path) -> int:
+    """Add every missing descriptor field as ``null`` to each planogram position, in place.
+
+    Existing values are never touched, so the call is idempotent.
+
+    Returns:
+        The number of positions that gained at least one field.
+    """
+    target = Path(path)
+    data = json.loads(target.read_text(encoding="utf-8"))
+    changed = 0
+    for shelf in data.get("shelves") or []:
+        for product in shelf["products"].values():
+            missing = [name for name in DESCRIPTOR_FIELDS if name not in product]
+            for name in missing:
+                product[name] = None
+            changed += bool(missing)
+    if changed:
+        target.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return changed
 
 
 def load_prices(path: Path) -> dict[str, Decimal]:
@@ -145,36 +219,6 @@ def load_prices(path: Path) -> dict[str, Decimal]:
         except InvalidOperation as exc:
             raise ValueError(f"Non-numeric price for SKU {sku}: {value}") from exc
     return result
-
-
-def emit_catalog_template(planogram: PlanogramRef, path: Path) -> None:
-    """Write a fill-in catalog skeleton: one item per distinct identity-required SKU.
-
-    Each item pre-fills ``sku``, ``brand`` (empty string when the planogram has none), ``identifiers=[sku]``,
-    ``display_name=""`` and leaves the descriptor fields at their defaults.
-
-    Raises:
-        FileExistsError: ``path`` already exists (never overwritten).
-    """
-    target = Path(path)
-    if target.exists():
-        raise FileExistsError(f"Refusing to overwrite existing catalog: {target}")
-    # Build ordered-unique items
-    seen_skus = set()
-    items: list[CatalogItem] = []
-    for facing in planogram.facings:
-        if facing.identity_required and facing.sku not in seen_skus:
-            items.append(
-                CatalogItem(
-                    sku=facing.sku,
-                    brand=facing.brand or "",
-                    display_name="",
-                    identifiers=[facing.sku],
-                )
-            )
-            seen_skus.add(facing.sku)
-    catalog = Catalog(items=items)
-    target.write_text(catalog.model_dump_json(indent=2), encoding="utf-8")
 
 
 def normalize_brand(text: str | None, catalog: Catalog) -> str | None:
@@ -230,7 +274,8 @@ def resolve_identity(reading: SlotReading, catalog: Catalog) -> tuple[str | None
     # Rule 2: descriptor signature
     signature_matches = []
     for item in items:
-        if reading.family is None:
+        # An item without a family has no signature: it can only match by identifier or alias.
+        if reading.family is None or item.family is None:
             continue
         if _norm(item.family) != _norm(reading.family):
             continue

@@ -416,7 +416,6 @@ sdd/state/.design_research/
 examples/planogram/*
 !examples/planogram/planogram_check.py
 !examples/planogram/README.md
-!examples/planogram/catalog.example.json
 !examples/planogram/plancheck/
 !examples/planogram/plancheck/**/*.py
 !examples/planogram/tests/

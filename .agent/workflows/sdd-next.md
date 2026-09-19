@@ -8,6 +8,12 @@ Aggregate tasks across all per-spec indexes (`sdd/tasks/index/*.json`),
 identify unblocked tasks, and suggest assignments. Shows worktree context
 to help the user decide where to run each task.
 
+## Usage
+```
+/sdd-next
+/sdd-next --project <project> [--tag <tag>]     # FEAT-576 taxonomy filter
+```
+
 ## Guardrails
 - Only suggest tasks with status `"pending"` and all dependencies `"done"`.
 - If `sdd/tasks/index/` is empty or does not exist, inform the user and suggest running `/sdd-task` first.
@@ -23,6 +29,15 @@ the `tasks[]` arrays:
 
 ```bash
 TASKS=$(jq -s '[.[] | select(.feature != "_orphans") | .tasks[]]' sdd/tasks/index/*.json)
+```
+
+If `--project` / `--tag` is given (FEAT-576), resolve the matching specs and
+keep only tasks whose index's `spec` is in the taxonomy list (AND across flags,
+OR within a repeated flag):
+
+```bash
+SPECS=$(python -m scripts.sdd.doc_taxonomy --kind spec --paths-only --project <p> --tag <t>)
+TASKS=$(jq -s --arg specs "$SPECS" '[.[] | select(.feature != "_orphans") | select(.spec as $s | ($specs | split("\n")) | index($s)) | .tasks[]]' sdd/tasks/index/*.json)
 ```
 
 If no per-spec index files exist, suggest the user run `/sdd-task` first.

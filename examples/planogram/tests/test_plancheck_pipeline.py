@@ -94,7 +94,7 @@ def _reader(fail_rows: frozenset[int] = frozenset()):
     return _answer
 
 
-def _settings(tmp_path: Path, image: np.ndarray, planogram_data: dict, catalog, n_images: int = 1) -> Settings:
+def _settings(tmp_path: Path, image: np.ndarray, planogram_data: dict, n_images: int = 1) -> Settings:
     """Create test settings with n_images copies of the same image."""
     images = []
     for i in range(n_images):
@@ -105,13 +105,9 @@ def _settings(tmp_path: Path, image: np.ndarray, planogram_data: dict, catalog, 
     planogram_path = tmp_path / "planogram.json"
     planogram_path.write_text(json.dumps(planogram_data), encoding="utf-8")
 
-    catalog_path = tmp_path / "catalog.json"
-    catalog_path.write_text(catalog.model_dump_json(indent=2), encoding="utf-8")
-
     return Settings(
         images=images,
         planogram=str(planogram_path),
-        catalog=str(catalog_path),
         output=str(tmp_path / "out"),
         cache_dir=str(tmp_path / "cache"),
         verify_pass=False,
@@ -132,13 +128,11 @@ def test_absolutize_resolves_relative_paths(tmp_path, monkeypatch) -> None:
     (tmp_path / "images").mkdir()
     (tmp_path / "images" / "test.png").touch()
     (tmp_path / "planogram.json").touch()
-    (tmp_path / "catalog.json").touch()
     (tmp_path / "cache").mkdir()
 
     settings = Settings(
         images=["images/test.png"],
         planogram="planogram.json",
-        catalog="catalog.json",
         output="out",
         cache_dir="cache",
         prices=None,
@@ -152,7 +146,6 @@ def test_absolutize_resolves_relative_paths(tmp_path, monkeypatch) -> None:
     # Every path field should be absolute
     assert Path(abs_settings.images[0]).is_absolute()
     assert Path(abs_settings.planogram).is_absolute()
-    assert Path(abs_settings.catalog).is_absolute()
     assert Path(abs_settings.output).is_absolute()
     assert Path(abs_settings.cache_dir).is_absolute()
     # prices stays None
@@ -169,7 +162,7 @@ async def test_run_check_synthetic_end_to_end(
 ) -> None:
     monkeypatch.setattr(pipeline, "TagOcr", _FakeOcr)
     fake_backend.queue["identify"] = [_reader()] * 20
-    settings = _settings(tmp_path, shelf_image, mini_planogram_data, mini_catalog)
+    settings = _settings(tmp_path, shelf_image, mini_planogram_data)
 
     report = await run_check(settings, backend_factory=lambda llm, **kw: fake_backend)
 
@@ -210,7 +203,7 @@ async def test_run_check_two_overlapping_photos(
 ) -> None:
     monkeypatch.setattr(pipeline, "TagOcr", _FakeOcr)
     fake_backend.queue["identify"] = [_reader()] * 40  # 20 per image
-    settings = _settings(tmp_path, shelf_image, mini_planogram_data, mini_catalog, n_images=2)
+    settings = _settings(tmp_path, shelf_image, mini_planogram_data, n_images=2)
 
     report = await run_check(settings, backend_factory=lambda llm, **kw: fake_backend)
 
@@ -232,7 +225,7 @@ async def test_run_check_two_overlapping_photos(
     # Run a single-image comparison
     single_dir = tmp_path / "single"
     single_dir.mkdir()
-    single_settings = _settings(single_dir, shelf_image, mini_planogram_data, mini_catalog, n_images=1)
+    single_settings = _settings(single_dir, shelf_image, mini_planogram_data, n_images=1)
     fake_backend_single = fake_backend.__class__()
     fake_backend_single.queue["identify"] = [_reader()] * 20
     monkeypatch.setattr(pipeline, "TagOcr", _FakeOcr)
@@ -247,7 +240,7 @@ async def test_run_check_backend_failure_row(
 ) -> None:
     monkeypatch.setattr(pipeline, "TagOcr", _FakeOcr)
     fake_backend.queue["identify"] = [_reader(fail_rows=frozenset({2}))] * 20
-    settings = _settings(tmp_path, shelf_image, mini_planogram_data, mini_catalog)
+    settings = _settings(tmp_path, shelf_image, mini_planogram_data)
 
     report = await run_check(settings, backend_factory=lambda llm, **kw: fake_backend)
 
@@ -272,3 +265,14 @@ async def test_run_check_backend_failure_row(
     assert (output / "slots").is_dir()
     assert (output / "tags").is_dir()
     assert (output / "run.snapshot.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_check_requires_described_planogram(tmp_path, shelf_image, mini_planogram_data, fake_backend) -> None:
+    for shelf in mini_planogram_data["shelves"]:
+        for product in shelf["products"].values():
+            product["display_name"] = None
+    settings = _settings(tmp_path, shelf_image, mini_planogram_data)
+    with pytest.raises(ValueError, match="--init-descriptors"):
+        await run_check(settings, backend_factory=lambda llm, **kw: fake_backend)
+    assert fake_backend.calls == []

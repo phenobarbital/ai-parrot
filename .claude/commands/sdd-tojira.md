@@ -137,7 +137,13 @@ Priority 4: No match
 | Section 1 | Motivation & Business Requirements | Description |
 | Section 5 | Acceptance Criteria | AC custom field |
 | Components | Module Breakdown / Impact | Jira components |
+| Labels (FEAT-576) | Frontmatter `projects` ∪ `tags` (sorted, deduped) | Jira labels |
 | Effort | Worktree Strategy or task index | Original estimate |
+
+**Labels**: Compute the labels from the spec's frontmatter using:
+```bash
+python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse_taxonomy; t = parse_taxonomy(Path('<spec>')); print(' '.join(sorted(set(t.projects + t.tags))))"
+```
 
 **Description format:**
 ```markdown
@@ -191,7 +197,7 @@ jira_create_issue(
     issue_type="Story",
     description="<formatted description>",
     components="Nav-AI",
-    additional_fields='{"timeoriginalestimate": "<TOTAL_SECONDS>"}'
+    additional_fields='{"labels": ["ai-parrot", "memory"], "timeoriginalestimate": "<TOTAL_SECONDS>"}'
 )
 ```
 
@@ -207,6 +213,7 @@ curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
       "issuetype": {"name": "Story"},
       "description": {"type": "doc", "version": 1, "content": [...]},
       "components": [{"name": "Nav-AI"}],
+      "labels": ["ai-parrot", "memory"],
       "timeoriginalestimate": 28800
     }
   }'
@@ -219,14 +226,15 @@ Extract the created ticket key: `JIRA_KEY=$(echo "$RESPONSE" | jq -r '.key')`
 Update description and estimate on the existing ticket.
 
 **Important**: In UPDATE mode, do NOT overwrite the summary — the user may have
-customized it in Jira. Only update description, AC, estimate, and components.
+customized it in Jira. Only update description, AC, estimate, and components, and add labels (never remove).
 
 **MCP path:**
 ```
 jira_update_issue(
     issue_key="NAV-8036",
     description="<formatted description>",
-    additional_fields='{"timeoriginalestimate": "<TOTAL_SECONDS>"}'
+    additional_fields='{"timeoriginalestimate": "<TOTAL_SECONDS>"}',
+    update_fields='{"labels": [{"add": "ai-parrot"}, {"add": "memory"}]}'
 )
 ```
 
@@ -239,7 +247,8 @@ curl -s -u "$JIRA_USERNAME:$JIRA_API_TOKEN" \
     "fields": {
       "description": {"type": "doc", "version": 1, "content": [...]},
       "timeoriginalestimate": 28800
-    }
+    },
+    "update": {"labels": [{"add": "ai-parrot"}, {"add": "memory"}]}
   }'
 ```
 

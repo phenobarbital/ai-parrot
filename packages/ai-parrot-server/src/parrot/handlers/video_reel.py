@@ -52,6 +52,7 @@ class _RequestError(Exception):
         max_size: Optional[int] = None,
         actual_size: Optional[int] = None,
     ) -> None:
+        self.user_message = message
         self.status = status
         self.max_size = max_size
         self.actual_size = actual_size
@@ -261,9 +262,9 @@ class VideoReelHandler(BaseView):
             raise web.HTTPRequestEntityTooLarge(
                 max_size=exc.max_size or 0,
                 actual_size=exc.actual_size or 0,
-                text=str(exc),
+                text=exc.user_message,
             )
-        raise web.HTTPBadRequest(text=str(exc))
+        raise web.HTTPBadRequest(text=exc.user_message)
 
     # ------------------------------------------------------------------
     # Session identity and job ownership (§8 Q7)
