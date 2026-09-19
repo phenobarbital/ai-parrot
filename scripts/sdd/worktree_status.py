@@ -25,6 +25,11 @@ from scripts.sdd.sdd_meta import WORKTREE_ROOT  # verified: scripts/sdd/sdd_meta
 
 _FEAT_BRANCH_RE = re.compile(r"^feat-(?:FEAT-)?(\d+)-(.+)$")
 _HOTFIX_BRANCH_RE = re.compile(r"^hotfix-([A-Z]+-\d+)-(.+)$")
+# sdd-coder pool sub-worktree suffix, e.g. "...--TASK-3505-a1-6818142afc1542a0bdd479267b8ccb6e"
+# (FEAT-549). These are task-level attempt branches nested inside a feature
+# worktree, not feature worktrees themselves, and must never be reported as
+# one (they would otherwise pass _FEAT_BRANCH_RE with a garbage slug).
+_POOL_SUB_WORKTREE_RE = re.compile(r"--TASK-\d+-a\d+-[0-9a-f]+$")
 
 # ---------------------------------------------------------------------------
 # Pydantic models
@@ -67,14 +72,23 @@ class WorktreeReport(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    """Run a git command, return CompletedProcess (never raises on failure)."""
-    return subprocess.run(
-        ["git", *args],
-        cwd=str(cwd),
-        text=True,
-        capture_output=True,
-    )
+def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    """Run a git command, return CompletedProcess (never raises on failure).
+
+    A missing/deleted ``cwd`` (e.g. a worktree directory removed without
+    ``git worktree remove``/``prune``) would otherwise raise ``OSError``
+    before git even runs; that is caught here and reported as a synthetic
+    non-zero-exit failure instead, matching the "never raises" contract.
+    """
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            text=True,
+            capture_output=True,
+        )
+    except OSError as exc:
+        return subprocess.CompletedProcess(args=["git", *args], returncode=1, stdout="", stderr=str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -87,9 +101,13 @@ def _parse_branch(
 ) -> tuple[str, str | None, Literal["feature", "hotfix"]] | None:
     """Parse an SDD branch name into (slug, feature_id_or_jira_key, flow_type).
 
-    Returns None for non-SDD branches (chore-*, fix-*, detached, etc.).
+    Returns None for non-SDD branches (chore-*, fix-*, detached, etc.) and for
+    sdd-coder pool sub-worktree branches (FEAT-549), which are task-level
+    attempts nested inside a feature worktree, not feature worktrees.
     Handles both ``feat-FEAT-550-slug`` and legacy ``feat-550-slug``.
     """
+    if _POOL_SUB_WORKTREE_RE.search(branch):
+        return None
     m = _FEAT_BRANCH_RE.match(branch)
     if m:
         return m.group(2), f"FEAT-{m.group(1)}", "feature"
@@ -131,8 +149,9 @@ def _read_worktree_index(
                     completed_at=task.get("completed_at"),
                 )
             )
-        except (KeyError, TypeError):
-            # Skip malformed task entries
+        except (KeyError, TypeError, ValueError):
+            # Skip malformed task entries (ValueError also covers pydantic's
+            # ValidationError, e.g. a status outside the Literal enum).
             continue
     return tasks, base_branch
 
@@ -241,12 +260,14 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
     # Get all worktree paths from git
     git_worktree_paths = {path for path, _ in git_worktrees}
 
-    # Scan WORKTREE_ROOT for orphan directories
-    worktree_root = Path(WORKTREE_ROOT)
+    # Scan WORKTREE_ROOT for orphan directories. WORKTREE_ROOT is relative
+    # (".claude/worktrees") and must be resolved against repo_root, not the
+    # process's current working directory (which may itself be a worktree).
+    worktree_root = repo_root / WORKTREE_ROOT
     orphan_paths: list[Path] = []
     if worktree_root.exists():
         for entry in worktree_root.iterdir():
-            if entry.is_dir() and entry.name not in git_worktree_paths:
+            if entry.is_dir() and entry.resolve() not in git_worktree_paths:
                 orphan_paths.append(entry)
 
     # Build set of all worktree paths (git + orphans)

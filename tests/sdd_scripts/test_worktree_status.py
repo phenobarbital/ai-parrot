@@ -15,6 +15,7 @@ from scripts.sdd.worktree_status import (
     WorktreeReport,
     WorktreeTaskStatus,
     _check_health,
+    _git,
     _parse_branch,
     _parse_porcelain,
     _read_worktree_index,
@@ -152,6 +153,12 @@ class TestParseBranch:
         """sdd-coder sub-worktrees must NOT be parsed as features."""
         assert _parse_branch("TASK-3351-a1-some-slug") is None
 
+    def test_pool_sub_worktree_real_pattern(self):
+        """FEAT-549 pool sub-worktree branches (feat-FEAT-<N>-<slug>--TASK-<N>-a<N>-<hash>)
+        must NOT be misparsed as a top-level feature worktree with a garbage slug."""
+        branch = "feat-FEAT-571-memory-dynamics--TASK-3382-a1-7f3a91c25d844e6b9a103c6e2b8f4d15"
+        assert _parse_branch(branch) is None
+
 
 # ---------------------------------------------------------------------------
 # TestParsePorcelain
@@ -199,6 +206,27 @@ class TestReadWorktreeIndex:
         tasks, base = _read_worktree_index(tmp_path, "bad")
         assert tasks == []
 
+    def test_task_with_invalid_status_is_skipped_not_raised(self, tmp_path):
+        """A task entry whose status is outside the Literal enum must be
+        skipped (pydantic ValidationError), never propagate and crash the
+        whole discovery run (AC9: malformed data must be handled gracefully)."""
+        idx_dir = tmp_path / "sdd" / "tasks" / "index"
+        idx_dir.mkdir(parents=True)
+        index_data = {
+            "feature": "bad-status",
+            "feature_id": "FEAT-999",
+            "base_branch": "dev",
+            "tasks": [
+                {"id": "TASK-1", "status": "blocked", "completed_at": None},
+                {"id": "TASK-2", "status": "done", "completed_at": "2026-01-01"},
+            ],
+        }
+        (idx_dir / "bad-status.json").write_text(json.dumps(index_data))
+        tasks, base = _read_worktree_index(tmp_path, "bad-status")
+        assert base == "dev"
+        assert len(tasks) == 1
+        assert tasks[0].id == "TASK-2"
+
 
 # ---------------------------------------------------------------------------
 # TestHealth
@@ -242,6 +270,17 @@ class TestHealth:
             health = _check_health(Path("/fake/wt"), "dev")
         assert health.dirty_count == 0
         assert health.unpushed_count == 2
+
+    def test_git_missing_worktree_directory_does_not_raise(self, tmp_path):
+        """A registered-but-deleted worktree directory (rm -rf'd without
+        `git worktree remove`/`prune`) must not crash the whole scan (AC9)."""
+        missing = tmp_path / "does-not-exist"
+        result = _git("status", "--porcelain", cwd=missing)
+        assert result.returncode != 0
+
+        health = _check_health(missing, "dev")
+        assert health.dirty_count == 0
+        assert health.unpushed_count == 0
 
 
 # ---------------------------------------------------------------------------
