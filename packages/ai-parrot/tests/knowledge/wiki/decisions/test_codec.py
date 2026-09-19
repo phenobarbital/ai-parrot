@@ -94,7 +94,7 @@ class TestRoundTrip:
         """All fields survive encode/decode; labels are visible in the stub."""
         page = decision_to_page(documented)
         assert page.category == "adr"
-        assert page.source_id is None          # survives source-slice deletion
+        assert page.source_id is None  # survives source-slice deletion
         assert page.title.startswith("[DOCUMENTED /")
         assert page.summary.startswith("[DOCUMENTED /")
         decoded = decision_from_page(page.model_dump())
