@@ -301,7 +301,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -314,8 +314,8 @@
       "parallelism_notes": "replaces the sync/generate/review stubs TASK-3490 wrote in decisions/service.py (same file, must follow it); calls refresh_decisions from TASK-3489 (decisions/ingest.py), generate_candidates from TASK-3491 and apply_review from TASK-3492",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3493-service-generate-and-review.md"
+      "completed_at": "2026-09-19T21:16:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3493-service-generate-and-review.md"
     },
     {
       "id": "TASK-3494",

@@ -471,10 +471,36 @@ class TestReview:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop —
+`parrot-sdd-coder` MCP server unresponsive throughout this run)
+**Date**: 2026-09-19
+**Notes**: `_target_evidence` resolves a `sym:` id via the injected
+structural service's `lookup()` (matching on exact `symbol_id`) to get a
+real line span, a bare name via `_resolve_symbol` (refusing ambiguity
+before ever reading a file), or a bare repository-relative path as
+whole-file evidence. `_evidence_fingerprint` sorts the evidence the same
+way `codec.content_fingerprint` sorts a record's evidence, so the same
+snapshot always yields the same digest. `generate()` probes existing
+records by `(generation.scope_id, generation.input_sha1)` BEFORE calling
+`resolve_client` — a rerun over unchanged evidence returns `reused` with
+zero client construction/invocation, satisfying AC6 for an offline rerun.
+Otherwise: resolve → one `generate_candidates` call → `recheck_evidence`
+(any drift persists nothing, reported as `ADR_EVIDENCE_CHANGED`) → mint a
+deterministic `candidate_decision_id` per surviving draft → CAS-insert
+with `expected_content_hash=None`, treating an `ADR_REVISION_CONFLICT`
+there as `reused` (a concurrent generate minted the same byte-equivalent
+id first) rather than an error. `sync`/`review` match the blueprint
+exactly. 14 new tests (gates, persistence shape, three dedup scenarios
+including a reviewed-candidate survival check, mid-generation drift, and
+the full review round-trip including concurrent-reviewer and missing-
+link-target cases); full `decisions/` suite re-verified at 164/164.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in behavior. One necessary test-suite
+correction outside this task's own file list: TASK-3490's
+`test_service_retrieval.py::TestOffline::test_orchestration_methods_are_declared_but_unimplemented`
+asserted `sync`/`generate` raise `NotImplementedError` — an assertion
+TASK-3490's own scope explicitly flagged as temporary ("TASK-3493 fills
+them in"). Replacing the stubs (this task's actual, listed scope)
+necessarily falsifies that assertion; removed it in the same commit
+rather than leave a known-broken test behind, with a `NOTE (TASK-3493)`
+comment explaining why.
