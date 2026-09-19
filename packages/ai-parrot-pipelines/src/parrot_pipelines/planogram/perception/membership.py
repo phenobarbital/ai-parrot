@@ -80,7 +80,8 @@ def _row_block_votes(shapes: Sequence[Shape], image_size: Tuple[int, int]) -> Di
     Each row is split into x-contiguous clusters (gap ≤ ``_MAX_GAP_PITCHES`` × the median neighbour
     pitch over all rows); the largest cluster of a row is its main run. The block is the set of main
     runs overlapping the largest main run by ≥ 50 %; it is coherent with ≥ 2 rows, or with one row
-    spanning ≥ 50 % of the image width.
+    spanning ≥ 50 % of the image width. A cluster whose centre lies inside the block's x-span (the
+    union of its main runs) is a hole inside the fixture and still votes ``row_block``.
 
     Args:
         shapes: Observations (only those with ``row_index`` take part).
@@ -121,12 +122,21 @@ def _row_block_votes(shapes: Sequence[Shape], image_size: Tuple[int, int]) -> Di
     if not coherent:
         return {}
 
+    # The block spans the union of its rows' main runs. A gap-separated cluster whose centre lies inside that
+    # span is a hole inside the fixture (e.g. one missing tag), not an adjacent fixture.
+    block_lo = min(_extent(main_runs[i])[0] for i in block_rows)
+    block_hi = max(_extent(main_runs[i])[1] for i in block_rows)
     votes: Dict[str, _Vote] = {}
     for index in block_rows:
         main_ids = {s.shape_id for s in main_runs[index]}
         for group in row_clusters[index]:
+            lo, hi = _extent(group)
+            inside = block_lo <= (lo + hi) / 2 <= block_hi
             for shape in group:
-                votes[shape.shape_id] = (True, "row_block") if shape.shape_id in main_ids else (False, "row_gap")
+                if shape.shape_id in main_ids or inside:
+                    votes[shape.shape_id] = (True, "row_block")
+                else:
+                    votes[shape.shape_id] = (False, "row_gap")
     return votes
 
 

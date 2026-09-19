@@ -142,3 +142,12 @@ def test_partial_view_header_cut_off():  # AC-9
     cut_header = _shape("zone_header", 600, 0, w=800, h=40, kind=ShapeKind.ZONE)
     got = _by_id(assign_membership([_shape("p1", 700, 400), _shape("p2", 1200, 400)], [cut_header], SIZE))
     assert got["p1"].membership == ON and got["p2"].membership == ON
+
+
+def test_hole_inside_the_block_is_not_a_row_gap():
+    """One missing tag inside the fixture span (2 pitches) must not push the row's other tags off-fixture."""
+    full = _tag_rows()  # rows 0..2, x centres 150 .. 1200
+    holed = [s for s in full if s.shape_id != "t1_3"]  # row 1 loses its 4th tag
+    got = _by_id(assign_membership(holed, [], SIZE))
+    assert all(s.membership == ON for s in got.values())
+    assert all(s.membership_evidence == ["row_block"] for s in got.values())
