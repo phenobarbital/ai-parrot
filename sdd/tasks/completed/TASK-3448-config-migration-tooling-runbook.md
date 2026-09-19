@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3426, TASK-3435
@@ -499,7 +499,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+planogram/migration.py: ConversionReport / PreflightRow; convert_config (deep copy; product_on_shelves only; fixed quantity_range (n,n) -> n facings with consecutive slots, ranges/unnamed -> one placeholder + unresolved; fact_tag/price_tag/slot skipped; promotional types -> zones (kind backlit/poster/box_stack/header) + zone_present binding; nested illumination (required/penalty/name), text_requirements (product-level and endcap, merged per target) and visual_features -> bindings with rule_id '<kind>:<target_id>', products bound on their first facing; ids shelf-<n>, <shelf_id>:<slot>, zone-<level>-<n>; slot-order warning; self-validation failures -> warnings); check_row (missing / undecodable JSON / invalid definition / invalid bindings; legacy types ok; JSON-string tolerant); preflight (lazy AsyncDB, single constant SELECT via conn.fetch_all — verified in the installed asyncdb pg driver); CLI convert (bare config or exported row, refuses to overwrite its input, exit 2 while unresolved) and preflight (exit 2 while any row fails). No print.
+docs/pipelines/planogram-cycle-migration.md: who needs it, score-semantics change, ALTER -> convert/review -> backfill -> preflight -> deploy, rollback, process-pool sizing under gunicorn, troubleshooting.
+Tests: test_config_migration.py 14 passed offline. ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
