@@ -219,9 +219,7 @@ def _log_line_count(service: LedgerService) -> int:
 class TestCloseEvidence:
     async def test_close_issue_persists_resolved_by(self, ledger_service):
         issue_id = await ledger_service.open_issue(title="Evidence", body="b", discovered_from="task:TASK-1")
-        assert (
-            await ledger_service.close_issue(issue_id, "fixed", "agent:sdd-fix", resolved_by="commit:abc123") is True
-        )
+        assert await ledger_service.close_issue(issue_id, "fixed", "agent:sdd-fix", resolved_by="commit:abc123") is True
         assert (await _state_of(ledger_service, issue_id))["resolved_by"] == "commit:abc123"
 
     async def test_close_issue_without_resolved_by_unchanged(self, ledger_service):

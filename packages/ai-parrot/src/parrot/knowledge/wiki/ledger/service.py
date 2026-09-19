@@ -258,7 +258,9 @@ class LedgerService:
         await self._sync_best_effort()
         state = await self._issue_state(issue_id)
         if state is None or state.get("status") not in ("open", "claimed"):
-            logger.warning("Refusing issue.closed for %s: missing or status=%r", issue_id, state and state.get("status"))
+            logger.warning(
+                "Refusing issue.closed for %s: missing or status=%r", issue_id, state and state.get("status")
+            )
             return False
         payload: dict[str, Any] = {"reason": reason, "closed_by": actor}
         if resolved_by is not None:
