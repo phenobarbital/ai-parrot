@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-<NNN>
 **Date**: 2026-09-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -401,7 +401,7 @@ None.
 
 ## 8. Open Questions
 
-- [ ] Q1: Follow-up spec to bring the same telemetry to the other 12 `invoke()` implementations, starting with GroqClient/LocalLLMClient/ZaiClient, which override the `OpenAIBaseClient` version? Could lifting this into a shared `AbstractClient` helper justify touching `clients/base.py`? — *Owner: Jesus Lara*
+- [ ] Q1: Follow-up spec to bring the same telemetry to the other 12 `invoke()` implementations, starting with GroqClient/LocalLLMClient/ZaiClient, which override the `OpenAIBaseClient` version? Could lifting this into a shared `AbstractClient` helper justify touching `clients/base.py`? — *Owner: Jesus Lara*: Yes
 
 ---
 
