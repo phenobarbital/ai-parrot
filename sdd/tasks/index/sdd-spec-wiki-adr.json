@@ -132,7 +132,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "calls decision_to_page/decision_from_page from TASK-3480 (decisions/codec.py) and store.compare_and_swap_page from TASK-3481",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3485-decision-repository.md"
+      "completed_at": "2026-09-19T20:48:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3485-decision-repository.md"
     },
     {
       "id": "TASK-3486",

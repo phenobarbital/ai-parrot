@@ -414,10 +414,31 @@ class TestInventory:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop)
+**Date**: 2026-09-19
+**Notes**: Implemented `get`, `inventory` (with the `+1` overflow probe and
+per-page `DecisionDiagnostic` collection on decode failure — a bad page is
+skipped, never sinks the whole answer) and `save` (CAS with the
+`NotImplementedError`→`ADR_WRITE_UNSUPPORTED`, `PermissionError`→
+`ADR_READ_ONLY`, `False`→`ADR_REVISION_CONFLICT` mapping, no retry). 10
+tests: insert/conflict, get-then-bump-then-stale-conflict round trip
+(AC6), CAS-less and read-only duck-typed stub stores, all five
+`TestInventory` bodies (all-records, over-bound raises, at-bound
+succeeds, one corrupt page becomes a diagnostic, `list_pages` stub
+bodies hydrated via `get_page`). All 10 pass against a real
+`InMemoryWikiStore` (TASK-3482).
 
-**Completed by**:
-**Date**:
-**Notes**:
+A previous native-sonnet attempt at this task correctly refused to commit
+after discovering its test fixture needed `InMemoryWikiStore` to have a
+genuine (non-stub) `compare_and_swap_page` — TASK-3482 was not yet merged
+into its base at the time, even though this task's own `Depends-on` list
+omits TASK-3482 (only TASK-3480/TASK-3481 are listed). That attempt's
+draft `repository.py`/`test_repository.py` were lost when the orchestrator
+ran `coder_cleanup` on its (uncommitted, non-conflicted) pool worktree
+before re-implementing; this delivery reimplements from the same task
+blueprint, now with TASK-3482 actually merged.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Note for future task authoring: this
+task's `Depends-on` list should probably include TASK-3482, since its own
+test blueprint explicitly requires a real (non-stub) file-backed CAS
+implementation.
