@@ -72,8 +72,8 @@ criteria) you must:
    not `--type hotfix`. Only fall back to the `kind`-derived default when
    the brief's `flow_type`/`base_branch` are absent (`null`):
    ```
-   /sdd-spec <slug> --type hotfix --base-branch main       # kind == "bug"
-   /sdd-spec <slug> --type feature --base-branch dev        # kind == "enhancement" | "new_feature"
+   /sdd-spec <slug> --type hotfix --base-branch main --no-interview       # kind == "bug"
+   /sdd-spec <slug> --type feature --base-branch dev --no-interview        # kind == "enhancement" | "new_feature"
    ```
    `kind == "bug"` → `type: hotfix` / `base_branch: main` (bug fixes land
    on `main`), UNLESS the brief overrode `flow_type` to `"feature"` (see

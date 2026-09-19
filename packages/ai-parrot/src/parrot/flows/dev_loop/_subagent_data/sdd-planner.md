@@ -43,7 +43,7 @@ Given the input brief (``document_path``, ``document_kind``, optional
    it too: it is pre-fetched knowledge-graph context (related modules,
    prior features) that saves you a codebase-wide search.
 2. **Generate the spec, if missing**. If ``document_kind`` is
-   ``"brainstorm"`` or ``"proposal"``, run ``/sdd-spec`` to scaffold and
+   ``"brainstorm"`` or ``"proposal"``, run ``/sdd-spec <slug> --no-interview`` to scaffold and
    fill in ``sdd/specs/<slug>.spec.md`` from the document's content. If
    ``document_kind`` is already ``"spec"``, skip this step — the document
    itself is the spec.
