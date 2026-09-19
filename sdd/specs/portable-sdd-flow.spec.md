@@ -15,7 +15,7 @@ created: 2026-09-19
 **Date**: 2026-09-19
 **Author**: Jesus
 **Status**: draft
-**Target version**: Pending owner selection (§8)
+**Target version**: Next release (owner-selected release milestone; version assigned by release tooling)
 
 Source: `sdd/proposals/portable-sdd-flow.brainstorm.md` (accepted).
 The source has no projects/tags; these remain empty. Its missing base branch
@@ -72,8 +72,11 @@ Resolve a target repository from explicit `--path` or Git discovery from CWD.
 Explicit script root/worktree arguments retain their meaning.
 
 The owner clarified that the new CLI must not use Click. Argument parsing uses
-stdlib `argparse`; the Rich output decision remains in §8. Existing core Click
-usage does not constrain the independent satellite CLI.
+stdlib `argparse` with Rich output. Declare `rich>=13.0` as the third satellite
+runtime dependency alongside Pydantic and PyYAML. Rich formats status tables,
+changed-path summaries and diagnostics; disable forced color/animation when
+output is redirected. Render paths as literal text, not Rich markup. Existing
+core Click usage does not constrain the independent satellite CLI.
 
 The two brainstorm asset layouts describe separate dimensions. Canonical storage
 is `assets/{generic,templated,seeds}/{shared,claude,codex,google}/...`.
@@ -104,7 +107,8 @@ ai-parrot host files ────> relative symlinks to package assets
 | Dev-loop QA | Installed module invocation | Invoke `parrot_sdd.scripts.lint_new` with existing argument quoting |
 | Dev-loop agent loader | Satellite resource lookup | One canonical prompt; absent satellite fails only at SDD prompt loading with an install hint |
 | Host commands, skills, agents, workflows | Resources and symlinks | Preserve host-specific syntax and discovery locations |
-| Test selector/graph checker | Portable kernel dependency | Resolve the extraction boundary in §8 before implementation |
+| Test selector/graph checker | Extract `parrot_sdd.test_scope` | Share one installed kernel; keep repository policy in config |
+| Task closure ledger | Core-owned optional adapter | Notify after successful closure; adapter failure never reverses closure |
 | Workspace and release tools | New distribution | Include wheel/sdist, tests, package data and version source |
 
 ### Data Models
@@ -200,11 +204,11 @@ file or manifest. Diagnostics use logging; the CLI owns presentation.
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1 Package + metadata | yes | Regular package; move metadata preserving §6 signatures; lazy ingest boundary | — |
-| M2 Scripts + portable dependencies | no | Installed module entry points; no checkout-relative loaders | Kernel and core adapter boundary awaits §8 |
-| M3 Core consumers | no | Lazy imports and explicit absent-capability errors; preserve parser semantics | Depends on M2 extraction decision |
+| M2 Scripts + portable dependencies | yes | Extracted kernel, config policy, installed entry points and closure notification contract below | — |
+| M3 Core consumers | yes | Lazy kernel/metadata imports; core-owned notification entry point; explicit absent-capability errors | — |
 | M4 Asset catalog + symlinks | yes | Two-dimensional layout and host mapping; relative symlinks; resource loader | — |
-| M5 Config + installer + CLI | no | Pydantic config, hash ownership, §2 APIs and exit codes | CLI output dependency awaits §8 |
-| M6 Release + integration guards | no | Wheel-only standalone smoke tests and release registration | Target release awaits §8 |
+| M5 Config + installer + CLI | yes | Pydantic config, hash ownership, §2 APIs/exit codes, argparse + Rich | — |
+| M6 Release + integration guards | yes | Next release; wheel-only standalone smoke tests and existing release registry pattern | — |
 
 ### Module 1: Package and metadata spine
 
@@ -227,23 +231,77 @@ file or manifest. Diagnostics use logging; the CLI owns presentation.
 - **Responsibility**: move all SDD utilities including `prune_intake.py` and
   `install_hooks.py`; eliminate old imports/module invocations. Import metadata
   directly from `parrot_sdd.meta`, not a second metadata shim.
-- **Depends on**: M1 and the §8 portable dependency decision.
+- **Depends on**: M1. Kernel extraction and immediate consumer updates land in the same wave.
 - **Interface skeleton**: retain moved utility public signatures/CLI flags and
   error codes; `ensure(plan, *, repo_root, sync=True, require_paths=(), dry_run=False)`
   and `reserve_ids(kind, count, base_branch, label, *, ...)` preserve behavior.
 - Keep shell resources installed in the package. New internal runner
   `parrot_sdd.scripts.run_shell.main(argv: list[str] | None = None) -> int`
-  accepts only `close_task`, `heal_orphans`, `codex_hook`, resolves packaged
+  accepts only `close_task`, `heal_orphans`, resolves packaged
   resources, forwards arguments without interpolation and returns the shell exit
   status. This does not add script verbs to `sdd`.
 - Move repository-specific baseline data out of the deleted directory, not into
   the wheel. Retain Bash/jq requirements where existing scripts use them.
 
+#### Extracted test-scope kernel
+
+- Move the complete core `flows/dev_loop/test_scope/` implementation to
+  `src/parrot_sdd/test_scope/`, including its existing tests under the satellite's
+  `tests/test_scope/`. Keep the existing algorithms and public signatures,
+  including `plan_tests(*, worktree, changed_files, tier, declared=(), policy=None)`.
+  Remove checkout-relative `sys.path` loaders from the two scripts.
+- Preserve existing dataclass carriers during this focused move; new config
+  boundaries use Pydantic. Package initialization and kernel imports must not
+  eagerly import Rich, Pydantic models, core or tools. CLI/config imports remain
+  separate from the dependency-light guard path.
+- Add `test_scope` to `SDDConfig`, represented by a new `TestScopeConfig` model:
+  `core_paths: list[str] = []`, `xdist_safe: list[str] = []`,
+  `impact_cap: int = 150`, `impact_depth: int = 1`,
+  `core_fanin_threshold: int = 50`, `marker_expression: str = ""`.
+  Require positive cap/threshold and nonnegative depth; validate paths as relative.
+  Convert this model to existing `ScopePolicy` through the new
+  `load_scope_policy(worktree: Path) -> ScopePolicy` in `test_scope/policy.py`.
+  Explicit `policy` wins; otherwise planning loads target-repository config.
+  Missing config uses portable defaults; invalid config raises an actionable error.
+- Move ai-parrot's measured core paths, xdist allowlist and marker expression
+  into its `.parrot/sdd.json`, updating paths affected by extraction. Generate
+  their documentation into the same CONFIG.md. Preserve ai-parrot behavior via
+  parity tests; never ship these values as portable defaults.
+- Retain workspace-layout support. Add `src/<import-package>/...` → `tests/...`
+  mirroring for single-distribution projects, using the existing deepest-directory
+  fallback and `root` distribution identity; recognize `src/` in `distribution_of`.
+  No automatic xdist or marker filtering in an unconfigured repository.
+- Update immediate consumers in the same extraction wave: QA, coder engine,
+  LLM dispatcher, worktree environment and tools' native scope guard. All imports
+  use the installed package; missing support must not silently disable a guard
+  in a configured SDD execution environment. Test direct-script hook execution
+  with an interpreter that can import the satellite. Do not mutate shared venvs.
+
+#### Shell integration boundary
+
+- Remove embedded core imports from packaged `close_task.sh`. After its successful
+  exit, `run_shell` calls the new satellite function
+  `notify_task_closed(root: Path, task_id: str, feature_slug: str, verification: str) -> None`
+  in `parrot_sdd/events.py`. Never notify after failed closure or orphan healing.
+- Discover optional callbacks through stdlib `importlib.metadata.entry_points`
+  in group `parrot_sdd.task_closed`, sorted by entry-point name. Each callback
+  receives those four keyword arguments; zero callbacks is a no-op. Discovery,
+  import and callback exceptions are logged individually and do not change the
+  successful closure exit status. No hard-coded core module name exists in the
+  satellite. Installing the satellite alone loads no core callback.
+- Relocate `scripts/sdd/codex_hook.sh` to repository-owned
+  `scripts/codex_hook.sh`; update its live callers. It remains an optional
+  ai-parrot-tools integration, excluded from the satellite resource catalog and
+  runner allowlist. This is the deliberate exception to the brainstorm's proposed
+  move of all three shell helpers, needed to retain the approved dependency boundary.
+
 ### Module 3: Core integration and duplicate removal
 
 - **Paths**: core dev-loop `nodes/base.py`, `nodes/research.py`,
   `nodes/feature_handoff.py`, `nodes/qa.py`, `_subagent_defs.py` and affected tests;
-  core optional-dependency metadata.
+  `sdd_coder/engine.py`, `dispatchers/llm.py`, `worktree_environment.py`;
+  tools `tool_optimizations/hooks.py`; core optional-dependency metadata;
+  new core `knowledge/wiki/ledger/sdd_adapter.py`.
 - **Responsibility**: replace duplicate branch constants/parsers with the satellite
   contract; preserve fallback behavior; replace the QA module invocation.
 - **Depends on**: M1, M2; prompt resource change lands with M4.
@@ -254,6 +312,17 @@ file or manifest. Diagnostics use logging; the CLI owns presentation.
 - `load_subagent_definition(name: str) -> str` retains its valid-name validation,
   frontmatter stripping, and missing-resource error behavior. It reads the
   satellite resource, not a checkout path or copied core prompt.
+- Core registers entry point `wiki_ledger` in group `parrot_sdd.task_closed`,
+  targeting `parrot.knowledge.wiki.ledger.sdd_adapter:task_closed`. New signature:
+  `task_closed(*, root: Path, task_id: str, feature_slug: str, verification: str) -> None`.
+  Move the existing ledger append behavior here: resolve the shared root, append
+  `task.closed` with subject `task:<id>`, actor `agent:close_task.sh`, and existing
+  feature/verification payload. Preserve best-effort notification semantics and
+  use no SQLite writer. The callback imports ledger implementation lazily.
+- Declare core's satellite dependency in an optional `sdd` extra and include the
+  satellite directly in workspace development dependencies. No satellite runtime
+  dependency points back to core; the entry point is an optional extension supplied
+  by an installed host, not a required reverse dependency.
 
 ### Module 4: Assets, portability and relative symlinks
 
@@ -280,7 +349,7 @@ file or manifest. Diagnostics use logging; the CLI owns presentation.
 - **Paths**: satellite `config.py`, `install.py`, `cli.py`, asset catalog/config
   template/seeds; ai-parrot `.parrot/sdd.json`, generated `sdd/CONFIG.md`.
 - **Responsibility**: implement §2 models, public APIs, ownership and exit codes.
-- **Depends on**: M4; output dependency decision in §8.
+- **Depends on**: M4. Uses argparse for parsing and Rich for user-facing output.
 - **Interface skeleton**: the signatures in §2 are authoritative. New exception
   `SDDInstallError(RuntimeError)` represents operational failures; Pydantic
   validation errors map to CLI exit 2. New code uses logging, no `print`.
@@ -329,6 +398,9 @@ release files are exclusive work; do not create speculative module worktrees.
 | `test_dry_run` | M5 | Same path plan as install; byte-for-byte and directory-tree non-mutation |
 | `test_partial_failure` | M5 | Failed writes reported; manifest never falsely reports success; recovery retains ownership |
 | `test_cli_contract` | M5 | All verbs/options and exit codes; help works without core |
+| `test_rich_output` | M5 | Literal paths/markup; stable redirected output without ANSI animation |
+| `test_scope_policy_portability` | M2 | Portable defaults, ai-parrot policy parity, explicit override precedence and invalid config |
+| `test_task_closed_callbacks` | M2/M3 | No callbacks, successful callback, broken callback/import; no notification after failed closure |
 
 ### Integration Tests
 
@@ -341,6 +413,8 @@ release files are exclusive work; do not create speculative module worktrees.
 | `test_core_with_sdd` | Same branch selection, QA lint argv and prompt bodies as before migration |
 | `test_no_legacy_callsites` | Scan executable/live documentation surfaces for old imports and paths, excluding immutable historical SDD records and explicit migration examples |
 | `test_allocator_regression` | Existing concurrency, rejection, duplicate-slug and local-commit protection tests pass against moved code |
+| `test_extracted_scope_consumers` | Script/direct hook, QA and dispatcher use the installed kernel; configured guards cannot disappear silently |
+| `test_core_ledger_adapter` | Successful closure appends the existing event payload through the optional adapter; missing core is a no-op |
 
 ### Test Data / Fixtures
 
@@ -359,7 +433,10 @@ instead of deriving the checkout root from their new file depth.
 - [ ] `scripts/sdd/` is removed; calibration and baseline remain repository-owned
   at the new paths; all live callers use the installed package.
 - [ ] Flow metadata, ID allocation, worktree provisioning and taxonomy regressions pass.
-- [ ] No satellite path, including embedded shell code, imports core; §8 seams are resolved.
+- [ ] No satellite path, including embedded shell code, directly imports core or tools;
+  the extracted kernel works standalone and optional ledger callbacks are core-owned.
+- [ ] Rich output works in interactive and redirected streams without requiring Click.
+- [ ] Existing ai-parrot test selection, escalation policy and guard decisions retain parity.
 - [ ] Core SDD imports are lazy; wiki ingest tolerates an absent satellite.
 - [ ] Duplicate core parsers/constants and bundled prompt copies are consolidated
   without changing fallback selection or programmatic prompt loading.
@@ -449,6 +526,10 @@ class SDDGraphIngest:
 | Repository policy | `ScopePolicy` uses repository-specific constants | `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/policy.py:751` |
 | Task-close integration | Embedded Python imports wiki ledger core | `scripts/sdd/close_task.sh:131` |
 | Codex hook | Executes `parrot_tools.tool_optimizations.hooks` via main .venv | `scripts/sdd/codex_hook.sh:6` |
+| Native guard | `_load_scope_guard(cwd)` currently loads kernel by checkout path | `packages/ai-parrot-tools/src/parrot_tools/tool_optimizations/hooks.py:466` |
+| Worktree guard | `_load_guard_bash()` currently handles package and direct-script imports | `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py:199` |
+| Coder kernel consumer | Imports attempt-context writer and data carrier | `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py:55` |
+| Dispatcher kernel consumer | Imports `GuardOutcome` and `guard_argv` | `packages/ai-parrot/src/parrot/flows/dev_loop/dispatchers/llm.py:59` |
 | Intake hooks | `render_block(python, repo_root)` emits old module invocation | `scripts/sdd/install_hooks.py:33` |
 | Allocation | Git-native remote compare-and-swap, no local history destruction | `scripts/sdd/reserve_ids.py:468` |
 | Workspace | Glob members `packages/*`; root explicitly lists runtime workspace dependencies | `pyproject.toml:13`, `:57` |
@@ -511,7 +592,7 @@ class SDDGraphIngest:
 |---|---|---|
 | Pydantic | `==2.12.5` in core | Satellite models; use this verified bound initially |
 | PyYAML | `>=6.0.2` in core | YAML metadata |
-| Rich | `>=13.0` in core; satellite inclusion pending §8 | Optional CLI presentation decision |
+| Rich | `>=13.0` | Required satellite CLI presentation; owner approved |
 | setuptools / wheel | `>=77.0.0` / `>=0.44.0` in satellite precedent | Build dependencies only |
 | Python | `>=3.11,<3.14` workspace convention | Runtime floor |
 | Git, Bash, jq | Existing external script prerequisites | Repository operations/shell helpers; document and diagnose absence |
@@ -541,16 +622,13 @@ brainstorm; the same source requires optional wiki/dev-loop integrations.
 ### Specification clarifications
 
 - [x] New CLI does not use Click — owner clarification during specification.
-- [ ] Rich output versus plain argparse output, and corresponding satellite dependency — Owner: Jesus.
-- [ ] Target release for the new distribution — Owner: Jesus.
-- [ ] Include test-scope kernel extraction and keep core ledger emission in an
-  optional core-owned adapter, or exclude those integrations from portable scope — Owner: Jesus.
-  This also covers `codex_hook.sh`'s parrot_tools dependency: it must remain a
-  repository-owned optional integration or be replaced by a portable implementation;
-  shipping the existing core-dependent hook violates the zero-core-dependency goal.
+- [x] CLI presentation — “Rich output”: argparse + Rich; Rich is an explicit satellite dependency.
+- [x] Target release — “next release”: scheduled for the next release; no guessed numeric version.
+- [x] Dependency boundary — “include”: extract the test-scope kernel into `parrot_sdd`
+  and retain ledger emission in a core-owned optional adapter, as specified in M2/M3.
 
-The unresolved dependency-boundary question blocks final M2/M3 contracts and task
-decomposition. Do not mark this draft approved until it is resolved.
+All specification clarification questions are resolved. Status remains draft for
+normal specification review; task decomposition follows approval.
 
 ---
 
@@ -562,10 +640,10 @@ not represented as an independent model opinion. No transcript is claimed.
 
 | # | Verified finding | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| R1 | Test scripts load core kernel by checkout path | ESCALATE | Moving scripts alone cannot satisfy standalone installation | §3 M2, §8 |
+| R1 | Test scripts load core kernel by checkout path | CONFIRM | Owner approved kernel extraction; repository policy moves to config | §3 M2 |
 | R2 | Handoff has another parser copy | CONFIRM | Consolidate all verified duplicates while preserving fallback semantics | §3 M3 |
 | R3 | Prompt loader reads core package data | CONFIRM | Symlinks alone cannot consolidate installed-wheel consumers | §3 M4 |
-| R4 | Shell helpers depend on core/tools | ESCALATE | Satellite must not retain hidden core dependencies | §8 |
+| R4 | Shell helpers depend on core/tools | CONFIRM | Ledger callback stays core-owned; tools-specific hook stays repository-owned | §3 M2/M3 |
 | R5 | Partial metadata frontmatter fails validation | CONFIRM | Resolve source default explicitly; keep current parser semantics visible | §6 |
 
 ---
@@ -575,3 +653,4 @@ not represented as an independent model opinion. No transcript is claimed.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-19 | Jesus / Codex | Initial researched draft; pending dependency and release clarifications |
+| 0.2 | 2026-09-19 | Jesus / Codex | Resolve owner choices: Rich output, next release, kernel extraction and core-owned ledger adapter |
