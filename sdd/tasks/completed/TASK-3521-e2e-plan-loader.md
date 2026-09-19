@@ -172,5 +172,44 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `parrot.e2e.plan.load_plan(path, *,
+worktree) -> E2EPlan` in `packages/ai-parrot-server/src/parrot/e2e/plan.py`:
+resolves and requires the worktree to exist; rejects plan/spec paths that
+escape the worktree (traversal or symlink escape); parses `---`-delimited
+YAML frontmatter with typed `E2EConfigError` on missing/unreadable file,
+unclosed/absent frontmatter, invalid YAML or non-mapping block; defaults an
+absent `policy` to `optional` without coercing an invalid present value
+(still fails Pydantic's Literal validation); wraps `E2EPlan` validation
+errors into `E2EConfigError(reason_code='plan_invalid')`; requires the
+referenced spec file to exist; optionally cross-validates plan
+policy/scenario IDs against an `e2e: {policy, scenario_ids}` block in the
+spec's own frontmatter when present (no-op when absent, true for every
+current spec). All failures are `E2EConfigError` (exit 2) and occur before
+any subprocess/client construction (verified with a monkeypatched
+subprocess guard).
+
+Three scope-boundary assumptions flagged by the implementing agent for
+reviewer/M7 confirmation: (1) the `e2e.policy`/`e2e.scenario_ids`
+frontmatter key names are a forward-compatible choice, not literal spec
+text — no formal schema exists yet (M7 lands it later); (2) "reject unknown
+target options" was interpreted as undeclared `target_id` references
+(already enforced by `E2EPlan`'s validator), not `TargetConfig.options`
+key-filtering, since TASK-3520's own docstring defers that to M4; (3)
+artifact-root escape checks were not implemented — `E2EPlan` carries no
+artifact-root field at plan-load time (that's an evidence-time concept, out
+of this task's file scope). None of these are code defects; carrying them
+forward for M7/M4/M2-evidence task owners to confirm.
+
+Tests: `packages/ai-parrot-server/tests/unit/e2e/test_plan.py` (new, 27
+tests, all tmp_path-isolated) covering success parsing, malformed
+frontmatter, policy defaulting/non-coercion, required-policy coverage,
+wildcard/bare-directory node rejection, duplicate node IDs, undeclared
+target references, path/symlink escape (plan and spec), missing
+worktree/spec, spec e2e-metadata cross-check (match/mismatch/absent), and
+exit-code-2 mapping. `PYTHONPATH=packages/ai-parrot-server/src:packages/ai-parrot/src
+pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 77 passed (includes
+TASK-3520's test_models.py, no regression).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 ·
+Duration: 612.8s · Tokens: 164780 (subagent, in+out combined; native
+usage_known=false in engine seats roll-up).
