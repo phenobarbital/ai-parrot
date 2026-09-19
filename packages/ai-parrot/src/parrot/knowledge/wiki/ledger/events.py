@@ -10,6 +10,7 @@ LedgerEventKind = Literal[
     "issue.acknowledged",
     "issue.closed",
     "issue.superseded",
+    "issue.unclaimed",
     "issue.linked",
     "task.started",
     "task.closed",
@@ -34,6 +35,17 @@ class IssueOpenedPayload(BaseModel):
 
 class IssueClaimedPayload(BaseModel):
     claimed_by: str = Field(description="Agent or task claiming work, e.g. task:TASK-3205")
+
+
+class IssueUnclaimedPayload(BaseModel):
+    """Release a claim so the issue returns to the ready pool (FEAT-572).
+
+    Reduces ``claimed -> open`` and clears ``claimed_by``; a no-op on any
+    other status. Mirrors :class:`IssueClaimedPayload`.
+    """
+
+    unclaimed_by: str = Field(description="Actor releasing the claim, e.g. agent:sdd-fix")
+    reason: str
 
 
 class IssueAcknowledgedPayload(BaseModel):
