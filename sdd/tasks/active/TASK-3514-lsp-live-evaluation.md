@@ -29,6 +29,54 @@ Implement M6 of the approved specification: execute the approved pilot and publi
 | `docs/sdd/lsp-pilot-results.md` | CREATE | Operator-facing evidence or guidance |
 | `packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py` | CREATE | Acceptance and regression tests |
 
+### Scope correction (2026-09-20, operator-approved)
+
+`benchmarks/sdd_lsp/runner.py` requires `SeatSpec.argv` to be a real,
+already-operator-provided CLI — "never invents a provider SDK
+integration" (spec §3 M5). None existed for any of the five arms; without
+one, M6 cannot launch a single live attempt. The operator selected
+`minimax.minimax-m2.5` over AWS Bedrock-Mantle (live-verified reachable
+on the operator's account via
+`packages/ai-parrot/tests/clients/test_bedrock_live_matrix.py -k "mantle and minimax"`,
+2026-09-20) as the one pinned model for all five arms (spec: "Identical
+... model settings ... apply" across arms). Driving it requires composing
+already-existing framework primitives only — `LLMFactory`'s
+`"mantle:<model>"` string (`BedrockMantleClient`), `parrot.bots.Agent`'s
+existing tool-calling loop, `parrot_tools.lsp.toolkit.LSPToolkit` for the
+three LSP arms, and a handful of new small local tools for the `wiki_ast`
+control condition (index-free, since each pilot attempt is a fresh
+never-indexed fixture directory the repo's wiki graph knows nothing
+about) — never a new LLM client class or CLI dispatcher, so this stays
+inside the "NOT in scope: implementing new host adapters" boundary.
+
+Added files (operator-approved, this scope-correction section is their
+record per this task's own Agent Instructions step 3):
+
+| File | Action | Description |
+|---|---|---|
+| `benchmarks/sdd_lsp/seats/__init__.py` | CREATE | Package marker |
+| `benchmarks/sdd_lsp/seats/tools.py` | CREATE | Bounded, cwd-scoped local tools: file read/write/list, investigation answer submission, index-free AST find-definition/find-references, text search |
+| `benchmarks/sdd_lsp/seats/bedrock_mantle_seat.py` | CREATE | The seat entry point (`python -m benchmarks.sdd_lsp.seats.bedrock_mantle_seat`) — same `argv` for all five arms, branches on `PARROT_LSP_PILOT_ARM`/`_TOOLS` env vars; satisfies `runner.py`'s full seat contract (env vars in, `answer.json`/edited `entry_point` + `trace.jsonl` out) |
+| `packages/ai-parrot-tools/tests/lsp/test_bedrock_mantle_seat.py` | CREATE | Offline, network-free tests for the local tools and the trace/answer-writing contract (a fake/stub client, never a real Bedrock call) |
+
+Per-arm tool loadout (operator-confirmed 2026-09-20):
+
+| Arm | Tools beyond `read_file`/`write_file`/`list_dir`/`submit_answer` |
+|---|---|
+| `current` | none |
+| `wiki_ast` | + `ast_find_definition`, `ast_find_references`, `text_search` |
+| `lsp_navigation` | `wiki_ast`'s tools + `lsp_definition`, `lsp_references` |
+| `lsp_diagnostics` | `wiki_ast`'s tools + `lsp_diagnostics`, `lsp_diagnostic_delta` |
+| `lsp_combined` | `wiki_ast`'s tools + all four LSP tools |
+
+The `fix-unavailable-server` forced condition
+(`PARROT_LSP_PILOT_FORCE_UNAVAILABLE=1`) is simulated by constructing
+`LSPConfig` with `environment_id=OPERATOR_UNCONFIGURED_ENVIRONMENT_ID`
+for that one attempt regardless of arm, so every `lsp_*` call reports
+`status="unavailable"` before any process spawns — reusing the toolkit's
+own documented sentinel behavior rather than inventing new simulation
+logic.
+
 ## Codebase Contract (Anti-Hallucination)
 
 ### Verified Imports
