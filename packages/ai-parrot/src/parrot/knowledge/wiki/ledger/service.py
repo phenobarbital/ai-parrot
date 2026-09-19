@@ -21,6 +21,7 @@ from parrot.knowledge.wiki.ledger.events import (
     IssueKind,
     IssueOpenedPayload,
     LedgerEvent,
+    SEVERITY_ORDER,
     compute_issue_id,
 )
 from parrot.knowledge.wiki.ledger.index import LedgerIndex, _decode_issue_body
@@ -197,14 +198,20 @@ class LedgerService:
         return issue_id
 
     async def ready_work(self, kind: IssueKind | None = None) -> list[dict[str, Any]]:
-        """Return unclaimed, open issues (optionally filtered by ``kind``)."""
+        """Return unclaimed, open issues sorted by ``(SEVERITY_ORDER, issue_id)``.
+
+        The filter predicate is unchanged; only the ordering is new (FEAT-572 S6).
+        ``ledger ready``, ``/sdd-next`` and the MCP ``ledger_ready`` tool inherit it.
+        """
         await self._sync_best_effort()
         issues = await self._all_issues()
-        return [
+        rows = [
             _issue_dict(issue_id, state)
             for issue_id, state in issues
             if state.get("status") == "open" and (kind is None or state.get("kind") == kind)
         ]
+        rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
+        return rows
 
     async def claim(self, issue_id: str, actor: str) -> bool:
         """Delegate to :meth:`LedgerIndex.claim_issue`."""

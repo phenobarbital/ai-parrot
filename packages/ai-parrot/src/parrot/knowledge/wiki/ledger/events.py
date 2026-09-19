@@ -1,7 +1,7 @@
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Final, Literal
 from pydantic import BaseModel, Field
 
 LedgerEventKind = Literal[
@@ -22,6 +22,14 @@ LedgerEventKind = Literal[
 IssueKind = Literal["bug", "tech_debt", "feature_gap", "vulnerability"]
 IssueSeverity = Literal["critical", "major", "minor", "low"]
 IssueStatus = Literal["open", "claimed", "closed", "superseded"]
+
+SEVERITY_ORDER: Final[dict[IssueSeverity, int]] = {"critical": 0, "major": 1, "minor": 2, "low": 3}
+"""Canonical severity order, most urgent first (FEAT-572, design research S6).
+
+Defined HERE, beside the Literal it orders, so ``LedgerService.ready_work()``,
+the fix planner, ``wikitoolkit ledger ready`` and the MCP ``ledger_ready`` tool
+all share one key. Never redefine it in a consumer — import it.
+"""
 
 
 class IssueOpenedPayload(BaseModel):

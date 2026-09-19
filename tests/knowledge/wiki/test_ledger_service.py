@@ -89,6 +89,24 @@ class TestOpenReadyClaim:
         assert await ledger_service.claim(issue_id, "task:TASK-3205") is True
         assert await ledger_service.claim(issue_id, "task:TASK-9999") is False
 
+    async def test_ready_work_is_severity_ordered(self, ledger_service):
+        """critical → major → minor → low, ties broken by issue_id (S6)."""
+        for sev in ("low", "critical", "minor", "major"):
+            await ledger_service.open_issue(title=f"{sev} issue", body="b", severity=sev, discovered_from="task:TASK-1")
+        minor_id_2 = await ledger_service.open_issue(
+            title="minor issue two", body="b", severity="minor", discovered_from="task:TASK-1"
+        )
+        minor_id_3 = await ledger_service.open_issue(
+            title="minor issue three", body="b", severity="minor", discovered_from="task:TASK-1"
+        )
+
+        rows = await ledger_service.ready_work()
+
+        assert [r["severity"] for r in rows] == ["critical", "major", "minor", "minor", "minor", "low"]
+        minor_ids = [r["issue_id"] for r in rows if r["severity"] == "minor"]
+        assert minor_ids == sorted(minor_ids)
+        assert set(minor_ids) & {minor_id_2, minor_id_3} == {minor_id_2, minor_id_3}
+
 
 class TestAcknowledgeAndClose:
     async def test_acknowledge_refuses_non_human_actor_and_leaves_status_open(self, ledger_service):
