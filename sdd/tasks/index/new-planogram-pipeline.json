@@ -520,7 +520,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -535,8 +535,8 @@
       "parallelism_notes": "Builds CycleContext from OcrReader (TASK-3428 perception/ocr.py), CpuExecutor (TASK-3434 perception/executor.py), usable_shapes (TASK-3437), llm_detect_shapes (TASK-3439 identification/detector.py); calls the hooks of TASK-3442; uses open_image(enhance=) and UNSET ctor from TASK-3427. Also flips the single empty-results test in test_legacy_run_orchestration.py created by TASK-3424 (ancestor through TASK-3442).",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3443-run-template.md"
+      "completed_at": "2026-09-19T00:13:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3443-run-template.md"
     },
     {
       "id": "TASK-3444",

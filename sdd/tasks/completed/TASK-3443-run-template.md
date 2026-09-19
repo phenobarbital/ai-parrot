@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3427, TASK-3428, TASK-3434, TASK-3437, TASK-3439, TASK-3442
@@ -702,7 +702,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+plan.py: new constructor (UNSET llm_provider/llm_model, keyword-only cpu_workers/llm_concurrency/llm_timeout/vision_cache_dir, config_backend=planogram_config.llm_backend; validate_contract already runs in AbstractPlanogramType.__init__). run() replaced by the template + helpers: _normalize_inputs (single or sequence; img0..imgN; mismatch/duplicate/empty -> ValueError; single-call _sfx rule kept), _build_context (lazy slots definition via asyncio.to_thread + validate_bindings, VisionAdapter with one semaphore per run, CpuExecutor, OcrReader, CreditPolicy/EvidenceWeights), _perceive_one (open_image via to_thread, enhance only when uses_enhanced_image), _fallback_if_needed (usable on-fixture shapes under min_usable_shapes -> llm_detect_shapes with the type prompt or detector.GENERIC_DETECTION_PROMPT, membership re-applied, slots=[], detection_source 'llm'; failed fallback keeps the perception and records errors), _compare (all-failed -> inconclusive), _render_all (per image, own boxes only, render via to_thread), _render_inputs (legacy payload or Identification->IdentifiedProduct projection), _assemble (8 legacy keys + 14 additive; overall_compliant requires non-empty results; assessment_status emitted as its string value). Per-photo failures isolated; executor closed in finally (success/failure/cancel). render_evaluated_image and _PLANOGRAM_TYPES verified byte-identical. Single legacy call without image_id passes '' to perceive (unsuffixed debug file); migrated types always get the normalised id.
+test_legacy_run_orchestration.py: ONLY test_legacy_empty_results_is_compliant_today flipped -> test_legacy_empty_results_is_not_compliant (overall_compliant False); the other 9 pass unedited.
+Deviation: used identification.detector.GENERIC_DETECTION_PROMPT (TASK-3439) instead of a second local generic prompt constant.
+Tests: test_run_template.py 18 passed (fallback tests inject an inline executor: a spawned worker cannot import the Cython parrot.utils.types from worktree sources — the real executor is covered by test_cpu_executor.py); legacy orchestration 10; full packages/ai-parrot-pipelines/tests 305 (+1 pre-existing), tests/pipelines 138; packages/ai-parrot handler test has the same 2 failures as origin/dev. ruff clean on plan.py.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
