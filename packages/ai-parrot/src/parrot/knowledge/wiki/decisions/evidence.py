@@ -46,14 +46,14 @@ _DOCSTRING_NODE_TYPES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.
 class Citation:
     """One resolved ``ADR-<n>`` reference in a Python source file."""
 
-    alias: str          # canonical "ADR-42"
+    alias: str  # canonical "ADR-42"
     rel_path: str
-    line: int           # 1-based line the reference text sits on
-    page_id: str        # sym:<rel>#<qualname>, or file:<rel> for module scope
+    line: int  # 1-based line the reference text sits on
+    page_id: str  # sym:<rel>#<qualname>, or file:<rel> for module scope
     qualname: str | None  # None == file scope
-    start_line: int     # owning span, 1-based inclusive
+    start_line: int  # owning span, 1-based inclusive
     end_line: int
-    kind: str           # "comment" | "document" (docstring)
+    kind: str  # "comment" | "document" (docstring)
 
 
 def sha1_of_span(text: str) -> str:
@@ -102,9 +102,7 @@ def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation]
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
-        return [], [
-            DecisionDiagnostic(code=ADR_PARSE_FAILED, message=f"Python syntax error: {exc}", path=rel_path)
-        ]
+        return [], [DecisionDiagnostic(code=ADR_PARSE_FAILED, message=f"Python syntax error: {exc}", path=rel_path)]
 
     ranges = _symbol_ranges(tree)
     citations: list[Citation] = []
@@ -144,9 +142,7 @@ def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation]
                 continue
             citations.append(_make_citation(alias, token.start[0], "comment"))
     except (tokenize.TokenError, SyntaxError, IndentationError) as exc:
-        return [], [
-            DecisionDiagnostic(code=ADR_PARSE_FAILED, message=f"tokenize error: {exc}", path=rel_path)
-        ]
+        return [], [DecisionDiagnostic(code=ADR_PARSE_FAILED, message=f"tokenize error: {exc}", path=rel_path)]
 
     for node in ast.walk(tree):
         if not isinstance(node, _DOCSTRING_NODE_TYPES):
