@@ -195,7 +195,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -205,8 +205,8 @@
       "parallelism_notes": "packs DecisionHit/DecisionDossier from TASK-3479 (decisions/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3488-dossier-render-and-budget.md"
+      "completed_at": "2026-09-19T19:15:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3488-dossier-render-and-budget.md"
     },
     {
       "id": "TASK-3489",

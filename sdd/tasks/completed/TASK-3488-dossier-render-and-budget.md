@@ -406,10 +406,16 @@ class TestRendering:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, backend=native, model=sonnet), orchestrated by sdd-worker
+**Date**: 2026-09-19
+**Notes**: Implemented `decisions/render.py` exactly per blueprint — `_shorten_hit` (trims
+decision text and citation excerpts longest-first, never touches origin/status/freshness or
+citation path/line range), `pack_dossier` (documented-first walk, fit/shorten/omit against
+`minimum_cost`'s label+citation floor, `ok`→`partial` downgrade on any drop, AC9's
+never-emit-unlabeled invariant enforced), `render_dossier_text` (two headed sections,
+explicit `(none)` for an empty group per AC3). Module confirmed pure (no store/I-O/CLI import).
+`pytest test_render.py`: 14 passed (all 6 blueprint FILL-IN test bodies completed, calibrated
+against this environment's real tiktoken-backed `estimate_tokens`). Only depends on TASK-3479
+(already merged) — no dependency on the blocked store-CAS chain.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
