@@ -159,9 +159,7 @@ async def test_start_reaches_ready_with_real_subprocess_and_persists_state(
     make_supervisor, worktree: Path, tmp_path: Path
 ) -> None:
     marker = tmp_path / "ready.marker"
-    adapter = _FakeAdapter(
-        lambda **kw: _marker_launch_spec(worktree, marker), ready_fn=_marker_ready(marker)
-    )
+    adapter = _FakeAdapter(lambda **kw: _marker_launch_spec(worktree, marker), ready_fn=_marker_ready(marker))
     supervisor = make_supervisor(adapter_resolver=lambda kind: adapter)
     config = TargetConfig(kind="mcp-toolkit", startup_timeout_s=5)
 

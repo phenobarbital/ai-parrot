@@ -155,7 +155,9 @@ def _validate_id(value: str, *, field_name: str) -> str:
             does not match the safe-slug pattern.
     """
     if not value or not _SAFE_ID_RE.match(value) or "/" in value or "\\" in value:
-        raise E2EConfigError(f"{field_name} must be a nonempty safe slug: {value!r}", reason_code=f"{field_name}_unsafe")
+        raise E2EConfigError(
+            f"{field_name} must be a nonempty safe slug: {value!r}", reason_code=f"{field_name}_unsafe"
+        )
     return value
 
 
@@ -227,9 +229,7 @@ class _StdioChannel:
                 f"stdio target violated stdout JSON purity: {raw!r}", reason_code="stdio_purity"
             ) from exc
         if not isinstance(parsed, dict):
-            raise E2ETargetError(
-                f"stdio target response is not a JSON object: {raw!r}", reason_code="stdio_purity"
-            )
+            raise E2ETargetError(f"stdio target response is not a JSON object: {raw!r}", reason_code="stdio_purity")
         return parsed
 
 
@@ -311,9 +311,7 @@ class E2ESupervisor:
                 f"worktree root does not exist or is unreadable: {worktree}: {exc}", reason_code="worktree_missing"
             ) from exc
         if not resolved_worktree.is_dir():
-            raise E2EConfigError(
-                f"worktree root is not a directory: {worktree}", reason_code="worktree_not_directory"
-            )
+            raise E2EConfigError(f"worktree root is not a directory: {worktree}", reason_code="worktree_not_directory")
 
         self._worktree = resolved_worktree
         self._owner_id = owner_id
@@ -425,7 +423,9 @@ class E2ESupervisor:
                 live.stdio_channel = stdio_channel
                 live.state = state
 
-            outcome = await self._await_ready(process, adapter, launch_spec, state, deadline_monotonic=deadline_monotonic)
+            outcome = await self._await_ready(
+                process, adapter, launch_spec, state, deadline_monotonic=deadline_monotonic
+            )
             if outcome == "ready":
                 ready_state = state.model_copy(update={"status": "ready"})
                 with e2e_state.locked_run(run_id, worktree=self._worktree):
@@ -625,7 +625,11 @@ class E2ESupervisor:
 
             final_status = "stopped" if cleanup_complete else "failed"
             final_state = current_state.model_copy(
-                update={"status": final_status, "shutdown_forced": shutdown_forced, "cleanup_complete": cleanup_complete}
+                update={
+                    "status": final_status,
+                    "shutdown_forced": shutdown_forced,
+                    "cleanup_complete": cleanup_complete,
+                }
             )
             e2e_state.write_state(final_state, worktree=self._worktree)
         return final_state
