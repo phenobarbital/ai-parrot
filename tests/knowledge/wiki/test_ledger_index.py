@@ -342,7 +342,9 @@ class TestAtomicClaim:
 @pytest.mark.slow
 def _unclaimed_event(issue_id: str, actor: str = "agent:sdd-fix") -> LedgerEvent:
     return LedgerEvent(
-        kind="issue.unclaimed", subject=issue_id, actor=actor,
+        kind="issue.unclaimed",
+        subject=issue_id,
+        actor=actor,
         payload={"unclaimed_by": actor, "reason": "released by test"},
     )
 

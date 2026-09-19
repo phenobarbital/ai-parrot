@@ -124,7 +124,9 @@ def test_ledger_event_kind_has_twelve_members_including_unclaimed():
 
 def test_issue_unclaimed_event_validates():
     event = LedgerEvent(
-        kind="issue.unclaimed", subject="issue:abc", actor="agent:sdd-fix",
+        kind="issue.unclaimed",
+        subject="issue:abc",
+        actor="agent:sdd-fix",
         payload={"unclaimed_by": "agent:sdd-fix", "reason": "released"},
     )
     assert event.event_id  # computed by model_post_init
