@@ -8,7 +8,7 @@ resolved path must stay under the vault root (same discipline as
 import asyncio
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from .abstract import ObsidianVaultInterface
 from .models import (
@@ -26,12 +26,16 @@ class LocalVaultBackend(ObsidianVaultInterface):
         self,
         vault_path: str | Path,
         vault_name: Optional[str] = None,
+        extra_skip_patterns: Optional[Iterable[str]] = None,
     ) -> None:
         """Initialize the backend.
 
         Args:
             vault_path: Directory of the vault (must exist).
             vault_name: Logical vault name; defaults to the directory name.
+            extra_skip_patterns: Extra directory names to exclude from
+                discovery, unioned with the defaults (see
+                :class:`~parrot.interfaces.obsidian.abstract.ObsidianVaultInterface`).
 
         Raises:
             ValueError: If ``vault_path`` is not an existing directory.
@@ -39,7 +43,7 @@ class LocalVaultBackend(ObsidianVaultInterface):
         root = Path(vault_path).expanduser().resolve()
         if not root.is_dir():
             raise ValueError(f"Vault path is not a directory: {vault_path}")
-        super().__init__(vault_name=vault_name or root.name)
+        super().__init__(vault_name=vault_name or root.name, extra_skip_patterns=extra_skip_patterns)
         self.vault_path = root
 
     # ------------------------------------------------------------------ #
