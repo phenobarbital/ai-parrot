@@ -325,10 +325,23 @@ async def test_concurrent_cas_has_exactly_one_winner(store):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, backend=native, model=haiku), orchestrated by sdd-worker
+**Date**: 2026-09-19
+**Notes**: Implemented `PostgresWikiStore.compare_and_swap_page` exactly per blueprint — single
+`conn.transaction()` with `FOR UPDATE OF v` on the open `node_versions` row, precondition
+evaluated against `content_hash` (None=insert-only, else must match), namespace-scoped by
+`self._wiki_name` (mirrors `replace_source_slice`'s join pattern), write delegated to
+`_upsert_page` to preserve close-and-insert version history. No `WikiProjectConfig.backend`
+change, no schema migration, no import from `parrot.knowledge.wiki.decisions`.
+Orchestrator verification: this sandbox has no live Postgres route (`OSError: [Errno 113] No
+route to host`, identical to the pre-existing `test_postgres_store.py` failures verified after
+TASK-3480/3481) — `WIKI_POSTGRES_DSN` is set in this environment but unreachable, so the test's
+own `skipif` does not trigger (same behavior as every other Postgres-backed test in this repo,
+confirmed pre-existing). AC8 requires reporting this gap rather than claiming parity: **backend
+parity for PostgresWikiStore is NOT validated end-to-end in this environment.** Verified by
+code review instead: the diff exactly mirrors the already-merged SQLite CAS implementation
+(TASK-3481) and the existing `_upsert_page`/`upsert_pages` transaction pattern; logic,
+precondition branches, and delegation are correct on inspection.
+Seat: haiku (native) · Backend: native · Model: haiku · Attempts: 1 · Duration: 303.3s · Tokens: 105991 (subagent total, in/out not separately reported by native path)
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Live-backend validation (AC8) blocked by sandbox network restrictions — documented per AC8's own requirement, not silently declared complete.
