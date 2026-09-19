@@ -12,9 +12,15 @@ answers server-to-client requests (and explicitly rejects
 ``workspace/applyEdit``), and tears the process down through a bounded
 ``shutdown``/``exit`` -> ``terminate`` -> ``kill`` -> reap sequence.
 
-Nothing here assembles diagnostics, synchronizes documents, or reads
-source files — that is document synchronization (a later task). This
-module only owns the process and the JSON-RPC transport around it.
+:meth:`PyrightSession.sync_documents` and :meth:`PyrightSession.diagnostics`
+additionally own exact on-disk document synchronization (``didOpen``/
+``didChange``/``didClose``, monotonic versions, a 20-document cap) and
+versioned push-diagnostic collection (freshness matched against the
+currently open document version, explicit missing/unversioned coverage,
+a 2,000 raw diagnostic cap, and warm per-path reuse for unchanged source
+states). Nothing here interprets or crops diagnostic messages for display,
+computes workspace digests, or builds baseline deltas — that is the
+toolkit's job (a later task).
 """
 
 from __future__ import annotations
@@ -29,7 +35,9 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Mapping
 
-from .models import LSPConfig, LSPFailure
+from pydantic import ValidationError
+
+from .models import DiagnosticBatch, LSPConfig, LSPFailure, RawDiagnostic, SourceRange, SourceState
 from .protocol import ParsedMessage, build_notification, build_request, build_response, read_message, write_message
 
 __all__ = ["PyrightSession"]
@@ -55,6 +63,13 @@ _MAX_BUFFERED_NOTIFICATIONS = 1000
 #: Bound on how many stderr bytes are retained for diagnosis; the pipe is drained past this
 #: cap too, so a noisy child never blocks on a full stderr buffer.
 _MAX_STDERR_CAPTURE_BYTES = 64 * 1024
+
+#: Bound on how many on-disk documents may be open at once (spec §2.5 "Bounds").
+_MAX_OPEN_DOCUMENTS = 20
+
+#: Bound on how many raw (uncropped) diagnostics one batch may carry across all
+#: matched paths (spec §2.10 "Bounds" — "maximum 2,000 raw diagnostics per snapshot").
+_MAX_RAW_DIAGNOSTICS = 2000
 
 #: Default bounded shutdown/terminate/kill timeouts (spec §2 "bounded process shutdown").
 _DEFAULT_SHUTDOWN_TIMEOUT_S = 5.0
@@ -111,14 +126,27 @@ class PyrightSession:
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
         self._pending: dict[int | str, "asyncio.Future[ParsedMessage]"] = {}
-        # Private seam: the next task (document sync/diagnostics) drains this
-        # via :meth:`_drain_notifications` instead of re-reading the wire itself.
+        # Private seam: :meth:`diagnostics` drains this via
+        # :meth:`_drain_notifications` instead of re-reading the wire itself.
         self._notifications: deque[ParsedMessage] = deque(maxlen=_MAX_BUFFERED_NOTIFICATIONS)
+        # Set whenever a notification is buffered, so :meth:`diagnostics` can
+        # wait for new arrivals instead of polling.
+        self._notification_event = asyncio.Event()
         self._stderr_tail = bytearray()
         self._id_counter = 1
         self._started = False
         self._crashed = False
         self._server_capabilities: dict[str, Any] | None = None
+
+        # Document synchronization state (path -> ...), all keyed by the
+        # repository-relative POSIX path a caller uses in `SourceState.path`.
+        self._open_documents: dict[str, int] = {}
+        self._open_document_sha: dict[str, str] = {}
+        self._open_document_text: dict[str, str] = {}
+        # The latest publication known to match the currently open version
+        # for a path: (version, uncropped diagnostics). Stale once the
+        # document is re-opened/changed to a version this no longer matches.
+        self._diagnostic_cache: dict[str, tuple[int, list[RawDiagnostic]]] = {}
 
     # ------------------------------------------------------------------
     # Public contract
@@ -217,6 +245,103 @@ class PyrightSession:
         if response.error is not None:
             raise LSPFailure("protocol_error", f"server returned an error for {method!r}: {response.error}")
         return response.result
+
+    async def sync_documents(self, sources: list[SourceState], texts: dict[str, str]) -> None:
+        """Open/change/close exact on-disk documents with explicit versions.
+
+        Closes any currently open document not present in ``sources`` (it is
+        not needed by the current operation), then opens or updates every
+        requested document: a first sighting of a path sends
+        ``textDocument/didOpen``; a strictly higher ``document_version``
+        for an already-open path sends ``textDocument/didChange`` with the
+        full new text; a repeated ``(document_version, sha256)`` pair is a
+        no-op that preserves any cached diagnostics for warm reuse.
+
+        Args:
+            sources: The exact on-disk identity (path, hash, monotonic
+                version) of every document this operation needs open. Must
+                not exceed :data:`_MAX_OPEN_DOCUMENTS` distinct paths.
+            texts: The exact decoded on-disk text for every path in
+                ``sources``, keyed by ``SourceState.path``.
+
+        Raises:
+            LSPFailure: ``"server_crashed"`` if the session is not running;
+                ``"resource_limit"`` if ``sources`` names more than
+                :data:`_MAX_OPEN_DOCUMENTS` distinct paths;
+                ``"invalid_request"`` if ``texts`` is missing a requested
+                path, a repeated version's hash does not match the
+                already-open document, or ``document_version`` regresses.
+        """
+        if not self._started or self._process is None or self._process.stdin is None:
+            raise LSPFailure("server_crashed", "session is not running")
+        requested_paths = {source.path for source in sources}
+        if len(requested_paths) > _MAX_OPEN_DOCUMENTS:
+            raise LSPFailure(
+                "resource_limit", f"cannot synchronize more than {_MAX_OPEN_DOCUMENTS} documents at once"
+            )
+        for path in list(self._open_documents):
+            if path not in requested_paths:
+                await self._close_document(path)
+        for source in sources:
+            if source.path not in texts:
+                raise LSPFailure("invalid_request", f"missing on-disk text for {source.path!r}")
+            await self._sync_one_document(source, texts[source.path])
+
+    async def diagnostics(self, sources: list[SourceState], timeout_s: float) -> DiagnosticBatch:
+        """Return version-matched publications and explicit missing/unversioned coverage.
+
+        Waits until every path in ``sources`` has a buffered
+        ``textDocument/publishDiagnostics`` publication whose version
+        matches that path's currently open document version (via
+        :meth:`sync_documents`), or until ``timeout_s`` elapses — never
+        inferring completeness from silence, a timer, or any other
+        response type. A path whose only publication omitted its version
+        is reported as unversioned rather than matched. A path already
+        covered by a warm, still-matching per-path cache entry (an
+        unchanged source state since the last call) is resolved
+        immediately without waiting. The combined raw diagnostic count is
+        capped at :data:`_MAX_RAW_DIAGNOSTICS`; paths dropped to respect
+        the cap are reported as missing rather than truncated in place.
+
+        Args:
+            sources: The exact document identities (path, hash, version)
+                to collect diagnostics for; must match what the caller
+                most recently passed to :meth:`sync_documents`.
+            timeout_s: Bound on waiting for every path's publication.
+
+        Returns:
+            A :class:`~parrot_tools.lsp.models.DiagnosticBatch` that is
+            ``complete`` only when every requested path has a matched,
+            within-cap publication.
+
+        Raises:
+            LSPFailure: ``"server_crashed"`` if the session is not running.
+        """
+        if not self._started or self._process is None:
+            raise LSPFailure("server_crashed", "session is not running")
+        requested_paths = sorted({source.path for source in sources})
+        expected_versions = {source.path: source.document_version for source in sources}
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        unversioned_seen: set[str] = set()
+
+        while True:
+            self._notification_event.clear()
+            self._consume_diagnostic_notifications(unversioned_seen)
+            pending = [
+                path
+                for path in requested_paths
+                if not self._has_matching_cached_diagnostics(path, expected_versions[path])
+            ]
+            if not pending or self._crashed:
+                break
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self._notification_event.wait(), timeout=remaining)
+
+        return self._build_diagnostic_batch(requested_paths, expected_versions, unversioned_seen)
 
     async def close(self) -> None:
         """Shut the owned process down through a bounded, idempotent sequence.
@@ -395,6 +520,7 @@ class PyrightSession:
             return
         if message.method in _BUFFERED_NOTIFICATION_METHODS:
             self._notifications.append(message)
+            self._notification_event.set()
 
     async def _answer_server_request(self, message: ParsedMessage) -> None:
         """Write back the response to one server-to-client request."""
@@ -486,6 +612,267 @@ class PyrightSession:
         request_id = self._id_counter
         self._id_counter += 1
         return request_id
+
+    # ------------------------------------------------------------------
+    # Document synchronization: didOpen/didChange/didClose
+    # ------------------------------------------------------------------
+
+    async def _sync_one_document(self, source: SourceState, text: str) -> None:
+        """Open, change, or no-op one document per its current open state."""
+        path = source.path
+        existing_version = self._open_documents.get(path)
+        if existing_version is None:
+            await self._send_did_open(path, source.document_version, text)
+            self._open_documents[path] = source.document_version
+            self._open_document_sha[path] = source.sha256
+            self._open_document_text[path] = text
+            return
+        if source.document_version == existing_version:
+            if self._open_document_sha.get(path) != source.sha256:
+                raise LSPFailure(
+                    "invalid_request", f"document_version for {path!r} did not change but content did"
+                )
+            return  # unchanged: no-op, preserves any cached diagnostics for warm reuse
+        if source.document_version < existing_version:
+            raise LSPFailure("invalid_request", f"document_version for {path!r} must increase monotonically")
+        await self._send_did_change(path, source.document_version, text)
+        self._open_documents[path] = source.document_version
+        self._open_document_sha[path] = source.sha256
+        self._open_document_text[path] = text
+
+    async def _send_did_open(self, path: str, version: int, text: str) -> None:
+        """Send ``textDocument/didOpen`` for one exact on-disk snapshot."""
+        assert self._process is not None and self._process.stdin is not None
+        params = {
+            "textDocument": {
+                "uri": self._uri_for_path(path),
+                "languageId": "python",
+                "version": version,
+                "text": text,
+            }
+        }
+        await write_message(self._process.stdin, build_notification("textDocument/didOpen", params))
+
+    async def _send_did_change(self, path: str, version: int, text: str) -> None:
+        """Send ``textDocument/didChange`` with the full new on-disk text."""
+        assert self._process is not None and self._process.stdin is not None
+        params = {
+            "textDocument": {"uri": self._uri_for_path(path), "version": version},
+            "contentChanges": [{"text": text}],
+        }
+        await write_message(self._process.stdin, build_notification("textDocument/didChange", params))
+
+    async def _close_document(self, path: str) -> None:
+        """Send ``textDocument/didClose`` and drop all local state for ``path``."""
+        if self._process is not None and self._process.stdin is not None:
+            with contextlib.suppress(LSPFailure):
+                await write_message(
+                    self._process.stdin,
+                    build_notification("textDocument/didClose", {"textDocument": {"uri": self._uri_for_path(path)}}),
+                )
+        self._open_documents.pop(path, None)
+        self._open_document_sha.pop(path, None)
+        self._open_document_text.pop(path, None)
+        self._diagnostic_cache.pop(path, None)
+
+    def _uri_for_path(self, path: str) -> str:
+        """Return the ``file://`` URI for a repository-relative document path."""
+        assert self._config is not None
+        return _path_to_file_uri(self._config.repo_root / path)
+
+    def _path_for_uri(self, uri: str) -> str | None:
+        """Return the repository-relative POSIX path for a ``file://`` URI.
+
+        Returns ``None`` if ``uri`` is not a ``file://`` URI or does not
+        resolve inside this session's confined ``repo_root`` — such a
+        notification concerns a file outside this session's workspace and
+        is ignored for checkpoint coverage.
+        """
+        if not uri.startswith("file://"):
+            return None
+        assert self._config is not None
+        raw_path = urllib.parse.unquote(urllib.parse.urlparse(uri).path)
+        try:
+            relative = Path(raw_path).relative_to(self._config.repo_root)
+        except ValueError:
+            return None
+        return relative.as_posix()
+
+    # ------------------------------------------------------------------
+    # Diagnostics: versioned push-notification collection
+    # ------------------------------------------------------------------
+
+    def _has_matching_cached_diagnostics(self, path: str, version: int) -> bool:
+        """Return whether a warm, still-fresh publication is cached for ``path``."""
+        cached = self._diagnostic_cache.get(path)
+        return cached is not None and cached[0] == version
+
+    def _consume_diagnostic_notifications(self, unversioned_seen: set[str]) -> None:
+        """Drain the shared notification seam, applying every diagnostics publication."""
+        for message in self._drain_notifications():
+            if message.method == "textDocument/publishDiagnostics":
+                self._apply_publish_diagnostics(message, unversioned_seen)
+            # "$/progress" and any other buffered method carries no diagnostic
+            # coverage; draining still clears the single shared seam for it.
+
+    def _apply_publish_diagnostics(self, message: ParsedMessage, unversioned_seen: set[str]) -> None:
+        """Route one ``textDocument/publishDiagnostics`` notification into the cache.
+
+        Ignores publications for a path outside this session's workspace,
+        a stale/mismatched version, or a malformed payload. A matching
+        version — even with an empty diagnostics list — replaces any prior
+        cache entry for that path, so a matching empty publication clears
+        earlier findings. A publication that omits its version marks the
+        path as unversioned rather than matched.
+        """
+        params = message.params if isinstance(message.params, Mapping) else {}
+        uri = params.get("uri")
+        if not isinstance(uri, str):
+            return
+        path = self._path_for_uri(uri)
+        if path is None:
+            return
+        version = params.get("version")
+        if version is None:
+            unversioned_seen.add(path)
+            return
+        if isinstance(version, bool) or not isinstance(version, int):
+            return
+        if self._open_documents.get(path) != version:
+            return  # stale generation/version; ignored for checkpoint coverage
+        raw_items = params.get("diagnostics")
+        if not isinstance(raw_items, list):
+            return
+        text = self._open_document_text.get(path, "")
+        diagnostics: list[RawDiagnostic] = []
+        for item in raw_items:
+            if isinstance(item, Mapping):
+                parsed = self._to_raw_diagnostic(path, text, item)
+                if parsed is not None:
+                    diagnostics.append(parsed)
+        self._diagnostic_cache[path] = (version, diagnostics)
+        unversioned_seen.discard(path)
+
+    def _to_raw_diagnostic(self, path: str, text: str, item: Mapping[str, Any]) -> RawDiagnostic | None:
+        """Convert one raw LSP diagnostic wire item into a private :class:`RawDiagnostic`.
+
+        Returns ``None`` for a malformed item (missing/invalid range or
+        message) rather than raising, so one bad item never discards an
+        otherwise valid publication. ``full_message`` is never truncated.
+        """
+        range_obj = item.get("range")
+        message = item.get("message")
+        if not isinstance(range_obj, Mapping) or not isinstance(message, str):
+            return None
+        try:
+            source_range = self._lsp_range_to_source_range(path, text, range_obj)
+        except ValueError:
+            return None
+        severity = item.get("severity")
+        code = item.get("code")
+        source_field = item.get("source")
+        kwargs: dict[str, Any] = {
+            "range": source_range,
+            "full_message": message,
+            "code": str(code) if code is not None else None,
+            "source": source_field if isinstance(source_field, str) else None,
+        }
+        if isinstance(severity, int) and not isinstance(severity, bool):
+            kwargs["severity"] = severity
+        try:
+            return RawDiagnostic(**kwargs)
+        except ValidationError:
+            return None
+
+    def _lsp_range_to_source_range(self, path: str, text: str, range_obj: Mapping[str, Any]) -> SourceRange:
+        """Convert one zero-based UTF-16 LSP range into a one-based Unicode :class:`SourceRange`."""
+        start = range_obj.get("start")
+        end = range_obj.get("end")
+        if not isinstance(start, Mapping) or not isinstance(end, Mapping):
+            raise ValueError("range is missing 'start'/'end'")
+        start_line, start_col = self._utf16_position_to_unicode(text, start.get("line"), start.get("character"))
+        end_line, end_col = self._utf16_position_to_unicode(text, end.get("line"), end.get("character"))
+        try:
+            return SourceRange(
+                path=path, start_line=start_line, start_column=start_col, end_line=end_line, end_column=end_col
+            )
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _utf16_position_to_unicode(self, text: str, line0: Any, utf16_col0: Any) -> tuple[int, int]:
+        """Convert one zero-based ``(line, UTF-16 code unit)`` LSP position to one-based Unicode.
+
+        Clamps a position past the last line to the end of the text rather
+        than raising, since a diagnostic range may legitimately point at
+        end-of-file.
+        """
+        if not isinstance(line0, int) or isinstance(line0, bool) or line0 < 0:
+            raise ValueError(f"invalid LSP line: {line0!r}")
+        if not isinstance(utf16_col0, int) or isinstance(utf16_col0, bool) or utf16_col0 < 0:
+            raise ValueError(f"invalid LSP character: {utf16_col0!r}")
+        lines = text.splitlines()
+        if line0 >= len(lines):
+            return (max(len(lines), 1), 1)
+        line_text = lines[line0]
+        codepoint_col = len(line_text)
+        utf16_count = 0
+        for idx, char in enumerate(line_text):
+            if utf16_count >= utf16_col0:
+                codepoint_col = idx
+                break
+            utf16_count += 2 if ord(char) > 0xFFFF else 1
+        return (line0 + 1, codepoint_col + 1)
+
+    def _build_diagnostic_batch(
+        self,
+        requested_paths: list[str],
+        expected_versions: dict[str, int],
+        unversioned_seen: set[str],
+    ) -> DiagnosticBatch:
+        """Assemble the final :class:`DiagnosticBatch`, enforcing the raw diagnostic cap.
+
+        A path with a matching cached publication contributes its
+        uncropped diagnostics; an unmatched path is reported as
+        unversioned (if only an unversioned publication was seen) or
+        missing (no matching publication at all — including one dropped
+        to respect the cap).
+        """
+        matched_versions: dict[str, int] = {}
+        diagnostics: dict[str, list[RawDiagnostic]] = {}
+        missing_paths: list[str] = []
+        unversioned_paths: list[str] = []
+
+        for path in requested_paths:
+            cached = self._diagnostic_cache.get(path)
+            if cached is not None and cached[0] == expected_versions[path]:
+                matched_versions[path] = cached[0]
+                diagnostics[path] = list(cached[1])
+            elif path in unversioned_seen:
+                unversioned_paths.append(path)
+            else:
+                missing_paths.append(path)
+
+        total = sum(len(items) for items in diagnostics.values())
+        if total > _MAX_RAW_DIAGNOSTICS:
+            kept_total = 0
+            for path in list(diagnostics):
+                count = len(diagnostics[path])
+                if kept_total + count > _MAX_RAW_DIAGNOSTICS:
+                    diagnostics.pop(path)
+                    matched_versions.pop(path, None)
+                    missing_paths.append(path)
+                else:
+                    kept_total += count
+            missing_paths.sort()
+
+        complete = not missing_paths and not unversioned_paths
+        return DiagnosticBatch(
+            diagnostics=diagnostics,
+            matched_versions=matched_versions,
+            missing_paths=missing_paths,
+            unversioned_paths=unversioned_paths,
+            complete=complete,
+        )
 
     # ------------------------------------------------------------------
     # Shutdown: graceful shutdown/exit, then bounded terminate/kill/reap
