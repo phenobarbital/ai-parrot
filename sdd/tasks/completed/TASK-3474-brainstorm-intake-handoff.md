@@ -199,4 +199,14 @@ See the blueprint test module.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+`/sdd-brainstorm` now accepts an `intake:` pointer hand-off (G12): §1 parses
+the pointer from `--` notes, §3 inserts a hand-off block before Round 0 that
+carries intake facts + synthesis `unknowns`/hypotheses forward as answered,
+and §4 copies synthesis `localization` into `## Code Context` after
+re-verification, with a graceful fallback (warning + normal run) on a
+missing/invalid staging dir. Both twins (`.claude/commands/sdd-brainstorm.md`,
+`.agent/workflows/sdd-brainstorm.md`) and `.agents/skills/sdd-brainstorm/SKILL.md`
+updated; `tests/sdd_scripts/test_brainstorm_intake_contract.py` created.
+Merged cleanly (outcome: merged; lint autofix commit `12a975976`).
+
+Seat: mistral (nova) · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 222.2s · Tokens: 974098/6014
