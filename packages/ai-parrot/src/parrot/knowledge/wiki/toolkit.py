@@ -846,6 +846,15 @@ class LLMWikiToolkit(AbstractToolkit):
             ``"not_found"`` when the page does not exist in the store.
         """
         existing = await self._store.get_page(page_id, include_body=False)
+
+        # Checked BEFORE the not-found branch: a nonexistent "adr:..." id
+        # must also be refused, closing the create-then-corrupt path.
+        from parrot.knowledge.wiki.tools import _reject_managed_page
+
+        managed = _reject_managed_page(existing, page_id)
+        if managed:
+            return {"page_id": page_id, "status": "refused", "reason": managed}
+
         if existing is None:
             return {"page_id": page_id, "status": "not_found", "reason": reason}
 
@@ -912,6 +921,22 @@ class LLMWikiToolkit(AbstractToolkit):
         page_id = "mem-" + hashlib.sha1(f"{title}::{category}".encode("utf-8")).hexdigest()[:12]
 
         existing = await self._store.get_page(page_id, include_body=False)
+
+        # A deterministic id could in principle collide with a page that
+        # already carries the managed ADR category — guard the same way
+        # update_page does, rather than trusting the "mem-" prefix.
+        from parrot.knowledge.wiki.tools import _reject_managed_page
+
+        managed = _reject_managed_page(existing, page_id)
+        if managed:
+            return {
+                "page_id": page_id,
+                "title": title,
+                "category": category,
+                "status": "refused",
+                "reason": managed,
+            }
+
         record = WikiPageRecord(
             concept_id=page_id,
             node_id=page_id,
