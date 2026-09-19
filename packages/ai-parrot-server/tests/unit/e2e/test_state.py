@@ -343,7 +343,9 @@ def test_process_identity_matches_false_on_wrong_pgid() -> None:
     proc = _spawn_sleeper()
     try:
         real_identity = state.capture_process_identity(proc.pid, owned=True)
-        wrong_pgid = real_identity.model_copy(update={"pgid": real_identity.pgid + 1 if real_identity.pgid > 1 else real_identity.pgid + 2})
+        wrong_pgid = real_identity.model_copy(
+            update={"pgid": real_identity.pgid + 1 if real_identity.pgid > 1 else real_identity.pgid + 2}
+        )
         assert state.process_identity_matches(proc.pid, wrong_pgid) is False
     finally:
         _terminate(proc)

@@ -238,7 +238,9 @@ def run_dir(run_id: str, *, worktree: Path) -> Path:
     target = directory / validated_run_id
     _reject_symlink_components(target, root=resolved_worktree)
     if target.exists() and not target.is_dir():
-        raise E2EConfigError(f"expected a directory for the run dir, found a file: {target}", reason_code="path_not_directory")
+        raise E2EConfigError(
+            f"expected a directory for the run dir, found a file: {target}", reason_code="path_not_directory"
+        )
     target.mkdir(mode=RUN_DIR_MODE, exist_ok=True)
     os.chmod(target, RUN_DIR_MODE)
     resolved_target = target.resolve(strict=True)
@@ -287,12 +289,16 @@ def read_state(run_id: str, *, worktree: Path) -> RunState:
             f"no persisted run state for run_id={run_id!r} in {target.parent}", reason_code="state_missing"
         ) from exc
     except OSError as exc:
-        raise E2EConfigError(f"run state file could not be read: {target}: {exc}", reason_code="state_unreadable") from exc
+        raise E2EConfigError(
+            f"run state file could not be read: {target}: {exc}", reason_code="state_unreadable"
+        ) from exc
 
     try:
         state = RunState.model_validate_json(raw)
     except ValidationError as exc:
-        raise E2EConfigError(f"run state file failed schema validation: {target}: {exc}", reason_code="state_invalid") from exc
+        raise E2EConfigError(
+            f"run state file failed schema validation: {target}: {exc}", reason_code="state_invalid"
+        ) from exc
 
     if state.run_id != run_id:
         raise E2EConfigError(
@@ -470,11 +476,15 @@ def _read_live_identity(pid: int) -> tuple[int, datetime, str]:
         process = psutil.Process(pid)
         create_time = process.create_time()
     except psutil.Error as exc:
-        raise E2EConfigError(f"process identity unavailable for pid={pid}: {exc}", reason_code="process_unavailable") from exc
+        raise E2EConfigError(
+            f"process identity unavailable for pid={pid}: {exc}", reason_code="process_unavailable"
+        ) from exc
     try:
         pgid = os.getpgid(pid)
     except ProcessLookupError as exc:
-        raise E2EConfigError(f"process identity unavailable for pid={pid}: {exc}", reason_code="process_unavailable") from exc
+        raise E2EConfigError(
+            f"process identity unavailable for pid={pid}: {exc}", reason_code="process_unavailable"
+        ) from exc
     return pgid, datetime.fromtimestamp(create_time, tz=timezone.utc), get_boot_id()
 
 
