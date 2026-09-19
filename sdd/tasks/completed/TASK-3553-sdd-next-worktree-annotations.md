@@ -212,10 +212,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator: google-compat/gemini-3.5-flash via parrot-sdd-coder)
+**Date**: 2026-09-19
+**Notes**: Updated `.claude/commands/sdd-next.md` and its skill twin
+`.agents/skills/sdd-next/SKILL.md` to call `worktree_status.py --json`,
+annotate feature headers with `(N/M done in worktree)`, and suggest
+`/sdd-done` instead of new tasks when `ready_for_done: true`. Reviewed; no
+unlisted files touched. Review recorded:
+`coder-review:da2f3249eec989eb2b3e152b`.
+Seat: gemini · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 132.612s · Tokens: 265484/1770
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

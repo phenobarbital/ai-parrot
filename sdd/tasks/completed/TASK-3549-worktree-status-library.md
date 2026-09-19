@@ -364,10 +364,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator: nova/zai.glm-4.7-flash via parrot-sdd-coder; fix by orchestrator)
+**Date**: 2026-09-19
+**Notes**: Implemented `scripts/sdd/worktree_status.py` per the Interface
+Skeleton: Pydantic models (`WorktreeTaskStatus`, `WorktreeHealth`,
+`WorktreeReport`), `_parse_branch`, `_read_worktree_index`, `_check_health`,
+`_live_process_count`, `discover_worktree_reports`, `main` (CLI with
+`--json`). Post-merge smoke test (`python -m scripts.sdd.worktree_status
+--json`/plain, per the task's own Test Specification) found the delivered
+`_read_worktree_index` built the index path as `sdd/tasks/<slug>.json`
+instead of the spec-documented `sdd/tasks/index/<slug>.json`, so
+`index_found` was always `False`. Fixed by the orchestrator in commit
+`3446bf986` and re-verified with the same smoke test (index_found=true,
+all 5 FEAT-582 tasks correctly listed). Feedback recorded:
+`coder-feedback:5812b09407a0ef0dedc23bb7`; review recorded:
+`coder-review:b036cb7bcb898d1560d701f8`.
+A second defect surfaced while implementing TASK-3550's tests: `_parse_porcelain`
+silently dropped detached-HEAD/bare worktree blocks instead of returning
+`branch=None`, violating AC9. Fixed in commit `e4b4739f6`; feedback recorded:
+`coder-feedback:b94d2b535b26c39aef85025f`.
+A third round via the feature-level adversarial code review (Claude
+subagent; codex unavailable — RO filesystem at init in the review sandbox)
+executed the module against the live repo (34 registered worktrees) and
+found 3 CRITICAL + 2 IMPORTANT defects, all fixed in commit `2c3efff45`:
+(1) `_parse_branch` misclassified FEAT-549 pool sub-worktree branches
+(`feat-FEAT-<N>-<slug>--TASK-<N>-a<N>-<hash>`) as top-level features —
+confirmed 6/22 live entries were bogus, FEAT-570 got zero usable entries;
+(2) `_read_worktree_index` crashed on a task status outside the Literal
+enum (uncaught pydantic `ValidationError`); (3) `_git()` raised `OSError`
+uncaught for a deleted worktree directory; (4) the orphan scan resolved
+`WORKTREE_ROOT` against CWD instead of `repo_root`; (5) `entry.name`
+(str) was compared against a `set[Path]`, dead-code exclusion. 3 new
+regression tests added (25 total, all pass). Re-verified live: 22 → 16
+report entries. Feedback recorded: `coder-feedback:098fb949eed16ac4ff0ab859`,
+`coder-feedback:2c20a59186e1929d5a41e766`. One finding (doc/library
+mismatch for non-SDD worktree rows) deferred to the ledger — see feature
+completion summary.
+Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 228.012s · Tokens: 407766/3846
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (fix aligned implementation to the documented path; no scope change)

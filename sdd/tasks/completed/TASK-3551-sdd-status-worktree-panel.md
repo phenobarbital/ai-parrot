@@ -225,10 +225,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator: nova/qwen.qwen3-coder-480b-a35b-instruct via parrot-sdd-coder)
+**Date**: 2026-09-19
+**Notes**: Updated `.claude/commands/sdd-status.md` with new §1.5 (worktree
+discovery via `worktree_status.py --json`), worktree-sourced task status
+labeling `(from worktree: <branch>)`, new §5 Worktrees panel, and updated
+Summary line to include worktree count / ready-for-done count. Reviewed
+against spec §3 Module 2; no unlisted files touched. Review recorded:
+`coder-review:0b9ca65f3dfe62f6f8047552`.
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 312.543s · Tokens: 615417/3822
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
