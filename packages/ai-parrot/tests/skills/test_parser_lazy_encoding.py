@@ -89,8 +89,7 @@ print("OK")
             check=False,
         )
         assert result.returncode == 0, (
-            f"subprocess failed (rc={result.returncode})\n"
-            f"stdout={result.stdout}\nstderr={result.stderr}"
+            f"subprocess failed (rc={result.returncode})\n" f"stdout={result.stdout}\nstderr={result.stderr}"
         )
         assert "OK" in result.stdout
 

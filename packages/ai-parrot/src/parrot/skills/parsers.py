@@ -12,6 +12,7 @@ source: authored
 
 <skill instructions body>
 """
+
 import logging
 import threading
 from pathlib import Path
@@ -21,7 +22,6 @@ import frontmatter
 import tiktoken
 
 from .models import SkillDefinition, SkillSource
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,9 +153,7 @@ def parse_skill_directory(skill_dir: Path) -> SkillDefinition:
     """
     skill_md = skill_dir / "SKILL.md"
     if not skill_md.exists():
-        raise FileNotFoundError(
-            f"Missing SKILL.md in composite skill directory: {skill_dir}"
-        )
+        raise FileNotFoundError(f"Missing SKILL.md in composite skill directory: {skill_dir}")
     skill = parse_skill_file(skill_md)
     skill = skill.model_copy(update={"assets_dir": skill_dir})
     return skill
