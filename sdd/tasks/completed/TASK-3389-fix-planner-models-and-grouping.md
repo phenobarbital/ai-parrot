@@ -375,10 +375,28 @@ class TestGroupIssues:   # 5 tests incl. test_snapshot_groups_into_seven_compone
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid a95ed4e1b13c46fd985133cb8457f24c)
+**Date**: 2026-09-19
+**Notes**: Created `fix_planner.py` with `PLANNER_VERSION`, the four lane-threshold constants,
+`Lane`, `FixIssue`, `ParentFeature`, `FixGroup`, `FixPlan`, `files_for()` and `group_issues()`
+exactly per the blueprint (union-find over issue↔file edges). Created
+`test_ledger_fix_planner.py` with `TestFilesFor` (3) + `TestGroupIssues` (5), 8/8 passing.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Stale Codebase Contract flagged and resolved**: the task's "hand-verified 2026-09-18"
+`sdd/ledger/issues.jsonl` facts (15 rows / 7 groups, six specific issue ids) no longer match
+the live, committed snapshot — it has grown to 44 rows via unrelated `/sdd-codereview`
+activity in other concurrent sessions, and none of the six referenced issue ids exist
+anymore (independently re-verified by the orchestrator via grep). Rather than hardcode the
+now-false numbers, the coder rewrote the one snapshot-dependent test
+(`test_snapshot_groups_into_expected_components`) to assert structural invariants (total
+issue count preserved, transitivity: issues sharing a file land in the same group, largest
+group ≥2) instead of a literal "7 groups" count. The orchestrator verified this and applied
+the same correction to the downstream TASK-3390 and TASK-3392 blueprints/acceptance criteria
+(commit `6421c4a0e`) so their coders don't hit the same stale contract.
 
-**Deviations from spec**: none | describe if any
+Validation: `pytest tests/knowledge/wiki/test_ledger_fix_planner.py -q` → 8 passed. `ruff check` + `black --check` clean.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 282.9s · Tokens: n/a (native, no usage telemetry)
+
+**Deviations from spec**: none in the delivered code; the task's own snapshot-fact
+documentation was corrected (see above) — the algorithm (`files_for`, `group_issues`) is an
+unmodified, exact realization of the blueprint.

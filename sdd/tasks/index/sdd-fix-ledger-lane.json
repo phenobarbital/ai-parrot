@@ -54,7 +54,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,8 +64,8 @@
       "parallelism_notes": "depends_on TASK-3388: imports SEVERITY_ORDER from ledger/events.py (created there). Creates two new files only (fix_planner.py, test_ledger_fix_planner.py).",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3389-fix-planner-models-and-grouping.md"
+      "completed_at": "2026-09-19T22:29:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3389-fix-planner-models-and-grouping.md"
     },
     {
       "id": "TASK-3390",
