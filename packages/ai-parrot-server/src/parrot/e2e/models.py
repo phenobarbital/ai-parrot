@@ -281,14 +281,10 @@ class E2EPlan(_E2EBaseModel):
             all_node_ids.extend(scenario.node_ids)
             for target_id in scenario.target_ids:
                 if target_id not in self.targets:
-                    raise ValueError(
-                        f"scenario {scenario.id!r} references undeclared target_id {target_id!r}"
-                    )
+                    raise ValueError(f"scenario {scenario.id!r} references undeclared target_id {target_id!r}")
             for prerequisite in scenario.prerequisites:
                 if prerequisite not in scenario_ids:
-                    raise ValueError(
-                        f"scenario {scenario.id!r} references undeclared prerequisite {prerequisite!r}"
-                    )
+                    raise ValueError(f"scenario {scenario.id!r} references undeclared prerequisite {prerequisite!r}")
         if len(set(all_node_ids)) != len(all_node_ids):
             raise ValueError(f"node IDs must belong to exactly one scenario across the plan: {all_node_ids!r}")
 
