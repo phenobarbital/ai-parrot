@@ -325,10 +325,15 @@ def test_ledger_ready_cli_prints_severity_order(runner, tmp_path): ...  # test_c
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid db3b6c427c504476ab0a76620b9bfea9)
+**Date**: 2026-09-19
+**Notes**: Added canonical `SEVERITY_ORDER: Final[dict[IssueSeverity, int]]` to `events.py`
+(single source, directly below `IssueStatus`); `LedgerService.ready_work()` now sorts its
+existing filtered rows by `(SEVERITY_ORDER.get(severity, len(SEVERITY_ORDER)), issue_id)`,
+filter predicate unchanged. Added a canonical-order test, a `ready_work` ordering test, and
+a CLI-level test using a real `LedgerService` (not the mock fixture) proving `ledger ready`
+prints severity-ordered with zero `cli.py` changes.
+Validation: `pytest tests/knowledge/wiki/test_ledger_events.py tests/knowledge/wiki/test_ledger_service.py tests/knowledge/wiki/test_cli_ledger.py -q` → 58 passed. `ruff check` clean.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 216.0s · Tokens: n/a (native, no usage telemetry)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

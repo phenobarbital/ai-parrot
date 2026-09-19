@@ -34,7 +34,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "depends_on TASK-3387: file overlap on packages/.../ledger/events.py and tests/knowledge/wiki/test_ledger_events.py (serialize, lower id first); needs no symbol from it. Adds SEVERITY_ORDER that TASK-3389 imports.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3388-severity-order-and-ready-work-sort.md"
+      "completed_at": "2026-09-19T22:19:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3388-severity-order-and-ready-work-sort.md"
     },
     {
       "id": "TASK-3389",
