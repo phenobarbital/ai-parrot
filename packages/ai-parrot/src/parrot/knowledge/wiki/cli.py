@@ -818,6 +818,35 @@ async def _ingest_files(
     return {"written": written, "unchanged": unchanged, "written_rel_paths": written_rel_paths}
 
 
+async def _refresh_adr_plane(store: BaseWikiStore, root: Path, config: WikiProjectConfig, paths: list[str] | None = None) -> None:
+    """Refresh the ADR decision plane after ordinary ingestion (FEAT-578).
+
+    A no-op when the feature is disabled or no ADR source exists. NEVER
+    generates candidates and never invokes a model — an ordinary build stays
+    fully offline (AC5).
+    """
+    if not config.decisions.enabled:
+        return
+    from parrot.knowledge.wiki.decisions.ingest import refresh_decisions
+
+    try:
+        result = await refresh_decisions(store, root, config.decisions, paths)
+    except Exception as exc:  # noqa: BLE001 — a build must not fail on the ADR plane
+        _cli_logger.warning("ADR refresh skipped: %s", exc)
+        return
+    if result.created or result.updated or result.unchanged or result.missing or result.unresolved:
+        _cli_logger.info(
+            "ADR refresh: %d created, %d updated, %d unchanged, %d missing, %d unresolved",
+            result.created,
+            result.updated,
+            result.unchanged,
+            result.missing,
+            result.unresolved,
+        )
+    for diagnostic in result.diagnostics:
+        _cli_logger.warning("ADR refresh diagnostic: %s: %s", diagnostic.code, diagnostic.message)
+
+
 # --------------------------------------------------------------------------
 # Roblox scan enrichment integration (FEAT-532 TASK-2909)
 # --------------------------------------------------------------------------
@@ -1612,6 +1641,10 @@ def build(
                 for path in scan.skipped:
                     click.echo(f"  - {path}")
 
+        # FEAT-578: refresh the ADR decision plane LAST — after ordinary
+        # ingestion, export/graph generation and deletion handling above.
+        _run(_refresh_adr_plane(_open_store(root, config), root, config))
+
 
 def _changed_files_from_git(root: Path) -> list[str]:
     """Relative paths touched by the last commit (post-commit hook).
@@ -1792,6 +1825,10 @@ def upsert(
             raise
         if not quiet:
             click.echo(f"Upserted {counts['written']} page(s), " f"removed {counts['removed']}.")
+
+        # FEAT-578: refresh the ADR decision plane LAST — after ordinary
+        # ingestion and deletion handling above.
+        _run(_refresh_adr_plane(_open_store(root, config), root, config))
 
 
 @wiki.command()
@@ -2190,6 +2227,13 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
     click.echo(text)
+
+
+# FEAT-578: the ADR decision plane. Its commands live in decisions/cli.py to
+# keep this module's size in check; only the registration is here.
+from parrot.knowledge.wiki.decisions.cli import adr as _adr_group
+
+wiki.add_command(_adr_group)
 
 
 @wiki.group(name="symbols")
@@ -3364,6 +3408,14 @@ def remember(
     from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
 
     existing = _run(store.get_page(page_id, include_body=False))
+
+    from parrot.knowledge.wiki.tools import _reject_managed_page
+
+    managed = _reject_managed_page(existing, page_id)
+    if managed:
+        click.echo(managed, err=True)
+        raise SystemExit(2)
+
     body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
     _run(
         store.upsert_pages(
@@ -3489,6 +3541,14 @@ def note(
     page = _run(store.get_page(page_id, include_body=True))
     if page is None:
         raise click.ClickException(f'Page {page_id!r} not found. Search first: wikitoolkit query "..."')
+
+    from parrot.knowledge.wiki.tools import _reject_managed_page
+
+    managed = _reject_managed_page(page, page_id)
+    if managed:
+        click.echo(managed, err=True)
+        raise SystemExit(2)
+
     asserted_by = _authoring_identity(by)
     stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
     body = str(page.get("body") or "")
