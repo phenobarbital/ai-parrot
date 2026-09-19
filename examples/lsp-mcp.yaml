@@ -1,0 +1,83 @@
+# FEAT-580 — SDD LSP research pilot, as a local MCP toolkit.
+#
+# Full guidance (provisioning, per-worktree installation, seat visibility
+# checks, the four tools, baselines/deltas, fallbacks, and known
+# limitations): docs/sdd/lsp-pilot.md. This file is a complete, safe-default
+# example — installing it does NOT start Pyright or change host behavior.
+#
+# Serve with:
+#     parrot mcp-local lsp --config examples/lsp-mcp.yaml
+#
+# Install (either path):
+#   1. Preferred — host-aware installer, one worktree at a time:
+#        parrot toolkits install lsp
+#      This copies the packaged `lsp` template into THIS worktree's
+#      `.parrot/mcp-toolkits.yaml` (rendering `{{repo_root}}` to the
+#      worktree's own absolute path) and wires the detected CLI hosts. An
+#      installed absolute root from a parent checkout must never be copied
+#      blindly into a child worktree — re-run the installer (or hand-edit
+#      `repo_root`) inside each worktree instead.
+#   2. Manual — APPEND the `lsp:` entry below under the `toolkits:` key of
+#      `.parrot/mcp-toolkits.yaml` (git-ignored — an operator-local file,
+#      never committed) and replace `{{repo_root}}` yourself. Do NOT `cp`
+#      this file over an existing one: that replaces the whole file and
+#      drops every other toolkit already configured in it.
+#        sed -n '/^toolkits:/,$p' examples/lsp-mcp.yaml | tail -n +2 \
+#          >> .parrot/mcp-toolkits.yaml
+#      Then check with `parrot mcp-local lsp --list --config
+#      .parrot/mcp-toolkits.yaml` that `lsp` and your pre-existing toolkits
+#      are all still listed. Add an entry to `.mcp.json` (also git-ignored)
+#      with an absolute `command`/`args` and explicit `cwd` — hosts start
+#      servers from their own cwd, so a relative `--config` resolves
+#      against the host's directory, not the repository:
+#        "parrot-lsp": {
+#          "command": "/abs/path/to/worktree/.venv/bin/parrot",
+#          "args": ["mcp-local", "lsp",
+#                   "--config", "/abs/path/to/worktree/.parrot/mcp-toolkits.yaml"],
+#          "cwd": "/abs/path/to/worktree"
+#        }
+#
+# NOTE ON VISIBILITY
+#   A server-level `tools/list` success does not prove a delegated seat can
+#   see the tools — verify through the actual CLI host you configured
+#   (research/coding/review seat) after installing. Seats without a
+#   provisioned Pyright/Node environment are recorded as fallback-only.
+#
+# NOTE ON THE SENTINEL
+#   `environment_id: operator-unconfigured` below is a safe default: every
+#   lsp_* tool call returns `status="unavailable"` before any process
+#   starts. Replace it with a real, immutable per-environment identifier
+#   only after Pyright 1.1.414 and a supported Node.js runtime are
+#   provisioned (docs/sdd/lsp-pilot.md, "Environment identity").
+#
+# NOTE ON CREDENTIALS
+#   No secrets appear here. `requires_llm: false` — this toolkit never
+#   calls a model.
+
+toolkits:
+  lsp:
+    class: parrot_tools.lsp.toolkit.LSPToolkit
+    kwargs:
+      config:
+        repo_root: {{repo_root}}
+        environment_id: operator-unconfigured
+        # Pinned pilot backend (docs/sdd/lsp-pilot.md, "Provisioning"):
+        # server_command: [pyright-langserver, --stdio]
+        # version_command: [pyright, --version]
+        # expected_server_version: "1.1.414"
+        # The interpreter Pyright should analyze against — defaults to the
+        # interpreter running this MCP server:
+        # python_path: {{repo_root}}/.venv/bin/python
+        # Additional PEP 420 namespace roots inside repo_root, if any
+        # distribution needs cross-root resolution (must be absolute and
+        # inside repo_root):
+        # source_roots: []
+        # Budgets (seconds unless noted); defaults shown are the packaged
+        # LSPConfig defaults, safe to leave commented out:
+        # startup_timeout_s: 20      # max 60
+        # request_timeout_s: 10      # max 30
+        # diagnostics_timeout_s: 20  # max 60
+        # idle_timeout_s: 120        # 30-600; owned Pyright process shuts
+        #                            # down after this much call inactivity
+        # node_heap_mb: 1024         # max 2048; Node old-space cap, not an
+        #                            # RSS guarantee

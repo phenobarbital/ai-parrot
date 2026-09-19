@@ -144,4 +144,64 @@ Real-Pyright acceptance requires `PARROT_LSP_REQUIRE_PYRIGHT=1` and the pinned e
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+**Implemented by the sdd-worker orchestrator directly** (not dispatched to a
+coder seat): the `parrot-sdd-coder` engine has a confirmed hard routing gap
+for `unknown`-classification tasks — every one of 6 distinct seats across
+all 3 backends (nova: glm/qwen/mistral/minimax, google-compat: gemini,
+codex: codex-spark) rejected this task with `CoderFailure: seat ... is not
+eligible for unknown task TASK-3508`, and native `coder_prepare_native` also
+refused (`task_not_in_plan`). Filed as `issue:f0cf45fc31dd`. The human
+operator explicitly authorized implementing directly after reviewing the
+`/sdd-done` blocker report.
+
+**`test_pyright_integration.py`** — real, pinned-Pyright (1.1.414) tests:
+`test_pyright_pinned_navigation` (alias/re-export chain, inheritance,
+duplicate names, a PEP 420 namespace root via `source_roots`),
+`test_pyright_saved_edit_diagnostic_delta` (baseline -> error -> removal
+diagnostic transitions including the versioned empty publication after a
+fix), `test_pyright_dependency_restart` (editing a non-target dependency
+bumps `_session_generation`, never reusing stale evidence). All three are
+gated by an `autouse` fixture that SKIPS an ordinary offline run when
+`pyright`/`pyright-langserver` are absent or the wrong version (never
+counted as integration acceptance per spec §5), and HARD-FAILS instead
+under `PARROT_LSP_REQUIRE_PYRIGHT=1` — verified both paths explicitly
+(offline: 3 skipped with a clear reason; `PARROT_LSP_REQUIRE_PYRIGHT=1`:
+3 failures). No real Pyright is provisioned in this environment, so these
+3 tests are **unexecuted here** — this is the honestly-reported limitation
+the task's own scope anticipates, not a gap I can close locally.
+
+**`test_mcp_integration.py`** — raw local MCP protocol tests against the
+real `parrot mcp-local lsp` CLI as a subprocess (never the in-process
+toolkit API), configured with `fake_server.py` as the LSP backend (never a
+live Pyright): `test_fake_server_stdio_end_to_end` (initialize -> tools/list
+exposing exactly the 4 documented tools -> tools/call -> EOF, asserting
+every stdout line is valid JSON-RPC) and `test_mcp_eof_reaps_child`
+(explicit focus: the fake-server child process is a real OS child before
+shutdown and fully reaped — via stdlib `/proc/<pid>/task/<pid>/children` +
+`os.kill(pid, 0)`, no new dependency — after a clean stdin EOF).
+
+**`test_worktree_isolation.py`** — `test_two_worktrees_and_concurrent_callers`:
+two independent `LSPToolkit` instances over two divergent git worktrees
+produce fully distinct `EvidenceMeta` (repo_root/workspace_id/
+workspace_digest); concurrent callers against ONE instance are proven
+strictly serialized by monkeypatching `PyrightSession.request` with an
+in-flight counter (`max_in_flight == 1` under 3-way `asyncio.gather`); and
+old-generation rejection — a stale `expected_sha256` after an on-disk edit
+is rejected (`status="error"`, `code="source_changed"`), and a fresh call
+bumps `_session_generation` with new `workspace_digest` evidence.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/ -q` → 116 passed, 3
+skipped (real-Pyright tests, expected — no `pyright` binary in this
+environment). `black -l 120`/`ruff check` clean on all 3 new files.
+
+**Observed, non-blocking**: the 3 skipped real-Pyright tests each emit a
+`PluggyTeardownRaisedWarning` from this repo's own root `conftest.py`
+`pytest_runtest_setup` hookwrapper (its `except Exception` doesn't catch
+`pytest.skip.Exception`, a `BaseException` subclass, raised from an
+`autouse` fixture). Reproduced independently of this task's code with a
+minimal fixture in an unrelated scratch file; `conftest.py` is out of this
+task's file scope, so not touched — noted here for whoever provisions the
+real M6 CI lane.
+
+Seat: sonnet (native, no MCP seat) — implemented directly by the
+sdd-worker orchestrator per the human-authorized exception above.

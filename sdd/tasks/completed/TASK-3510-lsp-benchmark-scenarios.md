@@ -138,4 +138,40 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Created `benchmarks/sdd_lsp/tasks.yaml` (12 fixed pilot tasks: 4
+investigation, 4 change, 4 fix — each with category, prompt, fixture
+selector, coverage tags, `required_evidence`,
+`supplementary_text_search`/`fallback_required` flags, pinned
+`fixture_sha256`, identical-shape `acceptance_commands`),
+`benchmarks/sdd_lsp/fixtures/scenarios.py` (`FixtureFile`/`ScenarioFixture`
+dataclasses + twelve deterministic builders producing baseline trees plus a
+plausible-but-wrong counterexample and an independently correct
+`expected_fix`; `content_sha256()` hashes only the baseline), and
+`benchmarks/sdd_lsp/fixtures/acceptance.py` (`EXPECTED_DEFINITIONS`
+hand-authored answers, `requires_supplementary_text_search()` policy,
+`check_definition_answer()`, `run_behavior_check()` — executes each
+fixture's bundled `check.py` in a bounded subprocess, testing outcomes
+never tool-call telemetry).
+
+**Deviation from file table (verified, reported):** no `fixtures/__init__.py`
+was added — verified empirically that the directory imports fine as a PEP
+420 implicit namespace subpackage under the existing regular
+`benchmarks.sdd_lsp` package; adding one would be an unlisted file for no
+functional benefit.
+
+**Bug caught and fixed during authoring:** the `fix-type-mismatch`
+fixture's `check.py` originally asserted exact float equality
+(`add_tax(100) == 110.0`), which fails on rounding
+(`100 * 1.1 == 110.00000000000001`); switched to a tolerance comparison
+and re-pinned that scenario's `fixture_sha256` accordingly.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_benchmark_scenarios.py -q`
+→ 4 passed (`test_twelve_scenarios_cover_approved_matrix`,
+`test_acceptance_rejects_incorrect_changes`,
+`test_dynamic_cases_require_additional_evidence`,
+`test_fixture_hashes_and_prompts_are_stable`). Full
+`packages/ai-parrot-tools/tests/lsp/` regression after merge: 106 passed.
+`black`/`ruff` clean.
+
+Seat: sonnet (native) · Attempt: 650553edf4b74941a176c21c8f445d39 · Commit:
+abf26a0f4 (attempt branch), merged cleanly.

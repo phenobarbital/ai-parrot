@@ -16,7 +16,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Independent root task; may run alongside tasks with disjoint targets. Owns lsp-models targets only.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3499-lsp-models.md"
+      "completed_at": "2026-09-19T01:46:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3499-lsp-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3500",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +45,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3499 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3500-lsp-snapshots.md"
+      "completed_at": "2026-09-19T02:05:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3500-lsp-snapshots.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3501",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,8 +66,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3499 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3501-lsp-protocol.md"
+      "completed_at": "2026-09-19T02:19:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3501-lsp-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3502",
@@ -74,7 +77,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -85,8 +88,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3499, TASK-3501 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3502-lsp-session-lifecycle.md"
+      "completed_at": "2026-09-19T02:38:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3502-lsp-session-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3503",
@@ -95,7 +99,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +109,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3502 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3503-lsp-session-diagnostics.md"
+      "completed_at": "2026-09-19T02:55:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3503-lsp-session-diagnostics.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3504",
@@ -115,7 +120,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +131,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3500, TASK-3503 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3504-lsp-navigation-toolkit.md"
+      "completed_at": "2026-09-19T03:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3504-lsp-navigation-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3505",
@@ -136,7 +142,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -146,8 +152,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3504 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3505-lsp-diagnostic-baselines.md"
+      "completed_at": "2026-09-19T15:06:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3505-lsp-diagnostic-baselines.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3506",
@@ -156,7 +163,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -164,8 +171,9 @@
       "parallelism_notes": "Independent root task; may run alongside tasks with disjoint targets. Owns lsp-mcp-lifecycle targets only.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3506-lsp-mcp-lifecycle.md"
+      "completed_at": "2026-09-19T01:32:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3506-lsp-mcp-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3507",
@@ -174,7 +182,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -185,8 +193,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3505, TASK-3506 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3507-lsp-installation-docs.md"
+      "completed_at": "2026-09-19T15:34:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3507-lsp-installation-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3508",
@@ -195,7 +204,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -205,8 +214,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3507 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3508-lsp-integration-tests.md"
+      "completed_at": "2026-09-19T17:39:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3508-lsp-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3509",
@@ -215,7 +225,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -223,8 +233,9 @@
       "parallelism_notes": "Independent root task; may run alongside tasks with disjoint targets. Owns lsp-benchmark-accounting targets only.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3509-lsp-benchmark-accounting.md"
+      "completed_at": "2026-09-19T15:19:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3509-lsp-benchmark-accounting.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3510",
@@ -233,7 +244,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -243,8 +254,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3509 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3510-lsp-benchmark-scenarios.md"
+      "completed_at": "2026-09-19T15:51:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3510-lsp-benchmark-scenarios.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3511",
@@ -253,7 +265,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -265,8 +277,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3507, TASK-3509, TASK-3510 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3511-lsp-benchmark-runner.md"
+      "completed_at": "2026-09-19T18:02:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3511-lsp-benchmark-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3512",
@@ -275,7 +288,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -285,8 +298,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3511 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3512-lsp-benchmark-report.md"
+      "completed_at": "2026-09-19T18:19:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3512-lsp-benchmark-report.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3513",
@@ -295,7 +309,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -306,8 +320,9 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3508, TASK-3512 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3513-lsp-seat-readiness.md"
+      "completed_at": "2026-09-19T18:28:35+00:00",
+      "file": "sdd/tasks/completed/TASK-3513-lsp-seat-readiness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3514",

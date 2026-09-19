@@ -134,4 +134,140 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+**Implemented by the sdd-worker orchestrator directly** (same authorized
+exception as TASK-3508): `parrot-sdd-coder` rejected this task on every
+probed seat with `CoderFailure: ... is not eligible for unknown task
+TASK-3511` (`classification=unknown`, `reason_codes=["metric_unknown"]`).
+Filed under the same `issue:f0cf45fc31dd` as TASK-3508.
+
+Implemented `async def run_pilot(manifest: PilotManifest, output_dir:
+Path) -> PilotReport` in `benchmarks/sdd_lsp/runner.py`, matching the
+spec's exact interface skeleton (2 params, no extra ones — cost tracking
+therefore relies solely on `ModelUsage.actual_cost_usd`, never an internal
+`PriceBook`, which the fixed signature has no room to accept):
+
+- `build_attempt_matrix`/`_ordered_pairs` expand a validated manifest into
+  exactly 180 deterministic `AttemptSpec`s. An explicit
+  `counterbalanced_order` (`"{task_id}|{arm}"` tokens) is honored verbatim
+  and validated (malformed token / incomplete coverage both raise
+  `ValueError` explicitly); otherwise a documented default rotates the arm
+  order per repetition.
+- `ARM_TOOL_FILTER` makes each arm's LSP tool visibility explicit
+  (`current`/`wiki_ast`: none; `lsp_navigation`:
+  definition+references; `lsp_diagnostics`: diagnostics+delta;
+  `lsp_combined`: all four) — communicated to the seat via
+  `PARROT_LSP_PILOT_TOOLS` since the seat's own MCP wiring is out of this
+  task's scope (explicitly "NOT in scope: choosing host/provider
+  adapters").
+- Each attempt gets a freshly materialized, isolated directory
+  (`build_fixture(task_id).materialize(...)`) and launches the seat's
+  exact configured `argv` via `asyncio.create_subprocess_exec` (no shell),
+  bounded by `SeatSpec.timeout_s`, with `PARROT_LSP_PILOT_FORCE_UNAVAILABLE=1`
+  set for the one task whose fixture requires a simulated unavailable
+  semantic server (`fix-unavailable-server`), regardless of arm.
+- Investigation-task answers are read from `answer.json` and checked via
+  `check_definition_answer`; change/fix edits are checked in place via
+  `run_behavior_check`. Usage is read from `trace.jsonl`
+  (`ModelUsage`-shaped JSON lines); a missing trace is recorded in
+  `coverage_manifest["missing_trace"]`, never silently dropped, and never
+  treated as zero cost.
+- Budget discipline: before each launch, remaining budget is checked
+  against `per_attempt_cost_reservation_usd`; after each attempt,
+  `accounting.attempt_cost_usd` (empty `PriceBook`, so only
+  `actual_cost_usd` is trusted) determines spend — an unknown cost or an
+  exhausted budget stops launching further attempts, but every
+  not-yet-launched attempt is still retained in the report with an
+  explicit `"not_launched: ..."` failure_reason. Nothing is silently
+  dropped.
+- All blocking I/O (`asyncio.create_subprocess_exec`'s bounded wait aside)
+  is wrapped in `asyncio.to_thread` — directory materialization, trace/
+  answer file reads, `run_behavior_check`'s subprocess call, and cleanup —
+  per the async-first convention; `ruff`'s `ASYNC240` finding was fixed,
+  not suppressed.
+
+Tests (`test_benchmark_runner.py`) use a small fake CLI seat script
+(written to `tmp_path` at test setup, never committed) driven purely by
+an argv mode token, never a live provider:
+`test_pilot_manifest_and_matrix` (180 deterministic attempts, explicit
+counterbalanced order honored/validated, malformed order rejected);
+`test_arm_filters_and_isolated_working_states` (full `ARM_TOOL_FILTER`
+mapping verified; a full successful 180-attempt run proves per-attempt
+isolation via scoped usage records); `test_budget_unknown_cost_and_
+timeout_stop` (unknown-cost stop after 1 of 180 launches; budget
+exhaustion stop; a hung seat is bounded by its own tiny per-seat timeout
+across the full matrix); `test_trace_coverage_and_failed_attempts_
+retained` (missing trace recorded as coverage without affecting
+acceptance; a crashing seat still yields 180 retained, unaccepted
+records).
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_benchmark_runner.py -q`
+→ 4 passed (~56s — 180-attempt full-matrix subprocess runs, expected for
+this task's scale). Full `packages/ai-parrot-tools/tests/lsp/` regression
+after this change: 123 collected, 120 passed, 3 skipped (real-Pyright
+tests, unrelated). `black -l 120`/`ruff check` clean.
+
+**Design choices made where the spec leaves the exact mechanism open**
+(all documented inline in `runner.py`'s module docstring): the
+`PARROT_LSP_PILOT_*` env-var contract for arm/tool-filter signaling to an
+external seat, and the `answer.json`/`trace.jsonl` file conventions for
+reading back a seat's investigation answer / normalized usage. No
+existing convention was available to verify against (this is the first
+task to define the seat-launch contract), so these are original design
+decisions, not verified pre-existing symbols — flagged per the Codebase
+Contract's anti-hallucination discipline.
+
+Seat: sonnet (native, no MCP seat) — implemented directly by the
+sdd-worker orchestrator per the human-authorized exception (see
+TASK-3508's completion note for the full blocker context).
+
+**Review-fix round (post-merge adversarial review, two independent
+reviewers, both CONFIRM):**
+- 🔴 CRITICAL, fixed: an attempt with NO trace ever observed (seat
+  crashed before flushing `trace.jsonl`, or a well-behaved seat's
+  attempt that simply never produced one) was priced at `0.0` by
+  `accounting.attempt_cost_usd`'s general "no usage = known zero"
+  contract, not `None` — this defeated the budget/unknown-cost stop
+  entirely and, at the report layer, could fabricate a false 100% cost
+  reduction / `"go"`. **Correction to this file's earlier claim**: the
+  original completion note above said a missing trace is "never treated
+  as zero cost" — that was false at the time, per direct reproduction
+  during review. Fixed with a new `runner.effective_attempt_cost_usd()`
+  wrapper (used by both the budget loop and `report.py`'s cohort cost
+  math) that returns `None` whenever no trace was ever observed,
+  reserving `accounting.attempt_cost_usd`'s `0.0` for a trace that was
+  present and explicitly reported zero-cost categories. Regression tests:
+  rewrote `test_trace_coverage_and_failed_attempts_retained`'s two
+  scenarios (`no_trace` and `crash` modes) to assert the run now halts
+  after the first untraced attempt instead of completing all 180 with a
+  fabricated zero-cost/accepted result; added
+  `test_missing_trace_is_never_priced_as_free` in
+  `test_benchmark_report.py` reproducing the exact false-`"go"` scenario
+  end to end.
+- 🔴 CRITICAL, fixed: an accepted attempt's `trace.jsonl` was deleted
+  with its scratch directory and never persisted anywhere else — the
+  returned `AttemptRecord.raw_trace_refs` pointed at a file that no
+  longer existed, and the full `PilotReport` (all per-attempt records)
+  was never written to disk, only the aggregated `report.json`/`report.md`.
+  Fixed: the trace is now archived to a durable
+  `output_dir/evidence/<attempt_id>/trace.jsonl` before any cleanup
+  (`raw_trace_refs` points at that durable copy), and `run_pilot` writes
+  the complete `PilotReport` to `output_dir/pilot_report.json` before
+  returning. New assertions added to
+  `test_arm_filters_and_isolated_working_states` proving the evidence
+  survives cleanup and the persisted report round-trips.
+- 🟠 IMPORTANT, deferred to ledger (`issue:65185c6c4f4a`): `tool_calls`,
+  `lsp_operations`, `correction_cycles`, and `retries` are never
+  populated on `AttemptRecord` by this runner — they silently default to
+  `0`. Fixing this needs a seat-protocol addition (a way for the seat to
+  report these back), out of scope for a same-session review fix.
+- 🟠 IMPORTANT, fixed: `benchmarks/sdd_lsp/__main__.py`'s `_amain` called
+  `path.read_text()`/`write_reports()` synchronously inside an `async
+  def`, inconsistent with this module's own `asyncio.to_thread`
+  discipline. Wrapped both in `asyncio.to_thread`.
+
+Full `packages/ai-parrot-tools/tests/lsp/` regression after these fixes:
+133 passed, 3 skipped (real-Pyright, unrelated). `black -l 120`/
+`ruff check` clean. Feedback NOT recorded via `coder_record_feedback`
+(this attempt has no resolvable `attempt_uid` — see TASK-3511's original
+completion note; the parrot-sdd-coder MCP server never dispatched this
+task).

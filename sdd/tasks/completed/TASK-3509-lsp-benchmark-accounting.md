@@ -140,4 +140,37 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Defined the M5 evaluation contracts in `benchmarks/sdd_lsp/`: `models.py`
+(`ARM_NAMES`/`ArmName`, `PilotManifest` — validates exactly 12 unique task
+ids, 3 repetitions, the exact five-arm set, one seat per arm matching its
+`arm`, positive `per_attempt_cost_reservation_usd` ≤ `spending_ceiling_usd`;
+`ModelUsage` cache-aware usage keyed by `(attempt_id, seat_id, request_id)`
+with disjoint token categories; `CachePriceRow`/`PriceBook`; `AttemptRecord`;
+`PilotReport`; `GateResult` data contract — decision procedure itself is
+TASK-3512's scope) and `accounting.py` (disjoint cache/read/write/output/
+reasoning billing with actual-cost precedence, provider "total" fields never
+billed; `find_duplicate_usage_keys`/`find_missing_request_ids`/
+`validate_model_usage` with typed `UsageIssue` codes). Deliberately did not
+reuse the older two-rate `UsageRecord`/`PriceRow`/`CostModel` from
+`benchmarks/tool_optimizations/accounting.py`.
+
+Out of scope (left unimplemented per task boundary, confirmed against
+TASK-3511/TASK-3512): `evaluate_gate`, `run_pilot`, provider SDK adapters,
+actual prices, process execution.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_benchmark_accounting.py -q`
+→ 4 passed (`test_manifest_dimensions_and_explicit_budget`,
+`test_cache_categories_are_disjoint`, `test_unknown_usage_never_becomes_zero`,
+`test_actual_cost_precedence_and_duplicate_requests`). `ruff check` clean;
+`black --line-length 120` applied. Feature-wide merge-tier regression
+(`select_tests --tier merge` over all FEAT-580 task files) also green: 98 +
+132 + 15 passed after merge into the feature branch.
+
+Prior coder-feedback (hasattr-duck-typing-before-definitive-signal,
+unisolated-real-home-in-tests, unscoped-removal-reuses-full-uninstall-helper)
+reviewed: none applicable — this module has no hasattr-based branching, no
+filesystem convention paths, and defines new schemas rather than reusing an
+existing helper for a narrower scope.
+
+Seat: sonnet (native) · Attempt: 53eec206924440d0987bdb11e57452f8 · Commit:
+4770f4cec (attempt branch), merged as 47c3b800b.

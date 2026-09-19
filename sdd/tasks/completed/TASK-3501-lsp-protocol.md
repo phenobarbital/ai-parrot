@@ -133,4 +133,42 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Implemented async Content-Length LSP framing in `protocol.py`: `read_message`/`write_message` with an 8 KiB
+header cap and 8 MiB frame cap (checked before the body is read, so an oversized declared length never forces
+an unbounded read), strict JSON-RPC 2.0 validation, and request/response/notification discrimination via a
+frozen `ParsedMessage` dataclass. Content-Length is always computed/consumed from the UTF-8-encoded body bytes,
+never the decoded string length. `LSPFailure("protocol_error", ...)` covers malformed/oversized frames and
+invalid JSON-RPC shapes; `LSPFailure("server_crashed", ...)` covers premature EOF. Added `build_request`/
+`build_notification`/`build_response` helpers preserving request-id type exactly. All symbols are module-public
+but intentionally unexported from `parrot_tools/lsp/__init__.py` — no public agent-facing API, consumed by
+`PyrightSession` (session.py, TASK-3502, not touched here). `fake_server.py` is a standalone scripted subprocess
+fixture with its OWN independent, synchronous Content-Length reader/writer (deliberately not importing
+`protocol.py`, so protocol.py's framing is verified against an independent implementation); scenarios:
+happy_path, fragmented_writes, flood_stderr, delay_response, omit_response, refuse_shutdown, early_eof,
+malformed_header, oversized_header.
+
+Validation: `PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot/src pytest
+packages/ai-parrot-tools/tests/lsp/test_protocol.py -q` → 30 passed, no warnings (pyproject's
+`filterwarnings = ["error", ...]` passed cleanly — no leaked subprocess/ResourceWarning). `black -l 120` and
+`ruff check` clean on all three files.
+
+Post-merge regression (`select_tests --tier merge`): 98 passed (`dev_loop/sdd_coder` + `packages/ai-parrot/tests/mcp`),
+78 passed/1 deselected (`packages/ai-parrot-tools/tests/lsp` + `tool_optimizations/integration`), 15 passed
+(`tests/mcp/test_toolkit_server.py`).
+
+Coder-feedback patterns checked: hasattr-duck-typing — not applicable (message discrimination uses explicit
+dict-key presence checks, ordered specific-before-generic, with the fallthrough raising rather than
+mis-classifying). unisolated-real-home-in-tests — not applicable (no test touches `$HOME`/`PARROT_HOME`/XDG;
+only I/O is spawning the repo-relative `fake_server.py` fixture as a subprocess).
+unscoped-removal-reuses-full-uninstall-helper — not applicable (all functions are new).
+
+Scope note: `protocol.py` implements only the framing/discrimination layer as scoped — no request-id-to-future
+routing, timeouts, method-not-found responses, `applyEdit` rejection, or session/process lifecycle; those
+remain TASK-3502 (session.py)'s responsibility. `fake_server.py` already answers `workspace/configuration` and
+emits `publishDiagnostics`/`$/progress` in anticipation of TASK-3502/3503 reusing this fixture — today's
+`test_protocol.py` only exercises it through raw framing, not session/toolkit semantics.
+
+No code review deferred findings for this delivery. No correction feedback filed (no confirmed defect found).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a (not reported by native
+Agent dispatch) · Tokens: 173754 (subagent_tokens, per completion notification).

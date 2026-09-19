@@ -129,4 +129,45 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Implemented `parrot_tools.lsp.models` with the strict Pydantic v2 (`extra="forbid"`) wire models: `LSPConfig`,
+`SourcePosition`, `SourceRange`, `SourceState`, `LSPLocation`, `LSPDiagnostic`, `EvidenceMeta`, `LSPResult`, plus
+the private `WorkspaceSnapshot`, `DiagnosticBatch`, `DiagnosticSnapshot`, `RawDiagnostic` and the `LSPFailure`
+exception carrying the fixed 24-code operational vocabulary. `LSPDiagnostic.message` is capped at 1000 chars
+(JSON-safe public evidence); `RawDiagnostic.full_message` is uncropped (used inside `DiagnosticBatch`/
+`DiagnosticSnapshot` to preserve complete internal evidence per the scope bullet). `DiagnosticBatch` uses a
+`model_validator` so missing/unversioned paths can never coexist with `complete=True` — unknown/partial coverage
+is structurally distinct from an empty-but-complete result. All path fields are validated as repository-relative
+POSIX shapes with no filesystem access; sha256 fields use `^[0-9a-f]{64}$`; `LSPConfig` validates `repo_root`
+absoluteness and `source_roots` containment via pure path algebra (no I/O), plus the configurable timeout/heap
+caps from spec §2 Bounds. `environment_id="operator-unconfigured"` round-trips as an ordinary valid string (the
+not-yet-built toolkit special-cases it before spawning). `parrot_tools/lsp/__init__.py` re-exports only the
+public wire models + `LSPFailure`; the private representations are importable only via `parrot_tools.lsp.models`.
+
+**Design note for reviewers of M2/M3 (session.py/toolkit.py):** `DiagnosticBatch`/`DiagnosticSnapshot.diagnostics`
+use `dict[str, list[RawDiagnostic]]` rather than `list[LSPDiagnostic]`, to satisfy "preserve complete uncropped
+diagnostics internally and JSON-safe public evidence separately" without contradicting `LSPDiagnostic`'s literal
+1000-char cap. `RawDiagnostic` is not named in the task's Implementation Blueprint symbol list — flagged here so
+TASK-3501/3502/3503/3504/3505 authors/implementers can confirm this private shape before consuming it.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_models.py -q` (via
+`PYTHONPATH=packages/ai-parrot-tools/src`, shared `.venv` is editable-installed against the main checkout) →
+14 passed. `ruff check` clean; `black --check` clean after one reformat pass. `test_import_and_construction_have_no_io`
+positively verifies the no-I/O acceptance criterion by monkeypatching `builtins.open`/`subprocess.Popen`/
+`asyncio.create_subprocess_exec` to raise if called, then constructing one instance of every model.
+
+Coder-feedback patterns checked: hasattr-duck-typing — not applicable (severity-default detection uses an
+explicit `'severity' not in data` dict-key check in `model_validator(mode='before')`, not `hasattr`).
+unisolated-real-home-in-tests — not applicable (no filesystem/`PARROT_HOME` I/O in this test file).
+unscoped-removal-reuses-full-uninstall-helper — not applicable (no helper reuse/wrapping in this task).
+
+Post-merge regression (`select_tests --tier merge`): 98 passed (`dev_loop/sdd_coder` + `packages/ai-parrot/tests/mcp`),
+44 passed/1 deselected (`packages/ai-parrot-tools/tests/lsp` + `tool_optimizations/integration`), 15 passed
+(`tests/mcp/test_toolkit_server.py`).
+
+No code review deferred findings for this delivery; the design note above is carried forward for later-task
+review, not a defect. No correction feedback filed (no confirmed defect found).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 (one prior attempt failed on an internal
+engine dispatch error unrelated to this coder — `_run_attempt is only called for mcp seats`; replanned to
+native and re-run) · Duration: n/a (not reported by native Agent dispatch) · Tokens: 145748 (subagent_tokens,
+per completion notification).

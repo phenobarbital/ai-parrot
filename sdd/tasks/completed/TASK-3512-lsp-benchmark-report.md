@@ -133,4 +133,70 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+**Implemented by the sdd-worker orchestrator directly** (same authorized
+exception as TASK-3508/3511): `parrot-sdd-coder` had no eligible seat for
+this `classification=unknown` task, filed under the same
+`issue:f0cf45fc31dd`.
+
+Implemented `benchmarks/sdd_lsp/report.py`:
+- `evaluate_gate(attempts, prices) -> GateResult` compares `lsp_combined`
+  against `wiki_ast` (never `current`, per spec §2). Requires the full
+  `TASK_COUNT * REPETITIONS` (36) launched attempts in BOTH arms, a
+  computable cost-per-accepted-task in both (via
+  `cohort_cost_per_accepted_task`, which charges every attempt — including
+  failed/retried ones — and divides by the accepted count only), and
+  computable wall-time medians; any gap yields `"inconclusive"`, never a
+  passing `"go"`. Thresholds are exact: `cost_reduction_pct >= 10.0`,
+  `median_wall_time_regression_pct <= 10.0`, no acceptance regression.
+  `correctness_regressed` mirrors `acceptance_regressed` — `AttemptRecord`
+  carries exactly one pass/fail signal (`accepted`); a second independent
+  "correctness" channel is not fabricated (documented explicitly in the
+  module docstring, since spec §2 names both but the data model only
+  supplies one signal — flagged rather than guessed).
+- `build_report_document`/`render_markdown`/`write_reports` produce a
+  deterministic JSON+Markdown pair with per-arm pooled totals (medians,
+  p95 via nearest-rank, cold/warm timing splits, correction cycles) and
+  per-task paired outcomes across all five arms — coverage gaps are
+  reported as `None`, never silently omitted.
+
+Implemented `benchmarks/sdd_lsp/__main__.py`: `python -m benchmarks.sdd_lsp
+--manifest <path> --output-dir <dir> [--prices <path>] [--live]`. Without
+`--live`, the manifest is loaded/validated and its planned matrix is
+previewed via `build_attempt_matrix` — `run_pilot` is never called, so no
+subprocess is ever launched offline (verified in tests via a
+monkeypatched runner spy). Only `--live` calls `run_pilot`, then
+`evaluate_gate` + `write_reports`. A malformed manifest raises before
+either path proceeds.
+
+Tests (`test_benchmark_report.py`): `test_cache_accounting_and_gate`
+(50% cost win + no regressions -> `"go"`; a failed attempt still charges
+its cost); `test_threshold_boundaries_and_per_task_regressions` (exact
+10%/10% boundaries pass, one unit past either fails; a per-task
+regression is reported by id); `test_incomplete_and_zero_success_are_
+inconclusive` (missing attempt, zero acceptance, and unknown cost each
+force `"inconclusive"`, never `"go"`); `test_cli_offline_default_and_
+live_validation` (offline never calls the runner; `--live` calls it
+exactly once and writes both report files; a malformed manifest raises in
+both modes). One extra test, `test_render_markdown_is_deterministic`,
+added beyond the required four.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_benchmark_report.py -q`
+→ 5 passed. Full `packages/ai-parrot-tools/tests/lsp/` regression: 128
+collected, 125 passed, 3 skipped (unrelated real-Pyright tests). `black
+-l 120`/`ruff check` clean.
+
+Seat: sonnet (native, no MCP seat) — implemented directly by the
+sdd-worker orchestrator per the human-authorized exception (see
+TASK-3508's completion note for the full blocker context).
+
+**Review-fix round (post-merge adversarial review):** `cohort_cost_per_
+accepted_task` used `accounting.attempt_cost_usd` directly, inheriting a
+confirmed CRITICAL defect (an attempt with no trace ever observed priced
+at `0.0` instead of unknown, able to fabricate a false 100% cost
+reduction / `"go"`). Full root cause, fix (new `runner.
+effective_attempt_cost_usd()`, now used here instead), and regression
+tests (`test_missing_trace_is_never_priced_as_free`) are documented in
+TASK-3511's completion note — this file only imports the corrected
+helper. Also fixed here: `__main__.py`'s `_amain` now wraps its
+`read_text`/`write_reports` calls in `asyncio.to_thread` (was blocking
+I/O in an async function). Full suite after fixes: 133 passed, 3 skipped.
