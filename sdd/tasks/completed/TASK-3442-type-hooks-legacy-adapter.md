@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3421, TASK-3424, TASK-3429
@@ -728,7 +728,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+types/abstract.py: ClassVars identify_strategy/requires_slots_definition/min_usable_shapes/uses_enhanced_image; the four legacy methods are no longer @abstractmethod and raise NotImplementedError('<Type> does not implement the legacy contract'); validate_contract() called from __init__ (TypeError containing 'abstract' unless the full legacy contract or all three cycle hooks are overridden; legacy-only types need both prompts; requires_slots_definition needs a slots_definition — ValueErrors name the FEAT-574 migration runbook under docs/pipelines); hooks perceive (lazy legacy_adapter), identify (pass-through), compare (mean + all-COMPLIANT, EMPTY list never a pass, LEGACY_UNMEASURED, coverage fields None), fallback_detection_prompt. noqa B024 (ABC kept per spec, contract enforced by validate_contract) and E402 (import follows existing module constants).
+types/legacy_adapter.py: legacy_perceive = verbatim move of plan.py steps 5-17 (same order, hasattr guards, bare excepts, logs, prompt text byte-identical) with the substitution table; compute_roi failure also recorded in PerceptionResult.errors.
+Deviation (files outside the declared list — test fixtures only): the spec'd legacy prompt check rejects configs with an empty prompt, so fixtures that built configs with object_identification_prompt=None / '' were given prompt strings: tests/pipelines/test_endcap_no_shelves.py::_make_config, tests/pipelines/test_product_on_shelves_grid.py::_make_config, and my own planogram_cycle/test_neutral_{shelf,panel}_types.py::_config. Production configs always had both prompts (NOT NULL columns before FEAT-574), so runtime behaviour is unchanged for existing rows; a legacy-type row with a NULL prompt now fails fast by design.
+Tests: test_type_hooks.py 11 passed; full packages/ai-parrot-pipelines/tests 287 passed (+1 pre-existing failure); tests/pipelines 138 passed; test_graphic_panel_display 13; plan.py untouched. No new ruff findings in planogram/types.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
