@@ -179,7 +179,7 @@ def test_get_target_adapter_rejects_unknown_kind() -> None:
 # ---------------------------------------------------------------------------
 
 
-_STILL_UNIMPLEMENTED_KINDS = sorted(TARGET_KINDS - {"mcp-toolkit", "mcp-stdio"})
+_STILL_UNIMPLEMENTED_KINDS = sorted(TARGET_KINDS - {"mcp-toolkit", "mcp-stdio", "botmanager"})
 
 
 @pytest.mark.parametrize("kind", _STILL_UNIMPLEMENTED_KINDS)
@@ -189,6 +189,8 @@ def test_get_target_adapter_raises_prerequisite_error_for_unimplemented_kind(kin
     `mcp-toolkit`/`mcp-stdio` are excluded here since TASK-3529 implemented
     real adapters for them in `parrot.e2e.targets.mcp` (see
     `test_mcp_targets.py` for their own prerequisite-error-free coverage).
+    `botmanager` is excluded since TASK-3530 implemented a real adapter in
+    `parrot.e2e.targets.botmanager` (see `test_botmanager_target.py`).
     """
     with pytest.raises(E2EPrerequisiteError) as excinfo:
         get_target_adapter(kind)
