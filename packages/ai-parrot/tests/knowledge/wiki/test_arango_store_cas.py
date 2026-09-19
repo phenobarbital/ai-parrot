@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import uuid
 
 import pytest
@@ -15,7 +16,48 @@ from parrot.knowledge.wiki.store import WikiPageRecord
 #: The reason string is asserted on by the parity test in TASK-3497.
 SKIP_REASON = "ArangoDB live fixture unavailable: set ARANGODB_HOST/ARANGODB_PASSWORD to validate AC8 parity"
 
-pytestmark = pytest.mark.skipif(not os.getenv("ARANGODB_HOST"), reason=SKIP_REASON)
+#: How long to wait for a raw TCP connect before declaring the backend
+#: unreachable. `ARANGODB_HOST` is often pre-populated by this project's
+#: config loader (navconfig) with a real internal hostname even in a
+#: sandboxed/CI environment with no route to it — checking only "is the
+#: env var set" is not a reliable proxy for "is the backend reachable",
+#: and a bare connection attempt inside the fixture can hang far longer
+#: than a normal test run (silently dropped SYN packets, not a fast
+#: connection refusal) instead of skipping (AC8: report missing, never
+#: hang/block).
+_CONNECT_TIMEOUT_S = 2.0
+
+
+def _arangodb_reachable() -> bool:
+    """Best-effort, tightly-bounded reachability probe (never hangs)."""
+    host = os.getenv("ARANGODB_HOST")
+    if not host:
+        return False
+    port = int(os.getenv("ARANGODB_PORT", "8529"))
+    try:
+        with socket.create_connection((host, port), timeout=_CONNECT_TIMEOUT_S):
+            return True
+    except OSError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(not _arangodb_reachable(), reason=SKIP_REASON)
+
+if not _arangodb_reachable():
+    # Module-level, collection-time skip (evaluated at import, before pytest
+    # ever builds a fixture graph for this module). This is the real guard:
+    # `pytestmark` alone does not reliably stop pytest-asyncio from starting
+    # to instantiate the async `store` fixture below in this package's full
+    # test environment, and doing so calls a fresh `asyncio.run()` per
+    # pytest-asyncio's `_asyncgen_fixture_wrapper` (bare `@pytest.fixture`
+    # async generator, asyncio_mode=auto) — which can deadlock against a
+    # lingering background thread started earlier by the heavy
+    # `parrot.bots`/`clients` import chain (a pycares DNS-resolver shutdown
+    # thread), hanging the whole run instead of skipping. Skipping the
+    # entire module at import time means that fixture is never even
+    # defined-and-requested for a real test item, so `asyncio.run()` is
+    # never invoked for it in that case.
+    pytest.skip(SKIP_REASON, allow_module_level=True)
 
 
 def _page(body: str = "v1", content_hash: str = "h1") -> WikiPageRecord:
