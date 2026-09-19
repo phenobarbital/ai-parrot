@@ -6,7 +6,7 @@
 		generate-registry check-registry build-codec-rs build-navrules-rs build-rust build-server-ui \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
-		install-supertonic injection-model docker-tool-worker docker-integrations docker-dev \
+		install-supertonic install-obscura injection-model docker-tool-worker docker-integrations docker-dev \
 		apply-commcenter-ddl build-clients publish-clients \
 		bump-all bump-patch-clients bump-minor-clients bump-major-clients
 
@@ -33,6 +33,15 @@ SUPERTONIC_DIR ?= models/supertonic-3
 # calls `warmup_injection_model()` - the only download site in the framework.
 INJECTION_MODEL_REPO ?= patronus-studio/wolf-defender-prompt-injection-small
 INJECTION_FORCE := $(if $(FORCE),True,False)
+
+# Obscura headless browser (FEAT-530). Prebuilt Linux x86_64 release; the
+# tarball ships `obscura` + `obscura-worker`, installed side by side. Pinned to
+# the version ObscuraProcessManager targets; OBSCURA_VERSION=latest follows HEAD.
+#   make install-obscura OBSCURA_INSTALL_DIR=/usr/local/bin   # needs write access
+OBSCURA_VERSION ?= v0.2.2
+OBSCURA_INSTALL_DIR ?= $(HOME)/.local/bin
+OBSCURA_TARBALL := obscura-x86_64-linux.tar.gz
+OBSCURA_URL := https://github.com/h4ckf0r0day/obscura/releases/$(if $(filter latest,$(OBSCURA_VERSION)),latest/download,download/$(OBSCURA_VERSION))/$(OBSCURA_TARBALL)
 
 # Experimental OpenAI Codex SDK source install.
 CODEX_SDK_VERSION ?= 0.1.11
@@ -300,6 +309,26 @@ install-supertonic:
 	@echo "   The 4-graph pipeline (text_encoder, duration_predictor, vector_estimator,"
 	@echo "   vocoder) is wired in SupertonicONNXBackend, so TTSConfig(backend='supertonic')"
 	@echo "   works out of the box. Voices: M1-M5, F1-F5 (TTSConfig(voice='F1'), default M1)."
+
+# Install the Obscura binaries into $(OBSCURA_INSTALL_DIR) (default ~/.local/bin,
+# no sudo). The browsing/scraping toolkits drive it with driver_type="obscura";
+# point OBSCURA_BINARY at the installed binary if that dir is not on PATH.
+install-obscura:
+	@if [ "$$(uname -s)-$$(uname -m)" != "Linux-x86_64" ]; then \
+		echo "❌ Obscura prebuilt binaries are Linux x86_64 only (got $$(uname -s)-$$(uname -m))."; \
+		echo "   Use Docker instead: docker run -d -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura"; \
+		exit 1; \
+	fi
+	@echo "Downloading Obscura $(OBSCURA_VERSION) from $(OBSCURA_URL) ..."
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		curl -fL --retry 3 -o "$$tmp/$(OBSCURA_TARBALL)" "$(OBSCURA_URL)" && \
+		tar xzf "$$tmp/$(OBSCURA_TARBALL)" -C "$$tmp" && \
+		mkdir -p "$(OBSCURA_INSTALL_DIR)" && \
+		install -m 0755 "$$tmp/obscura" "$$tmp/obscura-worker" "$(OBSCURA_INSTALL_DIR)/"
+	@echo "✅ Obscura installed in $(OBSCURA_INSTALL_DIR) (obscura, obscura-worker)"
+	@case ":$$PATH:" in *":$(OBSCURA_INSTALL_DIR):"*) ;; \
+		*) echo "   ⚠️  $(OBSCURA_INSTALL_DIR) is not on PATH — add it, or set OBSCURA_BINARY=$(OBSCURA_INSTALL_DIR)/obscura";; \
+	esac
 
 # ============================================================
 # Guardrail model assets
@@ -1052,6 +1081,7 @@ help:
 	@echo "    install-codex-sdk-editable - Install experimental Codex SDK from source"
 	@echo "    install-whisperx    - Install WhisperX with system deps"
 	@echo "    install-supertonic  - Install voice-supertonic extra + download TTS weights"
+	@echo "    install-obscura     - Install the Obscura headless browser binaries (Linux x86_64)"
 	@echo "    check-deps          - Check system dependencies (GPU, FFmpeg)"
 	@echo "    cuda-info           - Show GPU/CUDA information"
 	@echo "    install-go          - Install Go toolchain"

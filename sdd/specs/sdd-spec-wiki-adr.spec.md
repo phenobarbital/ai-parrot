@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-578
 **Date**: 2026-09-19
 **Author**: Codex with Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 Input: `sdd/proposals/sdd-spec-wiki-adr.brainstorm.md`, Option B. This document specifies the complete feature, including deterministic ADR ingestion, symbol-to-decision retrieval, cited “why” retrieval, and labeled candidate generation. Candidate acceptance policy remains a review gate (§8 Q3); it must be resolved before tasking the review module. Other architectural choices below are spec-author decisions for review, not additional user answers.
@@ -476,7 +476,7 @@ Original resolved answers are preserved verbatim:
 
 Brainstorm questions carried forward with dispositions:
 
-- [ ] Q1: Which real ADR directories/templates and sample repository should define the ingestion fixtures? — *Owner: Jesús*: Optional real-world samples remain requested. Synthetic fixtures and configurable conventional globs define v1; this is not a design blocker.
+- [ ] Q1: Which real ADR directories/templates and sample repository should define the ingestion fixtures? — *Owner: Jesús*: Optional real-world samples remain requested. Synthetic fixtures and configurable conventional globs define v1; this is not a design blocker.: https://github.com/adr/madr
 - [x] Q2: Which retrieval path is the first delivery priority if sequencing is necessary: symbol lookup or cited “why” answers? — *Owner: spec author*: Symbol lookup first as the evidence-link foundation, then why; both are required. This is an implementation ordering decision, not a new user preference.
 - [ ] Q3: Where are candidates reviewed, who may accept them, and must acceptance produce a committed ADR file? — *Owner: Jesús*: Proposed maintainer CLI review in the wiki, with optional export; awaiting response to the explicit question. Acceptance behavior and M5 dispatch are blocked until resolved. Rejection/revision never promote provenance.
 - [x] Q4: What default generation scope, model budget, and input sources are appropriate; should Git history be included in v1? — *Owner: spec author*: One file/symbol, eight files, 12000 estimated input tokens, 2000 output tokens, one model call, three candidates, 60-second timeout, explicit opt-in; no Git history. Configurable resource defaults, not quality guarantees.
