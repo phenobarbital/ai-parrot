@@ -110,9 +110,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
             try:
                 await toolkit._close()
             except Exception as exc:  # noqa: BLE001 -- isolated shutdown logging
-                self.logger.error(
-                    "Error in _close() for owned toolkit %s: %s", type(toolkit).__name__, exc
-                )
+                self.logger.error("Error in _close() for owned toolkit %s: %s", type(toolkit).__name__, exc)
             finally:
                 toolkit._opened = False
 
@@ -123,9 +121,7 @@ class _ToolkitStdioMCPServer(StdioMCPServer):
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as exc:  # noqa: BLE001 -- isolated shutdown logging
-                self.logger.error(
-                    "Error cleaning up owned toolkit %s: %s", type(toolkit).__name__, exc
-                )
+                self.logger.error("Error cleaning up owned toolkit %s: %s", type(toolkit).__name__, exc)
 
 
 def create_toolkit_mcp_server(
@@ -185,7 +181,7 @@ def create_toolkit_mcp_server(
         except ImportError as e:
             # Try to suggest the package extra
             if "parrot_tools" in section.class_path:
-                extra_hint = f"  Try: uv pip install ai-parrot-tools[scraping] " f"or ai-parrot-tools[browsing]"
+                extra_hint = "  Try: uv pip install ai-parrot-tools[scraping] " "or ai-parrot-tools[browsing]"
             else:
                 extra_hint = ""
             raise ImportError(
