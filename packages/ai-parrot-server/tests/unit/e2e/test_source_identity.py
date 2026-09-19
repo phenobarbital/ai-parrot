@@ -62,9 +62,7 @@ def _git_head(root: Path) -> str:
     Kept as a plain (non-async) helper so this test-only comparison never
     runs a blocking subprocess from inside an ``async def test_*`` body.
     """
-    result = subprocess.run(
-        ["git", "-C", str(root), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
-    )
+    result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], check=True, capture_output=True, text=True)
     return result.stdout.strip()
 
 
@@ -119,7 +117,9 @@ async def test_capture_identity_is_deterministic_for_unchanged_source(git_worktr
     assert first == second
 
 
-async def test_capture_identity_accepts_relative_worktree_path(git_worktree: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_capture_identity_accepts_relative_worktree_path(
+    git_worktree: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(git_worktree.parent)
     plan = _plan()
 

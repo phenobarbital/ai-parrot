@@ -180,9 +180,7 @@ def _resolve_spec_path(worktree: Path, spec_path: str) -> Path:
             reason_code="path_escape",
         )
     if not resolved.is_file():
-        raise E2EConfigError(
-            f"E2E plan references a missing spec file: {spec_path!r}", reason_code="spec_path_missing"
-        )
+        raise E2EConfigError(f"E2E plan references a missing spec file: {spec_path!r}", reason_code="spec_path_missing")
     return resolved
 
 
