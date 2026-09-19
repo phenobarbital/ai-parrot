@@ -188,8 +188,11 @@ class TestOffline:
         await service.for_symbol("sym:a.py#f")
         await service.why("pgvector")
 
-    @pytest.mark.parametrize("method,args", [("sync", ()), ("generate", ("sym:a.py#f",))])
-    async def test_orchestration_methods_are_declared_but_unimplemented(self, service, method, args):
-        """The surface is complete before Module 5 lands."""
-        with pytest.raises(NotImplementedError):
-            await getattr(service, method)(*args)
+    # NOTE (TASK-3493): `sync`/`generate`/`review` were declared here as
+    # NotImplementedError stubs by TASK-3490, precisely so retrieval could be
+    # built and tested before Module 5's orchestration existed ("TASK-3493
+    # fills them in (same file, sequenced after this task)" — TASK-3490's own
+    # scope). TASK-3493 has now replaced those stubs with real
+    # implementations; the assertion that they raise NotImplementedError no
+    # longer holds and is superseded by test_service_generation.py's full
+    # dedup/drift/review coverage.

@@ -7,26 +7,61 @@ generation/review task.
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 import logging
 import re
 from pathlib import Path
 
 from parrot.clients import AbstractClient
-from parrot.knowledge.wiki.decisions.evidence import verify_freshness
+from parrot.knowledge.wiki.decisions.codec import candidate_decision_id
+from parrot.knowledge.wiki.decisions.evidence import build_evidence, verify_freshness
+from parrot.knowledge.wiki.decisions.generation import (
+    PROMPT_VERSION,
+    generate_candidates,
+    recheck_evidence,
+    resolve_client,
+)
 from parrot.knowledge.wiki.decisions.models import (
+    ADR_INVALID_ARGUMENT,
     DecisionConfig,
+    DecisionDiagnostic,
     DecisionDossier,
+    DecisionError,
     DecisionHit,
     DecisionRecord,
+    EvidenceRef,
+    GenerationInfo,
     GenerationResult,
     ReviewRequest,
     SyncResult,
 )
 from parrot.knowledge.wiki.decisions.render import clamp_budget, clamp_limit, pack_dossier
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
+from parrot.knowledge.wiki.decisions.review import apply_review, validate_link_target
 from parrot.knowledge.wiki.store import BaseWikiStore
 from parrot.knowledge.wiki.structural.service import StructuralService
 from parrot.knowledge.wiki.symbols import parse_sym_id
+
+
+def _evidence_fingerprint(evidence: list[EvidenceRef]) -> str:
+    """Deterministic digest of an evidence snapshot (spec §2, AC6).
+
+    Sorted the same way :func:`codec.content_fingerprint` sorts a record's
+    evidence, so the same evidence set always yields the same fingerprint —
+    that reproducibility is what lets a rerun's dedup probe find an
+    existing candidate.
+    """
+    dumped = sorted(
+        (ref.model_dump(mode="json") for ref in evidence),
+        key=lambda item: (item["rel_path"], item["start_line"], item["end_line"], item["source_sha1"]),
+    )
+    payload = json.dumps(dumped, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha1(
+        payload.encode("utf-8")
+    ).hexdigest()  # noqa: S324 — content identity digest, not a security hash
+
 
 #: Lifecycle values hidden unless ``include_history=True`` (spec §2).
 HISTORICAL_STATUSES = frozenset({"rejected", "deprecated", "superseded"})
@@ -285,14 +320,170 @@ class DecisionService:
             status="ok",
         )
 
+    async def _target_evidence(self, target: str) -> tuple[str, list[EvidenceRef]]:
+        """Resolve one symbol id or repository-relative file into evidence.
+
+        Returns:
+            ``(scope_id, evidence)``. ``scope_id`` is the stable identity the
+            candidate id is derived from, so it must be the RESOLVED id, not
+            the user's possibly-ambiguous input.
+
+        Raises:
+            DecisionError: ``ADR_INVALID_ARGUMENT`` for an unresolvable or
+                ambiguous target — generation never guesses a binding, for
+                the same reason retrieval does not (AC2).
+        """
+        if target.startswith("sym:"):
+            resolved_id: str | None = target
+        else:
+            resolved_id, alternatives = await self._resolve_symbol(target)
+            if alternatives:
+                raise DecisionError(ADR_INVALID_ARGUMENT, f"{target!r} is ambiguous: {alternatives}")
+
+        if resolved_id is not None:
+            rel_path, qualname, _ordinal = parse_sym_id(resolved_id)
+            if self._structural is None:
+                raise DecisionError(
+                    ADR_INVALID_ARGUMENT,
+                    f"cannot resolve the span of {resolved_id!r} without a structural service",
+                )
+            lookup = await self._structural.lookup(qualname, limit=50)
+            match = next((hit for hit in lookup.hits if hit.symbol_id == resolved_id), None)
+            if match is None:
+                raise DecisionError(ADR_INVALID_ARGUMENT, f"symbol not found: {resolved_id!r}")
+            text = await asyncio.to_thread((self._root / rel_path).read_text, encoding="utf-8")
+            evidence = [build_evidence(rel_path, text, resolved_id, match.start_line, match.end_line, "code")]
+            return resolved_id, evidence
+
+        # A bare repository-relative file target (not a symbol name/id).
+        rel_path = target
+        text = await asyncio.to_thread((self._root / rel_path).read_text, encoding="utf-8")
+        end_line = max(len(text.splitlines()), 1)
+        evidence = [build_evidence(rel_path, text, f"file:{rel_path}", 1, end_line, "code")]
+        return f"file:{rel_path}", evidence
+
     async def sync(self, paths: list[str] | None = None) -> SyncResult:
-        """Refresh ADR sources. Implemented by the orchestration task."""
-        raise NotImplementedError("DecisionService.sync is implemented in FEAT-578 Module 5")
+        """Refresh ADR sources. Never invokes a model (AC5).
+
+        The import is function-local so that building or testing the retrieval
+        surface never drags in the ingest pipeline (TASK-3490 keeps this module
+        free of it by design).
+
+        Raises:
+            DecisionError: ``ADR_INVALID_ARGUMENT`` without a local root — a
+                store-only namespace has no source tree to scan (spec §2
+                Module 6).
+        """
+        from parrot.knowledge.wiki.decisions.ingest import refresh_decisions
+
+        if self._root is None:
+            raise DecisionError(ADR_INVALID_ARGUMENT, "sync requires a local project root")
+        return await refresh_decisions(self._store, self._root, self._config, paths)
 
     async def generate(self, target: str) -> GenerationResult:
-        """Generate bounded candidates. Implemented by the generation task."""
-        raise NotImplementedError("DecisionService.generate is implemented in FEAT-578 Module 5")
+        """Generate bounded candidates, or reuse the same snapshot's candidates.
+
+        Reuse is checked BEFORE the model is resolved or invoked, so a rerun
+        over unchanged evidence costs nothing and cannot disturb a candidate
+        a maintainer has already reviewed (AC6).
+
+        Raises:
+            DecisionError: ``ADR_INVALID_ARGUMENT`` without a local root,
+                ``ADR_MODEL_UNCONFIGURED`` when generation is off or no model
+                is configured, plus any code raised by the generation module.
+        """
+        if self._root is None:
+            raise DecisionError(
+                ADR_INVALID_ARGUMENT,
+                "candidate generation requires a local project root; a store-only namespace cannot generate",
+            )
+        result = GenerationResult()
+        scope_id, evidence = await self._target_evidence(target)
+        fingerprint = _evidence_fingerprint(evidence)
+
+        inventory = await self._repo.inventory()
+        existing_ids = [
+            record.decision_id
+            for record in inventory
+            if record.generation is not None
+            and record.generation.scope_id == scope_id
+            and record.generation.input_sha1 == fingerprint
+        ]
+        if existing_ids:
+            # AC6: a rerun over unchanged evidence is free — no client is ever
+            # resolved or invoked, so an offline rerun still succeeds.
+            result.reused = existing_ids
+            return result
+
+        client = resolve_client(self._config, self._client)
+        batch, packet, diagnostics = await generate_candidates(client, target, evidence, self._config)
+        result.diagnostics.extend(diagnostics)
+
+        drift = await recheck_evidence(self._root, packet)
+        if drift:
+            # spec §2: any span that changed mid-generation persists NOTHING.
+            result.diagnostics.extend(drift)
+            return result
+
+        for draft in batch.candidates:
+            cited_evidence = [packet[idx] for idx in draft.evidence_indexes]
+            decision_id = candidate_decision_id(scope_id, fingerprint, PROMPT_VERSION, draft.decision)
+            record = DecisionRecord(
+                decision_id=decision_id,
+                title=draft.title,
+                context=draft.context,
+                decision=draft.decision,
+                consequences=draft.consequences,
+                origin="inferred",
+                source_status="unknown",
+                review_status="unreviewed",
+                observations=draft.observations,
+                hypotheses=draft.hypotheses,
+                evidence=cited_evidence,
+                generation=GenerationInfo(
+                    model_spec=getattr(client, "model", None) or type(client).__name__,
+                    scope_id=scope_id,
+                    input_sha1=fingerprint,
+                    max_input_tokens=self._config.max_input_tokens,
+                    max_output_tokens=self._config.max_output_tokens,
+                ),
+            )
+            try:
+                await self._repo.save(record, None)
+            except DecisionError as exc:
+                if exc.code == "ADR_REVISION_CONFLICT":
+                    # The deterministic id already exists — a concurrent
+                    # generate() minted the byte-equivalent record first.
+                    result.reused.append(decision_id)
+                else:
+                    result.diagnostics.append(
+                        DecisionDiagnostic(code=exc.code, message=str(exc), decision_id=decision_id)
+                    )
+                continue
+            result.decision_ids.append(decision_id)
+
+        return result
 
     async def review(self, request: ReviewRequest) -> DecisionRecord:
-        """Apply an attributed review. Implemented by the review task."""
-        raise NotImplementedError("DecisionService.review is implemented in FEAT-578 Module 5")
+        """Validate and apply an attributed revision.
+
+        Raises:
+            DecisionError: ``ADR_INVALID_ARGUMENT`` when the record or a
+                ``link`` target is missing, ``ADR_REVISION_CONFLICT`` when
+                another reviewer wrote first. The conflict is surfaced, never
+                retried (spec §2).
+        """
+        loaded = await self._repo.get(request.decision_id)
+        if loaded is None:
+            raise DecisionError(
+                ADR_INVALID_ARGUMENT, f"no such decision: {request.decision_id}", decision_id=request.decision_id
+            )
+        record, page_hash = loaded
+
+        if request.action == "link":
+            target_loaded = await self._repo.get(request.documented_decision_id)
+            target_record = target_loaded[0] if target_loaded is not None else None
+            validate_link_target(target_record, request.documented_decision_id)
+
+        updated = apply_review(record, request)
+        return await self._repo.save(updated, page_hash)
