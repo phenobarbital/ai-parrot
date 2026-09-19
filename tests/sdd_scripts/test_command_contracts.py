@@ -55,6 +55,26 @@ def test_every_creator_calls_ensure_worktree(rel: str) -> None:
     ), f"{rel} must call `python -m scripts.sdd.ensure_worktree` to provision worktrees"
 
 
+#: Agent prompts that run /sdd-spec unattended — they must never enter intake mode (FEAT-577).
+_UNATTENDED_SPEC_CALLERS = (
+    ".claude/agents/sdd-research.md",
+    ".claude/agents/sdd-planner.md",
+    "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-research.md",
+    "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-planner.md",
+)
+
+
+@pytest.mark.parametrize("rel", _UNATTENDED_SPEC_CALLERS)
+def test_unattended_callers_pass_no_interview(rel: str) -> None:
+    """Every /sdd-spec invocation in an unattended agent carries --no-interview (FEAT-577)."""
+    content = _read(rel)
+    lines = content.splitlines()
+    spec_lines = [line for line in lines if "/sdd-spec " in line and "<slug>" in line]
+    assert spec_lines, f"No /sdd-spec <slug> invocation found in {rel}"
+    for line in spec_lines:
+        assert "--no-interview" in line, f"Line in {rel} missing --no-interview: {line}"
+
+
 def test_no_legacy_naming_template_remains() -> None:
     """`feat-<id>-<slug>` is gone: one template, owned by plan_worktree."""
     claude_dir = _REPO_ROOT / ".claude"
