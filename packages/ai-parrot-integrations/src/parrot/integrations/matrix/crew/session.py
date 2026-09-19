@@ -297,7 +297,7 @@ class MatrixCollaborativeSession:
             if self._tunnels is not None:
                 peers = [p for p in prev if p != card.agent_name]
                 asks = [self._ask_peer(card.agent_name, peer, prev[peer]) for peer in peers]
-                for peer, ans in zip(peers, await asyncio.gather(*asks, return_exceptions=True)):
+                for peer, ans in zip(peers, await asyncio.gather(*asks, return_exceptions=True), strict=False):
                     if not isinstance(ans, Exception) and ans is not None and ans.answer is not None:
                         peer_answers[peer] = str(ans.answer)
             enriched_prompt = self._build_enriched_context(
@@ -622,10 +622,9 @@ class MatrixCollaborativeSession:
             "Agent findings:",
         ]
 
-        for agent_name, results_list in self._state.agent_results.items():
+        for _agent_name, results_list in self._state.agent_results.items():
             if not results_list:
                 continue
-            # Use the most recent result for each agent
             latest = results_list[-1]
             lines.append(f"\n[{latest.display_name}]:")
             lines.append(latest.result_text)
@@ -647,7 +646,7 @@ class MatrixCollaborativeSession:
             return
 
         lines = [f"Investigation complete for: {self._question}", ""]
-        for agent_name, results_list in self._state.agent_results.items():
+        for _agent_name, results_list in self._state.agent_results.items():
             if not results_list:
                 continue
             latest = results_list[-1]
