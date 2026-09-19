@@ -15,8 +15,8 @@ _ROOT = Path(parrot_pipelines.__file__).parent
 #: Spec §5: zero matches for these three. (`llm.detect_objects` and `no_memory` are legitimate.)
 _FORBIDDEN = re.compile(r'model="gemini|roi_client|GoogleGenAIClient')
 
-#: handlers/ still builds a GoogleGenAIClient until TASK-3447 lands — delete this exclusion then.
-_EXCLUDED_DIRS = {"handlers", "__pycache__"}
+#: handlers/ was excluded until TASK-3447 removed its GoogleGenAIClient; only caches are skipped now.
+_EXCLUDED_DIRS = {"__pycache__"}
 
 
 def _offenders() -> List[str]:
