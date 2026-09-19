@@ -175,5 +175,36 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `ControlServer`/`ControlClient` (plus
+`ControlChannelError`, `ControlHandler`, `MAX_MESSAGE_BYTES`,
+`SOCKET_FILE_MODE`, `DEFAULT_REQUEST_DEADLINE_S`) with the exact fixed
+interface `ControlClient.request(operation, payload) -> dict[str, JsonValue]`
+(async). `ControlServer` is generic — it dispatches to a caller-supplied
+`operations` mapping and has no built-in start/status/stop semantics of its
+own; TASK-3527 (`E2ESupervisor`, the sole dependent) owns what each
+operation does. Wire shape: newline-delimited JSON-RPC 2.0 over a Unix
+domain socket, mode 0600, per the TASK-3517 research spike's frozen
+contract. Every read (both sides) goes through `asyncio.wait_for` — no
+blocking `readline()` gap. Authorization checked most-definitive-first
+(envelope shape → stale run_id → foreign owner_id) before any handler
+dispatch. 1 MiB message-size ceiling enforced on encode and read.
+Client-side JSON-RPC id correlation rejects `id_mismatch` before trusting a
+response body. Sockets closed in `finally` on both sides including on
+`CancelledError`; `stop()`/`__aexit__` unlink idempotently; symlinked
+socket paths refused before bind. `ControlServer`/`ControlClient` take an
+explicit `socket_path` rather than calling into `parrot.e2e.state.run_dir`
+directly, keeping this module decoupled from state.py's directory placement
+(left to the TASK-3527 caller).
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_control.py -q`
+→ 27 passed. Full-directory regression:
+`pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 226 passed
+(199+27), no regression against TASK-3520/3521/3524/3525.
+
+No unresolved limitations. AC3/AC5/AC6 demonstrated by the contract tests.
+Flag for the next dependent (TASK-3527): read `control.py` directly for the
+exact `ControlServer(socket_path, *, run_id, owner_id, operations,
+request_deadline_s)` / `ControlHandler = Callable[[dict], Awaitable[dict]]`
+signatures rather than re-deriving them.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 732.2s · Tokens: 196265 (combined)
