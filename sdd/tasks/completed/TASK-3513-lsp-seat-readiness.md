@@ -131,4 +131,61 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+**Implemented by the sdd-worker orchestrator directly** (same authorized
+exception as TASK-3508/3511/3512): `parrot-sdd-coder` had no eligible seat
+for this `classification=unknown` task, filed under the same
+`issue:f0cf45fc31dd`.
+
+Implemented `packages/ai-parrot-tools/tests/lsp/test_seat_visibility.py`:
+- `test_cli_seat_visibility_and_fallback`: three independently configured
+  seat-role worktrees (`research`/`coding`/`review`), each with its own
+  `.parrot/mcp-toolkits.yaml` pointed at the scripted `fake_server.py`
+  fixture (never a live agent). Each role's access is confirmed with a
+  real `lsp_definition` call, not just a declared `tools/list` — matching
+  spec's "server-level tools/list alone is not accepted as proof".
+  Adversarial: a role pointed at the `operator-unconfigured` sentinel is
+  recorded `fallback_only=True` explicitly; a worktree with no `lsp:`
+  section resolves as `visible=False`, not a crash.
+- `test_parent_visibility_does_not_imply_child_visibility`: empirically
+  proves the exact failure mode `docs/sdd/lsp-pilot.md` already warned
+  about — blindly copying a parent worktree's rendered
+  `.parrot/mcp-toolkits.yaml` into a child worktree still points at the
+  parent's absolute `repo_root`; querying a child-only file through that
+  copied config fails with `code="invalid_request"` (not part of the
+  parent's tracked/untracked manifest at all).
+- `test_missing_live_manifest_is_not_success` /
+  `test_live_manifest_when_provided_is_executed`: the opt-in
+  `PARROT_LSP_LIVE_MANIFEST` env var is absent by default — the live
+  check then returns `None` ("not executed"), never a fabricated pass;
+  when set to an operator manifest (a fake CLI here, for determinism), the
+  check actually runs and reports per-role results.
+
+Modified `docs/sdd/lsp-pilot.md`: added an "Operator run checklist
+(pre-M6)" section directly addressing spec §8's one unresolved open
+question (concrete CLI/model versions, immutable environment IDs, real
+task commits, price basis, spending ceiling) with a reviewed
+180-attempt-matrix checklist, plus a "Opting into the live seat-readiness
+check" subsection documenting `PARROT_LSP_LIVE_MANIFEST`'s exact contract
+and JSON shape. No defaults were invented for any of these — every item
+is stated as an operator/experiment-owner decision, matching spec §8's
+own framing.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_seat_visibility.py -q`
+→ 4 passed. Full `packages/ai-parrot-tools/tests/lsp/` regression: 132
+collected, 129 passed, 3 skipped (unrelated real-Pyright tests). `black
+-l 120`/`ruff check` clean.
+
+Two corrections made during implementation (both verified against actual
+source before asserting, not assumed): (1) `lsp_diagnostics` was dropped
+from the seat-access proof because `fake_server.py`'s `happy_path`
+scenario always publishes diagnostics for a fixed, unrelated URI
+(documented precedent in `test_session_diagnostics.py`) — `lsp_definition`
+alone proves real tool access; (2) the child-visibility test's expected
+failure code is `"invalid_request"` (a path not part of any
+tracked/untracked manifest entry), not `"file_missing"` (reserved for a
+tracked-then-deleted path) — verified directly against
+`snapshot.py`'s `LSPFailure` call sites before asserting.
+
+Seat: sonnet (native, no MCP seat) — implemented directly by the
+sdd-worker orchestrator per the human-authorized exception (see
+TASK-3508's completion note for the full blocker context).
