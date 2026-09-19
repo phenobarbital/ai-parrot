@@ -155,10 +155,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator: nova/mistral.devstral-2-123b via parrot-sdd-coder)
+**Date**: 2026-09-19
+**Notes**: Mirrored the M2 changes into `.agents/skills/sdd-status/SKILL.md`
+(worktree discovery step 1.5, worktree summary step 6, references updated).
+Reviewed; no unlisted files touched. Review recorded:
+`coder-review:42be1bd84adb45d535fc970c`.
+Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 243.244s · Tokens: 410239/2193
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

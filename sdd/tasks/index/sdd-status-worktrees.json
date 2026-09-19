@@ -54,7 +54,7 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -64,8 +64,8 @@
       "parallelism_notes": "calls python -m scripts.sdd.worktree_status --json created by TASK-3549; modifies .claude/commands/sdd-status.md (no overlap with other tasks); validation command references test file from TASK-3550 as a feature-level check, not a consumed artifact",
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3551-sdd-status-worktree-panel.md"
+      "completed_at": "2026-09-19T14:19:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3551-sdd-status-worktree-panel.md"
     },
     {
       "id": "TASK-3552",
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "references worktree_status CLI from TASK-3549; modifies .agents/skills/sdd-status/SKILL.md (no overlap with other tasks); validation command references test file from TASK-3550 as a feature-level check, not a consumed artifact",
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3552-sdd-status-skill-update.md"
+      "completed_at": "2026-09-19T14:19:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3552-sdd-status-skill-update.md"
     },
     {
       "id": "TASK-3553",
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "calls python -m scripts.sdd.worktree_status --json created by TASK-3549; modifies .claude/commands/sdd-next.md + .agents/skills/sdd-next/SKILL.md (no overlap with other tasks); validation command references test file from TASK-3550 as a feature-level check, not a consumed artifact",
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3553-sdd-next-worktree-annotations.md"
+      "completed_at": "2026-09-19T14:19:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3553-sdd-next-worktree-annotations.md"
     }
   ]
 }
