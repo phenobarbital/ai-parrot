@@ -95,7 +95,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "May run alongside tasks outside its dependency chain with disjoint targets. Requires TASK-3502 for the contracts and deliverables described below.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3503-lsp-session-diagnostics.md"
+      "completed_at": "2026-09-19T02:55:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3503-lsp-session-diagnostics.md"
     },
     {
       "id": "TASK-3504",

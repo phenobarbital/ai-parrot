@@ -128,4 +128,46 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Added `PyrightSession.sync_documents(sources, texts)`: opens (`didOpen`)/changes (`didChange`)/closes (`didClose`)
+exact on-disk documents. Enforces strictly monotonic `document_version`, rejects a repeated version whose hash
+changed, treats a repeated `(version, sha256)` as a no-op (preserving warm diagnostic cache), closes any open
+document not in the current `sources` set, rejects more than 20 distinct paths with `resource_limit`.
+
+Added `PyrightSession.diagnostics(sources, timeout_s)`: drains TASK-3502's private notification seam
+(`_drain_notifications`) via an `asyncio.Event` hooked into `_dispatch_message`; accepts only
+`textDocument/publishDiagnostics` publications whose version matches the path's currently-open document
+version; version-omitted publication → `unversioned_paths` (never matched); enforces the 2,000 raw-diagnostic
+cap by demoting whole oversized-contribution paths to `missing_paths` rather than truncating in place; returns
+a `DiagnosticBatch` that is `complete` only when every requested path matched — never raises on timeout, never
+infers completeness from silence. Warm reuse via a per-path version-keyed cache resolves an unchanged source
+state instantly. A matching version's diagnostics (even empty) replace the prior cache entry, so a matching
+empty publication clears earlier findings. `RawDiagnostic.full_message` is never truncated (uncropped, for
+M3's multiset comparisons).
+
+**Test design note:** `fake_server.py`'s `happy_path` scenario always publishes a hardcoded diagnostic for
+`file:///scenario.py`, which never resolves inside a pytest `tmp_path` root, so it can only exercise "foreign
+notification is ignored." Used real subprocesses against `happy_path` for lifecycle/liveness (as TASK-3502
+did), and fed synthetic `ParsedMessage` notifications through the session's private `_dispatch_message` seam to
+exercise freshness/matching/overflow — the same private-seam-testing convention TASK-3502 established. Applied
+the TASK-3502 implementer's fixture-race note: every test waits for `len(session._notifications) >= 2` after
+`start()` before writing anything else to stdin.
+
+Validation: `PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot/src pytest
+packages/ai-parrot-tools/tests/lsp/test_session_diagnostics.py -q` → 14 passed. Full `packages/ai-parrot-tools/tests/lsp/`
+→ 77 passed, no regression. `ruff check` clean; `black --check` flagged only the new test file's line-wrapping
+(not session.py); reformatted and re-verified 14/14 still green.
+
+Post-merge regression (`select_tests --tier merge`): 98 passed (`dev_loop/sdd_coder` + `packages/ai-parrot/tests/mcp`),
+107 passed/1 deselected (`packages/ai-parrot-tools/tests/lsp` + `tool_optimizations/integration`), 15 passed
+(`tests/mcp/test_toolkit_server.py`).
+
+Coder-feedback patterns checked: hasattr-duck-typing — not applicable (version/type discrimination uses
+explicit `isinstance`/`is None` checks ordered by definitiveness). unisolated-real-home-in-tests — not
+applicable (all tests use `tmp_path` exclusively; URI construction independently re-derived in tests rather
+than reusing the session's own encoder, to avoid a self-validating test). unscoped-removal-reuses-full-uninstall-helper
+— not applicable (`_close_document` is a new, narrowly-scoped helper).
+
+No code review deferred findings for this delivery; no defects found. No correction feedback filed.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a (not reported by native
+Agent dispatch) · Tokens: 202439 (subagent_tokens, per completion notification).
