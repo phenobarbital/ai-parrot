@@ -9,8 +9,11 @@ lane rules live here and ONLY here — the ``/sdd-fix`` twins execute
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
-from typing import Final, Literal
+import re
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timezone
+from pathlib import PurePosixPath
+from typing import Any, Final, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -154,3 +157,116 @@ def group_issues(issues: Sequence[FixIssue]) -> list[FixGroup]:
 
     groups.sort(key=lambda group: (SEVERITY_ORDER[group.max_severity], -len(group.issues), group.group_id))
     return groups
+
+
+_SPEC_PARENT_RE = re.compile(r"^spec:(FEAT-\d+)$")
+
+
+def decide_lane(group: FixGroup, *, override: Lane | None = None) -> tuple[Lane, str]:
+    """Return the lane for one group plus a one-line reason (spec §2 predicate on ``max_severity``).
+
+    ``override`` short-circuits the heuristic ("forced by --lane") but is never a safety
+    bypass (S7): ``override == "fast"`` raises ``ValueError`` when ``max_severity`` is
+    ``critical`` or any issue is a ``vulnerability``.
+    """
+    kinds = {issue.kind for issue in group.issues}
+    if override == "fast" and (group.max_severity == "critical" or kinds & ALWAYS_SDD_KINDS):
+        raise ValueError(
+            f"--lane fast refused for {group.group_id}: critical or vulnerability groups always take the SDD lane"
+        )
+    if override is not None:
+        return override, "forced by --lane"
+    if group.max_severity in ("critical", "major"):
+        return "sdd", f"max_severity is {group.max_severity}"
+    if kinds & ALWAYS_SDD_KINDS:
+        return "sdd", "group contains a vulnerability issue"
+    if not group.files:
+        return "sdd", "group has no file scope"
+    severities = {issue.severity for issue in group.issues}
+    if severities <= FAST_LANE_SEVERITIES and kinds <= FAST_LANE_KINDS and len(group.files) <= FAST_LANE_MAX_FILES:
+        return "fast", "minor/low tech_debt confined to a single file"
+    return "sdd", "does not meet fast-lane criteria"
+
+
+def suggest_slug(group: FixGroup) -> str:
+    """Deterministic kebab-case slug from the group's dominant file (pure; NOT unique — the CLI de-duplicates)."""
+    if not group.files:
+        return group.group_id.replace(":", "-")
+    file_counts: dict[str, int] = {}
+    for issue in group.issues:
+        for file_path in issue.files:
+            file_counts[file_path] = file_counts.get(file_path, 0) + 1
+    max_count = max(file_counts.values())
+    dominant_file = min(path for path, count in file_counts.items() if count == max_count)
+    path_obj = PurePosixPath(dominant_file)
+    parent_dir_name = path_obj.parent.name
+    stem = path_obj.stem
+    base = f"{parent_dir_name}-{stem}".replace("_", "-")
+
+    kind_counts: dict[str, int] = {}
+    for issue in group.issues:
+        kind_counts[issue.kind] = kind_counts.get(issue.kind, 0) + 1
+    max_kind_count = max(kind_counts.values())
+    dominant_kind = min(kind for kind, count in kind_counts.items() if count == max_kind_count)
+    suffix = "-tech-debt" if dominant_kind == "tech_debt" else "-fixes"
+    return base + suffix
+
+
+def _parents_for(group: FixGroup, status: Mapping[str, str | None]) -> list[ParentFeature]:
+    """Parents from ``spec:FEAT-<NNN>`` ``discovered_from`` only; absent from ``status`` ⇒ ``open=False``."""
+    ids = sorted(
+        {
+            m.group(1)
+            for issue in group.issues
+            if issue.discovered_from and (m := _SPEC_PARENT_RE.match(issue.discovered_from))
+        }
+    )
+    return [
+        ParentFeature(feature_id=fid, completed_at=status.get(fid), open=(fid in status and status[fid] is None))
+        for fid in ids
+    ]
+
+
+def plan_fix_batch(
+    issues: Sequence[Mapping[str, Any]],
+    *,
+    kind: IssueKind | None = None,
+    severity: IssueSeverity | None = None,
+    lane_override: Lane | None = None,
+    parent_index_status: Mapping[str, str | None] | None = None,
+    generated_at: str | None = None,
+) -> FixPlan:
+    """Build the ordered, lane-labelled plan from ``ready_work()`` rows (see spec §3 M1 for the full contract)."""
+    status = dict(parent_index_status or {})
+    parsed: list[FixIssue] = []
+    valid_kinds = set(get_args(IssueKind))
+    for row in issues:
+        issue_id = row.get("issue_id")
+        row_kind = row.get("kind")
+        row_severity = row.get("severity")
+        if not issue_id or row_kind not in valid_kinds or row_severity not in SEVERITY_ORDER:
+            continue
+        about = row.get("about") or []
+        parsed.append(
+            FixIssue(
+                issue_id=issue_id,
+                title=row.get("title", ""),
+                kind=row_kind,
+                severity=row_severity,
+                discovered_from=row.get("discovered_from"),
+                about=about,
+                files=files_for(about),
+            )
+        )
+    selected = [i for i in parsed if (kind is None or i.kind == kind) and (severity is None or i.severity == severity)]
+    groups = group_issues(selected)
+    for group in groups:
+        group.lane, group.lane_reason = decide_lane(group, override=lane_override)
+        group.suggested_slug = suggest_slug(group)
+        group.parents = _parents_for(group, status)
+    return FixPlan(
+        generated_at=generated_at or datetime.now(timezone.utc).isoformat(),
+        total_open=len(parsed),
+        groups=groups,
+        filters={"kind": kind, "severity": severity, "lane": lane_override},
+    )
