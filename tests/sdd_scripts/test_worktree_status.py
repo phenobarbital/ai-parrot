@@ -16,11 +16,14 @@ from scripts.sdd.worktree_status import (
     WorktreeTaskStatus,
     _check_health,
     _git,
+    _load_dev_indexes,
     _parse_branch,
     _parse_porcelain,
     _read_worktree_index,
     discover_worktree_reports,
     main,
+    reconcile_feature,
+    reconcile_reports,
 )
 
 # ---------------------------------------------------------------------------
@@ -395,3 +398,173 @@ class TestCli:
             exit_code = main()
 
         assert exit_code == 1
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation — the worktree may only advance a task, never roll it back
+# ---------------------------------------------------------------------------
+
+
+def _dev_index(statuses, **header):
+    """Build a per-spec index dict with tasks TASK-1..N at the given statuses."""
+    index = {
+        "feature": "token-budget-bedrock",
+        "feature_id": "FEAT-550",
+        "spec": "sdd/specs/token-budget-bedrock.spec.md",
+        "completed_at": None,
+        "tasks": [{"id": f"TASK-{i + 1}", "status": s} for i, s in enumerate(statuses)],
+    }
+    index.update(header)
+    return index
+
+
+def _wt_report(statuses, *, index_found=True, ids=None, slug="token-budget-bedrock"):
+    """Build a WorktreeReport whose index carries the given task statuses."""
+    ids = ids or [f"TASK-{i + 1}" for i in range(len(statuses))]
+    return WorktreeReport(
+        feature_slug=slug,
+        feature_id="FEAT-550",
+        flow_type="feature",
+        worktree_path=f"/repo/.claude/worktrees/feat-FEAT-550-{slug}",
+        branch=f"feat-FEAT-550-{slug}",
+        base_branch="dev",
+        tasks=[WorktreeTaskStatus(id=i, status=s) for i, s in zip(ids, statuses, strict=True)],
+        index_found=index_found,
+    )
+
+
+class TestReconcileFeature:
+    def test_no_worktree_keeps_dev(self):
+        """Without a worktree the dev index passes through untouched."""
+        feature = reconcile_feature(_dev_index(["done", "pending"]), None)
+        assert [t.status for t in feature.tasks] == ["done", "pending"]
+        assert all(t.source == "dev" for t in feature.tasks)
+        assert feature.worktree_ahead is False
+        assert feature.worktree_stale is False
+
+    def test_worktree_ahead_wins(self):
+        """Work started in the worktree surfaces even though dev is untouched."""
+        feature = reconcile_feature(
+            _dev_index(["pending", "pending", "pending"]),
+            _wt_report(["done", "in-progress", "pending"]),
+        )
+        assert [t.status for t in feature.tasks] == ["done", "in-progress", "pending"]
+        assert [t.source for t in feature.tasks] == ["worktree", "worktree", "dev"]
+        assert feature.worktree_ahead is True
+        assert feature.worktree_stale is False
+
+    def test_stale_worktree_never_reopens_a_finished_feature(self):
+        """FEAT-561 regression: a leftover worktree must not un-done dev's tasks."""
+        feature = reconcile_feature(
+            _dev_index(["done", "done"], completed_at="2026-09-16T00:00:00+00:00"),
+            _wt_report(["pending", "pending"]),
+        )
+        assert [t.status for t in feature.tasks] == ["done", "done"]
+        assert all(t.source == "dev" for t in feature.tasks)
+        assert feature.worktree_ahead is False
+        assert feature.worktree_stale is True
+        assert feature.dev_closed is True
+
+    def test_pre_branch_snapshot_does_not_undo_in_progress(self):
+        """A worktree branched before /sdd-start stamps must not show 'pending'."""
+        feature = reconcile_feature(
+            _dev_index(["in-progress", "in-progress"]),
+            _wt_report(["pending", "pending"]),
+        )
+        assert [t.status for t in feature.tasks] == ["in-progress", "in-progress"]
+        assert feature.worktree_stale is True
+
+    def test_terminal_states_tie_keeps_dev(self):
+        """done and done-with-issues share a rank — dev's record wins the tie."""
+        feature = reconcile_feature(
+            _dev_index(["done-with-issues", "done"]),
+            _wt_report(["done", "done-with-issues"]),
+        )
+        assert [t.status for t in feature.tasks] == ["done-with-issues", "done"]
+        assert feature.worktree_ahead is False
+
+    def test_index_not_found_is_ignored(self):
+        """index_found=False means the worktree has nothing to contribute."""
+        feature = reconcile_feature(
+            _dev_index(["in-progress"]),
+            _wt_report(["pending"], index_found=False),
+        )
+        assert [t.status for t in feature.tasks] == ["in-progress"]
+        assert feature.worktree_stale is False
+
+    def test_worktree_only_tasks_are_appended(self):
+        """Tasks generated inside the worktree still show on the board."""
+        feature = reconcile_feature(
+            _dev_index(["pending"]),
+            _wt_report(["done", "done"], ids=["TASK-1", "TASK-99"]),
+        )
+        assert {t.id: t.status for t in feature.tasks} == {"TASK-1": "done", "TASK-99": "done"}
+        assert feature.worktree_ahead is True
+
+    def test_worktree_only_feature(self):
+        """A feature with no dev index at all is reported from the worktree."""
+        feature = reconcile_feature(None, _wt_report(["done", "pending"]))
+        assert feature.worktree_only is True
+        assert feature.feature_id == "FEAT-550"
+        assert [t.status for t in feature.tasks] == ["done", "pending"]
+
+
+class TestReconcileReports:
+    def test_pairs_indexes_with_worktrees(self, tmp_path):
+        """Dev indexes pair by feature_id; unmatched worktrees are appended."""
+        index_dir = tmp_path / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True)
+        (index_dir / "token-budget-bedrock.json").write_text(json.dumps(_dev_index(["pending", "pending"])))
+        (index_dir / "_orphans.json").write_text(json.dumps({"tasks": [{"id": "TASK-9", "status": "pending"}]}))
+
+        other = _wt_report(["done"], slug="other-feature")
+        other.feature_id = "FEAT-999"
+
+        features = reconcile_reports(tmp_path, [_wt_report(["done", "in-progress"]), other])
+
+        by_id = {f.feature_id: f for f in features}
+        assert set(by_id) == {"FEAT-550", "FEAT-999"}
+        assert by_id["FEAT-550"].worktree_ahead is True
+        assert [t.status for t in by_id["FEAT-550"].tasks] == ["done", "in-progress"]
+        assert by_id["FEAT-999"].worktree_only is True
+
+    def test_orphans_and_malformed_indexes_are_skipped(self, tmp_path):
+        """_orphans.json is excluded and unreadable JSON never raises."""
+        index_dir = tmp_path / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True)
+        (index_dir / "_orphans.json").write_text(json.dumps({"tasks": []}))
+        (index_dir / "broken.json").write_text("{not json")
+
+        assert _load_dev_indexes(tmp_path) == []
+        assert reconcile_reports(tmp_path, []) == []
+
+    def test_missing_index_dir(self, tmp_path):
+        """A checkout without sdd/tasks/index yields no features."""
+        assert _load_dev_indexes(tmp_path) == []
+
+
+class TestReconcileCli:
+    def test_reconcile_json_output(self, capsys, monkeypatch, tmp_path):
+        """--reconcile --json emits ReconciledFeature objects with provenance."""
+        index_dir = tmp_path / "sdd" / "tasks" / "index"
+        index_dir.mkdir(parents=True)
+        (index_dir / "token-budget-bedrock.json").write_text(json.dumps(_dev_index(["pending", "done"])))
+
+        monkeypatch.setattr(sys, "argv", ["worktree_status.py", "--reconcile", "--json"])
+        toplevel = _completed(f"{tmp_path}\n")
+
+        with (
+            patch("scripts.sdd.worktree_status._git", return_value=toplevel),
+            patch(
+                "scripts.sdd.worktree_status.discover_worktree_reports",
+                return_value=[_wt_report(["done", "pending"])],
+            ),
+        ):
+            exit_code = main()
+
+        assert exit_code == 0
+        data = json.loads(capsys.readouterr().out)
+        assert len(data) == 1
+        assert data[0]["worktree_ahead"] is True
+        assert [t["status"] for t in data[0]["tasks"]] == ["done", "done"]
+        assert [t["source"] for t in data[0]["tasks"]] == ["worktree", "dev"]

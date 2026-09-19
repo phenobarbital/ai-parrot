@@ -331,12 +331,201 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 
 
 # ---------------------------------------------------------------------------
+# Dev-index reconciliation
+# ---------------------------------------------------------------------------
+
+# A worktree may only ever ADVANCE a task's status, never roll it back.
+# The dev-branch index is the merged, authoritative record; the worktree index
+# is a live-but-unmerged one that can also be a stale pre-branch snapshot (a
+# worktree branched before /sdd-task ran carries every task at "pending", and
+# a worktree left behind after /sdd-done still carries its own copy long after
+# the feature closed).  Taking the worktree as truth re-opens finished
+# features; taking the maximum of the two shows work that started in a
+# worktree without ever losing what dev already knows.
+#
+# "done" and "done-with-issues" share a rank so neither side can silently flip
+# a finished task between the two terminal states; on a tie the dev value wins.
+_STATUS_RANK: dict[str, int] = {
+    "pending": 0,
+    "in-progress": 1,
+    "done": 2,
+    "done-with-issues": 2,
+}
+
+_TERMINAL_STATUSES = ("done", "done-with-issues")
+
+
+class ReconciledTask(BaseModel):
+    """One task after merging the dev-branch index with a worktree index."""
+
+    id: str
+    status: Literal["pending", "in-progress", "done", "done-with-issues"]
+    source: Literal["dev", "worktree"] = "dev"
+
+
+class ReconciledFeature(BaseModel):
+    """A feature's task state after dev/worktree reconciliation."""
+
+    feature_slug: str
+    feature_id: str | None = None
+    spec: str | None = None
+    index_path: str | None = None
+    worktree_branch: str | None = None
+    worktree_path: str | None = None
+    #: at least one task's status was advanced by the worktree index
+    worktree_ahead: bool = False
+    #: the worktree index is behind dev everywhere it differs (leftover worktree)
+    worktree_stale: bool = False
+    #: dev already considers the feature finished (completed_at, or all tasks terminal)
+    dev_closed: bool = False
+    #: the feature has no index on dev at all — spec/tasks live only in the worktree
+    worktree_only: bool = False
+    tasks: list[ReconciledTask] = Field(default_factory=list)
+
+
+def reconcile_feature(
+    dev_index: dict | None,
+    report: WorktreeReport | None,
+) -> ReconciledFeature:
+    """Merge one feature's dev-branch index with its worktree index.
+
+    The worktree may only advance a task (``pending`` → ``in-progress`` →
+    terminal); a lower-ranked worktree status is ignored and marks the
+    worktree stale instead.  Tasks that exist only in the worktree index are
+    appended (they were generated inside the worktree and never merged).
+
+    Args:
+        dev_index: The parsed ``sdd/tasks/index/<slug>.json`` from the current
+            branch, or ``None`` when the feature exists only in a worktree.
+        report: The worktree report for the same feature, or ``None``.
+
+    Returns:
+        The reconciled feature, carrying per-task provenance and the
+        ``worktree_ahead`` / ``worktree_stale`` / ``dev_closed`` flags the
+        task board uses for labelling.
+    """
+    dev_index = dev_index or {}
+    dev_tasks = [t for t in dev_index.get("tasks", []) if isinstance(t, dict) and "id" in t]
+    dev_by_id = {t["id"]: t for t in dev_tasks}
+
+    dev_closed = bool(dev_index.get("completed_at")) or (
+        bool(dev_tasks) and all(t.get("status") in _TERMINAL_STATUSES for t in dev_tasks)
+    )
+
+    wt_by_id: dict[str, WorktreeTaskStatus] = {}
+    if report is not None and report.index_found:
+        wt_by_id = {t.id: t for t in report.tasks}
+
+    merged: list[ReconciledTask] = []
+    ahead = False
+    behind = False
+
+    for task in dev_tasks:
+        dev_status = task.get("status", "pending")
+        wt_task = wt_by_id.get(task["id"])
+        if wt_task is None:
+            merged.append(ReconciledTask(id=task["id"], status=dev_status, source="dev"))
+            continue
+        dev_rank = _STATUS_RANK.get(dev_status, 0)
+        wt_rank = _STATUS_RANK.get(wt_task.status, 0)
+        if wt_rank > dev_rank:
+            ahead = True
+            merged.append(ReconciledTask(id=task["id"], status=wt_task.status, source="worktree"))
+        else:
+            behind = behind or wt_rank < dev_rank
+            merged.append(ReconciledTask(id=task["id"], status=dev_status, source="dev"))
+
+    # Tasks the worktree knows about and dev does not (generated in-worktree).
+    for task_id, wt_task in wt_by_id.items():
+        if task_id in dev_by_id:
+            continue
+        ahead = True
+        merged.append(ReconciledTask(id=task_id, status=wt_task.status, source="worktree"))
+
+    return ReconciledFeature(
+        feature_slug=dev_index.get("feature") or (report.feature_slug if report else ""),
+        feature_id=dev_index.get("feature_id") or (report.feature_id if report else None),
+        spec=dev_index.get("spec"),
+        index_path=dev_index.get("_index_path"),
+        worktree_branch=report.branch if report else None,
+        worktree_path=report.worktree_path if report else None,
+        worktree_ahead=ahead,
+        worktree_stale=bool(wt_by_id) and not ahead and behind,
+        dev_closed=dev_closed,
+        worktree_only=not dev_tasks and bool(wt_by_id),
+        tasks=merged,
+    )
+
+
+def _load_dev_indexes(repo_root: Path) -> list[dict]:
+    """Load every per-spec index on the current branch (``_orphans.json`` aside)."""
+    index_dir = repo_root / "sdd" / "tasks" / "index"
+    indexes: list[dict] = []
+    if not index_dir.is_dir():
+        return indexes
+    for path in sorted(index_dir.glob("*.json")):
+        if path.name == "_orphans.json":
+            continue
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            data["_index_path"] = str(path.relative_to(repo_root))
+            indexes.append(data)
+    return indexes
+
+
+def reconcile_reports(
+    repo_root: Path,
+    reports: list[WorktreeReport],
+) -> list[ReconciledFeature]:
+    """Reconcile every per-spec index on this branch with its worktree, if any.
+
+    Features whose work only ever existed inside a worktree (no index on the
+    current branch) are appended so the task board can surface them too.
+
+    Args:
+        repo_root: The primary checkout's root.
+        reports: Worktree reports from :func:`discover_worktree_reports`.
+
+    Returns:
+        One :class:`ReconciledFeature` per dev index, plus one per
+        worktree-only feature, in index-filename order.
+    """
+    by_feature_id = {r.feature_id: r for r in reports if r.feature_id}
+    by_slug = {r.feature_slug: r for r in reports}
+
+    reconciled: list[ReconciledFeature] = []
+    matched: set[str] = set()
+
+    for dev_index in _load_dev_indexes(repo_root):
+        report = by_feature_id.get(dev_index.get("feature_id")) or by_slug.get(dev_index.get("feature"))
+        if report is not None:
+            matched.add(report.branch)
+        reconciled.append(reconcile_feature(dev_index, report))
+
+    for report in reports:
+        if report.branch in matched or not report.index_found:
+            continue
+        reconciled.append(reconcile_feature(None, report))
+
+    return reconciled
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 
 def main() -> int:
-    """CLI entry point.  --json prints list[WorktreeReport]; plain prints a table."""
+    """CLI entry point.
+
+    ``--json`` prints ``list[WorktreeReport]``; plain prints a table.
+    ``--reconcile`` switches both outputs to ``list[ReconciledFeature]``, the
+    dev-index/worktree merge the ``/sdd-status`` task board consumes.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(description="Discover SDD worktrees and report their task state and health.")
@@ -344,6 +533,14 @@ def main() -> int:
         "--json",
         action="store_true",
         help="Output as JSON array of WorktreeReport objects",
+    )
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help=(
+            "Merge each worktree index into the dev-branch index (worktree may only advance a task) "
+            "and report list[ReconciledFeature] instead of the raw worktree reports"
+        ),
     )
     args = parser.parse_args()
 
@@ -356,6 +553,27 @@ def main() -> int:
 
     # Get reports
     reports = discover_worktree_reports(repo_root)
+
+    if args.reconcile:
+        features = reconcile_reports(repo_root, reports)
+        if args.json:
+            print(json.dumps([f.model_dump() for f in features], indent=2))
+        else:
+            print(f"{'Feature':<45} {'Id':<12} {'Tasks (done/total)':<20} {'Source'}")
+            print("-" * 100)
+            for feature in features:
+                done = sum(1 for t in feature.tasks if t.status in ("done", "done-with-issues"))
+                flags = []
+                if feature.worktree_ahead:
+                    flags.append(f"worktree ahead: {feature.worktree_branch}")
+                if feature.worktree_stale:
+                    flags.append(f"stale worktree: {feature.worktree_branch}")
+                if feature.worktree_only:
+                    flags.append("worktree only")
+                source = ", ".join(flags) if flags else "dev"
+                tasks_str = f"{done}/{len(feature.tasks)}"
+                print(f"{feature.feature_slug:<45} {feature.feature_id or '-':<12} {tasks_str:<20} {source}")
+        return 0
 
     if args.json:
         # JSON output
