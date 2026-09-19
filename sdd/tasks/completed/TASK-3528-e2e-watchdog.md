@@ -192,5 +192,44 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `watchdog.py` as a separate process,
+fixed entry point `python -m parrot.e2e.watchdog --state-dir PATH --run-id
+ID` preserved literally (`--state-dir` documented as the worktree root, the
+same convention as every other `parrot.e2e.state` helper's `worktree=` —
+documented deviation from a literal reading, same style as TASK-3527's
+control-socket-path note). Handshake via three marker files in the run's
+existing mode-0700 run directory: `watchdog.ack` (startup), 
+`watchdog.registered` (per-attempt target-identity ack, re-verified across
+a port-collision retry), `watchdog.heartbeat` (mtime touched every 5s by
+the supervisor via `WatchdogHandle.send_heartbeat`). Monitor loop checks
+most-definitive-first: absolute lease deadline → controller-identity
+liveness → heartbeat staleness (>15s); first trigger fires
+`_teardown_owned_target`, duplicating `E2ESupervisor.stop()`'s exact
+revalidate-before-every-signal discipline (never signals an
+adopted/foreign/reused-PID process). `reconcile_stale_run()` is the
+documented next-invocation recovery path for the spec's own admitted limit
+(simultaneous watchdog/host destruction). `supervisor.py` MODIFY is minimal
+and targeted: spawns the watchdog once per run before the target/retry
+loop, blocks on the per-attempt identity ack, runs a background heartbeat
+task, and both teardown paths fully tear the watchdog down (including a
+new leak-guard around the ack-wait itself).
+
+Documented forward-compatibility note (not a defect): "foreground
+controller death" currently degenerates to "supervisor died" since
+`controller_identity == supervisor_identity` until the separate M3
+CLI/runner lands — correct today, will differentiate once that CLI records
+its own `controller_identity`. Absolute-lease *extension* is explicitly out
+of this task's scope (the detached `up` CLI's job).
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_watchdog.py -q`
+→ 11 passed (real subprocesses: heartbeat/deadline/controller-death
+triggers, owned-vs-adopted authorization, next-invocation reconciliation).
+Full-directory regression: `pytest packages/ai-parrot-server/tests/unit/e2e/ -q`
+→ 256 passed (245+11), no regression against TASK-3524/3525/3526/3527; no
+leftover child/watchdog processes after the run. `ruff check` clean;
+`black` applied to the one file that needed it, re-verified after.
+
+No unresolved limitations beyond the two documented notes above. AC5/AC6
+demonstrated by the new tests plus unaffected pre-existing coverage.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1337.97s · Tokens: 301002 (combined)
