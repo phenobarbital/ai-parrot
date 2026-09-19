@@ -215,7 +215,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -223,8 +223,8 @@
       "parallelism_notes": "Independent root task; may run alongside tasks with disjoint targets. Owns lsp-benchmark-accounting targets only.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3509-lsp-benchmark-accounting.md"
+      "completed_at": "2026-09-19T15:19:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3509-lsp-benchmark-accounting.md"
     },
     {
       "id": "TASK-3510",
