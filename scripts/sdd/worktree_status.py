@@ -4,6 +4,7 @@ Read-only: never writes files or runs mutating git commands.
 CLI: ``python -m scripts.sdd.worktree_status [--json]``
 Library: ``from scripts.sdd.worktree_status import discover_worktree_reports``
 """
+
 from __future__ import annotations
 
 import json
@@ -104,7 +105,8 @@ def _parse_branch(
 
 
 def _read_worktree_index(
-    wt_path: Path, slug: str,
+    wt_path: Path,
+    slug: str,
 ) -> tuple[list[WorktreeTaskStatus], str]:
     """Read the per-spec index inside a worktree.
 
@@ -272,15 +274,8 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 
         # Compute ready_for_done
         # All tasks must be done or done-with-issues, no dirty files, no unpushed commits
-        all_done = all(
-            t.status in ("done", "done-with-issues") for t in tasks
-        ) and len(tasks) > 0
-        ready_for_done = (
-            all_done
-            and health.dirty_count == 0
-            and health.unpushed_count == 0
-            and index_found
-        )
+        all_done = all(t.status in ("done", "done-with-issues") for t in tasks) and len(tasks) > 0
+        ready_for_done = all_done and health.dirty_count == 0 and health.unpushed_count == 0 and index_found
 
         reports.append(
             WorktreeReport(
@@ -309,9 +304,7 @@ def main() -> int:
     """CLI entry point.  --json prints list[WorktreeReport]; plain prints a table."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Discover SDD worktrees and report their task state and health."
-    )
+    parser = argparse.ArgumentParser(description="Discover SDD worktrees and report their task state and health.")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -364,9 +357,7 @@ def main() -> int:
             # Ready flag
             ready_str = "✓" if r.ready_for_done else ""
 
-            print(
-                f"{name:<40} {branch:<30} {r.feature_id or '-':<15} {tasks_str:<12} {health_str:<20} {ready_str}"
-            )
+            print(f"{name:<40} {branch:<30} {r.feature_id or '-':<15} {tasks_str:<12} {health_str:<20} {ready_str}")
 
     return 0
 
