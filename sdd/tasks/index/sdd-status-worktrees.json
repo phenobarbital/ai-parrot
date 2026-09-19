@@ -34,7 +34,7 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "imports WorktreeTaskStatus/WorktreeHealth/WorktreeReport/_parse_branch/_read_worktree_index/_check_health from TASK-3549 (scripts/sdd/worktree_status.py)",
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3550-worktree-status-tests.md"
+      "completed_at": "2026-09-19T14:23:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3550-worktree-status-tests.md"
     },
     {
       "id": "TASK-3551",

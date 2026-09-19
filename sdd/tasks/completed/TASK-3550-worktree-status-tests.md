@@ -389,10 +389,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator, attempt 3 — direct implementation)
+**Date**: 2026-09-19
+**Notes**: The first attempt (nova/minimax.minimax-m2.5) was rejected at the
+merge gate as a `fidelity_violation`: it correctly wrote the tests but also
+edited `scripts/sdd/worktree_status.py` (out of this task's declared scope)
+to fix a detached-HEAD parsing bug in `_parse_porcelain`. The orchestrator
+implemented the test file itself (22 tests: TestParseBranch,
+TestParsePorcelain, TestReadWorktreeIndex, TestHealth, TestReadyForDone via
+`discover_worktree_reports`, TestDiscover end-to-end, TestCli). While
+writing `test_detached_head` per the task's own blueprint, confirmed the
+same detached-HEAD defect was real and required by AC9 — fixed it properly
+in a separate, feature-scoped commit (`e4b4739f6`). All 22 tests pass;
+`ruff check` and `black --check` clean. Feedback recorded:
+`coder-feedback:d530942e0e1a8062436caa90` (fidelity violation) and
+`coder-feedback:b94d2b535b26c39aef85025f` (confirmed detached-HEAD defect).
+Review recorded: `coder-review:7be3825fcee89785517d3064`.
+Seat: orchestrator (direct) · Backend: n/a · Model: n/a (rejected attempt: nova/minimax.minimax-m2.5, 356.069s, 684921/9196 tokens)
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in test scope; `scripts/sdd/worktree_status.py`
+was corrected as a feature-scoped fix, not as part of this task's file list.

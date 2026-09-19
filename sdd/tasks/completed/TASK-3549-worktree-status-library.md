@@ -379,6 +379,10 @@ instead of the spec-documented `sdd/tasks/index/<slug>.json`, so
 all 5 FEAT-582 tasks correctly listed). Feedback recorded:
 `coder-feedback:5812b09407a0ef0dedc23bb7`; review recorded:
 `coder-review:b036cb7bcb898d1560d701f8`.
+A second defect surfaced while implementing TASK-3550's tests: `_parse_porcelain`
+silently dropped detached-HEAD/bare worktree blocks instead of returning
+`branch=None`, violating AC9. Fixed in commit `e4b4739f6`; feedback recorded:
+`coder-feedback:b94d2b535b26c39aef85025f`.
 Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 228.012s · Tokens: 407766/3846
 
 **Deviations from spec**: none (fix aligned implementation to the documented path; no scope change)
