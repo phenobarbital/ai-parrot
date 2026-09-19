@@ -34,7 +34,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "needs sdd/templates/intake.schema.json + widened state.schema.json from TASK-3469 (the procedure names both; its test asserts the paths exist)",
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3470-intake-procedure.md"
+      "completed_at": "2026-09-19T00:19:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3470-intake-procedure.md"
     },
     {
       "id": "TASK-3471",
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "reads intake.json updated_at as defined by sdd/templates/intake.schema.json from TASK-3469",
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3473-intake-retention.md"
+      "completed_at": "2026-09-19T00:19:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3473-intake-retention.md"
     },
     {
       "id": "TASK-3474",

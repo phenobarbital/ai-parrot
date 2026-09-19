@@ -312,4 +312,22 @@ See the blueprint test module.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `scripts/sdd/prune_intake.py` implementing `StaleIntake` (Pydantic
+model), `_check_root`, `run_age`, `find_stale`, `prune`, `default_stamp`,
+`claim_daily_slot`, `main` exactly per the blueprint signatures. Safety:
+`_check_root` requires the resolved path's last 3 parts to be
+`("sdd","state",".intake")` (ValueError / exit 2 otherwise, nothing
+deleted); `prune(apply=True)` re-checks parent + non-symlink before
+`shutil.rmtree`; `claim_daily_slot` touches the stamp before returning True;
+`default_stamp()` returns `None` on any git failure and `main --daily`
+exits 0 in that case (hook never fails). Added `sdd/state/.intake/` to
+`.gitignore`. Wrote `tests/sdd_scripts/test_prune_intake.py` (10 tests, all
+via `tmp_path`, no real-`$HOME` touch per prior feedback).
+
+`pytest tests/sdd_scripts/test_prune_intake.py -q` → 10 passed.
+`ruff check scripts/sdd/prune_intake.py tests/sdd_scripts/test_prune_intake.py` → clean.
+
+Delivered natively (sonnet) and merged cleanly via `coder_merge`
+(outcome: merged; engine lint autofix commit `4772072ab` — black only).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 169s · Tokens: 90148 (subagent total, backend-reported)
