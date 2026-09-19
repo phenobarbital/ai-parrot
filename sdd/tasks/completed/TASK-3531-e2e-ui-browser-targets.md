@@ -199,5 +199,40 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `ui.py` (build via `pnpm build` then
+`os.execv` into `pnpm preview --strictPort` inside the launched child;
+`ready()` checks HTTP `/admin/` 200 plus a best-effort backend-reachability
+probe — any response counts, only connection failure/timeout means "not
+ready", per the spec's "health alone is not browser evidence") and
+`browser.py` (`profile="minimal"`: deterministic/owned-only fresh loopback
+port + private `--storage-dir`; `profile="full"` + `options["adopt"]=True`:
+exploratory-only — `prepare()` returns a `LaunchSpec` for a benign sentinel
+the supervisor owns/kills instead of the real browser, so supervisor
+teardown can never signal the externally-owned adopted process — verified
+end-to-end with a real `obscura serve` process still alive after a full
+`E2ESupervisor.start()`/`.stop()` cycle). `browser.py`'s `ready()` reuses
+only `ObscuraProcessManager`'s side-effect-free `endpoint`/`is_running()`
+members (never `.start()`/`.stop()` — spawning/killing stays the M3
+supervisor's job via `LaunchSpec`), read in full before reuse.
+
+Sibling-merge integration fallout (flagged by this task, fixed by the
+orchestrator, not a defect here): TASK-3525's
+`test_get_target_adapter_raises_prerequisite_error_for_unimplemented_kind`
+narrowed further to exclude `ui`/`browser` (only `mcp-agent` remains
+genuinely unimplemented), and
+`test_get_target_adapter_only_imports_the_requested_module` switched its
+probe kind from the now-implemented `browser` to `mcp-agent` (still
+unimplemented via the missing-factory-attribute path, since `mcp.py`
+exists but has no `build_mcp_agent_adapter`). See commit e0f1a53da.
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_ui_browser_targets.py -q`
+→ 53 passed, 1 skipped (obscura genuinely installed on this host; its
+mocked-absence sibling covers the same code path). Two real-subprocess/
+real-supervisor acceptance tests spawn actual `obscura`; no orphaned
+processes after the run. Full-directory regression (after sibling-test
+fixes): `pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 354 passed,
+4 skipped, no regression against TASK-3524/3525/3526/3527/3528/3529/3530.
+
+No unresolved limitations. AC6/AC13 demonstrated by the contract tests.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1055.1s · Tokens: 266403 (combined)
