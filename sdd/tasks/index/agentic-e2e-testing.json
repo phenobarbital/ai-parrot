@@ -35,7 +35,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -45,8 +45,8 @@
       "parallelism_notes": "TASK-3516 owns its declared files for M1. TASK-3515 supplies keep standalone http mcp alive until shutdown. Exclusive prerequisite/shared-orchestration edit; do not co-schedule.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3516-e2e-lazy-tokenizer.md"
+      "completed_at": "2026-09-19T01:28:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3516-e2e-lazy-tokenizer.md"
     },
     {
       "id": "TASK-3517",

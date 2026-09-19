@@ -171,5 +171,33 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Removed the import-time `tiktoken.get_encoding("cl100k_base")`
+call in `packages/ai-parrot/src/parrot/skills/parsers.py`. Added a
+lazily-initialized, lock-guarded `_get_encoding()` that creates and caches
+the encoder on first use; a failed acquisition leaves the cache unset so a
+later call can retry rather than caching a broken state. `_count_tokens(text:
+str) -> int` keeps its exact signature and now calls
+`_get_encoding().encode(text)`; token counts are unchanged.
+
+Tests: `packages/ai-parrot/tests/skills/test_parser_lazy_encoding.py` (new,
+5 tests) — a real-subprocess test proving import alone never fetches the
+tokenizer, the first `_count_tokens` call triggers exactly one fetch and a
+second call reuses the cached encoder; a failure/cleanup test proving a
+failed fetch does not poison the cache and a retry succeeds; a parity test
+against a direct cl100k_base encode; an empty-string edge case; and an
+in-process reuse test across three calls.
+
+`PYTHONPATH=packages/ai-parrot/src pytest
+packages/ai-parrot/tests/skills/test_parser_lazy_encoding.py -q` → 5 passed.
+This bare worktree ships no compiled Cython `.so` extensions
+(`parrot/utils/types*.so`, `parrot/utils/parsers/toml*.so`); per the known
+"Worktree test setup" gotcha, I copied those artifacts from the read-only
+main checkout, ran the tests, then deleted the copies (worktree confirmed
+clean via `git status --porcelain` before committing). Regression check:
+`packages/ai-parrot-server/tests/mcp/test_cli_lifetime.py` (TASK-3515) still
+10/10 passed, run separately (its own package's conftest collides with
+ai-parrot's tests/ conftest module name when run in one invocation).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 ·
+Duration: 255.6s · Tokens: 99473 (subagent, in+out combined; native
+usage_known=false in engine seats roll-up).
