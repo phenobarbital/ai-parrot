@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3443
@@ -366,7 +366,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+handlers/planogram_compliance.py: no GoogleGenAIClient / DEFAULT_LLM_MODEL; PlanogramCompliance(planogram_config=_config) built INSIDE run_compliance (a construction ValueError becomes a FAILED job with its message, POST stays 202); _build_planogram_config hydrates slots_definition (dict, or JSON string via _decode_json_column) and llm_backend, NULL/absent prompts -> None; job result keeps the five keys and adds assessment_status, coverage, errors. Also moved the overlay read to asyncio.to_thread (_read_file_if_exists) to satisfy the AC 'ruff check passes' (pre-existing ASYNC240/ASYNC230).
+Tests: packages/ai-parrot/tests/handlers/test_planogram_compliance.py 18 passed — the two previously failing tests (they patched a non-existent module-level GoogleGenAIClient) are fixed by removing those patches; 6 new tests per the spec.
+Follow-through outside the declared list: test_no_hardcoded_models.py (TASK-3432) dropped its handlers/ exclusion as its own comment instructed once TASK-3447 landed — the whole package is now guarded (3 passed).
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
