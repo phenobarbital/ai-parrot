@@ -174,5 +174,32 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Added an HTTP-only keep-alive to
+`_run_standalone_server` in `packages/ai-parrot-server/src/parrot/mcp/cli.py`:
+a new `_wait_for_shutdown_signal(logger)` helper installs SIGINT/SIGTERM
+handlers and awaits an `asyncio.Event`, invoked only when
+`transport_config.transport == "http"` (HttpMCPServer.start() returns
+immediately after binding the socket; stdio/unix already block internally
+in their own `start()`, so no change was needed there). The pre-existing
+`finally: await server.stop()` guarantees single-stop on success, error and
+cancellation.
+
+Tests: `packages/ai-parrot-server/tests/mcp/test_cli_lifetime.py` (new, 10
+tests) — 9 unit tests faking only lifecycle collaborators plus 1 real
+process-boundary acceptance test that spawns `parrot mcp serve --transport
+http` as a genuine subprocess, makes two time-separated real HTTP requests,
+sends a real SIGTERM, and asserts bounded teardown + socket release.
+`PYTHONPATH="packages/ai-parrot/src:packages/ai-parrot-server/src" pytest
+packages/ai-parrot-server/tests/mcp/test_cli_lifetime.py -q` → 10 passed.
+
+Observation: the feature-level `select_tests --tier merge` invocation (run
+across all 34 task files per the orchestrator protocol) errored on 4
+groups because it also picks up Validation Commands declared by *pending*
+sibling tasks (TASK-3536, TASK-3539, TASK-3542, TASK-3545) whose target
+test files don't exist yet at 1/34 tasks complete — not a regression from
+this merge. This is expected to resolve naturally as those tasks land;
+flagged here for visibility rather than filed as a defect.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 ·
+Duration: 562.76s · Tokens: 157809 (subagent, in+out combined; native
+usage_known=false in engine seats roll-up).
