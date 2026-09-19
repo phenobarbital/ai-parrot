@@ -298,10 +298,14 @@ in the document.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (mcp, backend=nova, model=qwen.qwen3-coder-480b-a35b-instruct)
+**Date**: 2026-09-20
+**Notes**: Created `docs/guides/wiki-adr-decisions.md` covering the parsing subset, Python-only
+citation extraction, rename behavior, local/remote freshness, generation costs/limits, and
+review policy. Updated `docs/guides/llm-wiki-guide.md` to add the ADR section to the Table of
+Contents and insert the new section before "Persistent Memory". All documented commands were
+verified against the actual CLI interface.
+Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 ·
+Duration: 128.4s · Tokens: 1,124,045 in / 4,534 out
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
