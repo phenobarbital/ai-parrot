@@ -156,8 +156,53 @@ def test_eligible_seats_complex_restricts_to_strong_models():
     assert [s.label for s in res] == ["c", "h"]
 
 
-def test_eligible_seats_unknown_returns_all_seats():
-    """unknown = classifier could not determine complexity; default to full roster."""
+def test_eligible_seats_unknown_restricts_to_strong_models():
+    """unknown requires the strong-model allowlist, exactly like complex.
+
+    Spec §2: "Both complex and unknown require the strong-model allowlist."
+    An unmeasured signal may be hiding a complex task, so it routes
+    conservatively rather than to the full roster.
+    """
+    policy = ComplexityPolicy(
+        strong_models=(
+            StrongModelIdentity(canonical_model="sonnet-5", backend="codex", model="claude-3-5-sonnet"),
+            StrongModelIdentity(canonical_model="native-sonnet", backend="native", model="claude-3-5-sonnet-native"),
+        )
+    )
+    seats = [
+        RosterSeat(label="q", backend="nova", model="nova-model"),
+        RosterSeat(label="c", backend="codex", model="claude-3-5-sonnet"),
+        RosterSeat(label="h", kind="native", model="claude-3-5-sonnet-native"),
+    ]
+    res = eligible_seats(_assessment("unknown"), seats, policy)
+    assert [s.label for s in res] == ["c", "h"]
+
+
+def test_eligible_seats_unknown_excludes_every_weak_seat():
+    """Regression (ledger issue:e01c03baf493): when no seat is strong, an
+    `unknown` task gets an EMPTY eligible set -- so `plan()` raises a
+    `complex_model_unavailable` routing block instead of assigning a nova seat
+    that `_run_attempt`'s admission check would then refuse forever."""
+    policy = ComplexityPolicy(
+        strong_models=(StrongModelIdentity(canonical_model="sonnet-5", backend="codex", model="claude-3-5-sonnet"),)
+    )
+    seats = [
+        RosterSeat(label="glm", backend="nova", model="glm-4.6"),
+        RosterSeat(label="mistral", backend="nova", model="mistral-large"),
+        RosterSeat(label="qwen", backend="nova", model="qwen-3"),
+    ]
+    assert eligible_seats(_assessment("unknown"), seats, policy) == []
+
+
+@pytest.mark.parametrize("classification", ["standard", "complex", "unknown"])
+def test_eligible_seats_agrees_with_dispatch_admission(classification: str):
+    """Planner-side eligibility and dispatch-time admission must never disagree.
+
+    `SddCoderEngine._run_attempt` admits a seat iff the task is `standard` or
+    the seat's exact `(backend, model)` is in `strong_models`. A seat this
+    function yields but admission rejects is an undispatchable assignment --
+    the exact shape of ledger issue:e01c03baf493.
+    """
     policy = ComplexityPolicy(
         strong_models=(StrongModelIdentity(canonical_model="sonnet-5", backend="codex", model="claude-3-5-sonnet"),)
     )
@@ -165,8 +210,11 @@ def test_eligible_seats_unknown_returns_all_seats():
         RosterSeat(label="q", backend="nova", model="nova-model"),
         RosterSeat(label="c", backend="codex", model="claude-3-5-sonnet"),
     ]
-    res = eligible_seats(_assessment("unknown"), seats, policy)
-    assert res == seats
+    strong_keys = {(sm.backend, sm.model) for sm in policy.strong_models}
+
+    for seat in eligible_seats(_assessment(classification), seats, policy):
+        admitted = classification not in ("complex", "unknown") or (seat.backend, seat.model or "") in strong_keys
+        assert admitted, f"{classification} task: seat {seat.label!r} is planned but dispatch would reject it"
 
 
 def test_eligible_seats_no_alias_match():
