@@ -11,6 +11,8 @@ from parrot.knowledge.wiki.ledger.events import (
     IssueAcknowledgedPayload,
     IssueClosedPayload,
     InsightRecordedPayload,
+    IssueSeverity,
+    SEVERITY_ORDER,
     compute_event_id,
     compute_issue_id,
 )
@@ -130,3 +132,10 @@ def test_issue_unclaimed_event_validates():
         payload={"unclaimed_by": "agent:sdd-fix", "reason": "released"},
     )
     assert event.event_id  # computed by model_post_init
+
+
+def test_severity_order_is_total_and_canonical():
+    members = get_args(IssueSeverity)
+    assert set(SEVERITY_ORDER) == set(members), "every IssueSeverity member must have a rank"
+    assert sorted(SEVERITY_ORDER, key=SEVERITY_ORDER.__getitem__) == ["critical", "major", "minor", "low"]
+    assert sorted(SEVERITY_ORDER.values()) == list(range(len(members)))
