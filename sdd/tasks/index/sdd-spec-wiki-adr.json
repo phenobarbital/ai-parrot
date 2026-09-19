@@ -365,7 +365,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -378,8 +378,8 @@
       "parallelism_notes": "calls refresh_decisions from TASK-3489, service.generate/review from TASK-3493, create_decision_tools registration ordering from TASK-3494, and _reject_managed_page from TASK-3495; sole writer of wiki/cli.py",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3496-adr-cli-and-post-ingest-refresh.md"
+      "completed_at": "2026-09-19T22:18:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3496-adr-cli-and-post-ingest-refresh.md"
     },
     {
       "id": "TASK-3497",
