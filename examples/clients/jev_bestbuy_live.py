@@ -13,11 +13,17 @@
 
 Requirements:
     - ``JEV_API_KEY`` in ``env/.env`` (read through ``navconfig.config``).
-    - ai-parrot-client-jev and ai-parrot-tools installed, plus Playwright.
-    - A real Google Chrome and a display: Best Buy stalls headless Chromium
-      at navigation, so the browser runs headed on an installed Chrome
-      channel (``BESTBUY_BROWSER_CHANNEL``, default ``chrome``; use
-      ``chrome-beta`` if that is what the machine has).
+    - ai-parrot-client-jev, ai-parrot-tools and ai-parrot-server installed,
+      plus Playwright (only its client is used — no bundled browser needed).
+    - The Obscura headless browser (https://github.com/h4ckf0r0day/obscura)
+      instead of Chrome. The script spawns ``obscura serve --stealth`` and
+      Playwright drives it over CDP (``driver_type="obscura"``). Settings:
+
+        * ``OBSCURA_BINARY`` — binary path or ``PATH`` name (default ``obscura``).
+        * ``OBSCURA_PORT`` — CDP port (default ``9222``).
+        * ``OBSCURA_ATTACH=true`` — reuse an Obscura you already run (e.g.
+          ``docker run -d -p 127.0.0.1:9222:9222 h4ckf0r0day/obscura``)
+          instead of spawning one; it is left running on exit.
 
 Usage::
 
@@ -34,6 +40,7 @@ from navconfig import config
 from pydantic import BaseModel, Field
 
 from parrot.clients.jev import JevClient
+from parrot.mcp.obscura import ObscuraProcessConfig, ObscuraProcessManager
 from parrot_tools.browsing import WebBrowsingToolkit
 
 CATALOG_DIR = Path(__file__).parent / "bestbuy_catalog"
@@ -120,33 +127,43 @@ async def scrape_top_results(query: str) -> List[Dict[str, Any]]:
     Returns:
         The first ``TOP_N`` product rows that carry a title.
     """
+    obscura = ObscuraProcessManager(
+        ObscuraProcessConfig(
+            binary_path=config.get("OBSCURA_BINARY", fallback="obscura"),
+            port=int(config.get("OBSCURA_PORT", fallback=9222)),
+            stealth=True,  # anti-fingerprinting: Best Buy blocks plain headless browsers
+            attach_only=config.getboolean("OBSCURA_ATTACH", fallback=False),
+        )
+    )
+    # The toolkit only connects over CDP; it does not supervise Obscura.
+    endpoint = await obscura.start()
     toolkit = WebBrowsingToolkit(
         catalog_dir=CATALOG_DIR,
-        driver_type="playwright",
-        headless=False,  # Best Buy blocks headless browsers
-        browser_channel=config.get("BESTBUY_BROWSER_CHANNEL", fallback="chrome"),
+        driver_type="obscura",
+        cdp_endpoint_url=endpoint,
         confirm_runs=False,  # read-only public search, no HITL needed
         default_timeout=30,
     )
-    await toolkit.register_site(
-        base_url="https://www.bestbuy.com",
-        name=SITE,
-        title="Best Buy",
-        aliases=["best buy", "bestbuy.com"],
-    )
-    await toolkit.save_site_action(
-        site=SITE,
-        name="search-products",
-        description="Search the Best Buy catalog and extract the result cards",
-        params={"query": {"description": "Text to search for"}},
-        steps=SEARCH_STEPS,
-        source="user",
-        overwrite=True,  # keep the catalog in sync with SEARCH_STEPS on every run
-    )
     try:
+        await toolkit.register_site(
+            base_url="https://www.bestbuy.com",
+            name=SITE,
+            title="Best Buy",
+            aliases=["best buy", "bestbuy.com"],
+        )
+        await toolkit.save_site_action(
+            site=SITE,
+            name="search-products",
+            description="Search the Best Buy catalog and extract the result cards",
+            params={"query": {"description": "Text to search for"}},
+            steps=SEARCH_STEPS,
+            source="user",
+            overwrite=True,  # keep the catalog in sync with SEARCH_STEPS on every run
+        )
         run = await toolkit.run_site_action(SITE, "search-products", params={"query": query})
     finally:
         await toolkit.close_browser()
+        await obscura.stop()  # no-op when attached to an external Obscura
 
     if not run["success"]:
         errors = [step["error"] for step in run["executed"] if step.get("error")]
