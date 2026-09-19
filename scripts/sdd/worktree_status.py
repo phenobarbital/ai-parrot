@@ -113,7 +113,7 @@ def _read_worktree_index(
     Returns (task_list, base_branch).  task_list is empty if not found or
     malformed.  base_branch defaults to ``"dev"`` on any failure.
     """
-    index_path = wt_path / "sdd" / "tasks" / f"{slug}.json"
+    index_path = wt_path / "sdd" / "tasks" / "index" / f"{slug}.json"
     try:
         with open(index_path, encoding="utf-8") as f:
             data = json.load(f)
