@@ -344,7 +344,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -355,8 +355,8 @@
       "parallelism_notes": "needs ADR_CATEGORY/ADR_MANAGED_PAGE from TASK-3479 and decision_to_page/decision_from_page from TASK-3480 (decisions/codec.py) to build a managed page in its tests; sole writer of wiki/context.py, wiki/tools.py and wiki/toolkit.py",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3495-managed-page-protection.md"
+      "completed_at": "2026-09-19T20:41:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3495-managed-page-protection.md"
     },
     {
       "id": "TASK-3496",

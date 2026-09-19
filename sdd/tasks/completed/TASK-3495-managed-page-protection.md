@@ -395,10 +395,33 @@ class TestIdGrammar:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (native sonnet coder)
+**Date**: 2026-09-19
+**Notes**: Added `adr` to `_ID_KINDS` in `context.py` so `adr:doc:...` /
+`adr:candidate:...` parse as page ids. Added a shared `_reject_managed_page`
+guard (checks `page.get("category") == ADR_CATEGORY` first, falls back to an
+id-prefix pre-filter for not-yet-existing pages) applied in `WikiNoteTool`,
+`WikiRememberTool`, `LLMWikiToolkit.update_page`, and `LLMWikiToolkit.remember`,
+returning a structured `ADR_MANAGED_PAGE` refusal instead of letting a generic
+write corrupt a managed ADR record's JSON envelope/review history. 12 new
+tests in `test_managed_page_protection.py`; `test_wiki_tools.py` (31/31,
+AC10 regression guard) unaffected. Two pre-existing failures in
+`test_mcp_server_namespaces.py` (`BASE_TOOLS` drift from FEAT-498's newer
+wiki tools) verified unrelated via `git stash`/pop against unmodified HEAD —
+left untouched, out of scope.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: two, both required to satisfy the task's own stated
+Acceptance Criteria (not scope creep): (1) `_reject_managed_page` in
+`WikiNoteTool._execute` is placed immediately after `get_page()`, before the
+"page not found" branch, rather than after the blueprint's literal insertion
+point (which is only reached when `page is not None`) — otherwise an
+`adr:` id with no stored page would not be refused, per the task's own AC.
+(2) `WikiRememberTool`/`LLMWikiToolkit.remember` have no `concept_id`
+parameter (they derive their own id deterministically); the blueprint's
+literal "call with concept_id=..." instruction was infeasible, so the test
+pre-computes the exact derived id and seeds an ADR page at it instead.
 
-**Deviations from spec**: none | describe if any
+**Note for future task authoring**: this delivery was originally left
+un-finalized in the per-spec index (still `in-progress`, file pointing at
+`active/`) despite the code being merged — a bookkeeping slip by the
+orchestrator, corrected here retroactively with no code changes.
