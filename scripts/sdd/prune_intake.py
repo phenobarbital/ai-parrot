@@ -94,9 +94,7 @@ def prune(
 
 def default_stamp() -> Path | None:
     """``$(git rev-parse --git-common-dir)/sdd-intake-prune.stamp`` (shared by all worktrees); None outside a repo."""
-    result = subprocess.run(
-        ["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True, check=False
-    )
+    result = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         return None
     return Path(result.stdout.strip()).resolve() / STAMP_NAME
@@ -123,7 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--older-than-days", type=int, default=DEFAULT_MAX_AGE_DAYS)
     parser.add_argument("--apply", action="store_true", help="delete (default: dry-run)")
     parser.add_argument("--daily", action="store_true", help="run at most once per 24 h (git hook mode)")
-    parser.add_argument("--stamp", type=Path, default=None, help="daily stamp file (default: <git-common-dir>/" + STAMP_NAME + ")")
+    parser.add_argument(
+        "--stamp", type=Path, default=None, help="daily stamp file (default: <git-common-dir>/" + STAMP_NAME + ")"
+    )
     args = parser.parse_args(argv)
     if args.daily:
         stamp = args.stamp or default_stamp()
