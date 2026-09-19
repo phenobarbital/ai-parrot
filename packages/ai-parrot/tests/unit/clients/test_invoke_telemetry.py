@@ -4,6 +4,7 @@
 ClientCallFailedEvent for some time; ``invoke()`` emitted nothing, so every
 invoke call was missing from token, cost and latency telemetry.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -246,9 +247,7 @@ async def test_invoke_exactly_one_terminal_event(scenario: str) -> None:
         async def _fake_finalize_denied(self, *args, **kwargs):
             raise BudgetExhausted("finalization also denied", report={"partial_text": "partial"})
 
-        client = _make_stub(
-            raise_on_completion=BudgetExhausted("work call denied", report={"partial_text": "partial"})
-        )
+        client = _make_stub(raise_on_completion=BudgetExhausted("work call denied", report={"partial_text": "partial"}))
         client._finalize_budgeted_chat = _fake_finalize_denied.__get__(client, type(client))
     else:  # parse_error
         client = _make_stub(finish_reason="length")
