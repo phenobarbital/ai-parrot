@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-25T22:34:43.122686+00:00",
-  "completed_at": "2026-08-25T23:48:29+00:00",
+  "completed_at": "2026-09-19T15:48:43+00:00",
   "tasks": [
     {
       "id": "TASK-2478",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:01:16+00:00",
-      "file": "sdd/tasks/completed/TASK-2478-swarm-config-and-event-models.md"
+      "file": "sdd/tasks/completed/TASK-2478-swarm-config-and-event-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2479",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:04:22+00:00",
-      "file": "sdd/tasks/completed/TASK-2479-appservice-room-primitives.md"
+      "file": "sdd/tasks/completed/TASK-2479-appservice-room-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2480",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:07:43+00:00",
-      "file": "sdd/tasks/completed/TASK-2480-channel-manager-and-space.md"
+      "file": "sdd/tasks/completed/TASK-2480-channel-manager-and-space.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2481",
@@ -86,7 +89,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:11:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2481-tunnel-registry.md"
+      "file": "sdd/tasks/completed/TASK-2481-tunnel-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2482",
@@ -107,7 +111,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:16:10+00:00",
-      "file": "sdd/tasks/completed/TASK-2482-inbound-task-handler.md"
+      "file": "sdd/tasks/completed/TASK-2482-inbound-task-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2483",
@@ -129,7 +134,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:20:06+00:00",
-      "file": "sdd/tasks/completed/TASK-2483-agent-swarm-toolkit.md"
+      "file": "sdd/tasks/completed/TASK-2483-agent-swarm-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2484",
@@ -152,7 +158,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:31:37+00:00",
-      "file": "sdd/tasks/completed/TASK-2484-transport-wiring-and-swarm-sessions.md"
+      "file": "sdd/tasks/completed/TASK-2484-transport-wiring-and-swarm-sessions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2485",
@@ -173,7 +180,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:36:27+00:00",
-      "file": "sdd/tasks/completed/TASK-2485-session-tunnel-cross-pollination.md"
+      "file": "sdd/tasks/completed/TASK-2485-session-tunnel-cross-pollination.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2486",
@@ -191,7 +199,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:42:09+00:00",
-      "file": "sdd/tasks/completed/TASK-2486-matrix-dev-stack-compose.md"
+      "file": "sdd/tasks/completed/TASK-2486-matrix-dev-stack-compose.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2487",
@@ -212,7 +221,8 @@
       "assigned_to": null,
       "started_at": "2026-08-25T22:55:57+00:00",
       "completed_at": "2026-08-25T23:48:29+00:00",
-      "file": "sdd/tasks/completed/TASK-2487-docs-clients-bridges-examples.md"
+      "file": "sdd/tasks/completed/TASK-2487-docs-clients-bridges-examples.md",
+      "verification": "verified"
     }
   ]
 }
