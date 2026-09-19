@@ -11,10 +11,10 @@ base_branch: dev
 **Feature ID**: FEAT-578
 **Date**: 2026-09-19
 **Author**: Codex with Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
-Input: `sdd/proposals/sdd-spec-wiki-adr.brainstorm.md`, Option B. This document specifies the complete feature, including deterministic ADR ingestion, symbol-to-decision retrieval, cited “why” retrieval, and labeled candidate generation. Candidate acceptance policy remains a review gate (§8 Q3); it must be resolved before tasking the review module. Other architectural choices below are spec-author decisions for review, not additional user answers.
+Input: `sdd/proposals/sdd-spec-wiki-adr.brainstorm.md`, Option B. This document specifies the complete feature, including deterministic ADR ingestion, symbol-to-decision retrieval, cited “why” retrieval, and labeled candidate generation. Candidate acceptance policy is resolved (§8 Q3): maintainers explicitly accept candidates in the wiki; committing an ADR file is optional. Other architectural choices below are spec-author decisions for review, not additional user answers.
 
 ## 1. Motivation & Business Requirements
 
@@ -153,7 +153,7 @@ Targets are one symbol ID or one repository-relative file. Gather at most eight 
 
 The model selects evidence indexes from the packet; it cannot invent paths or statuses. Validate indexes and literal excerpts/ranges against the packet. Citations prove implementation observations, not historical intent. Unsupported rationale must appear in hypotheses and be labeled inferred. Invalid candidates are rejected individually with diagnostics; a valid sibling may persist. Provider failures yield `ADR_MODEL_FAILED`, timeout `ADR_MODEL_TIMEOUT`; existing data remains intact.
 
-Review supports typed revision, rejection, and linking to a documented decision, with revision checks and attributed history. **Acceptance policy is pending Q3:** proposed default is explicit maintainer CLI acceptance in the wiki with optional Markdown export; alternative is requiring a committed ADR first. Until Q3 is resolved, acceptance is unavailable (`ADR_REVIEW_POLICY_UNSET`), and M5 cannot be dispatched as complete. No model invocation or MCP tool automatically accepts a candidate.
+Review supports typed revision, rejection, and linking to a documented decision, with revision checks and attributed history. **Acceptance policy (Q3 confirmed):** a maintainer explicitly accepts a candidate through the CLI in the wiki; Markdown export and committing an ADR file are optional. Acceptance sets `review_status='accepted'`, retains `origin='inferred'` and `source_status='unknown'`, and appends an attributed review event through the same revision-checked write. No documented ADR is required for acceptance. No model invocation or MCP tool automatically accepts a candidate.
 
 Export renders a candidate as Markdown to stdout; writing/committing that output is outside this feature. Rejection does not delete a record. Revision preserves evidence/provenance and resets review status to unreviewed; immutable fields cannot be changed by `CandidateEdit`. Linking requires an existing documented ADR record and records an asserted association without changing inferred origin.
 
@@ -183,7 +183,7 @@ class DecisionService:
         """Generate bounded candidates or reuse the same evidence snapshot's candidates."""
 
     async def review(self, request: ReviewRequest) -> DecisionRecord:
-        """Validate and apply an attributed revision; raise DecisionError on conflict or policy gate."""
+        """Validate and apply an attributed revision; raise DecisionError on revision conflict or invalid review input."""
 
 # store.py:BaseWikiStore (additive concrete default; built-in backends override)
 async def compare_and_swap_page(self, page: WikiPageRecord,
@@ -211,9 +211,9 @@ Eligibility does not authorize dispatch before spec approval. Each TASK must car
 | M2 Atomic page writes | yes | Exact CAS signature; per-backend conditional write; conflict=False | — |
 | M3 Parser and refresh | yes | ATX/flat metadata subset, Python token/AST citations, configured paths, sync errors | — |
 | M4 Retrieval | yes | Exact service methods, status groups, scoring, budgets, ambiguity and freshness rules | — |
-| M5 Generation and review | no | Generation contract is fixed; review acceptance still gated | Q3 determines whether an accepted candidate may lack a committed ADR |
-| M6 Adapters and integration | no | Read/sync/generate adapters mechanical; acceptance CLI gated by M5 | Review-policy presentation must match Q3 |
-| M7 Validation and documentation | no | Fixture matrix and read/generation acceptance criteria fixed | Acceptance-policy test awaits Q3 |
+| M5 Generation and review | yes | Bounded generation; explicit maintainer wiki acceptance, immutable inferred provenance, revision-checked audit history | — |
+| M6 Adapters and integration | yes | Shared read/generation service adapters; maintainer CLI review, optional export, no automatic MCP acceptance | — |
+| M7 Validation and documentation | yes | Fixture matrix plus wiki acceptance without a committed ADR; provenance and audit tests | — |
 
 ### Module 1: Models, identity, and codec
 
@@ -279,7 +279,7 @@ Full sync enumerates all configured ADR sources plus indexed code targets. Incre
 
 - **Paths:** new `decisions/generation.py`, `review.py`; complete service methods in `service.py`.
 - **Responsibility:** Bound evidence/model calls, validate and persist candidates; review via typed edits and atomic history updates.
-- **Depends on:** M1–M4 and resolution of Q3 for acceptance.
+- **Depends on:** M1–M4.
 
 ```python
 # decisions/generation.py (new)
@@ -309,7 +309,7 @@ Namespaces: lookup/why target one namespace per call (`local` by default), rejec
 
 - **Paths:** new `packages/ai-parrot/tests/knowledge/wiki/decisions/` tests and fixtures; new `docs/guides/wiki-adr-decisions.md`; update the existing LLM wiki guide's command section.
 - **Responsibility:** Contracts below, user-facing provenance examples, limitations, generation opt-in, and review instructions.
-- **Depends on:** M1–M6; acceptance test gated by Q3.
+- **Depends on:** M1–M6.
 
 ## 4. Test Specification
 
@@ -330,7 +330,7 @@ Namespaces: lookup/why target one namespace per call (`local` by default), rejec
 | `test_evidence_changed_during_generation` | M5 | Source hash mutation between packet creation and persistence writes no candidates |
 | `test_generation_dedup_preserves_review` | M5 | Same evidence returns existing candidates; changed evidence creates a new record |
 | `test_managed_page_protection` | M6 | Generic note/update cannot corrupt the record; ordinary wiki pages unchanged |
-| `test_review_policy_gate` | M5/M6 | No candidate becomes accepted while Q3 is unresolved; replace with resolved policy tests before approval |
+| `test_maintainer_wiki_acceptance` | M5/M6 | Explicit CLI acceptance succeeds without a committed ADR, preserves inferred origin/unknown source status, records the actor, and rejects stale revisions; MCP/model paths never automatically accept |
 
 ### Integration Tests
 
@@ -360,7 +360,7 @@ Synthetic repository: two same-named Python symbols, a module comment, an execut
 - [ ] AC8: Namespace and backend contract tests pass; missing live backend validation is reported and blocks declaring backend parity complete.
 - [ ] AC9: CLI/MCP/toolkit adapters preserve service semantics and mandatory labels under output budgets.
 - [ ] AC10: Existing code/document search and source-slice tests pass; existing symbol IDs and client APIs are unchanged.
-- [ ] AC11: Review acceptance policy Q3 is resolved and tested before approval/task dispatch of M5.
+- [ ] AC11: Explicit maintainer acceptance in the wiki succeeds without a committed ADR, retains inferred provenance and unknown source status, and records revision-checked attribution; generation/MCP never automatically accepts.
 - [ ] AC12: `black` (120 columns), scoped `ruff check`, and scoped pytest suites pass; logs saved under `artifacts/logs/`.
 - [ ] AC13: Guide documents parsing subset, Python-only automatic citation extraction, rename behavior, local/remote freshness, generation costs/limits, and review policy.
 - [ ] AC14: Inventory limits return explicit errors; record serialization roundtrips at the configured bound. Record timing and memory for 1000 synthetic ADRs as a baseline; no unmeasured latency SLA is asserted.
@@ -463,7 +463,7 @@ No dependency additions or provider-specific SDK imports.
 
 **Isolation:** per-spec. After approval, `$sdd-task` owns creation of `.claude/worktrees/feat-FEAT-578-sdd-spec-wiki-adr` from `origin/dev`. Documentation preparation used a clean temporary clone, not a feature worktree. No implementation has been started.
 
-M1 precedes M2/M3; M2 and the pure parser portion of M3 can proceed independently after contracts are fixed. M4 follows storage and parsing. M5 follows retrieval and Q3. M6 read adapters can follow M4 while generation waits. One owner coordinates shared `store.py`, `cli.py`, `project.py`, and backend edits. M7 integrates all modules. No architectural choices may be delegated to a mechanical implementation task.
+M1 precedes M2/M3; M2 and the pure parser portion of M3 can proceed independently after contracts are fixed. M4 follows storage and parsing. M5 follows retrieval; Q3 is resolved. M6 read adapters can follow M4 while generation waits. One owner coordinates shared `store.py`, `cli.py`, `project.py`, and backend edits. M7 integrates all modules. No architectural choices may be delegated to a mechanical implementation task.
 
 ## 8. Open Questions
 
@@ -476,15 +476,15 @@ Original resolved answers are preserved verbatim:
 
 Brainstorm questions carried forward with dispositions:
 
-- [ ] Q1: Which real ADR directories/templates and sample repository should define the ingestion fixtures? — *Owner: Jesús*: Optional real-world samples remain requested. Synthetic fixtures and configurable conventional globs define v1; this is not a design blocker.
+- [ ] Q1: Which real ADR directories/templates and sample repository should define the ingestion fixtures? — *Owner: Jesús*: Optional real-world samples remain requested. Synthetic fixtures and configurable conventional globs define v1; this is not a design blocker.: https://github.com/adr/madr
 - [x] Q2: Which retrieval path is the first delivery priority if sequencing is necessary: symbol lookup or cited “why” answers? — *Owner: spec author*: Symbol lookup first as the evidence-link foundation, then why; both are required. This is an implementation ordering decision, not a new user preference.
-- [ ] Q3: Where are candidates reviewed, who may accept them, and must acceptance produce a committed ADR file? — *Owner: Jesús*: Proposed maintainer CLI review in the wiki, with optional export; awaiting response to the explicit question. Acceptance behavior and M5 dispatch are blocked until resolved. Rejection/revision never promote provenance.
+- [x] Q3: Where are candidates reviewed, who may accept them, and must acceptance produce a committed ADR file? — *Owner: Jesús*: Confirmed: “Q3: yes, accept”. Maintainers may explicitly accept candidates in the wiki through the CLI; Markdown export and committing an ADR are optional. Acceptance, rejection, and revision never change inferred provenance.
 - [x] Q4: What default generation scope, model budget, and input sources are appropriate; should Git history be included in v1? — *Owner: spec author*: One file/symbol, eight files, 12000 estimated input tokens, 2000 output tokens, one model call, three candidates, 60-second timeout, explicit opt-in; no Git history. Configurable resource defaults, not quality guarantees.
 - [x] Q5: Which persistence representation, backend parity scope, and rename/supersession identity rules will the first release guarantee? — *Owner: spec author*: Versioned JSON-in-page records, four built-in backend CAS implementations, path-derived documented identity, explicit supersession, and no inferred rename equivalence (§2).
 
 ## 9. Design Research Cross-Check
 
-**Status:** skipped (no independent design seat was dispatched; this is not an independent-review claim). The exploration is still marked exploration, and Q3 remains unresolved. A separate review may be requested before approval. No transcript was produced.
+**Status:** skipped (no independent design seat was dispatched; this is not an independent-review claim). The exploration is still marked exploration; Q3 was subsequently resolved by the user. A separate review may be requested before approval. No transcript was produced.
 
 | # | Author's source-verified finding | Disposition | Reason | Landed in |
 |---|---|---|---|---|
@@ -500,3 +500,4 @@ These are author checks, not suggestions attributed to an independent reviewer. 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-19 | Codex with Jesús Lara | Initial draft from Option B; FEAT-578 reserved; Q3 acceptance policy remains open |
+| 0.2 | 2026-09-19 | Codex with Jesús Lara | Resolve Q3: maintainer wiki acceptance, optional ADR commit; remove tasking gates and specify acceptance tests |

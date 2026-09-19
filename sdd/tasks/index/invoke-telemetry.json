@@ -1,0 +1,49 @@
+{
+  "feature": "invoke-telemetry",
+  "feature_id": "FEAT-579",
+  "spec": "sdd/specs/invoke-telemetry.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-19T02:10:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3477",
+      "slug": "jev-invoke-telemetry",
+      "title": "JevClient.invoke() lifecycle telemetry",
+      "feature_id": "FEAT-579",
+      "feature": "invoke-telemetry",
+      "spec": "sdd/specs/invoke-telemetry.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: uses only _emit_before_call/_emit_after_call/_emit_failed_call_safe, which already exist on AbstractClient (base.py:559/696/790) and are not created by any task here. Touches only packages/ai-parrot-client-jev/src/parrot/clients/jev/client.py and tests/clients/test_jev_client.py — neither is touched by TASK-3478. Not exclusive: no lockfile, migration, generated code or conftest.py change.",
+      "assigned_to": null,
+      "started_at": "2026-09-19T00:14:40+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3477-jev-invoke-telemetry.md"
+    },
+    {
+      "id": "TASK-3478",
+      "slug": "openai-base-invoke-telemetry",
+      "title": "OpenAIBaseClient.invoke() lifecycle telemetry",
+      "feature_id": "FEAT-579",
+      "feature": "invoke-telemetry",
+      "spec": "sdd/specs/invoke-telemetry.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: uses only the pre-existing AbstractClient hooks (base.py:559/696/790) plus the inherited _extract_finish_reason (base.py:2245); creates no symbol TASK-3477 needs and needs none from it. Touches only packages/ai-parrot/src/parrot/clients/openai_base.py and the new packages/ai-parrot/tests/unit/clients/test_invoke_telemetry.py — a different distribution from TASK-3477's files. Not exclusive: no lockfile, migration, generated code or conftest.py change.",
+      "assigned_to": null,
+      "started_at": "2026-09-19T00:14:40+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3478-openai-base-invoke-telemetry.md"
+    }
+  ]
+}
