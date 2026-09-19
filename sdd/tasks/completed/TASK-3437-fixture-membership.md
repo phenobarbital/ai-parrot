@@ -370,3 +370,5 @@ perception/membership.py: assign_membership(shapes, zones, image_size, *, llm_hi
 Tests: test_membership.py 9 passed (AC-1..AC-9 + containment); ruff clean.
 
 Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
+
+Post-completion review fix (found while integrating TASK-3444): a single missing tag inside the row block split the row and marked one side off-fixture (row_gap). Fixed in 4f7b3a13523ee89229db6cc8e5b33ee2f49ea35e — clusters whose centre lies inside the block x-span vote row_block; regression test test_hole_inside_the_block_is_not_a_row_gap. Defect was in the orchestrator fallback delivery (no coder attempt to attribute feedback to).
