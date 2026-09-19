@@ -54,7 +54,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -62,8 +62,8 @@
       "parallelism_notes": "no dependencies — store.py deliberately imports nothing from decisions/; sole writer of store.py; its only mention of parrot.knowledge.wiki.decisions is a prohibition (the store layer must never import it), not a use, so no edge to TASK-3479 applies",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3481-store-cas-base-and-sqlite.md"
+      "completed_at": "2026-09-19T18:41:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3481-store-cas-base-and-sqlite.md"
     },
     {
       "id": "TASK-3482",

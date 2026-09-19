@@ -361,10 +361,19 @@ feature rests on — respectively AC6 and the `ADR_WRITE_UNSUPPORTED` path.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, backend=native, model=sonnet), orchestrated by sdd-worker
+**Date**: 2026-09-19
+**Notes**: Added concrete `BaseWikiStore.compare_and_swap_page` (raises `NotImplementedError`,
+not abstract, so third-party subclasses stay instantiable) and `SQLiteWikiStore`'s atomic
+override inside a single `_write` `BEGIN IMMEDIATE` transaction. Verified no import of
+`parrot.knowledge.wiki.decisions` was introduced (grep-confirmed). Touched only the two
+blueprint-specified insertion points in `store.py`; `file_store.py`/`arango_store.py`/
+`postgres_store.py` left untouched for sibling tasks TASK-3482/3483/3484.
+`pytest test_store_cas.py`: 7 passed. AC10 regression guards: `test_sqlite_policy.py`: 10
+passed; `test_sqlite_fts_external_content.py`: 17 passed. Merge-tier: full wiki-scoped suite
+(excluding known no-DB `test_postgres_store.py`/`test_postgres_symbols.py`) re-run after merge.
+Post-merge lint left 1 pre-existing residual (`B027` on `_assert_writable`, unrelated to this
+task's diff) — deferred to `/sdd-done` per policy, not fixed here.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 417.9s · Tokens: 126452 (subagent total, in/out not separately reported by native path)
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
