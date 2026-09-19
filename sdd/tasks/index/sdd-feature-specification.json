@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-18T22:48:10+00:00",
-  "completed_at": "2026-09-19T00:42:49+00:00",
+  "completed_at": "2026-09-19T18:30:00+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,12 +25,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:10:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3469-intake-state-schemas.md"
+      "file": "sdd/tasks/completed/TASK-3469-intake-state-schemas.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3470",
       "slug": "intake-procedure",
-      "title": "Intake procedure — single source for /sdd-spec intake mode",
+      "title": "Intake procedure \u2014 single source for /sdd-spec intake mode",
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
@@ -45,7 +46,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:19:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3470-intake-procedure.md"
+      "file": "sdd/tasks/completed/TASK-3470-intake-procedure.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3471",
@@ -61,11 +63,12 @@
         "TASK-3470"
       ],
       "parallel": true,
-      "parallelism_notes": "needs sdd/templates/intake.procedure.md from TASK-3470 (§1.5 points at it; test asserts it exists). Rebase on FEAT-576 TASK-3465, which edits the same twin pair",
+      "parallelism_notes": "needs sdd/templates/intake.procedure.md from TASK-3470 (\u00a71.5 points at it; test asserts it exists). Rebase on FEAT-576 TASK-3465, which edits the same twin pair",
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:31:31+00:00",
-      "file": "sdd/tasks/completed/TASK-3471-sdd-spec-intake-wiring.md"
+      "file": "sdd/tasks/completed/TASK-3471-sdd-spec-intake-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3472",
@@ -85,12 +88,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:42:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3472-unattended-no-interview.md"
+      "file": "sdd/tasks/completed/TASK-3472-unattended-no-interview.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3473",
       "slug": "intake-retention",
-      "title": "Intake staging pruner — prune_intake.py with a once-a-day gate + gitignore",
+      "title": "Intake staging pruner \u2014 prune_intake.py with a once-a-day gate + gitignore",
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
@@ -105,7 +109,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:19:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3473-intake-retention.md"
+      "file": "sdd/tasks/completed/TASK-3473-intake-retention.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3474",
@@ -122,11 +127,12 @@
         "TASK-3470"
       ],
       "parallel": true,
-      "parallelism_notes": "reads the intake.json shape from TASK-3469 (intake.schema.json) and the `intake: <staging-dir>` pointer emitted by TASK-3470 (intake.procedure.md §3b)",
+      "parallelism_notes": "reads the intake.json shape from TASK-3469 (intake.schema.json) and the `intake: <staging-dir>` pointer emitted by TASK-3470 (intake.procedure.md \u00a73b)",
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:31:31+00:00",
-      "file": "sdd/tasks/completed/TASK-3474-brainstorm-intake-handoff.md"
+      "file": "sdd/tasks/completed/TASK-3474-brainstorm-intake-handoff.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3475",
@@ -147,12 +153,13 @@
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:42:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3475-intake-docs.md"
+      "file": "sdd/tasks/completed/TASK-3475-intake-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3476",
       "slug": "daily-prune-hook-installer",
-      "title": "Daily prune git-hook installer — install_hooks.py",
+      "title": "Daily prune git-hook installer \u2014 install_hooks.py",
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
@@ -167,7 +174,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
       "completed_at": "2026-09-19T00:31:31+00:00",
-      "file": "sdd/tasks/completed/TASK-3476-daily-prune-hook-installer.md"
+      "file": "sdd/tasks/completed/TASK-3476-daily-prune-hook-installer.md",
+      "verification": "verified"
     }
   ]
 }
