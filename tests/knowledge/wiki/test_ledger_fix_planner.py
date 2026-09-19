@@ -165,8 +165,7 @@ class TestSuggestSlug:
 
     def test_suggest_slug_uses_dominant_file_and_breaks_ties_by_path(self):
         dominant = [
-            _issue(f"issue:dom{i}", "pkg/nodes/development.py", severity="minor", kind="tech_debt")
-            for i in range(4)
+            _issue(f"issue:dom{i}", "pkg/nodes/development.py", severity="minor", kind="tech_debt") for i in range(4)
         ]
         minority = [_issue("issue:min", "pkg/other.py", severity="minor", kind="tech_debt")]
         group = _group(*dominant, *minority)
@@ -258,37 +257,45 @@ class TestPlanFixBatch:
 class TestParents:
     def test_parents_open_flag_from_index_status(self):
         open_status = {"FEAT-551": None}
-        open_parents = plan_fix_batch(
-            [
-                {
-                    "issue_id": "issue:a",
-                    "title": "t",
-                    "kind": "tech_debt",
-                    "severity": "minor",
-                    "discovered_from": "spec:FEAT-551",
-                    "about": ["sym:p/a.py"],
-                }
-            ],
-            parent_index_status=open_status,
-            generated_at="x",
-        ).groups[0].parents
+        open_parents = (
+            plan_fix_batch(
+                [
+                    {
+                        "issue_id": "issue:a",
+                        "title": "t",
+                        "kind": "tech_debt",
+                        "severity": "minor",
+                        "discovered_from": "spec:FEAT-551",
+                        "about": ["sym:p/a.py"],
+                    }
+                ],
+                parent_index_status=open_status,
+                generated_at="x",
+            )
+            .groups[0]
+            .parents
+        )
         assert open_parents == [ParentFeature(feature_id="FEAT-551", completed_at=None, open=True)]
 
         closed_status = {"FEAT-551": "2026-01-01T00:00:00+00:00"}
-        closed_parents = plan_fix_batch(
-            [
-                {
-                    "issue_id": "issue:a",
-                    "title": "t",
-                    "kind": "tech_debt",
-                    "severity": "minor",
-                    "discovered_from": "spec:FEAT-551",
-                    "about": ["sym:p/a.py"],
-                }
-            ],
-            parent_index_status=closed_status,
-            generated_at="x",
-        ).groups[0].parents
+        closed_parents = (
+            plan_fix_batch(
+                [
+                    {
+                        "issue_id": "issue:a",
+                        "title": "t",
+                        "kind": "tech_debt",
+                        "severity": "minor",
+                        "discovered_from": "spec:FEAT-551",
+                        "about": ["sym:p/a.py"],
+                    }
+                ],
+                parent_index_status=closed_status,
+                generated_at="x",
+            )
+            .groups[0]
+            .parents
+        )
         assert closed_parents == [
             ParentFeature(feature_id="FEAT-551", completed_at="2026-01-01T00:00:00+00:00", open=False)
         ]
