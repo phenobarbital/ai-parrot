@@ -386,7 +386,9 @@ async def test_start_rejects_symlinked_socket_path(tmp_path: Path) -> None:
 
 
 async def test_context_manager_starts_and_stops(tmp_path: Path) -> None:
-    async with ControlServer(tmp_path / "cm.sock", run_id=_RUN_ID, owner_id=_OWNER_ID, operations={"echo": _echo}) as server:
+    async with ControlServer(
+        tmp_path / "cm.sock", run_id=_RUN_ID, owner_id=_OWNER_ID, operations={"echo": _echo}
+    ) as server:
         client = ControlClient(server.socket_path, run_id=_RUN_ID, owner_id=_OWNER_ID)
         result = await client.request("echo", {"in": "context"})
         assert result == {"echoed": {"in": "context"}}
