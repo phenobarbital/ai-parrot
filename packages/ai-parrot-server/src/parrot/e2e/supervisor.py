@@ -40,17 +40,24 @@ Scope boundaries this module deliberately keeps:
   record. Population of that field is left to future (M4-adjacent) work; it
   is always persisted as ``None`` here, which is one of its two documented
   valid meanings ("None before readiness / for non-networked targets").
-- **The watchdog.** Registration/heartbeat *to* a separate watchdog process
-  and absolute-lease extension are TASK-3528's job (spec §3 "M3" explicitly
-  defers this). What this module does implement is the *handshake surface* a
-  future watchdog reconciles against: an atomically-written, mode-0600
+- **The watchdog (TASK-3528).** Every :meth:`start` spawns a separate
+  :mod:`parrot.e2e.watchdog` process before its own target (spec §2: "The
+  watchdog inherits the run manifest/control information before target
+  spawn."), waits for its per-attempt target-identity acknowledgement before
+  ever polling readiness, and keeps a background heartbeat running for the
+  run's lifetime (:meth:`_heartbeat_loop`). Absolute-lease *extension* (the
+  detached ``up`` CLI's job, spec §3 "M3" ``cli.py``/``runner.py`` — not this
+  module's own file scope) is still not implemented here; the watchdog only
+  ever enforces whatever lease :meth:`start` already recorded at
+  registration. What this module implements is the *handshake surface* the
+  watchdog reconciles against: an atomically-written, mode-0600
   :class:`RunState` per run, updated at every lifecycle transition
   (``starting`` → ``ready``/``failed`` → ``stopping`` → ``stopped``/
   ``failed``), plus a private per-run :class:`parrot.e2e.control.ControlServer`
   exposing ``status``/``stop``/``stdio`` operations so an out-of-process
-  caller (the eventual watchdog, or a `down`/`status` CLI) can reach this
-  same running supervisor without ever re-deriving pipe/process ownership
-  from a bare PID.
+  caller (the watchdog, or a future `down`/`status` CLI) can reach this same
+  running supervisor without ever re-deriving pipe/process ownership from a
+  bare PID.
 """
 
 from __future__ import annotations
@@ -75,6 +82,7 @@ import psutil
 from pydantic import JsonValue
 
 from parrot.e2e import state as e2e_state
+from parrot.e2e import watchdog as e2e_watchdog
 from parrot.e2e.control import ControlHandler, ControlServer, DEFAULT_REQUEST_DEADLINE_S, MAX_MESSAGE_BYTES
 from parrot.e2e.errors import E2EConfigError, E2ETargetError
 from parrot.e2e.models import ProcessIdentity, RunState, TargetConfig
@@ -100,6 +108,13 @@ _KILL_WAIT_S = 5.0
 # this is only the initial default recorded at registration time.
 _DEFAULT_LEASE_S = 600.0
 _READY_POLL_INTERVAL_S = 0.05
+# Bound for the per-attempt "watchdog acknowledged this target's identity"
+# handshake (spec §2: "target identity must be acknowledged before readiness
+# can be reported") -- deliberately independent of a target's own, possibly
+# very short, `config.startup_timeout_s`: this handshake is a local,
+# same-worktree file poll against an already-ack'd watchdog process, not
+# bounded by how quickly any particular target becomes ready.
+_WATCHDOG_REGISTRATION_ACK_TIMEOUT_S = 5.0
 # Linux's AF_UNIX sun_path buffer is 108 bytes including the NUL terminator;
 # leave margin below that hard kernel limit (see _resolve_control_socket_path).
 _MAX_SOCKET_PATH_BYTES = 100
@@ -248,6 +263,12 @@ class _LiveRun:
             stdout/stderr (or just stderr, for a ``stdio`` target).
         stdio_channel: Set only for a ``stdio``-launched target.
         state: The most recently persisted :class:`RunState` for this run.
+        watchdog: This run's separate, spawned watchdog process handle
+            (TASK-3528). Spawned once per run (never replaced across a
+            same-run-ID port-collision retry), unlike ``process``/``log_handle``.
+        heartbeat_task: Background task sending this run's watchdog a
+            heartbeat every :data:`parrot.e2e.watchdog.HEARTBEAT_INTERVAL_S`
+            seconds; cancelled during teardown.
     """
 
     run_id: str
@@ -258,6 +279,8 @@ class _LiveRun:
     log_handle: IO[bytes]
     stdio_channel: Optional[_StdioChannel] = None
     state: Optional[RunState] = None
+    watchdog: Optional[e2e_watchdog.WatchdogHandle] = None
+    heartbeat_task: Optional["asyncio.Task[None]"] = None
 
 
 class E2ESupervisor:
@@ -333,9 +356,12 @@ class E2ESupervisor:
     async def start(self, target_id: str, config: TargetConfig) -> RunState:
         """Start the target or raise a typed configuration/readiness error.
 
-        Registers this target's :class:`ProcessIdentity` and persists its
-        initial :class:`RunState` (status ``starting``) *before* polling for
-        readiness (spec §2). Retries exactly once, within the original
+        Spawns this run's separate watchdog process before the target itself
+        (spec §2), registers this target's :class:`ProcessIdentity` and
+        persists its initial :class:`RunState` (status ``starting``)
+        *before* polling for readiness, and blocks on the watchdog's
+        per-attempt target-identity acknowledgement before that polling
+        begins. Retries exactly once, within the original
         ``config.startup_timeout_s`` deadline, if the child exits early with
         a verified port-collision signature (spec §2).
 
@@ -354,6 +380,9 @@ class E2ESupervisor:
             E2ETargetError: If the target fails to spawn, exits early
                 without a retryable port collision, or never becomes ready
                 within its startup deadline.
+            parrot.e2e.watchdog.WatchdogSpawnError: If the separate watchdog
+                process cannot be spawned, or never acknowledges (a subclass
+                of :class:`E2ETargetError`).
         """
         _validate_id(target_id, field_name="target_id")
         adapter = self._adapter_resolver(config.kind)
@@ -363,6 +392,11 @@ class E2ESupervisor:
         run_directory = e2e_state.run_dir(run_id, worktree=self._worktree)
         control_socket = self._resolve_control_socket_path(run_id, run_directory)
         log_path = self._log_path(run_id, target_id)
+
+        # Spawned before the target itself (spec §2: "The watchdog inherits
+        # the run manifest/control information before target spawn."), once
+        # per run_id -- never replaced across a same-run-ID retry below.
+        watchdog_handle = await e2e_watchdog.spawn_watchdog(run_id, worktree=self._worktree)
 
         live: Optional[_LiveRun] = None
         for attempt in (1, 2):
@@ -393,6 +427,28 @@ class E2ESupervisor:
             with e2e_state.locked_run(run_id, worktree=self._worktree):
                 e2e_state.write_state(state, worktree=self._worktree)
 
+            # Spec §2: "target identity must be acknowledged before
+            # readiness can be reported" -- re-verified per attempt, since a
+            # port-collision retry registers a brand-new target identity.
+            try:
+                await watchdog_handle.wait_for_registration_ack(
+                    identity.pid, timeout_s=_WATCHDOG_REGISTRATION_ACK_TIMEOUT_S
+                )
+            except e2e_watchdog.WatchdogSpawnError:
+                # Never leak this attempt's just-spawned process/log handle,
+                # nor (on a first-attempt failure, before `live` exists) the
+                # watchdog subprocess itself.
+                await self._terminate_process_best_effort(process)
+                with contextlib.suppress(Exception):
+                    log_handle.close()
+                if live is not None:
+                    await self._teardown_live_resources(live)
+                    self._runs.pop(run_id, None)
+                else:
+                    with contextlib.suppress(Exception):
+                        await watchdog_handle.stop()
+                raise
+
             stdio_channel = _StdioChannel(process) if launch_spec.stdio else None
             if live is None:
                 operations = self._build_control_operations(run_id)
@@ -412,9 +468,11 @@ class E2ESupervisor:
                     log_handle=log_handle,
                     stdio_channel=stdio_channel,
                     state=state,
+                    watchdog=watchdog_handle,
                 )
                 self._runs[run_id] = live
                 await control_server.start()
+                live.heartbeat_task = asyncio.create_task(self._heartbeat_loop(watchdog_handle))
             else:
                 with contextlib.suppress(Exception):
                     live.log_handle.close()
@@ -898,8 +956,26 @@ class E2ESupervisor:
             with contextlib.suppress(Exception):
                 process.stdin.close()
 
+    async def _heartbeat_loop(self, watchdog_handle: e2e_watchdog.WatchdogHandle) -> None:
+        """Send this run's watchdog a heartbeat every heartbeat interval, until cancelled.
+
+        Args:
+            watchdog_handle: The run's own watchdog handle (captured once,
+                never re-fetched from ``self._runs`` — stable across a
+                same-run-ID port-collision retry within :meth:`start`).
+        """
+        with contextlib.suppress(asyncio.CancelledError):
+            while True:
+                await asyncio.sleep(e2e_watchdog.HEARTBEAT_INTERVAL_S)
+                await watchdog_handle.send_heartbeat()
+
+    async def _stop_watchdog(self, watchdog_handle: e2e_watchdog.WatchdogHandle) -> None:
+        """Best-effort, exception-suppressing :meth:`WatchdogHandle.stop`."""
+        with contextlib.suppress(Exception):
+            await watchdog_handle.stop()
+
     async def _teardown_live_resources(self, live: _LiveRun) -> None:
-        """Close a run's control server, stdio pipe and log handle.
+        """Close a run's control server, stdio pipe, log handle, heartbeat task and watchdog.
 
         Args:
             live: The run's live handles to release. Idempotent/best-effort:
@@ -910,6 +986,12 @@ class E2ESupervisor:
             :class:`ControlServer` request handlers — see
             :meth:`_teardown_live_resources_deferred`.
         """
+        if live.heartbeat_task is not None:
+            live.heartbeat_task.cancel()
+            with contextlib.suppress(Exception):
+                await live.heartbeat_task
+        if live.watchdog is not None:
+            await self._stop_watchdog(live.watchdog)
         with contextlib.suppress(Exception):
             await live.control_server.stop()
         if live.process.stdin is not None:
@@ -935,6 +1017,10 @@ class E2ESupervisor:
         Args:
             live: The run's live handles to release.
         """
+        if live.heartbeat_task is not None:
+            live.heartbeat_task.cancel()
+        if live.watchdog is not None:
+            asyncio.create_task(self._stop_watchdog(live.watchdog))
         stdin = live.process.stdin
         if stdin is not None:
             with contextlib.suppress(Exception):
