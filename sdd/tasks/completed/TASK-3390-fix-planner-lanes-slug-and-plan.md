@@ -37,7 +37,9 @@ breaks `test_plan_groups_are_byte_deterministic` (spec §7).
   skip malformed rows, apply filters before grouping, group, decide, slug, resolve parents
   from `discovered_from` matching `^spec:(FEAT-\d+)$` only, assemble `FixPlan`.
 - Extend `tests/knowledge/wiki/test_ledger_fix_planner.py` with the lane/slug/plan/parents
-  tests and the snapshot plan test (7 groups, two `major` groups first).
+  tests and a snapshot plan test asserting structural invariants over the live, committed
+  `sdd/ledger/issues.jsonl` (see the STALE-DATA note below — the ledger grows continuously
+  from unrelated `/sdd-codereview` activity across sessions, so hardcoded counts rot).
 
 **NOT in scope**: slug de-duplication against `sdd/specs/` and reading `sdd/tasks/index/`
 (TASK-3392 CLI + TASK-3391 service); the CLI itself.
@@ -83,13 +85,27 @@ def group_issues(issues: Sequence[FixIssue]) -> list[FixGroup]     # groups sort
 snapshot_issues fixture (list[dict] from sdd/ledger/issues.jsonl, resolved via Path(__file__).resolve().parents[3])
 def _issue(issue_id, *files, severity="minor", kind="tech_debt") -> FixIssue
 
-# sdd/ledger/issues.jsonl facts (hand-verified 2026-09-18):
-#   issue:bcd04b2170a0  minor vulnerability   → its group MUST be sdd
-#   issue:a9514c9232ad  major bug  (wrapper.py, manager.py) → singleton major group
-#   issue:bd1c792a5afc  major feature_gap (coder_suspensions.py, engine.py) → 3-issue major group with 700660c7f663, c1e28856ab0c
-#   issue:bde3a98caed2  discovered_from = "spec:codex-dispatch-stdin-isolation"  ← a `spec:` form that is NOT FEAT-<NNN>: yields NO parent
-#   fast-lane candidates: issue:0af9c12f991c (roster.py), issue:bde3a98caed2 (test_codex_dispatcher.py), issue:c376867f96d8 (test_execution_pool_integration.py)
-#   development.py appears in 4 of the 5 issues of the largest group → dominant file → slug "nodes-development-tech-debt"
+# STALE-DATA NOTE (updated 2026-09-19 by the sdd-worker orchestrator, confirmed by the
+# TASK-3389 coder and independently re-verified before dispatching this task): the
+# "hand-verified 2026-09-18" issue-id facts this contract used to list here
+# (issue:bcd04b2170a0, issue:a9514c9232ad, issue:bd1c792a5afc, issue:bde3a98caed2,
+# issue:0af9c12f991c, issue:c376867f96d8) NO LONGER EXIST in the committed
+# sdd/ledger/issues.jsonl — the shared ledger has grown from 15 to 44+ rows via unrelated
+# /sdd-codereview activity in other concurrent sessions since the spec was authored.
+# Do NOT hardcode any specific issue_id, group count, or "7 groups" / "total_open == 15"
+# assertion against the live snapshot — it will be false by the time you run it and it may
+# drift again before this feature merges. Instead:
+#   - For `TestSuggestSlug`'s dominant-file test, build synthetic FixIssue rows via `_issue()`
+#     (same pattern as TestGroupIssues) — do NOT depend on the live snapshot's file contents.
+#   - For the snapshot-backed `TestPlanFixBatch` test, assert STRUCTURAL INVARIANTS over
+#     `snapshot_issues` instead of literal counts (mirror
+#     `TestGroupIssues.test_snapshot_groups_into_expected_components` in the already-merged
+#     TASK-3389 test file for the established pattern): e.g. `plan.total_open` equals the
+#     number of well-formed rows in the fixture; `plan.groups` is sorted with `major`/`critical`
+#     groups first (if any exist in the live data) via `SEVERITY_ORDER`; every group with any
+#     `vulnerability` issue has `lane == "sdd"`; every group with `lane == "fast"` has exactly
+#     one file, every issue `tech_debt`, and severity in `{"minor", "low"}` — properties that
+#     hold regardless of how many rows the ledger currently contains.
 ```
 
 ### Does NOT Exist
@@ -152,7 +168,7 @@ def _issue(issue_id, *files, severity="minor", kind="tech_debt") -> FixIssue
 1. Append `decide_lane` — *why*: it is the only place lane rules live; S7 guard first, override second, heuristic third.
 2. Append `suggest_slug` — *why*: the twins must never re-derive a name; determinism is a tested property.
 3. Append `_parents_for` and `plan_fix_batch` — *why*: this is the function `ledger plan-fix` calls; its signature is fixed by spec §2.
-4. Add the four test classes; run the file — *why*: the snapshot assertions (7 groups, majors first, vulnerability → sdd) are acceptance criteria.
+4. Add the four test classes; run the file — *why*: the snapshot structural-invariant assertions (majors/vulnerability sort first, vulnerability → sdd, fast lane ⊆ single-file tech_debt) are acceptance criteria.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/fix_planner.py` (MODIFY)
 ```python
@@ -239,7 +255,8 @@ class TestDecideLane:
         assert decide_lane(_group(_issue("issue:a", "p/a.py", severity="major")))[0] == "sdd"
 
     def test_decide_lane_vulnerability_always_sdd(self):
-        # FILL IN: minor vulnerability single file → "sdd" (real case issue:bcd04b2170a0)
+        # FILL IN: synthetic minor vulnerability, single file, via _issue(..., kind="vulnerability") → "sdd"
+        #          (do NOT depend on any specific live-snapshot issue_id — see STALE-DATA note above)
     def test_decide_lane_mixed_kind_group_goes_sdd(self):
         # FILL IN: minor tech_debt + minor bug sharing a file → "sdd"
     def test_decide_lane_fast_requires_single_file(self):
@@ -257,8 +274,11 @@ class TestSuggestSlug:
     def test_suggest_slug_is_deterministic_for_same_input(self):
         # FILL IN: same group built twice → identical slug
     def test_suggest_slug_uses_dominant_file_and_breaks_ties_by_path(self):
-        # FILL IN: 4-of-5 issues on x/dev_loop/nodes/development.py → "nodes-development-tech-debt"; a 1:1 tie picks the
-        #          lexicographically smaller path
+        # FILL IN: build SYNTHETIC issues via _issue() (do NOT depend on the live snapshot — see the
+        #          STALE-DATA note in the Codebase Contract): 4 issues on "pkg/nodes/development.py"
+        #          + 1 on "pkg/other.py", all kind="tech_debt" → dominant file is development.py →
+        #          slug "nodes-development-tech-debt"; separately, two files tied 1-to-1 → the
+        #          lexicographically smaller path wins
     def test_suggest_slug_falls_back_to_group_id_without_files(self):
         # FILL IN: about=[] → slug == group_id with ":" replaced by "-"
 
@@ -274,11 +294,19 @@ class TestPlanFixBatch:
         assert a.model_dump_json(exclude={"generated_at"}) == b.model_dump_json(exclude={"generated_at"})
     def test_plan_carries_planner_version(self, snapshot_issues):
         assert plan_fix_batch(snapshot_issues).planner_version == PLANNER_VERSION
-    def test_plan_over_committed_snapshot_yields_seven_groups(self, snapshot_issues):
+    def test_plan_over_committed_snapshot_respects_lane_and_ordering_invariants(self, snapshot_issues):
+        # NOTE: sdd/ledger/issues.jsonl grows continuously from unrelated /sdd-codereview
+        # activity across sessions — do NOT hardcode a group count or total_open here (see
+        # the Codebase Contract's STALE-DATA note). Assert properties that hold regardless
+        # of how many rows the live snapshot currently has.
         plan = plan_fix_batch(snapshot_issues, generated_at="x")
-        assert len(plan.groups) == 7 and plan.total_open == 15
-        assert [g.max_severity for g in plan.groups[:2]] == ["major", "major"]
-        # FILL IN: the group containing issue:bcd04b2170a0 has lane == "sdd"; exactly 3 groups have lane == "fast"
+        # FILL IN: plan.total_open == number of well-formed rows in snapshot_issues (same
+        #          parsing rule as test_plan_fix_batch_skips_malformed_rows);
+        #          groups are non-increasing in SEVERITY_ORDER[g.max_severity] (majors/criticals,
+        #          if any, sort before minors/lows);
+        #          every group with any issue.kind == "vulnerability" has lane == "sdd";
+        #          every group with lane == "fast" has exactly one file, every issue.kind ==
+        #          "tech_debt", and every issue.severity in {"minor", "low"} (mirror FAST_LANE_*)
 
 
 class TestParents:
@@ -302,7 +330,10 @@ criteria for `plan-fix` before the CLI exists.
 
 ## Acceptance Criteria
 
-- [ ] `plan_fix_batch` over `sdd/ledger/issues.jsonl` yields exactly 7 groups, the two `major` groups first, `total_open == 15`.
+- [ ] `plan_fix_batch` over the live, committed `sdd/ledger/issues.jsonl` respects the lane/ordering
+      invariants (majors/criticals sort first; vulnerability groups → sdd; fast-lane groups are
+      single-file/tech_debt/minor-or-low only) and `total_open` equals the well-formed row count —
+      see the Codebase Contract's STALE-DATA note; do not hardcode a literal group count.
 - [ ] Two runs over identical input produce byte-identical `groups`; `planner_version` present (S2).
 - [ ] `--lane fast` (override) raises `ValueError` for `critical` and for any `vulnerability` group (S7).
 - [ ] `suggested_slug` is byte-identical across runs; no de-duplication happens in the planner.
@@ -325,7 +356,7 @@ criteria for `plan-fix` before the CLI exists.
 ```python
 class TestDecideLane:    # 7 tests
 class TestSuggestSlug:   # 3 tests
-class TestPlanFixBatch:  # 5 tests incl. test_plan_over_committed_snapshot_yields_seven_groups
+class TestPlanFixBatch:  # 5 tests incl. test_plan_over_committed_snapshot_respects_lane_and_ordering_invariants
 class TestParents:       # 3 tests
 ```
 
@@ -347,10 +378,19 @@ class TestParents:       # 3 tests
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid 5578890c60c94ef4a966cfa92433d40f)
+**Date**: 2026-09-19
+**Notes**: Appended `decide_lane` (5-rule predicate, S7 override guard), `suggest_slug`
+(dominant-file/kind kebab-case, lexicographic tie-break), `_parents_for` (`spec:FEAT-<NNN>`-only
+extraction), and `plan_fix_batch` to `fix_planner.py` per blueprint verbatim. Added
+`TestDecideLane`(7) + `TestSuggestSlug`(3) + `TestPlanFixBatch`(5) + `TestParents`(3) = 19 new
+tests (26 total in the file). Followed the orchestrator's STALE-DATA correction (commit
+`6421c4a0e`) exactly: the snapshot-backed plan test asserts structural invariants only
+(well-formed `total_open`, severity-ordered groups, vulnerability→sdd, fast-lane ⊆
+single-file/tech_debt/minor-or-low), and the dominant-file slug test uses synthetic
+`_issue()`-built rows, not the live snapshot.
+Validation: `pytest tests/knowledge/wiki/test_ledger_fix_planner.py -q` → 26 passed. `ruff check` clean; `black` applied by the merge-time engine formatter.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 278.4s · Tokens: n/a (native, no usage telemetry)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — implementation is an unmodified realization of the blueprint;
+only the task's own stale snapshot-fact documentation was corrected beforehand by the orchestrator.

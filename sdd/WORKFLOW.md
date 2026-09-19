@@ -461,6 +461,7 @@ The SDD workflow is unified across all three developer platforms:
 | `/sdd-explain <target>` | `sdd-explain` | Code-grounded architectural map or deep implementation trace |
 | `/sdd-status` | `sdd-status` | Show task index status board across all per-spec indexes |
 | `/sdd-next` | `sdd-next` | Suggest next unblocked tasks to assign |
+| `/sdd-fix [issue-id]` | `sdd-fix` | Drain the work ledger: plan-fix, claim, route to the Fast or SDD lane, close by evidence, release the rest |
 | `/sdd-fromjira` | `sdd-fromjira` | Bootstrap an SDD brainstorm from a Jira ticket |
 | `/sdd-tojira` | `sdd-tojira` | Export an SDD specification to a Jira Story and subtasks |
 | `/sdd-insight` | `sdd-insight` | Analyze collaboration transcripts and repo-level SDD process adherence |

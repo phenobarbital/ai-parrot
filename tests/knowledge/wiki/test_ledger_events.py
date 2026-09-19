@@ -1,12 +1,18 @@
+from typing import get_args
+
 import pytest
 from pydantic import ValidationError
 from parrot.knowledge.wiki.ledger.events import (
     LedgerEvent,
+    LedgerEventKind,
     IssueOpenedPayload,
     IssueClaimedPayload,
+    IssueUnclaimedPayload,
     IssueAcknowledgedPayload,
     IssueClosedPayload,
     InsightRecordedPayload,
+    IssueSeverity,
+    SEVERITY_ORDER,
     compute_event_id,
     compute_issue_id,
 )
@@ -104,3 +110,32 @@ def test_insight_recorded_payload():
     )
     assert insight.category == "note"
     assert insight.fact == "This is a fact"
+
+
+def test_issue_unclaimed_payload():
+    payload = IssueUnclaimedPayload(unclaimed_by="agent:sdd-fix", reason="released: not fixed in this lane")
+    assert payload.unclaimed_by == "agent:sdd-fix"
+    assert payload.reason.startswith("released")
+
+
+def test_ledger_event_kind_has_twelve_members_including_unclaimed():
+    members = get_args(LedgerEventKind)
+    assert len(members) == 12
+    assert "issue.unclaimed" in members
+
+
+def test_issue_unclaimed_event_validates():
+    event = LedgerEvent(
+        kind="issue.unclaimed",
+        subject="issue:abc",
+        actor="agent:sdd-fix",
+        payload={"unclaimed_by": "agent:sdd-fix", "reason": "released"},
+    )
+    assert event.event_id  # computed by model_post_init
+
+
+def test_severity_order_is_total_and_canonical():
+    members = get_args(IssueSeverity)
+    assert set(SEVERITY_ORDER) == set(members), "every IssueSeverity member must have a rank"
+    assert sorted(SEVERITY_ORDER, key=SEVERITY_ORDER.__getitem__) == ["critical", "major", "minor", "low"]
+    assert sorted(SEVERITY_ORDER.values()) == list(range(len(members)))

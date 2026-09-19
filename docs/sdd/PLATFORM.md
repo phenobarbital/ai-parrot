@@ -260,6 +260,7 @@ Run inside the feature worktree. Steps:
 | `/sdd-status [feature]` | Read-only task board aggregated across all per-spec indexes; shows blockers + an orphans panel. |
 | `/sdd-next` | Suggest unblocked `pending` tasks (deps all `done`), sorted by priority/effort, annotated with worktree commands. |
 | `/sdd-codereview <task>` | Apply the `code-reviewer` rubric to a completed task; structured report (Critical/Major/Minor + AC check). |
+| `/sdd-fix [issue-id]` | Ledger-driven fix lane: `ledger plan-fix --json` → claim → Fast lane (branch + PR) or SDD lane (spec/tasks/worktree) → close with `--resolved-by` → `unclaim` the rest. |
 | `/sdd-explain [--deep] <target>` | Code-grounded architecture walkthrough (default) or implementation trace (`--deep`); strict anti-hallucination (read before explain, grep anchors not line numbers). |
 
 `/sdd-tojira` is the reverse of `/sdd-fromjira`: the `jira:` metadata it writes

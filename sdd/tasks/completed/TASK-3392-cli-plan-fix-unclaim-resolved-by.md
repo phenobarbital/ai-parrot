@@ -327,17 +327,29 @@ def _real_service(tmp_path: Path) -> LedgerService:
     return LedgerService(LedgerIndex(store, log), store, log, tmp_path)
 
 
+# STALE-DATA NOTE (updated 2026-09-19 by the sdd-worker orchestrator): `snapshot_rows` reads
+# the live, committed sdd/ledger/issues.jsonl, which grows continuously from unrelated
+# /sdd-codereview activity in other concurrent sessions. As of this writing it has 44+ rows,
+# no group count is stable, and it currently contains ZERO `kind == "vulnerability"` issues.
+# Do NOT assert a literal `len(plan.groups) == N` against it, and do NOT rely on it containing
+# any specific issue_id or kind — inject synthetic rows via `mock_service.ready_work.return_value`
+# (or a local list, same shape as `snapshot_rows` entries) wherever a test needs a *specific*
+# severity/kind/file combination (e.g. the vulnerability-refusal test below).
+
 def test_cli_plan_fix_json_matches_fixplan_schema(runner, mock_service):
     with patch(_FROM_ROOT, return_value=mock_service):
         result = runner.invoke(ledger, ["plan-fix", "--json"])
     assert result.exit_code == 0, result.output
     plan = FixPlan.model_validate_json(result.output)
-    assert len(plan.groups) == 7 and plan.groups[0].max_severity == "major"
-    # FILL IN: every group's parents have open is False (all three FEATs are stamped) — bounded by AC "parents resolved by the CLI"
+    # FILL IN: plan.groups is non-empty; groups are non-increasing in SEVERITY_ORDER[g.max_severity]
+    #          (major/critical groups, if any in the live snapshot, sort first) — do NOT hardcode a count;
+    #          every group's parents have open is False (all three mocked FEATs are stamped) — bounded by
+    #          AC "parents resolved by the CLI"
 
 def test_cli_plan_fix_busy_falls_back_to_snapshot(runner, mock_service, tmp_path, snapshot_rows):
     # FILL IN: write tmp_path/sdd/ledger/issues.jsonl from snapshot_rows; ready_work.side_effect = WikiStoreBusy("ledger.sync");
-    #          exit 0, stdout parses as FixPlan with 7 groups — bounded by AC busy→snapshot
+    #          exit 0, stdout parses as a FixPlan whose total_open matches a direct plan_fix_batch(snapshot_rows) call
+    #          over the same rows — bounded by AC busy→snapshot; do NOT hardcode a group count
 
 def test_cli_plan_fix_dedupes_slug_against_existing_specs(runner, mock_service, tmp_path):
     # FILL IN: first run to learn groups[0].suggested_slug; create tmp_path/sdd/specs/<slug>.spec.md; second run → f"{slug}-2"
@@ -346,7 +358,12 @@ def test_cli_plan_fix_survives_unreadable_index_dir(runner, mock_service):
     # FILL IN: feature_index_status.side_effect = OSError("denied"); exit 0; all parents open is False
 
 def test_cli_plan_fix_refuses_fast_override_on_vulnerability(runner, mock_service):
-    # FILL IN: ["plan-fix", "--lane", "fast"] over the snapshot (has issue:bcd04b2170a0) → exit 1, "Refused" in output (S7)
+    # FILL IN: do NOT rely on the live snapshot containing a vulnerability issue (it may not —
+    #          see the STALE-DATA note above). Instead set
+    #          mock_service.ready_work = AsyncMock(return_value=[{"issue_id": "issue:synthetic-vuln",
+    #          "title": "t", "kind": "vulnerability", "severity": "minor", "status": "open",
+    #          "discovered_from": None, "about": ["sym:pkg/a.py#X"]}]) before invoking
+    #          ["plan-fix", "--lane", "fast"] → exit 1, "Refused" in output (S7)
 
 def test_cli_close_accepts_resolved_by(runner, mock_service):
     with patch(_FROM_ROOT, return_value=mock_service):
@@ -380,7 +397,10 @@ the two real-service tests prove the claim/unclaim/ready cycle end-to-end throug
 
 ## Acceptance Criteria
 
-- [ ] `wikitoolkit ledger plan-fix --json` over the snapshot emits a `FixPlan` with exactly 7 groups, the two `major` groups first.
+- [ ] `wikitoolkit ledger plan-fix --json` over the snapshot emits a well-formed `FixPlan` with
+      `major`/`critical` groups sorted first (severity-ordered); do not assert a literal group
+      count — see the STALE-DATA note in the test file (the live ledger snapshot grows
+      continuously and is not a fixed fixture).
 - [ ] `--json` stdout is pure JSON (`FixPlan.model_validate_json` succeeds); notices go to stderr.
 - [ ] `WikiStoreBusy` ⇒ plan from `sdd/ledger/issues.jsonl`, exit 0.
 - [ ] Parents resolved via `feature_index_status`; an unreadable index dir ⇒ all `open=False`, plan still emitted.
@@ -432,10 +452,17 @@ def test_spec_parent_ids_only_feat_form(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid a6935fa922a644cf89436f4917643706)
+**Date**: 2026-09-19
+**Notes**: Added `_load_ledger_snapshot`, `_spec_parent_ids`, `_dedupe_slugs` helpers, `plan-fix`
+and `unclaim` commands, and `--resolved-by` on `close` to `cli.py` per blueprint verbatim.
+Created `test_cli_plan_fix.py` (8 tests) following the orchestrator's STALE-DATA note exactly
+(commit `6421c4a0e`): no hardcoded `len(plan.groups) == N`, synthetic vulnerability row
+injected for the refusal test. Two narrow, test-only fixes discovered while making tests
+pass (not blueprint deviations): `WikiStoreBusy` needs 3 ctor args
+(`db_path, operation, waited_seconds`), and Click 8.5 interleaves stdout/stderr in
+`result.output` so two tests parse `result.stdout` directly.
+Validation: `pytest tests/knowledge/wiki/test_cli_plan_fix.py tests/knowledge/wiki/test_cli_ledger.py -q` → 36 passed. 14 residual lint findings (B905/ASYNC240/B904/E741) are pre-existing style debt, left for `/sdd-done` per policy.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 381.1s · Tokens: n/a (native, no usage telemetry)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

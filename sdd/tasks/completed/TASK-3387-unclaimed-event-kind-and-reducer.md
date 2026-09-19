@@ -368,10 +368,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid b815080bcdfa4a5891eaa2ae4a682b99)
+**Date**: 2026-09-19
+**Notes**: Added the 12th `LedgerEventKind` member `issue.unclaimed`, `IssueUnclaimedPayload`
+(events.py) and `LedgerIndex._apply_issue_unclaimed` (index.py) mirroring `_apply_issue_claimed`
+(claimed→open, `claimed_by=None`, asserts an `unclaimed-by` edge; no-op on open/closed/superseded
+or missing page). Filled in the blueprint's TestUnclaim + events tests verbatim.
+Validation: `pytest tests/knowledge/wiki/test_ledger_events.py tests/knowledge/wiki/test_ledger_index.py -q` → 31 passed.
+`ruff check` + `black --check` clean. Merged via `coder_merge` → merged, engine lint autofix (black) applied, no residual findings.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 191.2s · Tokens: n/a (native, no usage telemetry)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

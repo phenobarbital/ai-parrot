@@ -362,10 +362,17 @@ class TestFeatureIndexStatus:  # 2 tests
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid bbd1f920da354dc69e896b8b31055d88)
+**Date**: 2026-09-19
+**Notes**: `close_issue(resolved_by=)` now fail-closed (guards on open/claimed status via a shared
+`_issue_state()` helper before appending); new `unclaim()` guarded on `status == claimed`; new
+`feature_index_status()` does a single glob scan of `sdd/tasks/index/*.json`, skips malformed
+files, omits features with no index file from the result. Added `TestCloseEvidence`(4) +
+`TestUnclaim`(2) + `TestFeatureIndexStatus`(2) tests, all using the tmp_path-scoped
+`ledger_service` fixture (isolated per-test log) rather than the live, shared
+`sdd/ledger/issues.jsonl` snapshot — sidesteps the count-based flakiness flagged for
+TASK-3389/TASK-3390.
+Validation: `pytest tests/knowledge/wiki/test_ledger_service.py tests/knowledge/wiki/test_cli_ledger.py -q` → 53 passed. `ruff check` clean; `black` applied by the merge-time engine formatter.
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 203.3s · Tokens: n/a (native, no usage telemetry)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

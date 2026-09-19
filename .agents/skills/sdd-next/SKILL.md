@@ -42,7 +42,7 @@ Inspect all per-spec indexes (`sdd/tasks/index/*.json`), identify tasks whose de
 7. (FEAT-566, best-effort) Show ready ledger issues:
    - `wikitoolkit ledger ready 2>/dev/null || true`
    - list open, unclaimed issues (discovered work with no TASK-NNN yet)
-   - each entry suggests `sdd-task --from-issue <id> <spec.md>` to promote
+   - each entry suggests `sdd-fix <id>` (FEAT-572: plan-fix routes the issue's group to the Fast or SDD lane)
    - a missing/unbuilt ledger prints nothing here; never fatal, never blocks the rest of `sdd-next`
 
 ## References
