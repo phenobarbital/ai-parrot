@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T01:46:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3499-lsp-models.md"
+      "file": "sdd/tasks/completed/TASK-3499-lsp-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3500",
@@ -45,7 +46,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T02:05:17+00:00",
-      "file": "sdd/tasks/completed/TASK-3500-lsp-snapshots.md"
+      "file": "sdd/tasks/completed/TASK-3500-lsp-snapshots.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3501",
@@ -65,7 +67,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T02:19:30+00:00",
-      "file": "sdd/tasks/completed/TASK-3501-lsp-protocol.md"
+      "file": "sdd/tasks/completed/TASK-3501-lsp-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3502",
@@ -86,7 +89,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T02:38:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3502-lsp-session-lifecycle.md"
+      "file": "sdd/tasks/completed/TASK-3502-lsp-session-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3503",
@@ -106,7 +110,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T02:55:46+00:00",
-      "file": "sdd/tasks/completed/TASK-3503-lsp-session-diagnostics.md"
+      "file": "sdd/tasks/completed/TASK-3503-lsp-session-diagnostics.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3504",
@@ -127,7 +132,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T03:16:08+00:00",
-      "file": "sdd/tasks/completed/TASK-3504-lsp-navigation-toolkit.md"
+      "file": "sdd/tasks/completed/TASK-3504-lsp-navigation-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3505",
@@ -147,7 +153,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T15:06:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3505-lsp-diagnostic-baselines.md"
+      "file": "sdd/tasks/completed/TASK-3505-lsp-diagnostic-baselines.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3506",
@@ -165,7 +172,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T01:32:59+00:00",
-      "file": "sdd/tasks/completed/TASK-3506-lsp-mcp-lifecycle.md"
+      "file": "sdd/tasks/completed/TASK-3506-lsp-mcp-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3507",
@@ -186,7 +194,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T15:34:53+00:00",
-      "file": "sdd/tasks/completed/TASK-3507-lsp-installation-docs.md"
+      "file": "sdd/tasks/completed/TASK-3507-lsp-installation-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3508",
@@ -206,7 +215,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T17:39:45+00:00",
-      "file": "sdd/tasks/completed/TASK-3508-lsp-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-3508-lsp-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3509",
@@ -224,7 +234,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T15:19:20+00:00",
-      "file": "sdd/tasks/completed/TASK-3509-lsp-benchmark-accounting.md"
+      "file": "sdd/tasks/completed/TASK-3509-lsp-benchmark-accounting.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3510",
@@ -244,7 +255,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T15:51:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3510-lsp-benchmark-scenarios.md"
+      "file": "sdd/tasks/completed/TASK-3510-lsp-benchmark-scenarios.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3511",
@@ -266,7 +278,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T18:02:07+00:00",
-      "file": "sdd/tasks/completed/TASK-3511-lsp-benchmark-runner.md"
+      "file": "sdd/tasks/completed/TASK-3511-lsp-benchmark-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3512",
@@ -286,7 +299,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T18:19:36+00:00",
-      "file": "sdd/tasks/completed/TASK-3512-lsp-benchmark-report.md"
+      "file": "sdd/tasks/completed/TASK-3512-lsp-benchmark-report.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3513",
@@ -307,7 +321,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
       "completed_at": "2026-09-19T18:28:35+00:00",
-      "file": "sdd/tasks/completed/TASK-3513-lsp-seat-readiness.md"
+      "file": "sdd/tasks/completed/TASK-3513-lsp-seat-readiness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3514",
