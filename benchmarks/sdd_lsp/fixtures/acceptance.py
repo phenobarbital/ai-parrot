@@ -140,7 +140,13 @@ def run_behavior_check(
         )
     try:
         completed = subprocess.run(
-            [sys.executable, str(check_path)],
+            # -B: never read or write __pycache__/*.pyc. A fixture's entry_point is
+            # rewritten in place between variants (baseline/counterexample/expected_fix)
+            # by apply_variant(); two variants can land on the same source size within
+            # the same mtime second, which would otherwise let Python's default
+            # timestamp-based .pyc cache silently serve stale bytecode from a prior
+            # variant instead of recompiling the one actually on disk.
+            [sys.executable, "-B", str(check_path)],
             cwd=root,
             capture_output=True,
             text=True,
