@@ -276,9 +276,7 @@ class PyrightSession:
             raise LSPFailure("server_crashed", "session is not running")
         requested_paths = {source.path for source in sources}
         if len(requested_paths) > _MAX_OPEN_DOCUMENTS:
-            raise LSPFailure(
-                "resource_limit", f"cannot synchronize more than {_MAX_OPEN_DOCUMENTS} documents at once"
-            )
+            raise LSPFailure("resource_limit", f"cannot synchronize more than {_MAX_OPEN_DOCUMENTS} documents at once")
         for path in list(self._open_documents):
             if path not in requested_paths:
                 await self._close_document(path)
@@ -629,9 +627,7 @@ class PyrightSession:
             return
         if source.document_version == existing_version:
             if self._open_document_sha.get(path) != source.sha256:
-                raise LSPFailure(
-                    "invalid_request", f"document_version for {path!r} did not change but content did"
-                )
+                raise LSPFailure("invalid_request", f"document_version for {path!r} did not change but content did")
             return  # unchanged: no-op, preserves any cached diagnostics for warm reuse
         if source.document_version < existing_version:
             raise LSPFailure("invalid_request", f"document_version for {path!r} must increase monotonically")
