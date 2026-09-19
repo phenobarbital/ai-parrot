@@ -127,43 +127,40 @@ async def scrape_top_results(query: str) -> List[Dict[str, Any]]:
     Returns:
         The first ``TOP_N`` product rows that carry a title.
     """
-    obscura = ObscuraProcessManager(
+    async with ObscuraProcessManager(
         ObscuraProcessConfig(
             binary_path=config.get("OBSCURA_BINARY", fallback="obscura"),
             port=int(config.get("OBSCURA_PORT", fallback=9222)),
             stealth=True,  # anti-fingerprinting: Best Buy blocks plain headless browsers
             attach_only=config.getboolean("OBSCURA_ATTACH", fallback=False),
         )
-    )
-    # The toolkit only connects over CDP; it does not supervise Obscura.
-    endpoint = await obscura.start()
-    toolkit = WebBrowsingToolkit(
-        catalog_dir=CATALOG_DIR,
-        driver_type="obscura",
-        cdp_endpoint_url=endpoint,
-        confirm_runs=False,  # read-only public search, no HITL needed
-        default_timeout=30,
-    )
-    try:
-        await toolkit.register_site(
-            base_url="https://www.bestbuy.com",
-            name=SITE,
-            title="Best Buy",
-            aliases=["best buy", "bestbuy.com"],
+    ) as obscura:
+        toolkit = WebBrowsingToolkit(
+            catalog_dir=CATALOG_DIR,
+            driver_type="obscura",
+            cdp_endpoint_url=obscura.endpoint,
+            confirm_runs=False,  # read-only public search, no HITL needed
+            default_timeout=30,
         )
-        await toolkit.save_site_action(
-            site=SITE,
-            name="search-products",
-            description="Search the Best Buy catalog and extract the result cards",
-            params={"query": {"description": "Text to search for"}},
-            steps=SEARCH_STEPS,
-            source="user",
-            overwrite=True,  # keep the catalog in sync with SEARCH_STEPS on every run
-        )
-        run = await toolkit.run_site_action(SITE, "search-products", params={"query": query})
-    finally:
-        await toolkit.close_browser()
-        await obscura.stop()  # no-op when attached to an external Obscura
+        try:
+            await toolkit.register_site(
+                base_url="https://www.bestbuy.com",
+                name=SITE,
+                title="Best Buy",
+                aliases=["best buy", "bestbuy.com"],
+            )
+            await toolkit.save_site_action(
+                site=SITE,
+                name="search-products",
+                description="Search the Best Buy catalog and extract the result cards",
+                params={"query": {"description": "Text to search for"}},
+                steps=SEARCH_STEPS,
+                source="user",
+                overwrite=True,
+            )
+            run = await toolkit.run_site_action(SITE, "search-products", params={"query": query})
+        finally:
+            await toolkit.close_browser()
 
     if not run["success"]:
         errors = [step["error"] for step in run["executed"] if step.get("error")]
