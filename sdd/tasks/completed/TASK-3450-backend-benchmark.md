@@ -504,5 +504,18 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (sequential fallback — parrot-sdd-coder MCP server unresponsive)
+**Date**: 2026-09-19
+**Notes**: `examples/planogram/backend_benchmark.py` per blueprint (models, `check_backend`, `_instrument`,
+`_metrics_from_result`, `run_benchmark` with keyword-only `pipeline_factory` seam, `_pin_metadata`,
+`_aggregate`, `_write_reports`, CLI). Per backend × photo: `repeats` cold runs (no vision cache), then a
+warm-up + one measured run sharing a temporary cache dir; aggregates use cold runs only (mean ± stdev).
+`run()` results are per-image containers (`detections[*].shapes`, `identifications[*].identifications/added`)
+— the script flattens them; LLM-added objects are counted once by shape id across shapes/identifications/added.
+Pinned prompt versions: IDENTIFY/DETECT/VERIFY_PROMPT_VERSION (all three exist). Parameters pinned from the
+PlanogramCompliance/VisionAdapter defaults (2 / 4 / 120.0 / repair_retries 1). Resolved backend ids per
+requested backend are added to metadata after the runs. A backend whose every run failed is flipped to
+`available=False`. Neither report contains "accuracy" or "recall" (test-enforced).
+Validation: 9/9 tests pass offline; ruff + black clean; `git check-ignore` prints nothing; no `print`;
+test_no_hardcoded_models still green.
+Seat: sdd-worker (sequential) · Backend: native · Model: claude-opus-5 · Attempts: 1
