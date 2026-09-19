@@ -340,16 +340,16 @@ async def test_legacy_overall_aggregation(fake_vision_client, synthetic_shelf_im
     assert result["overall_compliant"] is True
 
 
-async def test_legacy_empty_results_is_compliant_today(fake_vision_client, synthetic_shelf_image) -> None:
-    """TODAY's quirk (plan.py:347-351): an empty result list ⇒ score 0.0 but overall_compliant True.
+async def test_legacy_empty_results_is_not_compliant(fake_vision_client, synthetic_shelf_image) -> None:
+    """An empty result list ⇒ score 0.0 and overall_compliant False (FEAT-574's single intended legacy change).
 
-    The type-hooks task (TASK-3442) intentionally flips ONLY this expectation to False — keep it isolated here.
+    Before the run() template (TASK-3443) the legacy quirk returned overall_compliant True here.
     """
     pipeline = build_pipeline(fake_vision_client, [])
     pipeline._type_handler.check_planogram_compliance = MagicMock(return_value=[])
     result = await pipeline.run(synthetic_shelf_image)
     assert result["overall_compliance_score"] == 0.0
-    assert result["overall_compliant"] is True
+    assert result["overall_compliant"] is False
 
 
 EIGHT_KEYS = {
