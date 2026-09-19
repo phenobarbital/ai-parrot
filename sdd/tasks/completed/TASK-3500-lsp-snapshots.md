@@ -124,4 +124,46 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Implemented `capture_workspace(config, paths)` in `parrot_tools/lsp/snapshot.py`: builds the deterministic
+manifest via `git ls-files -z` (tracked, `--deleted`, `--others --exclude-standard`), filtered to `.py`/`.pyi`
+plus in-root `pyrightconfig.json`/`pyproject.toml`/`uv.lock`/`.python-version`. Hashing/reading runs in an owned
+subprocess worker (stable open→fstat→read→fstat with `O_NONBLOCK`, 10s deadline, `_kill_and_reap()` on
+timeout/cancellation — verified no orphaned processes via `/proc` cmdline scan + `ps -ef`). Confinement checks
+(traversal, escaping symlinks, FIFO/non-regular targets, ignored/unlisted paths, tracked-deleted tombstones,
+oversized files/manifest, invalid UTF-8) each map to a fixed `LSP_ERROR_CODES` entry. Digest is sha256 over
+sorted file hashes + tombstones + `config_digest`, so both content edits and non-target config changes
+invalidate it. `to_lsp_position`/`from_lsp_range` (+ private `_from_lsp_position`) convert one-based Unicode
+↔ zero-based UTF-16, astral/surrogate-pair aware, CRLF/tabs/EOF handled, half-surrogate ranges rejected as
+`protocol_error`.
+
+**Codebase Contract check (requested by TASK-3499):** confirmed `DiagnosticBatch`/`DiagnosticSnapshot.diagnostics:
+dict[str, list[RawDiagnostic]]` — this task does not consume or produce that field; only `WorkspaceSnapshot`/
+`LSPFailure` are touched and their shapes matched exactly. No mismatch.
+
+**Design note flagged for reviewers of M3 (toolkit.py):** `from_lsp_range`/`_from_lsp_position` are new helpers
+not named in the task's Implementation Blueprint (only `capture_workspace`/`to_lsp_position` were listed); added
+because AC4 requires "the inverse range normalization needed by toolkit results" and the blueprint text says its
+listed interfaces are required but not exhaustive. Returns the existing `SourceRange` model, no new contract
+symbol. Also: git-subprocess failures (not a worktree, subprocess timeout) map to `resource_limit`, and malformed
+worker JSON maps to `protocol_error` — best-fit choices onto the fixed vocabulary since no more specific code
+exists for either case; documented in code comments.
+
+Validation: `PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot/src pytest
+packages/ai-parrot-tools/tests/lsp/test_snapshot.py -q` → 4 passed. Full `packages/ai-parrot-tools/tests/lsp/`
+(includes TASK-3499's `test_models.py`) → 18 passed, no regression. `black`/`ruff check` clean on both touched
+files (one `ASYNC240` finding fixed by hoisting a module-level constant resolve out of the async function).
+
+Post-merge regression (`select_tests --tier merge`): 98 passed (`dev_loop/sdd_coder` + `packages/ai-parrot/tests/mcp`),
+48 passed/1 deselected (`packages/ai-parrot-tools/tests/lsp` + `tool_optimizations/integration`), 15 passed
+(`tests/mcp/test_toolkit_server.py`).
+
+Coder-feedback patterns checked: hasattr-duck-typing — not applicable (error dispatch is on the fixed
+`LSPFailure.code` string, checked exactly, no ambiguous duck-typed branching). unisolated-real-home-in-tests —
+verified: no test touches `$HOME`/`PARROT_HOME`/XDG paths; all I/O is scoped to `tmp_path`.
+unscoped-removal-reuses-full-uninstall-helper — not applicable (all functions are new, nothing reused/wrapped).
+
+No code review deferred findings for this delivery; the two design notes above are carried forward for later-task
+review, not defects. No correction feedback filed.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a (not reported by native
+Agent dispatch) · Tokens: 221067 (subagent_tokens, per completion notification).
