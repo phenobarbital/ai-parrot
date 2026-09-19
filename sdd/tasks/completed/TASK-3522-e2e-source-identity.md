@@ -172,5 +172,41 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `parrot.e2e.evidence.capture_identity(plan,
+*, worktree) -> SourceIdentity`: async `git rev-parse HEAD` for the commit;
+a canonical sorted manifest via async `git ls-files -z --cached --others
+--exclude-standard` hashing each entry's mode + content (sha256 for regular
+files, raw symlink target for links, never dereferenced), excluding only
+`artifacts/logs/e2e/`, `sdd/tasks/`, `sdd/ledger/`, this feature's own
+`sdd/state/<feature_id>/e2e/` run-evidence dir, and pycache/bytecode paths;
+separate spec-file and plan-content hashes; a nonsecret environment
+fingerprint (interpreter version/path, all installed distribution versions,
+uv.lock digest, model, target kind/profile, opt-in flags — never credential
+values). All git calls use `asyncio.create_subprocess_exec`; heavy hashing
+runs via `asyncio.to_thread`. Failures raise `E2EConfigError` with specific
+reason codes, matching TASK-3521's conventions (re-implemented locally
+rather than importing plan.py's private helpers — narrower containment
+contract, spec_path only).
+
+Four decisions flagged for reviewer/M3-M6 confirmation: (1) `TargetConfig.
+options` deliberately excluded from the fingerprint (unvalidated values
+could carry credential-shaped content; only `kind`/`profile` folded in) —
+conservative choice, not a spec requirement; (2) the fingerprint's
+`distributions` map covers ALL installed distributions (spec says
+"installed distribution versions" unqualified), making `environment_sha256`
+sensitive to any dependency change — worth confirming against TASK-3523's
+`verify_evidence` tolerance; (3) `capture_identity` requires the worktree
+to be a git repo with ≥1 commit; (4) `parrot/e2e/__init__.py`'s stale
+docstring ("evidence lands in later tasks, must not be imported here") was
+left untouched since it's outside this task's file list — plan.py already
+contradicts it too; flagged for the spec owner to correct in a later task.
+
+Tests: `packages/ai-parrot-server/tests/unit/e2e/test_source_identity.py`
+(new, 25 tests, autouse fixture clears all env vars this module reads for
+every test, fresh `git init` under `tmp_path`, never touches the real
+repo). `pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 102 passed
+(full M2 unit regression, includes TASK-3520/3521, no regression).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 ·
+Duration: 639.5s · Tokens: 165732 (subagent, in+out combined; native
+usage_known=false in engine seats roll-up).
