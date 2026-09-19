@@ -156,7 +156,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,8 +166,8 @@
       "parallelism_notes": "depends_on TASK-3392: the twins invoke `wikitoolkit ledger plan-fix --json`, `ledger unclaim` and `close --resolved-by`, which that task creates in cli.py. Creates three new markdown files.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3394-sdd-fix-twins.md"
+      "completed_at": "2026-09-19T22:55:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3394-sdd-fix-twins.md"
     },
     {
       "id": "TASK-3395",
