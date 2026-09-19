@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3419, TASK-3430, TASK-3438, TASK-3443
@@ -419,7 +419,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+product_on_shelves.py (insertions + widened typing import only; every legacy method byte-identical): ClassVars (FULL_IMAGE, requires_slots_definition True, min_usable_shapes 3, untouched image, DEFAULT_PERCEPTION_MODE 'llm_detector'), _perception_mode (ValueError on anything but cv/llm_detector), get_shape_profiles (PROVISIONAL — spike outcome inconclusive: the spike's candidate product_body/product_box (edge), fact_tag (bright), backlit_zone (ZONE) values), fallback_detection_prompt (legacy hint wording duplicated with SORTED hints, object_identification_prompt wins when set, output part adapted to the detector's Detections schema), perceive (cv: propose_shapes via ctx.executor with candidate_shape_id ids; llm_detector: llm_detect_shapes; common tail: zones split off, shelf edges via ctx.executor.run(detect_shelf_edges) -> rows by band (vertical clustering when no edge), one SHAPE_IS_SLOT slot per product/box shape with anchors remapped to shape ids, fact-tag/zone OCR via ctx.executor when ctx.ocr.available, assign_membership with zones), identify (identify_full_image; vocabulary = populated Descriptors FIELD NAMES, same reason as TASK-3444).
+Consequence of the spec'd requires_slots_definition=True (not covered by the task lists): every test building ProductOnShelves from a real config without a slots definition fails at construction. Fixture-only fixes: minimal _MIN_SLOTS_DEFINITION added to test_pos_compliance_characterization / test_pos_fact_tags_illumination_characterization (TASK-3422/3423), packages/ai-parrot-pipelines/tests/test_planogram_types.py::planogram_config_obj, tests/pipelines/test_grid_integration.py (2 configs), tests/pipelines/test_grid_regression.py (base); test_legacy_run_orchestration (TASK-3424) now builds a _LegacyProductOnShelves subclass that restores the base hooks so it keeps pinning the legacy adapter sequence on the real legacy methods. Production configs of product_on_shelves need the reviewed slots backfill before deploy (runbook, TASK-3448) — by design.
+Until TASK-3446 adds compare, ProductOnShelves validates as legacy-only; the new test builds its config with prompts and clears object_identification_prompt after construction.
+Tests: test_pos_migrated_perceive_identify.py 7 passed; full packages/ai-parrot-pipelines/tests 325 passed (+1 pre-existing); tests/pipelines 138; handler suite unchanged (2 pre-existing failures). No new ruff findings in product_on_shelves.py.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
