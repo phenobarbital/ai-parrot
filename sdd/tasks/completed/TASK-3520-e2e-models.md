@@ -204,5 +204,30 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Created `packages/ai-parrot-server/src/parrot/e2e/`
+with `models.py` (10 strict Pydantic v2 models fixed by spec §2 —
+`E2EPlan`, `TargetConfig`, `ScenarioSpec`, `LiveBudget`, `ProcessIdentity`,
+`RunState`, `SourceIdentity`, `ScenarioResult`, `E2EVerdict`,
+`VerificationResult` — all `extra="forbid"`, UTC-only timestamps, safe-slug
+IDs, pytest node-ID validation rejecting wildcards/bare directories,
+required-policy coverage enforcement), `errors.py` (`E2EConfigError`,
+`E2EPrerequisiteError`, `E2ETargetError`, `E2EBudgetError`,
+`E2EEvidenceError` with the exact §2 exit-code mapping plus
+EXIT_SIGINT/EXIT_SIGTERM constants), and `__init__.py` (re-exports only, no
+side effects). Scope intentionally stopped at this task's declared 4 files
+— `plan.py`/`evidence.py` mentioned in spec §3's M2 description belong to
+other tasks (TASK-3521/3523) and were not created here.
+
+Tests: `packages/ai-parrot-server/tests/unit/e2e/test_models.py` (new, 50
+tests) covering success construction, invalid-input rejection (malformed
+enums, unsafe IDs, wildcard node IDs, duplicate scenario/node IDs,
+undeclared references, path traversal, naive datetimes, bad digests,
+non-positive limits, forbidden extra fields), required-coverage rules and
+exit-code mapping. `PYTHONPATH="packages/ai-parrot-server/src:packages/ai-parrot/src"
+pytest packages/ai-parrot-server/tests/unit/e2e/test_models.py -q` → 50
+passed (ai-parrot-server's own conftest already stubs the Cython
+parrot.utils extensions, so no .so-copy workaround was needed here).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 ·
+Duration: 560.4s · Tokens: 160135 (subagent, in+out combined; native
+usage_known=false in engine seats roll-up).
