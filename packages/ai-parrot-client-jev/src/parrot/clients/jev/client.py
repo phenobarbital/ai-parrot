@@ -697,6 +697,13 @@ class JevClient(AbstractClient):
         ``questions=`` (or the constructor default) is used and ``output`` is
         the :class:`SystemOneResponse`.
 
+        Emits ``BeforeClientCallEvent`` before the System One request and exactly
+        one terminal event: ``AfterClientCallEvent`` (tokens, duration,
+        ``response.model``, ``finish_reason="completed"``) when the request
+        returns, or ``ClientCallFailedEvent`` when ``system_one`` raises. Errors
+        while resolving questions or state (before the request) and parse errors
+        (after it) emit no failed event.
+
         Args:
             prompt: The state text (or ``state["input"]`` when ``system_prompt`` is set).
             output_type: Pydantic model to derive questions from and parse into.
@@ -721,10 +728,43 @@ class JevClient(AbstractClient):
         config_ = self._build_invoke_structured_config(output_type, structured_output)
         resolved_type = config_.output_type if config_ else None
         resolved_model = self._resolve_model(model)
+
+        # Input resolution: may fail without ever contacting System One, so it
+        # emits no lifecycle events at all (spec §2 "Where the before-event goes").
         try:
             resolved_questions = self._resolve_questions(questions, resolved_type)
             request_state = self._coerce_state(state) if state is not None else self._build_state(prompt, system_prompt)
+        except Exception as exc:
+            raise self._handle_invoke_error(exc) from exc
+
+        tc = self._emit_before_call(
+            client_name=self.client_name,
+            model=resolved_model,
+            temperature=None,
+            system_prompt=system_prompt,
+            has_tools=False,
+        )
+        started = time.perf_counter()
+        try:
             response = await self.system_one(request_state, resolved_questions, model=resolved_model)
+        except Exception as exc:
+            await self._emit_failed_call_safe(tc, self.client_name, resolved_model, started, exc)
+            raise self._handle_invoke_error(exc) from exc
+        elapsed = time.perf_counter() - started
+        usage = self._usage_from(response)
+        await self._emit_after_call(
+            tc,
+            client_name=self.client_name,
+            model=response.model,
+            duration_ms=elapsed * 1000,
+            input_tokens=usage.prompt_tokens,
+            output_tokens=usage.completion_tokens,
+            finish_reason="completed",
+        )
+
+        # Parsing happens after the terminal event: the tokens were consumed and
+        # billed, so a parse failure must not retract them (spec §2, decision 1).
+        try:
             output: Any = (
                 answers_to_type(response, resolved_type, noul_threshold=self.noul_threshold)
                 if resolved_type is not None
@@ -736,7 +776,7 @@ class JevClient(AbstractClient):
             output,
             resolved_type,
             response.model,
-            self._usage_from(response),
+            usage,
             raw_response=response.model_dump(mode="json"),
         )
 

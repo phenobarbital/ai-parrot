@@ -10,6 +10,7 @@ mapping). No live TypeSafe API calls are made.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from enum import Enum
 from typing import Literal, Optional
@@ -42,6 +43,11 @@ from parrot.clients.jev import (
 from parrot.clients.jev import client as jev_client_mod
 from parrot.clients.jev.exceptions import api_error, parse_retry_after
 from parrot.clients.jev.models import MAX_CHOICE_OPTIONS, normalize_questions, parse_question
+from parrot.core.events.lifecycle.events import (
+    AfterClientCallEvent,
+    BeforeClientCallEvent,
+    ClientCallFailedEvent,
+)
 from parrot.exceptions import InvokeError
 from parrot.memory.render import HistoryMessage
 from parrot.models import AIMessage
@@ -644,6 +650,118 @@ async def test_invoke_without_output_type_returns_response_and_wraps_errors(stub
         assert isinstance(excinfo.value.original, JevSchemaError)
     finally:
         await client.close()
+
+
+def _capture():
+    """Return ``(captured, async_callback)`` for one event class."""
+    captured: list = []
+
+    async def cb(event):
+        captured.append(event)
+
+    return captured, cb
+
+
+async def test_invoke_emits_before_and_after_with_usage(stub_api):
+    """invoke() success → one Before + one After carrying the response usage."""
+    server, _ = await stub_api()
+    client = _client(server)
+    before, before_cb = _capture()
+    after, after_cb = _capture()
+    client.events.subscribe(BeforeClientCallEvent, before_cb)
+    client.events.subscribe(AfterClientCallEvent, after_cb)
+    try:
+        await client.invoke("I was charged twice", output_type=Triage)
+    finally:
+        await client.close()
+    await asyncio.sleep(0.05)
+    assert len(before) == 1
+    assert len(after) == 1
+    assert after[0].input_tokens == 42
+    assert after[0].output_tokens == 0
+    assert after[0].model == "jev-latest"
+    assert after[0].finish_reason == "completed"
+    assert after[0].duration_ms > 0
+    assert after[0].client_name == "jev"
+
+
+async def test_invoke_api_error_emits_failed_and_raises_invokeerror(stub_api):
+    """system_one raises → one Failed, no After, InvokeError still raised."""
+
+    async def server_error(request):
+        return web.json_response({"error": "boom"}, status=500, headers={"x-typesafe-request-id": "r-500"})
+
+    server, _ = await stub_api(server_error)
+    client = _client(server)
+    failed, failed_cb = _capture()
+    after, after_cb = _capture()
+    client.events.subscribe(ClientCallFailedEvent, failed_cb)
+    client.events.subscribe(AfterClientCallEvent, after_cb)
+    try:
+        with pytest.raises(InvokeError):
+            await client.invoke("hello", questions={"urgent": Noul()})
+    finally:
+        await client.close()
+    await asyncio.sleep(0.05)
+    assert len(failed) == 1
+    assert len(after) == 0
+
+
+async def test_invoke_missing_questions_emits_nothing(stub_api):
+    """JevConfigurationError before the request → no events at all."""
+    server, calls = await stub_api()
+    client = _client(server)
+    before, before_cb = _capture()
+    after, after_cb = _capture()
+    failed, failed_cb = _capture()
+    client.events.subscribe(BeforeClientCallEvent, before_cb)
+    client.events.subscribe(AfterClientCallEvent, after_cb)
+    client.events.subscribe(ClientCallFailedEvent, failed_cb)
+    try:
+        with pytest.raises(InvokeError):
+            await client.invoke("hello")
+    finally:
+        await client.close()
+    await asyncio.sleep(0.05)
+    assert before == []
+    assert after == []
+    assert failed == []
+    assert calls == []
+
+
+@pytest.mark.parametrize("scenario", ["success", "api_error", "parse_error"])
+async def test_invoke_exactly_one_terminal_event(stub_api, scenario):
+    """Every invoke() that reaches dispatch emits exactly one terminal event."""
+
+    async def server_error(request):
+        return web.json_response({"error": "boom"}, status=500, headers={"x-typesafe-request-id": "r-500"})
+
+    handler = server_error if scenario == "api_error" else None
+    server, _ = await stub_api(handler)
+    client = _client(server)
+    after, after_cb = _capture()
+    failed, failed_cb = _capture()
+    client.events.subscribe(AfterClientCallEvent, after_cb)
+    client.events.subscribe(ClientCallFailedEvent, failed_cb)
+    try:
+        if scenario == "success":
+            await client.invoke("hello", questions={"urgent": Noul()})
+        elif scenario == "api_error":
+            with pytest.raises(InvokeError):
+                await client.invoke("hello", questions={"urgent": Noul()})
+        else:  # parse_error
+            # A valid System One field type ("foo": bool -> noul) whose name the
+            # stub server's fixed SAMPLE_ANSWERS never answers: dispatch succeeds,
+            # answers_to_type then raises for the missing required field.
+            class Unanswerable(BaseModel):
+                foo: bool = Field(description="Never present in SAMPLE_ANSWERS")
+
+            with pytest.raises(InvokeError):
+                await client.invoke("hello", output_type=Unanswerable)
+    finally:
+        await client.close()
+    await asyncio.sleep(0.05)
+    assert len(after) + len(failed) == 1
 
 
 async def test_ask_stream_yields_text_then_message(stub_api):
