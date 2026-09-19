@@ -277,4 +277,11 @@ See the blueprint test module.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `scripts/sdd/install_hooks.py` (idempotent install/uninstall of the
+`sdd-intake-prune` marker block in `post-checkout`/`post-merge`/`post-commit`;
+creates missing hooks with `#!/bin/sh` + `chmod +x`; preserves other blocks
+such as the parrot-wiki one; refuses with exit 2 on a missing hooks dir
+without writing anything) and `tests/sdd_scripts/test_install_hooks.py`.
+Merged cleanly (outcome: merged; lint autofix commit `4ea345c21`).
+
+Seat: gemini (google-compat) · Backend: google-compat · Model: gemini-3.5-flash · Attempts: 1 · Duration: 30.7s · Tokens: 174898/3404

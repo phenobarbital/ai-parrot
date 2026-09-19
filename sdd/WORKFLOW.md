@@ -388,6 +388,43 @@ via a `reuse_feature_id: FEAT-<NNN>` frontmatter field — see
 
 ---
 
+## Starting from an interview: `/sdd-spec` intake mode (FEAT-577)
+
+When you already know what you want and have no brainstorm or proposal, run
+`/sdd-spec` with no `--` notes (or pass `--interview`). It asks a fixed intake
+batch, researches the codebase (`--research full|light|none`, default `full`),
+runs 2–4 follow-up rounds informed by the findings, and writes a **spec**
+directly. The full procedure is `sdd/templates/intake.procedure.md`.
+
+### Flow
+```
+[Intake Interview] ──> [Codebase Research] ──> [2-4 Follow-up Rounds] ──> [Spec Generation]
+```
+
+### Flags
+- `--interview`: Force intake mode (warns and ignores if an exploration doc exists).
+- `--no-interview`: Skip intake and follow the standard path (unattended lanes always pass this).
+- `--resume [<staging-dir>]`: Resume an interrupted intake run from a staging directory.
+- `--research <full|light|none>`: Set codebase research depth (default: `full`).
+- `--no-gate`: Skip the research gate check.
+- `--budget <budget>`: Set token/time budget for the intake run.
+
+### Brainstorm Hand-off (G12)
+If the user decides during the interview that the feature is too complex or needs more exploration,
+they can decline the hand-off to spec generation. The intake run can then hand off to `/sdd-brainstorm`
+or `/sdd-proposal` to explore options first.
+
+### Staging & Retention (G13)
+Intake runs are staged under `sdd/state/.intake/` (which is git-ignored). Staged runs are pruned
+after 10 days by a daily git hook. Install this hook once with:
+```bash
+python -m scripts.sdd.install_hooks
+```
+To uninstall, run with `--uninstall`. The hook refuses to install if `core.hooksPath` is set to a custom path.
+Note that `/sdd-status` remains read-only during this process.
+
+---
+
 ## Parallelism Rules
 
 Claude Code agents can work in parallel when tasks have no shared dependencies:
@@ -416,7 +453,7 @@ The SDD workflow is unified across all three developer platforms:
 |---|---|---|
 | `/sdd-proposal` | `sdd-proposal` | Research a Jira issue, inline request, or notes file before writing a spec |
 | `/sdd-brainstorm` | `sdd-brainstorm` | Explore a feature idea, compare options, and write a brainstorm document |
-| `/sdd-spec` | `sdd-spec` | Scaffold a formal Feature Specification from exploration or direct request |
+| `/sdd-spec` | `sdd-spec` | Scaffold a formal Feature Specification from exploration, a direct request, or an intake interview (FEAT-577) |
 | `/sdd-task <spec.md>` | `sdd-task` | Decompose an approved spec into atomic task files and a per-spec index |
 | `/sdd-start <task>` | `sdd-start` | Implement and close one task inside the feature worktree |
 | `/sdd-done <feat>` | `sdd-done` | Verify, push, open or describe PR, and clean up the worktree |

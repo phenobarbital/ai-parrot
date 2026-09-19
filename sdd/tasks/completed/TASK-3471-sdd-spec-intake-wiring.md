@@ -246,4 +246,16 @@ See the blueprint test module.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Wired intake mode into both `/sdd-spec` twins (`.claude/commands/sdd-spec.md`,
+`.agent/workflows/sdd-spec.md`, kept byte-identical apart from the
+documented substitution) and `.agents/skills/sdd-spec/SKILL.md`: new flags,
+§1 trigger rule, new §1.5 Intake Mode pointing at
+`sdd/templates/intake.procedure.md`, §3b intake precondition + brief-source
+mapping, §6 staging promotion, §7 output line. Created
+`tests/sdd_scripts/test_sdd_spec_intake_contract.py`. Merged cleanly by the
+engine (outcome: merged; lint autofix commit `8da826f75`, black only).
+
+Merge-tier `select_tests --tier merge` run (with TASK-3474/3476 also
+merged): 46 + 7 passed, no failures.
+
+Seat: qwen (nova) · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 613.5s · Tokens: 2602909/18556

@@ -162,4 +162,24 @@ See the blueprint test block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `--no-interview` to every `/sdd-spec` invocation line in
+`.claude/agents/sdd-research.md` / `_subagent_data/sdd-research.md` (both
+copies, both flow-type lines) and `.claude/agents/sdd-planner.md` /
+`_subagent_data/sdd-planner.md`. Added
+`test_unattended_callers_pass_no_interview` to
+`tests/sdd_scripts/test_command_contracts.py`. Merged cleanly (outcome:
+merged, no lint changes needed).
+
+Merge-tier `select_tests` escalated the full `packages/ai-parrot/tests/flows/dev_loop`
+suite (core escalation triggered by the `.claude/agents/*` targets): 2243
+passed, 16 failed. Verified all 16 are pre-existing/environmental, not
+caused by this task — FEAT-577 touches zero files under
+`packages/*/src/parrot/`: (a) `test_no_credentials_skips_without_constructing_client`
+fails identically on `dev` HEAD directly (missing `NovaClient` attribute on
+`parrot.flows.dev_loop.dispatchers.nova`, unrelated to intake/no-interview);
+(b) the remaining dev_loop failures are a worktree-environment artifact
+(`ModuleNotFoundError: No module named 'parrot.utils.types'` — a compiled
+extension module absent from this worktree, a documented pre-existing
+worktree limitation). `tests/sdd_scripts/*` (65 tests) all passed.
+
+Seat: mistral (nova) · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 185.9s · Tokens: 471503/7360
