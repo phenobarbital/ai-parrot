@@ -508,10 +508,48 @@ class TestRefresh:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop —
+`parrot-sdd-coder` MCP server was fully unresponsive at this point in the
+run: 4 consecutive 30-minute timeouts)
+**Date**: 2026-09-19
+**Notes**: `discover_adr_sources` globs `config.adr_globs` and reuses
+`graphindex.cli._ALWAYS_SKIP`/`discover_python_files` directly (not
+reimplemented) for exclusion rules and the full code corpus scan.
+`_alias_index` builds a fresh alias→decision_id map per call, removing
+(not arbitrarily picking a winner for) any alias two records claim.
+`_resolve_citations` scans every indexed Python file (not just changed
+ones — the requirement most easily missed) and resolves each citation
+against the full stored inventory **plus** every freshly (re)parsed
+record this pass, so a brand-new or renamed ADR is resolvable in the
+same pass that creates it. `refresh_decisions` parses each source,
+attaches a wholesale-replaced `explains` link set every run (so a
+removed code citation loses its link rather than merely not gaining a
+new one), skips the write via `content_fingerprint` comparison when
+nothing changed (revision never bumps), catches `DecisionError` per
+record as a diagnostic (so writes stay per-record atomic and a retry
+converges), and counts — but never deletes — a record whose
+`source_path` no longer exists on disk. A full spec §4 synthetic fixture
+(`conftest.py::adr_repo`) covers accepted/superseded/proposed/unknown
+status, a genuinely duplicate `ADR-42` alias pair, malformed frontmatter,
+a >16000-character long ADR, an excluded-directory ADR, a citing Python
+module (module-scope comment + docstring citation + a same-named sibling
+symbol with no citation + a string-literal false-positive), and a
+Markdown doc linking an exact `sym:` id — shared for TASK-3497's reuse.
+12 tests: both discovery cases, first-sync/idempotent-no-op, link
+repair (a citation that resolves only after the ADR gains the alias it
+needs), link removal, deleted/renamed source handling, candidate
+preservation (byte-identical review history), partial-failure retry
+convergence, ambiguous-alias non-resolution, and zero-LLM-calls (asserted
+via a monkeypatch that raises if either `LLMFactory.create` or
+`AbstractClient.invoke` is ever touched).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in observable behavior. One internal
+return-type deviation from the blueprint's literal
+`_resolve_citations` signature (`tuple[dict[str, list[DecisionLink]], ...]`):
+`DecisionLink.evidence_indexes` must address the record's OWN evidence
+list per the `DecisionRecord` model's own invariant (verified in
+`models.py`'s `_check_invariants`), so `_resolve_citations` instead
+returns, per `decision_id`, `(extra_evidence, links)` — the extra
+`EvidenceRef`s to append and the links already indexed into that
+addition (shifted by `refresh_decisions` once the base record's own
+evidence length is known). Documented in the function's own docstring.
