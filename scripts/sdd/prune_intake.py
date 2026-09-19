@@ -36,11 +36,26 @@ class StaleIntake(BaseModel):
     age_source: str  # "updated_at" | "mtime"
 
 
-def _check_root(root: Path) -> Path:
-    """Return the resolved root, or raise ValueError when it is not an intake staging root."""
+def _repo_root() -> Path | None:
+    """Resolved top-level directory of the current git work tree, or None outside a repo."""
+    result = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip()).resolve()
+
+
+def _check_root(root: Path, repo_root: Path | None = None) -> Path:
+    """Return the resolved root, or raise ValueError when it is not an intake staging root inside a repo.
+
+    ``repo_root`` defaults to the current git work tree's top level (via ``_repo_root()``);
+    callers may pass it explicitly (e.g. tests pinning a synthetic repo boundary).
+    """
     resolved = root.resolve()
     if resolved.parts[-3:] != ("sdd", "state", ".intake"):
         raise ValueError(f"refusing to prune outside sdd/state/.intake: {root}")
+    repo_root = repo_root.resolve() if repo_root is not None else _repo_root()
+    if repo_root is None or not (resolved == repo_root or resolved.is_relative_to(repo_root)):
+        raise ValueError(f"refusing to prune a root outside the repository: {root}")
     return resolved
 
 
@@ -60,11 +75,16 @@ def run_age(run_dir: Path, now: datetime) -> tuple[timedelta, str]:
         return now - mtime, "mtime"
 
 
-def find_stale(root: Path, max_age_days: int = DEFAULT_MAX_AGE_DAYS, now: datetime | None = None) -> list[StaleIntake]:
+def find_stale(
+    root: Path,
+    max_age_days: int = DEFAULT_MAX_AGE_DAYS,
+    now: datetime | None = None,
+    repo_root: Path | None = None,
+) -> list[StaleIntake]:
     """Direct child dirs of ``root`` (no symlinks) older than ``max_age_days``. Missing root → []."""
     if not root.exists():
         return []
-    resolved = _check_root(root)
+    resolved = _check_root(root, repo_root)
     now = now or datetime.now(timezone.utc)
     max_age = timedelta(days=max_age_days)
     stale: list[StaleIntake] = []
@@ -78,12 +98,17 @@ def find_stale(root: Path, max_age_days: int = DEFAULT_MAX_AGE_DAYS, now: dateti
 
 
 def prune(
-    root: Path, max_age_days: int = DEFAULT_MAX_AGE_DAYS, *, apply: bool = False, now: datetime | None = None
+    root: Path,
+    max_age_days: int = DEFAULT_MAX_AGE_DAYS,
+    *,
+    apply: bool = False,
+    now: datetime | None = None,
+    repo_root: Path | None = None,
 ) -> list[StaleIntake]:
     """Return the stale runs; delete them only when ``apply``. Raises ValueError for an unsafe root."""
-    stale = find_stale(root, max_age_days, now)
-    if apply:
-        resolved_root = _check_root(root)
+    stale = find_stale(root, max_age_days, now, repo_root)
+    if apply and root.exists():
+        resolved_root = _check_root(root, repo_root)
         for run in stale:
             if run.path.parent != resolved_root or run.path.is_symlink():
                 continue

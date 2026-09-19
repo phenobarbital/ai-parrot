@@ -625,7 +625,7 @@ if [ -d "$DR" ]; then
 fi
 
 # Intake mode promotion (FEAT-577)
-if [ -d "$INTAKE_STAGE" ]; then
+if [ -d "$STAGE" ]; then
   # Set feat_id and phase: committed in intake.json BEFORE staging
   python -c "
 import json, sys
@@ -634,16 +634,16 @@ d['feat_id'] = sys.argv[2]
 d['phase'] = 'committed'
 d['updated_at'] = __import__('datetime').datetime.utcnow().isoformat() + '+00:00'
 json.dump(d, open(sys.argv[1], 'w'), indent=2)
-" "$INTAKE_STAGE/intake.json" "$FEAT_ID"
+" "$STAGE/intake.json" "$FEAT_ID"
   
   INTAKE_PROMOTED="sdd/state/$FEAT_ID/intake"
   if [ -e "$INTAKE_PROMOTED" ]; then
     echo "⚠️  $INTAKE_PROMOTED already exists — leaving intake staging in place for manual review (run-id ${RUN_ID}); not overwriting existing intake data."
   else
-    mkdir -p "sdd/state/$FEAT_ID" && cp -a "$INTAKE_STAGE"/. "$INTAKE_PROMOTED"/ \
-      && rm -rf "$INTAKE_STAGE" \
+    mkdir -p "sdd/state/$FEAT_ID" && cp -a "$STAGE"/. "$INTAKE_PROMOTED"/ \
+      && rm -rf "$STAGE" \
       && git add "$INTAKE_PROMOTED/" \
-      || { echo "⚠️  Promotion of $INTAKE_STAGE failed — left in place for inspection (run-id ${RUN_ID})." ; }
+      || { echo "⚠️  Promotion of $STAGE failed — left in place for inspection (run-id ${RUN_ID})." ; }
   fi
 fi
 

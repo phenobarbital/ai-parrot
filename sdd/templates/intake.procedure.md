@@ -227,7 +227,7 @@ Switch to `/sdd-brainstorm` (seeded with this intake), or continue to the spec?
   - Set `intake.json.phase = "handed_off"`
   - Set `research.handoff_declined = false`
   - Stop `/sdd-spec` (no §2d–§6, no FEAT-ID)
-  - Print: `Run: /sdd-brainstorm <slug> --intake: <STAGE>`
+  - Print: `Run: /sdd-brainstorm <slug> -- intake: <STAGE>`
   - The staging dir stays in place and is pruned under G13
 
 - **Continue (`c`)**:

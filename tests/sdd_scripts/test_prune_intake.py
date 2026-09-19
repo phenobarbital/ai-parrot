@@ -32,35 +32,35 @@ def _run(root: Path, name: str, age_days: float | None) -> Path:
     return d
 
 
-def test_find_stale_uses_updated_at(root: Path) -> None:
+def test_find_stale_uses_updated_at(root: Path, tmp_path: Path) -> None:
     stale_run = _run(root, "feat-x-RUN1", 11)
     fresh_run = _run(root, "feat-y-RUN2", 3)
-    stale = find_stale(root, now=_NOW)
+    stale = find_stale(root, now=_NOW, repo_root=tmp_path)
     assert [s.path for s in stale] == [stale_run]
     assert stale[0].age_source == "updated_at"
     assert stale[0].age_days == pytest.approx(11.0, abs=0.01)
     assert fresh_run.exists()
 
 
-def test_find_stale_falls_back_to_mtime(root: Path) -> None:
+def test_find_stale_falls_back_to_mtime(root: Path, tmp_path: Path) -> None:
     d = _run(root, "feat-z-RUN3", None)
     old_time = (_NOW - timedelta(days=15)).timestamp()
     os.utime(d, (old_time, old_time))
-    stale = find_stale(root, now=_NOW)
+    stale = find_stale(root, now=_NOW, repo_root=tmp_path)
     assert len(stale) == 1
     assert stale[0].path == d
     assert stale[0].age_source == "mtime"
     assert stale[0].age_days == pytest.approx(15.0, abs=0.01)
 
 
-def test_prune_dry_run_deletes_nothing(root: Path) -> None:
+def test_prune_dry_run_deletes_nothing(root: Path, tmp_path: Path) -> None:
     stale_run = _run(root, "feat-a-RUN1", 20)
-    result = prune(root, apply=False, now=_NOW)
+    result = prune(root, apply=False, now=_NOW, repo_root=tmp_path)
     assert len(result) == 1
     assert stale_run.exists()
 
 
-def test_prune_apply_deletes_only_stale_children(root: Path) -> None:
+def test_prune_apply_deletes_only_stale_children(root: Path, tmp_path: Path) -> None:
     stale_run = _run(root, "feat-a-RUN1", 20)
     fresh_run = _run(root, "feat-b-RUN2", 1)
     root_file = root / "not-a-dir.txt"
@@ -71,7 +71,7 @@ def test_prune_apply_deletes_only_stale_children(root: Path) -> None:
     symlinked = root / "feat-c-RUN3"
     symlinked.symlink_to(target, target_is_directory=True)
 
-    result = prune(root, apply=True, now=_NOW)
+    result = prune(root, apply=True, now=_NOW, repo_root=tmp_path)
 
     assert [r.path for r in result] == [stale_run]
     assert not stale_run.exists()
@@ -91,6 +91,25 @@ def test_prune_rejects_unsafe_root(tmp_path: Path) -> None:
     exit_code = main(["--root", str(unsafe_root), "--apply"])
     assert exit_code == 2
     assert unsafe_root.exists()
+
+
+def test_prune_rejects_correctly_suffixed_root_outside_repo(tmp_path: Path) -> None:
+    """A root with the right ``sdd/state/.intake`` suffix but outside the declared repo boundary
+    must still be rejected — regression for the CRITICAL ``_check_root`` bypass (FEAT-577 review):
+    a root that only checked the last 3 path components let ``--root /anywhere/sdd/state/.intake``
+    pass and get pruned even when it resolved outside any repository.
+    """
+    fake_repo = tmp_path / "repo"
+    fake_repo.mkdir()
+    outside_root = tmp_path / "elsewhere" / "sdd" / "state" / ".intake"
+    outside_root.mkdir(parents=True)
+    stale_run = _run(outside_root, "feat-x-RUN1", 20)
+
+    with pytest.raises(ValueError):
+        find_stale(outside_root, now=_NOW, repo_root=fake_repo)
+    with pytest.raises(ValueError):
+        prune(outside_root, apply=True, now=_NOW, repo_root=fake_repo)
+    assert stale_run.exists()
 
 
 def test_prune_missing_root_is_noop(tmp_path: Path) -> None:
