@@ -259,7 +259,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -270,8 +270,8 @@
       "parallelism_notes": "uses CandidateBatch from TASK-3479 and sha1_of_span/verify_freshness from TASK-3487 (decisions/evidence.py)",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3491-candidate-generation.md"
+      "completed_at": "2026-09-19T20:52:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3491-candidate-generation.md"
     },
     {
       "id": "TASK-3492",

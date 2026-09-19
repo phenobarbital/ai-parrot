@@ -582,10 +582,39 @@ class TestEvidenceDrift:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop — this
+task's classification was `unknown`, and the `parrot-sdd-coder` MCP server
+rejected it as "not eligible" across every seat rotation over several
+re-plans before becoming fully unresponsive)
+**Date**: 2026-09-19
+**Notes**: `build_packet` derives the target's rel_path from a `sym:`/
+`file:`/bare-path target string, always includes ALL target evidence
+first (raising `ADR_GENERATION_LIMIT` if that alone exceeds `max_files`/
+`max_input_tokens`), then greedily adds supplementary entries in order,
+one `DecisionDiagnostic` per dropped entry once the bound would be
+exceeded. `validate_candidates` caps `max_candidates` (diagnostic on
+overflow) then rejects per-candidate on empty citations, out-of-range
+indexes, or an empty/whitespace-only `decision` (`ADR_INVALID_ARGUMENT`),
+never sinking a valid sibling. `recheck_evidence` reuses
+`evidence.verify_freshness` per packet entry and reports
+`ADR_EVIDENCE_CHANGED` for anything not `"current"`. `generate_candidates`
+wraps exactly one `client.invoke()` in `asyncio.timeout`, mapping
+`TimeoutError`→`ADR_MODEL_TIMEOUT` and any other exception→
+`ADR_MODEL_FAILED` using only `type(exc).__name__` (never the exception
+text, which may carry a leaked credential). 19 tests covering
+configuration, all four bound cases, all five validation cases, all five
+invocation cases (including the exact-one-invocation and
+payload-not-leaked assertions), and both evidence-drift cases — all pass
+with a `FakeClient`, no network calls.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. Two implementation choices not spelled
+out verbatim in the blueprint, both consistent with its stated intent:
+(1) `_target_rel_path` parses `sym:<path>#<symbol>` / `file:<path>` /
+bare-path target strings to determine which evidence entries are "the
+target's own" versus supplementary — the blueprint's FILL IN comment
+names this split but not how to derive it from a single `target: str`.
+(2) per-candidate rejections (forged/empty citation, empty decision) use
+`ADR_INVALID_ARGUMENT`, since the task's own failure-mapping table only
+names `ADR_GENERATION_LIMIT` for bound overruns (used here for the
+`max_candidates` cap) and has no separate code for a malformed individual
+candidate.
