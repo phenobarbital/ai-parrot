@@ -22,7 +22,7 @@ tags:
 **Feature ID**: FEAT-581
 **Date**: 2026-09-19
 **Author**: Jesus Lara (jesuslarag@gmail.com); specification prepared by Codex
-**Status**: draft
+**Status**: approved
 **Target version**: next compatible 1.0.x release; release assignment pending
 **Source**: `sdd/proposals/agentic-e2e-testing.brainstorm.md` (reviewed 2026-09-19)
 **Research baseline**: `7b89150e1cd4426cd78a809a32aa7d3706d456ad` on `dev`
