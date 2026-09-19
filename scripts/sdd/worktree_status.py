@@ -194,21 +194,35 @@ def _check_health(wt_path: Path, base_branch: str) -> WorktreeHealth:
 
 
 def _parse_porcelain(output: str) -> list[tuple[Path, str | None]]:
-    """Parse ``git worktree list --porcelain`` into [(path, branch_or_None)]."""
+    """Parse ``git worktree list --porcelain`` into [(path, branch_or_None)].
+
+    Every ``worktree`` block is registered exactly once, even when it has no
+    ``branch refs/heads/...`` line (detached HEAD, or a bare repository) — in
+    that case the branch is ``None`` rather than the block being dropped.
+    """
     worktrees: list[tuple[Path, str | None]] = []
     current: Path | None = None
+    current_branch: str | None = None
+
+    def _flush() -> None:
+        nonlocal current, current_branch
+        if current is not None:
+            worktrees.append((current, current_branch))
+        current = None
+        current_branch = None
 
     for raw in output.splitlines():
         line = raw.strip()
         if line.startswith("worktree "):
+            _flush()
             current = Path(line[len("worktree ") :]).resolve()
         elif line.startswith("branch refs/heads/") and current is not None:
-            branch = line[len("branch refs/heads/") :]
-            worktrees.append((current, branch))
+            current_branch = line[len("branch refs/heads/") :]
         elif not line:
-            # Blank line resets current
-            current = None
+            # Blank line ends the current block
+            _flush()
 
+    _flush()
     return worktrees
 
 
