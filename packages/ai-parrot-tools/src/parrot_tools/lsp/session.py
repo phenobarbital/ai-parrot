@@ -232,7 +232,7 @@ class PyrightSession:
         self._pending[request_id] = future
         try:
             await write_message(self._process.stdin, build_request(request_id, method, params))
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             self._pending.pop(request_id, None)
             raise
 

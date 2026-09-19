@@ -42,8 +42,14 @@ _MAX_MANIFEST_FILES = 10_000
 _MAX_MANIFEST_BYTES = 128 * 1024 * 1024  # 128 MiB
 _WORKER_DEADLINE_S = 10.0
 _MANIFEST_PASS_DEADLINE_S = 10.0
-#: Defensive cap on the worker's own JSON response so a runaway/garbled
-#: worker can never make the parent buffer an unbounded amount of memory.
+#: Defensive cap on the worker's own JSON response, checked once
+#: ``proc.communicate()`` returns. NOTE: ``communicate()`` itself already
+#: buffers the entire response before this check runs, so this cap bounds
+#: what the parent *accepts*, not what it *buffers* in memory for one
+#: worker call — it relies on the worker's own internal bounds
+#: (``_MAX_MANIFEST_BYTES`` et al.) to keep a single response small, it
+#: does not independently enforce a hard memory ceiling on a runaway
+#: worker. See FEAT-580 code review Important #8.
 _MAX_WORKER_RESPONSE_BYTES = 64 * 1024 * 1024
 
 #: Config/lock files (by basename) that are part of the deterministic
