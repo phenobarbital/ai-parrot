@@ -16,7 +16,7 @@
       "feature_id": "FEAT-577",
       "feature": "sdd-feature-specification",
       "spec": "sdd/specs/sdd-feature-specification.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "no dependencies: creates intake.schema.json and widens state.schema.json; the foundation other tasks read",
       "assigned_to": null,
       "started_at": "2026-09-18T23:53:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3469-intake-state-schemas.md"
+      "completed_at": "2026-09-19T00:10:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3469-intake-state-schemas.md"
     },
     {
       "id": "TASK-3470",
