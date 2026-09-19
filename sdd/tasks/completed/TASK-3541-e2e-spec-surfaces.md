@@ -209,5 +209,25 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented policy metadata + E2E Scenarios template in
+`sdd/templates/spec.md`, matching generation rules in `.claude/commands/sdd-spec.md`
+and `.agents/skills/sdd-spec/SKILL.md` (E2EPlan frontmatter, stable scenario IDs,
+required node enumeration, separate exploration section, optional-by-default for
+old specs/no plan, invalid-value rejection, never labeling live generations
+deterministic). Added `tests/sdd_scripts/test_e2e_spec_contract.py` with a
+behavioral plan-schema round-trip contract test (21 tests, not string-only
+mirrors of prose).
+
+Also synced `.agent/workflows/sdd-spec.md` (the `/sdd-spec` command's twin,
+outside this task's declared file list) with the same E2E plan hint content —
+required to keep the pre-existing `test_command_twin_parity[sdd-spec]` test
+green, since touching `.claude/commands/sdd-spec.md` without its twin breaks
+twin-parity. This is a minimal, mechanically-necessary deviation to preserve a
+passing test, not a scope expansion.
+
+Tests:
+- `pytest tests/sdd_scripts/test_e2e_spec_contract.py -q` → 21 passed
+- `pytest tests/sdd_scripts/test_command_twin_parity.py -q` → 2 passed (twin
+  parity preserved after the sync above)
+
+No unresolved limitations. AC2/AC7/AC9 demonstrated by the contract tests.
