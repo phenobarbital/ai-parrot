@@ -209,7 +209,9 @@ def render_dossier_text(dossier: DecisionDossier) -> str:
 
     if dossier.truncated:
         lines.append("")
-        lines.append("Note: output was truncated to fit the token budget; some hits or excerpts were shortened or omitted.")
+        lines.append(
+            "Note: output was truncated to fit the token budget; some hits or excerpts were shortened or omitted."
+        )
 
     return "\n".join(lines)
 

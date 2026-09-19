@@ -24,8 +24,17 @@ def _hit(decision_id: str, origin: str = "documented", excerpt: str = "short", *
         review_status=kw.pop("review_status", "unreviewed"),
         freshness=kw.pop("freshness", "current"),
         decision=kw.pop("decision", "use the thing"),
-        citations=[EvidenceRef(page_id="file:a.py", rel_path="a.py", start_line=1, end_line=2,
-                               source_sha1="d", excerpt=excerpt, kind="code")],
+        citations=[
+            EvidenceRef(
+                page_id="file:a.py",
+                rel_path="a.py",
+                start_line=1,
+                end_line=2,
+                source_sha1="d",
+                excerpt=excerpt,
+                kind="code",
+            )
+        ],
         **kw,
     )
 
