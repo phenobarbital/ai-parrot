@@ -156,4 +156,36 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+Implemented a private `_ToolkitStdioMCPServer(StdioMCPServer)` in `toolkit_server.py` that retains the
+factory-instantiated toolkit and releases it (`_close()` if `_opened`, then `cleanup()`/`stop()`) idempotently
+under an asyncio.Lock, bounded by a 10-second cleanup budget with isolated per-phase logging mirroring
+`ToolManager.cleanup_toolkits`'s established pattern. `create_toolkit_mcp_server`'s public signature, return
+type and tool-filtering logic are unchanged — only the final construction line now builds
+`_ToolkitStdioMCPServer` instead of `StdioMCPServer`. `start()` wraps `super().start()` in `try/finally` → `stop()`.
+
+`local_cli.py` adds `_serve_with_shutdown(server)`, installing a SIGTERM handler via `loop.add_signal_handler`
+(not `signal.signal` directly) so termination does not depend on the blocking stdin-reader executor thread;
+on SIGTERM it restores the prior handler, awaits the server's own bounded `stop()`, then force-exits to cover
+the real process-exit path. Non-SIGTERM path is unchanged.
+
+Validation: `pytest packages/ai-parrot/tests/mcp/test_owned_toolkit_lifecycle.py -q` → 8 passed. Regression:
+`pytest packages/ai-parrot/tests/mcp/ -q` → 80 passed; `pytest tests/mcp/test_local_cli.py
+tests/mcp/test_toolkit_server.py tests/mcp/test_mcp_local_e2e.py -q` → 33 passed;
+`pytest packages/ai-parrot/tests/mcp/test_toolkit_matrix.py packages/ai-parrot/tests/mcp/test_toolkit_install.py -q`
+→ 19 passed. `ruff check` clean on `local_cli.py` and the new test file; `toolkit_server.py` carries 3
+pre-existing findings (B008, 2×F541) outside touched lines — left for the feature-wide lint pass.
+
+Worktree environment gap (pre-existing, not introduced here): this and every git worktree ship only Cython
+`.pyx` sources, not compiled `.so` extensions for `parrot.utils.types`/`parrot.utils.parsers.toml`; reproduced
+on unmodified files first, then temporarily copied matching `cpython-312` `.so` files from the main checkout to
+run the suites above and deleted them afterward — `.so` is gitignored and `git status` is clean.
+
+Merge-tier regression (`select_tests --tier merge`) after merge to the feature branch: 98 passed in
+`packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_mcp_local.py`, `test_toolkit.py`, `packages/ai-parrot/tests/mcp/`;
+15 passed in `tests/mcp/test_toolkit_server.py`. `lsp` suites under `packages/ai-parrot-tools/tests/lsp/` do not
+exist yet — created by later tasks (TASK-3499/M1 onward); their absence is expected at this point in the wave.
+
+No code review deferred findings for this delivery. No feedback correction was needed (no defect found).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a (not reported by native
+Agent dispatch) · Tokens: 261751 (subagent_tokens, per completion notification).
