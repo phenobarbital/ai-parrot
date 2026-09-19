@@ -364,10 +364,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator: nova/zai.glm-4.7-flash via parrot-sdd-coder; fix by orchestrator)
+**Date**: 2026-09-19
+**Notes**: Implemented `scripts/sdd/worktree_status.py` per the Interface
+Skeleton: Pydantic models (`WorktreeTaskStatus`, `WorktreeHealth`,
+`WorktreeReport`), `_parse_branch`, `_read_worktree_index`, `_check_health`,
+`_live_process_count`, `discover_worktree_reports`, `main` (CLI with
+`--json`). Post-merge smoke test (`python -m scripts.sdd.worktree_status
+--json`/plain, per the task's own Test Specification) found the delivered
+`_read_worktree_index` built the index path as `sdd/tasks/<slug>.json`
+instead of the spec-documented `sdd/tasks/index/<slug>.json`, so
+`index_found` was always `False`. Fixed by the orchestrator in commit
+`3446bf986` and re-verified with the same smoke test (index_found=true,
+all 5 FEAT-582 tasks correctly listed). Feedback recorded:
+`coder-feedback:5812b09407a0ef0dedc23bb7`; review recorded:
+`coder-review:b036cb7bcb898d1560d701f8`.
+Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 228.012s · Tokens: 407766/3846
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (fix aligned implementation to the documented path; no scope change)

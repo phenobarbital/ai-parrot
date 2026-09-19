@@ -16,7 +16,7 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "no dependencies; creates new module with no shared files",
       "assigned_to": null,
       "started_at": "2026-09-19T14:03:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3549-worktree-status-library.md"
+      "completed_at": "2026-09-19T14:10:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3549-worktree-status-library.md"
     },
     {
       "id": "TASK-3550",
