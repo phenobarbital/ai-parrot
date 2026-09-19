@@ -217,10 +217,14 @@ def test_all_sdd_task_twins_carry_from_issue_deprecation(self): ... # "Deprecate
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (MCP coder, seat glm, attempt_uid d6eea27331444d28a29c8bc96dabb24c)
+**Date**: 2026-09-19
+**Notes**: Replaced the `sdd-task --from-issue` suggestion in all three `/sdd-next` twins
+with `/sdd-fix`, and added a "Deprecated" note in all three `/sdd-task` twins pointing to
+`/sdd-fix` while keeping `--from-issue`, `reserve_ids`, `discovered_from` intact for the
+one-cycle deprecation window.
+Validation: `pytest tests/sdd/test_ledger_workflow_twins.py -q` → passed. Merged via
+`coder_merge` → merged, no residual lint findings.
+Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 155.9s · Tokens: 1477438/4706
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

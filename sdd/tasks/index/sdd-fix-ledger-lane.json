@@ -16,7 +16,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "Root of the graph — imports nothing from other tasks. Owns events.py, index.py, test_ledger_events.py, test_ledger_index.py; TASK-3388 also edits events.py/test_ledger_events.py and is serialized behind this task.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3387-unclaimed-event-kind-and-reducer.md"
+      "completed_at": "2026-09-19T22:14:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3387-unclaimed-event-kind-and-reducer.md"
     },
     {
       "id": "TASK-3388",
@@ -176,7 +176,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -184,8 +184,8 @@
       "parallelism_notes": "No dependencies: edits only pointer text in six existing twin files (sdd-next ×3, sdd-task ×3) touched by no other task; names /sdd-fix without reading its files. Parity tests arrive in TASK-3396.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3395-retarget-next-and-deprecate-from-issue.md"
+      "completed_at": "2026-09-19T22:14:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3395-retarget-next-and-deprecate-from-issue.md"
     },
     {
       "id": "TASK-3396",
@@ -236,7 +236,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -244,8 +244,8 @@
       "parallelism_notes": "No dependencies: docs/sdd/WORKFLOW.md, docs/sdd/PLATFORM.md, sdd/WORKFLOW.md and the new tests/sdd/test_sdd_fix_docs.py are touched by no other task; the command contract comes from the spec.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3398-docs-sdd-fix.md"
+      "completed_at": "2026-09-19T22:14:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3398-docs-sdd-fix.md"
     }
   ]
 }
