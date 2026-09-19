@@ -39,6 +39,7 @@ from .types import (
     ProductCounter,
     EndcapNoShelvesPromotional,
     EndcapBacklitMultitier,
+    InkWall,
 )
 
 ImageInput = Union[str, Path, Image.Image]
@@ -63,6 +64,7 @@ class PlanogramCompliance(AbstractPipeline):
         "product_counter": ProductCounter,
         "endcap_no_shelves_promotional": EndcapNoShelvesPromotional,
         "endcap_backlit_multitier": EndcapBacklitMultitier,
+        "ink_wall": InkWall,
     }
 
     def __init__(

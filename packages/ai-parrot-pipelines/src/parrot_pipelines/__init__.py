@@ -12,6 +12,12 @@ PIPELINE_REGISTRY: dict[str, str] = {
     "AbstractPlanogramType": "parrot_pipelines.planogram.types.abstract.AbstractPlanogramType",
     "ProductOnShelves": "parrot_pipelines.planogram.types.product_on_shelves.ProductOnShelves",
     "GraphicPanelDisplay": "parrot_pipelines.planogram.types.graphic_panel_display.GraphicPanelDisplay",
+    "ProductCounter": "parrot_pipelines.planogram.types.product_counter.ProductCounter",
+    "EndcapNoShelvesPromotional": (
+        "parrot_pipelines.planogram.types.endcap_no_shelves_promotional.EndcapNoShelvesPromotional"
+    ),
+    "EndcapBacklitMultitier": "parrot_pipelines.planogram.types.endcap_backlit_multitier.EndcapBacklitMultitier",
+    "InkWall": "parrot_pipelines.planogram.types.ink_wall.InkWall",
 }
 
 __all__ = ["__version__", "PIPELINE_REGISTRY"]

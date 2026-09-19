@@ -170,24 +170,62 @@ async def test_run_single_image_returns_legacy_and_additive_keys(pipeline, synth
 
 
 @pytest.mark.parametrize("ptype", sorted(PlanogramCompliance._PLANOGRAM_TYPES))
-async def test_run_preserves_eight_keys_for_every_type(ptype, fake_vision_client, synthetic_shelf_image):
-    """Every registered type keeps the eight legacy keys through the new template (legacy hooks stubbed)."""
+async def test_run_preserves_eight_keys_for_every_type(
+    ptype, fake_vision_client, synthetic_shelf_image, inline_executor
+):
+    """Every registered type keeps the eight legacy keys through the new template (type work stubbed)."""
+    cls = PlanogramCompliance._PLANOGRAM_TYPES[ptype]
+    definition = {
+        "shelves": [
+            {
+                "shelf_id": "shelf_1",
+                "shelf_number": 1,
+                "facings": [
+                    {
+                        "facing_id": "f1",
+                        "shelf_id": "shelf_1",
+                        "slot": 1,
+                        "product": "A",
+                        "descriptors": {"display_name": "A"},
+                    }
+                ],
+            }
+        ]
+    }
     config = PlanogramConfig(
         planogram_type=ptype,
         planogram_config={"brand": "X", "category": "Y", "aisle": {"name": "a"}, "shelves": []},
         roi_detection_prompt="roi",
         object_identification_prompt="objects",
+        slots_definition=definition if cls.requires_slots_definition else None,
     )
     pipe = PlanogramCompliance(planogram_config=config, llm=fake_vision_client)
     handler = pipe._type_handler
-    handler.compute_roi = AsyncMock(return_value=(None, None, None, None, []))
-    handler.detect_objects = AsyncMock(return_value=([], []))
-    handler.check_planogram_compliance = MagicMock(return_value=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)])
+    migrated = handler._implements("perceive")
+    if migrated:
+        handler.perceive = AsyncMock(
+            return_value=PerceptionResult(image_id="img0", image_size=synthetic_shelf_image.size, detection_source="cv")
+        )
+        handler.identify = AsyncMock(return_value=IdentificationResult(image_id="img0"))
+        handler.compare = AsyncMock(
+            return_value=ComparisonResult(
+                compliance_results=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)],
+                assessment_status=AssessmentStatus.INCONCLUSIVE,
+            )
+        )
+    else:
+        handler.compute_roi = AsyncMock(return_value=(None, None, None, None, []))
+        handler.detect_objects = AsyncMock(return_value=([], []))
+        handler.check_planogram_compliance = MagicMock(return_value=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)])
     result = await pipe.run(synthetic_shelf_image)
     assert LEGACY_KEYS <= set(result)
     assert result["compliance_results"] is result["step3_compliance_results"]
-    assert result["assessment_status"] == AssessmentStatus.LEGACY_UNMEASURED
-    assert result["detection_source"] == "legacy_llm"
+    if migrated:
+        assert result["assessment_status"] == AssessmentStatus.INCONCLUSIVE
+        assert result["detection_source"] == "cv"
+    else:
+        assert result["assessment_status"] == AssessmentStatus.LEGACY_UNMEASURED
+        assert result["detection_source"] == "legacy_llm"
 
 
 async def test_run_single_image_keeps_sfx_filename_rule(pipeline, synthetic_shelf_image, tmp_path):
