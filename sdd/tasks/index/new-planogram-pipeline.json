@@ -413,7 +413,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -426,8 +426,8 @@
       "parallelism_notes": "Uses strip_box/to_strip_norm/from_strip_norm from TASK-3433 (perception/slots.py), VisionAdapter from TASK-3436 (identification/vision.py), descriptor vocabulary from TASK-3435 (comparison/definition.py) and assign_membership from TASK-3437 (perception/membership.py) to revalidate additions.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3438-identify-strategies.md"
+      "completed_at": "2026-09-19T00:00:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3438-identify-strategies.md"
     },
     {
       "id": "TASK-3439",

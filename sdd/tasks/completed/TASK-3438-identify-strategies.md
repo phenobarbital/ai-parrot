@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3433, TASK-3435, TASK-3436, TASK-3437
@@ -439,7 +439,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+identification/identify.py: IDENTIFY_PROMPT_VERSION; targets = slots or usable_shapes; _plan_chunks (per row, balanced contiguous chunks <= substrip_max_slots); picklable render_marked_strip (2-px numbered outlines, labels at the box bottom edge; encode_png) run via ctx.executor; build_identify_prompt (AREAS JSON id/mark/box_2d/ocr_text + vocabulary fields; no planogram/expected products); validate_response (first occurrence wins, unknown ids dropped+error, known-missing -> uncertain 'missing_in_response', additions via from_strip_norm rejecting non-finite/out-of-range/zero-area/outside-image/IoU>0.5 duplicates, pipeline ids '<image_id>:added:<n>', source llm_added, raw_confidence untouched, image_id/source overwritten on existing entries); _run_call (VisionError -> targets uncertain 'identify_failed: <msg>' + one error; keeps only its own chunk's targets); _finalise (membership re-run for additions, deterministic order, ctx.errors); identify_full_image / identify_strips (asyncio.gather).
+Tests: test_identify.py 10 passed. ruff clean.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
