@@ -16,25 +16,25 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies \u2014 creates decisions/models.py, decisions/__init__.py and the additive WikiProjectConfig.decisions field; every other task imports from it",
+      "parallelism_notes": "no dependencies — creates decisions/models.py, decisions/__init__.py and the additive WikiProjectConfig.decisions field; every other task imports from it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3479-decision-models-and-config.md"
     },
     {
       "id": "TASK-3480",
       "slug": "decision-codec-and-identity",
-      "title": "Decision codec \u2014 canonical envelope, identity, and fingerprints",
+      "title": "Decision codec — canonical envelope, identity, and fingerprints",
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,25 +43,25 @@
       "parallel": true,
       "parallelism_notes": "imports DecisionRecord/DecisionError/ADR_* constants from TASK-3479 (decisions/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3480-decision-codec-and-identity.md"
     },
     {
       "id": "TASK-3481",
       "slug": "store-cas-base-and-sqlite",
-      "title": "compare_and_swap_page \u2014 base default + SQLite implementation",
+      "title": "compare_and_swap_page — base default + SQLite implementation",
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies \u2014 store.py deliberately imports nothing from decisions/; sole writer of store.py; its only mention of parrot.knowledge.wiki.decisions is a prohibition (the store layer must never import it), not a use, so no edge to TASK-3479 applies",
+      "parallelism_notes": "no dependencies — store.py deliberately imports nothing from decisions/; sole writer of store.py; its only mention of parrot.knowledge.wiki.decisions is a prohibition (the store layer must never import it), not a use, so no edge to TASK-3479 applies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3481-store-cas-base-and-sqlite.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": true,
       "parallelism_notes": "overrides BaseWikiStore.compare_and_swap_page whose signature TASK-3481 defines (store.py:608); only file_store.py; its only mention of parrot.knowledge.wiki.decisions is a prohibition (the store layer must never import it), not a use, so no edge to TASK-3479 applies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3482-file-store-cas.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -101,7 +101,7 @@
       "parallel": true,
       "parallelism_notes": "overrides BaseWikiStore.compare_and_swap_page from TASK-3481 (store.py:608); only arango_store.py; its only mention of parrot.knowledge.wiki.decisions is a prohibition (the store layer must never import it), not a use, so no edge to TASK-3479 applies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3483-arango-store-cas.md"
     },
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,18 +121,18 @@
       "parallel": true,
       "parallelism_notes": "overrides BaseWikiStore.compare_and_swap_page from TASK-3481 (store.py:608); only postgres_store.py; its only mention of parrot.knowledge.wiki.decisions is a prohibition (the store layer must never import it), not a use, so no edge to TASK-3479 applies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3484-postgres-store-cas.md"
     },
     {
       "id": "TASK-3485",
       "slug": "decision-repository",
-      "title": "DecisionRepository \u2014 bounded inventory and CAS-backed save",
+      "title": "DecisionRepository — bounded inventory and CAS-backed save",
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,18 +142,18 @@
       "parallel": true,
       "parallelism_notes": "calls decision_to_page/decision_from_page from TASK-3480 (decisions/codec.py) and store.compare_and_swap_page from TASK-3481",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3485-decision-repository.md"
     },
     {
       "id": "TASK-3486",
       "slug": "adr-markdown-parser",
-      "title": "ADR Markdown parser \u2014 sections, status, and identity aliases",
+      "title": "ADR Markdown parser — sections, status, and identity aliases",
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -163,7 +163,7 @@
       "parallel": true,
       "parallelism_notes": "imports documented_decision_id/normalize_rel_path from TASK-3480 (decisions/codec.py) and returns DecisionRecord/DecisionDiagnostic from TASK-3479 (decisions/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3486-adr-markdown-parser.md"
     },
@@ -174,7 +174,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -184,7 +184,7 @@
       "parallel": true,
       "parallelism_notes": "imports ADR_REFERENCE_RE/normalize_adr_alias from TASK-3486 (decisions/parser.py) and builds EvidenceRef from TASK-3479 (decisions/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3487-evidence-citations-and-freshness.md"
     },
@@ -195,7 +195,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -204,18 +204,18 @@
       "parallel": true,
       "parallelism_notes": "packs DecisionHit/DecisionDossier from TASK-3479 (decisions/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3488-dossier-render-and-budget.md"
     },
     {
       "id": "TASK-3489",
       "slug": "decision-ingest-refresh",
-      "title": "refresh_decisions \u2014 discovery, idempotent sync, and link repair",
+      "title": "refresh_decisions — discovery, idempotent sync, and link repair",
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -226,18 +226,18 @@
       "parallel": true,
       "parallelism_notes": "calls DecisionRepository.save from TASK-3485, parse_adr from TASK-3486 (decisions/parser.py) and extract_python_citations from TASK-3487 (decisions/evidence.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3489-decision-ingest-refresh.md"
     },
     {
       "id": "TASK-3490",
       "slug": "decision-service-retrieval",
-      "title": "DecisionService \u2014 for_symbol and why retrieval",
+      "title": "DecisionService — for_symbol and why retrieval",
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -248,7 +248,7 @@
       "parallel": true,
       "parallelism_notes": "calls DecisionRepository.inventory from TASK-3485, verify_freshness from TASK-3487 (decisions/evidence.py) and pack_dossier from TASK-3488 (decisions/render.py); imports nothing from decisions/ingest.py by design",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3490-decision-service-retrieval.md"
     },
@@ -259,7 +259,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -269,7 +269,7 @@
       "parallel": true,
       "parallelism_notes": "uses CandidateBatch from TASK-3479 and sha1_of_span/verify_freshness from TASK-3487 (decisions/evidence.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3491-candidate-generation.md"
     },
@@ -280,7 +280,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -290,18 +290,18 @@
       "parallel": true,
       "parallelism_notes": "calls review_fingerprint/render_markdown from TASK-3480 (decisions/codec.py); its output is persisted by TASK-3485's DecisionRepository",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3492-decision-review.md"
     },
     {
       "id": "TASK-3493",
       "slug": "service-generate-and-review",
-      "title": "DecisionService.sync / .generate / .review \u2014 orchestration",
+      "title": "DecisionService.sync / .generate / .review — orchestration",
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -313,7 +313,7 @@
       "parallel": true,
       "parallelism_notes": "replaces the sync/generate/review stubs TASK-3490 wrote in decisions/service.py (same file, must follow it); calls refresh_decisions from TASK-3489 (decisions/ingest.py), generate_candidates from TASK-3491 and apply_review from TASK-3492",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3493-service-generate-and-review.md"
     },
@@ -324,7 +324,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -333,7 +333,7 @@
       "parallel": true,
       "parallelism_notes": "binds DecisionService from TASK-3490; rewrites decisions/__init__.py which TASK-3479 created (dependency path 3479->3480->3485->3490->3494)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3494-decision-tools-toolkit-mcp.md"
     },
@@ -344,7 +344,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -354,7 +354,7 @@
       "parallel": true,
       "parallelism_notes": "needs ADR_CATEGORY/ADR_MANAGED_PAGE from TASK-3479 and decision_to_page/decision_from_page from TASK-3480 (decisions/codec.py) to build a managed page in its tests; sole writer of wiki/context.py, wiki/tools.py and wiki/toolkit.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3495-managed-page-protection.md"
     },
@@ -365,7 +365,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -377,7 +377,7 @@
       "parallel": true,
       "parallelism_notes": "calls refresh_decisions from TASK-3489, service.generate/review from TASK-3493, create_decision_tools registration ordering from TASK-3494, and _reject_managed_page from TASK-3495; sole writer of wiki/cli.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3496-adr-cli-and-post-ingest-refresh.md"
     },
@@ -388,7 +388,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -400,7 +400,7 @@
       "parallel": true,
       "parallelism_notes": "exercises the CLI from TASK-3496 end to end and asserts CAS parity across the backends implemented by TASK-3482/3483/3484",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3497-integration-and-backend-parity-tests.md"
     },
@@ -411,7 +411,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -420,7 +420,7 @@
       "parallel": true,
       "parallelism_notes": "documents the exact CLI flags TASK-3496 creates; every documented command must be executable",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T17:46:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3498-adr-decisions-guide.md"
     }
