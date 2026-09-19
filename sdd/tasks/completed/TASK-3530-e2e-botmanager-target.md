@@ -204,5 +204,51 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented `redis.py` (`find_redis_server_binary()`
+BLOCKED via `E2EPrerequisiteError` when absent, `allocate_loopback_port()`,
+`build_redis_argv()` with persistence fully disabled `--save "" --appendonly
+no`, `spawn_private_redis()` real-subprocess + raw-socket PING readiness)
+and `botmanager.py` (`build_botmanager_adapter()`/`_BotManagerAdapter`
+conforming to `TargetAdapter`; `run_app_entrypoint()` + real `_healthz`/
+`_bootstrap_login`/`_protected_bot` handlers invoked only inside the
+launched child). `prepare()` isolates `SITE_ROOT`/`REDIS_HOST`/
+`REDIS_PORT`/`SESSION_DB` before any import, allocates distinct app/Redis
+ports, generates a one-run bootstrap secret, and explicitly rejects
+`profile="full"` (`reason_code=botmanager_full_profile_unsupported`) rather
+than guessing an undefined contract — implementing only the "minimal"
+profile this task's title scopes. `_fetch_user_bot_model` replaced at the
+instance level with a documented fixture stub (DB disabled/out of scope in
+minimal profile, per TASK-3518's research).
+
+Manually verified the full flow (spawn → `/healthz` → bootstrap-login →
+protected route → real `BotManager.get_user_bot()`) out-of-band via a
+disposable, non-shared `redis:7-alpine` Docker container standing in for
+`redis-server` (not committed; this host has no `redis-server` binary).
+This caught and fixed a real bug: `navigator_session` 1.0.1's
+`RedisStorage.load_session()` overwrites `session[SESSION_KEY]` with the
+session ID after constructing `SessionData`, so reading identity via
+`session.get(SESSION_KEY)` returned the wrong value — fixed to use the
+dedicated `session.identity` property, documented inline with root cause.
+
+Sibling-merge integration fallout (flagged by this task, fixed by the
+orchestrator, not a defect here): TASK-3525's/TASK-3529's
+`test_get_target_adapter_raises_prerequisite_error_for_unimplemented_kind`
+narrowed further to exclude `botmanager` (now resolves for real). See
+commit 7bb8170d6.
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_botmanager_target.py -q`
+→ 26 passed, 3 skipped (real-subprocess/full-stack tests, skip-guarded on
+`redis-server` binary presence — absent on this host; will execute wherever
+one is installed, e.g. CI). Full-directory regression (after sibling-test
+fix): `pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 303 passed, 3
+skipped, no regression against TASK-3524/3525/3526/3527/3528/3529.
+
+Limitation flagged for follow-up: full end-to-end validation through a real
+`E2ESupervisor`-driven launch with a real `redis-server` binary has not run
+in this sandbox — only manually verified via the Docker substitute above.
+Recommend re-running `test_botmanager_target.py` in an environment with
+`redis-server` installed before closing out M4. `profile="full"` support is
+explicitly out of scope, not a gap — flagged for a future task if needed.
+AC4/AC6 demonstrated by the contract tests.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1615.2s · Tokens: 358457 (combined)
