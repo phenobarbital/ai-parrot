@@ -191,7 +191,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "TASK-3524 owns its declared files for M3. TASK-3520 supplies define strict e2e schemas and typed errors; TASK-3517 supplies verify supervisor crash recovery and obscura isolation contracts. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3524-e2e-run-state.md"
+      "completed_at": "2026-09-19T17:51:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3524-e2e-run-state.md"
     },
     {
       "id": "TASK-3525",

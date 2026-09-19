@@ -179,5 +179,39 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-19. Implemented worktree-local, mode-0600 atomic `RunState`
+persistence under `sdd/state/e2e/<run_id>.json` (tempfile + fsync +
+`os.replace`, never following/overwriting a symlinked destination),
+mode-0700 per-run directories for sockets/private profiles, and an advisory
+flock-based lock (`locked_run`, timeout-bounded) serializing competing
+commands. All path construction rejects unsafe `run_id`s and component-wise
+symlink escapes before touching the filesystem.
+
+Process identity: `get_boot_id()`, `capture_process_identity()` /
+`process_identity_matches()` (psutil `create_time` + `os.getpgid` + boot_id,
+0.5s tolerance) revalidate a live process against a recorded
+`ProcessIdentity`, guarding PID reuse and reboot-invalidated state.
+`is_authorized_to_signal()` is a pure predicate (never sends a signal):
+checks the adopted/owned flag first (most authoritative — adopted processes
+are never signaled), then worktree, then owner_id, then live identity match.
+`is_stale()` flags expired-deadline/orphaned runs without authorizing any
+signal itself. `read_state`/`write_state` match the fixed interfaces exactly;
+`write_state` cross-checks `state.worktree` against the resolved target
+(reason_code `worktree_mismatch`), `read_state` cross-checks the file's own
+`run_id`.
+
+Tests: `pytest packages/ai-parrot-server/tests/unit/e2e/test_state.py -q`
+→ 43 passed (run 3x, no flakiness on timing-sensitive process/lock tests),
+including two real multi-process acceptance tests (6 subprocesses × 25
+lock-guarded increments landing exactly 150; 8 subprocesses racing to mark
+cleanup_complete landing exactly one clean stopped/no corrupted JSON) and a
+PID-reuse simulation using a real live subprocess with a shifted recorded
+`create_time`. Full-directory regression:
+`pytest packages/ai-parrot-server/tests/unit/e2e/ -q` → 199 passed (156+43),
+no regression against TASK-3520/3521/3525.
+
+No unresolved limitations. AC5/AC6 demonstrated by the contract tests.
+Runtime E2E harness execution intentionally not claimed — the runner/CLI/
+supervisor tasks that would drive it do not exist yet.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 743.8s · Tokens: 191386 (combined)
