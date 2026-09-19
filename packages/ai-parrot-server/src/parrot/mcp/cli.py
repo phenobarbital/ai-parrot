@@ -4,15 +4,12 @@ import os
 import signal
 import sys
 import importlib.util
-from importlib import import_module
 from pathlib import Path
 from typing import Optional
 import yaml
 import click
 from navconfig.logging import logging
 from .server import MCPServer, MCPServerConfig
-from parrot.tools.abstract import AbstractTool
-from parrot.tools.toolkit import AbstractToolkit
 from .parrot_server import ParrotMCPServer, TransportConfig
 
 
@@ -172,10 +169,60 @@ async def _run_standalone_server(mcp_server: ParrotMCPServer):
     try:
         logger.info("Starting MCP server in %s mode...", transport_config.transport)
         await server.start()
+
+        if transport_config.transport == "http":
+            # HttpMCPServer.start() binds the listening socket and returns
+            # immediately — unlike stdio/unix, whose start() blocks
+            # internally until stopped. Without an explicit keep-alive the
+            # process would fall straight through to `finally` and close
+            # the socket before any client ever connects, so HTTP alone
+            # needs this wait; stdio/unix argument shapes and blocking
+            # behavior are unchanged.
+            await _wait_for_shutdown_signal(logger)
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
     finally:
+        # Exactly one stop() per run: this is the sole call site, reached
+        # whether start()/the keep-alive returned normally, raised, or was
+        # cancelled.
         await server.stop()
+
+
+async def _wait_for_shutdown_signal(logger: logging.Logger) -> None:
+    """Block until SIGINT or SIGTERM is received, then return.
+
+    Installs asyncio signal handlers for SIGINT/SIGTERM on the running
+    loop so the standalone HTTP process stays alive after
+    ``HttpMCPServer.start()`` returns, and always removes them again
+    before returning — whether the wait completed normally or was
+    cancelled — so no stray handler survives this keep-alive.
+
+    Args:
+        logger: Logger used for shutdown diagnostics.
+    """
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+    installed: list[signal.Signals] = []
+
+    def _handle_signal(sig: signal.Signals) -> None:
+        logger.info("Received signal %s, shutting down...", sig.name)
+        stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _handle_signal, sig)
+        except (NotImplementedError, RuntimeError):
+            # No loop-level signal support here (e.g. Windows, or a
+            # non-main thread) — SIGINT still surfaces as KeyboardInterrupt
+            # to the caller; SIGTERM simply cannot stop the keep-alive.
+            continue
+        installed.append(sig)
+
+    try:
+        await stop_event.wait()
+    finally:
+        for sig in installed:
+            loop.remove_signal_handler(sig)
 
 
 # ── Obscura lifecycle commands (FEAT-530) ────────────────────────
