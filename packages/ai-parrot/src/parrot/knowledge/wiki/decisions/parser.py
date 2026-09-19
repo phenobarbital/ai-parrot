@@ -278,9 +278,7 @@ def parse_adr(rel_path: str, text: str) -> tuple[DecisionRecord | None, list[Dec
     consequences_text = _section_text("consequences")
     status_section_text = _section_text("status")
 
-    source_status, source_status_raw, status_diagnostics = resolve_status(
-        fields.get("status", ""), status_section_text
-    )
+    source_status, source_status_raw, status_diagnostics = resolve_status(fields.get("status", ""), status_section_text)
     diagnostics.extend(status_diagnostics)
 
     # Identity: frontmatter id -> H1 heading -> filename, in that order.
