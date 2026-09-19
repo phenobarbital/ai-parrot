@@ -11,12 +11,13 @@ import asyncio
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
+from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
 from parrot.tools.abstract import AbstractTool, ToolResult
@@ -76,6 +77,41 @@ def _reject_foreign_id(store: BaseWikiStore, page_id: str) -> str | None:
         "read-only here. Writes to a namespace go through the CLI: "
         f"`wikitoolkit <command> --ns {namespace}`."
     )
+
+
+def _reject_managed_page(page: dict[str, Any] | None, page_id: str) -> str | None:
+    """Explain why a generic write cannot target ``page_id``, or ``None``.
+
+    ADR pages (FEAT-578) hold a canonical JSON envelope that IS the decision
+    record, including its audit history. Appending prose to that body would
+    make the record undecodable and silently destroy review history, so the
+    generic authoring surfaces refuse them; edits go through the typed
+    review surface (``wikitoolkit adr review``).
+
+    Args:
+        page: The stored row, or ``None`` when the page does not exist yet.
+        page_id: The id the caller asked to write.
+
+    Returns:
+        An error message, or ``None`` when the write may proceed.
+    """
+    if page is not None:
+        if page.get("category") == ADR_CATEGORY:
+            return (
+                f"Page {page_id!r} is a managed ADR record ({ADR_MANAGED_PAGE}); generic "
+                "note/update writes are refused to protect its review history. Edit it "
+                "through the typed review surface (`wikitoolkit adr review`)."
+            )
+        return None
+    from parrot.knowledge.wiki.context import split_namespaced_id
+
+    _namespace, local = split_namespaced_id(page_id)
+    if local.startswith("adr:"):
+        return (
+            f"Page {page_id!r} would be a managed ADR record ({ADR_MANAGED_PAGE}); generic "
+            "writes are refused."
+        )
+    return None
 
 
 _LEDGER_KIND_PREFIXES = ("issue:", "task:", "spec:", "insight:")
@@ -338,6 +374,14 @@ class WikiRememberTool(AbstractTool):
         resolved_title = (title or fact.strip().splitlines()[0][:80]).strip()
         page_id = "mem-" + hashlib.sha1(f"{resolved_title}::{category}".encode()).hexdigest()[:12]
 
+        # A deterministic id could in principle collide with a page that
+        # already carries the managed ADR category — guard the same way
+        # note does, rather than trusting the "mem-" prefix.
+        existing = await self._store.get_page(page_id, include_body=False)
+        managed = _reject_managed_page(existing, page_id)
+        if managed:
+            return ToolResult(success=False, status="error", result=None, error=managed)
+
         await self._store.upsert_pages(
             [
                 WikiPageRecord(
@@ -414,6 +458,12 @@ class WikiNoteTool(AbstractTool):
         # Read-modify-write pattern (mirrors cli.py:1741-1790) — there is
         # no store.add_note(); notes are appended to the body in-process.
         page = await self._store.get_page(page_id, include_body=True)
+        # Checked BEFORE the not-found branch: a nonexistent "adr:..." id
+        # must also be refused, closing the create-then-corrupt path — the
+        # category check above only protects a page that already exists.
+        managed = _reject_managed_page(page, page_id)
+        if managed:
+            return ToolResult(success=False, status="error", result=None, error=managed)
         if page is None:
             return ToolResult(
                 success=False,

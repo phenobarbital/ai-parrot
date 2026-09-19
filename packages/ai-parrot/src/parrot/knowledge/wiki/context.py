@@ -36,8 +36,9 @@ _NS_PREFIX_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 #: Page id kinds recognised as the leading ``<kind>:`` of an id.
 #: ``sym`` (FEAT-498) is the structural symbol-page kind, e.g.
 #: ``sym:a/b.py#Cls.method``. ``issue``, ``task``, ``spec``, ``insight``
-#: are ledger overlay kinds (FEAT-566 Module 13).
-_ID_KINDS = "file|dir|mod|pkg|doc|func|class|concept|page|sym|issue|task|spec|insight"
+#: are ledger overlay kinds (FEAT-566 Module 13). ``adr`` (FEAT-578) is the
+#: managed decision-record kind, e.g. ``adr:doc:<sha1>`` / ``adr:candidate:<sha1>``.
+_ID_KINDS = "file|dir|mod|pkg|doc|func|class|concept|page|sym|issue|task|spec|insight|adr"
 
 #: Leading ``<kind>:`` namespace of a page id, optionally preceded by a
 #: federated ``<ns>::`` prefix.  Matched non-greedily and only at the
