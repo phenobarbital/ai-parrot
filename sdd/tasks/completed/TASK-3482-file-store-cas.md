@@ -323,10 +323,37 @@ class TestStaleSnapshot:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (Fallback Sequential Loop — the
+`parrot-sdd-coder` MCP server never routed this task to any seat)
+**Date**: 2026-09-19
+**Notes**: Added `self._adr_lock` (dedicated, non-reentrant-safe lock,
+distinct from `self._lock` guarding `_ensure_loaded`). Implemented
+`_read_page_file_hash` (reads the persisted bundle file via
+`_parse_page_file`, never `self._pages`) and `compare_and_swap_page`
+(insert-if-absent / matching-hash replace / stale-hash conflict, per the
+base contract). Extracted `_write_page_file`'s rendering into a pure
+`_render_page_file` helper and added `_write_page_file_atomic` (temp file +
+`os.replace`, same directory) so the CAS replacement write is genuinely
+atomic on disk (spec §2), unlike `upsert_pages`' plain `write_text`. All
+file I/O and lock waits are off the event loop via `asyncio.to_thread`.
+6 new tests in `test_file_store_cas.py` (insert/replace/conflict + the
+stale-RAM-snapshot cross-"process" regression required by spec §7 + the
+no-partial-file-left-behind atomicity check); `test_extra_backends.py`
+(9 tests, AC10 regression guard) unaffected.
 
-**Completed by**:
-**Date**:
-**Notes**:
+This task was blocked for several hours by a `parrot-sdd-coder` MCP engine
+defect: the complexity assessor classified it `unknown` (blast-radius
+metric collection failed — `wiki_collector` exit 1 for its contract
+symbols), and every MCP seat (gemini, glm, qwen, codex-spark, minimax)
+rejected it across repeated re-plans as "not eligible for unknown task,"
+while `coder_prepare_native` refused because the plan never marked it
+native. The engine ultimately became fully unresponsive (4 consecutive
+30-minute timeouts on unrelated calls), so the orchestrator implemented
+this task directly per the Fallback Sequential Loop rather than continue
+retrying a dead server.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the CAS contract itself. Split
+`_write_page_file` into `_render_page_file` (pure) + the original sync
+writer (unchanged behavior for `upsert_pages`/`_persist_pages`) + a new
+`_write_page_file_atomic` — an additive refactor, not a behavior change to
+any existing caller.
