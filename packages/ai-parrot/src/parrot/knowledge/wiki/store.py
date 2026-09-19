@@ -1919,7 +1919,7 @@ class SQLiteWikiStore(BaseWikiStore):
         """
         if not concept_ids:
             return {}
-        out: dict[str, Optional[str]] = {cid: None for cid in concept_ids}
+        out: dict[str, Optional[str]] = dict.fromkeys(concept_ids)
         placeholders = ",".join("?" for _ in concept_ids)
         async with self._read() as conn:
             async with conn.execute(
@@ -2253,6 +2253,7 @@ class SQLiteWikiStore(BaseWikiStore):
         """
         _SYNCHRONOUS_NAMES = {0: "OFF", 1: "NORMAL", 2: "FULL", 3: "EXTRA"}
         async with self._open(writable=False) as conn:
+
             async def _one(pragma: str) -> Any:
                 async with conn.execute(f"PRAGMA {pragma}") as cur:
                     row = await cur.fetchone()
