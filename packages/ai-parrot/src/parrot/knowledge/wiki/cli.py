@@ -29,6 +29,7 @@ import errno
 import json
 import logging
 import os
+import re
 import subprocess
 from collections import Counter
 from collections.abc import Iterator
@@ -91,7 +92,8 @@ from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.ledger.service import LedgerService
-from parrot.knowledge.wiki.ledger.events import IssueKind
+from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -2634,6 +2636,51 @@ def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
 # Ledger commands (FEAT-566 — SDD Work Ledger)
 # --------------------------------------------------------------------------
 
+_SPEC_PARENT_RE = re.compile(r"^spec:(FEAT-\d+)$")
+
+
+def _load_ledger_snapshot(root: Path) -> list[dict[str, Any]]:
+    """Open rows from the committed ``sdd/ledger/issues.jsonl`` — the busy-index fallback for plan-fix."""
+    path = root / "sdd" / "ledger" / "issues.jsonl"
+    rows: list[dict[str, Any]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("status") == "open":
+            rows.append(row)
+    return rows
+
+
+def _spec_parent_ids(rows: list[dict[str, Any]]) -> set[str]:
+    """``FEAT-<NNN>`` ids from rows whose ``discovered_from`` is ``spec:FEAT-<NNN>`` (other forms yield nothing)."""
+    return {m.group(1) for row in rows if (m := _SPEC_PARENT_RE.match(str(row.get("discovered_from") or "")))}
+
+
+def _dedupe_slugs(plan: FixPlan, specs_dir: Path) -> None:
+    """Suffix colliding ``suggested_slug`` values with ``-2``, ``-3``… in group order (deterministic, I/O lives here)."""
+    try:
+        seen = {p.name[: -len(".spec.md")] for p in specs_dir.glob("*.spec.md")} if specs_dir.exists() else set()
+    except OSError:
+        return
+    for group in plan.groups:
+        base = group.suggested_slug
+        slug = base
+        n = 2
+        while slug in seen:
+            slug = f"{base}-{n}"
+            n += 1
+        group.suggested_slug = slug
+        seen.add(slug)
+
 
 @wiki.group(name="ledger")
 def ledger() -> None:
@@ -2731,11 +2778,12 @@ def ledger_acknowledge(issue_id: str, reason: str, actor: str) -> None:
 @click.argument("issue_id")
 @click.option("--reason", required=True, help="Reason for closing.")
 @click.option("--actor", default="agent:cli", help="Actor closing the issue.")
-def ledger_close(issue_id: str, reason: str, actor: str) -> None:
+@click.option("--resolved-by", default=None, help="Evidence ref: commit:<sha> or task:TASK-<NNN>.")
+def ledger_close(issue_id: str, reason: str, actor: str, resolved_by: str | None) -> None:
     """Close an issue."""
     service = LedgerService.from_root()
     try:
-        success = _run(service.close_issue(issue_id, reason, actor))
+        success = _run(service.close_issue(issue_id, reason, actor, resolved_by=resolved_by))
         if success:
             click.echo(f"Closed {issue_id}")
         else:
@@ -2743,6 +2791,70 @@ def ledger_close(issue_id: str, reason: str, actor: str) -> None:
             raise SystemExit(1)
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
+
+
+@ledger.command("plan-fix")
+@click.option("--kind", type=click.Choice(["bug", "tech_debt", "feature_gap", "vulnerability"]), default=None)
+@click.option("--severity", type=click.Choice(["critical", "major", "minor", "low"]), default=None)
+@click.option("--lane", type=click.Choice(["fast", "sdd"]), default=None, help="Force the lane for every group.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the FixPlan as JSON (stdout only).")
+def ledger_plan_fix(kind: str | None, severity: str | None, lane: str | None, as_json: bool) -> None:
+    """Plan a fix batch: severity-ordered, file-grouped, lane-labelled (FEAT-572)."""
+    service = LedgerService.from_root()
+    try:
+        rows = _run(service.ready_work(kind=cast(IssueKind, kind) if kind else None))
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); planning from committed snapshot", err=True)
+        rows = _load_ledger_snapshot(service.shared_root)
+    parents = _spec_parent_ids(rows)
+    try:
+        status = _run(service.feature_index_status(parents)) if parents else {}
+    except OSError as exc:
+        click.echo(f"Index directory unreadable ({exc}); parents reported as not open", err=True)
+        status = {}
+    try:
+        plan = plan_fix_batch(
+            rows,
+            kind=cast(IssueKind, kind) if kind else None,
+            severity=cast(IssueSeverity, severity) if severity else None,
+            lane_override=cast(Lane, lane) if lane else None,
+            parent_index_status=status,
+        )
+    except ValueError as exc:  # S7: --lane fast on a critical/vulnerability group
+        click.echo(f"Refused: {exc}", err=True)
+        raise SystemExit(1)
+    _dedupe_slugs(plan, service.shared_root / "sdd" / "specs")
+    if as_json:
+        click.echo(plan.model_dump_json(indent=2))
+        return
+    if not plan.groups:
+        click.echo("No ready issues.")
+        return
+    for group in plan.groups:
+        click.echo(
+            f"{group.group_id} [{group.max_severity}] lane={group.lane} "
+            f"slug={group.suggested_slug} ({group.lane_reason})"
+        )
+        for issue in group.issues:
+            click.echo(f"  {issue.issue_id} [{issue.severity}] {issue.title} ({issue.kind})")
+
+
+@ledger.command("unclaim")
+@click.argument("issue_id")
+@click.option("--reason", required=True, help="Why the claim is being released.")
+@click.option("--actor", default="agent:cli", help="Actor releasing the claim.")
+def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
+    """Release a claim so the issue returns to `ledger ready`."""
+    service = LedgerService.from_root()
+    try:
+        if _run(service.unclaim(issue_id, reason, actor)):
+            click.echo(f"Unclaimed {issue_id}")
+        else:
+            click.echo(f"Could not unclaim {issue_id} (not claimed or unknown)")
+            raise SystemExit(1)
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); cannot unclaim")
+        raise SystemExit(2)
 
 
 @ledger.command("context")
