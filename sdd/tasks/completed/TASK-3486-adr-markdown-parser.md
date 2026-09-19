@@ -489,10 +489,20 @@ class TestBoundedParsing:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (native, backend=native, model=sonnet), orchestrated by sdd-worker
+**Date**: 2026-09-19
+**Notes**: Implemented `decisions/parser.py` exactly per blueprint — fence-aware `split_sections`
+with 1-based inclusive spans, flat-scalar `parse_frontmatter` (nested/unclosed → `ADR_PARSE_FAILED`
+diagnostic, never fatal), `resolve_status` (frontmatter-first, conflict → `unknown` +
+`ADR_STATUS_CONFLICT`, raw text preserved), `parse_adr` (identity precedence frontmatter id → H1
+→ filename, one `EvidenceRef` per populated section, `origin='documented'` always,
+`None` + diagnostic when `Decision` is absent). `ADR_REFERENCE_RE` copied verbatim from
+GraphIndex's `_CITATION_RE` (graphindex/extractors/code.py:35) minus the RFC alternative, per
+spec's "consistent with GraphIndex" requirement. No YAML/Markdown library imported (stdlib
+`re`/`hashlib` only), no CLI import. `pytest test_parser.py`: 22 passed (all 11 blueprint FILL-IN
+test bodies completed). No dependency on TASK-3481-3485 — pure parser confirmed.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — two blueprint refinements only (frontmatter nested-structure
+detection via indented-continuation-line signal; unresolved `supersedes` links stored with empty
+`evidence_indexes`, since cross-inventory alias resolution is TASK-3489's scope), both consistent
+with the blueprint's own description, not scope changes.
