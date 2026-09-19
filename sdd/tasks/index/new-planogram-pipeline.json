@@ -591,7 +591,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -602,8 +602,8 @@
       "parallelism_notes": "Same file as TASK-3445 (product_on_shelves.py); feeds RuleOutcome into score_shelves/project_compliance from TASK-3441 (comparison/scoring.py, projection.py).",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3446-pos-migration-compare-rules.md"
+      "completed_at": "2026-09-19T00:30:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3446-pos-migration-compare-rules.md"
     },
     {
       "id": "TASK-3447",

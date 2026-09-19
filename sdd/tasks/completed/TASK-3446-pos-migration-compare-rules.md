@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3441, TASK-3445
@@ -414,7 +414,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+product_on_shelves.py (insertions only; legacy methods and __init__ byte-identical): _evaluate_rules (one RuleOutcome per binding, per-rule exception isolation -> assessed=False + ctx.errors), _rule_illumination (one _check_illumination per (image, box), cached; None -> unassessed; mismatch -> passed False, penalty params.penalty default 0.5, detail '<name> — backlight <DET> (required: <EXP>)' which projection turns into the illumination pseudo-entry), _rule_text (TextMatcher.check_text_match over normalised zone OCR / registered identification text; score = sum conf(found)/len(all); mandatory miss -> passed False; target unseen -> unassessed), _rule_visual (_calculate_visual_feature_match, passed at params.threshold default 0.5), _rule_zone_present (on_fixture -> 1.0, uncertain -> unassessed, absent -> 0.0), compare (canonical identity: exact product id then ink_wall.resolve_identity, unresolved reads kept; only on-fixture slots registered; merge -> rules -> score_shelves -> summarize -> project -> finalize_comparison; image cache cleared).
+Design decisions: definition zones are matched to observed zone shapes by order (definition order <-> top-to-bottom) since observed zones carry no sub-kind; the image cache (_cycle_images) is created lazily by perceive instead of in __init__ (keeps the legacy __init__ byte-identical); compare stashes perceptions/registrations in a private _rule_context for the fixed _evaluate_rules signature; ctx.errors are not copied into ComparisonResult.errors because run() already merges both (would duplicate).
+ProductOnShelves is now a full cycle type (prompts no longer required, slots_definition required).
+Tests: test_pos_migrated_compare.py 11 passed (incl. zone-only header shelf with the penalty applied once, inconclusive never compliant, off-fixture ignored); full packages/ai-parrot-pipelines/tests 336 passed (+1 pre-existing), tests/pipelines 138, handler suite unchanged (2 pre-existing). No new ruff findings.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
