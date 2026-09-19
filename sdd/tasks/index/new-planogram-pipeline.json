@@ -545,7 +545,7 @@
       "feature_id": "FEAT-574",
       "feature": "new-planogram-pipeline",
       "spec": "sdd/specs/new-planogram-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -558,8 +558,8 @@
       "parallelism_notes": "Composes group_rows/build_slots (TASK-3433), identify_strips (TASK-3438 identification/identify.py), merge_positions/summarize (TASK-3441 comparison/scoring.py); edits planogram/plan.py after TASK-3443 (same file).",
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3444-ink-wall-type.md"
+      "completed_at": "2026-09-19T00:20:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3444-ink-wall-type.md"
     },
     {
       "id": "TASK-3445",

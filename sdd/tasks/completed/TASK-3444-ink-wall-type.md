@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-574 — New Planogram Compliance Pipeline
 **Spec**: `sdd/specs/new-planogram-pipeline.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-3433, TASK-3438, TASK-3441, TASK-3443
@@ -659,7 +659,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-574 orchestrator)
+**Date**: 2026-09-19
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+Implemented in fallback sequential mode (parrot-sdd-coder server unresponsive).
+types/ink_wall.py: resolve_identity (identifier -> signature (xl unknown = candidates only) -> alias via rapidfuzz token_set_ratio >= 92; brand pool; unknown brand -> (None, []); never reads the expected facing); InkWall (STRIPS, requires_slots_definition, min_usable_shapes 8, untouched image): perceive = propose_shapes(PRICE_TAG_PROFILE) via ctx.executor -> group_rows -> build_slots(TAG_BELOW_PRODUCT, gap fill, untagged bottom row) -> tag OCR via ctx.executor.run(read_crop) in batches of 16 when ctx.ocr.available -> assign_membership; identify = identify_strips (+ verify_unresolved when planogram_config['verify_pass']); compare = canonicalise -> register on-fixture slots -> merge -> price notes (notes only) -> score -> summarize -> project -> finalize; fallback perception (slots == []) builds one slot per on-fixture shape.
+Wiring: types/__init__ export, _PLANOGRAM_TYPES['ink_wall'], lazy planogram.InkWall, PIPELINE_REGISTRY += InkWall, ProductCounter, EndcapNoShelvesPromotional, EndcapBacklitMultitier. docs/pipelines/planogram-compliance-cycle.md with the five sections.
+Deviations / decisions: (1) shape ids use candidate_shape_id (key constraint) instead of the blueprint's '<id>:tag:<n>' so slots join their tags; (2) _vocabulary returns the populated Descriptors FIELD NAMES (family/colors/pack/xl) — the blueprint's brand/family VALUES would be rejected by identify_strips' vocabulary check (TASK-3438); (3) compare registers only rows with at least one read identity: the spec fixture's untagged bottom row has none and would otherwise make every image ambiguous (more rows than shelves).
+Cross-task fix found here: membership (TASK-3437) marked the tags on one side of a single missing tag off-fixture; fixed in 4f7b3a135 ('fix(...): TASK-3437 review fixes', regression test added). test_run_template.py (TASK-3443) every-type test adapted for migrated types (slots_definition + stubbed hooks + inline executor).
+Tests: test_ink_wall.py 11 passed (incl. spec test_ink_wall_end_to_end_synthetic: 3 results, definition_coverage 20/24, inconclusive, described facings MATCH); full packages/ai-parrot-pipelines/tests 318 passed (+1 pre-existing); tests/pipelines 138. ruff clean on new files.
+
+Seat: orchestrator (fallback) · Backend: native · Model: claude-opus-5 · Attempts: 1
