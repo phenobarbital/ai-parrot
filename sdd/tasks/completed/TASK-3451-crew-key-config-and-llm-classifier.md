@@ -435,10 +435,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via native seat `sonnet`
+**Date**: 2026-09-19
+**Notes**: Added `CREW_AI_KEY = config.get("CREW_AI_KEY")` to `parrot/conf.py`
+next to `GOOGLE_API_KEY` (conf.py:378-379 anchor verified before editing).
+Created `packages/ai-parrot/src/parrot/bots/flows/crew/credentials.py` with
+`GOOGLE_PROVIDER_KEYS`, `_CREDENTIAL_KWARGS`, a warn-once `get_crew_google_api_key()`,
+and `is_google_llm()` (string/None/class/instance classification, lazy
+`SUPPORTED_CLIENTS` resolution — no `parrot.clients.google` import at module
+scope). Added `packages/ai-parrot/tests/bots/flows/crew/test_crew_credentials.py`
+covering every case in the spec's test matrix. `ruff check` clean.
+Test run: `pytest packages/ai-parrot/tests/bots/flows/crew/test_crew_credentials.py`
+→ 13 passed.
+Note: a merge-tier import-impact sweep (triggered by the `conf.py` change,
+which nearly every package imports) surfaced pre-existing, unrelated failures
+outside this task's scope — most notably a `NameError: name 'chat_kwargs' is
+not defined` in `packages/ai-parrot-client-grok/src/parrot/clients/grok/client.py:235`
+(4 failing tests in `test_grok_multiround_usage.py`), plus assorted pre-existing
+collection errors (missing `parrot.tools.*` toolkit modules, an `aiohttp.web`
+version mismatch, `parrot._imports` symbols). None touch `conf.py` or the new
+`credentials.py` module. Filed to the ledger at feature completion per the
+worker's Completion protocol.
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~215s · Tokens: n/a
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

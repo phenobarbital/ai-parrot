@@ -396,10 +396,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via native seat `sonnet`
+**Date**: 2026-09-19
+**Notes**: Added `google_api_key: Optional[str] = None` to `AgentCrew.__init__`
+(before `**kwargs`), stored as `self._google_api_key`. Threaded it into the
+default Google orchestration client construction and the two lazy fallbacks
+(`run_loop`, executive-summary `summary()`), passing `api_key=` only when set
+and not already present in kwargs. Did not touch `from_definition` (TASK-3454).
+Created `test_crew_google_key.py` (6 tests: AC2 instance untouched, AC3 non-Google
+string untouched, AC4 all three sites get the key, AC8 no-key path unchanged,
+explicit api_key kwarg wins). Test run: `test_crew_google_key.py` +
+`test_crew_credentials.py` + `test_nodes.py` → 41 passed. `ruff check` flagged
+2 pre-existing `B905 zip() without strict=` findings at crew.py:1325/2723,
+outside this task's diff hunks — pre-existing, deferred to feature-completion
+ledger, not fixed here (scope discipline).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

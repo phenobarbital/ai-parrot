@@ -273,10 +273,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via native seat `sonnet`
+**Date**: 2026-09-19
+**Notes**: Added `from ..bots.flows.crew.credentials import get_crew_google_api_key`
+to `manager.py`'s import block, and passed `google_api_key=get_crew_google_api_key()`
+(resolved per-call) into the existing `AgentCrew.from_definition(...)` call
+inside `BotManager._create_crew_from_definition`. Method signature unchanged.
+Created `test_crew_google_key.py` (2 tests: CREW_AI_KEY set → forwarded;
+unset → forwarded as None). Test run: 2 passed. `ruff check` flagged 1
+pre-existing `B007` unused-loop-var finding at manager.py:3119, outside this
+task's diff hunks — pre-existing, deferred to feature-completion ledger.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

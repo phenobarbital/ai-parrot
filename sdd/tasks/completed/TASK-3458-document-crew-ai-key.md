@@ -289,10 +289,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator) via seat `glm` (nova:zai.glm-4.7-flash)
+**Date**: 2026-09-18
+**Notes**: Added "Google Credentials (CREW_AI_KEY)" section to
+`docs/crew_handler.md` (coverage, precedence, unset behavior, persistence
+guarantees, timing caveats) and documented `CREW_AI_KEY` in
+`docs/config.md`'s environment-variable reference. Added
+`packages/ai-parrot/tests/bots/flows/crew/test_crew_key_documented.py`
+asserting AC10. Merge-tier tests: `2 passed`.
+Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 38.774s · Tokens: 218548/2348
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-19T00:00:00+02:00",
-  "completed_at": null,
+  "completed_at": "2026-09-19T01:01:35+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,17 +24,18 @@
       "parallelism_notes": "Root task. Owns conf.py and creates credentials.py; no other task writes either file before it.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3451-crew-key-config-and-llm-classifier.md"
+      "completed_at": "2026-09-18T22:42:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3451-crew-key-config-and-llm-classifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3452",
       "slug": "apply-google-api-key-injector",
-      "title": "apply_google_api_key() — non-mutating credential injector",
+      "title": "apply_google_api_key() \u2014 non-mutating credential injector",
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +45,9 @@
       "parallelism_notes": "Calls is_google_llm and reads _CREDENTIAL_KWARGS from TASK-3451 (packages/ai-parrot/src/parrot/bots/flows/crew/credentials.py); also appends to the same credentials.py and the same test_crew_credentials.py that TASK-3451 creates.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3452-apply-google-api-key-injector.md"
+      "completed_at": "2026-09-18T22:46:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3452-apply-google-api-key-injector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3453",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,17 +66,18 @@
       "parallelism_notes": "Imports GOOGLE_PROVIDER_KEYS from TASK-3451 (packages/ai-parrot/src/parrot/bots/flows/crew/credentials.py) to gate the llm-string branch of AgentCrew.__init__.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3453-agentcrew-init-google-key.md"
+      "completed_at": "2026-09-18T22:57:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3453-agentcrew-init-google-key.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3454",
       "slug": "from-definition-google-key",
-      "title": "AgentCrew.from_definition(google_api_key=) — per-agent injection + forwarding",
+      "title": "AgentCrew.from_definition(google_api_key=) \u2014 per-agent injection + forwarding",
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -85,8 +88,9 @@
       "parallelism_notes": "Calls apply_google_api_key from TASK-3452 (credentials.py); forwards google_api_key to the AgentCrew.__init__ parameter TASK-3453 adds, and edits the same file (packages/ai-parrot/src/parrot/bots/flows/crew/crew.py) as TASK-3453.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3454-from-definition-google-key.md"
+      "completed_at": "2026-09-18T23:05:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3454-from-definition-google-key.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3455",
@@ -95,7 +99,7 @@
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -105,8 +109,9 @@
       "parallelism_notes": "Passes the google_api_key keyword TASK-3454 adds to AgentCrew.from_definition (packages/ai-parrot/src/parrot/bots/flows/crew/crew.py); resolves it via get_crew_google_api_key, which reaches it transitively through TASK-3451.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3455-botmanager-passes-crew-key.md"
+      "completed_at": "2026-09-18T23:09:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3455-botmanager-passes-crew-key.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3456",
@@ -115,7 +120,7 @@
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,17 +131,18 @@
       "parallelism_notes": "Calls apply_google_api_key and get_crew_google_api_key from TASK-3452/3451 (credentials.py), and passes the google_api_key keyword TASK-3453 adds to AgentCrew.__init__. Does not touch crew.py, so it is file-disjoint from TASK-3454.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3456-crewhandler-applies-crew-key.md"
+      "completed_at": "2026-09-18T23:15:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3456-crewhandler-applies-crew-key.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3457",
       "slug": "crew-key-integration-test",
-      "title": "End-to-end test — a handler-built Google agent's client uses CREW_AI_KEY",
+      "title": "End-to-end test \u2014 a handler-built Google agent's client uses CREW_AI_KEY",
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -146,8 +152,9 @@
       "parallelism_notes": "Exercises the CrewHandler._create_crew_from_definition wiring TASK-3456 adds (packages/ai-parrot-server/src/parrot/handlers/crew/handler.py); the test asserts nothing until that call site injects the key.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3457-crew-key-integration-test.md"
+      "completed_at": "2026-09-18T23:37:35+00:00",
+      "file": "sdd/tasks/completed/TASK-3457-crew-key-integration-test.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3458",
@@ -156,7 +163,7 @@
       "feature_id": "FEAT-575",
       "feature": "agentcrew-handler-default-key",
       "spec": "sdd/specs/agentcrew-handler-default-key.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -164,8 +171,9 @@
       "parallelism_notes": "No code edge: the behaviour documented is fixed by the approved spec, not by the implementation. Owns docs/crew_handler.md and docs/config.md, which no other task touches.",
       "assigned_to": null,
       "started_at": "2026-09-18T22:16:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3458-document-crew-ai-key.md"
+      "completed_at": "2026-09-18T22:19:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3458-document-crew-ai-key.md",
+      "verification": "verified"
     }
   ]
 }
