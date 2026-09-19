@@ -427,3 +427,16 @@ When you pick up this task:
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD
+
+**Completed by**: sdd-worker (sequential fallback — parrot-sdd-coder MCP server unresponsive)
+**Date**: 2026-09-19
+**Notes**: `examples/planogram/descriptor_assistant.py` per blueprint. "Never price" enforced three times:
+schema has no `price`, `_strip_price` (recursive, case-insensitive, non-mutating) runs on every model answer,
+and again in `write_proposal`. Prompt lists only undescribed facings (`definition_coverage`). Merge rule:
+first proposal wins unless a later one fills more descriptor fields; page number forced from the render loop.
+Deviation (minor): `render_pdf_pages(dpi=None)` defaults to a module `_RENDER_DPI` that the CLI sets from
+`--dpi`, because `propose_descriptors` (fixed signature) calls the renderer with no dpi. Test fixture registers
+the module in `sys.modules` before `exec_module` — Pydantic needs it to resolve `from __future__` annotations.
+Validation: 7/7 tests pass offline; ruff + black clean; `git check-ignore` prints nothing; importing the
+script loads neither `fitz` nor a provider SDK.
+Seat: sdd-worker (sequential) · Backend: native · Model: claude-opus-5 · Attempts: 1
