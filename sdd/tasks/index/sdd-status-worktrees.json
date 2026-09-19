@@ -16,14 +16,14 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies; creates new module with no shared files",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3549-worktree-status-library.md"
     },
@@ -34,14 +34,16 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-3549"],
+      "depends_on": [
+        "TASK-3549"
+      ],
       "parallel": true,
       "parallelism_notes": "imports WorktreeTaskStatus/WorktreeHealth/WorktreeReport/_parse_branch/_read_worktree_index/_check_health from TASK-3549 (scripts/sdd/worktree_status.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3550-worktree-status-tests.md"
     },
@@ -52,14 +54,16 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-3549"],
+      "depends_on": [
+        "TASK-3549"
+      ],
       "parallel": true,
       "parallelism_notes": "calls python -m scripts.sdd.worktree_status --json created by TASK-3549; modifies .claude/commands/sdd-status.md (no overlap with other tasks); validation command references test file from TASK-3550 as a feature-level check, not a consumed artifact",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3551-sdd-status-worktree-panel.md"
     },
@@ -70,14 +74,16 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-3549"],
+      "depends_on": [
+        "TASK-3549"
+      ],
       "parallel": true,
       "parallelism_notes": "references worktree_status CLI from TASK-3549; modifies .agents/skills/sdd-status/SKILL.md (no overlap with other tasks); validation command references test file from TASK-3550 as a feature-level check, not a consumed artifact",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3552-sdd-status-skill-update.md"
     },
@@ -88,14 +94,16 @@
       "feature_id": "FEAT-582",
       "feature": "sdd-status-worktrees",
       "spec": "sdd/specs/sdd-status-worktrees.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-3549"],
+      "depends_on": [
+        "TASK-3549"
+      ],
       "parallel": true,
       "parallelism_notes": "calls python -m scripts.sdd.worktree_status --json created by TASK-3549; modifies .claude/commands/sdd-next.md + .agents/skills/sdd-next/SKILL.md (no overlap with other tasks); validation command references test file from TASK-3550 as a feature-level check, not a consumed artifact",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-19T14:03:40+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3553-sdd-next-worktree-annotations.md"
     }
