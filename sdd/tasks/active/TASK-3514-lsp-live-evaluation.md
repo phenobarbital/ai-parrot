@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-580 - SDD LSP Research Pilot
 **Spec**: `sdd/specs/sdd-research-lsp.spec.md`
-**Status**: pending
+**Status**: in-progress (blocked on operator-provided live-run manifest/prices/seats/budget — see Completion Note)
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3513
@@ -131,4 +131,55 @@ Completion additionally requires all 180 real attempts and auditable trace/cost 
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+**NOT DONE — intentionally left `in-progress`, per this task's own
+instructions.** M6 is explicitly not delegation-eligible (spec §3 Module
+Breakdown: "Requires provisioned CLI seats, actual usage/pricing, and
+human acceptance review; results cannot be manufactured"). This session
+had no operator-reviewed manifest, no real CLI seats, no actual prices,
+and no approved spending ceiling — exactly the external blocker spec §8's
+one remaining open question describes. Per "If prerequisites or trace
+coverage are missing, record the external blocker and leave this task
+unfinished... A complete no-go result is a valid deliverable; retain
+opt-in deployment," this task is **not marked done** and remains
+`in-progress` in the per-spec index; its file is **not** moved to
+`sdd/tasks/completed/`.
+
+**What was implemented** (the portion achievable without fabricating live
+evidence):
+- `packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py`: report-
+  integrity checking logic (`check_live_report_integrity`,
+  `manifest_digest`) validated against synthetic fixtures shaped like a
+  compliant live report — proving the CHECKING LOGIC works, never
+  claiming a live run occurred. Verifies: a report must not be
+  `synthetic`; its manifest must match a reviewed manifest's digest
+  exactly (tamper-evident); every one of the 180 planned attempts must be
+  present exactly once (no missing/duplicated ids); every launched
+  attempt must carry either raw trace refs or an explicit failure reason
+  (no silent gaps). Also verifies `evaluate_gate` is deterministically
+  re-derivable from raw attempt data and reacts correctly to tampered
+  acceptance data (three required tests, all present and passing).
+- `docs/sdd/lsp-pilot-results.md`: an honest, clearly-marked
+  **NOT YET RUN** placeholder — explains exactly what is blocking the
+  live run (referencing spec §8 and the "Operator run checklist" in
+  `docs/sdd/lsp-pilot.md`), what IS implemented and ready (M1–M5, all
+  complete and tested offline), and the exact command an operator runs
+  once the manifest/prices/seats/budget are reviewed. Contains
+  deliberately **zero** go/no_go/cost/quality/latency claims.
+
+**What was NOT done** (the actual scope of this task, honestly
+unfulfilled): the real 12-task × 3-repetition × 5-arm (180-attempt) live
+run was never executed; no real cost/trace/acceptance evidence exists;
+no audited `go`/`no_go`/`inconclusive` decision was published; no human
+acceptance review occurred. `lsp-pilot-results.md` explicitly does not
+claim otherwise.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py -q`
+→ 3 passed. Full `packages/ai-parrot-tools/tests/lsp/` regression: 135
+collected, 132 passed, 3 skipped (unrelated real-Pyright tests). `black
+-l 120`/`ruff check` clean.
+
+Seat: sonnet (native, no MCP seat) — implemented directly by the
+sdd-worker orchestrator per the human-authorized exception (see
+TASK-3508's completion note for the routing-gap blocker context; that
+blocker is unrelated to this task's OWN, separate M6 execution blocker
+described above).
