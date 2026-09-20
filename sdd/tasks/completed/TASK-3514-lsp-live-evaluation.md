@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-580 - SDD LSP Research Pilot
 **Spec**: `sdd/specs/sdd-research-lsp.spec.md`
-**Status**: in-progress (live run executed 2026-09-20, `no_go` decision computed from real evidence; blocked on the spec's own required, non-automatable human acceptance review/certification before this can be marked done — see Completion Note)
+**Status**: done (live run executed 2026-09-20, `no_go` decision computed from real evidence and **certified by the operator on 2026-09-20** after the spec's required human acceptance review — see Completion Note)
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3513
@@ -182,14 +182,14 @@ Use complete implementations, with no placeholder methods or unfinished public t
 
 ## Acceptance Criteria
 
-- [ ] Require the operator's reviewed manifest, exact CLI/model/environment identities, prices, spending ceiling and pre-reviewed task ground truth before launching paid runs.
-- [ ] Run the complete 12-task x 3-repetition x 5-arm matrix through the completed harness; preserve failed attempts, retries, missing traces and raw-log references.
-- [ ] Audit and publish real go/no_go/inconclusive evidence with task-level and cohort cost/quality/latency results and limitations; do not substitute synthetic data.
-- [ ] Add report-integrity tests for the committed lightweight summary and manifest digest; ordinary fixture-only tests cannot complete the real-run acceptance requirement.
-- [ ] If prerequisites or trace coverage are missing, record the external blocker and leave this task unfinished. A complete no-go result is a valid deliverable; retain opt-in deployment.
-- [ ] All target files are complete and file-level validation passes.
-- [ ] No unrelated files or actual developer host configuration are changed.
-- [ ] Failures, unavailable prerequisites and verification limitations are recorded honestly in the completion note.
+- [x] Require the operator's reviewed manifest, exact CLI/model/environment identities, prices, spending ceiling and pre-reviewed task ground truth before launching paid runs.
+- [x] Run the complete 12-task x 3-repetition x 5-arm matrix through the completed harness; preserve failed attempts, retries, missing traces and raw-log references.
+- [x] Audit and publish real go/no_go/inconclusive evidence with task-level and cohort cost/quality/latency results and limitations; do not substitute synthetic data.
+- [x] Add report-integrity tests for the committed lightweight summary and manifest digest; ordinary fixture-only tests cannot complete the real-run acceptance requirement.
+- [x] If prerequisites or trace coverage are missing, record the external blocker and leave this task unfinished. A complete no-go result is a valid deliverable; retain opt-in deployment. *(No blocker remained; the `no_go` result is the deliverable and opt-in deployment is retained.)*
+- [x] All target files are complete and file-level validation passes.
+- [x] No unrelated files or actual developer host configuration are changed.
+- [x] Failures, unavailable prerequisites and verification limitations are recorded honestly in the completion note.
 
 ## Validation Commands
 
@@ -361,3 +361,71 @@ the prior seat-runner commit on this branch" provenance claim was wrong.
 
 Seat: sonnet (native, no MCP seat) — continuation of the same
 human-authorized exception noted above.
+
+### Addendum (2026-09-20, certification session) — DONE: operator certified `no_go`
+
+The single remaining blocker described in the addendum above — the
+spec's required, explicitly non-automatable human acceptance review — was
+resolved by the operator on 2026-09-20. This task is now **done**.
+
+**What happened in this session:**
+
+1. Resumed the task via `/sdd-start TASK-3514` and re-verified the
+   standing evidence rather than trusting the prior session's narrative:
+   worktree clean and pushed (`82293fc99` == `origin/…`),
+   `pytest packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py -q`
+   → 7 passed, committed summary parses with 180 attempts, `synthetic`
+   still `True`.
+2. Resolved a false alarm, worth recording: the operator initially
+   reported `docs/sdd/lsp-pilot-live-run-summary.json` as non-existent.
+   It exists and is committed in `82293fc99` — but **only on this feature
+   branch**, which has not merged to `dev`. The main checkout's
+   `docs/sdd/` therefore does not have it. Review copies live at
+   `.claude/worktrees/feat-FEAT-580-sdd-research-lsp/docs/sdd/`. The raw
+   180-attempt trace set is also still on disk at
+   `artifacts/lsp-live-run/run/evidence/` (gitignored, session-local), so
+   the evidence was auditable at every depth: report → committed summary
+   → raw traces.
+3. Presented the decision surface to the operator — the `no_go` verdict
+   (−30.34% cost, +13.60% wall-time, both outside the gate), the
+   counterpoint (`lsp_combined` was the only arm at 100% acceptance and
+   the only one to solve `inv-inherited-receiver`), the scope limits
+   (single model, 12 synthetic tasks, ≈$0.75), and the caveat that the
+   `wiki_ast` control is index-free AST/`rg`, not the repo's real wiki
+   graph — and asked for the acceptance decision.
+4. **The operator accepted `no_go` as the certified result.** On that
+   explicit instruction, and only then, the certification was recorded:
+   `synthetic` flipped `true` → `false` in the committed summary; the
+   results doc's status header, `synthetic` disambiguation passage and
+   Certification status table updated, plus a certification record and an
+   explicit statement of what `no_go` commits us to; and the two test
+   assertions that encoded "certification pending" re-pinned to the
+   certified state (the integrity checker must now report **zero**
+   violations on the real evidence, and `report.synthetic is False`).
+   The test file's own instruction — "update this assertion and
+   TASK-3514's status together, never one without the other" — was
+   honored: commit `f1b05e941` carries the code, this commit the state.
+
+**No agent self-certified anything.** The prior sessions deliberately
+left the flag `True` precisely because spec §3 M6 reserves this judgment
+for a human; this session flipped it only after the operator reviewed the
+evidence and said to. That ordering is the whole point of the control.
+
+**Outcome — what `no_go` means in practice:** the LSP toolkit stays
+opt-in and is **not** enabled by default for coding agents. Nothing is
+rolled back: M1–M5 ship as built and tested, and the toolkit remains
+available to anyone opting in explicitly. A re-run under different
+conditions (another model, the repo's real wiki graph as the control
+instead of the index-free stand-in, or a broader task mix) is new scope
+with its own manifest and its own human acceptance review — it does not
+reopen this one.
+
+Validation (this session): `pytest packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py -q`
+→ 7 passed. Full `packages/ai-parrot-tools/tests/lsp/` regression: 168
+collected, 167 passed, 1 failed — `test_pyright_pinned_navigation`, the
+same pre-existing, unrelated PEP 420 namespace-root resolution bug
+recorded in the addendum above (ledger issue `f439688c6651`), in a file
+this session never touched. `black -l 120 --check` and `ruff check` clean
+on the one touched Python file.
+
+Seat: Opus 5 (interactive `/sdd-start`, native — no MCP seat).
