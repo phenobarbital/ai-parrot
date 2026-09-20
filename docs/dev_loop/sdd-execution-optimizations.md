@@ -352,7 +352,7 @@ Desglose de las 589 llamadas (verificado sobre los mismos transcripts):
 
 Propuestas, por orden de relación beneficio/esfuerzo:
 
-1. **P0 — Importación perezosa en el CLI de `wikitoolkit`** (registrar el subcomando `decisions` sin importar su módulo hasta que se invoque) y silenciar stdout en modo hook. Objetivo: hook < 0,3 s. No cambia comportamiento y beneficia a toda sesión del repositorio, no solo a SDD.
+1. **P0 — Importación perezosa en el CLI de `wikitoolkit`. Hecho (2026-09-21).** El commit `121090047` movió las anotaciones de `AbstractClient` bajo `TYPE_CHECKING` en `decisions/` (2,05 s → 0,45 s y stdout limpio, porque navconfig ya no se importa); `aiohttp` pasó a importarse dentro de `DocumentAcquirer` en `documents.py` (0,45 s → 0,32 s). Lo que queda es el arranque de Python más click/pydantic/yaml del propio CLI; bajar de ahí exigiría un punto de entrada separado para el hook (el módulo `claude_code.hook` solo importa en 0,27 s), con ganancia marginal.
 2. **P1 — Eliminar las llamadas sin efecto** desde el prompt del worker: no narrar con `echo`, y que `coder_begin_execution` entregue el identificador en lugar de generarlo con `python -c uuid4`. 71 llamadas × ~11 s ≈ 13 min.
 3. **P1 — Operaciones de lectura con propósito en el toolkit MCP**, no una tool genérica de inspección (que sería Bash con otro nombre). Candidatas, cada una sustituyendo una cadena observada:
    - `coder_task_context(task_id)`: tarea, entrada del índice, estado de dependencias y archivos declarados.
