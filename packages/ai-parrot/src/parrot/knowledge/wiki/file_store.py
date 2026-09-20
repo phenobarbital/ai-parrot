@@ -30,6 +30,8 @@ import asyncio
 import json
 import logging
 import math
+import os
+import uuid
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -91,6 +93,11 @@ class InMemoryWikiStore(BaseWikiStore):
 
         self._loaded = False
         self._lock = asyncio.Lock()
+
+        # FEAT-578: serializes compare-and-swap writes on managed ADR pages.
+        # Deliberately NOT `self._lock`, which `_ensure_loaded` holds while
+        # loading the bundle — asyncio.Lock is not reentrant.
+        self._adr_lock = asyncio.Lock()
 
         # RAM indexes (built by _load_bundle / maintained on mutation)
         self._pages: dict[str, dict[str, Any]] = {}
@@ -201,8 +208,8 @@ class InMemoryWikiStore(BaseWikiStore):
         stem = flatten_concept_id_for_filename(page["concept_id"])
         return self._bundle_dir / cat_dir / f"{stem}.md"
 
-    def _write_page_file(self, page: dict[str, Any]) -> None:
-        """Render + write one page's OKF markdown file (sync, threaded)."""
+    def _render_page_file(self, page: dict[str, Any]) -> str:
+        """Render one page's full OKF markdown file content (sync, pure)."""
         relates = [{"concept": dst, "rel": rel} for dst, rel in self._out_edges.get(page["concept_id"], [])]
         front = page_frontmatter(page, relates)
         # Machine fields appended into the same frontmatter block — OKF
@@ -219,9 +226,28 @@ class InMemoryWikiStore(BaseWikiStore):
                 default_flow_style=False,
             )
             front = front[: -len("---\n")] + extra + "---\n"
+        return front + "\n" + (page.get("body") or "")
+
+    def _write_page_file(self, page: dict[str, Any]) -> None:
+        """Render + write one page's OKF markdown file (sync, threaded)."""
         path = self._page_path(page)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(front + "\n" + (page.get("body") or ""), encoding="utf-8")
+        path.write_text(self._render_page_file(page), encoding="utf-8")
+
+    def _write_page_file_atomic(self, page: dict[str, Any]) -> None:
+        """Render + atomically replace one page's OKF markdown file.
+
+        Sync by design — call it through :func:`asyncio.to_thread`. Writes
+        to a sibling temp file first, then ``os.replace`` (same filesystem,
+        atomic on POSIX), so a crash mid-write cannot leave a partially
+        written record behind (spec §2: CAS "atomically replaces its
+        file").
+        """
+        path = self._page_path(page)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+        tmp_path.write_text(self._render_page_file(page), encoding="utf-8")
+        os.replace(tmp_path, path)
 
     def _write_index_md(self) -> None:
         """Regenerate the bundle's root ``index.md`` (sync, threaded)."""
@@ -316,9 +342,9 @@ class InMemoryWikiStore(BaseWikiStore):
 
     def _remove_edges_touching(self, concept_id: str) -> None:
         """Drop every edge where ``concept_id`` is src or dst."""
-        for dst, rel in self._out_edges.pop(concept_id, []):
+        for dst, _rel in self._out_edges.pop(concept_id, []):
             self._in_edges[dst] = [e for e in self._in_edges.get(dst, []) if e[0] != concept_id]
-        for src, rel in self._in_edges.pop(concept_id, []):
+        for src, _rel in self._in_edges.pop(concept_id, []):
             self._out_edges[src] = [e for e in self._out_edges.get(src, []) if e[0] != concept_id]
 
     def _stub(self, page: dict[str, Any]) -> dict[str, Any]:
@@ -376,6 +402,81 @@ class InMemoryWikiStore(BaseWikiStore):
             rows.append(row)
         await self._persist_pages(rows)
         return len(rows)
+
+    def _read_page_file_hash(self, concept_id: str, category: str) -> tuple[bool, str | None]:
+        """Read one page's persisted ``content_hash`` straight from its file.
+
+        Sync by design — call it through :func:`asyncio.to_thread`.
+
+        Args:
+            concept_id: The page identity to resolve a bundle path for.
+            category: The page's category, needed to resolve the same
+                bundle path :meth:`_page_path` would produce (ADR pages
+                keep a fixed ``category``, so this is stable across CAS
+                calls for a given ``concept_id``).
+
+        Returns:
+            ``(exists, content_hash)``. ``(False, None)`` when no file is
+            present. Never consults the RAM indexes, so it sees writes made
+            by another process since this store loaded its bundle (spec §7:
+            "do not trust only a startup snapshot").
+        """
+        path = self._page_path({"concept_id": concept_id, "category": category})
+        if not path.exists():
+            return False, None
+        try:
+            page, _relates = self._parse_page_file(path)
+        except (OSError, ValueError) as exc:
+            self.logger.warning("compare_and_swap_page: unreadable bundle file %s: %s", path, exc)
+            return False, None
+        return True, page.get("content_hash")
+
+    async def compare_and_swap_page(
+        self,
+        page: WikiPageRecord,
+        expected_content_hash: str | None,
+    ) -> bool:
+        """Conditionally write one page against the bundle file's current hash.
+
+        See :meth:`BaseWikiStore.compare_and_swap_page` for the contract.
+        The precondition is evaluated against the **persisted file**, not the
+        RAM snapshot, so a peer process's write is never silently clobbered.
+        """
+        self._assert_writable()
+        await self._ensure_loaded()
+        async with self._adr_lock:
+            exists, stored = await asyncio.to_thread(self._read_page_file_hash, page.concept_id, page.category)
+            if expected_content_hash is None:
+                if exists:
+                    return False
+            elif not exists or stored != expected_content_hash:
+                return False
+
+            now = _now_iso()
+            existing = self._pages.get(page.concept_id, {})
+            row = {
+                "concept_id": page.concept_id,
+                "node_id": page.node_id,
+                "title": page.title,
+                "category": page.category,
+                "summary": page.summary,
+                "body": page.body,
+                "source_id": page.source_id,
+                "token_count": page.token_count or estimate_tokens(page.body),
+                "created_at": existing.get("created_at") or now,
+                "updated_at": now,
+                "origin": page.origin,
+                "asserted_by": page.asserted_by,
+                "content_hash": page.content_hash,
+            }
+            old_path = self._page_path(existing) if existing else None
+            self._index_page(row)
+            new_path = self._page_path(row)
+            if old_path and old_path != new_path and old_path.exists():
+                await asyncio.to_thread(old_path.unlink)
+            await asyncio.to_thread(self._write_page_file_atomic, row)
+        self.logger.debug("compare_and_swap_page: wrote %s", page.concept_id)
+        return True
 
     async def add_edges(self, edges: list[tuple]) -> int:
         """Insert typed edges and re-persist affected source pages.
