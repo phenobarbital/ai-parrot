@@ -263,10 +263,19 @@ async def refresh_decisions(
         by_decision_id[record.decision_id] = record
     combined_inventory = list(by_decision_id.values())
 
-    python_files = await asyncio.to_thread(discover_python_files, root)
-    code_paths = [p.relative_to(root).as_posix() for p in python_files]
-    resolved_links, link_diagnostics = await _resolve_citations(root, code_paths, combined_inventory)
-    result.diagnostics.extend(link_diagnostics)
+    # Nothing in the inventory can be the target of a citation unless some
+    # record carries an alias, so the whole code walk -- read, tokenize and
+    # ast.parse EVERY Python file in the repository -- would resolve to the
+    # empty set. Skipping it is what keeps `wikitoolkit build` from paying
+    # ~30s per run for a decision plane that is simply empty, which is the
+    # state of every project that has not written an ADR yet.
+    alias_map, ambiguous_aliases = _alias_index(combined_inventory)
+    resolved_links: _ResolvedLinks = {}
+    if alias_map or ambiguous_aliases:
+        python_files = await asyncio.to_thread(discover_python_files, root)
+        code_paths = [p.relative_to(root).as_posix() for p in python_files]
+        resolved_links, link_diagnostics = await _resolve_citations(root, code_paths, combined_inventory)
+        result.diagnostics.extend(link_diagnostics)
 
     for record in parsed_by_source.values():
         extra_evidence, links = resolved_links.get(record.decision_id, ([], []))

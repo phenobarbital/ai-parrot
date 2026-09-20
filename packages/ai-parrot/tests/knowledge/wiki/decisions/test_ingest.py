@@ -229,6 +229,39 @@ class TestRefresh:
         assert not any(link.relation == "explains" for link in dup_a.links)
         assert not any(link.relation == "explains" for link in dup_b.links)
 
+    async def test_empty_inventory_skips_the_code_walk(self, tmp_path, adr_config, adr_store, monkeypatch):
+        """No alias in the inventory -> no citation can resolve, so don't walk.
+
+        A project with no ADR yet would otherwise read, tokenize and
+        ast.parse every Python file in the repository on every build, to
+        resolve citations against an empty alias map.
+        """
+        from parrot.knowledge.wiki.decisions import ingest
+
+        def _fail_discover(*args, **kwargs):
+            raise AssertionError("refresh_decisions must not walk the code with an empty inventory")
+
+        monkeypatch.setattr(ingest, "discover_python_files", _fail_discover)
+
+        result = await refresh_decisions(adr_store, tmp_path, adr_config)
+        assert result.created == 0 and result.updated == 0
+
+    async def test_inventory_with_an_alias_still_walks_the_code(self, adr_repo, adr_config, adr_store, monkeypatch):
+        """The guard is about an EMPTY alias map, never about skipping work."""
+        from parrot.knowledge.wiki.decisions import ingest
+
+        walked: list[object] = []
+        real_discover = ingest.discover_python_files
+
+        def _spy(root, *args, **kwargs):
+            walked.append(root)
+            return real_discover(root, *args, **kwargs)
+
+        monkeypatch.setattr(ingest, "discover_python_files", _spy)
+
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        assert walked, "an inventory carrying ADR aliases must still resolve code citations"
+
     async def test_sync_makes_zero_llm_calls(self, adr_repo, adr_config, adr_store, monkeypatch):
         """AC5: ordinary scan/read paths never construct or invoke a client."""
         from parrot.clients.base import AbstractClient
