@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-19T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-20T21:24:52+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -331,7 +331,7 @@
       "feature_id": "FEAT-580",
       "feature": "sdd-research-lsp",
       "spec": "sdd/specs/sdd-research-lsp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -341,8 +341,9 @@
       "parallelism_notes": "Exclusive use of paid CLI seats and the approved spending budget; TASK-3513 supplies readiness evidence.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3514-lsp-live-evaluation.md"
+      "completed_at": "2026-09-20T21:24:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3514-lsp-live-evaluation.md",
+      "verification": "verified"
     }
   ]
 }
