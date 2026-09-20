@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional, Sequence
@@ -37,12 +38,12 @@ from typing import Optional, Sequence
 import pathspec
 
 from parrot.knowledge.graphindex.analytics import compute_analytics, generate_report
-from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
 from parrot.knowledge.graphindex.assemble import GraphAssembler
 from parrot.knowledge.graphindex.communities import detect_communities
 from parrot.knowledge.graphindex.export_html import export_graph
 from parrot.knowledge.graphindex.extractors.code import CodeExtractor
 from parrot.knowledge.graphindex.schema import UniversalEdge, UniversalNode
+from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
 
 logger = logging.getLogger(__name__)
 
@@ -75,14 +76,20 @@ def discover_python_files(
         return [root] if root.suffix == ".py" else []
 
     files: list[Path] = []
-    for path in root.rglob("*.py"):
-        if any(part in _ALWAYS_SKIP for part in path.relative_to(root).parts):
-            continue
-        if ignore_spec is not None:
-            rel = path.relative_to(root).as_posix()
-            if ignore_spec.match_file(rel):
+    # os.walk, not rglob: an excluded directory must be PRUNED, not visited
+    # and then discarded file by file. `.claude` alone holds one full copy of
+    # the repository per SDD worktree, and rglob walked all of them only to
+    # drop every path it found there. Symlinked directories are not followed,
+    # which also makes a self-referential link a non-event.
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [name for name in dirnames if name not in _ALWAYS_SKIP]
+        for filename in filenames:
+            if not filename.endswith(".py"):
                 continue
-        files.append(path)
+            path = Path(dirpath, filename)
+            if ignore_spec is not None and ignore_spec.match_file(path.relative_to(root).as_posix()):
+                continue
+            files.append(path)
     return sorted(files)
 
 

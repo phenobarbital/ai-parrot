@@ -47,6 +47,13 @@ def sample_repo(tmp_path: Path) -> Path:
     (tmp_path / ".venv" / "junk.py").write_text("x = 1\n")
     (tmp_path / "__pycache__").mkdir()
     (tmp_path / "__pycache__" / "cached.py").write_text("y = 2\n")
+    # Tool output planes. `.claude` holds SDD worktrees: a full second copy
+    # of the repository, per worktree.
+    worktree = tmp_path / ".claude" / "worktrees" / "feat-1" / "pkg"
+    worktree.mkdir(parents=True)
+    (worktree / "b.py").write_text(SAMPLE_B)
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "generated.py").write_text("z = 3\n")
     return tmp_path
 
 
@@ -56,6 +63,24 @@ class TestDiscovery:
         names = {p.name for p in found}
         assert names == {"a.py", "b.py"}
         assert not any(".venv" in p.parts for p in found)
+
+    def test_skips_tool_output_planes(self, sample_repo):
+        """`.claude` and `build` are pruned, not walked then discarded.
+
+        A worktree under `.claude` is a complete copy of the repository, so
+        failing to prune it both duplicates every symbol and costs a full
+        extra walk per worktree.
+        """
+        found = cli.discover_python_files(sample_repo)
+        assert not any(".claude" in p.parts or "build" in p.parts for p in found)
+        assert len(found) == 2
+
+    def test_shares_the_package_wide_exclusion_list(self):
+        """One list, not a per-subsystem copy that can fall behind again."""
+        from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
+        from parrot.knowledge.wiki.repo_scan import DEFAULT_EXCLUDE_DIRS
+
+        assert cli._ALWAYS_SKIP is SCAN_EXCLUDE_DIRS is DEFAULT_EXCLUDE_DIRS
 
     def test_single_file(self, sample_repo):
         found = cli.discover_python_files(sample_repo / "a.py")
