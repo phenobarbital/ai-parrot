@@ -49,6 +49,7 @@ def _arangodb_reachable() -> bool:
     except OSError:
         return False
 
+
 #: Where the parity report is written (AC12: evidence under artifacts/logs/).
 PARITY_REPORT = Path("artifacts/logs/feat-578-backend-parity.json")
 

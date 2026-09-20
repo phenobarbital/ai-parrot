@@ -112,6 +112,20 @@ class TestOtherActions:
         assert revised.evidence == candidate.evidence
         assert revised.generation == candidate.generation
 
+    def test_revise_to_an_empty_decision_is_rejected(self, candidate):
+        """DecisionRecord.decision has min_length=1 — a revise that would
+        leave it empty must be refused before model_copy, not persisted."""
+        edit = CandidateEdit(decision="")
+        with pytest.raises(DecisionError) as exc:
+            apply_review(candidate, _req("revise", replacement=edit))
+        assert exc.value.code == "ADR_INVALID_ARGUMENT"
+
+    def test_revise_to_a_whitespace_only_decision_is_rejected(self, candidate):
+        edit = CandidateEdit(decision="   ")
+        with pytest.raises(DecisionError) as exc:
+            apply_review(candidate, _req("revise", replacement=edit))
+        assert exc.value.code == "ADR_INVALID_ARGUMENT"
+
     def test_link_records_an_asserted_association(self, candidate):
         linked = apply_review(candidate, _req("link", documented_decision_id="adr:doc:xyz"))
         assert linked.origin == "inferred"

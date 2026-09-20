@@ -160,6 +160,59 @@ async def _resolve_citations(
     return resolved, diagnostics
 
 
+def _strip_extracted_explains(record: DecisionRecord) -> tuple[list[EvidenceRef], list[DecisionLink]]:
+    """``record``'s evidence/links with stale extracted ``explains`` citation
+    links removed, ready for a fresh ``_resolve_citations`` result to be
+    appended in their place.
+
+    Only citation-derived links are eligible for removal here: an
+    ``explains`` link with ``provenance="extracted"`` is exactly what
+    ``_resolve_citations`` produces (see above) and nothing else does. An
+    ADR's own ``supersedes`` header is also parsed with
+    ``provenance="extracted"`` (``parser.py``) but a different ``relation``,
+    so it — and every ``asserted``/``inferred`` link — survives untouched.
+    Evidence not referenced by ANY link (e.g. the ADR body's own citation)
+    also survives; only evidence referenced EXCLUSIVELY by a removed
+    ``explains`` link is dropped.
+    """
+    keep_links = [link for link in record.links if not (link.relation == "explains" and link.provenance == "extracted")]
+    all_referenced = {idx for link in record.links for idx in link.evidence_indexes}
+    kept_referenced = {idx for link in keep_links for idx in link.evidence_indexes}
+    keep_indexes = sorted(
+        idx for idx in range(len(record.evidence)) if idx not in all_referenced or idx in kept_referenced
+    )
+    remap = {old: new for new, old in enumerate(keep_indexes)}
+    new_evidence = [record.evidence[i] for i in keep_indexes]
+    new_links = [
+        DecisionLink(
+            target_id=link.target_id,
+            relation=link.relation,
+            provenance=link.provenance,
+            evidence_indexes=[remap[idx] for idx in link.evidence_indexes],
+        )
+        for link in keep_links
+    ]
+    return new_evidence, new_links
+
+
+async def _persist_if_changed(repo: DecisionRepository, record: DecisionRecord, result: SyncResult) -> None:
+    """Save ``record`` when it differs from the stored version; update ``result`` counters."""
+    existing = await repo.get(record.decision_id)
+    expected_hash = existing[1] if existing is not None else None
+    if existing is not None and content_fingerprint(existing[0]) == content_fingerprint(record):
+        result.unchanged += 1
+        return
+    try:
+        await repo.save(record, expected_hash)
+    except DecisionError as exc:
+        result.diagnostics.append(DecisionDiagnostic(code=exc.code, message=str(exc), decision_id=exc.decision_id))
+        return
+    if existing is None:
+        result.created += 1
+    else:
+        result.updated += 1
+
+
 async def refresh_decisions(
     store: BaseWikiStore,
     root: Path,
@@ -185,7 +238,7 @@ async def refresh_decisions(
     inventory = await repo.inventory()
     result.diagnostics.extend(repo.last_diagnostics)
 
-    sources = paths if paths is not None else discover_adr_sources(root, config)
+    sources = paths if paths is not None else await asyncio.to_thread(discover_adr_sources, root, config)
 
     parsed_by_source: dict[str, DecisionRecord] = {}
     for source in sources:
@@ -209,7 +262,8 @@ async def refresh_decisions(
         by_decision_id[record.decision_id] = record
     combined_inventory = list(by_decision_id.values())
 
-    code_paths = [p.relative_to(root).as_posix() for p in discover_python_files(root)]
+    python_files = await asyncio.to_thread(discover_python_files, root)
+    code_paths = [p.relative_to(root).as_posix() for p in python_files]
     resolved_links, link_diagnostics = await _resolve_citations(root, code_paths, combined_inventory)
     result.diagnostics.extend(link_diagnostics)
 
@@ -228,21 +282,36 @@ async def refresh_decisions(
         record = record.model_copy(
             update={"evidence": [*record.evidence, *extra_evidence], "links": [*record.links, *shifted_links]}
         )
+        await _persist_if_changed(repo, record, result)
 
-        existing = await repo.get(record.decision_id)
-        expected_hash = existing[1] if existing is not None else None
-        if existing is not None and content_fingerprint(existing[0]) == content_fingerprint(record):
-            result.unchanged += 1
+    # `resolved_links` was just recomputed against the FULL current code
+    # state above, even for records whose OWN ADR source was not named in
+    # `paths` this pass. A partial sync must still propagate that result to
+    # every affected record — otherwise a citation removed from unrelated,
+    # unchanged code never gets its stale `explains` link retracted here
+    # (spec §2, AC7). Records already handled above (fresh reparse) are
+    # skipped — their fresh parse already excludes any stale extracted link.
+    for record in inventory:
+        if record.decision_id in parsed_by_source:
             continue
-        try:
-            await repo.save(record, expected_hash)
-        except DecisionError as exc:
-            result.diagnostics.append(DecisionDiagnostic(code=exc.code, message=str(exc), decision_id=exc.decision_id))
+        stripped_evidence, stripped_links = _strip_extracted_explains(record)
+        extra_evidence, links = resolved_links.get(record.decision_id, ([], []))
+        base_index = len(stripped_evidence)
+        shifted_links = [
+            DecisionLink(
+                target_id=link.target_id,
+                relation=link.relation,
+                provenance=link.provenance,
+                evidence_indexes=[idx + base_index for idx in link.evidence_indexes],
+            )
+            for link in links
+        ]
+        candidate = record.model_copy(
+            update={"evidence": [*stripped_evidence, *extra_evidence], "links": [*stripped_links, *shifted_links]}
+        )
+        if candidate == record:
             continue
-        if existing is None:
-            result.created += 1
-        else:
-            result.updated += 1
+        await _persist_if_changed(repo, candidate, result)
 
     # A source that vanished is retained, never deleted (spec §2, AC7) — just
     # counted, using the PRE-refresh inventory so a rename's old record is
@@ -252,6 +321,8 @@ async def refresh_decisions(
             continue
         if not (root / record.source_path).exists():
             result.missing += 1
+
+    result.unresolved = sum(1 for d in result.diagnostics if d.code in (ADR_REFERENCE_MISSING, ADR_REFERENCE_AMBIGUOUS))
 
     return result
 

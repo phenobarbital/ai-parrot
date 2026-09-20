@@ -30,7 +30,7 @@ An accepted candidate is a team agreement, not a historical record. The origin s
 
 ## What Gets Parsed
 
-ADRs are parsed from Markdown files matching the configured globs (defaults to `docs/adr/**/*.md`, `docs/architecture/**/*.md`). The parser extracts:
+ADRs are parsed from Markdown files matching the configured globs (defaults to `docs/adr/**/*.md`, `docs/adrs/**/*.md`, `docs/decisions/**/*.md`). The parser extracts:
 
 - **Frontmatter**: `id`, `title`, `status`, `supersedes` (case-insensitive). Nested YAML is unsupported.
 - **Sections**: `Context`, `Decision`, `Consequences`, `Status` (case-insensitive). Fenced headings are ignored.
@@ -96,14 +96,12 @@ Inventory bound: 10000 records (deliberate v1 tradeoff). Configurable via `ADR_I
 
 | Error Code | Meaning | What To Do |
 |------------|---------|------------|
-| `ADR_INVALID_ARGUMENT` | Bad CLI flag or request | Check the command syntax |
-| `ADR_RECORD_NOT_FOUND` | No such decision ID | Check the ID spelling |
+| `ADR_INVALID_ARGUMENT` | Bad CLI flag, malformed request, or no such decision ID | Check the command syntax / ID spelling |
 | `ADR_RECORD_TOO_LARGE` | Record exceeds 1 MiB | Split into smaller decisions |
 | `ADR_REVISION_CONFLICT` | Expected revision mismatch | Re-read before editing |
 | `ADR_STATUS_CONFLICT` | Frontmatter vs section status | Make them consistent |
 | `ADR_INVENTORY_LIMIT` | Too many records | Delete unused decisions |
-| `ADR_GENERATION_DISABLED` | Generation not enabled | Enable in config |
-| `ADR_NO_MODEL_CONFIGURED` | No LLM for generation | Set WIKI_ADR_LLM |
+| `ADR_MODEL_UNCONFIGURED` | Generation requested but no LLM is configured | Enable generation and set a model in config |
 
 ## What This Feature Does Not Do
 

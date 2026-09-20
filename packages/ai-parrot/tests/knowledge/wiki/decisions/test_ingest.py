@@ -89,6 +89,39 @@ class TestRefresh:
         after, _ = await repo.get(documented_decision_id("docs/adr/0060-removal-target.md"))
         assert not any(link.relation == "explains" for link in after.links)
 
+    async def test_removed_citation_removes_the_link_on_a_partial_sync(self, adr_repo, adr_config, adr_store):
+        """A partial sync must still retract a stale link for an UNCHANGED ADR
+        whose citing code changed elsewhere — the write loop must not only
+        touch records whose own source was named in `paths` this pass."""
+        adr_path = adr_repo / "docs" / "adr" / "0065-removal-target-partial.md"
+        adr_path.write_text(
+            "# Removal target (partial)\n\n## Context\nc\n\n## Decision\nd\n\n## Consequences\nc\n",
+            encoding="utf-8",
+        )
+        citing_path = adr_repo / "src" / "removal_citer_partial.py"
+        citing_path.write_text(
+            '"""Module docstring."""\n\n# see ADR-65\n\n\ndef f():\n    return 1\n', encoding="utf-8"
+        )
+        unrelated_path = adr_repo / "docs" / "adr" / "0066-unrelated-partial.md"
+        unrelated_path.write_text(
+            "# Unrelated (untouched by the removal)\n\n## Context\nc\n\n## Decision\nd\n\n## Consequences\nc\n",
+            encoding="utf-8",
+        )
+
+        repo = DecisionRepository(adr_store)
+        await refresh_decisions(adr_store, adr_repo, adr_config)
+        before, _ = await repo.get(documented_decision_id("docs/adr/0065-removal-target-partial.md"))
+        assert any(link.relation == "explains" for link in before.links)
+
+        # The citation disappears, but the PARTIAL sync below only names the
+        # UNRELATED ADR file — 0065's own source is never reparsed this pass.
+        citing_path.write_text(
+            '"""Module docstring, citation removed."""\n\n\ndef f():\n    return 1\n', encoding="utf-8"
+        )
+        await refresh_decisions(adr_store, adr_repo, adr_config, paths=["docs/adr/0066-unrelated-partial.md"])
+        after, _ = await repo.get(documented_decision_id("docs/adr/0065-removal-target-partial.md"))
+        assert not any(link.relation == "explains" for link in after.links)
+
     async def test_deleted_adr_source_is_missing_not_deleted(self, adr_repo, adr_config, adr_store):
         """spec §2: retain records whose sources disappeared (AC7)."""
         adr_path = adr_repo / "docs" / "adr" / "0070-will-vanish.md"

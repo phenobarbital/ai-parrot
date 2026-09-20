@@ -113,6 +113,12 @@ def apply_review(record: DecisionRecord, request: ReviewRequest) -> DecisionReco
                 ADR_INVALID_ARGUMENT, "action='revise' requires a replacement", decision_id=record.decision_id
             )
         updates = _apply_edit(record, request.replacement)
+        if "decision" in updates and not updates["decision"].strip():
+            raise DecisionError(
+                ADR_INVALID_ARGUMENT,
+                "action='revise' would leave decision empty",
+                decision_id=record.decision_id,
+            )
     elif request.action == "link":
         if request.documented_decision_id is None:
             raise DecisionError(

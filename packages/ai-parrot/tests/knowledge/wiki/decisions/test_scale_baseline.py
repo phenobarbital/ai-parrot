@@ -26,7 +26,10 @@ _SMALL_BOUND = 5
 
 
 def _seed(n: int) -> list[DecisionRecord]:
-    return [DecisionRecord(decision_id=f"adr:doc:{i}", decision=f"decision number {i}", origin="documented") for i in range(n)]
+    return [
+        DecisionRecord(decision_id=f"adr:doc:{i}", decision=f"decision number {i}", origin="documented")
+        for i in range(n)
+    ]
 
 
 class TestInventoryBound:

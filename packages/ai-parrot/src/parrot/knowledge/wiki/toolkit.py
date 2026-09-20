@@ -743,8 +743,28 @@ class LLMWikiToolkit(AbstractToolkit):
             related_pages: Optional list of related page IDs to link.
 
         Returns:
-            Dict with keys: page_id, title, category, status.
+            Dict with keys: page_id, title, category, status. ``status`` is
+            ``"refused"`` when ``category`` is the reserved ADR category.
         """
+        # ADR records (FEAT-578) are written ONLY through the typed
+        # codec/CAS path (decisions/repository.py) — a generic create with
+        # category="adr" would produce a page that decision_from_page
+        # cannot decode and that carries no review history at all.
+        from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
+
+        if category == ADR_CATEGORY:
+            return {
+                "page_id": None,
+                "title": title,
+                "category": category,
+                "related_pages": list(related_pages or []),
+                "status": "refused",
+                "reason": (
+                    f"category={ADR_CATEGORY!r} is reserved for managed ADR records ({ADR_MANAGED_PAGE}); "
+                    "create them through the typed review surface (`wikitoolkit adr sync`/`adr generate`)."
+                ),
+            }
+
         # Markdown kept for the PageIndex authoring plane; the category
         # lives as a real column in the WikiStore (the HTML comment is
         # retained only for backwards compatibility of stored markdown).
@@ -982,7 +1002,8 @@ class LLMWikiToolkit(AbstractToolkit):
 
         Returns:
             Dict with keys: page_id, status, message.  ``status`` is
-            ``"not_found"`` when the page does not exist.
+            ``"not_found"`` when the page does not exist, ``"refused"``
+            when it is a managed ADR record.
         """
         page = await self._store.get_page(page_id, include_body=False)
         if page is None:
@@ -991,6 +1012,12 @@ class LLMWikiToolkit(AbstractToolkit):
                 "status": "not_found",
                 "message": "No such page in the wiki store.",
             }
+
+        from parrot.knowledge.wiki.tools import _reject_managed_page
+
+        managed = _reject_managed_page(page, page_id)
+        if managed:
+            return {"page_id": page_id, "status": "refused", "message": managed}
 
         deleted = await self._store.delete_page(page["concept_id"])
 
