@@ -35,7 +35,6 @@ por usuario, y enforcement PBAC en el servidor MCP.
 - No reimplementa la exposición de `AbstractTool`/toolkits vía MCP (ya existe).
 - No hay inferencia de schema desde la signature en v1 (D1).
 - No hay memoria conversacional compartida entre llamadas MCP (D5).
-- No soporta transporte SSE legacy ni stdio para Claude Web.
 - No hay client_credentials (M2M): Claude Web exige authorization_code interactivo.
 - No hay `static_headers` (beta, org-level) como camino primario: pierde identidad.
 
