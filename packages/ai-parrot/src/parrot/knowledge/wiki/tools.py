@@ -616,6 +616,9 @@ class LedgerClaimInput(BaseModel):
 class LedgerCloseInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to close")
     reason: str = Field(..., description="Reason for closing")
+    resolved_by: str | None = Field(
+        default=None, description="Evidence that resolved the issue, e.g. commit:<sha> or task:TASK-<NNN> (FEAT-572 S4)"
+    )
 
 
 class LedgerContextInput(BaseModel):
@@ -711,9 +714,11 @@ class LedgerCloseTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, issue_id: str, reason: str) -> ToolResult:
+    async def _execute(self, issue_id: str, reason: str, resolved_by: str | None = None) -> ToolResult:
+        """Close a ledger issue, carrying the evidence reference through (actor stays ``agent:mcp``)."""
         try:
-            success = await self._ledger_service.close_issue(issue_id, reason, "agent:mcp")
+            kwargs = {"resolved_by": resolved_by} if resolved_by is not None else {}
+            success = await self._ledger_service.close_issue(issue_id, reason, "agent:mcp", **kwargs)
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))

@@ -9,6 +9,7 @@ from parrot.knowledge.wiki.tools import (
     LedgerOpenTool,
     LedgerReadyTool,
     LedgerClaimTool,
+    LedgerCloseInput,
     LedgerCloseTool,
     LedgerContextTool,
 )
@@ -161,6 +162,27 @@ class TestLedgerTools:
         assert result.success is True
         assert result.result == {"context": "Test context"}
         mock_ledger_service.get_context.assert_called_once_with(["src/main.py"], 3000)
+
+    @pytest.mark.asyncio
+    async def test_mcp_ledger_close_passes_resolved_by(self, mock_ledger_service):
+        """LedgerCloseTool forwards the evidence ref (S4)."""
+        tool = LedgerCloseTool(mock_ledger_service)
+        mock_ledger_service.close_issue.return_value = True
+        result = await tool._execute(issue_id="issue:def456", reason="Fixed", resolved_by="commit:abc123")
+        assert result.result == {"success": True}
+        mock_ledger_service.close_issue.assert_called_once_with(
+            "issue:def456", "Fixed", "agent:mcp", resolved_by="commit:abc123"
+        )
+
+    @pytest.mark.asyncio
+    async def test_mcp_ledger_close_without_resolved_by_unchanged(self, mock_ledger_service):
+        """Default None keeps the pre-FEAT-572 call shape."""
+        tool = LedgerCloseTool(mock_ledger_service)
+        mock_ledger_service.close_issue.return_value = True
+        result = await tool._execute(issue_id="issue:def456", reason="Fixed")
+        assert result.result == {"success": True}
+        mock_ledger_service.close_issue.assert_called_once_with("issue:def456", "Fixed", "agent:mcp")
+        assert LedgerCloseInput(issue_id="x", reason="y").resolved_by is None
 
     def test_no_acknowledge_tool_exists(self):
         """There should be no ledger_acknowledge tool."""
