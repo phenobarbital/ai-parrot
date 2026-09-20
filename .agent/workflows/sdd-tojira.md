@@ -290,6 +290,11 @@ If they do, only create the missing ones:
     Proceed? (y/N)
 ```
 
+Match tasks by their stored Jira key and the existing subtask's `[TASK-NNN]`
+summary. Reuse existing keys even when a previous run created a subtask but
+failed before saving the index. Stop on ambiguous matches instead of creating
+duplicates. This check also applies after a partially completed CREATE run.
+
 For each task without a Jira subtask:
 
 **MCP path:**
