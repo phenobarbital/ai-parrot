@@ -37,6 +37,7 @@ from typing import Optional, Sequence
 import pathspec
 
 from parrot.knowledge.graphindex.analytics import compute_analytics, generate_report
+from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
 from parrot.knowledge.graphindex.assemble import GraphAssembler
 from parrot.knowledge.graphindex.communities import detect_communities
 from parrot.knowledge.graphindex.export_html import export_graph
@@ -48,11 +49,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_OUTPUT_DIRNAME = "graphindex"
 
 #: Directories skipped during discovery regardless of any ignore file.
-_ALWAYS_SKIP: frozenset[str] = frozenset({
-    ".git", ".hg", ".svn", "__pycache__", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache", ".venv", "venv", "node_modules", ".tox", "build", "dist",
-    ".eggs", ".idea", ".vscode",
-})
+#: Aliases the package-wide set so this scanner and the wiki's cannot drift
+#: apart again (this copy used to omit `.claude`, and so walked every SDD
+#: worktree -- a full duplicate of the repository each).
+_ALWAYS_SKIP: frozenset[str] = SCAN_EXCLUDE_DIRS
 
 
 def discover_python_files(

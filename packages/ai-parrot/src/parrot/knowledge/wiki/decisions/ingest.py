@@ -11,7 +11,8 @@ import asyncio
 import logging
 from pathlib import Path
 
-from parrot.knowledge.graphindex.cli import _ALWAYS_SKIP, discover_python_files
+from parrot.knowledge.graphindex.cli import discover_python_files
+from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
 from parrot.knowledge.wiki.decisions.codec import content_fingerprint
 from parrot.knowledge.wiki.decisions.evidence import build_evidence, extract_python_citations
 from parrot.knowledge.wiki.decisions.models import (
@@ -52,7 +53,7 @@ def discover_adr_sources(root: Path, config: DecisionConfig) -> list[str]:
             if not path.is_file():
                 continue
             rel_parts = path.relative_to(root).parts
-            if any(part in _ALWAYS_SKIP for part in rel_parts):
+            if any(part in SCAN_EXCLUDE_DIRS for part in rel_parts):
                 continue
             found.add(path)
     return sorted(p.relative_to(root).as_posix() for p in found)

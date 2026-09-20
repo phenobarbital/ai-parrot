@@ -34,6 +34,7 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
+from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
 from parrot.knowledge.wiki.languages import all_scanners, scanned_suffixes, scanner_for, set_scan_root
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
@@ -107,35 +108,10 @@ CONFIG_SUFFIXES: frozenset[str] = frozenset(
 
 DEFAULT_SUFFIXES: frozenset[str] = CODE_SUFFIXES | DOC_SUFFIXES | CONFIG_SUFFIXES
 
-#: Directory names never descended into.
-DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
-    {
-        ".git",
-        ".hg",
-        ".svn",
-        "__pycache__",
-        ".venv",
-        "venv",
-        "node_modules",
-        ".tox",
-        "build",
-        "dist",
-        ".eggs",
-        ".idea",
-        ".vscode",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".parrot",
-        ".claude",
-        ".worktrees",
-        ".graphindex",
-        # Obsidian vault internals — never descend into these when a repo
-        # embeds a vault (the vault build mode has its own scanner).
-        ".obsidian",
-        ".trash",
-    }
-)
+#: Directory names never descended into. Aliases the package-wide set in
+#: :mod:`parrot.knowledge.scan_excludes` -- kept under this name because it
+#: is this module's published API (callers and tests import it from here).
+DEFAULT_EXCLUDE_DIRS: frozenset[str] = SCAN_EXCLUDE_DIRS
 
 #: File basenames always skipped (lockfiles and similar noise).
 DEFAULT_EXCLUDE_NAMES: frozenset[str] = frozenset(
