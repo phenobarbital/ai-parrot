@@ -194,7 +194,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -205,8 +205,8 @@
       "parallelism_notes": "depends_on TASK-3394: reads the three /sdd-fix twin files it creates; depends_on TASK-3395: asserts the retargeted sdd-next/sdd-task wording it writes. Owns tests/sdd/test_ledger_workflow_twins.py.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3396-fix-twin-parity-tests.md"
+      "completed_at": "2026-09-20T00:34:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3396-fix-twin-parity-tests.md"
     },
     {
       "id": "TASK-3397",
