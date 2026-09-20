@@ -245,6 +245,12 @@ file, the task is too big.
    can be run once the task is filed. Promotion never runs `ledger close`
    automatically — that stays an explicit, separate step for the human/agent
    doing the promotion.
+   **Deprecated (FEAT-572)**: `--from-issue` remains for one deprecation cycle but is no
+   longer the ledger entry point — it can only append a task to an *existing* spec, which
+   for a finished feature (per-spec index `completed_at` set) is wrong. Use `/sdd-fix
+   <issue-id>` instead: it plans the issue's group, routes it to the Fast lane (branch → PR)
+   or the SDD lane (reuse the open parent spec, else mint a fresh `FEAT-<NNN>`), and closes
+   by evidence.
    Fill the template's `## Implementation Blueprint` section for every task
    per §3's rules; a task without one is incomplete.
 

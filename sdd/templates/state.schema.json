@@ -22,9 +22,9 @@
       "description": "Schema version. Bump on breaking changes."
     },
     "feat_id": {
-      "type": "string",
+      "type": ["string", "null"],
       "pattern": "^FEAT-[0-9]{3,}$",
-      "description": "Stable feature ID, allocated in Phase 0 and reused by /sdd-spec."
+      "description": "Stable feature ID, allocated in Phase 0 and reused by /sdd-spec. Null while a /sdd-spec intake run is staged id-less (FEAT-577); set when /sdd-spec §5 reserves it."
     },
     "feature_slug": {
       "type": "string",
@@ -44,13 +44,13 @@
       "required": ["kind", "raw_path"],
       "additionalProperties": false,
       "properties": {
-        "kind": {"enum": ["jira", "inline", "file"]},
+        "kind": {"enum": ["jira", "inline", "file", "intake"]},
         "jira_key": {"type": ["string", "null"]},
         "jira_url": {"type": ["string", "null"]},
         "file_path": {"type": ["string", "null"]},
         "raw_path": {
           "type": "string",
-          "description": "Always sdd/state/<FEAT-ID>/source.md"
+          "description": "sdd/state/<FEAT-ID>/source.md, or sdd/state/.intake/<slug>-<RUN_ID>/source.md in /sdd-spec intake mode (FEAT-577)"
         },
         "fetched_at": {"type": "string", "format": "date-time"},
         "summary_oneline": {"type": "string", "maxLength": 200}

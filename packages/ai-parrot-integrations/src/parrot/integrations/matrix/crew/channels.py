@@ -6,6 +6,7 @@ room state — and resolves ``room_id <-> ChannelConfig`` for the transport.
 Also supports an optional Matrix Space grouping channels and tunnels as
 children.
 """
+
 import logging
 from typing import Dict, List, Optional
 
@@ -186,12 +187,8 @@ class ChannelManager:
         if not self._space_id:
             return
         via = [self._config.server_name]
-        await self._as.set_room_state_as_bot(
-            self._space_id, "m.space.child", {"via": via}, state_key=room_id
-        )
-        await self._as.set_room_state_as_bot(
-            room_id, "m.space.parent", {"via": via}, state_key=self._space_id
-        )
+        await self._as.set_room_state_as_bot(self._space_id, "m.space.child", {"via": via}, state_key=room_id)
+        await self._as.set_room_state_as_bot(room_id, "m.space.parent", {"via": via}, state_key=self._space_id)
 
     def _state(self, ch: ChannelConfig) -> ChannelStateContent:
         """Build the ``m.parrot.channel`` state content for a channel.

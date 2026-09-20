@@ -9,13 +9,17 @@ Scaffold a new Feature Specification using the SDD methodology.
 
 ## Usage
 ```
-/sdd-spec <feature-name> [--type feature|hotfix] [--base-branch <branch>] [-- free-form description and notes]
+/sdd-spec [<feature-slug>] [--type feature|hotfix] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]
 ```
 
 `--type` / `--base-branch` are explicit overrides for the flow resolved in
 §2d — they win over any brainstorm/proposal frontmatter and over the
 `WorkKind` mapping (FEAT-466). Omit both to let §2d resolve the flow from
 the exploration doc (or default to `feature`/`dev` when none exists).
+
+With no brainstorm/proposal and no notes (or with `--interview`), run intake
+mode by following `sdd/templates/intake.procedure.md`; never in a non-interactive run.
+These intake flags are ignored (with a notice) on the carry-forward path.
 
 ## Guardrails
 - Always use the official template at `sdd/templates/spec.md`.
@@ -40,8 +44,27 @@ the exploration doc (or default to `feature`/`dev` when none exists).
 ## Steps
 
 ### 1. Parse Input
-- **feature-name**: slug-friendly kebab-case. If not provided, ask.
+- **feature-name**: slug-friendly kebab-case. Optional in intake mode.
 - **free-form notes**: anything after `--`, used as Problem Statement seed.
+
+When no exploration doc exists AND no `--` notes were given, intake mode starts
+automatically. If the user cannot be asked questions, behave as `--no-interview`
+even without the flag. Cannot ask ⇒ `--no-interview`.
+
+### 1.5 Intake Mode (interactive only — FEAT-577)
+
+Runs only when §1's trigger rule selects it. Follow
+`sdd/templates/intake.procedure.md` §0–§8 end to end. It stages everything
+under `sdd/state/.intake/<slug>-<RUN_ID>/` (git-ignored; pruned after 10 days
+by a daily git hook), validated by `sdd/templates/intake.schema.json`, and returns
+one of two outcomes:
+
+- **handed off** (`phase: handed_off`) — the user chose `/sdd-brainstorm`; stop
+  here: no spec, no FEAT-ID.
+- **ready** (`phase: rounds_complete`) — continue at §2d with `doc_path=None`
+  and the Round 0 flow as `--type`/`--base-branch` overrides; §3b uses the
+  intake brief sources; §3 is skipped; §4 is seeded by the synthesis; §5
+  reserves the FEAT-ID unchanged; §6 promotes the staging dir.
 
 ### 2. Check for Prior Exploration (and carry it forward)
 
@@ -49,7 +72,7 @@ Look for prior exploration documents in `sdd/proposals/`:
 - `<feature-name>.brainstorm.md` → structured options analysis with a Recommended Option.
 - `<feature-name>.proposal.md` → discussion output.
 
-If neither exists, proceed to §3.
+If neither exists, proceed to §1.5 when intake mode is active, otherwise §3.
 
 **If a brainstorm exists, you MUST treat it as the authoritative input.**
 Do the following in order before writing anything or asking the user anything:
@@ -224,6 +247,7 @@ reason for spec §9 and the command continues. **This step must never abort
 - §2 found `<exploration-doc>` and its status is `accepted` (brainstorm
   `**Status**: accepted`, or proposal frontmatter `status: accepted`).
 - `command -v codex` succeeds.
+- **or** §1.5 ran and `intake.json.phase` is `rounds_complete`
 
 **Rules (identical to the Adversarial Cross-Check in `.claude/agents/code-reviewer.md`):**
 - **Never feed the reviewer your reasoning, draft, or preferred conclusion.**
@@ -291,6 +315,14 @@ the renderer, sourced from:
 - `code_context_paths.txt` ← the **paths only** (one per line) from brainstorm "## Code Context" | proposal "### 2.1 Localization"
 - `open_questions.txt` ← the `[ ]` items of the exploration doc (or "none")
 - `question.txt` ← "Given this accepted design intent and these verified code anchors, how would you build it? What is missing, risky, or better done another way?"
+
+In intake mode, sources come from `synthesis.json` (FEAT-577):
+- `problem_statement.txt` ← synthesis `"problem_statement"`
+- `constraints_and_goals.txt` ← synthesis `"constraints"` + `"goals"`
+- `recommended_option_or_scope.txt` ← synthesis `"scope"` + `"approach"`
+- `code_context_paths.txt` ← synthesis `"code_context_paths"` (one per line)
+- `open_questions.txt` ← synthesis `"open_questions"` (or "none")
+- `question.txt` ← same as above
 
 ```bash
 if [ -z "$SKIP_REASON" ]; then
@@ -389,6 +421,8 @@ sys.exit(0 if p == root or p.startswith(root + os.sep) else 1)" "<path>" \
   with the spec.
 
 ### 3. Ask Clarifying Questions (only what is genuinely missing)
+
+Skipped in intake mode — §1.5's adaptive rounds replace it.
 
 After §2c, you may ask the user **only** for gaps the brainstorm/proposal did
 not cover. Typical legitimate gaps:
@@ -594,9 +628,32 @@ if [ -d "$DR" ]; then
   fi
 fi
 
+# Intake mode promotion (FEAT-577)
+if [ -d "$STAGE" ]; then
+  # Set feat_id and phase: committed in intake.json BEFORE staging
+  python -c "
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['feat_id'] = sys.argv[2]
+d['phase'] = 'committed'
+d['updated_at'] = __import__('datetime').datetime.utcnow().isoformat() + '+00:00'
+json.dump(d, open(sys.argv[1], 'w'), indent=2)
+" "$STAGE/intake.json" "$FEAT_ID"
+  
+  INTAKE_PROMOTED="sdd/state/$FEAT_ID/intake"
+  if [ -e "$INTAKE_PROMOTED" ]; then
+    echo "⚠️  $INTAKE_PROMOTED already exists — leaving intake staging in place for manual review (run-id ${RUN_ID}); not overwriting existing intake data."
+  else
+    mkdir -p "sdd/state/$FEAT_ID" && cp -a "$STAGE"/. "$INTAKE_PROMOTED"/ \
+      && rm -rf "$STAGE" \
+      && git add "$INTAKE_PROMOTED/" \
+      || { echo "⚠️  Promotion of $STAGE failed — left in place for inspection (run-id ${RUN_ID})." ; }
+  fi
+fi
+
 # 3. Verify ONLY those paths are staged
 git diff --cached --name-only
-# Expected: sdd/specs/<feature-name>.spec.md [+ sdd/state/<FEAT-ID>/design_research/*]
+# Expected: sdd/specs/<feature-name>.spec.md [+ sdd/state/<FEAT-ID>/design_research/*] [+ sdd/state/<FEAT-ID>/intake/*]
 # If ANY other files appear, run "git reset HEAD" and start over
 
 # 4. Commit
@@ -613,6 +670,8 @@ git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
    Module graph: <M> modules, <E> dependency edges, exclusive: <modules or "none">
    Design research: <N> suggestions — <C> confirmed / <R> rejected / <E> escalated   (model <MODEL>)
    # or:  Design research: skipped (<SKIP_REASON>)
+   Intake: research <depth> (confidence <c> | degraded | skipped), rounds <n>, open questions <m>, Jira <KEY | created KEY | none>
+   (intake mode only; after the output, run `/sdd-tojira` when Jira = create)
 
    To create a worktree for this feature after task decomposition:
      git worktree add -b feat-<FEAT-ID>-<feature-name> \
@@ -651,6 +710,8 @@ Next:
 - Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`
 - Design-research brief: `sdd/templates/design_research.prompt.md` (FEAT-545)
 - Design-research schema: `sdd/templates/design_research.schema.json` (FEAT-545)
+- Intake procedure: `sdd/templates/intake.procedure.md` (FEAT-577)
+- Intake schema: `sdd/templates/intake.schema.json` (FEAT-577)
 
 ## Anti-Hallucination Policy
 

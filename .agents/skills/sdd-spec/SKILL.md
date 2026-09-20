@@ -8,7 +8,7 @@ description: Convert a brainstorm, proposal, or direct feature request into a fo
 Use this skill when the user asks to run `sdd-spec`, create a formal SDD
 specification, or convert a brainstorm/proposal into a spec.
 
-Codex invocation: `$sdd-spec <feature-slug> [--type feature|hotfix] [--base-branch <branch>] [-- <notes>]`.
+Codex invocation: `$sdd-spec [<feature-slug>] [--type feature|hotfix] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]`.
 
 ## Purpose
 
@@ -42,6 +42,9 @@ stay with the thinking model — eligibility never delegates a design choice.
    - free-form notes after `--`
    - optional `--type`
    - optional `--base-branch`
+   - intake flags (FEAT-577): with no brainstorm/proposal and no notes (or
+     with `--interview`), run intake mode by following
+     `sdd/templates/intake.procedure.md`; never in a non-interactive run.
 2. Locate prior exploration:
    - `sdd/proposals/<feature-slug>.brainstorm.md`
    - `sdd/proposals/<feature-slug>.proposal.md`

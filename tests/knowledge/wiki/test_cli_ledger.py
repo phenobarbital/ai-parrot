@@ -5,6 +5,7 @@ Tests CLI registration, exit codes, command behavior, and WikiStoreBusy handling
 
 from __future__ import annotations
 
+import asyncio
 import errno
 import json
 from pathlib import Path
@@ -15,8 +16,11 @@ import pytest
 from click.testing import CliRunner
 
 from parrot.knowledge.wiki.cli import ledger, wiki
+from parrot.knowledge.wiki.ledger.index import LedgerIndex
+from parrot.knowledge.wiki.ledger.log import LedgerLog
 from parrot.knowledge.wiki.ledger.service import LedgerService
-from parrot.knowledge.wiki.store import WikiStoreBusy
+from parrot.knowledge.wiki.ledger.store import LedgerStore
+from parrot.knowledge.wiki.store import SQLitePragmaPolicy, WikiStoreBusy
 
 
 @pytest.fixture
@@ -406,3 +410,27 @@ def test_ledger_audit_command(runner: CliRunner, mock_ledger_service: MagicMock)
     assert "Log size" in result.output
     assert "Total events" in result.output
     assert "SQLite" in result.output
+
+
+def _real_ledger_service(tmp_path: Path) -> LedgerService:
+    """Real service on tmp_path — mirrors tests/knowledge/wiki/test_ledger_service.py::ledger_service."""
+    ledger_dir = tmp_path / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True)
+    store = LedgerStore(
+        ledger_dir / "ledger.db", wiki_name="ledger", sqlite_policy=SQLitePragmaPolicy(busy_timeout_s=1.0)
+    )
+    log = LedgerLog(str(ledger_dir / "events.jsonl"))
+    return LedgerService(LedgerIndex(store, log), store, log, tmp_path)
+
+
+def test_ledger_ready_cli_prints_severity_order(runner: CliRunner, tmp_path: Path) -> None:
+    """`ledger ready` inherits ready_work()'s canonical order (S6) — no CLI change needed."""
+    service = _real_ledger_service(tmp_path)
+    asyncio.run(service.open_issue(title="Low first in log", body="b", severity="low", discovered_from="task:TASK-1"))
+    asyncio.run(
+        service.open_issue(title="Major second in log", body="b", severity="major", discovered_from="task:TASK-1")
+    )
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        result = runner.invoke(ledger, ["ready"])
+    assert result.exit_code == 0
+    assert result.output.index("[major]") < result.output.index("[low]")

@@ -24,6 +24,7 @@ This document describes the most important configuration values for AI-Parrot. A
 Configuration for Google's Generative AI (Gemini models).
 
 - **`GOOGLE_API_KEY`**: API key for Google GenAI services
+- **`CREW_AI_KEY`**: API key used by Google agents in crews built through the AgentCrew HTTP handlers, and by the crew's own default Google orchestration LLM. Unset falls back to `GOOGLE_API_KEY`. See `docs/crew_handler.md`.
 - **`VERTEX_PROJECT_ID`**: Google Cloud project ID for Vertex AI
 - **`VERTEX_REGION`**: Region for Vertex AI deployment
 
@@ -298,6 +299,7 @@ Here's a minimal example `.env` file for the `env/` folder:
 ```env
 # LLM API Keys
 GOOGLE_API_KEY=your_google_api_key
+CREW_AI_KEY=your_crew_gemini_api_key
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 GROQ_API_KEY=your_groq_api_key

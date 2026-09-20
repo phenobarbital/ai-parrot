@@ -23,6 +23,7 @@ from parrot.knowledge.wiki.ledger.events import (
     IssueClaimedPayload,
     IssueClosedPayload,
     IssueOpenedPayload,
+    IssueUnclaimedPayload,
     LedgerEvent,
 )
 from parrot.knowledge.wiki.ledger.log import LedgerLog
@@ -116,6 +117,8 @@ class LedgerIndex:
             await self._apply_issue_closed(event, conn)
         elif event.kind == "issue.superseded":
             await self._apply_issue_superseded(event, conn)
+        elif event.kind == "issue.unclaimed":
+            await self._apply_issue_unclaimed(event, conn)
         # task.*, spec.*, insight.* reduction is out of this task's scope
         # (Modules 7/8/12); unknown kinds are ignored rather than raising so
         # replay never breaks on a future event kind it doesn't own yet.
@@ -225,6 +228,21 @@ class LedgerIndex:
             return
         state["status"] = "superseded"
         await self._write_issue(conn, event.subject, state, event.actor, event.ts)
+
+    async def _apply_issue_unclaimed(self, event: LedgerEvent, conn: "aiosqlite.Connection") -> None:
+        """Revert ``claimed -> open`` and clear ``claimed_by``; any other status is a no-op.
+
+        Reverse of :meth:`_apply_issue_claimed` (FEAT-572 Module 2): a page that is
+        ``open``, ``closed``, ``superseded`` or missing is left untouched.
+        """
+        payload = IssueUnclaimedPayload(**event.payload)
+        state = await self._read_issue(conn, event.subject)
+        if state is None or state.get("status") != "claimed":
+            return
+        state["status"] = "open"
+        state["claimed_by"] = None
+        await self._write_issue(conn, event.subject, state, event.actor, event.ts)
+        await self.store.add_edges_in(conn, [(event.subject, payload.unclaimed_by, "unclaimed-by", "asserted")])
 
     # ------------------------------------------------------------------
     # Cursor / replay

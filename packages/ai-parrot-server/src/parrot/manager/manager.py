@@ -80,6 +80,7 @@ from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 
 # Crew:
 from ..bots.flows.crew import AgentCrew
+from ..bots.flows.crew.credentials import get_crew_google_api_key
 from ..models.crew_definition import CrewDefinition
 from ..handlers.crew.handler import CrewHandler
 from ..handlers.crew.execution_handler import CrewExecutionHandler
@@ -3085,7 +3086,9 @@ Available documentation UIs:
         ``self.get_bot_class`` as ``class_resolver``. Shared tool
         resolution is not available in this context (no tool registry on
         BotManager); ``from_definition`` handles the ``tool_resolver=None``
-        default by skipping shared tool resolution.
+        default by skipping shared tool resolution. Google agents without
+        their own credential receive ``CREW_AI_KEY`` when it is configured
+        (FEAT-575).
 
         Args:
             crew_def: Crew definition.
@@ -3096,6 +3099,7 @@ Available documentation UIs:
         return AgentCrew.from_definition(
             crew_def,
             class_resolver=self.get_bot_class,
+            google_api_key=get_crew_google_api_key(),
         )
 
     def get_crew_stats(self) -> Dict[str, Any]:
@@ -3112,7 +3116,7 @@ Available documentation UIs:
             "crews": [],
         }
 
-        for name, (crew, crew_def) in self._crews.items():
+        for _name, (crew, crew_def) in self._crews.items():
             mode = crew_def.execution_mode.value
             stats["crews_by_mode"][mode] = stats["crews_by_mode"].get(mode, 0) + 1
             stats["total_agents"] += len(crew.agents)

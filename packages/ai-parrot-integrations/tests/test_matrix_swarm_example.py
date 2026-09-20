@@ -1,4 +1,5 @@
 """Tests for the swarm example docs/config — FEAT-463 TASK-2487."""
+
 import pathlib
 
 from parrot.integrations.matrix.crew.config import MatrixCrewConfig

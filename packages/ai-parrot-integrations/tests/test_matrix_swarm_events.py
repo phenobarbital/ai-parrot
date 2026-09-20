@@ -1,4 +1,5 @@
 """Tests for swarm event models — FEAT-463 TASK-2478."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -25,16 +26,12 @@ def test_task_content_new_fields_default():
 
 
 def test_agent_answer_schema_ok():
-    AgentAnswer(answer={"total": 3}).validate_against(
-        {"type": "object", "required": ["total"]}
-    )
+    AgentAnswer(answer={"total": 3}).validate_against({"type": "object", "required": ["total"]})
 
 
 def test_agent_answer_schema_fail():
     with pytest.raises(ValueError):
-        AgentAnswer(answer={"x": 1}).validate_against(
-            {"type": "object", "required": ["total"]}
-        )
+        AgentAnswer(answer={"x": 1}).validate_against({"type": "object", "required": ["total"]})
 
 
 def test_agent_answer_from_text_json_and_raw():
