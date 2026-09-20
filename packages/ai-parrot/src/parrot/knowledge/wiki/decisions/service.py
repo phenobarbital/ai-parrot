@@ -13,8 +13,8 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from parrot.clients import AbstractClient
 from parrot.knowledge.wiki.decisions.codec import candidate_decision_id
 from parrot.knowledge.wiki.decisions.evidence import build_evidence, verify_freshness
 from parrot.knowledge.wiki.decisions.generation import (
@@ -42,6 +42,12 @@ from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.decisions.review import apply_review, validate_link_target
 from parrot.knowledge.wiki.store import BaseWikiStore
 from parrot.knowledge.wiki.structural.service import StructuralService
+
+if TYPE_CHECKING:  # pragma: no cover - import-time cost, not behaviour
+    # Annotation-only: a caller hands us an already-built client for the
+    # generation path. Nothing here ever constructs one, so the LLM stack
+    # must not be imported to read decisions.
+    from parrot.clients import AbstractClient
 from parrot.knowledge.wiki.symbols import parse_sym_id
 
 

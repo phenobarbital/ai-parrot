@@ -12,9 +12,8 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from parrot.clients import AbstractClient
-from parrot.clients.factory import LLMFactory
 from parrot.knowledge.wiki.decisions.evidence import FRESHNESS_CURRENT, verify_freshness
 from parrot.knowledge.wiki.decisions.models import (
     ADR_EVIDENCE_CHANGED,
@@ -31,6 +30,15 @@ from parrot.knowledge.wiki.decisions.models import (
     EvidenceRef,
 )
 from parrot.knowledge.wiki.store import estimate_tokens
+
+if TYPE_CHECKING:  # pragma: no cover - import-time cost, not behaviour
+    # Annotation-only. Importing parrot.clients for real drags the whole LLM
+    # client stack (pandas included) into every `wikitoolkit` invocation,
+    # including the read paths that AC5 forbids from ever constructing a
+    # client. The one runtime need, LLMFactory, is imported inside
+    # resolve_client below.
+    from parrot.clients import AbstractClient
+
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +78,8 @@ def resolve_client(config: DecisionConfig, client: AbstractClient | None) -> Abs
             ADR_MODEL_UNCONFIGURED,
             f"set {WIKI_ADR_LLM_ENV}='provider:model' or inject a client to generate candidates",
         )
+    from parrot.clients.factory import LLMFactory
+
     return LLMFactory.create(spec)
 
 
