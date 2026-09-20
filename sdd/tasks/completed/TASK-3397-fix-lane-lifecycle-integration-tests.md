@@ -260,10 +260,17 @@ async def test_plan_reflects_ready_pool_after_release(service): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator, sequential-loop fallback — `parrot-sdd-coder`
+roster was empty, `fallback_reason: suspension_history_unavailable`)
+**Date**: 2026-09-19
+**Notes**: Created `test_ledger_fix_lifecycle.py` with a local real-`LedgerService` fixture
+(SQLite in `tmp_path`) and the five lifecycle tests exactly per blueprint: full claim/unclaim
+cycle over a 5-issue chained group; partial close (3 of 5, `resolved_by`) + release of the
+other 2, verified against a fresh `plan_fix_batch(ready_work())`; concurrent claim race
+(`asyncio.gather`, exactly one winner); stale-plan-cannot-close-a-reclaimed-issue (S3); plan
+reflects the ready pool after release. All five passed on first implementation, no debugging
+needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Validation: `pytest tests/knowledge/wiki/test_ledger_fix_lifecycle.py -v` → 5 passed. `ruff check --select E9,F63,F7,F82` clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

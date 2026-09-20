@@ -39,7 +39,7 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
    its `files` appears in `git diff --name-only <base>...HEAD`. Then `wikitoolkit ledger close <issue-id> --reason "<what changed>"
    --actor agent:sdd-fix --resolved-by commit:<merge-sha>` (fast) or `--resolved-by task:TASK-<NNN>` (SDD).
 7. **Release** — every claimed issue that failed either key: `wikitoolkit ledger unclaim <issue-id> --reason "<why>" --actor agent:sdd-fix`.
-   Never leave an issue claimed; never call `ledger acknowledge` (human-only).
+   Never leave an issue claimed; acknowledgement stays human-only and out of scope here.
 
 ## Output
 Per group processed:

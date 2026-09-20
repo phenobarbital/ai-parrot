@@ -21,8 +21,8 @@ Use this skill when the user asks to fix ledger issues, drain the ledger, or run
    - **Fast lane**: Create branch in main checkout, make changes, run tests, commit, `git push`, then `gh pr create --base dev`.
    - **SDD lane**: Reuse open parent spec or mint new feature with `reserve_ids`, create spec, run `/sdd-task`, then `ensure_worktree`.
 
-6. **Close** — Two keys required: agent asserts resolution + file appears in diff. Close with `ledger close <id> --reason --actor --resolved-by commit:<sha>|task:TASK-<NNN>`.
+6. **Close** — two keys required: agent asserts resolution + file appears in diff. Close with `ledger close <id> --reason --actor --resolved-by commit:<sha>|task:TASK-<NNN>`.
 
 7. **Release** — Unfinished claimed issues: `wikitoolkit ledger unclaim <issue-id> --reason --actor agent:sdd-fix`.
 
-Shared ledger is read-only — exit without claiming if so. Never call `ledger acknowledge`. Both lanes documented. Parents/reserve_ids/ensure_worktree for SDD. Fast lane always uses `gh pr create --base dev`. Support `--lane` override (refused for critical groups).
+shared ledger is read-only — exit without claiming if so. Acknowledgement stays human-only and out of scope here. Both lanes documented. parents/reserve_ids/ensure_worktree for SDD. Fast lane always uses `gh pr create --base dev`. Support `--lane` override (refused for critical groups).

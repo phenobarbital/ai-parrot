@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T23:52:42.158653+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-20T00:52:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:14:03+00:00",
-      "file": "sdd/tasks/completed/TASK-3387-unclaimed-event-kind-and-reducer.md"
+      "file": "sdd/tasks/completed/TASK-3387-unclaimed-event-kind-and-reducer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3388",
@@ -45,7 +46,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:19:39+00:00",
-      "file": "sdd/tasks/completed/TASK-3388-severity-order-and-ready-work-sort.md"
+      "file": "sdd/tasks/completed/TASK-3388-severity-order-and-ready-work-sort.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3389",
@@ -65,7 +67,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:29:47+00:00",
-      "file": "sdd/tasks/completed/TASK-3389-fix-planner-models-and-grouping.md"
+      "file": "sdd/tasks/completed/TASK-3389-fix-planner-models-and-grouping.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3390",
@@ -85,7 +88,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:36:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3390-fix-planner-lanes-slug-and-plan.md"
+      "file": "sdd/tasks/completed/TASK-3390-fix-planner-lanes-slug-and-plan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3391",
@@ -106,7 +110,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:43:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3391-service-unclaim-close-evidence-index-status.md"
+      "file": "sdd/tasks/completed/TASK-3391-service-unclaim-close-evidence-index-status.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3392",
@@ -127,7 +132,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:51:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3392-cli-plan-fix-unclaim-resolved-by.md"
+      "file": "sdd/tasks/completed/TASK-3392-cli-plan-fix-unclaim-resolved-by.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3393",
@@ -136,7 +142,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -146,8 +152,9 @@
       "parallelism_notes": "depends_on TASK-3391: forwards resolved_by= to LedgerService.close_issue (kwarg added there). Owns tools.py and test_ledger_tools.py; runs alongside TASK-3392.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3393-mcp-ledger-close-resolved-by.md"
+      "completed_at": "2026-09-20T00:30:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3393-mcp-ledger-close-resolved-by.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3394",
@@ -167,7 +174,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:55:41+00:00",
-      "file": "sdd/tasks/completed/TASK-3394-sdd-fix-twins.md"
+      "file": "sdd/tasks/completed/TASK-3394-sdd-fix-twins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3395",
@@ -185,7 +193,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:14:03+00:00",
-      "file": "sdd/tasks/completed/TASK-3395-retarget-next-and-deprecate-from-issue.md"
+      "file": "sdd/tasks/completed/TASK-3395-retarget-next-and-deprecate-from-issue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3396",
@@ -194,7 +203,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -205,8 +214,9 @@
       "parallelism_notes": "depends_on TASK-3394: reads the three /sdd-fix twin files it creates; depends_on TASK-3395: asserts the retargeted sdd-next/sdd-task wording it writes. Owns tests/sdd/test_ledger_workflow_twins.py.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3396-fix-twin-parity-tests.md"
+      "completed_at": "2026-09-20T00:34:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3396-fix-twin-parity-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3397",
@@ -215,7 +225,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -226,8 +236,9 @@
       "parallelism_notes": "depends_on TASK-3390: imports plan_fix_batch; depends_on TASK-3391: calls LedgerService.unclaim / close_issue(resolved_by=). New module tests/knowledge/wiki/test_ledger_fix_lifecycle.py — deliberately NOT extending test_ledger_index.py (TASK-3387's file).",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3397-fix-lane-lifecycle-integration-tests.md"
+      "completed_at": "2026-09-20T00:35:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3397-fix-lane-lifecycle-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3398",
@@ -245,7 +256,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:14:03+00:00",
-      "file": "sdd/tasks/completed/TASK-3398-docs-sdd-fix.md"
+      "file": "sdd/tasks/completed/TASK-3398-docs-sdd-fix.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3554",
@@ -263,7 +275,8 @@
       "assigned_to": null,
       "started_at": "2026-09-20T00:00:00+00:00",
       "completed_at": "2026-09-20T02:30:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3554-sdd-coder-retry-native-seat-crash-and-fail-closed-eligibility.md"
+      "file": "sdd/tasks/completed/TASK-3554-sdd-coder-retry-native-seat-crash-and-fail-closed-eligibility.md",
+      "verification": "verified"
     }
   ]
 }

@@ -230,10 +230,35 @@ class TestSddNextRetarget:   # 2 tests
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator, sequential-loop fallback — `parrot-sdd-coder`
+roster was empty, `fallback_reason: suspension_history_unavailable`)
+**Date**: 2026-09-19
+**Notes**: Appended `TestFixTwins` (9 tests) and `TestSddNextRetarget` (2 tests) above the
+`__main__` guard, mirroring `TestCodereviewTwins` exactly, asserting the TASK-3394 twin
+token contract and the TASK-3395 retargeting wording.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+Validation: `pytest tests/sdd/test_ledger_workflow_twins.py -v` → 25 passed (all
+pre-existing classes unmodified and still green). `pytest tests/sdd/ -q` → 39 passed
+(no regressions).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Scope says "NOT in scope: ... editing any twin", but this
+task's own Agent Instructions step 5 says "if a twin fails an assertion, fix the twin
+(it broke the contract), not the test — unless the token table itself is wrong, in which
+case report." The new tests caught 3 genuine, pre-existing contract violations against
+TASK-3394's own token table, so per that instruction I fixed the twins rather than
+weakening the tests:
+1. All three `/sdd-fix` twins contained the literal string `ledger acknowledge` (in prose
+   explaining it's out of scope), which `test_no_twin_calls_acknowledge` requires absent
+   everywhere. Reworded without changing meaning (e.g. "acknowledgement stays human-only
+   and out of scope here").
+2. Both `/sdd-next` twins (claude, antigravity) still contained the literal deprecated
+   phrase `sdd-task --from-issue` in an explanatory aside about what `/sdd-fix` replaces,
+   which `test_all_sdd_next_twins_point_at_sdd_fix` requires absent. Reworded to
+   "supersedes the deprecated --from-issue flow".
+3. The Codex `/sdd-fix` skill (`.agents/skills/sdd-fix/SKILL.md`) used capitalized
+   "Two keys" / "Parents" / "Shared ledger is read-only" where TASK-3394's own token
+   contract (already matched verbatim by the other two twins) requires the lowercase
+   literals `two keys` / `parents` / `shared ledger is read-only`. Fixed to match.
+
+All fixes are additive wording-only changes — no procedural/behavioral content changed,
+only the surface tokens the parity tests assert on. Full diff in commit `550c85352`.
