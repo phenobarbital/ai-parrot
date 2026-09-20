@@ -123,6 +123,41 @@ class TestLocalTools:
 
 
 # --------------------------------------------------------------------------- #
+# _launch_cwd -- regression test for the live smoke-test finding (2026-09-20):
+# `import parrot` (navconfig's init) silently os.chdir()s to the main
+# checkout root, so a seat that reads Path.cwd() AFTER that import runs
+# would silently operate against the wrong directory entirely.
+# --------------------------------------------------------------------------- #
+
+
+class TestLaunchCwdCapturedBeforeParrotImport:
+    def test_bedrock_mantle_seat_uses_launch_cwd_not_path_cwd(self) -> None:
+        """`_run()` must read the module-level LAUNCH_CWD, never Path.cwd().
+
+        A regression guard for the exact bug the live smoke test found: if
+        this ever goes back to calling ``Path.cwd()`` directly, importing
+        ``parrot`` earlier in the module (required for ``Agent``) will have
+        already silently changed the process's cwd to the main ai-parrot
+        checkout root, and every attempt would wander the whole repository
+        instead of its tiny isolated fixture directory.
+        """
+        import inspect
+
+        source = inspect.getsource(bedrock_mantle_seat._run)
+        assert "= Path.cwd()" not in source
+        assert "Path(LAUNCH_CWD)" in source
+
+    def test_launch_cwd_is_imported_before_parrot(self) -> None:
+        """The LAUNCH_CWD import must precede the `parrot` import in source order."""
+        import inspect
+
+        source = inspect.getsource(bedrock_mantle_seat)
+        launch_cwd_import = source.index("from benchmarks.sdd_lsp.seats._launch_cwd import LAUNCH_CWD")
+        parrot_import = source.index("from parrot.bots.agent import Agent")
+        assert launch_cwd_import < parrot_import
+
+
+# --------------------------------------------------------------------------- #
 # bedrock_mantle_seat.py -- pure helpers
 # --------------------------------------------------------------------------- #
 
@@ -225,6 +260,7 @@ class TestRunOneAttempt:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(bedrock_mantle_seat, "LAUNCH_CWD", str(tmp_path))
         monkeypatch.setenv("PARROT_LSP_PILOT_ATTEMPT_ID", "inv-duplicate-names::current::rep1")
         monkeypatch.setenv("PARROT_LSP_PILOT_TASK_ID", "inv-duplicate-names")
         monkeypatch.setenv("PARROT_LSP_PILOT_ARM", "current")
@@ -247,6 +283,11 @@ class TestRunOneAttempt:
         assert record["input_tokens"] == 100
         assert record["output_tokens"] == 40
         assert record["failed"] is False
+        # A live, known-priced model must resolve a real cost -- never None --
+        # or `run_pilot`'s budget loop treats this attempt's cost as unknown
+        # and refuses to launch every attempt after it (TASK-3514 finding,
+        # 2026-09-20 live run: 179/180 attempts silently stopped on this gap).
+        assert record["actual_cost_usd"] == pytest.approx(100 / 1000 * 0.0003 + 40 / 1000 * 0.0012)
 
         # "current" arm must not see the wiki_ast tools.
         tool_names = {t.__name__ for t in _ScriptedAgent.last_instance.tools}
@@ -255,6 +296,7 @@ class TestRunOneAttempt:
 
     async def test_wiki_ast_arm_exposes_ast_tools(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(bedrock_mantle_seat, "LAUNCH_CWD", str(tmp_path))
         monkeypatch.setenv("PARROT_LSP_PILOT_ATTEMPT_ID", "chg-signature-callers::wiki_ast::rep1")
         monkeypatch.setenv("PARROT_LSP_PILOT_TASK_ID", "chg-signature-callers")
         monkeypatch.setenv("PARROT_LSP_PILOT_ARM", "wiki_ast")
@@ -283,6 +325,7 @@ class TestRunOneAttempt:
         from parrot_tools.lsp.models import OPERATOR_UNCONFIGURED_ENVIRONMENT_ID
 
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(bedrock_mantle_seat, "LAUNCH_CWD", str(tmp_path))
         monkeypatch.setenv("PARROT_LSP_PILOT_ATTEMPT_ID", "fix-unavailable-server::lsp_combined::rep1")
         monkeypatch.setenv("PARROT_LSP_PILOT_TASK_ID", "fix-unavailable-server")
         monkeypatch.setenv("PARROT_LSP_PILOT_ARM", "lsp_combined")
@@ -315,6 +358,7 @@ class TestRunOneAttempt:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(bedrock_mantle_seat, "LAUNCH_CWD", str(tmp_path))
         monkeypatch.setenv("PARROT_LSP_PILOT_ATTEMPT_ID", "inv-duplicate-names::current::rep1")
         monkeypatch.setenv("PARROT_LSP_PILOT_TASK_ID", "inv-duplicate-names")
         monkeypatch.setenv("PARROT_LSP_PILOT_ARM", "current")
@@ -329,3 +373,22 @@ class TestRunOneAttempt:
         assert not (tmp_path / "answer.json").exists()
         record = json.loads((tmp_path / "trace.jsonl").read_text(encoding="utf-8").strip())
         assert record["failed"] is True
+        # A failed attempt reports a known zero cost (no billable response was
+        # ever returned) -- never None, which would halt every attempt after
+        # it in `run_pilot`'s budget loop over one provider hiccup.
+        assert record["actual_cost_usd"] == 0.0
+
+
+class TestComputeActualCostUsd:
+    """Unit coverage for the pinned Bedrock-Mantle price table (TASK-3514)."""
+
+    def test_known_model_computes_real_cost(self) -> None:
+        cost = bedrock_mantle_seat._compute_actual_cost_usd("minimax.minimax-m2.5", 14297, 1290)
+        assert cost == pytest.approx(14297 / 1000 * 0.0003 + 1290 / 1000 * 0.0012)
+
+    def test_unknown_model_returns_none_never_guesses(self) -> None:
+        assert bedrock_mantle_seat._compute_actual_cost_usd("some-other-model", 100, 40) is None
+
+    def test_missing_token_counts_return_none(self) -> None:
+        assert bedrock_mantle_seat._compute_actual_cost_usd("minimax.minimax-m2.5", None, 40) is None
+        assert bedrock_mantle_seat._compute_actual_cost_usd("minimax.minimax-m2.5", 100, None) is None

@@ -32,6 +32,12 @@ must have written ``answer.json`` (investigation tasks) or edited
 
 from __future__ import annotations
 
+# Must be the very first import: captures the real launch-time cwd before
+# `import parrot` (below) silently os.chdir()s away from it. See
+# _launch_cwd's own docstring for the live smoke-test finding that
+# uncovered this (2026-09-20).
+from benchmarks.sdd_lsp.seats._launch_cwd import LAUNCH_CWD
+
 import asyncio
 import json
 import logging
@@ -56,6 +62,38 @@ _DEFAULT_MODEL = "minimax.minimax-m2.5"
 _TRACE_FILENAME = "trace.jsonl"
 _ANSWER_FILENAME = "answer.json"
 _DEFAULT_ENVIRONMENT_ID = "lexotanil"
+
+# Operator-confirmed Bedrock-Mantle pricing (2026-09-20), mirrored from this
+# pilot's artifacts/lsp-live-run/prices.json. `run_pilot` deliberately never
+# trusts an externally supplied PriceBook to gate live spending (see its own
+# docstring: "only actual_cost_usd is trusted here") -- it trusts only the
+# cost each seat reports for its own attempt, computed at call time from the
+# provider's own usage numbers. Without this table `actual_cost_usd` stays
+# None on every attempt and the runner refuses to launch a second one.
+_PRICE_USD_PER_1K: dict[str, tuple[float, float]] = {
+    # model -> (input_usd_per_1k, output_usd_per_1k)
+    "minimax.minimax-m2.5": (0.0003, 0.0012),
+}
+
+
+def _compute_actual_cost_usd(model: str, input_tokens: Optional[int], output_tokens: Optional[int]) -> Optional[float]:
+    """Compute this attempt's real cost from known pricing, never a guess.
+
+    Args:
+        model: The exact Bedrock-Mantle model id billed for this attempt.
+        input_tokens: Prompt tokens reported by the provider, if any.
+        output_tokens: Completion tokens reported by the provider, if any.
+
+    Returns:
+        The computed cost in USD, or ``None`` when the model is not in the
+        pinned price table or either token count is unknown -- never an
+        invented number.
+    """
+    rates = _PRICE_USD_PER_1K.get(model)
+    if rates is None or input_tokens is None or output_tokens is None:
+        return None
+    input_rate, output_rate = rates
+    return (input_tokens / 1000.0) * input_rate + (output_tokens / 1000.0) * output_rate
 
 
 def _load_task(task_id: str) -> dict[str, Any]:
@@ -143,7 +181,13 @@ async def _run() -> int:
 
         environment_id = OPERATOR_UNCONFIGURED_ENVIRONMENT_ID
 
-    cwd = Path.cwd().resolve()
+    # Path.cwd() would be wrong here -- it reflects the process's CURRENT
+    # cwd, which `import parrot` (above) already silently changed. LAUNCH_CWD
+    # was captured before that happened and is the actual directory
+    # benchmarks.sdd_lsp.runner launched this seat in (or, for a manual
+    # smoke test, whatever cwd subprocess.run(cwd=...) set). .resolve() is a
+    # blocking filesystem call, so it runs off the event loop.
+    cwd = await asyncio.to_thread(lambda: Path(LAUNCH_CWD).resolve())
     task = _load_task(task_id)
 
     answer_holder: dict[str, Any] = {}
@@ -176,23 +220,32 @@ async def _run() -> int:
     try:
         response = await agent.ask(question=question, session_id=attempt_id, user_id="lsp-pilot-seat")
         usage = response.usage
+        resolved_model = getattr(response, "model", None) or model
+        input_tokens = getattr(usage, "prompt_tokens", None)
+        output_tokens = getattr(usage, "completion_tokens", None)
         usage_record = ModelUsage(
             attempt_id=attempt_id,
             seat_id=arm,
             request_id=f"{attempt_id}::final",
-            model=getattr(response, "model", None) or model,
-            input_tokens=getattr(usage, "prompt_tokens", None),
-            output_tokens=getattr(usage, "completion_tokens", None),
+            model=resolved_model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            actual_cost_usd=_compute_actual_cost_usd(resolved_model, input_tokens, output_tokens),
             source="parrot.bots.Agent accumulated usage (bedrock-mantle)",
         )
     except Exception as exc:  # noqa: BLE001 -- a real, unpredictable live-provider/agent error; recorded, not swallowed
         failure = str(exc)
+        # agent.ask() never returned, so no usage was observed for this
+        # attempt -- the honest cost is 0.0 (not None/unknown): a single
+        # failed attempt must not halt the runner's remaining-179-attempt
+        # budget loop, which treats *any* unknown cost as a hard stop.
         usage_record = ModelUsage(
             attempt_id=attempt_id,
             seat_id=arm,
             request_id=f"{attempt_id}::error",
             model=model,
             failed=True,
+            actual_cost_usd=0.0,
             source="parrot.bots.Agent accumulated usage (bedrock-mantle)",
         )
 
