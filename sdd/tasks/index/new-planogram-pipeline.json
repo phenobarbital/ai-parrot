@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-18T21:51:05+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-20T08:47:16+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:22:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3418-perception-shape-proposer.md"
+      "file": "sdd/tasks/completed/TASK-3418-perception-shape-proposer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3419",
@@ -45,7 +46,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:35:16+00:00",
-      "file": "sdd/tasks/completed/TASK-3419-perception-spike-harness.md"
+      "file": "sdd/tasks/completed/TASK-3419-perception-spike-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3420",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:20:28+00:00",
-      "file": "sdd/tasks/completed/TASK-3420-test-conftest-fake-vision.md"
+      "file": "sdd/tasks/completed/TASK-3420-test-conftest-fake-vision.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3421",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T22:45:05+00:00",
-      "file": "sdd/tasks/completed/TASK-3421-cycle-contracts.md"
+      "file": "sdd/tasks/completed/TASK-3421-cycle-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3422",
@@ -99,7 +103,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:23:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3422-pos-compliance-characterization.md"
+      "file": "sdd/tasks/completed/TASK-3422-pos-compliance-characterization.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3423",
@@ -119,7 +124,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:30:08+00:00",
-      "file": "sdd/tasks/completed/TASK-3423-pos-facttag-illumination-characterization.md"
+      "file": "sdd/tasks/completed/TASK-3423-pos-facttag-illumination-characterization.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3424",
@@ -139,7 +145,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:31:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3424-legacy-run-orchestration-characterization.md"
+      "file": "sdd/tasks/completed/TASK-3424-legacy-run-orchestration-characterization.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3425",
@@ -157,7 +164,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:25:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3425-anthropic-vision-parity.md"
+      "file": "sdd/tasks/completed/TASK-3425-anthropic-vision-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3426",
@@ -175,7 +183,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:27:45+00:00",
-      "file": "sdd/tasks/completed/TASK-3426-config-fields-backend-sql.md"
+      "file": "sdd/tasks/completed/TASK-3426-config-fields-backend-sql.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3427",
@@ -195,7 +204,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:29:06+00:00",
-      "file": "sdd/tasks/completed/TASK-3427-pipeline-base-sentinel-open-image.md"
+      "file": "sdd/tasks/completed/TASK-3427-pipeline-base-sentinel-open-image.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3428",
@@ -215,7 +225,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:36:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3428-ocr-reader-packaging.md"
+      "file": "sdd/tasks/completed/TASK-3428-ocr-reader-packaging.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3429",
@@ -239,7 +250,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:47:18+00:00",
-      "file": "sdd/tasks/completed/TASK-3429-neutral-callsites-core.md"
+      "file": "sdd/tasks/completed/TASK-3429-neutral-callsites-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3430",
@@ -259,7 +271,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:49:22+00:00",
-      "file": "sdd/tasks/completed/TASK-3430-neutral-callsites-shelf-types.md"
+      "file": "sdd/tasks/completed/TASK-3430-neutral-callsites-shelf-types.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3431",
@@ -279,7 +292,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:50:47+00:00",
-      "file": "sdd/tasks/completed/TASK-3431-neutral-callsites-panel-types.md"
+      "file": "sdd/tasks/completed/TASK-3431-neutral-callsites-panel-types.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3432",
@@ -300,7 +314,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:51:59+00:00",
-      "file": "sdd/tasks/completed/TASK-3432-remove-roi-client.md"
+      "file": "sdd/tasks/completed/TASK-3432-remove-roi-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3433",
@@ -321,7 +336,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:45:27+00:00",
-      "file": "sdd/tasks/completed/TASK-3433-perception-rows-slots.md"
+      "file": "sdd/tasks/completed/TASK-3433-perception-rows-slots.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3434",
@@ -341,7 +357,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:37:08+00:00",
-      "file": "sdd/tasks/completed/TASK-3434-cpu-executor.md"
+      "file": "sdd/tasks/completed/TASK-3434-cpu-executor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3435",
@@ -361,7 +378,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:39:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3435-slots-definition-bindings.md"
+      "file": "sdd/tasks/completed/TASK-3435-slots-definition-bindings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3436",
@@ -383,7 +401,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:40:55+00:00",
-      "file": "sdd/tasks/completed/TASK-3436-vision-adapter.md"
+      "file": "sdd/tasks/completed/TASK-3436-vision-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3437",
@@ -404,7 +423,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:42:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3437-fixture-membership.md"
+      "file": "sdd/tasks/completed/TASK-3437-fixture-membership.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3438",
@@ -427,7 +447,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:00:18+00:00",
-      "file": "sdd/tasks/completed/TASK-3438-identify-strategies.md"
+      "file": "sdd/tasks/completed/TASK-3438-identify-strategies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3439",
@@ -449,7 +470,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:02:21+00:00",
-      "file": "sdd/tasks/completed/TASK-3439-llm-detector-verify.md"
+      "file": "sdd/tasks/completed/TASK-3439-llm-detector-verify.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3440",
@@ -469,7 +491,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:53:24+00:00",
-      "file": "sdd/tasks/completed/TASK-3440-registration.md"
+      "file": "sdd/tasks/completed/TASK-3440-registration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3441",
@@ -489,7 +512,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-18T23:57:41+00:00",
-      "file": "sdd/tasks/completed/TASK-3441-scoring-projection.md"
+      "file": "sdd/tasks/completed/TASK-3441-scoring-projection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3442",
@@ -511,7 +535,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:08:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3442-type-hooks-legacy-adapter.md"
+      "file": "sdd/tasks/completed/TASK-3442-type-hooks-legacy-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3443",
@@ -536,7 +561,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:13:22+00:00",
-      "file": "sdd/tasks/completed/TASK-3443-run-template.md"
+      "file": "sdd/tasks/completed/TASK-3443-run-template.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3444",
@@ -559,7 +585,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:20:04+00:00",
-      "file": "sdd/tasks/completed/TASK-3444-ink-wall-type.md"
+      "file": "sdd/tasks/completed/TASK-3444-ink-wall-type.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3445",
@@ -582,7 +609,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:27:37+00:00",
-      "file": "sdd/tasks/completed/TASK-3445-pos-migration-perceive-identify.md"
+      "file": "sdd/tasks/completed/TASK-3445-pos-migration-perceive-identify.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3446",
@@ -603,7 +631,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:30:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3446-pos-migration-compare-rules.md"
+      "file": "sdd/tasks/completed/TASK-3446-pos-migration-compare-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3447",
@@ -623,7 +652,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:32:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3447-handler-update.md"
+      "file": "sdd/tasks/completed/TASK-3447-handler-update.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3448",
@@ -644,7 +674,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:34:34+00:00",
-      "file": "sdd/tasks/completed/TASK-3448-config-migration-tooling-runbook.md"
+      "file": "sdd/tasks/completed/TASK-3448-config-migration-tooling-runbook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3449",
@@ -666,7 +697,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:36:48+00:00",
-      "file": "sdd/tasks/completed/TASK-3449-descriptor-assistant.md"
+      "file": "sdd/tasks/completed/TASK-3449-descriptor-assistant.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3450",
@@ -688,7 +720,8 @@
       "assigned_to": null,
       "started_at": "2026-09-18T22:34:22+00:00",
       "completed_at": "2026-09-19T00:39:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3450-backend-benchmark.md"
+      "file": "sdd/tasks/completed/TASK-3450-backend-benchmark.md",
+      "verification": "verified"
     }
   ]
 }
