@@ -59,7 +59,15 @@ internal branch conventions, ticket keys, or internal tooling decisions.
   process (or the script) is revised.
 - **Separate document.** No root-`README.md` entry and no interactive installer
   in this iteration.
-- Out of scope: the `/sdd-*` workflow, coding-agent CLIs, agent-host wiring.
+- **Coding-agent CLIs are in scope as LLM *providers* only** (`claude-code`,
+  `codex-code`), never as agent-host wiring. Installing them is optional and
+  multi-select: none, one, or several.
+- **RTK is out of scope** (it compresses coding-agent tool output; that use case
+  left with the host wiring). The in-framework analogue `ai-parrot[rust]` stays.
+- **Node.js/npm is a conditional prerequisite** — required only for the
+  CLI-backed provider path, never for the API-key path.
+- Out of scope: the `/sdd-*` workflow, agent-host wiring
+  (`parrot claude|codex|google install`), RTK.
 
 ---
 
@@ -227,7 +235,16 @@ section is verifiable before moving on:
    or stdlib `venv` + `pip`, with the four console scripts it provides.
 3. **Install and configure at least one LLM provider** — presented as a required
    step, not an optional one, with the explicit warning that a bare install
-   registers no providers. Per-provider extra and environment variable.
+   registers no providers. Two supported paths, reader's choice (and multiple
+   may be installed):
+   - **API-key path** — install a provider extra (`anthropic`, `openai`,
+     `google`, …) and export that provider's key.
+   - **CLI-backed path** — if the reader already has the Claude Code or Codex
+     CLI installed and authenticated, parrot can use it as a provider
+     (`claude-code`, `codex-code`) with **no separate API key**. Requires the
+     binary on `PATH` plus the matching satellite.
+   Note the asymmetry: Gemini has **no** CLI-backed provider; it is reachable
+   only via `google` (API key) or `google-compat`.
 4. **Hello world** — a runnable agent, copy-pasteable, that answers one question.
 5. **`wikitoolkit build` / `query`** — the offline codebase knowledge graph, used
    standalone.
@@ -408,6 +425,27 @@ if __name__ == '__main__':
 - `jev` extra → `ai-parrot-client-jev`; requires `TYPESAFE_API_KEY` (docs/clients/jev.md:15-16)
 - `rust` extra → `parrot_codec`, with a pure-Python fallback (pyproject.toml:860-862)
 
+#### Coding-agent CLIs as providers (verified via installed entry points)
+
+```python
+# From packages/ai-parrot/src/parrot/clients/detection.py (full file, verified)
+_CLAUDE_CODE_SPEC = "claude-code:claude-haiku-4-5-20251001"
+_CODEX_CODE_SPEC = "codex-code:gpt-5.1-codex"
+
+def detect_coding_agent_llm() -> Optional[str]:
+    """Claude Code first, then Codex; None if neither.
+    Only LLMFactory.list_providers() + shutil.which() — never imports a
+    provider SDK, never spawns a subprocess, never makes a network call."""
+```
+
+Requires BOTH the provider key registered AND the binary on `PATH`:
+
+| Provider key | Client | Binary | Extra |
+|---|---|---|---|
+| `claude-code`, `claude-agent` | `parrot.clients.anthropic:ClaudeAgentClient` | `claude` | `ai-parrot[claude-agent]` |
+| `codex-code`, `codex-agent`, `openai-codex` | `parrot.clients.openai:OpenAICodexClient` | `codex` | `ai-parrot[codex-agent]` |
+| `google`, `google-compat` | `GoogleGenAIClient` / `GeminiOpenAICompatClient` | — (API key) | `ai-parrot[google]` |
+
 ### Does NOT Exist (Anti-Hallucination)
 
 - ~~`parrot sdd install`~~ — no such command. The `parrot` CLI groups are
@@ -423,6 +461,9 @@ if __name__ == '__main__':
   packaging; the in-framework analogue is the `rust` extra.
 - ~~`ai-parrot[claude-code]` / `[codex]` / `[gemini-cli]`~~ — no extras install
   coding-agent CLIs; those are external tools (now out of scope).
+- ~~A Gemini/Antigravity (`agy`) CLI provider~~ — does NOT exist. The complete
+  37-key `parrot.clients` entry-point set contains no `agy`, `antigravity`, or
+  `gemini-cli` provider. Gemini is reachable only as `google` or `google-compat`.
 - ~~Automatic provider registration on bare install~~ — does NOT happen; at least
   one `ai-parrot-client-*` satellite must be installed.
 
@@ -455,17 +496,21 @@ if __name__ == '__main__':
   Yes — a basic hello-world is in scope.
 - [x] Should the SDD workflow be documented or scaffolded? — *Owner: Arturo Martinez*:
   No. SDD is entirely out of scope for this document.
-- [ ] **Should RTK be dropped?** Its purpose is compressing *coding-agent* tool
-  output, and coding agents are now out of scope. Proposed: drop RTK; cover the
-  in-framework `ai-parrot[rust]` compression instead. — *Owner: Arturo Martinez*
-- [ ] **Is `npm` still required?** It was needed only to install the coding-agent
-  CLIs. With those removed, no documented step appears to need Node.js. Proposed:
-  drop `npm`, keep `sudo` for system packages and `uv` for Python. — *Owner: Arturo Martinez*
-- [ ] Which provider should the hello-world default to? It determines the extra
-  and API key a first-time reader must obtain. Proposed: show one provider
-  concretely and table the rest. — *Owner: Arturo Martinez*
-- [ ] Should CI run the installer scripts on a real ubuntu/macOS/Windows runner
-  matrix, or is a single-OS dry run plus syntax checks sufficient for v1?
-  Cost/benefit tradeoff. — *Owner: Arturo Martinez*
-- [ ] Exact document path and filename under `docs/` (e.g.
-  `docs/getting-started.md` vs `docs/install/README.md`). — *Owner: Arturo Martinez*
+- [x] **Should RTK be dropped?** — *Owner: Arturo Martinez*: Yes. Dropped.
+  `ai-parrot[rust]` is covered instead.
+- [x] **Is `npm` still required?** — *Owner: Arturo Martinez*: Dropped as a
+  blanket prerequisite, but reinstated **conditionally** — the CLI-backed
+  provider path needs npm to install the `claude` / `codex` binaries. Documented
+  as optional, path-dependent.
+- [x] Which provider should the hello-world default to? — *Owner: Arturo Martinez*:
+  Offer a choice rather than one default. Support installing one or several of
+  Claude Code, Codex, and Gemini; none is mandatory on its own, but at least one
+  provider overall is. Hello-world shows one concretely and tables the rest.
+- [x] Should CI run a real OS matrix? — *Owner: Arturo Martinez*: No. Single-OS
+  dry run plus syntax checks for v1.
+- [x] Exact document path — *Owner: Arturo Martinez*: `docs/getting-started`.
+- [ ] For the CLI-backed path, does `ClaudeAgentClient` require an active
+  authenticated CLI session, and what is the failure mode when the binary exists
+  but is unauthenticated? `detect_coding_agent_llm()` only checks `which`, so a
+  logged-out binary may pass detection and fail at call time. Needs verification
+  during spec. — *Owner: Arturo Martinez*
