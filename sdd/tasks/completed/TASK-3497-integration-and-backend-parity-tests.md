@@ -550,3 +550,53 @@ above (factual, not a scope change).
 **Follow-up required before this feature is fully validated**: re-run the three
 unvalidated test files once the shared venv is confirmed healthy, and file the CLI
 namespace-federation defect to the ledger.
+
+---
+
+### Update — feature-level consolidation pass (2026-09-20)
+
+Everything flagged above as outstanding is now resolved:
+
+- **All three previously-unvalidated files now pass**, plus a fourth
+  (`test_backend_parity_is_reported`) with **true 4-backend parity**
+  (`mandatory_validated=[sqlite,memory]`, `live_validated=[arangodb,postgres]`,
+  `parity_complete=true`) against live ArangoDB + Postgres containers.
+  `artifacts/logs/feat-578-backend-parity.json` and
+  `feat-578-scale-baseline.json` now exist, correctly anchored inside this
+  worktree (see below — they were initially landing in the main checkout).
+- Getting there required fixing genuine bugs beyond this note's original
+  scope, found via a full adversarial code-review pass and this
+  consolidation: a `_page(...)` positional-argument test-authoring bug in
+  `test_backend_parity.py` (every CAS assertion was checking the wrong
+  page/hash), a legitimate-but-wrongly-asserted `status="partial"` in
+  `test_scale_baseline.py`, and — the interesting one — `Path("artifacts/logs/...")`
+  in both files resolving relative to `Path.cwd()`, which a pre-existing
+  `import parrot` → navconfig side effect silently `chdir()`s to the **main
+  checkout**, not this worktree. Fixed by anchoring both paths to `__file__`.
+  Commit `4fa3d95cc`.
+- The CLI namespace-federation defect (`_resolve_scoped_store`) described
+  above **is now fixed** (not by this task — by the feature-level review-fix
+  pass, commit `c85837ae4`): it calls `_federate()` correctly now, and
+  `--ns` was also added to the write commands (`sync`/`generate`/`review`/
+  `export`) per spec line 296, which this task's own testing had not
+  originally covered either.
+- **Ledger status: now filed.** `wikitoolkit` recovered once the concurrent
+  session's dependency mutation resolved. Filed as `issue:6500603d22d4`
+  (major, tracks verifying the new write-command `--ns` paths end-to-end —
+  the read-path fix itself is confirmed). Two further findings from the
+  code review were also filed: `issue:b084239103d7` (the unimplemented
+  document-level `sym:` citation extraction — needs a maintainer scope
+  decision, not a bug fix) and `issue:7efc053d80c9` (AC12 evidence-logging
+  discipline was only followed for 1 of ~16 tasks — tech debt, process
+  reminder, not a FEAT-578 backfill).
+- A second, independent production defect was found and fixed during this
+  same pass: `create_wiki_mcp_server` (`mcp_server.py`) had two tool-factory
+  call sites (`create_structural_tools`, `create_decision_tools`) not
+  wrapped in the file's own `redirect_stdout(sys.stderr)` discipline —
+  their transitive imports could leak a stray navconfig print into the
+  JSON-RPC stdout stream, corrupting the very first response byte for any
+  real MCP stdio client. Reproduced live via a real subprocess
+  (`test_vault_tools_over_stdio`), fixed in the same commit `4fa3d95cc`.
+
+Status updated to **done** (from `done-with-issues`) — nothing outstanding
+remains from this task's original scope.
