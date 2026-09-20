@@ -342,9 +342,9 @@ class InMemoryWikiStore(BaseWikiStore):
 
     def _remove_edges_touching(self, concept_id: str) -> None:
         """Drop every edge where ``concept_id`` is src or dst."""
-        for dst, rel in self._out_edges.pop(concept_id, []):
+        for dst, _rel in self._out_edges.pop(concept_id, []):
             self._in_edges[dst] = [e for e in self._in_edges.get(dst, []) if e[0] != concept_id]
-        for src, rel in self._in_edges.pop(concept_id, []):
+        for src, _rel in self._in_edges.pop(concept_id, []):
             self._out_edges[src] = [e for e in self._out_edges.get(src, []) if e[0] != concept_id]
 
     def _stub(self, page: dict[str, Any]) -> dict[str, Any]:

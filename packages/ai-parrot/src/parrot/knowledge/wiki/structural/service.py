@@ -450,7 +450,7 @@ class StructuralService:
         known = await self._store.page_hashes(concept_ids)
         stale = [
             rel_path
-            for rel_path, concept_id in zip(rel_paths, concept_ids)
+            for rel_path, concept_id in zip(rel_paths, concept_ids, strict=True)
             if self._disk_hash(rel_path) != known.get(concept_id)
         ]
         if not stale:

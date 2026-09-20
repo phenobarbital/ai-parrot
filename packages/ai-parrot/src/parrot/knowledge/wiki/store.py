@@ -641,7 +641,7 @@ class BaseWikiStore(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not support compare_and_swap_page")
 
-    def _assert_writable(self) -> None:
+    def _assert_writable(self) -> None:  # noqa: B027  (deliberate concrete no-op hook)
         """Hook for stores that can be opened read-only.
 
         The base implementation is a no-op; :class:`SQLiteWikiStore`

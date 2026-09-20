@@ -486,7 +486,7 @@ def _normalize_scores(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     scores = [float(r.get("score", 0.0)) for r in rows]
     lo, hi = min(scores), max(scores)
     span = hi - lo
-    for row, score in zip(rows, scores):
+    for row, score in zip(rows, scores, strict=True):
         row["score"] = 1.0 if span <= 0 else (score - lo) / span
     return rows
 
@@ -749,7 +749,7 @@ async def _ingest_files(
     # read per file), so only the files that will actually be re-ingested
     # get registered.
     pending: list[tuple[Any, Path]] = []
-    for file_slice, abs_path in zip(scan.files, paths):
+    for file_slice, abs_path in zip(scan.files, paths, strict=True):
         entry = known.get(str(abs_path))
         must_force = force or file_slice.rel_path in force_rel_paths
         if entry is not None and not must_force and not sources.entry_is_stale(entry):
@@ -2233,7 +2233,7 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
 
 # FEAT-578: the ADR decision plane. Its commands live in decisions/cli.py to
 # keep this module's size in check; only the registration is here.
-from parrot.knowledge.wiki.decisions.cli import adr as _adr_group
+from parrot.knowledge.wiki.decisions.cli import adr as _adr_group  # noqa: E402  (bottom import breaks a cycle)
 
 wiki.add_command(_adr_group)
 
@@ -2755,7 +2755,7 @@ def ledger_claim(issue_id: str, actor: str) -> None:
             raise SystemExit(1)
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); cannot claim")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("acknowledge")
@@ -2845,7 +2845,7 @@ def ledger_sync() -> None:
         # (unlike open/close's soft index_pending success) — the cursor is
         # unchanged, the whole batch rolled back, nothing to report as done.
         click.echo(f"Ledger index is busy ({exc.operation}); sync failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("rebuild")
@@ -2875,7 +2875,7 @@ def ledger_rebuild() -> None:
         click.echo("Ledger index rebuilt (SDD spec/task graph re-ingested)")
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); rebuild failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("ingest-sdd")
@@ -2896,7 +2896,7 @@ def ledger_ingest_sdd() -> None:
         )
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); ingest failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("compact")
@@ -2908,7 +2908,7 @@ def ledger_compact(older_than: int) -> None:
         folded = _run(service.compact(older_than_days=older_than))
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); compact failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
     click.echo(f"Compacted: {folded} issue(s) folded (events.jsonl untouched)")
 
 
