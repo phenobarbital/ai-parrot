@@ -83,6 +83,25 @@ class TestBuildBackendChoice:
         assert config.backend == "arangodb"
 
     def test_build_creates_collections_and_view(self, runner, repo, mock_arango_driver):
+        # The ADR refresh opens another store after ingestion. Model persistent
+        # database state so reopening it checks the existing schema.
+        collections: set[str] = set()
+        views: dict[str, dict] = {}
+
+        def create_collection(name: str, *, edge: bool) -> None:
+            """Retain collection creation across store connections."""
+            collections.add(name)
+
+        def create_view(*, name: str, view_type: str, properties: dict) -> None:
+            """Retain the view properties for subsequent initialization."""
+            views[name] = properties
+
+        mock_arango_driver.collection_exists.side_effect = collections.__contains__
+        mock_arango_driver.create_collection.side_effect = create_collection
+        connection = mock_arango_driver._connection
+        connection.views.side_effect = lambda: [{"name": name} for name in views]
+        connection.create_view.side_effect = create_view
+        connection.view_info = AsyncMock(side_effect=views.__getitem__)
         with patch(
             "parrot.knowledge.wiki.arango_store.AsyncDB",
             return_value=mock_arango_driver,
