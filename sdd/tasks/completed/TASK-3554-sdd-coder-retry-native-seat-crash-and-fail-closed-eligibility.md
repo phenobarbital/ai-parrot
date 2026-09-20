@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-572 — `/sdd-fix` — Ledger-Driven Fix Lane
 **Spec**: `sdd/specs/sdd-fix-ledger-lane.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -545,7 +545,42 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Both defects confirmed and fixed:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+- **Defect A (crash)**: reproduced with a new pool-path test
+  (`test_pool_based_retry_never_selects_native_seat`) before touching code —
+  a healthy native strong seat WAS selected by `_select_retry_seat`'s pool
+  branch and crashed `_run_attempt`'s `assert seat.backend is not None`,
+  producing an opaque `AssertionError` diagnostic with an empty `attempts`
+  list. Fixed by adding a `seat.kind == "native"` skip to both loops in that
+  branch, mirroring `ChunkAssigner.retry_seat`'s existing guard.
+- **Defect B (fail-open)**: could not be reproduced end-to-end against the
+  production job evidence (`plan.assessments` is written once by `plan()`
+  and never mutated/evicted elsewhere — confirmed by `grep -n
+  '_plan_cache\['`, exactly one write site). Hardened `_eligible_retry_labels`
+  to return `set()` (fail closed) instead of `None` (unrestricted) when a
+  task's cached assessment cannot be resolved, closing the only code path by
+  which the pool-based retry ladder could silently widen to the full,
+  unrestricted roster for a `complex`/`unknown` task — verified directly with
+  `test_eligible_retry_labels_fails_closed_on_missing_assessment`. The exact
+  live-process trigger for the original production symptom (continuous nova
+  cycling across `job-00cdece6c00d.json`/`job-1677572b6ba3.json`) remains
+  unconfirmed — flagging as a known open question in case it resurfaces after
+  a `parrot-sdd-coder` MCP server restart; this hardening closes the risk
+  regardless of the exact trigger.
+
+Fix landed in the existing FEAT-572 worktree
+(`.claude/worktrees/feat-FEAT-572-sdd-fix-ledger-lane`, commit `09a377fa1`,
+pushed to `origin/feat-FEAT-572-sdd-fix-ledger-lane`) rather than as a
+separate branch, since that worktree/spec is the reused open parent per
+`/sdd-fix`'s SDD-lane routing. It has not yet been merged to `dev` — FEAT-572
+has other in-progress tasks (TASK-3393, TASK-3396, TASK-3397); `/sdd-done
+FEAT-572` will bring this fix to `dev` together with them once those land.
+Files actually changed: `engine.py` + `test_engine_dispatch.py` (not
+`roster.py`, which the ledger issue's `about` field pointed at as a
+conceptual anchor — the real defect was in `SddCoderEngine`'s pool-based
+retry path, not in `roster.py`'s `eligible_seats`/`ChunkAssigner`, both of
+which were already correctly tested and behaved correctly in isolation).
+
+**Completed by**: Claude (interactive session)
+**Date**: 2026-09-20
