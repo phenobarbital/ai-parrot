@@ -412,6 +412,6 @@ def mock_aiohttp_pdf(monkeypatch: pytest.MonkeyPatch, sample_pdf: Path):
     )
     session = _FakeAiohttpSession(response)
     monkeypatch.setattr(
-        "parrot.knowledge.wiki.documents.aiohttp.ClientSession",
+        "aiohttp.ClientSession",
         lambda **kwargs: session,
     )

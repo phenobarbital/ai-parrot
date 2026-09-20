@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import aiohttp
 import click
 import yaml
 from pydantic import BaseModel, Field
@@ -578,6 +577,11 @@ class DocumentAcquirer:
                 network/timeout error. Any partially-written temp file is
                 removed before raising.
         """
+        # Lazy for the same reason as _plain_text_extensions(): ~120 ms that every
+        # ``wikitoolkit`` invocation (the per-tool-call hook included) would pay for
+        # a module only URL acquisition needs.
+        import aiohttp
+
         timeout = aiohttp.ClientTimeout(total=self.fetch_timeout)
         tmp_path: Path | None = None
         success = False
