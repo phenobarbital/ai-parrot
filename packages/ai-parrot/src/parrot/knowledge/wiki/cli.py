@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 from collections import Counter
 from collections.abc import Iterator
@@ -2093,6 +2094,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     # from `read_store`, which may be a federated span.
     if isinstance(store, SQLiteWikiStore):
         payload["sqlite"] = _run(store.sqlite_settings())
+        # The `sqlite3` CLI is never required by wikitoolkit itself (the
+        # store talks to the DB through Python's stdlib `sqlite3` module
+        # only) — this is purely a convenience hint for a human/agent who
+        # wants to inspect `.parrot/wiki.db` or `.parrot/ledger/ledger.db`
+        # directly instead of going through `wikitoolkit`/MCP tools.
+        payload["sqlite_cli"] = shutil.which("sqlite3") is not None
 
     payload["roblox_api"] = get_roblox_status()
     if as_json:
@@ -2146,6 +2153,11 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
             click.echo("           : performance pragmas ENABLED")
         else:
             click.echo("           : performance pragmas disabled")
+        if not payload.get("sqlite_cli"):
+            click.echo(
+                "           : sqlite3 CLI not found on PATH — optional, only needed to "
+                "inspect the .db files directly (e.g. `apt install sqlite3`)"
+            )
 
     roblox_api = payload.get("roblox_api")
     if roblox_api is None:

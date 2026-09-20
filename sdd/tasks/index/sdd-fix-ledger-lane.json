@@ -246,6 +246,24 @@
       "started_at": "2026-09-19T21:56:38+00:00",
       "completed_at": "2026-09-19T22:14:03+00:00",
       "file": "sdd/tasks/completed/TASK-3398-docs-sdd-fix.md"
+    },
+    {
+      "id": "TASK-3554",
+      "slug": "sdd-coder-retry-native-seat-crash-and-fail-closed-eligibility",
+      "title": "sdd-coder pool-based retry crashes on a native strong seat and can silently drop the complex/unknown eligibility restriction",
+      "feature_id": "FEAT-572",
+      "feature": "sdd-fix-ledger-lane",
+      "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: owns packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py and packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py, neither touched by any other task in this index. Filed from ledger issue:e01c03baf493 (FEAT-572 sdd-fix-ledger-lane's own dogfood run against FEAT-561's complexity routing).",
+      "assigned_to": null,
+      "started_at": "2026-09-20T00:00:00+00:00",
+      "completed_at": "2026-09-20T02:30:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3554-sdd-coder-retry-native-seat-crash-and-fail-closed-eligibility.md"
     }
   ]
 }

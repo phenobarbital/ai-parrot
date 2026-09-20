@@ -299,10 +299,18 @@ async def test_standard_task_uses_normal_rotation(
     # Could be any seat depending on rotation
 
 
-async def test_unknown_task_uses_full_roster(
+async def test_unknown_task_blocked_without_strong_models(
     git_sandbox_feature, weak_roster, noop_probe, strong_policy, monkeypatch
 ):
-    """unknown = classifier could not determine complexity; task uses full roster, not blocked."""
+    """An `unknown` task needs the strong-model allowlist just like a complex one.
+
+    Regression for ledger issue:e01c03baf493. `eligible_seats` used to lump
+    `unknown` in with `standard` and hand back the full roster, while
+    `_run_attempt`'s admission check rejected every non-strong seat. The
+    planner therefore produced an assignment dispatch would refuse forever.
+    With no strong seat configured the honest outcome is a planning-time
+    `complex_model_unavailable` block, not a doomed nova assignment.
+    """
     worktree, feature_branch, base_path, index_path = git_sandbox_feature
 
     mock_assessment = create_mock_assessment("TASK-0001", "unknown")
@@ -322,9 +330,61 @@ async def test_unknown_task_uses_full_roster(
     plan = await engine.plan("demo", str(worktree))
 
     blocked_tasks = [block for block in plan.routing_blocks if block.task_id == "TASK-0001"]
-    assert len(blocked_tasks) == 0
-    task_chunks = [chunk for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"]
+    assert len(blocked_tasks) == 1
+    assert blocked_tasks[0].code == "complex_model_unavailable"
+    assert blocked_tasks[0].details["classification"] == "unknown"
+
+    # No weak seat was assigned, so the task never reaches a chunk at all.
+    assert [task for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"] == []
+
+
+async def test_unknown_task_routes_to_strong_model(
+    git_sandbox_feature, mixed_roster, noop_probe, strong_policy, monkeypatch
+):
+    """An `unknown` task routes to a strong seat and dispatches successfully.
+
+    The other half of ledger issue:e01c03baf493: the planner must pick a seat
+    `_run_attempt` will actually admit, so the task runs instead of cycling
+    through ineligible seats until its retries are exhausted.
+    """
+    worktree, feature_branch, base_path, index_path = git_sandbox_feature
+
+    mock_assessment = create_mock_assessment("TASK-0001", "unknown")
+
+    async def mock_compute_assessment(self, ctx, task, task_file):
+        return mock_assessment
+
+    async def mock_assessment_for(self, ctx, task, task_file, execution_id=None):
+        # Same rationale as test_complex_task_routes_to_strong_model: the real
+        # snapshot validator would recollect evidence and never match this
+        # fixture's fake hashes, so read the cached plan directly.
+        return self._plan_cache[ctx.feature_id].assessments[task.task_id]
+
+    monkeypatch.setattr(SddCoderEngine, "_compute_assessment", mock_compute_assessment)
+    monkeypatch.setattr(SddCoderEngine, "_assessment_for", mock_assessment_for)
+
+    builder = fake_complexity_builder_factory({})
+    engine = SddCoderEngine(
+        roster=mixed_roster,
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+
+    plan = await engine.plan("demo", str(worktree))
+
+    assert [block for block in plan.routing_blocks if block.task_id == "TASK-0001"] == []
+
+    task_chunks = [task for chunk in plan.chunks for task in chunk.tasks if task.task_id == "TASK-0001"]
     assert len(task_chunks) == 1
+    assert task_chunks[0].seat_label in ["s1", "s2"]  # never the weak "w1"
+
+    # And the assignment survives dispatch-time admission.
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 10)
+
+    assert result.state == "done"
+    assert result.tasks[0].outcome == "merged"
 
 
 async def test_hard_limit_triggers_complex_classification(
