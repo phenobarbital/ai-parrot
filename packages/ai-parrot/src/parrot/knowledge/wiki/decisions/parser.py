@@ -249,7 +249,12 @@ def parse_adr(rel_path: str, text: str) -> tuple[DecisionRecord | None, list[Dec
     """
     diagnostics: list[DecisionDiagnostic] = []
     normalized_text = text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = normalized_text.split("\n")
+    # splitlines(), not split("\n"): a file ending in a newline would otherwise
+    # gain a phantom trailing line, pushing the LAST section's end_line one past
+    # the file and hashing a span that `evidence._read_span_sync` (which reads
+    # with splitlines()) can never reproduce -- freshness then reported `stale`
+    # for every untouched final section.
+    lines = normalized_text.splitlines()
 
     fields, body_start, fm_diagnostics = parse_frontmatter(lines)
     diagnostics.extend(fm_diagnostics)
