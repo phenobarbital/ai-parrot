@@ -22,7 +22,7 @@ from parrot.knowledge.wiki.decisions.models import ADR_INVALID_ARGUMENT, Decisio
 from parrot.knowledge.wiki.decisions.render import DEFAULT_BUDGET_TOKENS, render_dossier_text
 from parrot.knowledge.wiki.decisions.service import DecisionService
 from parrot.knowledge.wiki.project import WikiProjectConfig
-from parrot.knowledge.wiki.store import BaseWikiStore
+from parrot.knowledge.wiki.store import BaseWikiStore, estimate_tokens
 from parrot.knowledge.wiki.structural.service import StructuralService
 from parrot.knowledge.wiki.tools import _scoped_store, _unknown_namespace_error
 from parrot.tools.abstract import AbstractTool, ToolResult
@@ -69,10 +69,27 @@ def _dossier_result(dossier: DecisionDossier, budget_tokens: int) -> ToolResult:
     The text body always carries the origin/status/freshness labels and the
     candidate group heading, so a model reading only the text cannot mistake
     a candidate for documented history (AC3, AC9).
+
+    The machine-readable JSON tail is reserved its own token budget and is
+    NEVER passed through ``truncate_to_tokens`` itself — truncating the
+    combined text+JSON blob as one string can cut the JSON mid-object,
+    corrupting it into something that no longer parses (AC9: adapters must
+    preserve service semantics under output budgets). Only the human-
+    readable prose is subject to character-level truncation; the JSON tail
+    is always appended whole.
     """
     tail = json.dumps(dossier.model_dump(mode="json"))
-    text, _truncated = truncate_to_tokens(f"{render_dossier_text(dossier)}\n\n{tail}", budget_tokens)
-    return ToolResult(result=text, metadata={"status": dossier.status, "truncated": dossier.truncated})
+    text_budget = budget_tokens - estimate_tokens(tail)
+    if text_budget <= 0:
+        # The JSON tail alone already meets or exceeds the budget; there is
+        # no room left for prose, but the tail must still be emitted whole.
+        body, body_truncated = "", True
+    else:
+        body, body_truncated = truncate_to_tokens(render_dossier_text(dossier), text_budget)
+    text = f"{body}\n\n{tail}"
+    return ToolResult(
+        result=text, metadata={"status": dossier.status, "truncated": dossier.truncated or body_truncated}
+    )
 
 
 def _error_result(exc: DecisionError) -> ToolResult:

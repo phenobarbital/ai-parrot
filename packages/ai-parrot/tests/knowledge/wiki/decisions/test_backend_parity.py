@@ -50,8 +50,16 @@ def _arangodb_reachable() -> bool:
         return False
 
 
+#: Repo root, anchored to this file rather than ``Path.cwd()`` — importing
+#: ``parrot`` (Navigator/navconfig) chdirs the process to wherever the
+#: shared editable-install package root resolves, which is the MAIN
+#: checkout even when pytest is invoked from inside a feature worktree.
+#: A bare relative path would silently write this feature's own evidence
+#: into a different checkout entirely.
+_REPO_ROOT = Path(__file__).resolve().parents[6]
+
 #: Where the parity report is written (AC12: evidence under artifacts/logs/).
-PARITY_REPORT = Path("artifacts/logs/feat-578-backend-parity.json")
+PARITY_REPORT = _REPO_ROOT / "artifacts" / "logs" / "feat-578-backend-parity.json"
 
 
 def _available_live_backends() -> dict[str, bool]:
@@ -118,9 +126,9 @@ class TestMandatoryBackends:
         """Insert / replace / conflict behave identically on every backend."""
         assert await parity_store.compare_and_swap_page(_page(), None) is True
         assert await parity_store.compare_and_swap_page(_page(), None) is False
-        assert await parity_store.compare_and_swap_page(_page("v2", "h2"), "h1") is True
+        assert await parity_store.compare_and_swap_page(_page(body="v2", content_hash="h2"), "h1") is True
         assert (await parity_store.get_page("adr:doc:a"))["body"] == "v2"
-        assert await parity_store.compare_and_swap_page(_page("v3", "h3"), "h1") is False
+        assert await parity_store.compare_and_swap_page(_page(body="v3", content_hash="h3"), "h1") is False
         assert (await parity_store.get_page("adr:doc:a"))["body"] == "v2"
 
     async def test_full_record_roundtrip(self, parity_store):
@@ -161,15 +169,15 @@ class TestLiveBackends:
     async def test_cas_contract(self, live_store):
         assert await live_store.compare_and_swap_page(_page(), None) is True
         assert await live_store.compare_and_swap_page(_page(), None) is False
-        assert await live_store.compare_and_swap_page(_page("v2", "h2"), "h1") is True
+        assert await live_store.compare_and_swap_page(_page(body="v2", content_hash="h2"), "h1") is True
         assert (await live_store.get_page("adr:doc:a"))["body"] == "v2"
 
     async def test_concurrent_cas_one_winner(self, live_store):
         """AC8: parity is BEHAVIORAL, not just a JSON round-trip."""
         await live_store.compare_and_swap_page(_page(), None)
         results = await asyncio.gather(
-            live_store.compare_and_swap_page(_page("a", "ha"), "h1"),
-            live_store.compare_and_swap_page(_page("b", "hb"), "h1"),
+            live_store.compare_and_swap_page(_page(body="a", content_hash="ha"), "h1"),
+            live_store.compare_and_swap_page(_page(body="b", content_hash="hb"), "h1"),
         )
         assert sorted(results) == [False, True]
 

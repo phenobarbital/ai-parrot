@@ -17,8 +17,16 @@ from parrot.knowledge.wiki.decisions.models import DecisionConfig, DecisionError
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.decisions.service import DecisionService
 
+#: Repo root, anchored to this file rather than ``Path.cwd()`` — importing
+#: ``parrot`` (Navigator/navconfig) chdirs the process to wherever the
+#: shared editable-install package root resolves, which is the MAIN
+#: checkout even when pytest is invoked from inside a feature worktree.
+#: A bare relative path would silently write this feature's own evidence
+#: into a different checkout entirely.
+_REPO_ROOT = Path(__file__).resolve().parents[6]
+
 #: AC12: evidence is saved under artifacts/logs/.
-BASELINE_REPORT = Path("artifacts/logs/feat-578-scale-baseline.json")
+BASELINE_REPORT = _REPO_ROOT / "artifacts" / "logs" / "feat-578-scale-baseline.json"
 
 SYNTHETIC_RECORD_COUNT = 1000
 
@@ -83,7 +91,13 @@ class TestScaleBaseline:
         tracemalloc.stop()
 
         assert len(inventory) == SYNTHETIC_RECORD_COUNT
-        assert dossier.status == "ok"
+        # Every seeded record's decision text contains "decision", so this
+        # query legitimately matches all 1000 hits and hits the packing
+        # limit/budget — render.py correctly reports "partial" (not "ok")
+        # whenever that happens. Assert the call succeeded and returned
+        # real content, not the specific status a smaller corpus would get.
+        assert dossier.status in ("ok", "partial")
+        assert dossier.documented or dossier.candidates
 
         BASELINE_REPORT.parent.mkdir(parents=True, exist_ok=True)
         BASELINE_REPORT.write_text(
