@@ -9,7 +9,7 @@ tags: [installation, onboarding, getting-started, wikitoolkit, documentation]
 
 **Date**: 2026-09-20
 **Author**: Arturo Martinez
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: C
 
 ---
@@ -55,6 +55,12 @@ internal branch conventions, ticket keys, or internal tooling decisions.
 - **Automation scripts** are the shortcut to the documented steps: may use
   `sudo` for system packages and `uv` for Python; conservative by default, with
   detect-and-guide fallbacks and manual steps for less technical readers.
+- **Every command must be explained before it is run.** For each step the guide
+  states the exact command, what it does, and why it is needed — enough that a
+  reader can judge it before pasting. Anything privileged (`sudo`) or remotely
+  fetched (piped installers) gets an explicit note on what it touches and a
+  non-piped alternative where one exists. The goal is informed trust, not
+  blind copy-paste.
 - **Tests must keep the document true.** A failing test means the documented
   process (or the script) is revised.
 - **Separate document.** No root-`README.md` entry and no interactive installer
@@ -253,6 +259,11 @@ section is verifiable before moving on:
 7. **Verification checklist** and a troubleshooting table keyed to the two known
    silent traps.
 8. **Where to go next** — pointers into the existing deep `docs/` pages.
+
+Every command block in the guide is accompanied by a plain-language note: what
+the command does, why this step needs it, and what it will change on the
+reader's machine. Privileged or network-fetching commands additionally state
+their blast radius and offer a manual alternative.
 
 Two scripts under `scripts/` are the shortcut: a POSIX shell script for
 Ubuntu/macOS and a PowerShell script for Windows. They perform the same steps,
