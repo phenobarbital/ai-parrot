@@ -223,10 +223,14 @@ class TestLedgerTools:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (orchestrator, sequential-loop fallback — `parrot-sdd-coder`
+roster was empty, `fallback_reason: suspension_history_unavailable`)
+**Date**: 2026-09-19
+**Notes**: Added `LedgerCloseInput.resolved_by: str | None = None`; extended
+`LedgerCloseTool._execute(..., resolved_by=None)` to forward it as a kwarg only when not
+`None`, keeping the existing positional call byte-identical when omitted. Added
+`test_mcp_ledger_close_passes_resolved_by` and
+`test_mcp_ledger_close_without_resolved_by_unchanged`.
+Validation: `pytest tests/knowledge/wiki/test_ledger_tools.py -q` → 12 passed. `ruff check --select E9,F63,F7,F82` clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

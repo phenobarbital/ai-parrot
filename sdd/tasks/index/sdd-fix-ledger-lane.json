@@ -136,7 +136,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -146,8 +146,8 @@
       "parallelism_notes": "depends_on TASK-3391: forwards resolved_by= to LedgerService.close_issue (kwarg added there). Owns tools.py and test_ledger_tools.py; runs alongside TASK-3392.",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3393-mcp-ledger-close-resolved-by.md"
+      "completed_at": "2026-09-20T00:30:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3393-mcp-ledger-close-resolved-by.md"
     },
     {
       "id": "TASK-3394",
