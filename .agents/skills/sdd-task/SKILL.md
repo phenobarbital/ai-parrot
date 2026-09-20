@@ -129,6 +129,8 @@ Example:
      <issue-id>`; record `discovered_from: <issue-id>` in the task so
      `wikitoolkit ledger close <issue-id>` can be run as a separate,
      explicit step once the task is filed.
+     Deprecated (FEAT-572): prefer `sdd-fix <issue-id>`, which routes the issue's group to
+     the Fast or SDD lane; `--from-issue` stays for one deprecation cycle only.
 8. Create task files:
    - directory: `sdd/tasks/active/`
    - template: `sdd/templates/task.md`

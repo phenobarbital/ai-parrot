@@ -140,7 +140,7 @@ wikitoolkit ledger ready 2>/dev/null || true
 ```
 🗒  Ready ledger issues (not yet promoted to a task):
   issue:3f8a1c9e [major] Leak in connection pool (bug)
-     → /sdd-task --from-issue issue:3f8a1c9e <spec.md>  (promote, keeps ID/dependency discipline)
+     → /sdd-fix issue:3f8a1c9e        (plan-fix routes its group to the Fast or SDD lane; supersedes the deprecated --from-issue flow, FEAT-572)
 ```
 
 If the command prints nothing (or fails), omit this section entirely —

@@ -13,11 +13,87 @@ command function rather than at module import time.
 """
 
 import asyncio
+import contextlib
 import logging
+import os
+import signal
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
+
+if TYPE_CHECKING:
+    from parrot.mcp.local_server import StdioMCPServer
+
+logger = logging.getLogger(__name__)
+
+
+async def _serve_with_shutdown(server: "StdioMCPServer") -> None:
+    """Run `server.start()`, handling SIGTERM without hanging the process.
+
+    `StdioMCPServer.start()` reads stdin via
+    `loop.run_in_executor(None, sys.stdin.readline)`. Once that blocking
+    read is in flight, its task cannot be cancelled — a
+    `concurrent.futures.Future` refuses cancellation once it is already
+    running — so a SIGTERM handler that merely cancels the running task
+    (or relies on `asyncio.run()`'s own teardown, which joins the default
+    executor) would hang the process for as long as the MCP host keeps
+    stdin open (FEAT-580 M4). `loop.add_signal_handler` instead delivers
+    the signal through the loop's self-pipe, which the loop can service
+    even while that read is still pending, so this shutdown path never
+    waits on it: on SIGTERM it restores the prior handler, drives the
+    server's own bounded `stop()` (which releases any owned toolkit
+    resources), and then forces the process to exit directly with
+    `os._exit()` — which also reaps the still-blocked reader thread,
+    covering the actual process exit path a graceful `asyncio.run()`
+    teardown cannot.
+
+    Args:
+        server: The server whose `start()` should run, and whose `stop()`
+            releases owned resources on shutdown.
+    """
+    loop = asyncio.get_running_loop()
+    prior_handler = signal.getsignal(signal.SIGTERM)
+    installed = False
+
+    def _restore_handler() -> None:
+        nonlocal installed
+        if not installed:
+            return
+        installed = False
+        with contextlib.suppress(NotImplementedError, RuntimeError):
+            loop.remove_signal_handler(signal.SIGTERM)
+        with contextlib.suppress(ValueError, OSError):
+            signal.signal(signal.SIGTERM, prior_handler)
+
+    async def _on_sigterm() -> None:
+        # Restore first: whether or not the bounded stop() below succeeds,
+        # a second SIGTERM must fall through to the platform's default
+        # disposition rather than re-entering this handler.
+        _restore_handler()
+        try:
+            await server.stop()
+        except Exception:  # noqa: BLE001 -- best-effort; we exit regardless
+            logger.exception("Error while shutting down mcp-local on SIGTERM")
+        finally:
+            os._exit(0)
+
+    def _sigterm_callback() -> None:
+        asyncio.ensure_future(_on_sigterm())
+
+    try:
+        loop.add_signal_handler(signal.SIGTERM, _sigterm_callback)
+        installed = True
+    except NotImplementedError:
+        # Event loops without POSIX signal support (e.g. Windows'
+        # ProactorEventLoop) fall back to default SIGTERM handling.
+        pass
+
+    try:
+        await server.start()
+    finally:
+        _restore_handler()
 
 
 def _configure_stderr_logging() -> None:
@@ -146,6 +222,6 @@ def mcp_local(
         sys.exit(1)
 
     try:
-        asyncio.run(server.start())
+        asyncio.run(_serve_with_shutdown(server))
     except KeyboardInterrupt:
         sys.exit(0)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-client-google"
-version = "0.2.4"
+version = "0.2.5"
 description = "Google GenAI (Gemini) LLM clients for AI-Parrot (parrot.clients.google)"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 dependencies = [
-    "ai-parrot>=1.0.4",
+    "ai-parrot>=1.0.5",
     # FEAT-564 TASK-3335: floor raised from 2.18.1 to 2.23.0 — the lowest
     # version this reel feature's async surfaces (aio.models.generate_videos,
     # aio.operations.get, aio.files.download, aio.interactions.create,

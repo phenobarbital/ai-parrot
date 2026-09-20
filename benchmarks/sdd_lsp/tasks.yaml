@@ -1,0 +1,264 @@
+# FEAT-580 M5 -- the twelve fixed pilot tasks (spec §2 Evaluation contract,
+# §3 Module 5: "tasks are fixed before measurement").
+#
+# This file is the reviewable ground truth for the five-arm pilot: every
+# task's fixture, required evidence and file-level acceptance command are
+# pinned here BEFORE any live measurement runs, so a human can review the
+# matrix (and its fixture hashes) independently of any arm's output.
+#
+# - `fixture` names a builder key in
+#   `benchmarks/sdd_lsp/fixtures/scenarios.py` (`build_fixture`).
+# - `fixture_sha256` pins the exact materialized baseline tree's content
+#   hash (`ScenarioFixture.content_sha256()`); it must be identical across
+#   every arm run for the same task (spec: "pin fixture content/hashes").
+# - `acceptance_commands` are file-level checks run against the resulting
+#   worktree after an attempt, identical regardless of which arm produced
+#   the change (spec: "Preserve identical task checks across all arms").
+#   Every task ships the same shape of command: run its bundled `check.py`
+#   with the interpreter that is running the pilot.
+# - `supplementary_text_search` marks tasks whose correct resolution
+#   cannot rely on static go-to-definition alone (dynamic namespace
+#   merging, a decorator-rewritten target, a string-keyed registry, or a
+#   simulated unavailable semantic server), so seats must fall back to a
+#   text search rather than trust a single navigation result.
+# - `fallback_required` marks the one task that simulates the LSP server
+#   itself being unavailable; the runner (TASK-3511) is responsible for
+#   forcing that condition per arm, not this manifest.
+
+schema_version: 1
+task_count: 12
+categories: [investigation, change, fix]
+
+policy:
+  # Cross-checked 1:1 against
+  # `benchmarks.sdd_lsp.fixtures.acceptance.SUPPLEMENTARY_TEXT_SEARCH_SCENARIOS`
+  # by test_dynamic_cases_require_additional_evidence.
+  supplementary_text_search_required_for:
+    - inv-namespace-import
+    - chg-decorator-wrapper
+    - chg-registry-dispatch
+    - fix-unavailable-server
+
+tasks:
+  # --------------------------------------------------------------------- #
+  # Investigation (read-only: report a definition location, make no edit)
+  # --------------------------------------------------------------------- #
+  - id: inv-duplicate-names
+    category: investigation
+    title: Duplicate top-level function names across sibling modules
+    prompt: >
+      Two modules under pkg/ each define a function named `process`.
+      Determine which `process` definition `pkg/caller.py`'s `run()`
+      actually calls, and report the exact file and one-based line of
+      that definition.
+    fixture: inv-duplicate-names
+    entry_point: null
+    includes: [duplicate_names]
+    required_evidence: [definition_location]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "477077ee549dce3c2d6f80ae8059add95e2eec6a766c01fca552dc01cc427fad"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: inv-alias-reexport
+    category: investigation
+    title: Re-exported symbol through an import alias
+    prompt: >
+      `pkg2/caller.py` imports `ExportedWidget` from the `pkg2` package.
+      `pkg2/__init__.py` re-exports it under that alias from another
+      module. Report the exact file and one-based line where the real
+      `Widget` class is defined.
+    fixture: inv-alias-reexport
+    entry_point: null
+    includes: [alias]
+    required_evidence: [definition_location]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "49f969d94ec0c141f327374adfd2919dcc42f298a001386b825e18da4c36d75f"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: inv-namespace-import
+    category: investigation
+    title: PEP 420 namespace package spanning two distribution roots
+    prompt: >
+      `nsx` is a namespace package assembled from two separate source
+      roots (roots/root_a and roots/root_b), neither of which declares
+      `nsx/__init__.py`. `nsx.tool.helper` is imported by a caller.
+      Report the exact file and one-based line where `helper` is
+      actually defined.
+    fixture: inv-namespace-import
+    entry_point: null
+    includes: [namespace]
+    required_evidence: [definition_location]
+    supplementary_text_search: true
+    fallback_required: false
+    fixture_sha256: "5970f56af36f4f4e15636f316b377bd4d22d967b803cf83090a9b938b35b573b"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: inv-inherited-receiver
+    category: investigation
+    title: Method call resolves through an inherited base-class receiver
+    prompt: >
+      `pkg3/caller.py` calls `Derived().compute()`. `Derived` does not
+      override `compute`. Report the exact file and one-based line
+      where the method that actually executes is defined.
+    fixture: inv-inherited-receiver
+    entry_point: null
+    includes: [inherited_receiver]
+    required_evidence: [definition_location]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "357b8bbcdc0995d2041d8aa2361afa567df86d5f2e3bd5391a8ed2a3e9c59b4e"
+    acceptance_commands:
+      - [python, check.py]
+
+  # --------------------------------------------------------------------- #
+  # Change (edit existing, working code to add a capability)
+  # --------------------------------------------------------------------- #
+  - id: chg-signature-callers
+    category: change
+    title: Add a parameter to a function and update its caller
+    prompt: >
+      Add an `excited: bool = False` parameter to `greet()` in
+      pkg4/greet.py that appends "!" to the greeting when true, and
+      update `welcome()` to accept and forward its own `excited`
+      parameter (default false) to `greet()`.
+    fixture: chg-signature-callers
+    entry_point: pkg4/greet.py
+    includes: [signature_callers]
+    required_evidence: [behavior_pass]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "eac022e72973601de1468c979c938ca9c2414875b35dda9cdaeaec59817a905d"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: chg-return-type-consumers
+    category: change
+    title: Change a function's return type and update its consumer
+    prompt: >
+      Change `bounds()` in pkg5/stats.py to return a frozen `Bounds`
+      dataclass (fields `minimum`, `maximum`) instead of a bare tuple,
+      and update `describe()`, its only consumer, to read the new
+      attributes.
+    fixture: chg-return-type-consumers
+    entry_point: pkg5/stats.py
+    includes: [return_type_consumers]
+    required_evidence: [behavior_pass]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "883754d6ae33d58eaecfe5434fe52f1984b076a81d4579c92674f1f26ed5344c"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: chg-decorator-wrapper
+    category: change
+    title: Wrap an existing function with a call-counting decorator
+    prompt: >
+      Add a `counted` decorator in pkg6/deco.py that increments
+      `calls['count']` each time the wrapped function runs, preserves
+      the wrapped function's return value and `__name__`, and apply it
+      to `compute`.
+    fixture: chg-decorator-wrapper
+    entry_point: pkg6/deco.py
+    includes: [decorator]
+    required_evidence: [behavior_pass, text_search_evidence]
+    supplementary_text_search: true
+    fallback_required: false
+    fixture_sha256: "310e70134522b8c05380365e951948377289d7e2e734b47d7c03c2201c713f05"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: chg-registry-dispatch
+    category: change
+    title: Register a new handler in a string-keyed dispatch table
+    prompt: >
+      Add a `_triple` handler to pkg7/registry.py that triples its
+      input, and register it under the `"triple"` key in `HANDLERS` so
+      `dispatch("triple", x)` returns `x * 3`.
+    fixture: chg-registry-dispatch
+    entry_point: pkg7/registry.py
+    includes: [registry]
+    required_evidence: [behavior_pass, text_search_evidence]
+    supplementary_text_search: true
+    fallback_required: false
+    fixture_sha256: "f235d3681b6f51d50c124eb6277bba285c806a0be190015fc207c2111a232c8d"
+    acceptance_commands:
+      - [python, check.py]
+
+  # --------------------------------------------------------------------- #
+  # Fix (repair broken behavior in existing code)
+  # --------------------------------------------------------------------- #
+  - id: fix-wrong-import
+    category: fix
+    title: Correct an import that pulls the wrong sibling definition
+    prompt: >
+      pkg8/consumer.py imports `VALUE` from the wrong sibling module.
+      Fix the import so `get_value()` returns the value defined in
+      pkg8/correct_source.py.
+    fixture: fix-wrong-import
+    entry_point: pkg8/consumer.py
+    includes: [wrong_import]
+    required_evidence: [behavior_pass]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "50de13761672ae0145d49452e31a3a7ad2660690924f1306b20681da66a8a307"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: fix-type-mismatch
+    category: fix
+    title: Fix a str/int type mismatch in an arithmetic expression
+    prompt: >
+      pkg9/calc.py's `add_tax()` adds an `int` to `TAX_RATE_CONFIG`,
+      which is a `str`. Fix the type mismatch so `add_tax(100)` returns
+      `110.0`.
+    fixture: fix-type-mismatch
+    entry_point: pkg9/calc.py
+    includes: [type_mismatch]
+    required_evidence: [behavior_pass]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "8fcddc9be0516d3592a9b977aed73af4e807b0d586feb22f06100046b4e74c3e"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: fix-stale-saved-dependency
+    category: fix
+    title: Update a caller left stale after a dependency's signature changed
+    prompt: >
+      pkg10/dependency.py's `compute_price()` now requires a
+      `discount_pct` argument. pkg10/consumer.py's `total()` was not
+      updated after that saved change and still calls it with one
+      argument. Fix `total()` to pass `discount_pct=10.0` so
+      `total(100.0)` returns `90.0`.
+    fixture: fix-stale-saved-dependency
+    entry_point: pkg10/consumer.py
+    includes: [stale_saved_dependency]
+    required_evidence: [behavior_pass]
+    supplementary_text_search: false
+    fallback_required: false
+    fixture_sha256: "fb80a188a21229000d43697d5158d3d2508adf35d6b99c78a161856b79524d50"
+    acceptance_commands:
+      - [python, check.py]
+
+  - id: fix-unavailable-server
+    category: fix
+    title: Fix a simple bug while the semantic server is unavailable
+    prompt: >
+      pkg11/util.py's `clamp()` returns the wrong bound when the input
+      exceeds `high`. The semantic navigation/diagnostics server is
+      simulated unavailable for this task; fix the bug using text
+      search and direct inspection so `clamp(15, 0, 10)` returns `10`.
+    fixture: fix-unavailable-server
+    entry_point: pkg11/util.py
+    includes: [unavailable_server]
+    required_evidence: [behavior_pass, text_search_evidence]
+    supplementary_text_search: true
+    fallback_required: true
+    fixture_sha256: "70018b3d9afe7d29bad0cf918a1451f2e5ffae57515d6588b38941e9a33ad242"
+    acceptance_commands:
+      - [python, check.py]

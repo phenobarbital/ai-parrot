@@ -156,3 +156,49 @@ class TestStatusPayload:
         # Skip this test for now as it's complex to set up properly
         # The main functionality (SQLite backend) is tested in other tests
         pass
+
+
+class TestSqliteCliHint:
+    """`status` surfaces whether the `sqlite3` CLI binary is on PATH.
+
+    wikitoolkit itself never shells out to the `sqlite3` binary — the store
+    only uses Python's stdlib `sqlite3` module — so this is purely a
+    convenience hint for a human/agent who wants to inspect `.parrot/wiki.db`
+    or `.parrot/ledger/ledger.db` directly with the CLI tool instead of going
+    through `wikitoolkit`/MCP tools.
+    """
+
+    def test_json_reports_sqlite_cli_present(self, runner, repo, monkeypatch) -> None:
+        _build(runner, repo)
+        monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/usr/bin/sqlite3")
+
+        result = runner.invoke(wiki, ["status", "--path", str(repo), "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["sqlite_cli"] is True
+
+    def test_json_reports_sqlite_cli_missing(self, runner, repo, monkeypatch) -> None:
+        _build(runner, repo)
+        monkeypatch.setattr(cli_module.shutil, "which", lambda name: None)
+
+        result = runner.invoke(wiki, ["status", "--path", str(repo), "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["sqlite_cli"] is False
+
+    def test_human_output_hints_install_when_missing(self, runner, repo, monkeypatch) -> None:
+        _build(runner, repo)
+        monkeypatch.setattr(cli_module.shutil, "which", lambda name: None)
+
+        result = runner.invoke(wiki, ["status", "--path", str(repo)])
+        assert result.exit_code == 0
+        assert "sqlite3 CLI not found" in result.output
+        assert "apt install sqlite3" in result.output
+
+    def test_human_output_silent_when_present(self, runner, repo, monkeypatch) -> None:
+        _build(runner, repo)
+        monkeypatch.setattr(cli_module.shutil, "which", lambda name: "/usr/bin/sqlite3")
+
+        result = runner.invoke(wiki, ["status", "--path", str(repo)])
+        assert result.exit_code == 0
+        assert "sqlite3 CLI not found" not in result.output

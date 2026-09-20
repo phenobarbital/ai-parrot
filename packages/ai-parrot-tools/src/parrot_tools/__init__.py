@@ -83,6 +83,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "jira": "parrot_tools.jiratoolkit.JiraToolkit",
     "kubernetes": "parrot_tools.kubernetes.toolkit.KubernetesToolkit",
     "lead_iq": "parrot_tools.leadiq.tool.LeadIQToolkit",
+    "lsp": "parrot_tools.lsp.toolkit.LSPToolkit",
     "massive": "parrot_tools.massive.toolkit.MassiveToolkit",
     "math": "parrot_tools.math.MathTool",
     "whats_app": "parrot_tools.messaging.whatsapp.WhatsAppTool",

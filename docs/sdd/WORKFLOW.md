@@ -175,6 +175,23 @@ are not in `tasks/completed/`.
 | `/sdd-task <spec.md>` | Decompose a spec into Task Artifacts |
 | `/sdd-status` | Show task index status summary |
 | `/sdd-next` | Suggest next unblocked tasks to assign |
+| `/sdd-fix [issue-id] [--top N] [--kind K] [--severity S] [--lane fast|sdd]` | Drain the work ledger: plan a severity-ordered, file-grouped batch and route each group to the Fast lane (branch → PR) or the SDD lane (spec → tasks → worktree) |
+
+---
+
+## Ledger-Driven Fix Lane (`/sdd-fix`)
+
+`/sdd-codereview` files confirmed-but-unfixed findings in the SDD work ledger; `/sdd-fix`
+drains it. It runs `wikitoolkit ledger plan-fix --json` and executes the returned plan:
+
+| Group (connected component over `about` files) | Lane |
+|---|---|
+| max severity `critical` / `major`, any `vulnerability`, or no file scope | **SDD lane** — reuse the open parent spec, else reserve a fresh `FEAT-<NNN>`, `/sdd-task`, worktree, `/sdd-done` |
+| `minor`/`low`, every issue `tech_debt`, exactly one file | **Fast lane** — branch `fix/<id>-<slug>` off `origin/dev`, commit, **always** `gh pr create --base dev` |
+
+The plan is a snapshot and `ledger claim` is authoritative (a lost claim drops the issue);
+close by two keys with `ledger close --resolved-by`; release the rest with `ledger unclaim`;
+`--lane fast` is refused for critical/vulnerability groups; `ready` output is now severity-ordered.
 
 ---
 

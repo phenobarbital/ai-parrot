@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-580 - SDD LSP Research Pilot
 **Spec**: `sdd/specs/sdd-research-lsp.spec.md`
-**Status**: pending
+**Status**: in-progress (blocked on operator-provided live-run manifest/prices/seats/budget — see Completion Note)
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3513
@@ -28,6 +28,54 @@ Implement M6 of the approved specification: execute the approved pilot and publi
 |---|---|---|
 | `docs/sdd/lsp-pilot-results.md` | CREATE | Operator-facing evidence or guidance |
 | `packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py` | CREATE | Acceptance and regression tests |
+
+### Scope correction (2026-09-20, operator-approved)
+
+`benchmarks/sdd_lsp/runner.py` requires `SeatSpec.argv` to be a real,
+already-operator-provided CLI — "never invents a provider SDK
+integration" (spec §3 M5). None existed for any of the five arms; without
+one, M6 cannot launch a single live attempt. The operator selected
+`minimax.minimax-m2.5` over AWS Bedrock-Mantle (live-verified reachable
+on the operator's account via
+`packages/ai-parrot/tests/clients/test_bedrock_live_matrix.py -k "mantle and minimax"`,
+2026-09-20) as the one pinned model for all five arms (spec: "Identical
+... model settings ... apply" across arms). Driving it requires composing
+already-existing framework primitives only — `LLMFactory`'s
+`"mantle:<model>"` string (`BedrockMantleClient`), `parrot.bots.Agent`'s
+existing tool-calling loop, `parrot_tools.lsp.toolkit.LSPToolkit` for the
+three LSP arms, and a handful of new small local tools for the `wiki_ast`
+control condition (index-free, since each pilot attempt is a fresh
+never-indexed fixture directory the repo's wiki graph knows nothing
+about) — never a new LLM client class or CLI dispatcher, so this stays
+inside the "NOT in scope: implementing new host adapters" boundary.
+
+Added files (operator-approved, this scope-correction section is their
+record per this task's own Agent Instructions step 3):
+
+| File | Action | Description |
+|---|---|---|
+| `benchmarks/sdd_lsp/seats/__init__.py` | CREATE | Package marker |
+| `benchmarks/sdd_lsp/seats/tools.py` | CREATE | Bounded, cwd-scoped local tools: file read/write/list, investigation answer submission, index-free AST find-definition/find-references, text search |
+| `benchmarks/sdd_lsp/seats/bedrock_mantle_seat.py` | CREATE | The seat entry point (`python -m benchmarks.sdd_lsp.seats.bedrock_mantle_seat`) — same `argv` for all five arms, branches on `PARROT_LSP_PILOT_ARM`/`_TOOLS` env vars; satisfies `runner.py`'s full seat contract (env vars in, `answer.json`/edited `entry_point` + `trace.jsonl` out) |
+| `packages/ai-parrot-tools/tests/lsp/test_bedrock_mantle_seat.py` | CREATE | Offline, network-free tests for the local tools and the trace/answer-writing contract (a fake/stub client, never a real Bedrock call) |
+
+Per-arm tool loadout (operator-confirmed 2026-09-20):
+
+| Arm | Tools beyond `read_file`/`write_file`/`list_dir`/`submit_answer` |
+|---|---|
+| `current` | none |
+| `wiki_ast` | + `ast_find_definition`, `ast_find_references`, `text_search` |
+| `lsp_navigation` | `wiki_ast`'s tools + `lsp_definition`, `lsp_references` |
+| `lsp_diagnostics` | `wiki_ast`'s tools + `lsp_diagnostics`, `lsp_diagnostic_delta` |
+| `lsp_combined` | `wiki_ast`'s tools + all four LSP tools |
+
+The `fix-unavailable-server` forced condition
+(`PARROT_LSP_PILOT_FORCE_UNAVAILABLE=1`) is simulated by constructing
+`LSPConfig` with `environment_id=OPERATOR_UNCONFIGURED_ENVIRONMENT_ID`
+for that one attempt regardless of arm, so every `lsp_*` call reports
+`status="unavailable"` before any process spawns — reusing the toolkit's
+own documented sentinel behavior rather than inventing new simulation
+logic.
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -131,4 +179,55 @@ Completion additionally requires all 180 real attempts and auditable trace/cost 
 
 ## Completion Note
 
-Not completed. The implementing agent must record changed behavior, validation results, commit, review outcome and remaining limitations here.
+**NOT DONE — intentionally left `in-progress`, per this task's own
+instructions.** M6 is explicitly not delegation-eligible (spec §3 Module
+Breakdown: "Requires provisioned CLI seats, actual usage/pricing, and
+human acceptance review; results cannot be manufactured"). This session
+had no operator-reviewed manifest, no real CLI seats, no actual prices,
+and no approved spending ceiling — exactly the external blocker spec §8's
+one remaining open question describes. Per "If prerequisites or trace
+coverage are missing, record the external blocker and leave this task
+unfinished... A complete no-go result is a valid deliverable; retain
+opt-in deployment," this task is **not marked done** and remains
+`in-progress` in the per-spec index; its file is **not** moved to
+`sdd/tasks/completed/`.
+
+**What was implemented** (the portion achievable without fabricating live
+evidence):
+- `packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py`: report-
+  integrity checking logic (`check_live_report_integrity`,
+  `manifest_digest`) validated against synthetic fixtures shaped like a
+  compliant live report — proving the CHECKING LOGIC works, never
+  claiming a live run occurred. Verifies: a report must not be
+  `synthetic`; its manifest must match a reviewed manifest's digest
+  exactly (tamper-evident); every one of the 180 planned attempts must be
+  present exactly once (no missing/duplicated ids); every launched
+  attempt must carry either raw trace refs or an explicit failure reason
+  (no silent gaps). Also verifies `evaluate_gate` is deterministically
+  re-derivable from raw attempt data and reacts correctly to tampered
+  acceptance data (three required tests, all present and passing).
+- `docs/sdd/lsp-pilot-results.md`: an honest, clearly-marked
+  **NOT YET RUN** placeholder — explains exactly what is blocking the
+  live run (referencing spec §8 and the "Operator run checklist" in
+  `docs/sdd/lsp-pilot.md`), what IS implemented and ready (M1–M5, all
+  complete and tested offline), and the exact command an operator runs
+  once the manifest/prices/seats/budget are reviewed. Contains
+  deliberately **zero** go/no_go/cost/quality/latency claims.
+
+**What was NOT done** (the actual scope of this task, honestly
+unfulfilled): the real 12-task × 3-repetition × 5-arm (180-attempt) live
+run was never executed; no real cost/trace/acceptance evidence exists;
+no audited `go`/`no_go`/`inconclusive` decision was published; no human
+acceptance review occurred. `lsp-pilot-results.md` explicitly does not
+claim otherwise.
+
+Validation: `pytest packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py -q`
+→ 3 passed. Full `packages/ai-parrot-tools/tests/lsp/` regression: 135
+collected, 132 passed, 3 skipped (unrelated real-Pyright tests). `black
+-l 120`/`ruff check` clean.
+
+Seat: sonnet (native, no MCP seat) — implemented directly by the
+sdd-worker orchestrator per the human-authorized exception (see
+TASK-3508's completion note for the routing-gap blocker context; that
+blocker is unrelated to this task's OWN, separate M6 execution blocker
+described above).

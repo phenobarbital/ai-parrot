@@ -43,8 +43,10 @@ This makes `/sdd-status` misleading for the most common use cases:
 
 ### Goals
 
-- G1: `/sdd-status` shows the **true** task state per feature by reading
-  the worktree's index when a worktree exists for that feature.
+- G1: `/sdd-status` shows the **true** task state per feature by
+  reconciling the dev-branch index with the worktree's index — taking
+  whichever side is further along, per task (see §8, amended 2026-09-20:
+  the worktree is *not* preferred wholesale, it may only advance a task).
 - G2: A new "Worktrees" panel shows all active worktrees with their
   health (dirty files, unpushed commits, live processes).
 - G3: Features ready for `/sdd-done` (all tasks done in worktree, branch
@@ -82,9 +84,10 @@ The `/sdd-status` command (`.claude/commands/sdd-status.md`) and its
 skill twin (`.agents/skills/sdd-status/SKILL.md`) are updated to:
 
 - Call `worktree_status.py` to get the worktree reports.
-- For features with a worktree: show the **worktree index** status
-  instead of (or alongside) the dev-branch index status, with a clear
-  label indicating the source.
+- For features with a worktree: show the **reconciled** status —
+  `worktree_status.py --reconcile` merges the two indexes, letting the
+  worktree only advance a task, never roll it back — with a label
+  indicating when the worktree is ahead, worktree-only, or stale.
 - Append a "Worktrees" summary panel after the task board.
 - Flag features ready for `/sdd-done`.
 
@@ -231,9 +234,11 @@ class WorktreeReport(BaseModel):
 - **Changes**:
   1. New step §2.5 between "Read All Per-Spec Indexes" and "Group and Display":
      run `python -m scripts.sdd.worktree_status --json` to get worktree reports.
-  2. For features with a worktree report: show the worktree task statuses
-     instead of (or alongside) the dev-branch ones, labeled
-     `(from worktree: <branch>)`.
+  2. For features with a worktree report: show the reconciled task
+     statuses (`--reconcile`), labeled `(worktree ahead: <branch>)`,
+     `(worktree only: <branch>)` or `(stale worktree: <branch> — dev is
+     ahead)` from the per-feature flags. Never the worktree's statuses
+     wholesale — that regressed closed features to "pending" (FEAT-561).
   3. New "Worktrees" panel at the end showing all active SDD worktrees,
      their health, and ready-for-done flags.
   4. Update the Summary line to include worktree count.
@@ -452,12 +457,14 @@ def discover() -> list[Worktree]:  # line 168
 - **Pydantic for all models**: `WorktreeReport`, `WorktreeHealth`, `WorktreeTaskStatus`.
 - **Read-only invariant**: the module MUST NOT write any file or run any mutating git command.
 - **Graceful degradation**: every external call (git, /proc, json.load) must be wrapped in try/except and degrade to "unknown" state, never crash the whole report.
-- **CLI entry point**: `if __name__ == "__main__": sys.exit(main())` with `--json` flag.
+- **CLI entry point**: `if __name__ == "__main__": sys.exit(main())` with `--json` and
+  `--reconcile` flags (`--reconcile` returns `list[ReconciledFeature]`: the dev index
+  merged with the worktree index, per-task `source`, and the ahead/stale/only flags).
 
 ### Known Risks / Gotchas
 
 1. **Worktree directory exists but git doesn't track it** (orphan): `git worktree list --porcelain` won't show it. The module should also scan `WORKTREE_ROOT` for directories not in the porcelain output (same pattern as `remove_worktree.discover()`).
-2. **Index inside worktree may be stale**: the worktree was branched before tasks were generated. In this case `index_found=False` and the dev-branch index is used.
+2. **Index inside worktree may be stale**: the worktree was branched before tasks were generated, or left behind after the feature merged. `index_found=False` covers only the "no index file at all" case — an index that *exists* but predates the last `/sdd-task`, `/sdd-start` or `/sdd-done` stamp is the common case, and is handled by the monotonic merge (`reconcile_feature`), not by ignoring the worktree.
 3. **Legacy branch naming**: some worktrees use `feat-<NNN>-<slug>` (without the `FEAT-` prefix, e.g. `feat-465-fix-weak-sha1-arango-store`). The regex must handle both.
 4. **Non-SDD worktrees**: branches like `chore-ruff-config` or `fix-*` are not SDD features — they have no per-spec index and are shown in the worktree panel but not matched to a feature.
 5. **`/proc` is Linux-only**: live process detection should be best-effort; on non-Linux, `_live_process_count()` returns 0.
@@ -472,7 +479,7 @@ No new external dependencies. Uses only stdlib + pydantic (already a project dep
 
 ## 8. Open Questions
 
-- [x] Should the worktree index *replace* or be shown *alongside* the dev-branch index? — *Resolved*: Replace when a worktree exists (the worktree is truth for active work); the dev-branch status is only shown for features without a worktree.
+- [x] Should the worktree index *replace* or be shown *alongside* the dev-branch index? — *Resolved (amended 2026-09-20)*: **Neither — reconcile them.** The original resolution ("replace when a worktree exists; the worktree is truth for active work") shipped and was wrong: a worktree is truth only where it is *ahead*. A worktree branched before `/sdd-task`/`/sdd-start`, or left behind after `/sdd-done` merged, carries a snapshot that is *behind* dev, and replacing made `/sdd-status` report closed features as not started (FEAT-561: 10 tasks shown pending for a feature merged 2026-09-16; FEAT-581: 34 in-progress tasks shown pending). `worktree_status.py --reconcile` now merges per task and the worktree may only *advance* a status — `pending` < `in-progress` < `done` = `done-with-issues`, ties keep dev's value — with `worktree_ahead` / `worktree_only` / `worktree_stale` / `dev_closed` flags driving the labels.
 - [x] Should non-SDD worktrees (chore-*, fix-*) be shown? — *Resolved*: Yes, in the Worktrees panel only (no task board entry since they have no per-spec index).
 - [ ] Should `/sdd-status --worktrees-only` be a flag to show just the worktree panel? — *Owner: Jesus* — can be deferred to implementation.
 - [ ] Should `worktree_status.py` reuse `remove_worktree.discover()` directly or reimplement? — *Owner: implementer* — Both are viable; reimplementing keeps `worktree_status` self-contained and avoids importing a CLI script's internals. Recommended: reimplement the subset needed.

@@ -243,18 +243,32 @@ def eligible_seats(
 ) -> List[RosterSeat]:
     """Filter `seats` to those permitted for `assessment`'s classification (spec §2).
 
-    `standard` and `unknown` tasks may use any of the supplied seats, unchanged
-    and in order ("Standard tasks retain the configured roster rotation
-    behavior").  `unknown` means the classifier could not determine complexity,
-    so we default to the full roster rather than restricting to strong models.
-    `complex` tasks are restricted to seats whose exact `(backend, model)` pair
-    -- `backend="native"` for `kind="native"` seats -- matches one of
-    `policy.strong_models`'s configured identities. Never matches a seat
-    nickname or an inferred alias, and never overrides seat availability or
-    suspension: `seats` is expected to already be the caller's
-    available/unsuspended subset.
+    Only `standard` tasks may use any of the supplied seats, unchanged and in
+    order ("Standard tasks retain the configured roster rotation behavior").
+
+    `complex` AND `unknown` tasks are both restricted to seats whose exact
+    `(backend, model)` pair -- `backend="native"` for `kind="native"` seats --
+    matches one of `policy.strong_models`'s configured identities (spec §2:
+    "Both complex and unknown require the strong-model allowlist"; §"Models and
+    dispatch rules": "Complex/unknown tasks may use only a matching, available
+    model"). `unknown` means an applicable signal could not be measured, and an
+    unmeasured task may well be a complex one, so it is routed conservatively
+    rather than defaulting to the full roster.
+
+    This restriction MUST stay in step with `SddCoderEngine._run_attempt`'s
+    dispatch-time admission check, which rejects BOTH classifications on a
+    non-strong seat. While this function was the looser of the two, `plan()`
+    handed every `unknown` task to a standard MCP seat that dispatch then
+    refused with `complex_model_unavailable`, and `_eligible_retry_labels` --
+    which derives its restricted retry set from right here -- resolved to the
+    full roster, so the retry ladder rotated through the same ineligible seats
+    and never reached a strong one. Such tasks were permanently undispatchable.
+
+    Never matches a seat nickname or an inferred alias, and never overrides
+    seat availability or suspension: `seats` is expected to already be the
+    caller's available/unsuspended subset.
     """
-    if assessment.classification in ("standard", "unknown"):
+    if assessment.classification == "standard":
         return list(seats)
 
     strong_keys = {(sm.backend, sm.model) for sm in policy.strong_models}

@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from parrot.knowledge.wiki.ledger.events import (
     IssueKind,
     IssueOpenedPayload,
     LedgerEvent,
+    SEVERITY_ORDER,
     compute_issue_id,
 )
 from parrot.knowledge.wiki.ledger.index import LedgerIndex, _decode_issue_body
@@ -197,14 +199,20 @@ class LedgerService:
         return issue_id
 
     async def ready_work(self, kind: IssueKind | None = None) -> list[dict[str, Any]]:
-        """Return unclaimed, open issues (optionally filtered by ``kind``)."""
+        """Return unclaimed, open issues sorted by ``(SEVERITY_ORDER, issue_id)``.
+
+        The filter predicate is unchanged; only the ordering is new (FEAT-572 S6).
+        ``ledger ready``, ``/sdd-next`` and the MCP ``ledger_ready`` tool inherit it.
+        """
         await self._sync_best_effort()
         issues = await self._all_issues()
-        return [
+        rows = [
             _issue_dict(issue_id, state)
             for issue_id, state in issues
             if state.get("status") == "open" and (kind is None or state.get("kind") == kind)
         ]
+        rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
+        return rows
 
     async def claim(self, issue_id: str, actor: str) -> bool:
         """Delegate to :meth:`LedgerIndex.claim_issue`."""
@@ -232,13 +240,47 @@ class LedgerService:
         await self._sync_best_effort()
         return True
 
-    async def close_issue(self, issue_id: str, reason: str, actor: str) -> bool:
-        """Close an issue with a reason."""
+    async def _issue_state(self, issue_id: str) -> dict[str, Any] | None:
+        """Read one issue's decoded state (``None`` when no page exists); reads via ``store._read()`` like ``_all_issues``."""
+        async with self.store._read() as conn:
+            async with conn.execute("SELECT body FROM pages WHERE concept_id = ?", (issue_id,)) as cur:
+                row = await cur.fetchone()
+        return _decode_issue_body(row[0]) if row else None
+
+    async def close_issue(self, issue_id: str, reason: str, actor: str, resolved_by: str | None = None) -> bool:
+        """Close an issue, recording the resolver and the evidence reference (FEAT-572 S4/S5).
+
+        ``resolved_by`` is e.g. ``commit:<sha>`` (fast lane) or ``task:TASK-<NNN>`` (SDD lane)
+        and is carried into ``IssueClosedPayload.resolved_by``. Returns ``False`` WITHOUT
+        appending when the issue does not exist or its status is not ``open``/``claimed`` —
+        a double close is detectable instead of silent.
+        """
+        await self._sync_best_effort()
+        state = await self._issue_state(issue_id)
+        if state is None or state.get("status") not in ("open", "claimed"):
+            logger.warning(
+                "Refusing issue.closed for %s: missing or status=%r", issue_id, state and state.get("status")
+            )
+            return False
+        payload: dict[str, Any] = {"reason": reason, "closed_by": actor}
+        if resolved_by is not None:
+            payload["resolved_by"] = resolved_by
+        event = LedgerEvent(kind="issue.closed", subject=issue_id, actor=actor, payload=payload)
+        await asyncio.to_thread(self.log.append, event)
+        await self._sync_best_effort()
+        return True
+
+    async def unclaim(self, issue_id: str, reason: str, actor: str) -> bool:
+        """Append ``issue.unclaimed``, returning a claimed issue to the ready pool (FEAT-572 M3).
+
+        Returns ``False`` without appending unless the issue exists with status ``claimed``.
+        """
+        await self._sync_best_effort()
+        state = await self._issue_state(issue_id)
+        if state is None or state.get("status") != "claimed":
+            return False
         event = LedgerEvent(
-            kind="issue.closed",
-            subject=issue_id,
-            actor=actor,
-            payload={"reason": reason, "closed_by": actor},
+            kind="issue.unclaimed", subject=issue_id, actor=actor, payload={"unclaimed_by": actor, "reason": reason}
         )
         await asyncio.to_thread(self.log.append, event)
         await self._sync_best_effort()
@@ -321,6 +363,30 @@ class LedgerService:
             if data.get("feature_id") == feature_id:
                 return [task.get("id") for task in data.get("tasks", []) if task.get("id")]
         return []
+
+    def _feature_index_status_sync(self, wanted: set[str]) -> dict[str, str | None]:
+        """Blocking half of :meth:`feature_index_status` — one ``glob`` over the index directory."""
+        index_dir = self.shared_root / "sdd" / "tasks" / "index"
+        result: dict[str, str | None] = {}
+        if not wanted or not index_dir.exists():
+            return result
+        for index_path in index_dir.glob("*.json"):
+            try:
+                data = json.loads(index_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            feature_id = data.get("feature_id")
+            if feature_id in wanted:
+                result[feature_id] = data.get("completed_at")
+        return result
+
+    async def feature_index_status(self, feature_ids: Collection[str]) -> dict[str, str | None]:
+        """Map each ``FEAT-<NNN>`` to its per-spec index ``completed_at`` (``None`` = still open).
+
+        A feature with no index file is ABSENT from the result — the caller distinguishes
+        "open" (present, ``None``) from "unknown" (absent). Scans the directory once.
+        """
+        return await asyncio.to_thread(self._feature_index_status_sync, set(feature_ids))
 
     async def export_snapshot(self, dest: Path) -> bool:
         """Write ``sdd/ledger/issues.jsonl`` deterministically.
