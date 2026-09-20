@@ -569,13 +569,20 @@ Both defects confirmed and fixed:
   a `parrot-sdd-coder` MCP server restart; this hardening closes the risk
   regardless of the exact trigger.
 
-Fix landed in the existing FEAT-572 worktree
+Fix was implemented in the existing FEAT-572 worktree
 (`.claude/worktrees/feat-FEAT-572-sdd-fix-ledger-lane`, commit `09a377fa1`,
 pushed to `origin/feat-FEAT-572-sdd-fix-ledger-lane`) rather than as a
 separate branch, since that worktree/spec is the reused open parent per
-`/sdd-fix`'s SDD-lane routing. It has not yet been merged to `dev` — FEAT-572
-has other in-progress tasks (TASK-3393, TASK-3396, TASK-3397); `/sdd-done
-FEAT-572` will bring this fix to `dev` together with them once those land.
+`/sdd-fix`'s SDD-lane routing. That feature branch's diff against `dev` was
+confirmed to contain ONLY this fix (`git diff --stat origin/dev...HEAD`) —
+FEAT-572's other in-progress tasks (TASK-3393, TASK-3396, TASK-3397) never
+produced any code, since every one of their dispatch attempts was blocked by
+this very bug. Given that, the fix commit was cherry-picked directly onto
+`dev` (commit `848513359`, pushed) rather than waiting for `/sdd-done
+FEAT-572` to close out the whole feature — safe and low-risk since it carried
+no other feature's unfinished work along with it. `/sdd-done FEAT-572` will
+still be needed later to close out TASK-3393/3396/3397 and merge/clean up the
+worktree itself; this fix landing on `dev` early unblocks those tasks sooner.
 Files actually changed: `engine.py` + `test_engine_dispatch.py` (not
 `roster.py`, which the ledger issue's `about` field pointed at as a
 conceptual anchor — the real defect was in `SddCoderEngine`'s pool-based
