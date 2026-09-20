@@ -6,8 +6,7 @@ Step 3: Planogram Comparison and Compliance Verification
 """
 
 import asyncio
-import os
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional, Union
 from collections import defaultdict, Counter
 from datetime import datetime
 import unicodedata
@@ -16,9 +15,8 @@ import traceback
 from pathlib import Path
 import math
 import pytesseract
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
-from pydantic import BaseModel, Field
 import cv2
 import torch
 from google.genai.errors import ServerError
@@ -667,7 +665,7 @@ class RetailDetector(AbstractDetector):
             print("   Focus: Let classification phase handle object type distinction")
 
             # Print final statistics
-            print(f"\n📊 Detection Summary:")
+            print("\n📊 Detection Summary:")
             print(f"   Total YOLO detections: {stats['total_detections']}")
             print(f"   Passed confidence: {stats['passed_confidence']}")
             print(f"   Passed basic size: {stats['passed_size']}")

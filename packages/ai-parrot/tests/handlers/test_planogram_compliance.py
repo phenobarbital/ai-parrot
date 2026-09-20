@@ -1,4 +1,5 @@
 """Tests for PlanogramComplianceHandler — planogram compliance REST endpoint."""
+
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +23,7 @@ from parrot.pipelines.models import PlanogramConfig, EndcapGeometry
 # Helpers — minimal JPEG bytes (valid 1×1 JPEG)
 # ---------------------------------------------------------------------------
 
+
 def _make_jpeg_bytes() -> bytes:
     """Return minimal valid JPEG image bytes (1x1 white pixel)."""
     try:
@@ -41,7 +43,7 @@ def _make_jpeg_bytes() -> bytes:
             b"\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00"
             b"\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4"
             b"\x00\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00"
-            b"\x00\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07\"q\x142"
+            b'\x00\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07"q\x142'
             b"\x81\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18"
             b"\x19\x1a%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85"
             b"\x86\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3"
@@ -203,9 +205,7 @@ class TestPostEndpoint:
             _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         with patch(
             "parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance",
@@ -227,9 +227,7 @@ class TestPostEndpoint:
             _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
             # No image part
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 400
@@ -244,9 +242,7 @@ class TestPostEndpoint:
             # No config_name part
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 400
@@ -261,9 +257,7 @@ class TestPostEndpoint:
             _MockPart("config_name", b"NonExistentConfig"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 404
@@ -279,9 +273,7 @@ class TestPostEndpoint:
             _MockPart("config_name", b"InactiveConfig"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 404
@@ -450,9 +442,7 @@ class TestEndToEndCompliance:
             _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         # Create a small PNG for the overlay
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as overlay_f:
@@ -600,7 +590,13 @@ async def test_job_result_has_additive_fields(planogram_db_row, job_manager):
     assert response.status == 202
     assert job.status == JobStatus.COMPLETED, job.error
     result = job.result
-    for key in ("overall_compliant", "overall_compliance_score", "rendered_image_base64", "content_type", "shelf_results"):
+    for key in (
+        "overall_compliant",
+        "overall_compliance_score",
+        "rendered_image_base64",
+        "content_type",
+        "shelf_results",
+    ):
         assert key in result
     assert result["assessment_status"] == "inconclusive"
     assert result["coverage"] == pytest.approx(0.6)

@@ -615,14 +615,20 @@ class AnthropicClient(AbstractClient):
                         response = await self._sdk_create(payload)
                     except Exception as fallback_exc:
                         await self._emit_failed_call_safe(
-                            _lc_tc, self._telemetry_client_name, payload["model"],
-                            _lc_t0, fallback_exc,
+                            _lc_tc,
+                            self._telemetry_client_name,
+                            payload["model"],
+                            _lc_t0,
+                            fallback_exc,
                         )
                         raise
                 else:
                     await self._emit_failed_call_safe(
-                        _lc_tc, self._telemetry_client_name, payload["model"],
-                        _lc_t0, e,
+                        _lc_tc,
+                        self._telemetry_client_name,
+                        payload["model"],
+                        _lc_t0,
+                        e,
                     )
                     raise
             # Convert Message object to dict for compatibility
@@ -1113,8 +1119,11 @@ class AnthropicClient(AbstractClient):
                             break
                     else:
                         await self._emit_failed_call_safe(
-                            _lc_tc_s, self._telemetry_client_name,
-                            model, _lc_t0_s, e,
+                            _lc_tc_s,
+                            self._telemetry_client_name,
+                            model,
+                            _lc_t0_s,
+                            e,
                         )
                         raise
                 # Check if we reached max tokens

@@ -18,7 +18,6 @@ from .abstract import AbstractPlanogramType
 from parrot.models.detections import (
     Detection,
     DetectionBox,
-    BoundingBox,
     Detections,
     IdentifiedProduct,
     ShelfRegion,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from abc import ABC
-from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple, Union, TYPE_CHECKING
+from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 _ILLUMINATION_FEATURE_PREFIX = "illumination_status:"
 _DEFAULT_ILLUMINATION_PENALTY: float = 1.0

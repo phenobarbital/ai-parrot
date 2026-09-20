@@ -6,6 +6,7 @@ Note: PlanogramCompliance is not imported directly to avoid the
 transformers-version import chain. We test through ProductOnShelves
 with a mocked pipeline, which is equivalent for detection tests.
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from PIL import Image
@@ -15,10 +16,10 @@ from parrot_pipelines.planogram.grid.models import DetectionGridConfig, GridType
 from parrot_pipelines.planogram.types.product_on_shelves import ProductOnShelves
 from parrot.models.detections import IdentifiedProduct
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_image(w: int = 800, h: int = 600) -> Image.Image:
     """Create a blank test image."""
@@ -33,7 +34,13 @@ _MIN_SLOTS_DEFINITION = {
             "shelf_id": "shelf_1",
             "shelf_number": 1,
             "facings": [
-                {"facing_id": "f1", "shelf_id": "shelf_1", "slot": 1, "product": "P", "descriptors": {"display_name": "P"}}
+                {
+                    "facing_id": "f1",
+                    "shelf_id": "shelf_1",
+                    "slot": 1,
+                    "product": "P",
+                    "descriptors": {"display_name": "P"},
+                }
             ],
         }
     ]
@@ -79,9 +86,9 @@ def _make_mock_llm(responses_by_call=None):
     if responses_by_call:
         llm.detect_objects = AsyncMock(side_effect=responses_by_call)
     else:
-        llm.detect_objects = AsyncMock(return_value=[
-            {"label": "ES-C220", "box_2d": [20, 10, 150, 120], "confidence": 0.9, "type": "product"}
-        ])
+        llm.detect_objects = AsyncMock(
+            return_value=[{"label": "ES-C220", "box_2d": [20, 10, 150, 120], "confidence": 0.9, "type": "product"}]
+        )
     return llm
 
 
@@ -147,6 +154,7 @@ def planogram_config_no_grid():
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestGridIntegration:
     """Integration tests for the full grid detection path."""
 
@@ -190,11 +198,13 @@ class TestGridIntegration:
     @pytest.mark.asyncio
     async def test_grid_mode_products_merged(self, planogram_config_with_grid):
         """Products from all cells are merged into a single list."""
-        mock_llm = _make_mock_llm(responses_by_call=[
-            [{"label": "ES-C220", "box_2d": [20, 10, 150, 120], "confidence": 0.9, "type": "product"}],
-            [{"label": "V39-II", "box_2d": [20, 10, 100, 80], "confidence": 0.85, "type": "product"}],
-            [{"label": "ES-C320W", "box_2d": [20, 10, 100, 80], "confidence": 0.8, "type": "product"}],
-        ])
+        mock_llm = _make_mock_llm(
+            responses_by_call=[
+                [{"label": "ES-C220", "box_2d": [20, 10, 150, 120], "confidence": 0.9, "type": "product"}],
+                [{"label": "V39-II", "box_2d": [20, 10, 100, 80], "confidence": 0.85, "type": "product"}],
+                [{"label": "ES-C320W", "box_2d": [20, 10, 100, 80], "confidence": 0.8, "type": "product"}],
+            ]
+        )
         pos = _make_pos(planogram_config_with_grid, llm=mock_llm)
         image = _make_image()
 
@@ -210,11 +220,13 @@ class TestGridIntegration:
         """Product detected in wrong cell gets out_of_place=True."""
         # Top shelf only expects ES-C220, ES-580W
         # If LLM returns V39-II for top shelf → out_of_place
-        mock_llm = _make_mock_llm(responses_by_call=[
-            [{"label": "V39-II", "box_2d": [20, 10, 150, 120], "confidence": 0.8, "type": "product"}],
-            [],
-            [],
-        ])
+        mock_llm = _make_mock_llm(
+            responses_by_call=[
+                [{"label": "V39-II", "box_2d": [20, 10, 150, 120], "confidence": 0.8, "type": "product"}],
+                [],
+                [],
+            ]
+        )
         pos = _make_pos(planogram_config_with_grid, llm=mock_llm)
         image = _make_image()
 
@@ -224,10 +236,7 @@ class TestGridIntegration:
         p = products[0]
         assert p.product_model == "V39-II"
         # Should be tagged as out_of_place
-        has_flag = (
-            getattr(p, "out_of_place", False) is True
-            or p.extra.get("out_of_place") == "true"
-        )
+        has_flag = getattr(p, "out_of_place", False) is True or p.extra.get("out_of_place") == "true"
         assert has_flag
 
     @pytest.mark.asyncio
@@ -257,11 +266,13 @@ class TestGridIntegration:
     @pytest.mark.asyncio
     async def test_cell_failure_does_not_fail_pipeline(self, planogram_config_with_grid):
         """One cell LLM failure doesn't fail the whole detection."""
-        mock_llm = _make_mock_llm(responses_by_call=[
-            Exception("API error"),  # top shelf fails
-            [{"label": "V39-II", "box_2d": [20, 10, 100, 80], "confidence": 0.85, "type": "product"}],
-            [],
-        ])
+        mock_llm = _make_mock_llm(
+            responses_by_call=[
+                Exception("API error"),  # top shelf fails
+                [{"label": "V39-II", "box_2d": [20, 10, 100, 80], "confidence": 0.85, "type": "product"}],
+                [],
+            ]
+        )
         pos = _make_pos(planogram_config_with_grid, llm=mock_llm)
         image = _make_image()
 
@@ -287,14 +298,16 @@ class TestGridRegression:
         assert mock_llm.detect_objects.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_no_grid_returns_all_products_from_single_call(
-        self, planogram_config_no_grid
-    ):
+    async def test_no_grid_returns_all_products_from_single_call(self, planogram_config_no_grid):
         """Legacy path returns all products from the single LLM response."""
-        mock_llm = _make_mock_llm(responses_by_call=[[
-            {"label": "ES-C220", "box_2d": [20, 10, 150, 120], "confidence": 0.9, "type": "product"},
-            {"label": "V39-II", "box_2d": [30, 20, 200, 150], "confidence": 0.8, "type": "product"},
-        ]])
+        mock_llm = _make_mock_llm(
+            responses_by_call=[
+                [
+                    {"label": "ES-C220", "box_2d": [20, 10, 150, 120], "confidence": 0.9, "type": "product"},
+                    {"label": "V39-II", "box_2d": [30, 20, 200, 150], "confidence": 0.8, "type": "product"},
+                ]
+            ]
+        )
         pos = _make_pos(planogram_config_no_grid, llm=mock_llm)
         image = _make_image()
 
@@ -306,9 +319,7 @@ class TestGridRegression:
         assert "V39-II" in models
 
     @pytest.mark.asyncio
-    async def test_no_grid_products_have_no_out_of_place_flag(
-        self, planogram_config_no_grid
-    ):
+    async def test_no_grid_products_have_no_out_of_place_flag(self, planogram_config_no_grid):
         """Legacy path does not set out_of_place — default is False."""
         mock_llm = _make_mock_llm()
         pos = _make_pos(planogram_config_no_grid, llm=mock_llm)
@@ -352,8 +363,17 @@ class TestGridRegression:
             GridDetector,
             get_strategy,
         )
-        assert all([
-            GridType, DetectionGridConfig, GridCell,
-            AbstractGridStrategy, NoGrid, HorizontalBands,
-            CellResultMerger, GridDetector, get_strategy,
-        ])
+
+        assert all(
+            [
+                GridType,
+                DetectionGridConfig,
+                GridCell,
+                AbstractGridStrategy,
+                NoGrid,
+                HorizontalBands,
+                CellResultMerger,
+                GridDetector,
+                get_strategy,
+            ]
+        )

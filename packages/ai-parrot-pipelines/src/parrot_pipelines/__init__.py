@@ -1,4 +1,5 @@
 """AI-Parrot Pipelines package."""
+
 from .version import __version__, __title__, __description__
 
 PIPELINE_REGISTRY: dict[str, str] = {

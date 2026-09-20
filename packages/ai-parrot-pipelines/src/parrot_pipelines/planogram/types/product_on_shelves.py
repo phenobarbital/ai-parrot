@@ -352,7 +352,9 @@ class ProductOnShelves(AbstractPlanogramType):
             shelves = getattr(description, "shelves", None) or []
         except Exception:  # noqa: BLE001 - migrated configs may not describe shelves the legacy way
             shelves = []
-        hints = sorted({p.name for s in shelves for p in (getattr(s, "products", None) or []) if getattr(p, "name", "")})
+        hints = sorted(
+            {p.name for s in shelves for p in (getattr(s, "products", None) or []) if getattr(p, "name", "")}
+        )
         hints_str = ", ".join(hints)
         instructions = getattr(self.config, "object_identification_prompt", None) or (
             "Detect all retail products, empty slots, and shelf regions in this image.\n"
@@ -498,9 +500,11 @@ class ProductOnShelves(AbstractPlanogramType):
         ]
         position = {s.anchor_shape_id: (s.row_index, s.slot_index) for s in slots}
         updated = [
-            s.model_copy(update={"row_index": position[s.shape_id][0], "slot_index": position[s.shape_id][1]})
-            if s.shape_id in position
-            else s
+            (
+                s.model_copy(update={"row_index": position[s.shape_id][0], "slot_index": position[s.shape_id][1]})
+                if s.shape_id in position
+                else s
+            )
             for s in shapes
         ]
         return updated, slots, len(rows)
@@ -521,7 +525,9 @@ class ProductOnShelves(AbstractPlanogramType):
         read_zones = list(await asyncio.gather(*(read(z) for z in zones)))
         return [read_tags.get(s.shape_id, s) for s in shapes], read_zones
 
-    async def identify(self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext) -> IdentificationResult:
+    async def identify(
+        self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext
+    ) -> IdentificationResult:
         """Stage 2: one full-image call (image + stage-1 JSON).
 
         The vocabulary is the list of ``Descriptors`` field NAMES the definition uses — never an expected SKU.
@@ -705,7 +711,9 @@ class ProductOnShelves(AbstractPlanogramType):
 
     def _rule_text(self, binding: RuleBinding, identifications: Sequence[IdentificationResult]) -> RuleOutcome:
         """params: {"requirements": [TextRequirement dicts]} — legacy semantics (score = Σ conf(found) / len(all))."""
-        requirements = [TextRequirement(**r) if isinstance(r, dict) else r for r in binding.params.get("requirements", [])]
+        requirements = [
+            TextRequirement(**r) if isinstance(r, dict) else r for r in binding.params.get("requirements", [])
+        ]
         if not requirements:
             return self._unassessed(binding, "no text requirements")
         observed, features = self._target_texts(binding.target_id)
@@ -722,7 +730,9 @@ class ProductOnShelves(AbstractPlanogramType):
             for req in requirements
         ]
         score = sum(r.confidence for r in results if r.found) / len(results)
-        mandatory_missing = [req.required_text for req, r in zip(requirements, results, strict=True) if req.mandatory and not r.found]
+        mandatory_missing = [
+            req.required_text for req, r in zip(requirements, results, strict=True) if req.mandatory and not r.found
+        ]
         return RuleOutcome(
             rule_id=binding.rule_id,
             assessed=True,
@@ -749,9 +759,7 @@ class ProductOnShelves(AbstractPlanogramType):
             detail=None,
         )
 
-    def _rule_zone_present(
-        self, binding: RuleBinding, identifications: Sequence[IdentificationResult]
-    ) -> RuleOutcome:
+    def _rule_zone_present(self, binding: RuleBinding, identifications: Sequence[IdentificationResult]) -> RuleOutcome:
         """score 1.0 when the bound zone was observed on_fixture in any image, else 0.0 (assessed=True)."""
         observed = self._observed_zones(binding.target_id)
         if any(zone.membership == FixtureMembership.ON_FIXTURE for _i, zone in observed):
@@ -822,7 +830,9 @@ class ProductOnShelves(AbstractPlanogramType):
             ]
             idents = [i.model_copy(update={"image_id": perception.image_id}) for i in idents]
             on_fixture = {s.shape_id for s in perception.shapes if s.membership == FixtureMembership.ON_FIXTURE}
-            on_fixture |= {s.shape_id for s in (ident.added if ident else []) if s.membership == FixtureMembership.ON_FIXTURE}
+            on_fixture |= {
+                s.shape_id for s in (ident.added if ident else []) if s.membership == FixtureMembership.ON_FIXTURE
+            }
             slots = [s for s in perception.slots if s.anchor_shape_id in on_fixture]
             registrations.append(register_image(perception.image_id, slots, idents, definition))
             canonical.extend(idents)
@@ -1571,7 +1581,7 @@ class ProductOnShelves(AbstractPlanogramType):
         full_height_hint = False
         if endcap and getattr(endcap, "position", None) == "header" and getattr(endcap, "full_height_roi", True):
             shelves = getattr(planogram, "shelves", []) or []
-            has_non_header = any(getattr(s, "level", None) and getattr(s, "level") != "header" for s in shelves)
+            has_non_header = any(getattr(s, "level", None) and s.level != "header" for s in shelves)
             full_height_hint = has_non_header
         if full_height_hint:
             ey2 = 1.0
@@ -1902,7 +1912,7 @@ class ProductOnShelves(AbstractPlanogramType):
 
         # If no shelf_regions were supplied, fall back to only detected-tag levels
         if not shelf_reg_by_level:
-            shelf_reg_by_level = {lvl: None for lvl in detected_by_shelf}
+            shelf_reg_by_level = dict.fromkeys(detected_by_shelf)
 
         shelf_map: Dict[str, List[str]] = defaultdict(list)
         img_w, img_h = img.size
