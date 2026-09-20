@@ -30,9 +30,13 @@ Export an approved specification (`sdd/specs/*.spec.md`) to Jira as a Story, opt
    - Fallback to curl with `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`.
 3. Create or update Story:
    - Set summary, description, component, and AC.
-  - Add labels = frontmatter `projects` ∪ `tags` (FEAT-576); on update only add, never remove.
+   - Add labels = frontmatter `projects` ∪ `tags` (FEAT-576); on update only add, never remove.
 4. Create Subtasks (if `--with-subtasks`):
-   - For each task in `sdd/tasks/index/<feature>.json`, create Jira subtask with original estimate.
+   - Fetch existing subtasks before creating any. Match each TASK-ID against
+     the stored Jira key and the existing subtask's `[TASK-NNN]` summary.
+   - Create only missing subtasks with the original estimate; reuse existing
+     keys, including when a previous run created the subtask but did not save
+     the index. Stop on ambiguous matches instead of creating duplicates.
    - Record created Jira keys in the task index.
 5. Update spec with Jira link:
    - Add `jira: <KEY>` to frontmatter and link in markdown body.

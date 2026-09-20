@@ -1,4 +1,5 @@
 """Unit and integration tests for ProductCounter planogram type (TASK-596)."""
+
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
@@ -17,10 +18,10 @@ from parrot.models.detections import (
 )
 from parrot.models.compliance import ComplianceResult, ComplianceStatus
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_image(w: int = 800, h: int = 600) -> Image.Image:
     """Create a simple test image."""
@@ -32,7 +33,9 @@ def _make_pipeline() -> MagicMock:
     pipeline = MagicMock()
     pipeline.logger = MagicMock()
     pipeline._downscale_image = MagicMock(return_value=_make_image(512, 384))
-    pipeline.roi_client = MagicMock()
+    pipeline.llm = MagicMock()
+    pipeline.roi_client = pipeline.llm  # same object until TASK-3432 removes roi_client
+    pipeline.resolved_backend = MagicMock(provider="google", model=None)
     return pipeline
 
 
@@ -87,6 +90,7 @@ def counter(mock_pipeline, mock_config) -> ProductCounter:
 # Unit tests: initialisation
 # ---------------------------------------------------------------------------
 
+
 class TestProductCounterInit:
     """Tests for ProductCounter initialisation."""
 
@@ -115,6 +119,7 @@ class TestProductCounterInit:
 # ---------------------------------------------------------------------------
 # Unit tests: check_planogram_compliance
 # ---------------------------------------------------------------------------
+
 
 class TestProductCounterCompliance:
     """Tests for check_planogram_compliance scoring logic."""
@@ -218,6 +223,7 @@ class TestProductCounterCompliance:
 # Unit tests: detect_objects
 # ---------------------------------------------------------------------------
 
+
 class TestProductCounterDetectObjects:
     """Tests for detect_objects."""
 
@@ -262,6 +268,7 @@ class TestProductCounterDetectObjects:
 # Integration test: type registration
 # ---------------------------------------------------------------------------
 
+
 class TestProductCounterRegistration:
     """Integration tests: verify ProductCounter is registered in PlanogramCompliance.
 
@@ -273,6 +280,7 @@ class TestProductCounterRegistration:
     def test_product_counter_in_planogram_types_source(self):
         """plan.py source contains 'product_counter' registration."""
         import os
+
         plan_path = os.path.join(
             os.path.dirname(__file__),
             "../../packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py",
@@ -284,4 +292,5 @@ class TestProductCounterRegistration:
     def test_imports_from_types_package(self):
         """ProductCounter importable from parrot_pipelines.planogram.types."""
         from parrot_pipelines.planogram.types import ProductCounter as PC
+
         assert PC is ProductCounter

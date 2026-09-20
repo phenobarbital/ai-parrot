@@ -6,6 +6,7 @@ Note: PlanogramCompliance is not imported directly to avoid the
 transformers-version import chain. We test through ProductOnShelves
 with a mocked pipeline.
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from PIL import Image
@@ -13,6 +14,26 @@ from PIL import Image
 from parrot_pipelines.models import PlanogramConfig
 from parrot_pipelines.planogram.types.product_on_shelves import ProductOnShelves
 from parrot.models.detections import IdentifiedProduct, DetectionBox
+
+#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise legacy methods
+#: directly, so a minimal valid definition satisfies construction.
+_MIN_SLOTS_DEFINITION = {
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {
+                    "facing_id": "f1",
+                    "shelf_id": "shelf_1",
+                    "slot": 1,
+                    "product": "P",
+                    "descriptors": {"display_name": "P"},
+                }
+            ],
+        }
+    ]
+}
 
 
 def _make_image(w: int = 800, h: int = 600) -> Image.Image:
@@ -48,6 +69,7 @@ def _legacy_config(**overrides) -> PlanogramConfig:
         roi_detection_prompt="Find the endcap.",
         object_identification_prompt="Identify all products.",
         reference_images={"ES-C220": "/fake/ref.jpg"},
+        slots_definition=_MIN_SLOTS_DEFINITION,
     )
     base.update(overrides)
     return PlanogramConfig(**base)
@@ -60,9 +82,9 @@ class TestLegacyPathRegression:
     async def test_single_llm_call_made(self):
         """Exactly 1 LLM call — no parallelism."""
         llm = MagicMock()
-        llm.detect_objects = AsyncMock(return_value=[
-            {"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}
-        ])
+        llm.detect_objects = AsyncMock(
+            return_value=[{"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}]
+        )
         config = _legacy_config()
         pos = _make_pos(config, llm)
         image = _make_image()
@@ -76,11 +98,13 @@ class TestLegacyPathRegression:
         llm = MagicMock()
         llm.detect_objects = AsyncMock(return_value=[])
 
-        config = _legacy_config(reference_images={
-            "A": "/a.jpg",
-            "B": "/b.jpg",
-            "C": "/c.jpg",
-        })
+        config = _legacy_config(
+            reference_images={
+                "A": "/a.jpg",
+                "B": "/b.jpg",
+                "C": "/c.jpg",
+            }
+        )
         pos = _make_pos(config, llm)
         image = _make_image()
         await pos.detect_objects(img=image, roi=None, macro_objects=None)
@@ -93,9 +117,9 @@ class TestLegacyPathRegression:
     async def test_offset_correction_applied(self):
         """ROI crop offset is applied to detection coordinates."""
         llm = MagicMock()
-        llm.detect_objects = AsyncMock(return_value=[
-            {"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}
-        ])
+        llm.detect_objects = AsyncMock(
+            return_value=[{"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}]
+        )
 
         config = _legacy_config()
         pos = _make_pos(config, llm)
@@ -118,10 +142,12 @@ class TestLegacyPathRegression:
     async def test_shelf_items_go_to_shelf_regions(self):
         """Items with 'shelf' in label go to shelf_regions, not products."""
         llm = MagicMock()
-        llm.detect_objects = AsyncMock(return_value=[
-            {"label": "shelf_top", "box_2d": [0, 0, 800, 200], "confidence": 0.95, "type": "shelf"},
-            {"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"},
-        ])
+        llm.detect_objects = AsyncMock(
+            return_value=[
+                {"label": "shelf_top", "box_2d": [0, 0, 800, 200], "confidence": 0.95, "type": "shelf"},
+                {"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"},
+            ]
+        )
 
         config = _legacy_config()
         pos = _make_pos(config, llm)
@@ -136,9 +162,11 @@ class TestLegacyPathRegression:
     async def test_product_box_type_assigned(self):
         """Labels with 'box' in them get product_type='product_box'."""
         llm = MagicMock()
-        llm.detect_objects = AsyncMock(return_value=[
-            {"label": "ES-C220 box", "box_2d": [10, 5, 100, 80], "confidence": 0.8, "type": "product"},
-        ])
+        llm.detect_objects = AsyncMock(
+            return_value=[
+                {"label": "ES-C220 box", "box_2d": [10, 5, 100, 80], "confidence": 0.8, "type": "product"},
+            ]
+        )
 
         config = _legacy_config()
         pos = _make_pos(config, llm)
@@ -152,9 +180,11 @@ class TestLegacyPathRegression:
     async def test_out_of_place_field_default_false(self):
         """Legacy path never sets out_of_place=True (default False)."""
         llm = MagicMock()
-        llm.detect_objects = AsyncMock(return_value=[
-            {"label": "UNKNOWN_PRODUCT", "box_2d": [10, 5, 100, 80], "confidence": 0.7, "type": "product"},
-        ])
+        llm.detect_objects = AsyncMock(
+            return_value=[
+                {"label": "UNKNOWN_PRODUCT", "box_2d": [10, 5, 100, 80], "confidence": 0.7, "type": "product"},
+            ]
+        )
 
         config = _legacy_config()
         pos = _make_pos(config, llm)

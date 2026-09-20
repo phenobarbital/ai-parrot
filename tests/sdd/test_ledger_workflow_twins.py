@@ -186,6 +186,18 @@ class TestFixTwins:
     CODEX = ".agents/skills/sdd-fix/SKILL.md"
     ALL = (CLAUDE, ANTIGRAVITY, CODEX)
 
+    def test_complete_procedure_is_identical_across_hosts(self) -> None:
+        """Prevent loss of execution rules when adapting the fix skill for a host."""
+        bodies = []
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            if content.startswith("---\n"):
+                content = content.split("---\n", 2)[2].lstrip()
+            # Host adaptations are limited to the title and skill invocation prefix.
+            body = content.split("\n", 1)[1].replace("$sdd-", "/sdd-").strip()
+            bodies.append(body)
+        assert bodies[0] == bodies[1] == bodies[2]
+
     def test_workflow_files_exist(self):
         for file_path in self.ALL:
             assert (_WORKTREE_ROOT / file_path).exists(), f"Missing workflow file: {file_path}"
