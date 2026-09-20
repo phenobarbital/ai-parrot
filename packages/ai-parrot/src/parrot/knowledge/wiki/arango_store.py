@@ -597,13 +597,18 @@ class ArangoDBWikiStore(BaseWikiStore):
         # Single atomic AQL operation with precondition check.
         # For insert-only (expected_content_hash=None): check that doc is absent.
         # For update (expected_content_hash!=None): check that current content_hash matches.
+        # AQL has no SQL-style CASE/WHEN/THEN; use the ternary operator instead.
         aql = (
-            "LET existing = DOCUMENT(CONCAT(@@collection, '/', @key)) "
-            "LET matches = "
-            "  CASE @expected "
-            "    WHEN null THEN existing == null "
-            "    ELSE (existing != null AND existing.content_hash == @expected) "
-            "  END "
+            # DOCUMENT's two-arg form takes the collection as a genuine
+            # collection bind parameter (@@collection); a collection bind
+            # parameter can only be used where AQL expects a collection
+            # name, never as a plain string operand — CONCAT(@@collection,
+            # ...) fails server-side with "collection used as expression
+            # operand" (ERR 1568).
+            "LET existing = DOCUMENT(@@collection, @key) "
+            "LET matches = @expected == null "
+            "  ? existing == null "
+            "  : (existing != null AND existing.content_hash == @expected) "
             "FILTER matches "
             "UPSERT { _key: @key } "
             "INSERT @doc "
@@ -639,10 +644,37 @@ class ArangoDBWikiStore(BaseWikiStore):
             )
             # If result is not empty, the precondition matched and write succeeded.
             return bool(result)
-        except RuntimeError:
-            # ArangoDB errors (duplicate key, constraint violation, etc.) are
-            # handled as False returns — the precondition did not hold.
-            return False
+        except RuntimeError as exc:
+            # A failed precondition alone never raises: the FILTER above simply
+            # yields an empty result set, handled by the `bool(result)` above.
+            # ArangoDB's UPSERT can still legitimately raise for a *bona fide*
+            # lost race in two documented ways, both confirmed live against a
+            # 3.11 server (RocksDB engine):
+            #   - [ERR 1210] unique constraint violated — two concurrent
+            #     insert-only writes land on the same `_key` at the storage
+            #     layer, underneath the FILTER.
+            #   - [ERR 1200] write-write conflict — two concurrent single-
+            #     document UPSERTs on the SAME key genuinely race each other
+            #     (reproduced by test_concurrent_cas_has_exactly_one_winner);
+            #     this is RocksDB's normal signal that the other writer got
+            #     there first, not an infrastructure failure.
+            # The asyncdb driver only surfaces either as a stringified
+            # message, so we pattern-match on the ArangoDB error number.
+            # Any OTHER error (syntax, auth, connection, unrelated AQL
+            # failure) must propagate — it is an infrastructure failure, not
+            # a conflict, and must never be reported as a "lost the race"
+            # `False`.
+            message = str(exc)
+            if (
+                "unique constraint violated" in message
+                or "write-write conflict" in message
+                or "ERROR_ARANGO_UNIQUE_CONSTRAINT_VIOLATED" in message
+                or "ERROR_ARANGO_CONFLICT" in message
+                or "[ERR 1210]" in message
+                or "[ERR 1200]" in message
+            ):
+                return False
+            raise
 
     async def add_edges(self, edges: list[tuple]) -> int:
         """Insert typed edges via AQL UPSERT.

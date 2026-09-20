@@ -316,13 +316,25 @@ class PostgresWikiStore(BaseWikiStore):
         """Conditionally write one page against its open version row's hash.
 
         See :meth:`BaseWikiStore.compare_and_swap_page` for the contract.
-        The compare and the close-and-insert share one transaction, and the
-        open ``node_versions`` row is locked ``FOR UPDATE`` first, so a
-        concurrent reviewer blocks instead of interleaving.
+        The compare and the close-and-insert share one transaction. ``FOR
+        UPDATE OF v`` alone only locks an *existing* ``node_versions`` row,
+        so it cannot serialize two concurrent insert-only CAS calls racing
+        on a page that is genuinely absent for both: the ``nodes`` table's
+        own ``ON CONFLICT`` upsert would still order their writes, but only
+        *after* both already read the (then-correct, now-stale) "absent"
+        precondition. A transaction-scoped advisory lock keyed on
+        ``concept_id``, taken before the precondition read, forces the
+        second concurrent caller to block until the first's whole
+        transaction commits, so its own precondition read then correctly
+        observes the row the first caller just wrote.
         """
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                    page.concept_id,
+                )
                 row = await conn.fetchrow(
                     f"""
                     SELECT v.content_hash

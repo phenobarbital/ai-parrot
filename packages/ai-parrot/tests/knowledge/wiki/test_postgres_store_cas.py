@@ -143,3 +143,38 @@ async def test_concurrent_cas_has_exactly_one_winner(store):
     stored_page = await store.get_page("adr:doc:a")
     assert stored_page["body"] in ("a", "b")
     assert stored_page["content_hash"] in ("h2", "h3")
+
+
+async def test_concurrent_insert_when_absent_has_exactly_one_winner(store):
+    """AC6/AC8: two writers racing an insert-only CAS on the SAME absent page.
+
+    Regression guard for the absent-insert TOCTOU: `FOR UPDATE OF v` alone
+    cannot lock a row that does not exist yet, so both concurrent callers
+    could previously read the "absent" precondition as true and both
+    report `True` after the `nodes` table's own ON CONFLICT serialized
+    their writes (see `compare_and_swap_page`'s advisory-lock fix). Distinct
+    from `test_concurrent_cas_has_exactly_one_winner`, which only races the
+    replace-on-matching-hash branch against a page that already exists.
+    """
+    results = await asyncio.gather(
+        store.compare_and_swap_page(_page(body="a", content_hash="h2"), None),
+        store.compare_and_swap_page(_page(body="b", content_hash="h3"), None),
+    )
+
+    # Exactly one insert-only write should land; the other must see the row
+    # the winner just created and report a lost race, not a second "success".
+    assert sorted(results) == [False, True]
+
+    stored_page = await store.get_page("adr:doc:a")
+    assert stored_page["body"] in ("a", "b")
+    assert stored_page["content_hash"] in ("h2", "h3")
+
+    # Exactly one node_versions row must exist for this concept_id — two
+    # "successful" inserts would otherwise each leave their own row behind.
+    pool = await store._ensure_pool()
+    async with pool.acquire() as conn:
+        count = await conn.fetchval(
+            f"SELECT count(*) FROM {store._schema}.node_versions WHERE concept_id = $1",
+            "adr:doc:a",
+        )
+    assert count == 1
