@@ -20,7 +20,9 @@ ACTOR = "agent:sdd-fix"
 def service(tmp_path) -> LedgerService:
     ledger_dir = tmp_path / ".parrot" / "ledger"
     ledger_dir.mkdir(parents=True)
-    store = LedgerStore(ledger_dir / "ledger.db", wiki_name="ledger", sqlite_policy=SQLitePragmaPolicy(busy_timeout_s=1.0))
+    store = LedgerStore(
+        ledger_dir / "ledger.db", wiki_name="ledger", sqlite_policy=SQLitePragmaPolicy(busy_timeout_s=1.0)
+    )
     log = LedgerLog(str(ledger_dir / "events.jsonl"))
     return LedgerService(LedgerIndex(store, log), store, log, tmp_path)
 
@@ -30,7 +32,11 @@ async def _seed_group(service: LedgerService, n: int = 5) -> list[str]:
     ids = []
     for i in range(n):
         about = [f"sym:pkg/mod_{i}.py#f", f"sym:pkg/mod_{i + 1}.py#g"]  # mod_i ↔ mod_{i+1} chains transitively
-        ids.append(await service.open_issue(title=f"Issue {i}", body="b", kind="tech_debt", about=about, discovered_from="spec:FEAT-1"))
+        ids.append(
+            await service.open_issue(
+                title=f"Issue {i}", body="b", kind="tech_debt", about=about, discovered_from="spec:FEAT-1"
+            )
+        )
     return ids
 
 
