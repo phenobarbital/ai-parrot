@@ -1,4 +1,5 @@
 """Tests for the Planogram Compliance Modular composable pattern (FEAT-048)."""
+
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,10 +18,10 @@ from parrot.models.detections import (
 )
 from parrot.models.compliance import ComplianceResult, ComplianceStatus
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_planogram_config():
@@ -78,6 +79,27 @@ def sample_planogram_config():
     }
 
 
+#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise legacy methods
+#: directly, so a minimal valid definition satisfies construction.
+_MIN_SLOTS_DEFINITION = {
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {
+                    "facing_id": "f1",
+                    "shelf_id": "shelf_1",
+                    "slot": 1,
+                    "product": "P",
+                    "descriptors": {"display_name": "P"},
+                }
+            ],
+        }
+    ]
+}
+
+
 @pytest.fixture
 def planogram_config_obj(sample_planogram_config):
     """PlanogramConfig Pydantic model instance."""
@@ -87,6 +109,7 @@ def planogram_config_obj(sample_planogram_config):
         planogram_config=sample_planogram_config,
         roi_detection_prompt="Detect the endcap for {brand}.",
         object_identification_prompt="Identify products.",
+        slots_definition=_MIN_SLOTS_DEFINITION,
     )
 
 
@@ -97,8 +120,9 @@ def mock_pipeline(planogram_config_obj):
     pipeline.logger = logging.getLogger("test.planogram")
     pipeline.planogram_config = planogram_config_obj
     pipeline.reference_images = {}
-    pipeline.roi_client = MagicMock()
     pipeline.llm = MagicMock()
+    pipeline.roi_client = pipeline.llm  # same object until TASK-3432 removes roi_client
+    pipeline.resolved_backend = MagicMock(provider="google", model=None)
     pipeline._json = MagicMock()
     pipeline._downscale_image = MagicMock()
     pipeline.left_margin_ratio = 0.01
@@ -165,6 +189,7 @@ def sample_db_row(sample_planogram_config):
 # 1. ABC Contract Tests
 # ===================================================================
 
+
 class TestAbstractPlanogramType:
 
     def test_cannot_instantiate_directly(self, mock_pipeline, planogram_config_obj):
@@ -174,9 +199,11 @@ class TestAbstractPlanogramType:
 
     def test_abstract_methods_enforced(self, mock_pipeline, planogram_config_obj):
         """Subclass missing abstract methods raises TypeError."""
+
         class IncompleteType(AbstractPlanogramType):
             async def compute_roi(self, img):
                 pass
+
             # Missing: detect_objects_roi, detect_objects, check_planogram_compliance
 
         with pytest.raises(TypeError, match="abstract"):
@@ -184,13 +211,17 @@ class TestAbstractPlanogramType:
 
     def test_default_render_colors(self, mock_pipeline, planogram_config_obj):
         """get_render_colors returns dict with expected keys."""
+
         class CompleteType(AbstractPlanogramType):
             async def compute_roi(self, img):
                 pass
+
             async def detect_objects_roi(self, img, roi):
                 pass
+
             async def detect_objects(self, img, roi, m):
                 pass
+
             def check_planogram_compliance(self, p, d):
                 pass
 
@@ -207,6 +238,7 @@ class TestAbstractPlanogramType:
 # ===================================================================
 # 2. Registry & Delegation Tests
 # ===================================================================
+
 
 class TestPlanogramComplianceRegistry:
 
@@ -256,6 +288,7 @@ class TestPlanogramComplianceRegistry:
 # 3. PlanogramConfig Tests
 # ===================================================================
 
+
 class TestPlanogramConfigType:
 
     def test_planogram_type_field_exists(self):
@@ -302,6 +335,7 @@ class TestPlanogramConfigType:
 # 4. ProductOnShelves Tests
 # ===================================================================
 
+
 class TestProductOnShelves:
 
     def test_implements_contract(self, product_on_shelves):
@@ -323,9 +357,7 @@ class TestProductOnShelves:
         image_size = (1000, 1000)
         planogram_desc = product_on_shelves.config.get_planogram_description()
 
-        shelves = product_on_shelves._generate_virtual_shelves(
-            roi_bbox, image_size, planogram_desc
-        )
+        shelves = product_on_shelves._generate_virtual_shelves(roi_bbox, image_size, planogram_desc)
         assert len(shelves) == 3  # header, main_shelf, bottom
         assert shelves[0].level == "header"
         assert shelves[1].level == "main_shelf"
@@ -395,9 +427,7 @@ class TestProductOnShelves:
         assert score > 0.0
 
         # No match
-        score = product_on_shelves._calculate_visual_feature_match(
-            ["tiger image"], ["blue background"]
-        )
+        score = product_on_shelves._calculate_visual_feature_match(["tiger image"], ["blue background"])
         assert score == 0.0
 
         # Empty expected = 1.0
@@ -435,6 +465,7 @@ class TestProductOnShelves:
 # 5. Rendering Color Tests
 # ===================================================================
 
+
 class TestRenderColors:
 
     def test_product_on_shelves_default_colors(self, product_on_shelves):
@@ -448,6 +479,7 @@ class TestRenderColors:
 # ===================================================================
 # 6. Handler Hydration Tests
 # ===================================================================
+
 
 class TestHandlerHydration:
 
@@ -478,6 +510,7 @@ class TestHandlerHydration:
 # ===================================================================
 # 7. Integration / Backwards Compatibility
 # ===================================================================
+
 
 class TestBackwardsCompatibility:
 

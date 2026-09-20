@@ -23,6 +23,16 @@ internal to this repo (`scripts/sdd/`, `reference/sdd-insight/`, `.claude/workfl
 > **Always activate the venv first** (project rule): `source .venv/bin/activate`.
 > The engine is pure stdlib, but follow the rule for consistency.
 
+## Transcript source and arguments
+
+The engine accepts Claude Code JSONL transcripts, defaulting to `~/.claude/projects`.
+Native Codex session logs are not supported; do not attribute these personal scores
+to Codex sessions. Pass the optional transcript path and supported flags to both
+measurement and rendering, preserving paths with spaces as single arguments.
+If no compatible transcripts are found, report the limitation and stop without
+inventing scores. The deterministic fallback applies when evidence exists but
+Workflow is unavailable.
+
 ## Step 1 — Measure + emit evidence
 
 Working files live at fixed, reused paths, so first delete leftovers from a previous run so a

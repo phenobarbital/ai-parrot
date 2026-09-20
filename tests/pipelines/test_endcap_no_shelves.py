@@ -1,4 +1,5 @@
 """Unit and integration tests for EndcapNoShelvesPromotional planogram type (TASK-596)."""
+
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,10 +18,10 @@ from parrot.models.detections import (
 )
 from parrot.models.compliance import ComplianceResult, ComplianceStatus
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _make_image(w: int = 800, h: int = 1000) -> Image.Image:
     """Create a simple test image (tall, like an endcap)."""
@@ -32,7 +33,9 @@ def _make_pipeline() -> MagicMock:
     pipeline = MagicMock()
     pipeline.logger = MagicMock()
     pipeline._downscale_image = MagicMock(return_value=_make_image(512, 640))
-    pipeline.roi_client = MagicMock()
+    pipeline.llm = MagicMock()
+    pipeline.roi_client = pipeline.llm  # same object until TASK-3432 removes roi_client
+    pipeline.resolved_backend = MagicMock(provider="google", model=None)
     return pipeline
 
 
@@ -45,7 +48,7 @@ def _make_config(planogram_config: dict | None = None) -> MagicMock:
         "illumination_expected": "ON",
     }
     config.roi_detection_prompt = "Find the promotional endcap area"
-    config.object_identification_prompt = None
+    config.object_identification_prompt = "Identify the endcap zones"  # required since FEAT-574 (TASK-3442)
     config.get_planogram_description.return_value = MagicMock(brand="Epson")
     return config
 
@@ -91,6 +94,7 @@ def endcap(mock_pipeline, mock_config) -> EndcapNoShelvesPromotional:
 # ---------------------------------------------------------------------------
 # Unit tests: initialisation
 # ---------------------------------------------------------------------------
+
 
 class TestEndcapNoShelvesInit:
     """Tests for EndcapNoShelvesPromotional initialisation."""
@@ -174,6 +178,7 @@ class TestEndcapDetectObjects:
 # ---------------------------------------------------------------------------
 # Unit tests: check_planogram_compliance — one ComplianceResult per zone
 # ---------------------------------------------------------------------------
+
 
 def _description(threshold: float = 0.8) -> MagicMock:
     """Planogram description stub with a real numeric compliance threshold."""
@@ -278,6 +283,7 @@ class TestEndcapCompliance:
 # Integration test: type registration
 # ---------------------------------------------------------------------------
 
+
 class TestEndcapNoShelvesRegistration:
     """Integration tests: verify EndcapNoShelvesPromotional is registered.
 
@@ -289,6 +295,7 @@ class TestEndcapNoShelvesRegistration:
     def test_endcap_in_planogram_types_source(self):
         """plan.py source contains 'endcap_no_shelves_promotional' registration."""
         import os
+
         plan_path = os.path.join(
             os.path.dirname(__file__),
             "../../packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py",
@@ -300,12 +307,14 @@ class TestEndcapNoShelvesRegistration:
     def test_imports_from_types_package(self):
         """EndcapNoShelvesPromotional importable from parrot_pipelines.planogram.types."""
         from parrot_pipelines.planogram.types import EndcapNoShelvesPromotional as ENS
+
         assert ENS is EndcapNoShelvesPromotional
 
     def test_both_new_types_in_types_init(self):
         """Both new types are exported from the types package __init__."""
         from parrot_pipelines.planogram.types import ProductCounter, EndcapNoShelvesPromotional
         from parrot_pipelines.planogram.types import ProductOnShelves, GraphicPanelDisplay
+
         # Original types still present
         assert ProductOnShelves is not None
         assert GraphicPanelDisplay is not None

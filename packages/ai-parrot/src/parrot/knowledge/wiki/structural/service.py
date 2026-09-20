@@ -18,7 +18,6 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, Field
 
-from parrot.knowledge.wiki.cli import _ingest_files, _open_sources
 from parrot.knowledge.wiki.project import WikiProjectConfig, wiki_write_lock
 from parrot.knowledge.wiki.repo_scan import (
     DEFAULT_EXCLUDE_DIRS,
@@ -125,6 +124,13 @@ class StructuralService:
     """
 
     def __init__(self, store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> None:
+        # Deferred: `cli.py` imports `decisions.cli` (FEAT-578) at module
+        # load, and `decisions.service` imports this module — a module-level
+        # import back into `cli.py` here would be circular regardless of
+        # which side of that cycle imports first (mirrors `decisions/cli.py`'s
+        # own local imports of `cli.py` helpers for the same reason).
+        from parrot.knowledge.wiki.cli import _open_sources
+
         self._store = store
         self._root = root.resolve()
         self._config = config
@@ -434,6 +440,9 @@ class StructuralService:
             another writer (in which case :attr:`_lock_busy` is set so
             callers can flag their hits ``stale=True``).
         """
+        # Deferred for the same reason as `__init__`'s `_open_sources` import.
+        from parrot.knowledge.wiki.cli import _ingest_files
+
         self._lock_busy = False
         if not rel_paths:
             return []
@@ -441,7 +450,7 @@ class StructuralService:
         known = await self._store.page_hashes(concept_ids)
         stale = [
             rel_path
-            for rel_path, concept_id in zip(rel_paths, concept_ids)
+            for rel_path, concept_id in zip(rel_paths, concept_ids, strict=True)
             if self._disk_hash(rel_path) != known.get(concept_id)
         ]
         if not stale:

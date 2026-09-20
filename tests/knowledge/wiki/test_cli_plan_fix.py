@@ -12,7 +12,7 @@ from click.testing import CliRunner
 
 from parrot.knowledge.wiki.cli import _dedupe_slugs, _spec_parent_ids, ledger
 from parrot.knowledge.wiki.ledger.events import SEVERITY_ORDER
-from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, plan_fix_batch
+from parrot.knowledge.wiki.ledger.fix_planner import FixPlan
 from parrot.knowledge.wiki.ledger.index import LedgerIndex
 from parrot.knowledge.wiki.ledger.log import LedgerLog
 from parrot.knowledge.wiki.ledger.service import LedgerService
@@ -31,7 +31,7 @@ def runner() -> CliRunner:
 @pytest.fixture
 def snapshot_rows() -> list[dict]:
     path = _REPO_ROOT / "sdd" / "ledger" / "issues.jsonl"
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 @pytest.fixture
@@ -84,7 +84,19 @@ def test_cli_plan_fix_json_matches_fixplan_schema(runner, mock_service):
             assert parent.open is False
 
 
-def test_cli_plan_fix_busy_falls_back_to_snapshot(runner, mock_service, tmp_path, snapshot_rows):
+def test_cli_plan_fix_busy_falls_back_to_snapshot(runner, mock_service, tmp_path):
+    snapshot_rows = [
+        {
+            "issue_id": f"issue:{status}",
+            "title": f"{status} issue",
+            "kind": "bug",
+            "severity": "minor",
+            "status": status,
+            "discovered_from": None,
+            "about": ["file:pkg/example.py"],
+        }
+        for status in ("open", "closed")
+    ]
     ledger_dir = tmp_path / "sdd" / "ledger"
     ledger_dir.mkdir(parents=True)
     snapshot_path = ledger_dir / "issues.jsonl"
@@ -94,8 +106,9 @@ def test_cli_plan_fix_busy_falls_back_to_snapshot(runner, mock_service, tmp_path
         result = runner.invoke(ledger, ["plan-fix", "--json"])
     assert result.exit_code == 0, result.output
     plan = FixPlan.model_validate_json(result.stdout)
-    expected = plan_fix_batch(snapshot_rows, parent_index_status={})
-    assert plan.total_open == expected.total_open
+    assert "planning from committed snapshot" in result.stderr
+    assert plan.total_open == 1
+    assert [issue.issue_id for group in plan.groups for issue in group.issues] == ["issue:open"]
 
 
 def test_cli_plan_fix_dedupes_slug_against_existing_specs(runner, mock_service, tmp_path):

@@ -72,6 +72,20 @@ quiet_http_loggers()
 AnthropicBackend = Literal["direct", "bedrock", "aws"]
 
 
+class _NormalizedObjectBox(BaseModel):
+    """One detected object; box is [ymin, xmin, ymax, xmax] normalised to 0-1000."""
+
+    label: str = Field(default="unknown")
+    box_2d: List[int] = Field(..., min_length=4, max_length=4)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class _NormalizedObjectBoxes(BaseModel):
+    """Structured-output envelope for ``AnthropicClient.detect_objects``."""
+
+    objects: List[_NormalizedObjectBox] = Field(default_factory=list)
+
+
 class AnthropicClient(AbstractClient):
     """Client for interacting with the Anthropic API using the official SDK."""
 
@@ -88,13 +102,12 @@ class AnthropicClient(AbstractClient):
     _default_model: str = "claude-sonnet-4-5"
     _fallback_model: str = "claude-sonnet-4.5"
     _lightweight_model: str = "claude-haiku-4-5-20251001"
-    # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
-    # multiplies by it), so this MUST stay non-None. 16000 preserves the budget
-    # ask()/ask_stream() fell back to before FEAT-481.
-    _default_max_tokens: int = 16000
     # FEAT-181: Anthropic caches system prefixes ≥ 1024 tokens.
     _min_cache_tokens: int = 1024
 
+    # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
+    # multiplies by it), so this MUST stay non-None.
+    #
     # 21,333 — not a round number, and not a model limit. ``ask()`` and
     # ``invoke()`` both go through the SDK's NON-streaming
     # ``messages.create()``, and the SDK refuses such a request outright when
@@ -601,14 +614,20 @@ class AnthropicClient(AbstractClient):
                         response = await self._sdk_create(payload)
                     except Exception as fallback_exc:
                         await self._emit_failed_call_safe(
-                            _lc_tc, self._telemetry_client_name, payload["model"],
-                            _lc_t0, fallback_exc,
+                            _lc_tc,
+                            self._telemetry_client_name,
+                            payload["model"],
+                            _lc_t0,
+                            fallback_exc,
                         )
                         raise
                 else:
                     await self._emit_failed_call_safe(
-                        _lc_tc, self._telemetry_client_name, payload["model"],
-                        _lc_t0, e,
+                        _lc_tc,
+                        self._telemetry_client_name,
+                        payload["model"],
+                        _lc_t0,
+                        e,
                     )
                     raise
             # Convert Message object to dict for compatibility
@@ -1099,8 +1118,11 @@ class AnthropicClient(AbstractClient):
                             break
                     else:
                         await self._emit_failed_call_safe(
-                            _lc_tc_s, self._telemetry_client_name,
-                            model, _lc_t0_s, e,
+                            _lc_tc_s,
+                            self._telemetry_client_name,
+                            model,
+                            _lc_t0_s,
+                            e,
                         )
                         raise
                 # Check if we reached max tokens
@@ -1309,7 +1331,7 @@ class AnthropicClient(AbstractClient):
         prompt: str,
         image: Union[Path, bytes, Image.Image],
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
-        model: Union[ClaudeModel, str] = ClaudeModel.SONNET_4,
+        model: Union[ClaudeModel, str, None] = None,
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         structured_output: Union[type, StructuredOutputConfig] = None,
@@ -1317,6 +1339,7 @@ class AnthropicClient(AbstractClient):
         history: Optional[Sequence[HistoryMessage]] = None,
         system_prompt: Optional[str] = None,
         context_1m: bool = False,
+        no_memory: bool = False,
     ) -> AIMessage:
         """
         Ask Claude a question about an image, optionally with conversation history.
@@ -1326,7 +1349,9 @@ class AnthropicClient(AbstractClient):
             image (Union[Path, bytes, Image.Image]): The primary image to analyze.
             reference_images (Optional[List[Union[Path, bytes, Image.Image]]]):
                 Optional reference images.
-            model (Union[ClaudeModel, str]): The Claude model to use.
+            model (Union[ClaudeModel, str, None]): The Claude model to use. Resolution
+                order: explicit ``model`` → the client's configured model →
+                ``ClaudeModel.SONNET_5``.
             max_tokens (int): Maximum tokens for the response.
             temperature (float): Sampling temperature.
             structured_output (Union[type, StructuredOutputConfig]):
@@ -1335,6 +1360,10 @@ class AnthropicClient(AbstractClient):
                 Whether to count objects in the image (enables default JSON output).
             history: Already-rendered conversation history supplied by the
                 owning bot (FEAT-524). Replayed before the image turn.
+            system_prompt: Optional system prompt.
+            context_1m: Enable the 1M-context beta.
+            no_memory: When True, skip replaying ``history`` (the method never
+                reads or writes conversation memory itself).
 
         Returns:
             AIMessage: The response from Claude about the image.
@@ -1349,7 +1378,10 @@ class AnthropicClient(AbstractClient):
         # usable here because the current turn is an image payload assembled
         # below rather than a plain _prepare_messages() text turn — so only the
         # history half is formatted here, and the image turn is appended after.
-        messages = self._format_history(history or ())
+        # FEAT-574: explicit model → client's configured model → SONNET_5. A method
+        # default must never mask the caller's or the client's selection.
+        model = model or self.model or ClaudeModel.SONNET_5
+        messages = self._format_history(() if no_memory else (history or ()))
 
         output_config = self._get_structured_config(structured_output)
 
@@ -1481,6 +1513,86 @@ class AnthropicClient(AbstractClient):
             ai_message.response = final_output
 
         return ai_message
+
+    async def detect_objects(
+        self,
+        image: Union[str, Path, Image.Image],
+        prompt: str,
+        reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
+        output_dir: Optional[Union[str, Path]] = None,
+        *,
+        model: Union[ClaudeModel, str, None] = None,
+    ) -> List[Dict[str, Any]]:
+        """Detect objects in an image, mirroring the Google client's contract.
+
+        Args:
+            image: Path (str or Path) or PIL image.
+            prompt: Caller-supplied detection prompt (no built-in prompt text).
+            reference_images: Optional reference images.
+            output_dir: Created when given; nothing is written (no masks on Anthropic).
+            model: Optional model; same resolution order as ``ask_to_image``.
+
+        Returns:
+            Dicts ``{"label", "box_2d": [x1, y1, x2, y2] in ORIGINAL-image pixels, "confidence",
+            "mask_image": None, "overlay_image": None, **passthrough}``. ``[]`` when the
+            answer cannot be parsed — never raises for a bad model answer.
+        """
+        from PIL import Image as _PILImage  # lazy: PIL is TYPE_CHECKING-only at module level
+
+        if output_dir:
+            await asyncio.to_thread(Path(output_dir).mkdir, parents=True, exist_ok=True)
+        pil = await asyncio.to_thread(_PILImage.open, str(image)) if isinstance(image, (str, Path)) else image
+        width, height = pil.size
+        refs = [Path(r) if isinstance(r, str) else r for r in (reference_images or [])] or None
+        full_prompt = (
+            f"{prompt}\n\n"
+            "Answer with a JSON object of the form "
+            '{"objects": [{"label": "<name>", "confidence": <0.0-1.0>, '
+            '"box_2d": [ymin, xmin, ymax, xmax]}]}. '
+            "box_2d coordinates are integers normalised to 0-1000 relative to the primary image. "
+            'Return {"objects": []} when nothing is found.'
+        )
+        try:
+            message = await self.ask_to_image(
+                prompt=full_prompt,
+                image=pil,
+                reference_images=refs,
+                model=model,
+                structured_output=_NormalizedObjectBoxes,
+                no_memory=True,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - Google parity: bad answer ⇒ []
+            self.logger.error("detect_objects failed: %s", exc)
+            return []
+        parsed = getattr(message, "structured_output", None)
+        if not isinstance(parsed, _NormalizedObjectBoxes):
+            self.logger.error("detect_objects: unparseable model answer")
+            return []
+        results: List[Dict[str, Any]] = []
+        for obj in parsed.objects:
+            box = obj.box_2d
+            y0 = int(box[0] / 1000 * height)
+            x0 = int(box[1] / 1000 * width)
+            y1 = int(box[2] / 1000 * height)
+            x1 = int(box[3] / 1000 * width)
+            if y0 >= y1 or x0 >= x1:
+                continue
+            x0, x1 = max(0, min(x0, width)), max(0, min(x1, width))
+            y0, y1 = max(0, min(y0, height)), max(0, min(y1, height))
+            item: Dict[str, Any] = {
+                "label": obj.label or "unknown",
+                "box_2d": [x0, y0, x1, y1],
+                "confidence": obj.confidence,
+                "mask_image": None,
+                "overlay_image": None,
+            }
+            for key, value in obj.model_dump().items():
+                if key not in ("mask", "box_2d") and key not in item:
+                    item[key] = value
+            results.append(item)
+        return results
 
     async def summarize_text(
         self,
@@ -1971,7 +2083,7 @@ Provide your final answer with:
         except InvokeError:
             raise
         except Exception as exc:
-            raise self._handle_invoke_error(exc)
+            raise self._handle_invoke_error(exc) from exc
 
 
 # Backward compatibility alias

@@ -9,6 +9,84 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.5] — 2026-09-20 — SDD tooling, CLI agent UI and client reliability
+
+Twelve core-line distributions move to `1.0.5`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.5` and are
+re-pinned to `ai-parrot>=1.0.5`.
+
+Code changed in eight distributions: `ai-parrot` (185 files),
+`ai-parrot-tools`, `ai-parrot-integrations`, `ai-parrot-client-google`,
+`ai-parrot-server`, `ai-parrot-client-jev`, `parrot-formdesigner`,
+`navrules`. The rest are version-only bumps.
+
+### Added
+
+- **FEAT-573: interactive `parrot agent <agent_id>` CLI.** The agent REPL
+  becomes a real terminal application — usable composer, readable
+  conversation rendering, discoverable commands and visible progress.
+- **FEAT-563: scoped test selection.** The SDD cycle no longer runs all
+  ~2,900 `test_*.py` modules; tasks select the tests that cover their scope,
+  with guard-bypass checks closed by code review.
+- **FEAT-564: video-reel Omni/Veo reliability.** Owner-checked job polling
+  and artifact delivery in `GoogleGenAIClient.generate_video_reel`; the owned
+  async Veo client is now closed on every exit path.
+- **FEAT-565: autonomous planogram compliance.** `examples/planogram/
+  planogram_check.py` runs the compliance algorithm end to end.
+- **FEAT-570: local-MCP toolkit exposure.** Builtin-consumer audit, a
+  cross-host command matrix and a no-secret integration test on top of the
+  FEAT-485/556 local-MCP machinery.
+- **FEAT-582: worktree-aware `/sdd-status`.** Task state is now read from the
+  feature's worktree, not only from the per-spec index on `dev`; `/sdd-next`
+  gains worktree progress annotations.
+- **FEAT-577 / FEAT-576: grounded, scoped SDD specs.** Specs record which
+  project and part of the codebase they concern, and spec authoring is
+  grounded in a brainstorm/proposal.
+- **FEAT-579: `invoke()` lifecycle telemetry** on the OpenAI-base clients,
+  wiring `BeforeClientCallEvent` / `AfterClientCallEvent` /
+  `ClientCallFailedEvent` through the invoke path.
+- **FEAT-580 (15/16 tasks): LSP evidence for SDD seats.** Bounded LSP
+  framing with a scripted fake server, Pyright process ownership, versioned
+  diagnostics, hash-verified definition/reference tools, checkpoint
+  diagnostics and a bounded CLI pilot runner. TASK-3514 remains in progress.
+
+### Changed
+
+- **FEAT-562 CI remediation closed out** — `test-core` workspace install and
+  the drifted-test repairs are complete.
+- **sdd-coder** requires strong-model seats for `unknown`-complexity tasks.
+- **`parrot codex install`** no longer accepts `--toolkits` /
+  `--all-toolkits`.
+- **FEAT-571 memory-dynamics** landed as research spikes (attribution
+  precision, brain-page state/lineage) rather than shipped behaviour, plus a
+  real repair to `UnifiedMemoryManager` episodic recording.
+
+### Fixed
+
+- **Security (CWE-209):** video-reel error responses no longer expose stack
+  traces.
+- **sdd-coder:** pool-based retry crashed on the native seat; retry-label
+  eligibility now fails closed (TASK-3554).
+- **sdd-worker:** sandboxed Bash calls are bounded, `aiosqlite` threads no
+  longer leak, and a worktree sandbox may administer sibling worktrees.
+- **`/sdd-done`** refuses `--merge` and `--sync-down` from inside a worktree.
+- **jev client:** session timeout is enforced and the answer kind
+  cross-checked.
+- **`GoogleGenAIClient`** API-key resolution.
+- **CLI console** TTY detection.
+- **Agent methods** are exposed correctly as MCP tools.
+- **CI `test-core`:** optional `duckduckgo-search` and `arxiv` imports are
+  guarded so core imports without those extras.
+- **`wikitoolkit status`** hints when the `sqlite3` CLI is missing.
+
+### Docs
+
+- SDD specs and task graphs landed for in-flight features: FEAT-572
+  (`/sdd-fix` ledger lane, 10/13), FEAT-574 (planogram pipeline),
+  FEAT-578 (spec wiki ADR), FEAT-581 (agentic E2E testing).
+
+---
+
 ## [1.0.4] — 2026-09-17
 
 Twelve core-line distributions move to `1.0.4`. The sixteen satellites

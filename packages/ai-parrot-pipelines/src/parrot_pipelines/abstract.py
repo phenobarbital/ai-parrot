@@ -2,10 +2,11 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Tuple, Union
 from pathlib import Path
 import io
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageOps
 from navconfig.logging import logging
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611
 from parrot.clients.factory import LLMFactory
+from parrot_pipelines.planogram.backend import UNSET, ResolvedBackend, _Unset, resolve_backend
 
 logging.getLogger("pytesseract").setLevel(logging.WARNING)
 
@@ -13,31 +14,45 @@ logging.getLogger("pytesseract").setLevel(logging.WARNING)
 class AbstractPipeline(ABC):
     """Abstract base class for all pipelines."""
 
-    def __init__(self, llm: Any = None, llm_provider: str = "google", llm_model: Optional[str] = None, **kwargs: Any):
-        """
-        Initialize the 3-step pipeline
+    def __init__(
+        self,
+        llm: Any = None,
+        llm_provider: Union[str, _Unset] = UNSET,
+        llm_model: Union[str, None, _Unset] = UNSET,
+        *,
+        config_backend: Optional[str] = None,
+        **kwargs: Any,
+    ):
+        """Initialize the pipeline and resolve its LLM backend (FEAT-574).
+
+        Backend precedence: an explicit ``llm`` (client instance or ``"provider:model"``
+        string) → explicit ``llm_provider`` / ``llm_model`` applied over the configured
+        backend → ``config_backend`` → the package default (``DEFAULT_LLM_BACKEND``).
+        A provider switch without a model never inherits the other provider's model id.
 
         Args:
-            llm_provider: LLM provider for identification
-            llm_model: Specific LLM model
-            api_key: API key
-            detection_model: Object detection model to use
+            llm: An LLM client instance, a ``"provider:model"`` string, or ``None``.
+            llm_provider: Explicit provider name; omitted when ``UNSET``.
+            llm_model: Explicit model name; omitted when ``UNSET`` or ``None``.
+            config_backend: The configuration's ``llm_backend`` (``"provider:model"``);
+                consumed here and never forwarded to the client constructor.
+            **kwargs: Extra keyword arguments forwarded to the client constructor.
         """
         self.llm = llm
         self.llm_provider = None
         self.logger = logging.getLogger(f"parrot.pipelines.{self.__class__.__name__}")
         self._json = JSONContent()
-        if not llm:
-            self.llm_provider = llm_provider.lower()
-            self.llm = self._get_llm(llm_provider, llm_model, **kwargs)
+        self.resolved_backend: ResolvedBackend = resolve_backend(llm, llm_provider, llm_model, config_backend)
+        if llm is None or isinstance(llm, str):
+            # No client instance given: build it from the resolved backend (FEAT-574).
+            # _get_llm() overwrites llm_provider from the built client's client_name.
+            self.llm_provider = self.resolved_backend.provider
+            self.llm = self._get_llm(self.resolved_backend.provider, self.resolved_backend.model, **kwargs)
         else:
             self.llm_provider = llm.client_name.lower()
-        # Ensure a Google Client for multi-modal capabilities:
-        # FEAT-523 (TASK-2846): lazy import — core/satellites must not
-        # import a provider client at module scope (AC-3).
-        from parrot.clients.google import GoogleGenAIClient
-
-        self.roi_client = GoogleGenAIClient(model="gemini-3-flash-preview", temperature=0.0, max_retries=2, timeout=20)
+        self.logger.debug(
+            "Resolved LLM backend: %s (%s)", self.resolved_backend.as_string(), self.resolved_backend.origin
+        )
 
     def _get_llm(self, provider: str, model: Optional[str] = None, **kwargs: Any) -> Any:
         """
@@ -70,8 +85,18 @@ class AbstractPipeline(ABC):
         self.llm_provider = client.client_name.lower()
         return client
 
-    def open_image(self, image_path: Union[Path, Image.Image]) -> Image.Image:
-        """Open an image from a file path."""
+    def open_image(self, image_path: Union[Path, Image.Image], *, enhance: bool = True) -> Image.Image:
+        """Open an image from a file path (or pass a PIL image through) as RGB.
+
+        Args:
+            image_path: Path/str to an image file, or an already opened PIL image.
+            enhance: When True (default, legacy behaviour) apply ``_enhance_image``
+                (brightness/contrast). The FEAT-574 cycle passes False so perception, OCR and
+                LLM crops use the untouched full-resolution image.
+
+        Returns:
+            The RGB image.
+        """
         try:
             if isinstance(image_path, (str, Path)):
                 img = Image.open(str(image_path))
@@ -79,7 +104,8 @@ class AbstractPipeline(ABC):
                 img = image_path
             if img.mode != "RGB":
                 img = img.convert("RGB")
-            img = self._enhance_image(img)
+            if enhance:
+                img = self._enhance_image(img)
             self.logger.debug(f"Opened image {image_path} with size {img.size} and mode {img.mode}")
             return img
         except Exception as e:

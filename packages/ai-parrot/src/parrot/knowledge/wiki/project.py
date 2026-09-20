@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from parrot.knowledge.wiki.decisions.models import DecisionConfig
+
 if TYPE_CHECKING:
     # Import only for the annotation below — the real (runtime) import in
     # sqlite_policy_from_config() is deferred to avoid a module-load cycle
@@ -407,6 +409,9 @@ class WikiProjectConfig(BaseModel):
         obsidian_sync: Settings for ``wikitoolkit sync obsidian`` —
             which categories are mirrored into the Obsidian vault and
             which folder each category maps onto.
+        decisions: ADR decision-plane settings (FEAT-578): discovery
+            globs, inventory bound, and the opt-in candidate-generation
+            budget. Generation is disabled by default.
     """
 
     wiki_name: str = Field(default="codebase")
@@ -468,6 +473,14 @@ class WikiProjectConfig(BaseModel):
             "Kill switch for the optional ast-grep structural extraction "
             "seam (FEAT-498). When False, scanners always use their "
             "tree-sitter/heuristic tiers even if ast-grep-py is installed."
+        ),
+    )
+    decisions: DecisionConfig = Field(
+        default_factory=DecisionConfig,
+        description=(
+            "ADR decision-plane settings (FEAT-578): discovery globs, "
+            "inventory bound, and the opt-in candidate-generation budget. "
+            "Generation is disabled by default."
         ),
     )
     sqlite_busy_timeout: float = Field(

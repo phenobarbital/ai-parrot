@@ -204,9 +204,26 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     # FEAT-498: symbol-plane tools (wiki_symbol_lookup, wiki_code_outline,
     # wiki_blast_radius) share the same read_store, so they honour the
     # same federated namespaces as the six tools above.
-    from parrot.knowledge.wiki.structural import create_structural_tools
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.knowledge.wiki.structural import create_structural_tools
 
-    tools = tools + create_structural_tools(read_store, root, config)
+        structural_tools = create_structural_tools(read_store, root, config)
+    tools = tools + structural_tools
+
+    # FEAT-578: decision-plane tools (wiki_decisions_for_symbol,
+    # wiki_decision_why) share the same read_store, so they honour the same
+    # federated namespaces. wiki_decision_generate is added by the factory
+    # only when generation is enabled AND a local project is available; there
+    # is no review tool — acceptance is a maintainer CLI action (AC11).
+    # decisions.service transitively reaches structural.service (which
+    # itself imports wiki.cli for a couple of helpers), and that chain can
+    # still trigger the same navconfig settings-init stdout leak the
+    # imports above are guarded against — protect this one the same way.
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.knowledge.wiki.decisions import create_decision_tools
+
+        decision_tools = create_decision_tools(read_store, root, config)
+    tools = tools + decision_tools
 
     # Obsidian vault exposure: when the project has a vault (explicit
     # `vault_dir` in wiki.json, or the root itself is a vault), register
