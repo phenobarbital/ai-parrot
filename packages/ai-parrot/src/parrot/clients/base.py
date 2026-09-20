@@ -1,6 +1,25 @@
 from __future__ import annotations
-from typing import AsyncIterator, Dict, List, Optional, Sequence, Union, TypedDict, Any, Callable, FrozenSet
+from typing import (
+    AsyncIterator,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Union,
+    TypedDict,
+    Any,
+    Callable,
+    FrozenSet,
+    TYPE_CHECKING,
+)
 from parrot._imports import lazy_import
+
+if TYPE_CHECKING:  # pragma: no cover - import-time cost, not behaviour
+    # Annotation-only. Importing PythonREPLTool for real pulls
+    # parrot.security.redaction -> memory.episodic -> vault_utils ->
+    # interfaces.documentdb into EVERY module that touches a client. The two
+    # factories below import it when they actually build one.
+    from ..tools.pythonrepl import PythonREPLTool
 from datetime import datetime
 import inspect
 import json
@@ -20,7 +39,6 @@ import yaml
 from pydantic import BaseModel, ValidationError, TypeAdapter
 from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder, JSONContent  # pylint: disable=E0611 # noqa
-import pandas as pd
 import aiohttp
 from navconfig import config
 from navconfig.logging import logging
@@ -29,7 +47,6 @@ from navconfig.logging import logging
 # imported, from ``parrot.memory.render`` — a leaf module that never pulls in a
 # storage backend, so no LLM client inherits a Redis/aiofiles dependency.
 from ..memory.render import HistoryMessage
-from ..tools.pythonrepl import PythonREPLTool
 from ..models import AIMessage, StructuredOutputConfig, OutputFormat
 from ..models.responses import InvokeResult
 from ..models.basic import CompletionUsage
@@ -99,6 +116,8 @@ def register_python_tool(
     Returns:
         The PythonREPLTool instance
     """
+    from ..tools.pythonrepl import PythonREPLTool
+
     tool = PythonREPLTool(
         report_dir=report_dir,
     )
@@ -1357,6 +1376,8 @@ $backstory
         """
         if "python_repl" in self.tools:
             return self.tools["python_repl"]
+
+        from ..tools.pythonrepl import PythonREPLTool
 
         tool = PythonREPLTool(
             report_dir=report_dir,
@@ -2638,6 +2659,7 @@ $backstory
                 # Parse natural language text into structured format
                 return await self._parse_text_to_structure(response_text, output_type)
             elif structured_output.format == OutputFormat.CSV:
+                pd = lazy_import("pandas")
                 df = pd.read_csv(io.StringIO(response_text))
                 return df if output_type == pd.DataFrame else df
             elif structured_output.format == OutputFormat.YAML:
