@@ -107,10 +107,7 @@ def _reject_managed_page(page: dict[str, Any] | None, page_id: str) -> str | Non
 
     _namespace, local = split_namespaced_id(page_id)
     if local.startswith("adr:"):
-        return (
-            f"Page {page_id!r} would be a managed ADR record ({ADR_MANAGED_PAGE}); generic "
-            "writes are refused."
-        )
+        return f"Page {page_id!r} would be a managed ADR record ({ADR_MANAGED_PAGE}); generic writes are refused."
     return None
 
 
