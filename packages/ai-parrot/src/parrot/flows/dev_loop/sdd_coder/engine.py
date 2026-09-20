@@ -1182,7 +1182,15 @@ class SddCoderEngine:
         """
         plan = await self._cached_plan(ctx.feature, ctx.worktree, ctx, execution_id=execution_id)
         assessment = plan.assessments.get(task.task_id)
-        if assessment is None or assessment.classification not in ("complex", "unknown"):
+        if assessment is None:
+            # A task reaching retry was, by definition, just dispatched under SOME
+            # cached plan/assessment (`_run_attempt`'s own admission check just used
+            # one to fail attempt 1). A missing assessment here is an anomaly, never
+            # evidence this task is unrestricted -- fail closed rather than letting
+            # `_select_retry_seat` search the full, unrestricted roster
+            # (issue:e01c03baf493).
+            return set()
+        if assessment.classification not in ("complex", "unknown"):
             return None
         seats = self._executions[execution_id]._seats if execution_id in self._executions else self.seats
         return {s.label for s in eligible_seats(assessment, seats, self.roster.complexity)}
@@ -2447,6 +2455,14 @@ class SddCoderEngine:
                 for seat in pool._seats:
                     from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
 
+                    # A native seat has no dispatcher: `_run_attempt` asserts
+                    # `seat.backend is not None` and `_run_task` never routes a
+                    # retry through `coder_prepare_native`, so selecting one here
+                    # would crash the attempt instead of retrying it (mirrors
+                    # `ChunkAssigner.retry_seat`'s own `kind == "native"` guard,
+                    # issue:e01c03baf493).
+                    if seat.kind == "native":
+                        continue
                     key = _effective_key(seat)
                     if key is None:
                         continue
@@ -2470,6 +2486,8 @@ class SddCoderEngine:
                 for seat in pool._seats:
                     from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
 
+                    if seat.kind == "native":
+                        continue
                     key = _effective_key(seat)
                     if key is None or seat.label in tried_seats:
                         continue
