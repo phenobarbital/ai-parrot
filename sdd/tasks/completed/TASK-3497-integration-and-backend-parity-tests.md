@@ -489,11 +489,64 @@ class TestScaleBaseline:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Fallback: Sequential Loop, via a forked sub-agent) — jesuslarag@gmail.com
+**Date**: 2026-09-20
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Backends validated**: sqlite / memory / arangodb? / postgres?
+**Notes**: Implemented in fallback mode after two independent `parrot-sdd-coder` MCP
+infra failures (see below). All four CREATE files exist per the blueprint; commit `5e7e3225f`.
 
-**Deviations from spec**: none | describe if any
+- `test_integration_roundtrip.py` — **5/5 passed**, fully verified
+  (`PYTHONPATH=packages/ai-parrot/src pytest ... -q`). One factual correction from the
+  blueprint: the fixture's "accepted" ADR carries no `## Status` header, so
+  `source_status` is actually `unknown`, not `accepted` — the label assertion was
+  adjusted to match the real fixture rather than the blueprint's assumption.
+- `test_backend_parity.py`, `test_namespace_and_offline.py`, `test_scale_baseline.py` —
+  written per blueprint (`ruff check --fix` clean), but **NOT executed**. Mid-run the
+  shared main-checkout `.venv` (read-only to this worker) was mutated by another
+  concurrent session: `numpy` lost its compiled extension
+  (`No module named 'numpy._core._multiarray_umath'`) and, confirmed again by me
+  afterward, `pydantic-core` (2.49.0) became incompatible with the installed `pydantic`
+  (requires 2.41.5) — even `wikitoolkit` itself stopped working. Per policy I did not
+  attempt to repair the shared venv; I polled for recovery (bounded, ~60s) with no
+  success and stopped. **These three files' test bodies are unvalidated and need a
+  re-run once the shared venv is stable** (`PYTHONPATH=packages/ai-parrot/src pytest
+  packages/ai-parrot/tests/knowledge/wiki/decisions/test_backend_parity.py
+  test_namespace_and_offline.py test_scale_baseline.py -q`).
+- `artifacts/logs/feat-578-backend-parity.json` / `feat-578-scale-baseline.json` —
+  **not yet generated** (their writer tests never ran).
+
+**Backends validated**: none of the four backend-parity fixtures have run yet (blocked
+above). By construction sqlite/memory are the two mandatory `parity_store` params;
+arangodb/postgres are gated on `ARANGODB_HOST` / `WIKI_POSTGRES_DSN` respectively,
+following `test_arango_store_cas.py` / `test_postgres_store_cas.py` conventions —
+whether either env was present in this worktree is unconfirmed since the module never ran.
+
+**Production defect found (NOT fixed — out of this task's scope)**:
+`packages/ai-parrot/src/parrot/knowledge/wiki/decisions/cli.py::_resolve_scoped_store`
+(added by TASK-3496, ~lines 70-95) opens the store via `_require_built()` directly
+instead of the `_federate()` helper every other `wiki` CLI command uses. Its namespace
+narrowing only works once the store is already a `FederatedWikiStore`, so CLI-level
+`adr lookup/why --ns <foreign-namespace>` silently keeps reading the LOCAL plane instead
+of the declared namespace — no error, just wrong-namespace data. The MCP-tool path
+(`create_decision_tools` via `create_wiki_mcp_server`) is unaffected since it wraps the
+store in `FederatedWikiStore` first. `test_namespace_and_offline.py` sidesteps this by
+asserting isolation at the tool level and CLI/MCP parity only for the default
+(no `--ns`) case. **Ledger status: NOT filed** — `wikitoolkit ledger open` itself failed
+with the same shared-venv `pydantic-core`/`pydantic` mismatch described above. Filing is
+deferred to a session with a healthy shared venv; full finding text is preserved in this
+note and in the sdd-worker session transcript.
+
+**Infra note (unrelated to this task's content, recorded for the record)**: TASK-3497
+was originally blocked twice through `parrot-sdd-coder`: (1) an `unknown`-classification
+eligibility bug (fixed upstream in `dev` commit `957c15d96`, confirmed merged); (2)
+after restarting to pick up that fix, the MCP server's suspension-history store came
+back `suspension_history_unavailable` / roster `exhausted` — a live-process regression,
+separate from (1) and still unresolved as of this task's completion. Implemented via the
+documented Fallback: Sequential Loop as a result.
+
+**Deviations from spec**: none structural; see the `source_status` label correction
+above (factual, not a scope change).
+
+**Follow-up required before this feature is fully validated**: re-run the three
+unvalidated test files once the shared venv is confirmed healthy, and file the CLI
+namespace-federation defect to the ledger.

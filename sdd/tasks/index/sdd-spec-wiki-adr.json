@@ -388,7 +388,7 @@
       "feature_id": "FEAT-578",
       "feature": "sdd-spec-wiki-adr",
       "spec": "sdd/specs/sdd-spec-wiki-adr.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -401,8 +401,8 @@
       "parallelism_notes": "exercises the CLI from TASK-3496 end to end and asserts CAS parity across the backends implemented by TASK-3482/3483/3484",
       "assigned_to": null,
       "started_at": "2026-09-19T17:46:59+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3497-integration-and-backend-parity-tests.md"
+      "completed_at": "2026-09-20T00:59:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3497-integration-and-backend-parity-tests.md"
     },
     {
       "id": "TASK-3498",
