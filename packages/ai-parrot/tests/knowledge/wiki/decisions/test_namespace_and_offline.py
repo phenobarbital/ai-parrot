@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -89,7 +90,12 @@ class TestNamespaceIsolation:
 
     async def test_broadcast_writes_are_refused(self, runner, adr_repo):
         """--ns all is ADR_INVALID_ARGUMENT in v1, on both surfaces."""
-        _build(runner, adr_repo)
+        # `_build` invokes a Click command that runs `asyncio.run()`
+        # internally; called directly from this `async def` test, that
+        # collides with pytest-asyncio's already-running loop. Run it on a
+        # thread instead, same as a real CLI invocation would (no loop of
+        # its own to collide with).
+        await asyncio.to_thread(_build, runner, adr_repo)
         cli_result = runner.invoke(wiki, ["adr", "why", "why", "--ns", "all", "--json", "--path", str(adr_repo)])
         assert cli_result.exit_code == 2
         cli_payload = json.loads(cli_result.stderr or cli_result.output)
@@ -106,10 +112,15 @@ class TestNamespaceIsolation:
 class TestCliMcpParity:
     async def test_cli_mcp_parity(self, runner, adr_repo):
         """spec §4: equivalent data and identical error codes on both surfaces."""
-        _build(runner, adr_repo)
-        runner.invoke(wiki, ["adr", "sync", "--json", "--path", str(adr_repo)])
+        # `runner.invoke` runs a Click command that calls `asyncio.run()`
+        # internally; every invocation in this async test is threaded for
+        # the same reason `_build` is (see `test_broadcast_writes_are_refused`).
+        await asyncio.to_thread(_build, runner, adr_repo)
+        await asyncio.to_thread(runner.invoke, wiki, ["adr", "sync", "--json", "--path", str(adr_repo)])
 
-        cli_result = runner.invoke(wiki, ["adr", "why", "pgvector", "--json", "--path", str(adr_repo)])
+        cli_result = await asyncio.to_thread(
+            runner.invoke, wiki, ["adr", "why", "pgvector", "--json", "--path", str(adr_repo)]
+        )
         assert cli_result.exit_code == 0, cli_result.output
         cli_dossier = json.loads(cli_result.output)
 
@@ -127,7 +138,9 @@ class TestCliMcpParity:
         assert [h["origin"] for h in cli_dossier["documented"]] == [h["origin"] for h in tool_dossier["documented"]]
 
         # Trigger the same failure on both surfaces and assert the SAME code.
-        cli_fail = runner.invoke(wiki, ["adr", "why", "q", "--ns", "all", "--json", "--path", str(adr_repo)])
+        cli_fail = await asyncio.to_thread(
+            runner.invoke, wiki, ["adr", "why", "q", "--ns", "all", "--json", "--path", str(adr_repo)]
+        )
         cli_fail_payload = json.loads(cli_fail.stderr or cli_fail.output)
         tool_fail = await tool._execute(question="q", namespace="all")
         assert cli_fail_payload["error"]["code"] == "ADR_INVALID_ARGUMENT"
@@ -191,9 +204,7 @@ class TestOfflineAndDisabledGeneration:
         """AC10: existing symbol ids and search behaviour are unchanged."""
         _build(runner, adr_repo)
         before_query = runner.invoke(wiki, ["query", "ClassA", "--json", "--path", str(adr_repo)])
-        before_symbols = runner.invoke(
-            wiki, ["symbols", "lookup", "ClassA.run", "--json", "--path", str(adr_repo)]
-        )
+        before_symbols = runner.invoke(wiki, ["symbols", "lookup", "ClassA.run", "--json", "--path", str(adr_repo)])
         assert before_query.exit_code == 0
         assert before_symbols.exit_code == 0
 

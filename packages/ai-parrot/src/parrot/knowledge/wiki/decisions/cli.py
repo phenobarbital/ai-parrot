@@ -52,6 +52,17 @@ def _resolve_scoped_store(
 ) -> tuple[BaseWikiStore, Path | None, WikiProjectConfig]:
     """Resolve the project, open its store, and narrow it to ``namespace``.
 
+    Uses the same ``_federate`` helper every other ``wiki`` CLI command uses
+    (``cli.py:584``) rather than a bare, unfederated store — ``_require_built``
+    alone never returns a ``FederatedWikiStore``, so narrowing it with the
+    tool-side ``_scoped_store`` no-ops for ANY ``--ns`` value, including an
+    unknown namespace name. ``namespace`` also defaults to ``"local"`` here
+    (never passed through as ``None``), because ``_federate``/``_selected_
+    namespaces`` treat an omitted selector as a broadcast across every
+    federated namespace — correct for generic ``wiki query``, but not for
+    decisions: spec §2 Module 6 requires lookup/why to target exactly one
+    namespace per call, ``local`` by default.
+
     Returns:
         ``(store, root, config)``. ``root`` is ``None`` for a scoped-away
         (foreign) namespace — the caller should then skip anything that
@@ -72,21 +83,18 @@ def _resolve_scoped_store(
     # imports `cli.py` — a module-level import back here would be circular
     # (mirrors `_structural_tool`'s own local import in `cli.py` for the
     # same reason).
-    from parrot.knowledge.wiki.cli import _require_built, _resolve_project
-    from parrot.knowledge.wiki.tools import _scoped_store, _unknown_namespace_error
+    from parrot.knowledge.wiki.cli import _federate, _require_built, _resolve_project
 
     root, config = _resolve_project(path_)
-    store = _require_built(root, config)
+    local = _require_built(root, config)
+    effective_ns = namespace or "local"
 
-    if namespace and namespace != "local":
-        try:
-            scoped_store = _scoped_store(store, namespace)
-        except KeyError:
-            raise DecisionError(ADR_INVALID_ARGUMENT, _unknown_namespace_error(store, namespace)) from None
-    else:
-        scoped_store = store
+    try:
+        scoped_store = _federate(root, config, local, effective_ns)
+    except click.ClickException as exc:
+        raise DecisionError(ADR_INVALID_ARGUMENT, str(exc)) from exc
 
-    effective_root: Path | None = root if scoped_store is store else None
+    effective_root: Path | None = root if effective_ns == "local" else None
     if writable and effective_root is None:
         raise DecisionError(
             ADR_INVALID_ARGUMENT,
@@ -115,6 +123,12 @@ def adr() -> None:
     """Architectural decisions: ingest ADRs, look them up, and review candidates."""
 
 
+def _ns_option(func):
+    """Shared ``--ns`` option for write commands (spec §2 Module 6: "write
+    commands reject --ns all and missing local evidence roots")."""
+    return click.option("--ns", "namespace", default=None, help="Namespace ('all' is not supported).")(func)
+
+
 def _read_options(func):
     """Shared options for the two read commands (spec §2 Module 6)."""
     func = click.option("--include-history", is_flag=True, help="Include rejected/deprecated/superseded records.")(func)
@@ -138,13 +152,14 @@ def _run(coro):
 @click.argument("paths", nargs=-1)
 @click.option("--path", "path_", default=None, help="Project root.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the SyncResult as JSON.")
-def adr_sync(paths: tuple[str, ...], path_: str | None, as_json: bool) -> None:
+@_ns_option
+def adr_sync(paths: tuple[str, ...], path_: str | None, as_json: bool, namespace: str | None) -> None:
     """Refresh ADR records from source. Never invokes a model."""
     try:
-        service = _build_service(path_, None, writable=True)
+        service = _build_service(path_, namespace, writable=True)
         result = _run(service.sync(list(paths) or None))
     except DecisionError as exc:
-        raise SystemExit(_emit_error(exc, as_json))
+        raise SystemExit(_emit_error(exc, as_json)) from exc
     if as_json:
         click.echo(json.dumps(as_json_dict(result)))
     else:
@@ -168,7 +183,7 @@ def adr_lookup(symbol, path_, include_history, limit, budget, as_json, namespace
         service = _build_service(path_, namespace, writable=False)
         dossier = _run(service.for_symbol(symbol, include_history=include_history, limit=limit, budget_tokens=budget))
     except DecisionError as exc:
-        raise SystemExit(_emit_error(exc, as_json))
+        raise SystemExit(_emit_error(exc, as_json)) from exc
     if as_json:
         click.echo(json.dumps(as_json_dict(dossier)))
     else:
@@ -185,7 +200,7 @@ def adr_why(question, path_, include_history, limit, budget, as_json, namespace)
         service = _build_service(path_, namespace, writable=False)
         dossier = _run(service.why(question, include_history=include_history, limit=limit, budget_tokens=budget))
     except DecisionError as exc:
-        raise SystemExit(_emit_error(exc, as_json))
+        raise SystemExit(_emit_error(exc, as_json)) from exc
     if as_json:
         click.echo(json.dumps(as_json_dict(dossier)))
     else:
@@ -196,17 +211,18 @@ def adr_why(question, path_, include_history, limit, budget, as_json, namespace)
 @click.argument("target")
 @click.option("--path", "path_", default=None, help="Project root.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the GenerationResult as JSON.")
-def adr_generate(target: str, path_: str | None, as_json: bool) -> None:
+@_ns_option
+def adr_generate(target: str, path_: str | None, as_json: bool, namespace: str | None) -> None:
     """Generate labeled CANDIDATE rationale for TARGET (a sym: id or a file).
 
     Requires generation to be enabled and a model configured. Candidates are
     created unreviewed; accepting one is a separate, explicit `adr review`.
     """
     try:
-        service = _build_service(path_, None, writable=True)
+        service = _build_service(path_, namespace, writable=True)
         result = _run(service.generate(target))
     except DecisionError as exc:
-        raise SystemExit(_emit_error(exc, as_json))
+        raise SystemExit(_emit_error(exc, as_json)) from exc
     if as_json:
         click.echo(json.dumps(as_json_dict(result)))
     else:
@@ -239,6 +255,7 @@ def adr_generate(target: str, path_: str | None, as_json: bool) -> None:
 )
 @click.option("--path", "path_", default=None, help="Project root.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the updated record as JSON.")
+@_ns_option
 def adr_review(
     decision_id: str,
     action: str,
@@ -249,6 +266,7 @@ def adr_review(
     documented_id: str | None,
     path_: str | None,
     as_json: bool,
+    namespace: str | None,
 ) -> None:
     """Accept, reject, revise, or link a decision record.
 
@@ -292,10 +310,10 @@ def adr_review(
         raise SystemExit(_emit_error(DecisionError(ADR_INVALID_ARGUMENT, str(exc)), as_json)) from exc
 
     try:
-        service = _build_service(path_, None, writable=True)
+        service = _build_service(path_, namespace, writable=True)
         record = _run(service.review(request))
     except DecisionError as exc:
-        raise SystemExit(_emit_error(exc, as_json))
+        raise SystemExit(_emit_error(exc, as_json)) from exc
 
     if as_json:
         click.echo(json.dumps(as_json_dict(record)))
@@ -311,18 +329,19 @@ def adr_review(
 @adr.command("export")
 @click.argument("decision_id")
 @click.option("--path", "path_", default=None, help="Project root.")
-def adr_export(decision_id: str, path_: str | None) -> None:
+@_ns_option
+def adr_export(decision_id: str, path_: str | None, namespace: str | None) -> None:
     """Print DECISION_ID as Markdown on stdout.
 
     Writing or committing this output is deliberately outside the feature —
     accepting a candidate in the wiki is sufficient (Q3).
     """
     try:
-        store, _root, config = _resolve_scoped_store(path_, None, writable=False)
+        store, _root, config = _resolve_scoped_store(path_, namespace, writable=False)
         repo = DecisionRepository(store, max_records=config.decisions.max_records)
         loaded = _run(repo.get(decision_id))
     except DecisionError as exc:
-        raise SystemExit(_emit_error(exc, False))
+        raise SystemExit(_emit_error(exc, False)) from exc
     if loaded is None:
         raise SystemExit(
             _emit_error(

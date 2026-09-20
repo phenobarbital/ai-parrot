@@ -208,12 +208,21 @@ def create_decision_tools(
     def service_factory(namespace: str | None) -> DecisionService:
         if namespace == "all":
             raise DecisionError(ADR_INVALID_ARGUMENT, "namespace='all' is not supported for decisions")
+        # `namespace` defaults to "local" (never passed through as `None`):
+        # `_scoped_store(store, None)` no-ops and returns `store` UNCHANGED,
+        # which — when `store` is a `FederatedWikiStore` (the MCP server
+        # wraps it in one before this factory ever runs) — is the whole
+        # broadcasting federation, not the local plane. Spec §2 Module 6
+        # requires why/lookup to target exactly one namespace per call,
+        # `local` by default; only an explicit selector should narrow to a
+        # named foreign namespace.
+        effective_ns = namespace or "local"
         try:
-            scoped = _scoped_store(store, namespace)
+            scoped = _scoped_store(store, effective_ns)
         except KeyError:
             raise ValueError(_unknown_namespace_error(store, str(namespace))) from None
-        if scoped is store:
-            return DecisionService(store, root, decisions_config, structural=local_structural)
+        if effective_ns == "local":
+            return DecisionService(scoped, root, decisions_config, structural=local_structural)
         # A foreign/federated namespace has no local evidence root of its
         # own — freshness answers 'unverified' and generation/sync refuse,
         # per spec §2 Module 6 ("cannot generate or sync local code").
