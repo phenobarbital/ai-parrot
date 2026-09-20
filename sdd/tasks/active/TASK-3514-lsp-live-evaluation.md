@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-580 - SDD LSP Research Pilot
 **Spec**: `sdd/specs/sdd-research-lsp.spec.md`
-**Status**: in-progress (blocked on operator-provided live-run manifest/prices/seats/budget — see Completion Note)
+**Status**: in-progress (live run executed 2026-09-20, `no_go` decision computed from real evidence; blocked on the spec's own required, non-automatable human acceptance review/certification before this can be marked done — see Completion Note)
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3513
@@ -76,6 +76,41 @@ for that one attempt regardless of arm, so every `lsp_*` call reports
 `status="unavailable"` before any process spawns — reusing the toolkit's
 own documented sentinel behavior rather than inventing new simulation
 logic.
+
+### Scope correction (2026-09-20, addendum — committed evidence summary)
+
+The live 180-attempt run executed for real on 2026-09-20 (evidence:
+`artifacts/lsp-live-run/run/` — gitignored, session-local per repo
+policy). `benchmarks.sdd_lsp.runner.run_pilot()` always sets
+`PilotReport.synthetic=True` on its returned report by design (its own
+docstring: "this runner never asserts it produced a live, audited run —
+that judgment belongs to the caller, per spec §3 M5"); certifying a run
+as non-synthetic is therefore explicitly a caller/human decision, never
+something `run_pilot` or an agent self-asserts. Additionally, this
+task's own acceptance criteria require "report-integrity tests for the
+**committed** lightweight summary and manifest digest" — no such
+committed artifact existed yet; the raw run directory is gitignored and
+too large/unreviewable to commit wholesale.
+
+Added file (this addendum's own record, same pattern as the section
+above):
+
+| File | Action | Description |
+|---|---|---|
+| `docs/sdd/lsp-pilot-live-run-summary.json` | CREATE | A committed, trimmed `PilotReport` (real manifest for digest verification + all 180 real `AttemptRecord`s with real `arm`/`accepted`/`elapsed_ms`/`actual_cost_usd`/failure-reason/trace-presence, `usage` token breakdowns dropped as non-essential to gate/coverage recomputation, `raw_trace_refs` reduced to a presence marker instead of this machine's local absolute paths) |
+
+`packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py` gained
+tests that load this committed file and run the SAME
+`check_live_report_integrity`/`evaluate_gate` functions against it
+(not synthetic fixtures): they prove 180/180 attempts present exactly
+once, every one traced, the manifest digest verifiable, and the gate
+decision (`no_go`, -30.34% cost, +13.60% wall-time) exactly
+re-derivable from the raw evidence alone — and they honestly assert
+`report.synthetic is True`, i.e. this evidence has NOT yet received the
+human certification flip. Per spec §3 Module Breakdown's verbatim
+requirement for M6 — "Requires provisioned CLI seats, actual
+usage/pricing, and human acceptance review; results cannot be
+manufactured" — this agent does not flip that flag; see Completion Note.
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -231,3 +266,98 @@ sdd-worker orchestrator per the human-authorized exception (see
 TASK-3508's completion note for the routing-gap blocker context; that
 blocker is unrelated to this task's OWN, separate M6 execution blocker
 described above).
+
+### Addendum (2026-09-20, continuation session) — real run executed, `no_go`, still NOT DONE
+
+Between the note above and this one, the blocker it described was
+resolved: the operator reviewed and provided a manifest, real
+`minimax.minimax-m2.5` seats via AWS Bedrock-Mantle, real prices, and a
+$15.00 spending ceiling (see the "Scope correction" sections above — the
+seat runner itself, `benchmarks/sdd_lsp/seats/bedrock_mantle_seat.py`,
+was built and committed in a prior session on this same branch). The real
+12-task × 3-repetition × 5-arm (180-attempt) live run then executed for
+real on 2026-09-20 (two earlier attempts were discarded for real
+infrastructure reasons — a genuine cost-reporting bug, then unrelated
+environment contamination — both documented in
+`docs/sdd/lsp-pilot-results.md`'s "Scope and limitations"; neither
+salvaged nor blended with the clean run).
+
+**This continuation session's own work**, starting from that already-run
+data (found uncommitted in the worktree at session start):
+
+1. Verified the raw evidence independently before trusting the prior
+   session's draft narrative: recomputed attempt counts (180 unique ids
+   in `attempts_progress.jsonl`), cross-checked the published
+   `report.json` gate numbers against a from-scratch `evaluate_gate()`
+   recomputation over the raw attempts, and confirmed `no_go` /
+   `cost_reduction_pct=-30.34` / `median_wall_time_regression_pct=13.60`
+   are genuinely reproducible from the raw data, not merely asserted in
+   prose.
+2. Found and diagnosed a real integrity gap the prior draft's prose did
+   not surface: `benchmarks.sdd_lsp.runner.run_pilot()` always sets
+   `PilotReport.synthetic=True` on every report it returns — including
+   this live run's — by explicit design (its own docstring: "this runner
+   never asserts it produced a live, audited run — that judgment belongs
+   to the caller"). The prior draft's prose claimed "not a synthetic or
+   offline preview" without ever performing that caller-side
+   certification step. This agent does **not** perform it either — per
+   spec, that certification is the human acceptance review step, and
+   this agent has no authority to self-certify a real-money live run's
+   result. `report.synthetic` is left `True` and asserted as such by
+   `test_real_live_run_manifest_matches_published_results_doc`.
+3. Built the missing "committed lightweight summary and manifest digest"
+   deliverable this task's own acceptance criteria require (the raw
+   180-attempt output directory is gitignored/session-local and too
+   large/unreviewable to commit wholesale): `docs/sdd/lsp-pilot-live-run-summary.json`
+   — a trimmed, portable `PilotReport` (real manifest, all 180 real
+   `AttemptRecord`s minus token-count breakdowns and this machine's local
+   absolute trace paths, which were replaced with a presence marker).
+   Documented as a second scope-correction addendum above.
+4. Added four new tests to `test_live_pilot_report.py` that load that
+   committed file and run the SAME `check_live_report_integrity`/
+   `evaluate_gate` functions against it (not fixtures):
+   `test_real_live_run_has_full_180_attempt_coverage_and_traces`,
+   `test_real_live_run_gate_matches_published_no_go_decision`,
+   `test_real_live_run_manifest_matches_published_results_doc`,
+   `test_real_live_run_summary_is_valid_json_and_reasonably_sized`. All
+   pass; the coverage test asserts the checker's only reported violation
+   on real evidence is `report.synthetic is True` — proving every other
+   integrity property (coverage, no silent gaps, manifest digest) holds
+   for real, while honestly refusing to assert the one property that
+   requires a human.
+5. Rewrote `docs/sdd/lsp-pilot-results.md` to present the real evidence
+   (decision, per-arm table, per-task outcomes, manifest, limitations —
+   preserved from the prior draft, spot-checked against the committed
+   summary) plus a new explicit "Certification status" table separating
+   what is verified-done from what still requires the operator's sign-off.
+
+**What remains NOT done, and why this task is still `in-progress`, not
+`done`:** the spec's own verbatim words for M6 — "Requires provisioned
+CLI seats, actual usage/pricing, and human acceptance review; results
+cannot be manufactured" (spec §3 Module Breakdown) — describe exactly
+the one remaining step: the operator reviewing this `no_go` result and
+its evidence, and
+either accepting it (certifying `PilotReport.synthetic=False` in the
+published artifact and closing this task) or requesting further
+investigation. No prerequisite, seat, budget, or trace-coverage blocker
+remains; the sole remaining blocker is that explicit review, which this
+agent does not have standing to perform on its own.
+
+Validation (this session): `pytest packages/ai-parrot-tools/tests/lsp/test_live_pilot_report.py -q`
+→ 7 passed (3 pre-existing + 4 new, real-evidence-backed). Full
+`packages/ai-parrot-tools/tests/lsp/` regression: 168 collected, 167
+passed, 1 failed (`test_pyright_pinned_navigation` — the same
+pre-existing, unrelated PEP 420 namespace-root resolution bug the prior
+seat-runner commit's message on this branch already noted and attributed
+to `issue:f439688c6651`; not touched here, out of this task's scope).
+**Correction (this continuation session's own adversarial review found
+this):** that issue was NOT filed by a commit on this branch — it lives
+in `sdd/ledger/issues.jsonl` via commit `77391c0a52` ("sdd: ledger
+snapshot for FEAT-578") on `origin/dev`, a separate/parallel session, not
+an ancestor of this branch's HEAD. The underlying bug report is real and
+correctly describes the same failure reproduced here; only the "filed by
+the prior seat-runner commit on this branch" provenance claim was wrong.
+`black -l 120`/`ruff check` clean on all touched Python files.
+
+Seat: sonnet (native, no MCP seat) — continuation of the same
+human-authorized exception noted above.
