@@ -215,7 +215,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -226,8 +226,8 @@
       "parallelism_notes": "depends_on TASK-3390: imports plan_fix_batch; depends_on TASK-3391: calls LedgerService.unclaim / close_issue(resolved_by=). New module tests/knowledge/wiki/test_ledger_fix_lifecycle.py — deliberately NOT extending test_ledger_index.py (TASK-3387's file).",
       "assigned_to": null,
       "started_at": "2026-09-19T21:56:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3397-fix-lane-lifecycle-integration-tests.md"
+      "completed_at": "2026-09-20T00:35:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3397-fix-lane-lifecycle-integration-tests.md"
     },
     {
       "id": "TASK-3398",
