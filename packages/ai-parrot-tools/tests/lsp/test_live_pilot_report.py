@@ -15,11 +15,12 @@ Two groups of tests live here:
    ``docs/sdd/lsp-pilot-results.md`` and TASK-3514's Completion Note) and
    runs the SAME integrity/gate functions against genuine evidence, not a
    fixture. Per spec ("human acceptance review... cannot be an unattended,
-   automated sign-off"), these tests do NOT assert the evidence has been
-   certified -- they assert exactly what is honestly true today: coverage,
-   traces and the manifest digest all check out, the published `no_go`
-   decision is bit-for-bit re-derivable from the raw evidence, and the
-   report's own `synthetic` flag is still `True` (certification pending).
+   automated sign-off"), certification was performed by the operator on
+   2026-09-20 -- a human act, never asserted by an agent. These tests now
+   assert what is true post-certification: coverage, traces and the
+   manifest digest all check out, the published `no_go` decision is
+   bit-for-bit re-derivable from the raw evidence, and the report carries
+   `synthetic=False`, i.e. the certified audited result.
 """
 
 from __future__ import annotations
@@ -288,20 +289,17 @@ def test_real_live_run_has_full_180_attempt_coverage_and_traces() -> None:
 
     This is genuine evidence (2026-09-20 Bedrock-Mantle run), not a
     fixture: it exercises the SAME integrity checker as the synthetic
-    tests above, against real data. The only violation
-    ``check_live_report_integrity`` is expected to report is
-    ``report.synthetic``, which stays ``True`` until a human certifies
-    this run (see module docstring) -- everything else about the real
-    evidence (coverage, no silent gaps, manifest digest) must check out.
+    tests above, against real data. Since the operator certified this run
+    on 2026-09-20 (see module docstring and TASK-3514's Completion Note),
+    the checker must now report NO violations at all -- coverage, absence
+    of silent gaps, manifest digest and the certification flag alike.
     """
     report = _load_real_report()
     assert len(report.attempts) == report.manifest.total_attempts == 180
 
     expected_digest = manifest_digest(report.manifest)
     violations = check_live_report_integrity(report, expected_digest)
-    assert violations == [
-        "report.synthetic is True: a live run's report must not be synthetic"
-    ], f"unexpected integrity violations in the committed real-run evidence: {violations}"
+    assert violations == [], f"unexpected integrity violations in the certified real-run evidence: {violations}"
 
     # No silent gaps: every attempt either has a trace marker or an
     # explicit failure/not_launched reason (coverage_manifest agrees).
@@ -344,11 +342,12 @@ def test_real_live_run_manifest_matches_published_results_doc() -> None:
     assert set(report.manifest.arms) == set(ARM_NAMES)
 
     # Certification status is explicit, not silently assumed either way.
-    assert report.synthetic is True, (
-        "this evidence has not been through the spec's required human acceptance "
-        "review/certification yet -- see TASK-3514's Completion Note. If this now "
-        "reads False, a human has certified the run: update this assertion and "
-        "TASK-3514's status together, never one without the other."
+    assert report.synthetic is False, (
+        "this evidence was certified by the operator on 2026-09-20 after human "
+        "acceptance review of the `no_go` decision -- see TASK-3514's Completion "
+        "Note and `docs/sdd/lsp-pilot-results.md`'s Certification status table. "
+        "If this now reads True, the committed evidence was replaced or reverted: "
+        "do not re-certify it from an agent -- a human must review the new run."
     )
 
 

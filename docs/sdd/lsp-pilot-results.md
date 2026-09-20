@@ -1,7 +1,8 @@
 # FEAT-580 LSP Pilot — Live Evaluation Results
 
-**Status: RUN EXECUTED, decision computed, `no_go` — pending required human
-acceptance review before this can be treated as the certified result.**
+**Status: CERTIFIED. Run executed, decision computed and accepted —
+`no_go` is the audited result of FEAT-580's pilot.** The operator
+completed the spec-required human acceptance review on 2026-09-20.
 
 A real 180-attempt run executed against real Bedrock-Mantle seats on
 2026-09-20, spending ≈$0.75 of the approved $15.00 ceiling. This is real
@@ -25,17 +26,16 @@ certified this report as the audited result," and
 `benchmarks.sdd_lsp.runner.run_pilot()` sets it `True` on *every* report
 it ever returns, live or not, by explicit design (see its docstring):
 flipping it to `False` is deliberately left to a human caller, never the
-runner itself. This run's committed `synthetic` field is still `True`
-today — not because the run is fake, but because that human
-certification step (below) has not happened yet.
+runner itself. On 2026-09-20 the operator reviewed this run's evidence
+and certified it, so the committed `synthetic` field now reads `False`.
 
-**What is NOT yet done: certification.** Per spec §3 Module Breakdown's
-verbatim M6 requirement — "Requires provisioned CLI seats, actual
-usage/pricing, and human acceptance review; results cannot be
-manufactured" — this is explicitly not something an agent can self-certify.
-This document presents the run's real, verified evidence and the gate's
-real, verified `no_go` output, but the formal sign-off step has not
-happened. See "Certification status" below.
+**Certification: done.** Per spec §3 Module Breakdown's verbatim M6
+requirement — "Requires provisioned CLI seats, actual usage/pricing, and
+human acceptance review; results cannot be manufactured" — this was
+explicitly not something an agent could self-certify. The operator
+performed that review on 2026-09-20, accepted the `no_go` decision, and
+authorized flipping the certification flag. No agent asserted this
+judgment. See "Certification status" below.
 
 ## Adoption gate decision: `no_go`
 
@@ -166,17 +166,25 @@ crash) held under a real live run, not just in the offline tests.
 | Coverage/trace/manifest-digest integrity verified | ✅ done — `test_real_live_run_has_full_180_attempt_coverage_and_traces` |
 | `no_go` decision independently re-derivable from raw evidence | ✅ done — `test_real_live_run_gate_matches_published_no_go_decision` |
 | Committed, auditable evidence artifact | ✅ done — `docs/sdd/lsp-pilot-live-run-summary.json` |
-| **Human acceptance review of the `no_go` decision** | ❌ **not done** — spec-required, explicitly non-automatable |
-| `PilotReport.synthetic` flipped to `False` (formal certification) | ❌ **not done**, and will not be done by an agent — see below |
+| **Human acceptance review of the `no_go` decision** | ✅ **done** — operator review, 2026-09-20 |
+| `PilotReport.synthetic` flipped to `False` (formal certification) | ✅ **done** — on the operator's explicit instruction, 2026-09-20 |
 
-This document does not mark TASK-3514 `done` and the per-spec index still
-carries it `in-progress`, exactly per the task's own instructions ("If
-prerequisites or trace coverage are missing, record the external
-blocker and leave this task unfinished... A complete `no_go` result is a
-valid deliverable"). The remaining blocker is no longer data,
-infrastructure, or seats — it is the operator's explicit review and
-acceptance of this `no_go` result, which the spec deliberately keeps a
-human-only step.
+**Certification record.** On 2026-09-20 the operator reviewed this
+report, the committed evidence summary and the raw 180-attempt trace set,
+and accepted `no_go` as the audited result of the pilot. The
+certification flag in `lsp-pilot-live-run-summary.json` was flipped to
+`synthetic=False` on that instruction, and
+`test_real_live_run_manifest_matches_published_results_doc` now pins it
+there. TASK-3514 is closed on this basis; M6 is complete.
+
+**What `no_go` commits us to.** The LSP toolkit stays opt-in and is not
+enabled by default for coding agents — the disposition the spec reserved
+for this outcome. Nothing is rolled back: M1–M5 ship as built and tested,
+and the toolkit remains available to anyone who opts in explicitly. A
+future re-run under different conditions (another model, the repo's real
+wiki graph as the control instead of the index-free AST/`rg` stand-in, or
+a broader task mix) would be new scope with its own manifest and its own
+human acceptance review — it does not reopen this one.
 
 ## Reproducing this run
 
