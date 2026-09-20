@@ -82,7 +82,7 @@ class TestCasInsertUpdateConflict:
                 f"""
                 SELECT validity, content_hash FROM {store._schema}.node_versions
                 WHERE concept_id = $1
-                ORDER BY created_at ASC
+                ORDER BY updated_at ASC
                 """,
                 "adr:doc:a",
             )
