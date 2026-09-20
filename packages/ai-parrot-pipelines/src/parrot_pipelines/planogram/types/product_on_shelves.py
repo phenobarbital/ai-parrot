@@ -1259,8 +1259,8 @@ class ProductOnShelves(AbstractPlanogramType):
             # Build found_readable — update labels for illumination-mismatch products.
             _mismatch_j = {j_idx: det for (_, j_idx, det, _, _) in illum_mismatches}
             found_readable = []
-            for k, (used, (f_ptype, f_base), (_, _, original_label)) in enumerate(
-                zip(consumed, found_keys, found_lookup)
+            for k, (_used, (_f_ptype, _f_base), (_, _, original_label)) in enumerate(
+                zip(consumed, found_keys, found_lookup, strict=True)
             ):
                 label = original_label
                 if k in _mismatch_j:
@@ -1273,7 +1273,9 @@ class ProductOnShelves(AbstractPlanogramType):
                 missing.append(f"{expected_readable[i_idx]} — backlight {det.upper()} (required: {exp_s.upper()})")
             unexpected = []
             if not shelf_cfg.allow_extra_products:
-                for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
+                for used, (f_ptype, f_base), (_, _, original_label) in zip(
+                    consumed, found_keys, found_lookup, strict=True
+                ):
                     if not used and (f_ptype, f_base) not in globally_matched_keys:
                         # Also protect products that ARE expected somewhere else in
                         # the planogram but landed on the wrong shelf due to spatial
@@ -1530,9 +1532,6 @@ class ProductOnShelves(AbstractPlanogramType):
                 panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
                 panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
 
-        config_width_percent = geometry.width_margin_percent
-        config_height_percent = geometry.height_margin_percent
-        config_top_margin_percent = geometry.top_margin_percent
         side_margin_percent = geometry.side_margin_percent
 
         # If planogram has is_background shelves (e.g. a wide promotional panel

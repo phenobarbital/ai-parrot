@@ -188,7 +188,7 @@ class TextMatcher:
         # ----- 2) Contains (fast path)
         if match_type == "contains":
             needle = req_norm_cs if case_sensitive else req_norm
-            for raw, norm in zip(raw_features, norm_features):
+            for raw, norm in zip(raw_features, norm_features, strict=True):
                 haystack = raw if case_sensitive else norm
                 if needle and needle in haystack:
                     return _result(True, 1.0, "contains", [needle])
@@ -196,7 +196,7 @@ class TextMatcher:
 
         # ----- 3) N-gram / Auto (n-gram + fuzzy + contains fallback)
         # quick exact-substring fallback (case-insensitive)
-        for raw, norm in zip(raw_features, norm_features):
+        for _raw, norm in zip(raw_features, norm_features, strict=True):
             if req_norm and req_norm in norm:
                 return _result(True, 1.0, "contains", [required_text])
 
@@ -204,7 +204,7 @@ class TextMatcher:
         best_hits: List[str] = []
         best_kind = "ngram"
 
-        for raw, norm in zip(raw_features, norm_features):
+        for _raw, norm in zip(raw_features, norm_features, strict=True):
             # n-gram containment
             feat_tokens = cls._tokenize(norm, min_len=min_token_len)
             feat_grams = cls._ngrams(feat_tokens, ngram_range[0], ngram_range[1])

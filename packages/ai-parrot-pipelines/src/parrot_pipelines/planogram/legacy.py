@@ -343,7 +343,7 @@ class RetailDetector(AbstractDetector):
                 return levels, bands
 
         # Default fallback: 3-shelf layout if no config
-        hdr_r, mid_r, bot_r = 0.40, 0.30, 0.30
+        hdr_r, mid_r, _bot_r = 0.40, 0.30, 0.30
 
         header_bottom = ry1 + int(hdr_r * roi_h)
         middle_bottom = header_bottom + int(mid_r * roi_h)
@@ -564,7 +564,7 @@ class RetailDetector(AbstractDetector):
                 phase_count = 0
                 phase_rejected = 0
 
-                for _, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes)):
+                for _, ((x1, y1, x2, y2), conf, cls_id) in enumerate(zip(xyxy, confs, classes, strict=True)):
                     gx1, gy1, gx2, gy2 = int(x1) + rx1, int(y1) + ry1, int(x2) + rx1, int(y2) + ry1
 
                     width, height = x2 - x1, y2 - y1
@@ -970,7 +970,7 @@ class RetailDetector(AbstractDetector):
                     img_feat = self.clip.get_image_features(**ip)
                     img_feat /= img_feat.norm(dim=-1, keepdim=True)
                     text_sims = (img_feat @ self.text_feats.T).squeeze().tolist()
-                    s_poster, s_printer, s_box = text_sims[0], text_sims[1], text_sims[2]
+                    _s_poster, s_printer, s_box = text_sims[0], text_sims[1], text_sims[2]
 
                 # --- New Decision Logic ---
                 class_name = None
@@ -1889,7 +1889,10 @@ Analyze all provided images and return the complete JSON response.
                 return True
             # NEW: allow cross-slug promo matching if synonyms overlap
             if e_ptype == "promotional_graphic":
-                fam = lambda s: "canvas-tv" if "canvas-tv" in s else s
+
+                def fam(s):
+                    return "canvas-tv" if "canvas-tv" in s else s
+
                 return fam(e_base) == fam(f_base)
             # containment: allow 'et-4950' inside 'epson et-4950 bundle' etc.
             return e_base in f_base or f_base in e_base
@@ -1974,7 +1977,9 @@ Analyze all provided images and return the complete JSON response.
             # Compute lists for reporting/scoring
             expected_readable = [f"{e_ptype}:{e_base}" if e_base else f"{e_ptype}" for (e_ptype, e_base) in expected]
             found_readable = []
-            for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
+            for _used, (f_ptype, f_base), (_, _, original_label) in zip(
+                consumed, found_keys, found_lookup, strict=True
+            ):
                 # Keep the original label for readability but also show our canonicalization
                 tag = original_label
                 if f_base:
@@ -1985,7 +1990,9 @@ Analyze all provided images and return the complete JSON response.
             # If extras not allowed, mark unexpected any unconsumed found
             unexpected = []
             if not shelf_cfg.allow_extra_products:
-                for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
+                for used, (f_ptype, f_base), (_, _, original_label) in zip(
+                    consumed, found_keys, found_lookup, strict=True
+                ):
                     if not used:
                         lbl = original_label
                         if f_base:
@@ -2267,7 +2274,7 @@ Analyze all provided images and return the complete JSON response.
             for tr in endcap.text_requirements:
                 if getattr(tr, "required_text", None):
                     tags.append(tr.required_text)
-        tag_hint = ", ".join(sorted(set(f"'{t}'" for t in tags if t)))
+        tag_hint = ", ".join(sorted({f"'{t}'" for t in tags if t}))
 
         # downscale for LLM
         image_small = self._downscale_image(image, max_side=1024, quality=78)
@@ -2334,16 +2341,7 @@ Analyze all provided images and return the complete JSON response.
                 panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
                 panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
 
-        # Get planogram advertisement config with safe defaults
-        advertisement_config = getattr(planogram, "advertisement_endcap", {})
-        # # Default values if not in planogram, normalized to image (not ROI)
-        # config_width_percent = advertisement_config.width_margin_percent
-        # config_height_percent = advertisement_config.height_margin_percent
-        # config_top_margin_percent = advertisement_config.top_margin_percent
-        # # E.g., 5% of panel width
-        # side_margin_percent = advertisement_config.side_margin_percent
-
-        config_width_percent = geometry.width_margin_percent
+        # Default values if not in planogram, normalized to image (not ROI)
         config_height_percent = geometry.height_margin_percent
         config_top_margin_percent = geometry.top_margin_percent
         side_margin_percent = geometry.side_margin_percent

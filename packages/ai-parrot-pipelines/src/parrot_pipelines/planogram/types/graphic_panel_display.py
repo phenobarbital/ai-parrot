@@ -108,7 +108,6 @@ class GraphicPanelDisplay(AbstractPlanogramType):
         Returns:
             List of Detection objects for each detected graphic zone.
         """
-        planogram_description = self.config.get_planogram_description()
         endcap_det = roi  # roi is the endcap Detection from compute_roi
 
         if endcap_det is None:

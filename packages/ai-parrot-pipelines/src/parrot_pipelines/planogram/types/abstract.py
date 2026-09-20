@@ -6,9 +6,6 @@ import re
 from abc import ABC
 from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
-_ILLUMINATION_FEATURE_PREFIX = "illumination_status:"
-_DEFAULT_ILLUMINATION_PENALTY: float = 1.0
-
 from PIL import Image
 
 from parrot.models.detections import (
@@ -18,7 +15,7 @@ from parrot.models.detections import (
     ShelfRegion,
 )
 from parrot.models.compliance import ComplianceResult, ComplianceStatus
-from ..contracts import (  # noqa: E402 - follows the module's existing top-level constants
+from ..contracts import (
     AssessmentStatus,
     ComparisonResult,
     CycleContext,
@@ -33,6 +30,7 @@ if TYPE_CHECKING:
     from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy
 
 _ILLUMINATION_FEATURE_PREFIX = "illumination_status:"
+_DEFAULT_ILLUMINATION_PENALTY: float = 1.0
 
 
 class AbstractPlanogramType(ABC):  # noqa: B024 - contract enforced by validate_contract() (FEAT-574)

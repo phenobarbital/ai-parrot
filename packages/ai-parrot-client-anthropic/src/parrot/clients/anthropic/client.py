@@ -102,13 +102,12 @@ class AnthropicClient(AbstractClient):
     _default_model: str = "claude-sonnet-4-5"
     _fallback_model: str = "claude-sonnet-4.5"
     _lightweight_model: str = "claude-haiku-4-5-20251001"
-    # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
-    # multiplies by it), so this MUST stay non-None. 16000 preserves the budget
-    # ask()/ask_stream() fell back to before FEAT-481.
-    _default_max_tokens: int = 16000
     # FEAT-181: Anthropic caches system prefixes ≥ 1024 tokens.
     _min_cache_tokens: int = 1024
 
+    # The Anthropic SDK requires a non-None int (_calculate_nonstreaming_timeout
+    # multiplies by it), so this MUST stay non-None.
+    #
     # 21,333 — not a round number, and not a model limit. ``ask()`` and
     # ``invoke()`` both go through the SDK's NON-streaming
     # ``messages.create()``, and the SDK refuses such a request outright when
@@ -2084,7 +2083,7 @@ Provide your final answer with:
         except InvokeError:
             raise
         except Exception as exc:
-            raise self._handle_invoke_error(exc)
+            raise self._handle_invoke_error(exc) from exc
 
 
 # Backward compatibility alias
