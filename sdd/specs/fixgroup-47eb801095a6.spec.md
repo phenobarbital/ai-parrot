@@ -6,7 +6,7 @@ type: feature
 status: approved
 base_branch: dev
 created: 2026-09-21
-revision: 0.1
+revision: 0.2
 source: "ledger issue:569e81756247 (bug, major) via /sdd-fix group fixgroup:47eb801095a6"
 projects: [ai-parrot, dev-loop]
 tags: [sdd-coder, retry, roster, complexity, FEAT-561, FEAT-559]
@@ -243,15 +243,22 @@ code. Neither is the source of truth.
   failure. It does not affect this defect: the retry set is empty regardless of
   why attempt 1 failed.
 
-## 8. Open questions
+## 8. Open questions — RESOLVED
 
-- **Q1** — Should the native retry handoff reuse `outcome="native_pending"`-style
-  routing that `sdd-worker` already has for attempt 1, or a distinct outcome so
-  the orchestrator can tell "planned native" from "retried onto native"?
-  *Assumption:* distinct, so telemetry can attribute retries.
-- **Q2** — Should Module 3's warning also fire when `strong_models` is empty
-  (today: every complex task blocks at admission)? *Assumption:* yes, same
-  advisory channel.
+Both resolved by Jesus on 2026-09-21, before decomposition. Each confirmed the
+spec's stated assumption; no design change followed.
+
+- **Q1 — RESOLVED: distinct.** The native retry handoff gets its own outcome,
+  separate from the routing `sdd-worker` already uses for a *planned* native
+  attempt 1, so telemetry can distinguish "planned native" from "retried onto
+  native". Module 1 and AC-1/AC-2 assume this; the orchestrator must route the
+  new outcome (R4).
+- **Q2 — RESOLVED: yes.** Module 3's warning also fires when `strong_models`
+  is empty — a roster in which *every* complex/unknown task blocks at
+  admission is the most extreme case of the condition the warning exists to
+  report, and reporting it at `coder_begin_execution` is strictly better than
+  discovering it per task. Same advisory channel, same non-blocking contract
+  (AC-7).
 
 ## 9. Design Research Cross-Check
 
