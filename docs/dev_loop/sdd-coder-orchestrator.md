@@ -192,6 +192,20 @@ and cleanup call (see "Execution lifecycle and suspension policy" below):
    review, push, and the summary — extended with a per-model table for this
    feature.
 
+### Inspection and compact projection (FEAT-584)
+
+Prefer `coder_task_context` and `coder_delivery_report` for known task/delivery chains. For genuinely independent source queries, use one bounded-source `source_inspect_batch` call (at most eight operations, concurrency four); it is read-only and never a shell escape.
+
+`coder_plan`, `coder_wait`, and `coder_status` retain `response_mode="full"` as their public default. The worker may explicitly request `"compact"`, but must recover mandatory evidence/pages with `coder_read_artifact` before dispatch, validation, merge, or acceptance. Compact output never changes routing, coverage, ownership, retry, fidelity, or the 90-second client poll.
+
+### Review boundary and compaction (FEAT-584)
+
+After settlement: persist checkpoint; request at most one supported between-turn compaction; record its actual receipt; reload/validate the checkpoint; start a fresh independent reviewer. Do not compact per task/tool, inside a tool call, while work is live, or by invoking `/compact` through Bash.
+
+`pre_review_compaction="auto"` is a policy request, not a host/context capability assertion. Record `skipped`, `unsupported`, `failed`, or unsettled `in_progress` explicitly; never blindly retry an unsettled receipt. Check installation diagnostics against the actual worktree, but never treat them as a capability handshake. Parent compaction is not evidence of native-child compaction.
+
+The [SDD execution optimization](sdd-execution-optimization.md) guide records the current no-default decision. API defaults and host limits above remain unchanged until the concrete host driver, real receipt/review continuation, and controlled pilot provide sufficient evidence.
+
 ## Outcomes
 
 | Outcome | Meaning | `sdd-worker` does |

@@ -91,6 +91,17 @@ Per-task execution:
    files. Verify git diff --cached --name-only.
 8. Commit code as feat(<feature-slug>): TASK-NNN - <title>.
 9. Close the task with scripts/sdd/close_task.sh TASK-NNN <feature-slug> verified.
+
+## Deterministic task inspection and closure (FEAT-584)
+Keep wiki-first and read the complete task contract through bounded references.
+Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
+Use the existing declared test selector, environment protection and semantic delivery review.
+Finalize only with structured green evidence and the exact implementation HEAD; call
+python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
+Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
+Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
+
 10. Fill the Completion Note in the completed task file.
 11. Verify staged SDD files only, then commit sdd: complete TASK-NNN - <title>.
 

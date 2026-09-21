@@ -105,6 +105,15 @@ from disk exactly as given — never guess a task's file path from its id.
 ## Steps
 
 ### a) Read and Understand Task
+
+## Bounded inspection and delivery (FEAT-584)
+Preserve wiki-first discovery and the complete task acceptance/file contract.
+Batch only independent read-only inspections; inspect every partial error and snapshot hash.
+Do not interpret compact payloads, background finished or a log as task acceptance.
+Keep validation selectors and full native coder_feedback; do not repeat unchanged checks
+without a reason. Commit code only under the existing delivery contract; task closure
+and feature compaction remain the worker's responsibility, never one compact per task.
+
 - Read the full task file at `task_file`.
 - Extract and note:
   - **Exact files to create** (list them)

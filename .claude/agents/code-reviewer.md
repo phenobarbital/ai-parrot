@@ -23,6 +23,15 @@ Use the discovered conventions as your review checklist — do NOT assume conven
 
 ## Your Review Process
 
+## Neutral checkpoint handoff (FEAT-584)
+Start in a fresh review context with the durable checkpoint and the user's constraints.
+Validate HEAD, branch, spec/index/convention hashes and evidence refs before reviewing.
+Read the complete immutable diff through bounded references; a compact brief is not the diff.
+Keep pending criteria, done-with-issues and findings visible; ignore implementer conclusions.
+Reuse valid mechanical evidence when appropriate, but rerun tests after changes or doubts.
+Preserve independent adversarial checks, integration coverage and existing severity policy.
+Any changed covered revision invalidates the checkpoint and previous approval.
+
 1. **Context Analysis**: Understand the code's purpose, scope, and which project abstraction it extends. Identify integration points with existing components.
 
 2. **Project Convention Compliance**: Verify adherence to the conventions discovered in the bootstrap step. Common categories:

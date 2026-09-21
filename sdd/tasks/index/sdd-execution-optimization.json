@@ -5,21 +5,22 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-21",
-  "completed_at": null,
+  "completed_at": "2026-09-21T16:50:35+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "decomposition_complete": false,
-  "decomposition_notes": "Contratos comunes descompuestos. Q1 de la spec bloquea únicamente el driver específico de M5. Metadata informativa: el scheduler existente no aplica deferred_work. TASK-3576 debe permanecer pendiente hasta ampliar depends_on con las tareas nuevas del driver y pasar AC11 real.",
+  "decomposition_notes": "Contratos comunes descompuestos. M5b (driver concreto, TASK-3577) decompuesta tras enmienda Q1/M0 aprobada (commit d80bb0e1b). TASK-3576 depende ahora de TASK-3575 y TASK-3577; permanece pendiente hasta que AC11 tenga evidencia de piloto real con host homologado -- no puede cerrarse solo con TASK-3577 mergeada. Q1b (subagente/fork) sigue abierta y explícitamente no bloquea el resto de la feature.",
   "deferred_work": [
     {
       "module": "M5 host driver and managed installation",
-      "reason": "Q1: M0 must establish target context, checkpoint transport and resumption API before decomposition.",
+      "reason": "Q1 RESOLVED for main-loop (spec amended, commit d80bb0e1b): M0 spike found no Python-side call surface to $.session.compact() exists; driver rescoped from caller to receipt-reader. Subagent/fork addressing split off as Q1b, still genuinely open (needs a follow-up spike with real interactive host access).",
       "prerequisite_task": "TASK-3555",
       "blocking_acceptance": [
         "AC11"
       ],
       "completion_gate_task": "TASK-3576",
-      "required_next_action": "Amend and approve spec with verified paths/contracts; rerun sdd-task to reserve/add driver tasks and wire final acceptance dependencies."
+      "driver_task": "TASK-3577",
+      "required_next_action": "TASK-3577 (done) built the concrete receipt-reader driver; supports()/compact() gate and event-record real, but no observable host receipt surface was found (status=failed, honest). TASK-3576 (done) delivered the rollout-acceptance record with AC11/AC15/AC16/AC23 explicitly pending and decided against a default. AC11 remains open pending a follow-up spike with genuine interactive host access to find/prove a receipt-observation surface (Q1b), plus a real matched pilot meeting the documented thresholds -- this is intentionally not closed by decomposition alone."
     }
   ],
   "tasks": [
@@ -30,7 +31,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -38,8 +39,9 @@
       "parallelism_notes": "Independiente del engine; usar sesión de prueba propia. El bloqueo externo del host no debe serializar M1/M2/M9.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3555-compaction-capability-spike.md"
+      "completed_at": "2026-09-21T01:09:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3555-compaction-capability-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3556",
@@ -48,7 +50,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -56,8 +58,9 @@
       "parallelism_notes": "Owner único del reader y runner; independiente de core. Los tests MCP se añaden después para no fragmentar la unidad de ejecución.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3556-bounded-inspection-batch.md"
+      "completed_at": "2026-09-21T00:54:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3556-bounded-inspection-batch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3557",
@@ -66,7 +69,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -76,8 +79,9 @@
       "parallelism_notes": "Depende de TASK-3556 por implementación M1. Tests de integración y benchmark propios; no comparte fuentes del runner.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3557-inspection-mcp-benchmark.md"
+      "completed_at": "2026-09-21T01:24:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3557-inspection-mcp-benchmark.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3558",
@@ -86,7 +90,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -94,8 +98,9 @@
       "parallelism_notes": "Único owner de optimization_models.py; independiente de M1/M0/M9. Los consumidores dependen de estos tipos.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3558-optimization-domain-models.md"
+      "completed_at": "2026-09-21T01:45:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3558-optimization-domain-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3559",
@@ -104,7 +109,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -114,8 +119,9 @@
       "parallelism_notes": "Depende de TASK-3558 por modelos. Solo evidence.py y sus pruebas; puede avanzar junto a M1/M9.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3559-durable-execution-evidence.md"
+      "completed_at": "2026-09-21T01:59:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3559-durable-execution-evidence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3560",
@@ -124,7 +130,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -134,8 +140,9 @@
       "parallelism_notes": "Depende de TASK-3559 por persistencia. Primer owner en la cadena de engine/toolkit/models/test_toolkit.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3560-native-events-integration.md"
+      "completed_at": "2026-09-21T03:53:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3560-native-events-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3561",
@@ -144,7 +151,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -154,8 +161,9 @@
       "parallelism_notes": "Depende de TASK-3560 por store conectado y para serializar engine/toolkit/models. Helpers y tests propios.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3561-sdd-purpose-inspection.md"
+      "completed_at": "2026-09-21T04:19:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3561-sdd-purpose-inspection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3562",
@@ -164,7 +172,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -174,8 +182,9 @@
       "parallelism_notes": "Depende de TASK-3561 para serializar toolkit/models/test_toolkit y reutilizar consultas; views no toca engine.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3562-compact-coder-responses.md"
+      "completed_at": "2026-09-21T04:40:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3562-compact-coder-responses.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3563",
@@ -184,7 +193,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -194,8 +203,9 @@
       "parallelism_notes": "Depende de TASK-3559 por evidencia durable. No toca toolkit/engine; puede avanzar junto a TASK-3560–TASK-3562.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3563-background-registry.md"
+      "completed_at": "2026-09-21T04:58:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3563-background-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3564",
@@ -204,7 +214,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -214,8 +224,9 @@
       "parallelism_notes": "Depende de TASK-3563: segundo owner de background.py; aporta procesos reales al registro. No cambia JobTable ni toolkit.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3564-background-validation-supervisor.md"
+      "completed_at": "2026-09-21T05:18:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3564-background-validation-supervisor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3565",
@@ -224,7 +235,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -235,8 +246,9 @@
       "parallelism_notes": "Depende de TASK-3562 para serializar toolkit/models y de TASK-3564 por supervisor. Único owner actual de engine/test_toolkit.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3565-background-mcp-gates.md"
+      "completed_at": "2026-09-21T11:05:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3565-background-mcp-gates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3566",
@@ -245,7 +257,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -255,8 +267,9 @@
       "parallelism_notes": "Depende de TASK-3559 por refs durables. CLI y tests propios; puede ejecutarse junto a integraciones MCP.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3566-deterministic-task-finalization.md"
+      "completed_at": "2026-09-21T10:31:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3566-deterministic-task-finalization.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3567",
@@ -265,7 +278,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -276,8 +289,9 @@
       "parallelism_notes": "Depende de TASK-3565 por receipts y gates de background, y de TASK-3566 por cierre/evidencia finalizada. Archivos propios.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3567-review-checkpoint.md"
+      "completed_at": "2026-09-21T11:32:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3567-review-checkpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3568",
@@ -286,7 +300,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -297,8 +311,9 @@
       "parallelism_notes": "Depende de TASK-3555 por hallazgos de capacidad y de TASK-3567 por checkpoint validable. No comparte archivos con el driver diferido.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3568-portable-phase-boundary.md"
+      "completed_at": "2026-09-21T11:49:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3568-portable-phase-boundary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3569",
@@ -307,7 +322,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -315,8 +330,9 @@
       "parallelism_notes": "Independiente del engine y de todos los prompts; único owner de cli.py. Revalidar cambios recientes de wiki antes de implementar.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3569-lazy-wiki-hook-startup.md"
+      "completed_at": "2026-09-21T12:08:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3569-lazy-wiki-hook-startup.md",
+      "verification": "verified-with-issues"
     },
     {
       "id": "TASK-3570",
@@ -325,7 +341,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -340,8 +356,9 @@
       "parallelism_notes": "Depende de TASK-3556/TASK-3561/TASK-3562/TASK-3565/TASK-3566/TASK-3568 por contratos públicos definitivos. Owner único de los dos worker Claude y su regresión.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3570-worker-optimization-contracts.md"
+      "completed_at": "2026-09-21T12:26:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3570-worker-optimization-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3571",
@@ -350,7 +367,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -361,8 +378,9 @@
       "parallelism_notes": "Depende de TASK-3567/TASK-3568 por handoff y outcomes; archivos separados del worker de TASK-3570.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3571-coder-reviewer-handoff.md"
+      "completed_at": "2026-09-21T12:36:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3571-coder-reviewer-handoff.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3572",
@@ -371,7 +389,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -382,8 +400,9 @@
       "parallelism_notes": "Depende de TASK-3566/TASK-3568 por cierre y política portable. No comparte archivos con worker Claude ni reviewer.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3572-start-cross-host-contracts.md"
+      "completed_at": "2026-09-21T12:44:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3572-start-cross-host-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3573",
@@ -392,7 +411,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -403,8 +422,9 @@
       "parallelism_notes": "Depende de TASK-3567/TASK-3568 por checkpoint/política. Archivos distintos de start y agentes; puede avanzar junto a TASK-3570–TASK-3572.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3573-review-done-flow-contracts.md"
+      "completed_at": "2026-09-21T12:52:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3573-review-done-flow-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3574",
@@ -413,7 +433,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -424,8 +444,9 @@
       "parallelism_notes": "Depende de TASK-3559/TASK-3565 por eventos durables y receipts background definitivos. Script/tests propios; paralelo a documentación.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3574-execution-profile.md"
+      "completed_at": "2026-09-21T13:08:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3574-execution-profile.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3575",
@@ -434,7 +455,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -450,8 +471,9 @@
       "parallelism_notes": "Depende de TASK-3557/TASK-3569/TASK-3570/TASK-3571/TASK-3572/TASK-3573/TASK-3574 por transporte, hook, twins y perfiles completos; integración final offline.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3575-optimization-workflow-regression.md"
+      "completed_at": "2026-09-21T13:59:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3575-optimization-workflow-regression.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3576",
@@ -460,18 +482,43 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3575"
+        "TASK-3575",
+        "TASK-3577"
       ],
       "parallel": true,
-      "parallelism_notes": "Depende de TASK-3575 por integración offline. Además existe gate documental obligatorio M0→enmienda→tareas M5→smoke live; el scheduler actual no interpreta metadata adicional y el worker debe mantener esta tarea pendiente.",
+      "parallelism_notes": "Depende de TASK-3575 (integración offline) y TASK-3577 (driver concreto M5b, ahora decompuesta tras la enmienda Q1/M0). AC11 exige evidencia de piloto real con host homologado -- no puede declararse cumplido por unsupported/mocks, ni siquiera con TASK-3577 mergeada; esta tarea documenta lo verificable offline y reporta honestamente si el piloto live sigue pendiente.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3576-optimization-rollout-evidence.md"
+      "completed_at": "2026-09-21T16:25:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3576-optimization-rollout-evidence.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3577",
+      "slug": "claude-compaction-driver",
+      "title": "Implementar driver concreto de compactación (M5b, lector de receipt)",
+      "feature": "sdd-execution-optimization",
+      "feature_id": "FEAT-584",
+      "spec": "sdd/specs/sdd-execution-optimization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3555",
+        "TASK-3567",
+        "TASK-3568"
+      ],
+      "parallel": true,
+      "parallelism_notes": "M5b decompuesta tras la enmienda Q1/M0 (commit d80bb0e1b). Depende de TASK-3555 (spike M0), TASK-3567 (checkpoint.py — context_id producer), TASK-3568 (phase_boundary.py — Protocol a implementar). Reservada vía reserve_ids.py FEAT-387; ledger commit 6b8528908.",
+      "assigned_to": null,
+      "started_at": "2026-09-21T15:02:54+00:00",
+      "completed_at": "2026-09-21T16:19:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3577-claude-compaction-driver.md",
+      "verification": "verified"
     }
   ]
 }
