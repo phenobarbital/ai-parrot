@@ -20,7 +20,7 @@
       ],
       "completion_gate_task": "TASK-3576",
       "driver_task": "TASK-3577",
-      "required_next_action": "TASK-3577 (decomposed, in-progress) builds the concrete receipt-reader driver. AC11 still requires TASK-3576 to obtain real live-host pilot evidence -- cannot be satisfied by TASK-3577 alone, unsupported results, or mocks."
+      "required_next_action": "TASK-3577 (done) built the concrete receipt-reader driver; supports()/compact() gate and event-record real, but no observable host receipt surface was found (status=failed, honest). TASK-3576 (done) delivered the rollout-acceptance record with AC11/AC15/AC16/AC23 explicitly pending and decided against a default. AC11 remains open pending a follow-up spike with genuine interactive host access to find/prove a receipt-observation surface (Q1b), plus a real matched pilot meeting the documented thresholds -- this is intentionally not closed by decomposition alone."
     }
   ],
   "tasks": [
@@ -461,7 +461,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -472,8 +472,8 @@
       "parallelism_notes": "Depende de TASK-3575 (integración offline) y TASK-3577 (driver concreto M5b, ahora decompuesta tras la enmienda Q1/M0). AC11 exige evidencia de piloto real con host homologado -- no puede declararse cumplido por unsupported/mocks, ni siquiera con TASK-3577 mergeada; esta tarea documenta lo verificable offline y reporta honestamente si el piloto live sigue pendiente.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3576-optimization-rollout-evidence.md"
+      "completed_at": "2026-09-21T16:25:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3576-optimization-rollout-evidence.md"
     },
     {
       "id": "TASK-3577",

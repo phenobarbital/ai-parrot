@@ -153,4 +153,28 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Implementado 2026-09-21. Nuevo `docs/dev_loop/sdd-execution-optimization.md` — registro
+operacional de FEAT-584: matriz de capacidad/rollout, tabla de estado AC1-23 (AC11/AC15/AC16/AC23
+marcados honestamente como pendientes, sin excepción reclamada), protocolo de piloto emparejado
+con umbrales explícitos de activación (≥20% menos requests, ≥15% menor p50, sin regresión de
+calidad), y la decisión de rollout: **no activar un default general**, mantener todo opt-in/off
+hasta que TASK-3577 asiente, un host real produzca un receipt versionado con continuidad de
+revisión desde checkpoint validado, y el piloto emparejado cumpla los umbrales.
+`docs/dev_loop/sdd-coder-orchestrator.md` referencia el nuevo doc y documenta las políticas de
+inspección/proyección compacta y frontera de revisión/compactación ya cableadas en
+`sdd-worker.md` por TASK-3570/3571.
+
+Este es el `completion_gate_task` de M5 (AC11/AC16) — cierra la decomposición de FEAT-584 sin
+declarar AC11/AC16/AC23 cumplidos por defecto: quedan explícitamente pendientes de evidencia de
+host real y piloto, documentado como tal en la propia tabla AC1-23 del documento entregado.
+
+Nota de proceso: la entrega inicial (codex/gpt-5.6-terra vía MCP) fue correcta y completa
+(verificado archivo por archivo — exactamente los 2 archivos declarados) pero el motor
+`parrot-sdd-coder` falló en extraer/commitear el trabajo del coder, reportándolo como
+`dirty_task_worktree` → `complex_model_unavailable` (tercera ocurrencia del mismo defecto de
+motor conocido esta sesión — ver hallazgo de ledger no archivable sobre
+`engine.py::_consolidate`). El commit fue realizado por el orquestador tras verificar que el
+diff coincidía exactamente con la tabla de archivos declarada de la tarea.
+
+Seat: gpt-5.6-terra (codex) — orquestador realizó el commit tras verificación · Backend: codex
+· Model: gpt-5.6-terra · Attempts: 1 · Duration: 224.3s · Tokens: n/a (usage_known=false)
