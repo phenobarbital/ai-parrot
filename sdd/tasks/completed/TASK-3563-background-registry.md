@@ -188,4 +188,42 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `3023c07826484209ad448d91822776b3`). Created
+only the two listed targets:
+
+- `background.py` CREATE — `BackgroundRegistry` with exactly the two public methods the
+  blueprint fixes: `register(registration) -> str` and `status(execution_id, handle,
+  since_revision=None, tail_bytes=2048) -> BackgroundStatus`. Registrations persist durably
+  under `store.root/executions/<execution_id>/background/<sha256(handle)>.json` (atomic
+  temp-file + `os.replace`), keyed so a handle from a different execution_id is
+  indistinguishable from never-registered. `status()` degrades to `unknown`/`exit_code=None`/
+  `stale=True` whenever `owner_instance_id` no longer matches the querying instance and no
+  terminal receipt exists — never resurrects state from an absent/reused PID. Tail reads use
+  bounded `seek()+read()` (never a whole-file read), UTF-8 codepoint-boundary safe; a 1s I/O
+  budget overrun raises `BackgroundBudgetExceededError` rather than a false terminal state.
+- `test_background_status.py` CREATE — 5 tests.
+
+Design decision flagged and accepted: the spec's M8 module-level skeleton also shows a
+`ValidationSupervisor` class and toolkit/engine wiring, but those live in files not in this
+task's table (later M8 tasks own them). Since `register`/`status` alone cannot progress state
+past pending without some transition write-path, the coder added one internal,
+underscore-prefixed method `_record_transition(execution_id, handle, *, state, outcome,
+exit_code, log_path)` — documented as callable only by the owning engine/supervisor/
+host-observation authority in this same process, never the LLM. A later M8 task is expected
+to call this hook or introduce its own. Accepted: this is a private helper within the single
+CREATE file this task owns, not a change to any other file, and does not invent a public
+contract beyond the two blueprint-fixed methods.
+
+No MCP tool was registered (confirmed by the coder via grep) so the TASK-3560/3561/3562
+allowlist collateral pattern does not apply here.
+
+Validation:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_status.py -q` → 5 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_models.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_evidence.py -q` → 12 passed (combined regression check).
+- Full scoped `packages/ai-parrot/tests/flows/dev_loop/sdd_coder` suite → 430 passed (up from 425 at TASK-3562).
+- `git status --porcelain --untracked-files=all` clean except gitignored build artifacts.
+- `ruff check` clean (one ASYNC240 blocking-call-in-async finding self-corrected by the coder before commit); `black --line-length 120` applied.
+
+Review: `coder-review:5cb7ae49302086b68318ef58` (zero fix commits — clean delivery).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 921801ms (~15m22s) · Tokens: 205247 (subagent total, in/out split not exposed for native).
