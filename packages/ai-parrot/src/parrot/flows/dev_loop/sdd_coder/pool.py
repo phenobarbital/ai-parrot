@@ -189,9 +189,7 @@ class ExecutionPool:
             Zero or more human-readable warnings; never raises.
         """
         if not self._complexity.strong_models:
-            return [
-                "Roster has no strong models; every complex/unknown task will block at admission."
-            ]
+            return ["Roster has no strong models; every complex/unknown task will block at admission."]
 
         restricted_assessment = ComplexityAssessment.model_construct(classification="complex")
         restricted_seats = eligible_seats(restricted_assessment, self._seats, self._complexity)

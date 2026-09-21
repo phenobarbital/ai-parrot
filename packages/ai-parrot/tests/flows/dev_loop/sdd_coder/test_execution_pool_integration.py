@@ -1489,9 +1489,7 @@ def test_empty_strong_models_is_reported_at_execution_start(tmp_path: Path) -> N
 
     view = _pool_for_roster_warning(tmp_path, roster).view()
 
-    assert view.roster_warnings == [
-        "Roster has no strong models; every complex/unknown task will block at admission."
-    ]
+    assert view.roster_warnings == ["Roster has no strong models; every complex/unknown task will block at admission."]
     assert view.status == "active"
     assert not view.fallback_required
     assert view.fallback_reason == ""
