@@ -25,6 +25,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple
 
+from pydantic import ValidationError as PydanticValidationError
+
 if TYPE_CHECKING:
     from parrot.flows.dev_loop.sdd_coder.models import ExecutionPoolView
 
@@ -62,6 +64,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderJob,
     CoderPlan,
     ExecutionSnapshot,
+    NativeObservation,
     NativePrep,
     OrphanBranch,
     PlannedTask,
@@ -69,6 +72,12 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     RosterSeat,
     SeatProbeResult,
     TaskResult,
+)
+from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef, WorkflowEvent
+from parrot.flows.dev_loop.sdd_coder.evidence import (
+    EvidenceConflictError,
+    EvidenceCorruptionError,
+    ExecutionEvidenceStore,
 )
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityAssessment,
@@ -405,12 +414,20 @@ class SddCoderEngine:
         # `telemetry_dir` constructor kwarg (e.g. from a test, or a future
         # toolkit YAML override) still wins over conf either way.
         self._sink: Optional[CoderTelemetrySink] = None
+        # FEAT-584 M2/R3: durable, out-of-worktree evidence store for
+        # `record_native_observation` (and, later, other M2/M4 consumers).
+        # Bound to the SAME resolved root the telemetry sink uses (spec R3:
+        # "Reutilizar resolve_durable_root") -- no collision, since the sink
+        # writes flat `<feature_id>.jsonl` files directly under that root
+        # while the store owns its own `executions/` subdirectory.
+        self._evidence_store: Optional[ExecutionEvidenceStore] = None
         if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
             from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
 
             effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
             telemetry_root = resolve_durable_root(effective_dir, worktree_base_path=self._base_path)
             self._sink = CoderTelemetrySink(telemetry_root)
+            self._evidence_store = ExecutionEvidenceStore(telemetry_root)
 
     async def open(self) -> None:
         """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available.
@@ -764,6 +781,110 @@ class SddCoderEngine:
             del self._execution_owners[canonical_worktree]
 
         return pool.view()
+
+    async def record_native_observation(
+        self,
+        feature: str,
+        worktree: str,
+        execution_id: str,
+        observation: dict[str, object],
+    ) -> EvidenceRef:
+        """Validate an issued native attempt and persist an observation, not acceptance.
+
+        Persists a `delivery.observed` `WorkflowEvent` (source="worker_observation")
+        keyed to the attempt's own `task_id`/`attempt_uid`, once identity has been
+        checked against THIS engine's own bookkeeping. A foreign execution, an
+        attempt this execution never issued for that task, or a repeated
+        `event_id` reported with different content are all rejected BEFORE
+        anything is written (spec R3: "Rechaza identidades ajenas y payloads
+        incompatibles repetidos"). Never releases the attempt's pool reservation
+        and never calls `merge()`/`_consolidate` -- an observation is evidence,
+        not acceptance (spec: "no libera reservas ... no sustituye coder_merge").
+
+        Args:
+            feature: Feature identifier (matches per-spec index header).
+            worktree: Absolute path to the feature worktree.
+            execution_id: The execution that must own both the worktree and the
+                referenced native reservation.
+            observation: Raw MCP payload; validated here against
+                `NativeObservation` independently of any upstream toolkit-level
+                schema check (this method is also called directly by tests).
+
+        Returns:
+            The durable `EvidenceRef` for the appended (or already-idempotent)
+            event.
+
+        Raises:
+            CoderFailure with codes:
+                - evidence_invalid: `observation` fails schema validation
+                - execution_not_found: unknown execution_id
+                - execution_scope_mismatch: execution bound to a different feature/worktree
+                - attempt_not_found: attempt_uid is not an issued native reservation for task_id
+                - observation_conflict: event_id already recorded with different content
+                - evidence_persistence_failed: durable evidence store unavailable or write failed
+        """
+        ctx = await self._resolve_feature(feature, worktree)
+
+        try:
+            obs = NativeObservation.model_validate(observation)
+        except PydanticValidationError as exc:
+            raise CoderFailure("evidence_invalid", "observation failed schema validation", errors=exc.errors()) from exc
+
+        if execution_id not in self._executions:
+            raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+        pool = self._executions[execution_id]
+        if pool.worktree_path != ctx.worktree or pool.feature_id != ctx.feature_id:
+            raise CoderFailure(
+                "execution_scope_mismatch",
+                f"execution {execution_id} is bound to feature {pool.feature_id!r} / worktree "
+                f"{pool.worktree_path!r}, not {ctx.feature_id!r} / {ctx.worktree!r}",
+            )
+
+        reservation_key = (execution_id, obs.task_id)
+        reserved_uid = self._native_reservations.get(reservation_key)
+        if reserved_uid is None or reserved_uid != obs.attempt_uid:
+            raise CoderFailure(
+                "attempt_not_found",
+                f"attempt {obs.attempt_uid} is not an issued native reservation for {obs.task_id} "
+                f"in execution {execution_id}",
+            )
+
+        if self._evidence_store is None:
+            raise CoderFailure("evidence_persistence_failed", "no durable evidence store is configured for this engine")
+
+        try:
+            event = WorkflowEvent(
+                event_id=obs.event_id,
+                kind="delivery.observed",
+                execution_id=execution_id,
+                task_id=obs.task_id,
+                attempt_uid=obs.attempt_uid,
+                timestamp=obs.observed_at,
+                source="worker_observation",
+                payload={
+                    "agent_id": obs.agent_id,
+                    "observed_kind": obs.kind,
+                    "started_at": obs.started_at.isoformat() if obs.started_at else None,
+                    "ended_at": obs.ended_at.isoformat() if obs.ended_at else None,
+                    "terminal": obs.terminal,
+                    "evidence_ref": obs.evidence_ref.model_dump(),
+                },
+            )
+        except PydanticValidationError as exc:
+            raise CoderFailure(
+                "evidence_invalid", "observation could not be recorded as a valid event", errors=exc.errors()
+            ) from exc
+
+        try:
+            return await self._evidence_store.append_event(event)
+        except EvidenceConflictError as exc:
+            raise CoderFailure("observation_conflict", str(exc)) from exc
+        except EvidenceCorruptionError as exc:
+            raise CoderFailure("evidence_persistence_failed", str(exc)) from exc
+        except ValueError as exc:
+            raise CoderFailure("evidence_invalid", str(exc)) from exc
+        except OSError as exc:
+            raise CoderFailure("evidence_persistence_failed", str(exc)) from exc
 
     async def _resolve_feature(self, feature: str, worktree: str) -> _FeatureCtx:
         """Match sdd/tasks/index/*.json headers in the sdd-worker.md §1 order.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityBlock,
     ComplexityPolicy,
 )
+from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef
 
 SeatKind = Literal["mcp", "native"]
 TaskOutcome = Literal[
@@ -78,6 +80,18 @@ ERROR_CODES: frozenset[str] = frozenset(
         "model_suspended",
         "suspension_history_unavailable",
         "suspension_persistence_failed",
+        # FEAT-559: `suspend_model` already raises this (engine.py) for an
+        # attempt_uid that is not one of the pool's own admitted reservations;
+        # it belongs in this closed set alongside the other admission-scoped
+        # codes above, and `coder_record_native_observation` (FEAT-584 M2/R3)
+        # raises it too for an attempt_uid this execution never issued.
+        "attempt_not_found",
+        # FEAT-584 M2/R3: `coder_record_native_observation` error codes.
+        "observation_conflict",
+        "artifact_not_found",
+        "artifact_scope_mismatch",
+        "evidence_persistence_failed",
+        "evidence_invalid",
     }
 )
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
@@ -97,6 +111,20 @@ def _check_uuid(v: str) -> str:
     except (ValueError, AttributeError, TypeError) as exc:
         raise ValueError(f"execution_id must be a valid UUID string, got {v!r}") from exc
     return v
+
+
+def _require_utc(value: datetime) -> datetime:
+    """Reject a naive or non-UTC-offset timestamp (spec R3: 'timestamps UTC para correlación')."""
+    if value.tzinfo is None or value.utcoffset() != timedelta(0):
+        raise ValueError(f"timestamp must be timezone-aware UTC, got {value!r}")
+    return value
+
+
+def _require_utc_optional(value: Optional[datetime]) -> Optional[datetime]:
+    """Apply `_require_utc` only when a timestamp is actually present."""
+    if value is None:
+        return value
+    return _require_utc(value)
 
 
 class RosterSeat(BaseModel):
@@ -605,4 +633,53 @@ class CoderEndExecutionArgs(_Args):
     """
 
     execution_id: str = Field(..., min_length=1)
+
+
+class NativeObservation(BaseModel):
+    """Typed `coder_record_native_observation.observation` payload (FEAT-584 spec §2 R3).
+
+    Reports host-observed agent linkage and completion for an already-issued
+    native attempt -- never authoritative acceptance, never a released
+    reservation (the engine's own `record_native_observation` enforces that
+    part; this model only enforces the payload's own shape).
+
+    `started_at`/`ended_at` may both be omitted: the real span is unknown
+    when only the arrival time of the result is known (spec: "El span real
+    puede ser null"). A supplied pair must not be reversed -- no invented
+    duration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(..., min_length=1)
+    task_id: str
+    attempt_uid: str = Field(..., min_length=1)
+    agent_id: str = Field(..., min_length=1)
+    observed_at: datetime
+    kind: Literal["dispatched", "finished"]
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    terminal: Optional[Literal["completed", "failed", "salvaged"]] = None
+    evidence_ref: EvidenceRef
+
+    _tid = field_validator("task_id")(_check_task_id)
+    _attempt_uuid = field_validator("attempt_uid")(_check_uuid)
+    _observed_utc = field_validator("observed_at")(_require_utc)
+    _started_utc = field_validator("started_at")(_require_utc_optional)
+    _ended_utc = field_validator("ended_at")(_require_utc_optional)
+
+    @model_validator(mode="after")
+    def _reject_reversed_span(self) -> "NativeObservation":
+        """Reject an invented (reversed) span when both endpoints are supplied."""
+        if self.started_at is not None and self.ended_at is not None and self.ended_at < self.started_at:
+            raise ValueError(
+                f"observation has a reversed span: ended_at {self.ended_at} < started_at {self.started_at}"
+            )
+        return self
+
+
+class CoderRecordNativeObservationArgs(CoderPlanArgs):
+    """`coder_record_native_observation` arguments; `observation` is a fully typed schema (spec R3)."""
+
+    observation: NativeObservation
     _exec = field_validator("execution_id")(_check_uuid)

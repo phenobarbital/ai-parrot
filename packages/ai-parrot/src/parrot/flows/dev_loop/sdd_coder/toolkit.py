@@ -21,6 +21,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderPlanArgs,
     CoderPrepareNativeArgs,
     CoderRecordFeedbackArgs,
+    CoderRecordNativeObservationArgs,
     CoderRecordReviewArgs,
     CoderResult,
     CoderRunChunkArgs,
@@ -63,6 +64,8 @@ class SddCoderToolkit(AbstractToolkit):
         "coder_cleanup": CoderCleanupArgs,
         "coder_record_feedback": CoderRecordFeedbackArgs,
         "coder_record_review": CoderRecordReviewArgs,
+        # FEAT-584 M2/R3: worker-reported native observation (no acceptance, no release).
+        "coder_record_native_observation": CoderRecordNativeObservationArgs,
         # FEAT-559: split from CoderPlanArgs -- the repository-wide feedback report
         # is read-only and never starts or requires an execution (CoderPlanArgs
         # itself now REQUIRES execution_id, so reusing it here would be a bug).
@@ -251,6 +254,28 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run(
             "coder_record_review",
             self._engine.record_review(feature, worktree, CoderReview(**review), execution_id=execution_id),
+        )
+
+    async def coder_record_native_observation(
+        self, feature: str, worktree: str, execution_id: str, observation: Dict[str, Any]
+    ) -> CoderResult:
+        """Persist host observations for an issued native attempt without accepting it.
+
+        Reports agent linkage and observed dispatch/completion for a native
+        attempt `coder_prepare_native` already issued in THIS execution.
+        Supply event_id, task_id, attempt_uid, agent_id, observed_at,
+        kind=dispatched|finished, evidence_ref; started_at/ended_at/terminal
+        are optional -- leave the span null when only the arrival of the
+        result is known, never infer it from an immediate dispatch tool_result.
+        Never marks the task accepted, never releases the attempt's
+        reservation and never substitutes for coder_merge; a repeated
+        event_id reported with different content is rejected as a conflict,
+        and an attempt/execution this engine did not itself issue is
+        rejected as a foreign identity.
+        """
+        return await self._run(
+            "coder_record_native_observation",
+            self._engine.record_native_observation(feature, worktree, execution_id, observation),
         )
 
     async def coder_feedback_report(self, feature: str, worktree: str) -> CoderResult:
