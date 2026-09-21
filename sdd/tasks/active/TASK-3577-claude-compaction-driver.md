@@ -42,7 +42,7 @@ porcentajes del profiler no son ahorros garantizados.
   ubicación del host) donde aparezca la línea de receipt del plugin
   (`"<percent>% reduction; ..."` / `"fallback to built-in summary (...)"`,
   `hooks/fast-jev.ts:179-190,270-289`, ya hasheado por TASK-3555). **Si no se encuentra una
-  superficie real, el driver debe devolver `status="unknown"` con la investigación documentada en
+  superficie real, el driver debe devolver `status="failed"` (backend="unknown") con la investigación documentada en
   el `reason` — nunca fabricar una fuente de observación ni declarar `completed` sin evidencia
   real.** Esto es un resultado honesto válido, no un fallo de la tarea.
 - Cablear la referencia concreta de este driver/CLI en la sección "Compact once, between turns" del
@@ -64,7 +64,7 @@ real, nunca de esta tarea de implementación de driver.
 | `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/checkpoint.py` | MODIFY | Añadir `context_id="main"` al dict `fields` de `prepare_review_checkpoint` (una línea) |
 | `.claude/agents/sdd-worker.md` | MODIFY | Referenciar el comando/CLI real del driver en el paso "Compact once, between turns" |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md` | MODIFY | Twin empaquetado — mismo cambio, byte-idéntico al canónico |
-| `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_claude_compaction_driver.py` | CREATE | Tests reales offline: gate por worktree, emisión de evento, resultado honesto `unknown`/`unsupported_host` |
+| `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_claude_compaction_driver.py` | CREATE | Tests reales offline: gate por worktree, emisión de evento, resultado honesto `failed` (sin superficie)/`unsupported` |
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -175,6 +175,30 @@ async def prepare_review_checkpoint(
 valor; `compute_checkpoint_id(cls, **fields: object) -> str` (`optimization_models.py:300`) ya
 acepta cualquier campo del modelo por `**kwargs` — no requiere cambio de firma.
 
+`packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py:320` — **contrato
+exacto de `CompactionReceipt`, cerrado, no modificar en esta tarea** (`status` NO incluye
+`"unknown"`; ese valor pertenece a `BackgroundStatus`/R8, un modelo distinto — no confundirlos):
+
+```python
+class CompactionReceipt(OptimizationModel):
+    checkpoint_id: str = Field(pattern=_SHA256_HEX_PATTERN)
+    context_id: str = Field(min_length=1)
+    status: Literal["completed", "skipped", "unsupported", "failed", "in_progress"]
+    reason: str = Field(min_length=1, max_length=2048)
+    backend: Literal["jev", "builtin", "unknown"]  # "unknown" lives HERE, on backend, not status
+    before_bytes: int | None = Field(default=None, ge=0)
+    after_bytes: int | None = Field(default=None, ge=0)
+    before_tokens: int | None = Field(default=None, ge=0)
+    after_tokens: int | None = Field(default=None, ge=0)
+    elapsed_ms: int = Field(ge=0)
+```
+
+**No hay valor `status="unknown"` en este modelo.** El resultado honesto de "no se encontró
+superficie de receipt observable, o expiró el timeout acotado" es `status="failed"` con
+`backend="unknown"` y un `reason` que documente lo investigado — nunca `status="completed"` por
+ausencia de contradicción, y nunca inventar un valor de `status` fuera de los cinco listados
+arriba.
+
 ### Does NOT Exist
 
 - No existe ninguna función/tool/CLI Python-side que invoque `$.session.compact()` — confirmado
@@ -193,7 +217,7 @@ acepta cualquier campo del modelo por `**kwargs` — no requiere cambio de firma
 ### Task-specific integration constraints
 
 `compact()` NUNCA debe bloquear indefinidamente: cualquier espera de observación debe tener un
-timeout explícito y acotado (segundos, no minutos) y degradar a `status="unknown"` al expirar —
+timeout explícito y acotado (segundos, no minutos) y degradar a `status="failed"` (backend="unknown") al expirar —
 igual que R8 prohíbe inferir éxito por ausencia de contradicción. `supports()` debe evaluar
 `compaction_status` contra el `worktree_root` recibido, nunca contra el checkout principal ni
 cacheado entre llamadas (TASK-3555 encontró que difieren). Esta tarea NO declara ni implica que
@@ -260,7 +284,7 @@ explícito de "no encontrado" con lo que se probó).
    encontrado (con ruta/hash) o no encontrado (con lo que se probó) — en el Completion Note.
 4. Implementar `compact()`: emitir `WorkflowEvent(kind="compaction.requested", ...)` vía
    `store.append_event`; si el paso 3 encontró una superficie real, observarla con timeout acotado
-   y parsear a `CompactionReceipt`; si no, devolver `status="unknown"` honesto de inmediato (sin
+   y parsear a `CompactionReceipt`; si no, devolver `status="failed"` (backend="unknown") honesto de inmediato (sin
    espera artificial que simule una investigación que no ocurre). Emitir
    `WorkflowEvent(kind="compaction.finished", ...)` con el resultado antes de retornar.
 5. Cablear el CLI/comando real (si el paso 3 produce uno invocable, p. ej. un pequeño script
@@ -277,7 +301,7 @@ Spec `sdd/specs/sdd-execution-optimization.spec.md` R6/M5 (enmienda tras TASK-35
 NEVER calls `$.session.compact()` -- no such call surface exists outside a registered Claude Code
 plugin hook. It only (a) gates on `compaction_status(worktree_root)`, (b) emits the
 `compaction.requested` marker event, and (c) makes a bounded, honest attempt to observe whatever
-real surface this task's own investigation found -- degrading to `status="unknown"` rather than
+real surface this task's own investigation found -- degrading to `status="failed"` (backend="unknown") rather than
 ever inferring `completed` from silence.
 """
 from __future__ import annotations
@@ -323,14 +347,14 @@ def test_compact_emits_requested_and_finished_events(tmp_path: Path) -> None:
     # FILL IN: arrange the scenario, invoke the public boundary and assert the stated invariant.
     raise NotImplementedError
 
-def test_honest_unknown_never_inferred_completed(tmp_path: Path) -> None:
-    """Absent a real observable receipt surface (or on a bounded-timeout expiry), status is 'unknown', never 'completed'."""
+def test_honest_failed_never_inferred_completed(tmp_path: Path) -> None:
+    """Absent a real observable receipt surface (or on a bounded-timeout expiry), status is 'failed' (backend='unknown'), never 'completed'."""
     # FILL IN: arrange the scenario, invoke the public boundary and assert the stated invariant.
     raise NotImplementedError
 ```
 
 **Aplicación y motivo:** los tres escenarios mínimos verificables del blueprint; ninguno depende de
-un host Claude Code real ni asume que la investigación del paso 3 tuvo éxito — el `unknown` honesto
+un host Claude Code real ni asume que la investigación del paso 3 tuvo éxito — el `failed` honesto
 es un resultado igualmente probado.
 
 ### FILL IN checklist
@@ -350,7 +374,7 @@ es un resultado igualmente probado.
 - [ ] `compact()` emite `compaction.requested` y `compaction.finished` de forma durable antes de
   retornar, en ambos casos (superficie encontrada o no).
 - [ ] Ningún resultado `completed` se produce sin una observación real y documentada; ausencia de
-  superficie o timeout produce `unknown`, nunca inferido por silencio.
+  superficie o timeout produce `status="failed"` (backend="unknown"), nunca inferido `completed` por silencio.
 - [ ] `checkpoint.py::prepare_review_checkpoint` sigue pasando `test_review_checkpoint.py` sin
   modificación de ningún otro campo/comportamiento tras añadir `context_id`.
 - [ ] Esta tarea NO declara AC11 satisfecho — solo entrega la maquinaria; TASK-3576 decide con
@@ -376,7 +400,7 @@ nunca se presentan como pasados por una simulación.
 2. Revalidar imports/anchors y convenios antes de editar. Preservar cambios de otras tareas y del
    usuario.
 3. Implementar solo targets, completar blueprints y ejecutar Validation Commands. No rebajar ACs
-   para cerrar la tarea. Un resultado honesto `unknown`/superficie-no-encontrada NO es rebajar un
+   para cerrar la tarea. Un resultado honesto `failed`/superficie-no-encontrada NO es rebajar un
    AC — es exactamente lo que el contrato pide.
 4. Registrar evidencia y revisión; usar el flujo SDD para actualizar estado, mover active→completed
    y commit acotado.
