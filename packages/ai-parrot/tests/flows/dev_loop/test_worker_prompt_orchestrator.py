@@ -100,3 +100,98 @@ def test_orchestrator_loop_describes_background_native_agents():
     assert "Never call `Agent` again for the same task" in loop
     assert "branch_not_merged" in loop
     assert "every native task of the chunk has gone through `coder_merge`" in loop
+
+
+def _fallback_loop(body: str) -> str:
+    """Return just the `## Fallback: Sequential Loop` section (up to `## Completion`)."""
+    return body.split("\n## Fallback: Sequential Loop", 1)[1].split("\n## Completion", 1)[0]
+
+
+def _completion_section(body: str) -> str:
+    """Return just the `## Completion` section (to end of file)."""
+    return body.split("\n## Completion", 1)[1]
+
+
+def test_worker_prompt_execution_optimization_tools_invoked_in_loop():
+    """FEAT-584 M6: the FEAT-549 allow-list gained `coder_task_context`, `coder_delivery_report`,
+    `coder_bg_status`, `coder_run_validation` and `source_inspect_batch` over TASK-3556/3561/3562/
+    3565/3566/3568, but those ripple patches only ever touched the frontmatter `tools:` line
+    (never the prompt body) -- the tools must actually be invoked in the Orchestrator Loop, not
+    merely declared as available."""
+    loop = _orchestrator_loop(load_subagent_definition("sdd-worker"))
+    assert "## Execution optimization (FEAT-584)" in loop
+    for tool in (
+        "coder_task_context",
+        "coder_delivery_report",
+        "source_inspect_batch",
+        "coder_bg_status",
+        "coder_run_validation",
+        "finalize_task",
+    ):
+        assert tool in loop, f"{tool!r} is allow-listed but never invoked in the Orchestrator Loop"
+
+
+def test_worker_prompt_frontmatter_lists_bounded_source_tool():
+    """R1: `source_inspect_batch` ships on the independent `parrot-bounded-source` MCP server
+    (not `parrot-sdd-coder`), so it needs its own frontmatter allow-list entry. Checked against
+    the installed repo copy, mirroring `test_worker_prompt_tools_list_mcp_names` above."""
+    text = (_repo_agents_dir() / "sdd-worker.md").read_text(encoding="utf-8")
+    tools_line = next(line for line in text.splitlines() if line.startswith("tools:"))
+    assert "mcp__parrot-bounded-source__source_inspect_batch" in tools_line
+
+
+def test_worker_prompt_boundary_sequence_is_checkpoint_then_compaction_then_outcome_then_revalidate_then_reviewer():
+    """R5/R6/R7: the development-to-review boundary is a fixed order -- persist a checkpoint,
+    request (at most) one between-turn compaction, record its actual outcome, reload/validate
+    the checkpoint, THEN start a fresh reviewer -- never just these words present anywhere in
+    the packaged prompt in any order."""
+    body = load_subagent_definition("sdd-worker")
+    markers = [
+        "persist checkpoint",
+        "request one supported between-turn compaction",
+        "record actual outcome",
+        "reload/validate checkpoint",
+        "start a fresh independent reviewer",
+    ]
+    positions = [body.index(marker) for marker in markers]
+    assert positions == sorted(positions), "checkpoint -> compaction -> outcome -> revalidate -> reviewer order broken"
+
+
+def test_worker_prompt_fallback_does_not_assume_engine():
+    """The Fallback loop (no `parrot-sdd-coder` server) must never assume an engine-only
+    execution_id/settlement exists: `coder_run_validation`, `coder_end_execution` and
+    `review_checkpoint prepare` all require a durably-closed engine execution that the
+    Fallback loop -- which never calls `coder_begin_execution` -- never produces."""
+    fallback = _fallback_loop(load_subagent_definition("sdd-worker"))
+    assert "coder_run_validation" not in fallback
+    assert "coder_end_execution" not in fallback
+    assert "review_checkpoint prepare" not in fallback
+
+
+def test_worker_prompt_completion_has_explicit_no_engine_variant():
+    """M6 Interface Skeleton requires the sequence to 'specify a variant without the engine':
+    the Completion boundary must explicitly branch for hosts/contexts where checkpoint/
+    compaction cannot run, rather than silently assuming the MCP engine settled."""
+    completion = _completion_section(load_subagent_definition("sdd-worker"))
+    assert "No-engine variant" in completion
+    assert "unsupported_host" in completion
+    assert "review_checkpoint validate" in completion
+
+
+def test_worker_prompt_never_invokes_compact_via_bash():
+    """R6: `/compact` must never be run as a Bash command, and a native child's context is
+    never assumed compacted just because the parent was."""
+    body = load_subagent_definition("sdd-worker")
+    assert "Never invoke `/compact` through Bash" in body
+    assert "native child" in body
+
+
+def test_worker_prompt_uses_finalize_task_not_manual_jq_close_in_orchestrator_loop():
+    """R4: the Orchestrator Loop's own merged-task close must route through the deterministic
+    `scripts.sdd.finalize_task` CLI instead of delegating to the Fallback loop's manual
+    Edit/Write/jq/mv dance -- the two used to describe different, contradictory closing
+    mechanics for the same `merged` outcome."""
+    loop = _orchestrator_loop(load_subagent_definition("sdd-worker"))
+    assert "python -m scripts.sdd.finalize_task" in loop
+    assert "manual Edit/Write/jq/mv dance" in loop
+    assert "step (g) of the Fallback loop for this task" not in loop
