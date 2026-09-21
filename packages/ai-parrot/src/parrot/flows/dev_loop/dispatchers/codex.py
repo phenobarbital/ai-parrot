@@ -44,6 +44,93 @@ from parrot.flows.dev_loop.models import (
 )
 from parrot.flows.dev_loop.session_state import SessionHost
 
+_NULL_SCHEMA: Dict[str, Any] = {"type": "null"}
+
+
+def _allows_null(node: Dict[str, Any]) -> bool:
+    """Return True when a JSON-schema node already admits ``null``."""
+    node_type = node.get("type")
+    if node_type == "null" or (isinstance(node_type, list) and "null" in node_type):
+        return True
+    return any(isinstance(alt, dict) and _allows_null(alt) for alt in node.get("anyOf", ()))
+
+
+def _make_nullable(node: Dict[str, Any]) -> Dict[str, Any]:
+    """Return *node* widened to admit ``null`` (strict mode's spelling of "optional")."""
+    if _allows_null(node):
+        return node
+    node_type = node.get("type")
+    if isinstance(node_type, str) and "enum" not in node and "const" not in node:
+        return {**node, "type": [node_type, "null"]}
+    if isinstance(node_type, list):
+        return {**node, "type": [*node_type, "null"]}
+    if "anyOf" in node:
+        return {**node, "anyOf": [*node["anyOf"], dict(_NULL_SCHEMA)]}
+    description = node.get("description")
+    inner = {k: v for k, v in node.items() if k != "description"}
+    wrapped: Dict[str, Any] = {"anyOf": [inner, dict(_NULL_SCHEMA)]}
+    if description:
+        wrapped["description"] = description
+    return wrapped
+
+
+def _strict_output_schema(schema: Any) -> Any:
+    """Rewrite a Pydantic JSON schema into OpenAI's strict structured-output dialect.
+
+    ``codex exec --output-schema`` forwards the schema as a strict
+    ``response_format``; the API answers HTTP 400 ``invalid_json_schema`` unless
+    every object sets ``additionalProperties: false`` and lists ALL of its
+    properties in ``required``. Pydantic emits neither for fields that carry a
+    default, so a raw ``model_json_schema()`` fails the very first turn.
+
+    Properties that were optional become nullable instead (the model answers
+    ``null`` for "not provided") and ``default`` is dropped, since strict mode
+    rejects it. `_prune_nulls` undoes the nullability on the way back in.
+    Returns a rewritten copy; *schema* is left untouched.
+    """
+    if isinstance(schema, list):
+        return [_strict_output_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    out: Dict[str, Any] = {}
+    for key, value in schema.items():
+        if key == "default":
+            continue
+        if key == "properties" and isinstance(value, dict):
+            out[key] = {name: _strict_output_schema(prop) for name, prop in value.items()}
+        else:
+            out[key] = _strict_output_schema(value)
+    properties = out.get("properties")
+    if isinstance(properties, dict):
+        required = set(schema.get("required") or ())
+        for name, prop in properties.items():
+            if name not in required and isinstance(prop, dict):
+                properties[name] = _make_nullable(prop)
+        out["required"] = list(properties)
+        out["additionalProperties"] = False
+    return out
+
+
+def _prune_nulls(payload: Any) -> Any:
+    """Drop ``null``-valued object keys so Pydantic field defaults apply again."""
+    if isinstance(payload, dict):
+        return {key: _prune_nulls(value) for key, value in payload.items() if value is not None}
+    if isinstance(payload, list):
+        return [_prune_nulls(item) for item in payload]
+    return payload
+
+
+def _codex_error_message(event: Dict[str, Any]) -> str:
+    """Return the failure text of a ``codex exec --json`` ``error``/``turn.failed`` event."""
+    event_type = event.get("type")
+    message: Any = ""
+    if event_type == "error":
+        message = event.get("message")
+    elif event_type == "turn.failed":
+        error = event.get("error")
+        message = error.get("message") if isinstance(error, dict) else error
+    return message.strip() if isinstance(message, str) else ""
+
 
 class _BoundedStderrReader:
     """Per-dispatch incremental stderr tail collector (hotfix: stdin isolation).
@@ -183,6 +270,7 @@ class CodexCodeDispatcher:
         output_path: Optional[str] = None
         process: Any = None
         stderr_reader: Optional[_BoundedStderrReader] = None
+        codex_error = ""
         # FEAT-322 TASK-1852: see module-level _SESSION_HOST_CTX docstring.
         # try/except covers the narrow pre-semaphore window so an early
         # raise here still resets the var (the main finally: below only
@@ -235,7 +323,7 @@ class CodexCodeDispatcher:
                     async with asyncio.timeout(profile.timeout_seconds):
                         process = await self._create_process(command)
                         stderr_reader = _BoundedStderrReader(process.stderr)
-                        await self._stream_stdout_events(
+                        codex_error = await self._stream_stdout_events(
                             process.stdout,
                             stream_key=stream_key,
                             run_id=run_id,
@@ -288,12 +376,15 @@ class CodexCodeDispatcher:
                         node_id=node_id,
                         payload={
                             "exit_code": return_code,
+                            "codex_error": codex_error[-4000:],
                             "stderr_tail": stderr[-4000:],
                         },
                     )
-                    raise DispatchExecutionError(
-                        "Codex CLI dispatch failed with exit code " f"{return_code}: {stderr[-1000:]}"
-                    )
+                    # With `--json` codex reports the real failure (API 4xx, auth, quota) as an
+                    # `error`/`turn.failed` event on STDOUT; stderr often holds nothing but the
+                    # harmless "Reading additional input from stdin..." banner.
+                    detail = "\n".join(part for part in (codex_error[-1000:], stderr[-1000:].strip()) if part)
+                    raise DispatchExecutionError(f"Codex CLI dispatch failed with exit code {return_code}: {detail}")
 
                 try:
                     result = self._validate_output_file(output_path, output_model)
@@ -543,13 +634,15 @@ class CodexCodeDispatcher:
         stream_key: str,
         run_id: str,
         node_id: str,
-    ) -> None:
+    ) -> str:
+        """Publish each stdout JSONL event; return the last codex-reported error ("" if none)."""
+        last_error = ""
         if stdout is None:
-            return
+            return last_error
         while True:
             raw = await stdout.readline()
             if not raw:
-                return
+                return last_error
             line = raw.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
@@ -564,6 +657,8 @@ class CodexCodeDispatcher:
                     payload={"raw_line": line},
                 )
                 continue
+            if isinstance(event, dict):
+                last_error = _codex_error_message(event) or last_error
             await self._publish_codex_event(stream_key, event, run_id, node_id)
 
     async def _publish_codex_event(
@@ -681,6 +776,13 @@ class CodexCodeDispatcher:
         try:
             return output_model.model_validate_json(raw_payload)
         except ValidationError as exc:
+            # The strict schema spells "optional" as nullable, so codex answers `null` for
+            # fields whose Pydantic type is not Optional (`summary: str = ""`). Retry with
+            # those keys dropped so the field defaults apply; report the ORIGINAL error.
+            try:
+                return output_model.model_validate(_prune_nulls(json.loads(raw_payload)))
+            except (ValueError, ValidationError):
+                pass
             raise DispatchOutputValidationError(
                 f"Output failed {output_model.__name__} validation: {exc}",
                 raw_payload=raw_payload,
@@ -697,7 +799,7 @@ class CodexCodeDispatcher:
             raise DispatchExecutionError(f"cwd {cwd!r} is not under WORKTREE_BASE_PATH={base!r}")
 
     def _materialize_json_schema(self, output_model: Type[BaseModel]) -> str:
-        schema = output_model.model_json_schema()
+        schema = _strict_output_schema(output_model.model_json_schema())
         fd, path = tempfile.mkstemp(prefix="dev_loop_codex_schema_", suffix=".json")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
