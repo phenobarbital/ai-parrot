@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-21T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-21T22:05:53+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-586",
       "feature": "parrot-install-guide",
       "spec": "sdd/specs/parrot-install-guide.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "CI job invokes artifacts from TASK-3585 (test_getting_started_claims.py), TASK-3586 (install-parrot.sh) and TASK-3587 (install-parrot.ps1); they must exist for the pipeline to pass.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3588-ci-install-wiring.md"
+      "completed_at": "2026-09-21T22:05:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3588-ci-install-wiring.md"
     }
   ]
 }
