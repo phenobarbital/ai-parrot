@@ -54,7 +54,7 @@
       "feature_id": "FEAT-588",
       "feature": "fixgroup-47eb801095a6",
       "spec": "sdd/specs/fixgroup-47eb801095a6.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -64,8 +64,9 @@
       "parallelism_notes": "Both tasks modify packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/models.py (TASK-3580 adds TaskResult.native_retry, this one adds ExecutionPoolView.roster_warnings), so they must be serialized.",
       "assigned_to": null,
       "started_at": "2026-09-21T20:45:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3582-roster-retry-capability-warning.md"
+      "completed_at": "2026-09-21T22:08:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3582-roster-retry-capability-warning.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3583",

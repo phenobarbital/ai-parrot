@@ -287,3 +287,23 @@ that also fires on a healthy roster trains operators to ignore it.
 
 ### Completion Note
 (Agent fills this in when done)
+
+## Completion Note
+
+- Task: TASK-3582
+- Feature: fixgroup-47eb801095a6
+- Implementation SHA: b7001a7c554f9f855d23ecb399aebe8533f356fa
+- Closed at (UTC): 2026-09-21T22:08:43+00:00
+- Fix commits: b7001a7c554f9f855d23ecb399aebe8533f356fa
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| ac_verification | AC-1..AC-5 covered by test_single_retry_capable_strong_seat_is_reported/test_empty_strong_models_is_reported_at_execution_start/test_two_mcp_strong_seats_produce_no_warning; extra=forbid still validates; ruff shows only 42 pre-existing unrelated ASYNC221 findings (residual, deferred to /sdd-done) |
+| merge_tier_validation | coder_run_validation (tier=merge, TASK-3582+TASK-3583) timed_out after 180s -- same deterministic pre-existing hang in packages/ai-parrot-integrations/tests/integrations/telegram/test_oauth2_integration.py already confirmed unrelated and filed as issue:1dbb2aac09ba |
+| model_feedback_id | coder-feedback:267735c7de8d454b7fb85b2c |
+| review_feedback_id | coder-review:c2a0f689f44047e5d2989d63 |
+| review_fix_commit | b7001a7c554f9f855d23ecb399aebe8533f356fa -- fixed invalid Pydantic literal backend="claude" in test_two_mcp_strong_seats_produce_no_warning |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 167.62s · Tokens: n/a |
+| task_scoped_tests | pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py test_compact_views.py test_roster.py test_complexity_routing.py -> 138 passed after review fix (was 1 failed due to invalid backend literal) |
