@@ -32,11 +32,13 @@ EXPECTED_TOOLS = {
     "coder_begin_execution",
     "coder_end_execution",
     "coder_suspend_model",
+    # FEAT-584 M2/R3: worker-reported native observation (no acceptance, no release).
+    "coder_record_native_observation",
 }
 
 
 def test_toolkit_exposes_execution_lifecycle_tools(three_seat_roster):
-    """Actual registered tool set contains the ten existing plus three new tools; no helper leaks into MCP."""
+    """Actual registered tool set contains the existing tools plus the new ones; no helper leaks into MCP."""
     toolkit = _toolkit(three_seat_roster)
     names = {t.name for t in toolkit.get_tools()}
     assert names == EXPECTED_TOOLS
@@ -184,6 +186,7 @@ def test_registered_schemas_require_execution_identity(three_seat_roster):
         "coder_cleanup",
         "coder_record_feedback",
         "coder_record_review",
+        "coder_record_native_observation",
     }
     unscoped = {"coder_wait", "coder_status", "coder_feedback_report"}
     for tool in toolkit.get_tools():
@@ -193,6 +196,81 @@ def test_registered_schemas_require_execution_identity(three_seat_roster):
             assert "execution_id" in required, f"{tool.name} schema must require execution_id"
         elif tool.name in unscoped:
             assert "execution_id" not in parameters.get("properties", {}), f"{tool.name} must not expose execution_id"
+
+
+VALID_OBSERVATION = {
+    "event_id": "evt-toolkit-1",
+    "task_id": "TASK-1",
+    "attempt_uid": "abcd1234abcd1234abcd1234abcd1234",
+    "agent_id": "agent-1",
+    "observed_at": "2026-09-21T00:00:00+00:00",
+    "kind": "finished",
+    "evidence_ref": {
+        "artifact_id": "e" * 64,
+        "sha256": "e" * 64,
+        "relative_path": "handback/agent-1.json",
+        "size_bytes": 5,
+        "media_type": "application/json",
+    },
+}
+
+
+async def test_record_native_observation_pre_execute_validates_schema(three_seat_roster):
+    """The nested `observation` schema is validated BEFORE the engine ever runs."""
+    toolkit = _toolkit(three_seat_roster)
+    await toolkit._pre_execute(
+        "coder_record_native_observation",
+        feature="f",
+        worktree="/abs",
+        execution_id=VALID_EXECUTION_ID,
+        observation=VALID_OBSERVATION,
+    )  # must not raise
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute(
+            "coder_record_native_observation",
+            feature="f",
+            worktree="/abs",
+            execution_id=VALID_EXECUTION_ID,
+            observation={**VALID_OBSERVATION, "kind": "not-a-kind"},
+        )
+    assert excinfo.value.code == "invalid_arguments"
+
+
+async def test_record_native_observation_routes_through_run(three_seat_roster, monkeypatch):
+    """`coder_record_native_observation` maps engine success/failure through `_run` like every other tool."""
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef
+
+    toolkit = _toolkit(three_seat_roster)
+    seen = {}
+
+    async def _record(feature, worktree, execution_id, observation):
+        seen["args"] = (feature, worktree, execution_id, observation)
+        return EvidenceRef(
+            artifact_id="evt-toolkit-1",
+            sha256="e" * 64,
+            relative_path="executions/x/events.jsonl",
+            size_bytes=10,
+            media_type="application/x-ndjson",
+        )
+
+    monkeypatch.setattr(toolkit._engine, "record_native_observation", _record)
+    result = await toolkit.coder_record_native_observation(
+        feature="f", worktree="/abs", execution_id=VALID_EXECUTION_ID, observation=VALID_OBSERVATION
+    )
+    assert result.status == "ok"
+    assert result.data["artifact_id"] == "evt-toolkit-1"
+    assert seen["args"][3] == VALID_OBSERVATION
+
+    async def _raise(*args, **kwargs):
+        raise CoderFailure("attempt_not_found", "x")
+
+    monkeypatch.setattr(toolkit._engine, "record_native_observation", _raise)
+    result = await toolkit.coder_record_native_observation(
+        feature="f", worktree="/abs", execution_id=VALID_EXECUTION_ID, observation=VALID_OBSERVATION
+    )
+    assert result.status == "error"
+    assert result.error.code == "attempt_not_found"
 
 
 async def test_toolkit_pre_execute_via_full_execute_path_never_reaches_engine(three_seat_roster, monkeypatch):
