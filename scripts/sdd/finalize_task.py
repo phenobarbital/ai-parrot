@@ -413,7 +413,9 @@ def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> li
             text=True,
         )
         if proc.returncode != 0:
-            raise OperationError(f"close_task.sh failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+            raise OperationError(
+                f"close_task.sh failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
+            )
 
         new_tree = _run_git(["write-tree"], cwd=repo_root, env=tmp_env).stdout.strip()
 
