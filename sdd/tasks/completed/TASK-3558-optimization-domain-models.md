@@ -287,4 +287,51 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `ce5814d34826451d8712aebdcfed9d19`). Created
+only the two CREATE targets:
+
+- `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py` — the eight
+  Pydantic v2 models from the blueprint (`OptimizationModel`, `EvidenceRef`, `WorkflowEvent`,
+  `TaskCompletionEvidence`, `ReviewCheckpoint`, `CompactionReceipt`, `BackgroundRegistration`,
+  `BackgroundStatus`), no field renamed/added/removed relative to the blueprint so downstream
+  tasks (TASK-3559 onward) can import these exact names. Filled every blueprint FILL IN:
+  `WorkflowEvent` bounds payload to 4096 bytes, recursively rejects prompt/secret/credential
+  keys at any nesting depth, enforces a per-kind required-identity table from spec R3's ten
+  minimal event kinds, rejects a reversed started_at/ended_at window. `ReviewCheckpoint
+  .checkpoint_id` validates against its own canonical-content sha256 (excluding
+  `checkpoint_id`) via a reusable `compute_checkpoint_id(**fields)` classmethod future tasks
+  must call rather than hand-rolling their own hash. `BackgroundStatus` enforces the R8 state
+  machine (pending/running carry no outcome/exit_code; finished always carries a known
+  outcome; unknown never carries a stale exit_code; host-observation authority never
+  fabricates a POSIX exit_code; exit_code 124 is preserved verbatim, never auto-labeled
+  timed_out) plus an 8192-byte envelope bound and a 4096-byte log_tail bound.
+- `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_models.py` — the three
+  blueprint-named test functions (`test_reject_invalid_identity_and_time`,
+  `test_nullable_authority_and_outcome`, `test_canonical_json_roundtrip`), broadened
+  internally to also cover `TaskCompletionEvidence` and `BackgroundRegistration`.
+
+Design decisions flagged for downstream tasks (not given exact numbers/algorithms by the
+task/spec text, so documented choices consistent with neighboring spec budgets and existing
+`sdd_coder.models` conventions): the 4096-byte `WorkflowEvent` payload bound, the per-kind
+required-identity mapping, and the `checkpoint_id` hash algorithm (sha256 hex of canonical
+sorted-key JSON excluding `checkpoint_id`). Future tasks producing checkpoints must call
+`ReviewCheckpoint.compute_checkpoint_id(**fields)`.
+
+Minor, non-blocking: a pyright-only type-checker false positive on `model_construct(**fields)`
+in `compute_checkpoint_id` (stub mismatch for the `**fields: object` spread against
+`_fields_set: set[str] | None`); does not affect runtime behavior, all tests pass.
+
+Environment note: this worktree's compiled Cython extensions
+(`parrot/utils/types*.so`, `parrot/utils/parsers/toml*.so`) were missing (gitignored build
+artifacts, only present in the main checkout's `.venv`-adjacent tree); copied from the main
+checkout (read-only source, written only into this worktree) rather than rebuilt, to unblock
+`import parrot` for validation. No shared environment was mutated.
+
+Validation:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_models.py -q` → 3 passed.
+- `select_tests --tier merge` scoped to completed tasks (TASK-3555, TASK-3556, TASK-3557) plus this one → dev_loop/sdd_coder core-escalation suite 401 passed; tool_optimizations suite 433 passed/1 deselected; wiki compaction suite 17 passed.
+- `git status --porcelain --untracked-files=all` clean except gitignored build artifacts.
+
+Review: `coder-review:6d6b6350180bdca61139f691` (zero fix commits — clean delivery).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 746146ms (~12m26s) · Tokens: 204956 (subagent total, in/out split not exposed for native).

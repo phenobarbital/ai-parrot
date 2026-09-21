@@ -86,7 +86,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -94,8 +94,8 @@
       "parallelism_notes": "Único owner de optimization_models.py; independiente de M1/M0/M9. Los consumidores dependen de estos tipos.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3558-optimization-domain-models.md"
+      "completed_at": "2026-09-21T01:45:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3558-optimization-domain-models.md"
     },
     {
       "id": "TASK-3559",
