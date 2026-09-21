@@ -3283,9 +3283,7 @@ class SddCoderEngine:
                     pool, tried_seats, eligible_labels=eligible_labels
                 )
                 if native_retry_seat is not None:
-                    assessment = await self._assessment_for(
-                        ctx, task, task.task_file, execution_id=execution_id
-                    )
+                    assessment = await self._assessment_for(ctx, task, task.task_file, execution_id=execution_id)
                     model = native_retry_seat.model or "haiku"
                     native_retry = await self._reserve_native_attempt(
                         ctx,
@@ -3315,8 +3313,10 @@ class SddCoderEngine:
                 # complex_model_unavailable diagnostic, preserving previous
                 # attempts").
                 remaining = eligible_labels - tried_seats
-                if pool is not None and remaining and all(
-                    candidate.kind == "native" for candidate in pool._seats if candidate.label in remaining
+                if (
+                    pool is not None
+                    and remaining
+                    and all(candidate.kind == "native" for candidate in pool._seats if candidate.label in remaining)
                 ):
                     no_retry_error = (
                         f"complex_model_unavailable: MCP-only retry ladder has no eligible seat for {task.task_id}"

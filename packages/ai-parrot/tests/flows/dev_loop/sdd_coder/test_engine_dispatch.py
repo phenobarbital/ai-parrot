@@ -710,7 +710,9 @@ class TestComplexityDispatchAdmission:
         )
         # A busy native seat cannot be handed off. The diagnostic must describe
         # the MCP-only retry selector instead of claiming a generic shortage.
-        await engine._executions[execution_id].admit("TASK-OTHER", ModelKey(backend="native", model="sonnet-5"))  # noqa: SLF001
+        await engine._executions[execution_id].admit(
+            "TASK-OTHER", ModelKey(backend="native", model="sonnet-5")
+        )  # noqa: SLF001
 
         job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"], execution_id=execution_id)
         result = await engine.wait(job.job_id, 5)
@@ -747,9 +749,7 @@ class TestComplexityDispatchAdmission:
         await engine.begin_execution("demo", str(worktree), execution_id)
         plan = await engine.plan("demo", str(worktree), execution_id=execution_id)
         task_id = next(task.task_id for chunk in plan.chunks for task in chunk.tasks if task.seat_label == "mcp")
-        engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(  # noqa: SLF001
-            plan, task_id, "complex"
-        )
+        engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(plan, task_id, "complex")  # noqa: SLF001
 
         job = await engine.run_chunk("demo", str(worktree), [task_id], execution_id=execution_id)
         result = await engine.wait(job.job_id, 5)
@@ -783,9 +783,7 @@ class TestComplexityDispatchAdmission:
         await engine.begin_execution("demo", str(worktree), execution_id)
         pool = engine._executions[execution_id]  # noqa: SLF001
 
-        retry = await engine._select_retry_seat(  # noqa: SLF001
-            pool, "mcp", {"mcp"}, eligible_labels={"native"}
-        )
+        retry = await engine._select_retry_seat(pool, "mcp", {"mcp"}, eligible_labels={"native"})  # noqa: SLF001
         assert retry is None
         assert ChunkAssigner(roster.seats).retry_seat("mcp", {"mcp"}, eligible_labels={"native"}) is None
 
@@ -808,9 +806,7 @@ class TestComplexityDispatchAdmission:
         await engine.begin_execution("demo", str(worktree), execution_id)
         plan = await engine.plan("demo", str(worktree), execution_id=execution_id)
         task_id = next(task.task_id for chunk in plan.chunks for task in chunk.tasks)
-        engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(  # noqa: SLF001
-            plan, task_id, "complex"
-        )
+        engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(plan, task_id, "complex")  # noqa: SLF001
 
         job = await engine.run_chunk("demo", str(worktree), [task_id], execution_id=execution_id)
         result = await engine.wait(job.job_id, 5)
