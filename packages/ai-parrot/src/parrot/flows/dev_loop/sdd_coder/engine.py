@@ -2904,10 +2904,6 @@ class SddCoderEngine:
         if outcome == "fidelity_violation":
             return "fidelity_violation"
 
-        # Check for dirty delivery
-        if error_class == "dirty_task_worktree" or (error and error.startswith("dirty_task_worktree:")):
-            return "dirty_delivery"
-
         # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError.
         # The real production wrap (`dispatchers/llm.py`'s `except TimeoutError as
         # exc: raise DispatchExecutionError(f"Dispatch exceeded {timeout}s
@@ -3162,13 +3158,14 @@ class SddCoderEngine:
         execution_id: Optional[str] = None,
         pool: Optional["ExecutionPool"] = None,
     ) -> TaskResult:
-        """Run up to two attempts, retrying dispatch and dirty-worktree failures on another MCP seat.
+        """Run up to two attempts, retrying DISPATCH failures on another MCP seat.
 
-        A clean dispatcher response is not sufficient for success: an agent can
-        return ``DevelopmentOutput`` after exhausting its turn budget while
-        leaving its changes uncommitted. Treat that first-attempt
-        ``dirty_task_worktree`` outcome as retryable, but preserve fidelity
-        violations and merge conflicts for the orchestrator to handle.
+        A seat that delivers its declared files without committing them is not a
+        failure: ``.git`` is read-only to a sandboxed seat by design, and
+        ``_consolidate`` extracts and commits the deliverable itself via
+        ``_commit_declared_changes`` (ed267c217 / FEAT-587). Only dispatch errors
+        are retried on a fresh seat; fidelity violations and merge conflicts are
+        preserved for the orchestrator to handle.
 
         FEAT-559: When execution_id/pool are provided, uses pool-based admission
         gating, failure classification, and healthy-model retry selection.
@@ -3182,23 +3179,23 @@ class SddCoderEngine:
         attempts.append(rec)
 
         if not err:
+            # A consolidation result is always terminal (merged, fidelity_violation,
+            # merge_conflict or failed) and belongs to the orchestrator -- never a
+            # reason to burn the second attempt on another seat. FEAT-587 retired the
+            # `dirty_task_worktree` branch that used to sit here: `_consolidate` now
+            # extracts and commits an uncommitted-but-declared delivery itself.
             result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
-            if not (result.outcome == "failed" and result.diagnostics.startswith("dirty_task_worktree:")):
-                final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
-                self._latest_attempt[task.task_id] = rec
-                await self._emit_outcome(
-                    ctx,
-                    attempt_rec=rec,
-                    task_id=task.task_id,
-                    outcome=result.outcome,
-                    conflict_file_count=len(result.conflict_files),
-                    unexpected_file_count=len(result.unexpected_files),
-                )
-                return final_result
-
-            err = result.diagnostics
-            rec = rec.model_copy(update={"error": err, "error_class": "dirty_task_worktree"})
-            attempts[-1] = rec
+            final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
+            self._latest_attempt[task.task_id] = rec
+            await self._emit_outcome(
+                ctx,
+                attempt_rec=rec,
+                task_id=task.task_id,
+                outcome=result.outcome,
+                conflict_file_count=len(result.conflict_files),
+                unexpected_file_count=len(result.unexpected_files),
+            )
+            return final_result
 
         if err:
             # FEAT-559: Classify failure and suspend model if qualifying

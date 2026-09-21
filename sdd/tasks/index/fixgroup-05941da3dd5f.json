@@ -16,16 +16,16 @@
       "feature_id": "FEAT-587",
       "feature": "fixgroup-05941da3dd5f",
       "spec": "sdd/specs/fixgroup-05941da3dd5f.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies and no exclusive resource: sole owner of sdd_coder/engine.py, sdd_coder/models.py and tests/.../test_engine_dispatch.py. Shares no file with TASK-3579, which is documentation-only.",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3578-retire-dirty-task-worktree-engine.md"
+      "assigned_to": "claude-opus-5:7e0222c8",
+      "started_at": "2026-09-21T18:42:00+00:00",
+      "completed_at": "2026-09-21T18:50:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3578-retire-dirty-task-worktree-engine.md"
     },
     {
       "id": "TASK-3579",

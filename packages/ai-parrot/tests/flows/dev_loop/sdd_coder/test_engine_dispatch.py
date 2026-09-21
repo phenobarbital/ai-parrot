@@ -712,9 +712,9 @@ class TestComplexityDispatchAdmission:
 
         task_result = result.tasks[0]
         assert task_result.outcome == "failed"
-        assert len(task_result.attempts) == 1, (
-            f"retry must never select the native seat, expected no attempt 2: {task_result.attempts}"
-        )
+        assert (
+            len(task_result.attempts) == 1
+        ), f"retry must never select the native seat, expected no attempt 2: {task_result.attempts}"
         assert "complex_model_unavailable" in task_result.diagnostics
         assert "AssertionError" not in task_result.diagnostics
         assert "prepare_native" not in task_result.diagnostics
@@ -1064,3 +1064,84 @@ class TestCooldownStartsAtFailureObservation:
                 suspended_until = datetime.fromisoformat(view.suspended_until)
                 # suspended_until should be after after_failure (cooldown starts at observation)
                 assert suspended_until > after_failure
+
+
+def _code_string_literals(module) -> set[str]:
+    """Every str constant in `module`'s source EXCEPT docstrings.
+
+    A retired contract survives as prose in a docstring or comment explaining why
+    it was retired -- that is documentation, not a code path. Only a string the
+    module actually evaluates can still produce the old behaviour, so that is what
+    the FEAT-587 guard below asserts on.
+    """
+    import ast
+
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+    docstrings = {
+        doc
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        for doc in [ast.get_docstring(node, clean=False)]
+        if doc is not None
+    }
+    return {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value not in docstrings
+    }
+
+
+class TestDirtyTaskWorktreeContractRetired:
+    """FEAT-587: the `dirty_task_worktree` contract no longer exists in code."""
+
+    def test_no_dirty_task_worktree_producer(self):
+        """Neither the engine nor the error-code enum may still evaluate the retired contract (AC-1, AC-4)."""
+        from parrot.flows.dev_loop.sdd_coder import engine as engine_mod
+        from parrot.flows.dev_loop.sdd_coder import models as models_mod
+
+        for module in (engine_mod, models_mod):
+            offenders = sorted(
+                literal
+                for literal in _code_string_literals(module)
+                if "dirty_task_worktree" in literal or literal == "dirty_delivery"
+            )
+            assert offenders == [], f"{module.__name__} still evaluates {offenders}"
+
+    def test_dirty_feature_worktree_is_untouched(self):
+        """The *feature*-worktree precondition is a different, still-live check (AC-4)."""
+        from parrot.flows.dev_loop.sdd_coder.models import ERROR_CODES
+
+        assert "dirty_feature_worktree" in ERROR_CODES
+        assert "dirty_task_worktree" not in ERROR_CODES
+
+    def test_classify_failure_reason_ignores_uncommitted_delivery(self):
+        """An uncommitted-but-declared delivery is never charged against the model (AC-3)."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        assert (
+            engine._classify_failure_reason(
+                error="dirty_task_worktree: uncommitted/untracked changes:\n?? packages/x/t1.py",
+                error_class="dirty_task_worktree",
+            )
+            is None
+        )
+        # Controls: the classifier still classifies what it should, so the
+        # assertion above cannot pass by it returning None for everything.
+        assert (
+            engine._classify_failure_reason(
+                error="TimeoutError: dispatch timed out",
+                error_class="DispatchExecutionError",
+            )
+            == "timeout"
+        )
+        assert (
+            engine._classify_failure_reason(
+                error="",
+                error_class="RuntimeError",
+                outcome="fidelity_violation",
+            )
+            == "fidelity_violation"
+        )
