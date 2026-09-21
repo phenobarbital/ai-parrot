@@ -855,3 +855,124 @@ class TestCodexStdinIsolation:
         events = _published_events(dispatcher)
         tails = {e["payload"]["stderr_tail"] for e in events if e["kind"] == "dispatch.failed"}
         assert tails == {"SENTINEL-A", "SENTINEL-B"}
+
+
+def _assert_strict(node: Any) -> None:
+    """Every object node lists all its properties as required and forbids extras."""
+    if isinstance(node, dict):
+        assert "default" not in node
+        if "properties" in node:
+            assert node["additionalProperties"] is False
+            assert sorted(node["required"]) == sorted(node["properties"])
+        for value in node.values():
+            _assert_strict(value)
+    elif isinstance(node, list):
+        for value in node:
+            _assert_strict(value)
+
+
+class TestCodexStrictOutputSchema:
+    """`--output-schema` is sent as a STRICT response_format (regression: HTTP 400
+    `invalid_json_schema` — 'additionalProperties' is required to be supplied and to be false)."""
+
+    def test_materialized_schema_is_strict(self, dispatcher):
+        path = dispatcher._materialize_json_schema(DevelopmentOutput)
+        try:
+            schema = json.loads(Path(path).read_text(encoding="utf-8"))
+        finally:
+            os.unlink(path)
+
+        _assert_strict(schema)
+        # Nested models under $defs are rewritten too, not only the root object.
+        assert schema["$defs"]["WorkerSummary"]["additionalProperties"] is False
+        # Originally-required fields stay non-nullable; defaulted ones become nullable.
+        assert schema["properties"]["files_changed"]["type"] == "array"
+        assert schema["properties"]["summary"]["type"] == "string"
+        assert schema["properties"]["merge_performed"]["type"] == ["boolean", "null"]
+        assert schema["properties"]["incomplete_tasks"]["type"] == ["array", "null"]
+
+    def test_strict_rewrite_does_not_mutate_the_source_schema(self):
+        source = DevelopmentOutput.model_json_schema()
+        snapshot = json.dumps(source, sort_keys=True)
+        codex_dispatcher_module._strict_output_schema(source)
+        assert json.dumps(source, sort_keys=True) == snapshot
+
+    def test_make_nullable_shapes(self):
+        make_nullable = codex_dispatcher_module._make_nullable
+        assert make_nullable({"type": "integer"}) == {"type": ["integer", "null"]}
+        assert make_nullable({"type": ["string", "null"]}) == {"type": ["string", "null"]}
+        already = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+        assert make_nullable(already) == already
+        # A $ref (or an enum) cannot take a type list: wrap it, hoisting the description.
+        assert make_nullable({"$ref": "#/$defs/X", "description": "d"}) == {
+            "anyOf": [{"$ref": "#/$defs/X"}, {"type": "null"}],
+            "description": "d",
+        }
+        assert make_nullable({"type": "string", "enum": ["a"]}) == {
+            "anyOf": [{"type": "string", "enum": ["a"]}, {"type": "null"}]
+        }
+
+    @pytest.mark.asyncio
+    async def test_null_for_defaulted_field_validates(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+        """Codex answers `null` for the now-nullable optionals; the field defaults must apply."""
+        payload = json.dumps(
+            {
+                "files_changed": ["app.py"],
+                "commit_shas": ["abc1234"],
+                "summary": "implemented the spec",
+                "incomplete_tasks": None,
+                "worker_summaries": None,
+                "merge_performed": None,
+            }
+        )
+
+        async def _fake_create(command: Sequence[str]):
+            _write_output(command, payload)
+            return _FakeCodexProcess()
+
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        result = await dispatcher.dispatch(
+            brief=brief,
+            profile=CodexCodeDispatchProfile(),
+            output_model=DevelopmentOutput,
+            run_id="r1",
+            node_id="development",
+            cwd=str(_patch_worktree_base),
+        )
+
+        assert result.files_changed == ["app.py"]
+        assert result.incomplete_tasks == []
+        assert result.worker_summaries == []
+        assert result.merge_performed is False
+
+    @pytest.mark.asyncio
+    async def test_nonzero_exit_surfaces_stdout_error_event(self, dispatcher, brief, _patch_worktree_base, monkeypatch):
+        """The real failure is a JSON event on stdout; stderr only holds the stdin banner."""
+        api_error = "Invalid schema for response_format 'codex_output_schema'"
+
+        async def _fake_create(command: Sequence[str]):
+            return _FakeCodexProcess(
+                stdout_lines=[
+                    '{"type":"thread.started","thread_id":"t1"}\n',
+                    json.dumps({"type": "error", "message": api_error}) + "\n",
+                    json.dumps({"type": "turn.failed", "error": {"message": api_error}}) + "\n",
+                ],
+                stderr="Reading additional input from stdin...\n",
+                return_code=1,
+            )
+
+        monkeypatch.setattr(dispatcher, "_create_process", _fake_create)
+
+        with pytest.raises(DispatchExecutionError, match="exit code 1: Invalid schema for response_format"):
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=CodexCodeDispatchProfile(),
+                output_model=DevelopmentOutput,
+                run_id="r1",
+                node_id="development",
+                cwd=str(_patch_worktree_base),
+            )
+
+        failed = [e for e in _published_events(dispatcher) if e["kind"] == "dispatch.failed"]
+        assert failed[-1]["payload"]["codex_error"] == api_error
