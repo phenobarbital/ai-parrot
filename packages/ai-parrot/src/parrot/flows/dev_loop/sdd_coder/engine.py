@@ -886,6 +886,124 @@ class SddCoderEngine:
         except OSError as exc:
             raise CoderFailure("evidence_persistence_failed", str(exc)) from exc
 
+    def _require_execution_owns(self, ctx: _FeatureCtx, execution_id: str) -> None:
+        """Same ownership check `record_native_observation` applies: reject a foreign/unknown execution.
+
+        Raises:
+            CoderFailure with codes:
+                - execution_not_found: unknown execution_id
+                - execution_scope_mismatch: execution bound to a different feature/worktree
+        """
+        if execution_id not in self._executions:
+            raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+        pool = self._executions[execution_id]
+        if pool.worktree_path != ctx.worktree or pool.feature_id != ctx.feature_id:
+            raise CoderFailure(
+                "execution_scope_mismatch",
+                f"execution {execution_id} is bound to feature {pool.feature_id!r} / worktree "
+                f"{pool.worktree_path!r}, not {ctx.feature_id!r} / {ctx.worktree!r}",
+            )
+
+    async def task_context(self, feature: str, worktree: str, task_id: str, execution_id: str) -> Dict[str, Any]:
+        """Read-only snapshot of task/index/dependency/contract state (spec §3 M1b/R1b).
+
+        Delegates the actual projection to `inspection.task_context` once feature
+        resolution and execution ownership are established here -- never modifies
+        the per-spec index, never marks a task ready on trust, never duplicates
+        `check_fidelity`'s policy.
+
+        Args:
+            feature: Feature identifier (matches per-spec index header).
+            worktree: Absolute path to the feature worktree.
+            task_id: The TASK id to inspect.
+            execution_id: The execution that must own this worktree.
+
+        Returns:
+            A bounded snapshot dict (spec AC4/AC5: "16KiB"); see
+            `inspection.task_context` for its exact shape.
+
+        Raises:
+            CoderFailure with codes:
+                - worktree_outside_base / feature_not_found: from `_resolve_feature`
+                - execution_not_found / execution_scope_mismatch: foreign/unknown execution
+                - evidence_persistence_failed: no durable evidence store is configured
+                - index_unreadable: the per-spec index is missing or unreadable
+                - task_not_in_plan: task_id is not declared in the per-spec index
+        """
+        ctx = await self._resolve_feature(feature, worktree)
+        self._require_execution_owns(ctx, execution_id)
+        if self._evidence_store is None:
+            raise CoderFailure("evidence_persistence_failed", "no durable evidence store is configured for this engine")
+
+        from parrot.flows.dev_loop.sdd_coder import inspection  # local: avoid a module-level import cycle
+
+        try:
+            return await inspection.task_context(
+                feature=Path(ctx.index_path).stem,
+                worktree=Path(ctx.worktree),
+                task_id=task_id,
+                execution_id=execution_id,
+                store=self._evidence_store,
+            )
+        except FileNotFoundError as exc:
+            raise CoderFailure("index_unreadable", str(exc)) from exc
+        except LookupError as exc:
+            raise CoderFailure("task_not_in_plan", str(exc)) from exc
+        except ValueError as exc:
+            raise CoderFailure("internal_error", str(exc)) from exc
+
+    async def delivery_report(self, feature: str, worktree: str, task_id: str, execution_id: str) -> Dict[str, Any]:
+        """Read-only projection of a task's latest execution-owned attempt (spec §3 M1b/R1b).
+
+        Delegates the actual projection to `inspection.delivery_report` once
+        feature resolution and execution ownership are established here.
+        Never runs `git merge`, autofix, lint, tests or a fresh validation, and
+        never approves a delivery -- absent evidence is reported as
+        `"unknown"`, never fabricated as a pass.
+
+        Args:
+            feature: Feature identifier (matches per-spec index header).
+            worktree: Absolute path to the feature worktree.
+            task_id: The TASK id to inspect.
+            execution_id: The execution that must own this worktree AND the
+                attempt branch being reported on (a foreign execution's
+                attempt is never adopted -- see `inspection._discover_attempt_branch`).
+
+        Returns:
+            A bounded snapshot dict (spec AC4/AC5: "16KiB"); see
+            `inspection.delivery_report` for its exact shape.
+
+        Raises:
+            CoderFailure with codes:
+                - worktree_outside_base / feature_not_found: from `_resolve_feature`
+                - execution_not_found / execution_scope_mismatch: foreign/unknown execution
+                - evidence_persistence_failed: no durable evidence store is configured
+                - index_unreadable: the per-spec index is missing or unreadable
+                - task_not_in_plan: task_id is not declared in the per-spec index
+                - branch_not_found: no execution-owned attempt branch exists for task_id
+        """
+        ctx = await self._resolve_feature(feature, worktree)
+        self._require_execution_owns(ctx, execution_id)
+        if self._evidence_store is None:
+            raise CoderFailure("evidence_persistence_failed", "no durable evidence store is configured for this engine")
+
+        from parrot.flows.dev_loop.sdd_coder import inspection  # local: avoid a module-level import cycle
+
+        try:
+            return await inspection.delivery_report(
+                feature=Path(ctx.index_path).stem,
+                worktree=Path(ctx.worktree),
+                task_id=task_id,
+                execution_id=execution_id,
+                store=self._evidence_store,
+            )
+        except FileNotFoundError as exc:
+            raise CoderFailure("index_unreadable", str(exc)) from exc
+        except LookupError as exc:
+            raise CoderFailure("branch_not_found", str(exc)) from exc
+        except ValueError as exc:
+            raise CoderFailure("internal_error", str(exc)) from exc
+
     async def _resolve_feature(self, feature: str, worktree: str) -> _FeatureCtx:
         """Match sdd/tasks/index/*.json headers in the sdd-worker.md §1 order.
 

@@ -563,6 +563,14 @@ class CoderMergeArgs(CoderPrepareNativeArgs):
     """Same shape as prepare_native."""
 
 
+class CoderTaskContextArgs(CoderPrepareNativeArgs):
+    """Same shape as prepare_native (FEAT-584 M1b/R1b) -- read-only, never allocates a worktree."""
+
+
+class CoderDeliveryReportArgs(CoderPrepareNativeArgs):
+    """Same shape as prepare_native (FEAT-584 M1b/R1b) -- read-only, never merges/validates/approves."""
+
+
 class CoderRecordFeedbackArgs(CoderPlanArgs):
     """Record a worker-confirmed correction from a known coder attempt."""
 
