@@ -104,7 +104,7 @@ def test_coder_retains_delivery_scope(tmp_path: Path) -> None:
     # Unlike the deliberately-distinct reviewer profiles above, the coder's installed and
     # packaged twins must stay in semantic lockstep -- byte-identical, like
     # `test_subagent_parity.py` enforces for every other dual-sourced prompt.
-    pkg_copy_raw = (
-        (resources.files("parrot.flows.dev_loop") / "_subagent_data" / "sdd-coder.md").read_text(encoding="utf-8")
+    pkg_copy_raw = (resources.files("parrot.flows.dev_loop") / "_subagent_data" / "sdd-coder.md").read_text(
+        encoding="utf-8"
     )
     assert installed_body == pkg_copy_raw
