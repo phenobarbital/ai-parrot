@@ -188,4 +188,12 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Implementado `scripts/sdd/finalize_task.py::finalize_task/main` (validación de evidencia/HEAD, journal reanudable fuera de código bajo el mismo `durable_root` que `telemetry.resolve_durable_root`, índice Git temporal aislado para `close_task.sh`, verificación de postcondiciones) y
+`packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py` (3 tests: validación semántica/HEAD, crash-resume + twin divergente, preservación de staging ajeno). Validation Command
+`pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py -q` → 3 passed (verificado dos veces para determinismo).
+
+Desviaciones/decisiones documentadas por el agente: (1) el criterio de "archivos cambiados" para `check_fidelity` se derivó de `implementation_sha` + `fix_commits` vía `git diff-tree` (el contrato no fijaba la fuente exacta); (2) un evidence-hash distinto sobre una tarea ya cerrada se rechaza como `TaskEvidenceStaleError` (nueva operación requerida), reabrir queda fuera de scope; (3) el journal reutiliza `SDD_CODER_TELEMETRY_DIR` vía `os.environ` en lugar de `parrot.conf` para evitar el side-effect de chdir de navconfig.
+
+Nota de entorno (no bloqueante para esta tarea): los `.so` de Cython de `parrot.utils.{types,parsers.toml}` no existen en worktrees (solo en el checkout principal); sin ellos, importar `parrot.flows.dev_loop.sdd_coder` falla en collection para todo el directorio de tests, incluidos módulos hermanos ya mergeados. El agente copió esos artefactos ignorados por git desde el checkout principal solo para verificar localmente su propio archivo de test; permanecen untracked y no forman parte del commit. Quien ejecute el suite merge-tier del feature necesitará el mismo workaround o que el pool provea esos binarios.
+
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~1012s · Tokens: 235383 (in/out combined, not split by engine)

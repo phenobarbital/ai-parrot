@@ -245,7 +245,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -255,8 +255,8 @@
       "parallelism_notes": "Depende de TASK-3559 por refs durables. CLI y tests propios; puede ejecutarse junto a integraciones MCP.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3566-deterministic-task-finalization.md"
+      "completed_at": "2026-09-21T10:31:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3566-deterministic-task-finalization.md"
     },
     {
       "id": "TASK-3567",
