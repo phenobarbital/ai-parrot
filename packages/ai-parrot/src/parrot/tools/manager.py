@@ -49,6 +49,28 @@ class ToolNameCollisionError(ValueError):
     """
 
 
+def get_toolkit_owner(tool: Any) -> Optional["AbstractToolkit"]:
+    """Return the toolkit that owns ``tool``, or ``None``.
+
+    A toolkit is reachable two ways: it is registered directly (``tool`` IS
+    an ``AbstractToolkit``), or one of its methods is registered as a
+    ``ToolkitTool`` whose ``bound_method.__self__`` is the owner. Anything
+    else (plain ``AbstractTool``, ``ToolDefinition``, ``None``) has no owner.
+
+    Args:
+        tool: Any object a ``ToolManager`` iterable may yield.
+
+    Returns:
+        The owning ``AbstractToolkit`` instance, or ``None``.
+    """
+    from .toolkit import AbstractToolkit as _AbstractToolkit
+
+    if isinstance(tool, _AbstractToolkit):
+        return tool
+    owner = getattr(getattr(tool, "bound_method", None), "__self__", None)
+    return owner if isinstance(owner, _AbstractToolkit) else None
+
+
 class ToolFormat(Enum):
     """Enum for different tool format requirements by LLM providers."""
 
@@ -2586,7 +2608,7 @@ class ToolManager(MCPToolManagerMixin):
         from .working_memory import WorkingMemoryToolkit
 
         for tool in self._tools.values():
-            owner = getattr(getattr(tool, "bound_method", None), "__self__", None)
+            owner = get_toolkit_owner(tool)
             if isinstance(owner, WorkingMemoryToolkit):
                 return owner
         return None
