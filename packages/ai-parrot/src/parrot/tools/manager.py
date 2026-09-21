@@ -9,9 +9,6 @@ import aiohttp
 import pandas as pd
 from .abstract import AbstractTool, ToolResult, _run_tool_output_guardrails
 from .compression import CompressionStage, CompressorRegistry
-from .compression import (
-    codecs as _compression_codecs,
-)  # noqa: F401 — import side effect: registers built-in codecs (json_compact, ...) before CompressorRegistry.load() validates the core manifest below
 from .compression.budget import BudgetRouter
 from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin

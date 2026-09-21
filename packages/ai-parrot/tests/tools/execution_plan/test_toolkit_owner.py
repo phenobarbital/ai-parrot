@@ -1,4 +1,5 @@
 """FEAT-585 M1 — toolkit-owner discovery (AC12)."""
+
 from __future__ import annotations
 
 import pytest
