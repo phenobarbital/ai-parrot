@@ -62,9 +62,9 @@ def test_review_variants_validate_checkpoint(tmp_path: Path) -> None:
         # AC9/AC17: the boundary block augments the existing steps/workflow -- it must
         # land right after the section heading and never displace the first real step.
         anchor = _ANCHOR_MARKER[rel_path]
-        assert body.index(_BOUNDARY_HEADING) < body.index(anchor), (
-            f"{rel_path}: durable review boundary block must precede {anchor!r}"
-        )
+        assert body.index(_BOUNDARY_HEADING) < body.index(
+            anchor
+        ), f"{rel_path}: durable review boundary block must precede {anchor!r}"
 
     # Existing review criteria, adversarial cross-check and ledger gates are preserved,
     # not relaxed, by the new boundary block (task title: "sin relajar gates").
@@ -98,9 +98,9 @@ def test_done_variants_keep_release_gates(tmp_path: Path) -> None:
             assert marker in section, f"{rel_path} boundary block is missing {marker!r}"
 
         anchor = _ANCHOR_MARKER[rel_path]
-        assert body.index(_BOUNDARY_HEADING) < body.index(anchor), (
-            f"{rel_path}: durable review boundary block must precede {anchor!r}"
-        )
+        assert body.index(_BOUNDARY_HEADING) < body.index(
+            anchor
+        ), f"{rel_path}: durable review boundary block must precede {anchor!r}"
 
     # Existing verification stamping, blocker checks and push/merge/hotfix policy stay
     # intact -- the boundary block is a preface, never a rewrite of these steps.
