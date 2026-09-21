@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-21T18:40:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-21T20:15:00+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-587",
       "feature": "fixgroup-05941da3dd5f",
       "spec": "sdd/specs/fixgroup-05941da3dd5f.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies and no exclusive resource: sole owner of sdd_coder/engine.py, sdd_coder/models.py and tests/.../test_engine_dispatch.py. Shares no file with TASK-3579, which is documentation-only.",
-      "assigned_to": null,
-      "started_at": "2026-09-21T19:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3578-retire-dirty-task-worktree-engine.md"
+      "assigned_to": "claude-opus-5:7e0222c8",
+      "started_at": "2026-09-21T18:42:00+00:00",
+      "completed_at": "2026-09-21T18:50:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3578-retire-dirty-task-worktree-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3579",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-587",
       "feature": "fixgroup-05941da3dd5f",
       "spec": "sdd/specs/fixgroup-05941da3dd5f.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies and no exclusive resource: sole owner of docs/dev_loop/sdd-coder-orchestrator.md and sdd/specs/sdd-worker-subagents.spec.md, neither of which TASK-3578 touches. Documentation only — no import of any symbol TASK-3578 changes.",
-      "assigned_to": null,
-      "started_at": "2026-09-21T19:29:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3579-retire-dirty-task-worktree-docs.md"
+      "assigned_to": "claude-opus-5:7e0222c8",
+      "started_at": "2026-09-21T18:52:00+00:00",
+      "completed_at": "2026-09-21T18:55:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3579-retire-dirty-task-worktree-docs.md",
+      "verification": "verified"
     }
   ]
 }

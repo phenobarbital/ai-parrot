@@ -57,7 +57,6 @@ ERROR_CODES: frozenset[str] = frozenset(
         "job_not_found",
         "branch_not_found",
         "dirty_feature_worktree",
-        "dirty_task_worktree",
         "merge_conflict",
         "fidelity_violation",
         "invalid_arguments",

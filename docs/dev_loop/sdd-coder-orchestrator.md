@@ -430,8 +430,13 @@ as the unbudgeted comparison baseline.
   `coder_status(job_id)` rather than re-dispatching. If the server
   restarted mid-job, the branch/worktree persists and surfaces as an orphan
   on the next `coder_plan`.
-- **`dirty_task_worktree`** — the coder left uncommitted or untracked
-  changes; nothing is merged until the branch is clean.
+- **uncommitted coder deliveries** — a sandboxed seat has `.git` read-only by
+  design and cannot commit; the engine extracts the task's **declared** files
+  itself and commits them on the attempt branch (`_commit_declared_changes`,
+  FEAT-587 / `ed267c217`). There is no `dirty_task_worktree` rejection. A file
+  the coder produced but the task does not declare is never merged and never
+  dropped: it surfaces as `fidelity_violation` with `unexpected_files` and the
+  `undeclared_files_left_uncommitted` diagnostic.
 - **Redis warnings** — dispatch telemetry to Redis is best-effort; a single
   startup warning when `REDIS_URL` is unreachable is expected and harmless.
   Set `REDIS_URL` to enable live event streams.

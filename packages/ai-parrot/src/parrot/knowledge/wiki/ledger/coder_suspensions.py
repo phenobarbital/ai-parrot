@@ -46,11 +46,28 @@ SuspensionReason = Literal[
     "timeout",
     "dispatch_error",
     "invalid_output",
-    "dirty_delivery",
+    "dirty_delivery",  # RETIRED, read-only -- never produced since FEAT-587. Do not remove; see below.
     "fidelity_violation",
     "review_critical",
     "probe_failed",
 ]
+"""Why a model seat was suspended.
+
+``dirty_delivery`` is RETIRED and must not be removed. FEAT-587 deleted its only
+producer: ``.git`` is read-only to a sandboxed coder seat by design, so an
+uncommitted-but-declared delivery is correct behaviour that the engine extracts
+and commits itself (``_commit_declared_changes``, ed267c217) rather than charging
+against the model.
+
+The member stays because :meth:`CoderSuspensionStore._replay` is strict and
+fail-closed: one stored record whose ``reason`` is absent from this Literal raises
+:class:`SuspensionHistoryError` for the ENTIRE history, not just that row, and
+callers must not treat a failed read as a clean history. The incident log is
+append-only -- expiry filters records, it never deletes them -- and is gitignored,
+so it is per-machine and cannot be migrated centrally. Historical
+``dirty_delivery`` rows therefore cannot be waited out; dropping the member would
+brick suspension history on every machine that ran a coder seat before ed267c217.
+"""
 
 # A template-generated explanation, not a raw prompt/provider transcript.
 Explanation = Annotated[str, Field(min_length=1, max_length=1400)]

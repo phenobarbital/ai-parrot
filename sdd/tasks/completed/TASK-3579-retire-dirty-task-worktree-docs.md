@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-587 — Retire the `dirty_task_worktree` contract
 **Spec**: `sdd/specs/fixgroup-05941da3dd5f.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -196,8 +196,21 @@ grep -rn "dirty_task_worktree" docs/dev_loop/sdd-coder-orchestrator.md
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5 (session 7e0222c8)
+**Date**: 2026-09-21
+**Notes**: Replaced the operator-facing `dirty_task_worktree` bullet with a
+description of the extract-and-commit behaviour, naming `fidelity_violation` /
+`unexpected_files` / `undeclared_files_left_uncommitted` as what an operator
+should actually look for. Annotated FEAT-549's AC-22 (strike-through plus an
+explicit supersession note) and its S5 design-research row at `:1170`; neither
+original text was deleted, since FEAT-549 is a completed feature and its spec
+is a historical record.
 
-**Deviations from spec**: none | describe if any
+One `dirty_task_worktree` mention survives in the docs, inside the FEAT-587
+note itself ("There is no `dirty_task_worktree` rejection") — allowed by this
+task's Test Specification.
+
+Validation: `tests/sdd_scripts/test_doc_taxonomy.py` +
+`test_sdd_spec_intake_contract.py` 9 passed. No code file touched.
+
+**Deviations from spec**: none

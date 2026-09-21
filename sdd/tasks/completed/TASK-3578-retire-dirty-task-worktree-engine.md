@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-587 — Retire the `dirty_task_worktree` contract
 **Spec**: `sdd/specs/fixgroup-05941da3dd5f.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -308,8 +308,27 @@ specification of the shipped behaviour.
 
 ## Completion Note
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-opus-5 (session 7e0222c8)
+**Date**: 2026-09-21
+**Notes**: Collapsed the unreachable guard in `_run_task` (the consolidation
+result is now always terminal), deleted the `dirty_delivery` branch from
+`_classify_failure_reason`, rewrote the `_run_task` docstring, and removed
+`"dirty_task_worktree"` from `ERROR_CODES`. Added
+`TestDirtyTaskWorktreeContractRetired` to `test_engine_dispatch.py`: an
+AST-based guard that ignores docstrings and comments (so the two surviving
+prose mentions at `engine.py:2081` and `:3185`, both explaining the
+retirement, are allowed) and asserts no evaluated string literal in
+`engine.py`/`models.py` still carries the contract; plus an
+`ERROR_CODES` membership test and a classifier test with `"timeout"` and
+`"fidelity_violation"` controls. The guard was mutation-checked: restoring the
+enum member makes both assertions fail.
 
-**Deviations from spec**: none | describe if any
+`coder_suspensions.py` deliberately untouched — `SuspensionReason` still
+accepts `"dirty_delivery"` so pre-`ed267c217` ledger rows parse (AC-5, spec
+§8 Q1).
+
+Validation: `test_engine_dispatch.py` 38 passed; `test_engine_plan_merge.py` +
+`test_integration_chunk.py` 35 passed with the three named integration tests
+unmodified. `ruff check` and `black --check` clean.
+
+**Deviations from spec**: none
