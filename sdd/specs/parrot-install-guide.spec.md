@@ -10,7 +10,7 @@ tags: [installation, onboarding, getting-started, wikitoolkit, documentation]
 **Feature ID**: FEAT-586
 **Date**: 2026-09-21
 **Author**: Arturo Martinez
-**Status**: draft
+**Status**: accepted
 **Target version**: 1.0.5
 
 ---
@@ -119,7 +119,7 @@ docs/getting-started.md ──(claim anchors)──→ test_getting_started_clai
 ```python
 # Claim extracted from the guide (test-harness-internal, not a public API)
 class DocClaim(BaseModel):
-    kind: Literal["python-range", "extra", "script", "provider", "envvar"]
+    kind: Literal["python-range", "extra", "script", "provider", "envvar", "dep"]
     value: str
     line: int          # 1-based line in the source document, for failure messages
     source: Path
@@ -156,6 +156,7 @@ importable Python API and changes no runtime behavior.
   <!-- verify: script=wikitoolkit -->
   <!-- verify: provider=claude-code -->
   <!-- verify: envvar=TYPESAFE_API_KEY -->
+  <!-- verify: dep=ai-parrot-client-anthropic:claude-agent-sdk>=0.1.68 -->
   ```
   One anchor per line, immediately preceding the prose or fenced block it
   substantiates. Anchors are HTML comments, invisible when rendered.
@@ -170,6 +171,10 @@ importable Python API and changes no runtime behavior.
   the step needs it, and what it changes on the machine. Privileged (`sudo`) or
   network-fetching commands additionally state their blast radius and offer a
   non-piped alternative where one exists.
+
+  The CLI-backed provider section installs the **latest minor** of each CLI
+  (`@latest`) and pins no concrete version number; it documents the verifiable
+  SDK floors (`claude-agent-sdk>=0.1.68`, `openai-codex>=0.1.0`) instead.
 
 ### Module 2: Claim-verification harness
 - **Path**: `packages/ai-parrot/tests/docs/test_getting_started_claims.py` (new)
@@ -200,6 +205,9 @@ importable Python API and changes no runtime behavior.
   def test_named_providers_are_registered() -> None:
       """Every provider claim resolves in entry_points(group='parrot.clients')."""
 
+  def test_named_dep_floors_match() -> None:
+      """Every `dep=<dist>:<req>` claim matches that satellite's declared dependency floor."""
+
   def test_hello_world_snippet_executes() -> None:
       """The guide's hello-world runs against a stub client — no network, no API key."""
   ```
@@ -216,7 +224,8 @@ importable Python API and changes no runtime behavior.
   # --venv <dir>             virtualenv dir (default: .venv)
   # --python <bin>           interpreter (default: python3)
   # --with-wiki              run `wikitoolkit build` after install
-  # --install-cli            npm-install the claude/codex CLI for a CLI-backed provider
+  # --install-cli            npm-install the LATEST MINOR of the claude/codex CLI
+  #                          (@latest) for a CLI-backed provider — pins no version
   # --system-deps            install OS packages via sudo apt-get / brew (opt-in)
   # --dry-run                print every command without executing it
   # -h|--help
@@ -274,6 +283,7 @@ importable Python API and changes no runtime behavior.
 | `test_named_extras_exist` | M2 | Every extra claim is a real optional-dependency key |
 | `test_named_scripts_exist` | M2 | Every script claim is a real `[project.scripts]` key |
 | `test_named_providers_are_registered` | M2 | Every provider claim resolves in `parrot.clients` entry points |
+| `test_named_dep_floors_match` | M2 | Every dep-floor claim matches the satellite's declared dependency |
 | `test_failure_message_names_file_and_line` | M2 | A stale claim fails naming `file:line` and the offending value |
 
 ### Integration Tests
@@ -336,6 +346,11 @@ def stub_provider(monkeypatch) -> None:
 - [ ] AC15. No mention of the `/sdd-*` workflow, agent-host wiring, or RTK.
 - [ ] AC16. `ruff check` and `black --check` pass on all new Python.
 - [ ] AC17. No changes to `README.md` and no runtime code changes.
+- [ ] AC18. The CLI-backed section installs the **latest minor** of each CLI
+      (`@latest`) and states that policy; it pins **no** concrete CLI version
+      number. It documents the two verifiable SDK floors —
+      `claude-agent-sdk>=0.1.68` and `openai-codex>=0.1.0` — which are anchored
+      (`dep` claim kind) so the harness verifies them.
 
 ---
 
@@ -433,7 +448,11 @@ if __name__ == '__main__':
 - `rust` extra → `parrot_codec`, pure-Python fallback (pyproject.toml:860-862)
 - `claude-agent` extra → `ai-parrot-client-anthropic`, which depends on
   `claude-agent-sdk>=0.1.68` (that satellite's pyproject.toml:18)
-- `codex-agent` extra → `ai-parrot-client-openai[bridge]` (pyproject.toml:579-584)
+- `codex-agent` extra → `ai-parrot-client-openai[bridge]` (pyproject.toml:579-584);
+  the OpenAI satellite depends on `openai-codex>=0.1.0` (that satellite's pyproject.toml:23)
+- **No `claude`/`codex` CLI *binary* version floor is asserted anywhere in the
+  tree** — only the two SDK floors above. A concrete CLI version is therefore
+  unverifiable and must not be hardcoded.
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~A Gemini/Antigravity (`agy`) CLI provider~~ — the complete 37-key
@@ -483,6 +502,10 @@ if __name__ == '__main__':
   when present.
 - **Doc path collision.** `docs/getting-started.md` must not shadow an existing
   page — verified absent.
+- **A hardcoded CLI version would be an unverifiable claim.** The tree pins SDK
+  floors, never CLI-binary versions. Mitigation: the guide states a "latest
+  minor" policy (`@latest`) and anchors only the verifiable SDK floors via the
+  `dep` claim kind (AC18).
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -518,10 +541,17 @@ No new runtime dependency is introduced.
       `claude auth` flow (claude_agent.py:272-274). Because
       `detect_coding_agent_llm()` only calls `shutil.which`, a logged-out binary
       **is** detected and fails at call time. Captured as AC6 and a §7 risk.
-- [ ] Should the guide pin a concrete `claude`/`codex` CLI minimum version? The
-      clients depend on `claude-agent-sdk>=0.1.68`, but no minimum *CLI* version
-      is asserted anywhere in the tree. Decide during implementation; if no
-      floor can be verified, state none rather than invent one. — *Owner: Arturo Martinez*
+- [x] Should the guide pin a concrete `claude`/`codex` CLI minimum version? —
+      *Resolved by Arturo Martinez*: Track the **latest minor** of each CLI as a
+      policy, not a hardcoded number. The guide and `--install-cli` install the
+      most recent release (`@latest`) and state that ai-parrot targets the latest
+      minor of Claude Code and Codex. No concrete CLI version is written anywhere:
+      the tree asserts no CLI-binary floor (only the SDK floors
+      `claude-agent-sdk>=0.1.68` and `openai-codex>=0.1.0`), so a hardcoded CLI
+      number would be an **unverifiable** claim the Option-C harness cannot check
+      and that rots silently — the exact failure Option C exists to prevent. The
+      guide documents the two SDK floors and the harness anchors them via the new
+      `dep` claim kind. (§3 M1, §3 M3, §4, AC18)
 
 ---
 
@@ -564,3 +594,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-21 | Arturo Martinez | Initial draft from accepted brainstorm (Option C) |
+| 0.2 | 2026-09-21 | Arturo Martinez | Resolve CLI-version open question: latest-minor policy, no hardcoded CLI floor, add `dep` claim kind (AC18) |
