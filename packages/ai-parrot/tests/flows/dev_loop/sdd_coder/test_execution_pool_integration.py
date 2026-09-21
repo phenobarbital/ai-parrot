@@ -1520,12 +1520,12 @@ def test_two_mcp_strong_seats_produce_no_warning(tmp_path: Path) -> None:
     roster = RosterConfig(
         seats=[
             RosterSeat(label="mcp-one", backend="codex", model="gpt-5.6-terra"),
-            RosterSeat(label="mcp-two", backend="claude", model="claude-sonnet-5"),
+            RosterSeat(label="mcp-two", backend="codex", model="gpt-5.6-luna"),
         ],
         complexity=ComplexityPolicy(
             strong_models=(
                 StrongModelIdentity(canonical_model="terra", backend="codex", model="gpt-5.6-terra"),
-                StrongModelIdentity(canonical_model="sonnet", backend="claude", model="claude-sonnet-5"),
+                StrongModelIdentity(canonical_model="luna", backend="codex", model="gpt-5.6-luna"),
             )
         ),
     )
