@@ -434,7 +434,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -450,8 +450,8 @@
       "parallelism_notes": "Depende de TASK-3557/TASK-3569/TASK-3570/TASK-3571/TASK-3572/TASK-3573/TASK-3574 por transporte, hook, twins y perfiles completos; integración final offline.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3575-optimization-workflow-regression.md"
+      "completed_at": "2026-09-21T13:59:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3575-optimization-workflow-regression.md"
     },
     {
       "id": "TASK-3576",
