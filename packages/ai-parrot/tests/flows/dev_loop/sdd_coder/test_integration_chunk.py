@@ -41,7 +41,10 @@ class CommittingFakeDispatcher:
         `git_sandbox_feature` fixture's own task templates — TASK-3120).
       - "fail": raise `DispatchExecutionError` before writing anything.
       - "extra": also commit an UNLISTED file (fidelity violation).
-      - "dirty": leave an uncommitted, untracked file behind.
+      - "dirty": also leave an uncommitted, UNDECLARED file behind.
+      - "uncommitted": deliver the listed file WITHOUT committing it, the way a
+        sandboxed seat must (its `.git` is read-only by design, so producing the
+        commit is the engine's job).
     """
 
     def __init__(self, label: str, mode: str = "ok") -> None:
@@ -57,6 +60,10 @@ class CommittingFakeDispatcher:
 
         n = int(brief.task_id.rsplit("-", 1)[-1])
         target = f"pkg/t{n}.py"
+        if self.mode == "uncommitted":
+            (Path(cwd) / target).write_text(f"# {brief.task_id}\n")
+            self.calls.append({"cwd": cwd, "start": start, "end": time.monotonic(), "subagent": profile.subagent})
+            return DevelopmentOutput(files_changed=[target], commit_shas=[], summary=f"{self.label} uncommitted")
         await _write_and_commit(Path(cwd), target, f"# {brief.task_id}\n", f"impl {brief.task_id}")
 
         if self.mode == "extra":
@@ -154,10 +161,15 @@ async def test_partial_completion_and_orphans(git_sandbox_feature, three_seat_ro
     assert violated[0].task_id in plan2.pending
 
 
-async def test_dirty_attempt_retries_on_other_seat_and_merges(git_sandbox_feature, three_seat_roster, noop_probe):
-    """A salvaged output with uncommitted changes gets one fresh-seat retry."""
+async def test_uncommitted_declared_work_is_extracted_and_merged(git_sandbox_feature, three_seat_roster, noop_probe):
+    """A seat that delivers but cannot commit is salvaged on its FIRST attempt.
+
+    This is the normal path for every sandboxed CLI seat: `.git` is read-only to
+    the coder by design, so it leaves the declared file in the tree and the engine
+    commits it. No retry should be burned.
+    """
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
-    builder, fakes = make_builder({"nova": "dirty"})
+    builder, fakes = make_builder({"nova": "uncommitted"})
     engine = SddCoderEngine(
         roster=three_seat_roster,
         probe=noop_probe,
@@ -173,15 +185,34 @@ async def test_dirty_attempt_retries_on_other_seat_and_merges(git_sandbox_featur
 
     result = done.tasks[0]
     assert result.outcome == "merged"
-    assert len(result.attempts) == 2
+    assert len(result.attempts) == 1, "extraction must not burn a retry"
     assert result.attempts[0].seat_label == "a"
-    assert result.attempts[1].seat_label == "b"
-    assert result.attempts[0].error.startswith("dirty_task_worktree:")
     assert fakes["nova"].calls[0]["cwd"].endswith(f"{task_id}-a1")
-    assert fakes["google-compat"].calls[0]["cwd"].endswith(f"{task_id}-a2")
 
     _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
-    assert f"impl {task_id}" in log
+    assert "engine-committed coder deliverable" in log
+
+
+async def test_undeclared_leftover_is_a_fidelity_violation(git_sandbox_feature, three_seat_roster, noop_probe):
+    """An undeclared file left in the tree is a scope violation, not a retryable dirty tree."""
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    builder, _fakes = make_builder({"nova": "dirty"})
+    engine = SddCoderEngine(
+        roster=three_seat_roster,
+        probe=noop_probe,
+        redis_url="redis://127.0.0.1:1/0",
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    plan = await engine.plan("FEAT-549", str(worktree))
+    task_id = plan.chunks[0].tasks[0].task_id
+
+    job = await engine.run_chunk("FEAT-549", str(worktree), [task_id])
+    done = await engine.wait(job.job_id, 30)
+
+    result = done.tasks[0]
+    assert result.outcome == "fidelity_violation"
+    assert result.unexpected_files == ["pkg/untracked.py"]
 
 
 async def test_merge_conflict_leaves_feature_clean(git_sandbox_feature, three_seat_roster, noop_probe):
