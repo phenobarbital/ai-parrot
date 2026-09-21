@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -258,29 +259,53 @@ def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:
 
 
 HOST_DEFAULT_TIMEOUT_MS = 120_000
+HOST_MAX_TIMEOUT_MS = 600_000
 KILL_GRACE_SECONDS = 5
+BACKSTOP_MARGIN_RATIO = 0.25
+MIN_BACKSTOP_MARGIN_SECONDS = 5
+
+
+def _backstop_seconds(seconds: int) -> int:
+    """Lift a host-side bound to the sandbox backstop that sits above it.
+
+    Args:
+        seconds: The host-side bound in whole seconds.
+
+    Returns:
+        That bound plus headroom — ``BACKSTOP_MARGIN_RATIO`` of it, never less
+        than ``MIN_BACKSTOP_MARGIN_SECONDS``.
+    """
+    return seconds + max(MIN_BACKSTOP_MARGIN_SECONDS, math.ceil(seconds * BACKSTOP_MARGIN_RATIO))
 
 
 def command_timeout_seconds(tool_input: dict[str, Any]) -> int | None:
-    """Resolve the wall-clock bound the sandboxed command must respect.
+    """Resolve the wall-clock backstop the sandboxed command must respect.
 
-    The host kills a foreground Bash call at ``tool_input["timeout"]`` (or its
-    default, ``BASH_DEFAULT_TIMEOUT_MS`` / 120 s). A process that prints an
-    error and then never exits — an unclosed ``aiosqlite`` worker thread is the
-    classic case — keeps Bubblewrap waiting on it, and the host's kill does not
-    always reach through the sandbox. Enforcing the same bound *inside* the
-    sandbox guarantees the call terminates either way.
+    A process that prints an error and then never exits — an unclosed
+    ``aiosqlite`` worker thread is the classic case — keeps Bubblewrap waiting
+    on it, and the host's teardown does not always reach through the sandbox,
+    so the command is bounded *inside* the sandbox too.
+
+    That bound is a backstop, never the first kill. The host does not kill a
+    foreground Bash call that overruns ``tool_input["timeout"]`` (or its
+    default, ``BASH_DEFAULT_TIMEOUT_MS`` / 120 s): it *detaches* it and lets it
+    finish in the background. A sandbox kill at exactly the host's bound turns
+    that rescue into ``exit 124`` and discards the output of a healthy slow
+    command — a merge-tier pytest sweep is the classic case. So every bound
+    gets headroom, and an implicit one is lifted to at least the host's maximum
+    (``HOST_MAX_TIMEOUT_MS``): once the host has detached a command, nothing
+    else will ever reap it.
 
     Args:
         tool_input: The native ``Bash`` tool input.
 
     Returns:
-        The bound in whole seconds (at least 1), or ``None`` for a background
-        command without an explicit timeout, which the host never bounds.
+        The backstop in whole seconds, or ``None`` for a background command
+        without an explicit timeout, which the host never bounds.
     """
     explicit = tool_input.get("timeout")
     if isinstance(explicit, (int, float)) and explicit > 0:
-        return max(1, int(explicit // 1000))
+        return _backstop_seconds(max(1, int(explicit // 1000)))
     if tool_input.get("run_in_background"):
         return None
     default_ms = os.environ.get("BASH_DEFAULT_TIMEOUT_MS", "")
@@ -288,7 +313,7 @@ def command_timeout_seconds(tool_input: dict[str, Any]) -> int | None:
         milliseconds = int(default_ms) if default_ms else HOST_DEFAULT_TIMEOUT_MS
     except ValueError:
         milliseconds = HOST_DEFAULT_TIMEOUT_MS
-    return max(1, milliseconds // 1000)
+    return max(_backstop_seconds(max(1, milliseconds // 1000)), HOST_MAX_TIMEOUT_MS // 1000)
 
 
 def bounded_shell_argv(command: str, tool_input: dict[str, Any]) -> list[str]:

@@ -125,8 +125,13 @@ async def test_engine_native_prepare_then_merge(git_sandbox_feature, noop_probe)
     assert status.strip() == ""
 
 
-async def test_engine_rejects_dirty_task_worktree(git_sandbox_feature, noop_probe):
-    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+async def test_engine_reports_undeclared_leftovers_as_fidelity_violation(git_sandbox_feature, noop_probe):
+    """A file the task does not declare is a scope violation, not salvageable work.
+
+    The engine stages only declared files, so an undeclared leftover stays
+    uncommitted and is surfaced -- never silently dropped, never committed.
+    """
+    worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     engine = SddCoderEngine(
         roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
         probe=noop_probe,
@@ -139,8 +144,38 @@ async def test_engine_rejects_dirty_task_worktree(git_sandbox_feature, noop_prob
     (path / "stray.txt").write_text("untracked\n")
 
     result = await engine.merge("demo", str(worktree), "TASK-0002")
-    assert result.outcome == "failed"
-    assert "dirty_task_worktree" in result.diagnostics
+    assert result.outcome == "fidelity_violation"
+    assert result.unexpected_files == ["stray.txt"]
+    assert "undeclared_files_left_uncommitted" in result.diagnostics
+    _rc, log, _err = await _git("log", "--oneline", "TASK-0002.a1", cwd=path)
+    assert "engine-committed coder deliverable" not in log
+
+
+async def test_engine_commits_uncommitted_declared_work(git_sandbox_feature, noop_probe):
+    """A sandboxed coder cannot commit (`.git` is read-only by design) -- the engine extracts.
+
+    The declared file is delivered in the tree and left uncommitted; consolidation
+    must stage and commit it rather than discarding the attempt.
+    """
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0002", 1)
+    path = Path(await manager.create("TASK-0002.a1"))
+    (path / "pkg" / "t2.py").write_text("# t2 delivered but not committed\n")
+
+    result = await engine.merge("demo", str(worktree), "TASK-0002")
+    assert result.outcome == "merged"
+
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert "engine-committed coder deliverable" in log
+    assert (worktree / "pkg" / "t2.py").read_text() == "# t2 delivered but not committed\n"
+    _rc, status, _err = await _git("status", "--porcelain", cwd=worktree)
+    assert status.strip() == ""
 
 
 async def test_engine_fidelity_violation_keeps_branch(git_sandbox_feature, noop_probe):

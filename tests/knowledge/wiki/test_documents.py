@@ -300,7 +300,7 @@ class _FakeClientSession:
 def _install_fake_session(monkeypatch, *, response=None, exc=None):
     fake_session = _FakeClientSession(response=response, exc=exc)
     monkeypatch.setattr(
-        "parrot.knowledge.wiki.documents.aiohttp.ClientSession",
+        "aiohttp.ClientSession",
         lambda **_kwargs: fake_session,
     )
 

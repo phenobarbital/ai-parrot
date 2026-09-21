@@ -10,7 +10,7 @@ tags: [sdd, performance, mcp, bounded-inspection, concurrency, compaction, jev, 
 **Feature ID**: FEAT-584
 **Date**: 2026-09-21
 **Author**: Jesús Lara / Codex
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ## 1. Motivation & Business Requirements
