@@ -2246,10 +2246,19 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
 
 
 # FEAT-578: the ADR decision plane. Its commands live in decisions/cli.py to
-# keep this module's size in check; only the registration is here.
-from parrot.knowledge.wiki.decisions.cli import adr as _adr_group  # noqa: E402  (bottom import breaks a cycle)
+# keep this module's size in check. Registration is lazy (FEAT-584 /
+# TASK-3569): `decisions.cli` (and the service/store/structural chain it
+# pulls in) is only imported once an `adr` subcommand is actually resolved,
+# so the `claude-hook` fast path — and every other `wikitoolkit` invocation
+# that never touches ADRs — no longer pays that import cost.
+from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup  # noqa: E402  (bottom import breaks a cycle)
 
-wiki.add_command(_adr_group)
+wiki.add_command(
+    LazyAdrGroup(
+        name="adr",
+        help="Architectural decisions: ingest ADRs, look them up, and review candidates.",
+    )
+)
 
 
 @wiki.group(name="symbols")
