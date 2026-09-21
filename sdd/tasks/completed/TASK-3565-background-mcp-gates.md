@@ -283,4 +283,64 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `f65637a91f474c7fb22ff1529fcb67a2`, segundo
+intento — el primero, backend codex/gpt-5.6-terra, terminó `dirty_task_worktree` sin commit porque
+el sandbox de `codex exec --sandbox workspace-write` mantiene `.git` read-only; ver memoria
+"codex seats cannot commit"). Tocó solo los cinco targets listados:
+
+- `models.py` MODIFY — 6 códigos de error nuevos en `ERROR_CODES`, `CoderBgStatusArgs` /
+  `CoderRunValidationArgs` (subclases `_Args` reutilizando `_check_uuid`/`_check_abs`/`_check_task_ids`),
+  campo opcional `bg_handle` en `CoderJob`/`NativePrep`.
+- `engine.py` MODIFY — construye un `BackgroundRegistry` + `ValidationSupervisor` en `__init__`
+  (solo con evidence store durable configurado, keyed por un owner id propio por instancia);
+  registra un handle real en cada punto de lanzamiento (`run_chunk` con
+  `kind='mcp_job'/authority='engine'`, asentado desde el propio outcome de `JobTable`, nunca un
+  exit_code POSIX; `prepare_native` registra un handle pendiente `kind='native_agent'
+  /authority='host_observation'` que `record_native_observation` enlaza-sin-asentar); añade
+  `bg_status()`/`run_validation()` (chequeo de ownership vía mapa handle→execution_id local antes
+  de tocar el registro; `host_bridge` reportado como no soportado; `task_ids` validados contra el
+  índice per-spec); ambos `end_execution` y `cleanup` bloqueados por
+  `_assert_no_pending_validations()` (reutiliza `execution_busy`, nunca un código nuevo) y publican
+  un artefacto de settlement durable vía `ExecutionEvidenceStore.put_artifact` solo tras pasar esos
+  gates (fallo degrada el mismo flag `persistence_degraded` existente).
+- `toolkit.py` MODIFY — registra `coder_bg_status`/`coder_run_validation` en `arg_models` con
+  docstrings LLM-facing, enrutados por el `_run()` existente; ningún tool adicional al par que
+  especifica el blueprint.
+- `test_toolkit.py` MODIFY — 31 passed (incluye la ampliación del set esperado de tools).
+- `test_background_mcp.py` CREATE — 3 escenarios: `test_mcp_schema_and_issued_handles` (ambos
+  tools descubribles; handle nunca registrado → `background_not_found`; `task_id` no declarado →
+  `validation_scope_invalid`; aislamiento cross-execution real); `test_cleanup_and_end_execution_block_unknown`
+  (pending/running/unknown bloquean ambos con `execution_busy`; `unknown` vía registro bajo
+  `owner_instance_id` ajeno simulando autoridad reiniciada; validación real vía
+  `ValidationSupervisor.start()` con subprocess sintético bloquea el cierre sin carrera
+  lanzamiento-vs-cierre); `test_native_and_logical_authorities` (handle `host_observation` pendiente
+  de `prepare_native` se enlaza sin asentar, `exit_code` permanece `None`; `mcp_job` real se asienta
+  con outcome real; `host_bridge` rechazado como `background_source_unsupported`; envelope de
+  `BackgroundStatus` dentro de 8 KiB).
+
+Colateral flagueado por el coder (correctamente no arreglado fuera de scope, mismo patrón
+TASK-3560/3561/3562: dos tools MCP nuevos sin allow-list) y arreglado por el orquestador en el
+commit `71d144310` (frontmatter canónico + twin empaquetado `_subagent_data/sdd-worker.md` +
+`test_mcp_local.py` `EXPECTED`). TASK-3570 (worker-optimization-contracts, aún pendiente) posee la
+reescritura comprensiva de esos mismos dos archivos de prompt.
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_toolkit.py -q` → 31 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_mcp.py -q` → 3 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder -q` (regresión completa del paquete,
+  post-fix) → 443 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_mcp_local.py
+  packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py::test_mcp_and_prompt_twins -q`
+  → 3 passed (post-fix; los 3 fallaban pre-fix, coincide con el diagnóstico del coder).
+- `ruff check` en los cinco archivos tocados/creados → clean.
+- Merge-tier: la escalación de `select_tests` a paquete completo `ai-parrot`/`ai-parrot-integrations`
+  encontró errores de colección preexistentes NO relacionados con esta feature (verificado:
+  `git log HEAD..origin/dev` no toca esos archivos, mismos errores en baseline). Ver nota de
+  merge-tier del feature para el detalle y el alcance real ejecutado.
+
+Review: `coder-review:16901d741ec56c990936c105` (registrado tras merge; fix commit `71d144310`,
+aplicado por el orquestador, no por el coder).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 2 (1 codex fallido sin commit,
+1 native completado) · Duration: ~1578s (agente nativo) · Tokens: 323375 (subagent total, in/out
+no separado para native).
