@@ -400,9 +400,7 @@ def _build_attempts(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     }
     for event in events:
         kind = event.get("kind")
-        execution_id, task_id, attempt_uid = event.get("execution_id"), event.get("task_id"), event.get(
-            "attempt_uid"
-        )
+        execution_id, task_id, attempt_uid = event.get("execution_id"), event.get("task_id"), event.get("attempt_uid")
         if kind in _ATTEMPT_FIELD and execution_id and task_id and attempt_uid:
             record = _get(execution_id, task_id, attempt_uid)
             record[_ATTEMPT_FIELD[kind]] = event.get("timestamp")
@@ -581,9 +579,15 @@ def build_report(
 
     residual_s = max(0.0, wall_span_s - union_s) if wall_span_s is not None else None
 
-    long_spans = [{**_span_public(span), "bucket": "active"} for span in active_spans if span["duration_s"] >= _LONG_SPAN_THRESHOLD_S]
+    long_spans = [
+        {**_span_public(span), "bucket": "active"}
+        for span in active_spans
+        if span["duration_s"] >= _LONG_SPAN_THRESHOLD_S
+    ]
     long_spans += [
-        {**_span_public(span), "bucket": "fallback"} for span in fallback_spans if span["duration_s"] >= _LONG_SPAN_THRESHOLD_S
+        {**_span_public(span), "bucket": "fallback"}
+        for span in fallback_spans
+        if span["duration_s"] >= _LONG_SPAN_THRESHOLD_S
     ]
 
     return {

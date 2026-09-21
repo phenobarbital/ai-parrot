@@ -35,7 +35,9 @@ def _event(kind: str, ts_offset: float, **kwargs: Any) -> dict[str, Any]:
     return record
 
 
-def _run_profiler(tmp_path: Path, events: list[dict[str, Any]], transcript: list[dict[str, Any]] | None) -> dict[str, Any]:
+def _run_profiler(
+    tmp_path: Path, events: list[dict[str, Any]], transcript: list[dict[str, Any]] | None
+) -> dict[str, Any]:
     events_path = tmp_path / "events.jsonl"
     output_path = tmp_path / "report.json"
     _write_jsonl(events_path, events)
@@ -126,9 +128,7 @@ def test_background_and_merge_identity(tmp_path: Path) -> None:
     assert background_spans[0]["duration_s"] == 300.0
     assert background_spans[0]["identity"]["job_id"] == "job-1"
 
-    unresolved_kinds = [
-        (u["kind"], u["identity"]["task_id"]) for u in report["active"]["unresolved_spans"]
-    ]
+    unresolved_kinds = [(u["kind"], u["identity"]["task_id"]) for u in report["active"]["unresolved_spans"]]
     assert ("delivery.observed", "TASK-9") in unresolved_kinds
 
     attempts_by_uid = {a["attempt_uid"]: a for a in report["attempts"]}
