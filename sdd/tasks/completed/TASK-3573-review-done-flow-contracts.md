@@ -304,4 +304,42 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `8cfd538850754702be7c4945298596f0`). Tocó solo
+los siete targets listados (6 MODIFY + 1 CREATE):
+
+- `.claude/commands/sdd-codereview.md`, `.claude/commands/sdd-done.md`,
+  `.agent/workflows/sdd-codereview.md`, `.agent/workflows/sdd-done.md`,
+  `.agents/skills/sdd-codereview/SKILL.md`, `.agents/skills/sdd-done/SKILL.md` — subsección "##
+  Durable review boundary (FEAT-584)" insertada tras cada anchor verificado ('## Steps'/'##
+  Workflow'), antes del primer paso numerado existente, texto idéntico byte-a-byte en los seis
+  archivos: asienta attempts/validaciones propios y cierra la ejecución antes del review de
+  feature; actividad desconocida es bloqueante; persistencia de checkpoint; como mucho una
+  compactación registrada por checkpoint/contexto; revalidación antes de un reviewer fresco;
+  continuación sin soporte con razón explícita; y, específico para sdd-done, preserva la política
+  existente de stamping de verificación/aprobación/push-merge y nunca re-ejecuta el cierre de tarea
+  en `base_branch` ni limpia worktrees con actividad desconocida. Ningún contenido existente
+  (criterios de review, cross-check adversarial, gate de hallazgos diferidos al ledger, pasos de
+  stamping de verificación, checks de bloqueo, política push/PR de hotfix) fue eliminado o alterado
+  — verificado vía `git diff --stat` (10 inserciones por archivo, 0 eliminaciones, 60 total).
+- `test_done_optimization_contract.py` CREATE — `test_review_variants_validate_checkpoint` y
+  `test_done_variants_keep_release_gates` (mismo patrón que los tests hermanos FEAT-584 ya en este
+  worktree): leen los archivos reales, verifican el heading y cada marcador requerido presente,
+  verifican que el bloque precede al primer paso real, y verifican que los marcadores de gates
+  preexistentes (cross-check adversarial, hallazgos diferidos/ledger, stamping de verificación,
+  bloqueos de ledger, rechazo de push a main en hotfix, cleanup de worktree solo tras éxito) siguen
+  presentes intactos.
+
+Sin desviaciones del blueprint. Nada bajo `sdd/` tocado.
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_done_optimization_contract.py -q`
+  (Validation Command exacto) → 2 passed.
+- Regresión adicional (no requerida): `test_done_optimization_contract.py
+  test_start_optimization_contract.py test_review_handoff_contract.py -q` → 6 passed (sin ruptura
+  colateral de los contract tests hermanos).
+- `ruff check` → clean (lint autofix del engine: commit `04d54e7c4`).
+- `git status --porcelain --untracked-files=all` limpio salvo artefactos gitignored.
+
+Review: `coder-review:2a7b07e2b0eda6bc3c3ea5b5`.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~446s · Tokens: 153449 (subagent total, in/out no separado para native).
