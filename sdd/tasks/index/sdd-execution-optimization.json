@@ -9,17 +9,18 @@
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "decomposition_complete": false,
-  "decomposition_notes": "Contratos comunes descompuestos. Q1 de la spec bloquea únicamente el driver específico de M5. Metadata informativa: el scheduler existente no aplica deferred_work. TASK-3576 debe permanecer pendiente hasta ampliar depends_on con las tareas nuevas del driver y pasar AC11 real.",
+  "decomposition_notes": "Contratos comunes descompuestos. M5b (driver concreto, TASK-3577) decompuesta tras enmienda Q1/M0 aprobada (commit d80bb0e1b). TASK-3576 depende ahora de TASK-3575 y TASK-3577; permanece pendiente hasta que AC11 tenga evidencia de piloto real con host homologado -- no puede cerrarse solo con TASK-3577 mergeada. Q1b (subagente/fork) sigue abierta y explícitamente no bloquea el resto de la feature.",
   "deferred_work": [
     {
       "module": "M5 host driver and managed installation",
-      "reason": "Q1: M0 must establish target context, checkpoint transport and resumption API before decomposition.",
+      "reason": "Q1 RESOLVED for main-loop (spec amended, commit d80bb0e1b): M0 spike found no Python-side call surface to $.session.compact() exists; driver rescoped from caller to receipt-reader. Subagent/fork addressing split off as Q1b, still genuinely open (needs a follow-up spike with real interactive host access).",
       "prerequisite_task": "TASK-3555",
       "blocking_acceptance": [
         "AC11"
       ],
       "completion_gate_task": "TASK-3576",
-      "required_next_action": "Amend and approve spec with verified paths/contracts; rerun sdd-task to reserve/add driver tasks and wire final acceptance dependencies."
+      "driver_task": "TASK-3577",
+      "required_next_action": "TASK-3577 (decomposed, in-progress) builds the concrete receipt-reader driver. AC11 still requires TASK-3576 to obtain real live-host pilot evidence -- cannot be satisfied by TASK-3577 alone, unsupported results, or mocks."
     }
   ],
   "tasks": [
@@ -464,14 +465,37 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-3575"
+        "TASK-3575",
+        "TASK-3577"
       ],
       "parallel": true,
-      "parallelism_notes": "Depende de TASK-3575 por integración offline. Además existe gate documental obligatorio M0→enmienda→tareas M5→smoke live; el scheduler actual no interpreta metadata adicional y el worker debe mantener esta tarea pendiente.",
+      "parallelism_notes": "Depende de TASK-3575 (integración offline) y TASK-3577 (driver concreto M5b, ahora decompuesta tras la enmienda Q1/M0). AC11 exige evidencia de piloto real con host homologado -- no puede declararse cumplido por unsupported/mocks, ni siquiera con TASK-3577 mergeada; esta tarea documenta lo verificable offline y reporta honestamente si el piloto live sigue pendiente.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3576-optimization-rollout-evidence.md"
+    },
+    {
+      "id": "TASK-3577",
+      "slug": "claude-compaction-driver",
+      "title": "Implementar driver concreto de compactación (M5b, lector de receipt)",
+      "feature": "sdd-execution-optimization",
+      "feature_id": "FEAT-584",
+      "spec": "sdd/specs/sdd-execution-optimization.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3555",
+        "TASK-3567",
+        "TASK-3568"
+      ],
+      "parallel": true,
+      "parallelism_notes": "M5b decompuesta tras la enmienda Q1/M0 (commit d80bb0e1b). Depende de TASK-3555 (spike M0), TASK-3567 (checkpoint.py — context_id producer), TASK-3568 (phase_boundary.py — Protocol a implementar). Reservada vía reserve_ids.py FEAT-387; ledger commit 6b8528908.",
+      "assigned_to": null,
+      "started_at": "2026-09-21T15:02:54+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3577-claude-compaction-driver.md"
     }
   ]
 }
