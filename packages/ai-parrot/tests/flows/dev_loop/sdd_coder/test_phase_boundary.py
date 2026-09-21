@@ -161,9 +161,7 @@ def test_unsupported_off_and_fallback(tmp_path: Path) -> None:
     # policy='off' never even asks the driver whether it supports the context.
     off_checkpoint = _build_checkpoint(context_id="claude-main")
     off_driver = _RecordingDriver(supports=True, receipt=None)
-    off_receipt = asyncio.run(
-        prepare_review_boundary(off_checkpoint, driver=off_driver, policy="off", store=store)
-    )
+    off_receipt = asyncio.run(prepare_review_boundary(off_checkpoint, driver=off_driver, policy="off", store=store))
     assert off_receipt.status == "skipped"
     assert off_receipt.backend == "unknown"
     assert not off_driver.supports_calls
@@ -252,9 +250,7 @@ def test_crash_timeout_and_stale_resume(tmp_path: Path) -> None:
     # The stale handoff is itself durably recorded as `failed` -- a replay
     # never re-invokes the driver, and never resurfaces as `completed`.
     another_driver = _RecordingDriver(supports=True, receipt=None)
-    replay = asyncio.run(
-        prepare_review_boundary(stale_checkpoint, driver=another_driver, policy="auto", store=store)
-    )
+    replay = asyncio.run(prepare_review_boundary(stale_checkpoint, driver=another_driver, policy="auto", store=store))
     assert replay.status == "failed"
     assert not another_driver.supports_calls
     assert not another_driver.compact_calls
