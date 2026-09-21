@@ -217,4 +217,65 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `47137220887642e8a74e0e381459ac65`). Tocó solo
+los tres targets listados:
+
+- `checkpoint.py` CREATE — `prepare_review_checkpoint`/`validate_review_checkpoint` (firmas del
+  blueprint sin cambios). `prepare` nunca confía en estado en memoria: escanea el evidence root
+  durable por el `ExecutionSnapshot` que `end_execution` publicó (TASK-3565), valida scope
+  (feature_id/worktree_path) y que admitted_attempts/native_reservations/outstanding_job_ids estén
+  vacíos, confirma que toda registración `kind=="validation"` asentó vía la API pública
+  `BackgroundRegistry.status()`, hashea spec/index/tres archivos de convenciones, resuelve
+  branch/base_sha (`git merge-base HEAD origin/<base_branch>`)/HEAD/commits vía git, publica
+  excerpts de task+criteria como evidencia durable, renderiza un `neutral_brief` fáctico acotado
+  (sin veredicto), computa `checkpoint_id` vía `ReviewCheckpoint.compute_checkpoint_id`, y publica
+  atómicamente el checkpoint bajo `executions/<execution_id>/review/<checkpoint_id>.json` (layout
+  R3 de la spec). `validate` re-deriva cada uno de esos hechos desde cero y lanza `checkpoint_stale`
+  ante cualquier drift (branch/HEAD/spec/index/convención/hash de evidence-ref) — nunca aprueba código.
+- `scripts/sdd/review_checkpoint.py` CREATE — CLI `prepare|validate --feature --worktree
+  --execution-id[--checkpoint-id]`, exit 0/1/2/3 según el blueprint (`checkpoint_busy`/
+  `checkpoint_stale`/`checkpoint_incomplete` → 3; otro `CheckpointError` → 1; `ValueError`/argparse
+  → 2). Los SHA siempre se resuelven localmente vía git, nunca aceptados de un caller.
+- `test_review_checkpoint.py` CREATE — 3 escenarios: `test_settlement_and_unknown_gate`,
+  `test_stale_head_spec_index_and_conventions`, `test_durable_neutral_resume`, contra repos git
+  temporales reales.
+
+Decisiones de diseño flagueadas por el coder (revisadas, aceptadas sin cambios): (1)
+`ReviewCheckpoint.user_constraints` siempre se publica como `[]` porque la firma fija del
+blueprint no tiene forma de recibirlo explícitamente — `pending_actions` sí se deriva de forma
+durable (toda tarea no-`done` del índice) y se puebla real. (2) `evidence_refs` está anclado solo a
+`[settlement_ref]` — ningún productor en el alcance actual de esta feature publica todavía
+evidencia de fix/feedback/review bajo una key descubrible (mismo gap honesto que
+`inspection.delivery_report`). (3) "Validaciones asentadas" se leen escaneando los registros en
+disco de `background.py` directamente (parseando solo el payload público anidado
+`BackgroundRegistration`) porque `BackgroundRegistry` no tiene API pública de listado y añadir una
+tocaría `background.py`, fuera del scope de esta tarea; cualquier registro ilegible/malformado
+falla SEGURO (`checkpoint_busy`, nunca un falso "clear"). (4) `base_sha` requiere que
+`origin/<base_branch>` resuelva localmente vía git — siempre cierto en worktrees SDD reales
+(`ensure_worktree` bifurca desde `origin/<base_branch>`). (5) Nota de entorno, no defecto de código:
+misma ausencia de `.so` de Cython que TASK-3566 documentó; copiados temporalmente para verificar
+localmente y removidos antes del commit (`git status` confirma su ausencia). (6) También observado
+(preexistente, no introducido aquí): importar `parrot` configura logging a stdout, por lo que la
+línea JSON de este CLI queda precedida de ruido INFO/DEBUG — idéntico al ya mergeado
+`scripts/sdd/finalize_task.py`; un caller debe tomar la ÚLTIMA línea de stdout como el payload JSON.
+
+Sin bloqueos ni desviaciones del blueprint. `.claude/agents/sdd-worker.md` NO fue tocado — esta
+tarea no registra tools MCP nuevos.
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_checkpoint.py -q` → 3 passed.
+- Smoke-test manual del CLI: busy (sin settlement) → exit 3; prepare tras publicar settlement
+  cerrado → exit 0 con checkpoint bien formado; validate → exit 0; mutar un archivo de convenciones
+  → validate exit 3 `checkpoint_stale`.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder -q` (regresión completa del paquete,
+  post-merge) → 446 passed.
+- `ruff check` en los tres archivos → clean (lint autofix del engine: commit `94e646d6a`).
+- Merge-tier ai-parrot/ai-parrot-integrations: ver nota consolidada del feature — la escalación a
+  paquete completo tropieza con fallos preexistentes ajenos a esta feature (`ai-parrot`, confirmado
+  contra baseline `dev`) y con un hang de suite ajeno a nuestro scope en
+  `ai-parrot-integrations` (3 intentos, ~2500s, detenido consistentemente ~97%); no bloqueante para
+  este task, documentado para seguimiento separado.
+
+Review: `coder-review:3a85bb3261868d12bd927b9c`.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~1407s · Tokens: 325293 (subagent total, in/out no separado para native).

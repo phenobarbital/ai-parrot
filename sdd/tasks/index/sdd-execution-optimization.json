@@ -265,7 +265,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -276,8 +276,8 @@
       "parallelism_notes": "Depende de TASK-3565 por receipts y gates de background, y de TASK-3566 por cierre/evidencia finalizada. Archivos propios.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3567-review-checkpoint.md"
+      "completed_at": "2026-09-21T11:32:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3567-review-checkpoint.md"
     },
     {
       "id": "TASK-3568",
