@@ -2032,29 +2032,131 @@ class SddCoderEngine:
         store = await asyncio.to_thread(CoderFeedbackStore.from_root, Path(ctx.worktree))
         return await CoderReviewStore(store.log).report()
 
+    @staticmethod
+    def _dirty_paths(porcelain_z: str) -> List[str]:
+        """Every path named by `git status --porcelain -z --untracked-files=all` output.
+
+        `-z` (rather than the plain porcelain used elsewhere in this module) is
+        deliberate: a path containing a space or a quote is emitted verbatim between
+        NULs instead of being C-quoted, so what is parsed here round-trips into
+        `git add -- <path>` unchanged. Rename/copy entries carry their source path in
+        the FOLLOWING NUL-terminated field; both ends are returned, since a renamed
+        declared file is dirty at both and both must be staged for the extraction
+        commit to be complete.
+
+        Args:
+            porcelain_z: Raw stdout of the `-z` status call.
+
+        Returns:
+            Affected repo-relative paths, in the order git reported them.
+        """
+        fields = porcelain_z.split("\0")
+        paths: List[str] = []
+        i = 0
+        while i < len(fields):
+            entry = fields[i]
+            i += 1
+            if len(entry) < 4:  # trailing empty field, or a truncated entry
+                continue
+            xy, dest = entry[:2], entry[3:]
+            paths.append(dest)
+            if "R" in xy or "C" in xy:
+                if i < len(fields) and fields[i]:
+                    paths.append(fields[i])
+                i += 1
+        return paths
+
+    async def _commit_declared_changes(
+        self, task: PlannedTask, expected: List[str], *, branch: str, path: str, feature: str
+    ) -> Optional[TaskResult]:
+        """Stage and commit the task's DECLARED files, then report anything left dirty.
+
+        A coder seat runs sandboxed with `.git` read-only by design: it delivers its
+        work in the tree and cannot commit it (verified for `codex exec --sandbox
+        workspace-write`, which protects `.git` specifically — neither `--add-dir`
+        nor `sandbox_workspace_write.writable_roots` lifts it, and widening a seat's
+        write scope to make it commit is explicitly rejected). Producing the commit
+        is the orchestrator's job, so the engine — which runs outside that sandbox
+        and already commits here for the lint pass — extracts the deliverable itself
+        instead of failing the attempt as `dirty_task_worktree` and discarding work
+        the coder produced correctly.
+
+        Only `expected` — the task markdown's declared files, the same list
+        `check_fidelity` gates on — is ever staged, never the coder-reported
+        `DevelopmentOutput.files_changed`: a seat must not be able to widen its own
+        scope by naming extra files in its output. `sdd/` paths are never staged at
+        all, so a coder cannot reach SDD state through this path either.
+
+        Args:
+            task: The task being consolidated.
+            expected: Declared files from the task markdown (`parse_task_files`).
+            branch: The attempt branch, for the returned `TaskResult`.
+            path: The attempt sub-worktree to operate in.
+            feature: Feature slug, used in the commit message.
+
+        Returns:
+            `None` when the tree is clean or became clean (consolidation proceeds),
+            otherwise a terminal `TaskResult`: undeclared leftovers are a fidelity
+            violation, never a silently-dropped file.
+        """
+        _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
+        if not self._dirty_paths(status):
+            return None
+
+        declared = {p for p in expected if not p.startswith("sdd/")}
+        # dict.fromkeys: preserve git's order while dropping the duplicate a rename
+        # produces when both of its ends are declared.
+        to_stage = list(dict.fromkeys(p for p in self._dirty_paths(status) if p in declared))
+        if to_stage:
+            await _git("add", "--", *to_stage, cwd=path)
+            rc, _out, err = await _git(
+                "commit",
+                "--no-verify",
+                "-m",
+                f"feat({feature}): {task.task_id} — engine-committed coder deliverable",
+                cwd=path,
+            )
+            if rc != 0:
+                # Roll the index back so the attempt branch is left exactly as the
+                # coder produced it (same recovery shape as the lint pass's failed
+                # autofix commit), rather than half-staged.
+                await _git("reset", "--quiet", "--", *to_stage, cwd=path)
+                return TaskResult(
+                    task_id=task.task_id,
+                    outcome="failed",
+                    branch=branch,
+                    worktree_path=path,
+                    diagnostics=f"extract_commit_failed: {err.strip()}",
+                )
+
+        _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
+        leftover = sorted(set(self._dirty_paths(status)))
+        if leftover:
+            return TaskResult(
+                task_id=task.task_id,
+                outcome="fidelity_violation",
+                branch=branch,
+                worktree_path=path,
+                unexpected_files=leftover,
+                diagnostics=(
+                    "undeclared_files_left_uncommitted: the coder produced files the task does not "
+                    "declare under '## Files to Create / Modify'; they were left uncommitted:\n" + "\n".join(leftover)
+                ),
+            )
+        return None
+
     async def _consolidate(
         self, ctx: _FeatureCtx, manager: SubWorktreeManager, task: PlannedTask, *, branch: str, path: str
     ) -> TaskResult:
-        """clean status -> fidelity (committed diff only) -> locked merge. Never raises for domain outcomes."""
-        _rc, status, _err = await _git("status", "--porcelain", "--untracked-files=all", cwd=path)
-        if status.strip():
-            return TaskResult(
-                task_id=task.task_id,
-                outcome="failed",
-                branch=branch,
-                worktree_path=path,
-                diagnostics="dirty_task_worktree: uncommitted/untracked changes:\n" + status,
-            )
-        # Triple-dot semantics (merge-base-relative), NOT double-dot (direct tree comparison):
-        # `git diff A..B` is a literal two-tree diff, so if `ctx.feature_branch` has advanced
-        # since `branch` was created (e.g. a sibling task's attempt merged first, under the SAME
-        # `_merge_lock` but in an EARLIER `_consolidate` call), a two-dot diff would list every
-        # file the other merge introduced too — this branch would then fail fidelity for files
-        # it never touched. `_consolidate_diff_base` resolves the equivalent of `A...B`'s merge
-        # base, but ALSO covers the re-merge case (`branch` already an ancestor of
-        # `ctx.feature_branch` — see its docstring) that a plain `git merge-base` gets wrong.
-        diff_base = await _consolidate_diff_base(ctx.feature_branch, branch, cwd=ctx.worktree)
-        _rc, diff, _err = await _git("diff", "--name-only", f"{diff_base}..{branch}", cwd=ctx.worktree)
+        """extract+commit declared work -> fidelity (committed diff only) -> locked merge.
+
+        Never raises for domain outcomes.
+        """
+        # The task markdown is resolved and read FIRST (it used to be read after the
+        # clean-tree check below): its declared-file list now drives BOTH the
+        # extraction commit and the fidelity gate, so it has to be in hand before
+        # anything is staged.
+        #
         # Code-review fix (FEAT-549, IMPORTANT): resolve + verify containment before reading.
         # `os.path.join(ctx.worktree, task.task_file)` silently discards `ctx.worktree` if
         # `task.task_file` were ever absolute (`os.path.join` semantics), reading an arbitrary
@@ -2072,8 +2174,23 @@ class SddCoderEngine:
                 diagnostics=f"task_file {task.task_file!r} resolves outside the feature worktree",
             )
         task_md = await asyncio.to_thread(task_md_path.read_text, "utf-8")
+        expected = parse_task_files(task_md)
+
+        blocked = await self._commit_declared_changes(task, expected, branch=branch, path=path, feature=ctx.feature)
+        if blocked is not None:
+            return blocked
+        # Triple-dot semantics (merge-base-relative), NOT double-dot (direct tree comparison):
+        # `git diff A..B` is a literal two-tree diff, so if `ctx.feature_branch` has advanced
+        # since `branch` was created (e.g. a sibling task's attempt merged first, under the SAME
+        # `_merge_lock` but in an EARLIER `_consolidate` call), a two-dot diff would list every
+        # file the other merge introduced too — this branch would then fail fidelity for files
+        # it never touched. `_consolidate_diff_base` resolves the equivalent of `A...B`'s merge
+        # base, but ALSO covers the re-merge case (`branch` already an ancestor of
+        # `ctx.feature_branch` — see its docstring) that a plain `git merge-base` gets wrong.
+        diff_base = await _consolidate_diff_base(ctx.feature_branch, branch, cwd=ctx.worktree)
+        _rc, diff, _err = await _git("diff", "--name-only", f"{diff_base}..{branch}", cwd=ctx.worktree)
         changed = [p for p in diff.splitlines() if p.strip()]
-        report = check_fidelity(parse_task_files(task_md), changed)
+        report = check_fidelity(expected, changed)
         if not report.ok:
             return TaskResult(
                 task_id=task.task_id,

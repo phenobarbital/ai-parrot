@@ -498,8 +498,11 @@ If ANY check fails, fix or STOP.
 - Lint mechanically, never by hand (this path has no engine to do it): `ruff check --fix <task .py files>`, then
   `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
   (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
-- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
-  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
+- Run the task's `## Validation Commands`, then `mkdir -p artifacts/logs;
+  python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
+  as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
+  bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.
 

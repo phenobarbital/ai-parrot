@@ -394,27 +394,47 @@ def _sandboxed_argv(response: dict[str, Any]) -> list[str]:
 
 
 def test_hook_bounds_command_with_tool_timeout(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit tool timeout is backstopped just above the host's own bound."""
     monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
     response = policy.hook_response(
         {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest -q x.py", "timeout": 90_000}}
     )
     argv = _sandboxed_argv(response)
     tail = argv[argv.index("--") + 1 :]
-    assert tail == ["/usr/bin/timeout", "-k", "5", "90", "/bin/bash", "-c", "pytest -q x.py"]
+    assert tail == ["/usr/bin/timeout", "-k", "5", "113", "/bin/bash", "-c", "pytest -q x.py"]
 
 
-def test_hook_default_timeout_matches_host_default(
+def test_hook_default_timeout_backstops_host_default(
     checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An implicit bound is lifted to at least the host's maximum.
+
+    The host does not kill a foreground call at its default bound — it detaches
+    it and lets it run on. Killing inside the sandbox at that same instant
+    turned healthy slow commands (a merge-tier pytest sweep) into ``exit 124``
+    with their output discarded, so the sandbox bound must sit well above it.
+    """
     monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.delenv("BASH_DEFAULT_TIMEOUT_MS", raising=False)
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     argv = _sandboxed_argv(response)
-    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "120"]
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "600"]
     monkeypatch.setenv("BASH_DEFAULT_TIMEOUT_MS", "600000")
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     argv = _sandboxed_argv(response)
-    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "600"]
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "750"]
+
+
+@pytest.mark.parametrize("host_ms", [1_000, 30_000, 120_000, 600_000, 900_000])
+def test_sandbox_backstop_never_preempts_the_host_bound(monkeypatch: pytest.MonkeyPatch, host_ms: int) -> None:
+    """Whatever the host bound, the in-sandbox kill lands strictly after it."""
+    monkeypatch.delenv("BASH_DEFAULT_TIMEOUT_MS", raising=False)
+    explicit = policy.command_timeout_seconds({"command": "true", "timeout": host_ms})
+    assert explicit is not None and explicit > host_ms // 1000
+
+    monkeypatch.setenv("BASH_DEFAULT_TIMEOUT_MS", str(host_ms))
+    implicit = policy.command_timeout_seconds({"command": "true"})
+    assert implicit is not None and implicit > host_ms // 1000
 
 
 def test_hook_leaves_background_commands_unbounded_without_explicit_timeout(
@@ -430,7 +450,7 @@ def test_hook_leaves_background_commands_unbounded_without_explicit_timeout(
     assert argv[argv.index("--") + 1 :] == ["/bin/bash", "-c", "true"]
     payload["tool_input"]["timeout"] = 30_000
     argv = _sandboxed_argv(policy.hook_response(payload))
-    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "30"]
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "38"]
 
 
 def test_real_hung_sandboxed_process_is_killed_at_tool_timeout(tmp_path: Path) -> None:

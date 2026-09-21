@@ -76,4 +76,6 @@ Useful Laya Huggingaace pages:
 https://huggingface.co/convaiinnovations/laya-typed-decisions
 https://huggingface.co/tozp/laya-onnx
 
+## Primary Task
 
+- This is an evaluation task, generating an "end-to-end" python script in artifacts/laya/ that can be called to test some possibilities as classification for prompt injection or model routing (changing in assigned Agent from current LLM client to a cheaper LLM model of the same client, in parrot each LLM client have a "fallback" model that is cheaper than assigned model), also a grounded classification example using Laya.
