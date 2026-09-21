@@ -1789,25 +1789,50 @@ class SddCoderEngine:
         else:
             model = seat.model or "haiku"
 
+        return await self._reserve_native_attempt(
+            ctx,
+            planned,
+            seat,
+            model=model,
+            assessment_id=assessment_id,
+            execution_id=execution_id,
+            pool=pool,
+            attempt=1,
+        )
+
+    async def _reserve_native_attempt(
+        self,
+        ctx: _FeatureCtx,
+        task: PlannedTask,
+        seat: RosterSeat,
+        *,
+        model: str,
+        assessment_id: str,
+        execution_id: Optional[str],
+        pool: Optional[ExecutionPool],
+        attempt: int,
+    ) -> NativePrep:
+        """Admit and allocate one native attempt, reusing its execution reservation."""
         if pool is not None:
-            reservation_key = (execution_id, task_id)
+            assert execution_id is not None
+            reservation_key = (execution_id, task.task_id)
             existing_uid = self._native_reservations.get(reservation_key)
             if existing_uid is not None:
                 attempt_uid = existing_uid
             else:
-                attempt_uid = await pool.admit(task_id, ModelKey(backend="native", model=model))
+                attempt_uid = await pool.admit(task.task_id, ModelKey(backend="native", model=model))
                 self._native_reservations[reservation_key] = attempt_uid
         else:
             attempt_uid = uuid.uuid4().hex
 
-        worker_id = self._worker_id(task_id, 1, execution_id)
-        manager = self._manager_for(ctx, task_id, 1, execution_id)
+        worker_id = self._worker_id(task.task_id, attempt, execution_id)
+        manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
         path = await manager.create(worker_id)
-        await self._write_attempt_scope(path, task_id, planned.task_file, ctx.feature_branch)
+        await self._write_attempt_scope(path, task.task_id, task.task_file, ctx.feature_branch)
         self._native_inflight.add(worker_id)
-        branch = self._branch_for(ctx, task_id, 1, execution_id)
-        self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)
-        feedback_context = await self._feedback_for(ctx, planned, "native", model)
+        branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
+        self._feedback_sources[attempt_uid] = (ctx.worktree, task.task_id, "native", model)
+        feedback_context = await self._feedback_for(ctx, task, "native", model)
         self._feedback_contexts[attempt_uid] = feedback_context
 
         # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
@@ -1822,7 +1847,7 @@ class SddCoderEngine:
                 registration = BackgroundRegistration(
                     handle=attempt_uid,
                     execution_id=execution_id,
-                    task_id=task_id,
+                    task_id=task.task_id,
                     attempt_uid=attempt_uid,
                     launch_id=attempt_uid,
                     owner_instance_id=self._instance_id,
@@ -1840,11 +1865,11 @@ class SddCoderEngine:
                 bg_handle = attempt_uid
 
         return NativePrep(
-            task_id=task_id,
-            task_file=planned.task_file,
+            task_id=task.task_id,
+            task_file=task.task_file,
             branch=branch,
             worktree_path=path,
-            seat_label=planned.seat_label,
+            seat_label=seat.label,
             model=model,
             attempt_uid=attempt_uid,
             coder_feedback=feedback_context,
@@ -3052,6 +3077,39 @@ class SddCoderEngine:
                 "failed to persist execution snapshot for %s after suspending %s", execution_id, seat.model
             )
 
+    async def _select_native_retry_seat(
+        self,
+        pool: Optional["ExecutionPool"],
+        tried_seats: set[str],
+        *,
+        eligible_labels: Optional[Set[str]] = None,
+    ) -> Optional[RosterSeat]:
+        """Return an untried, healthy eligible native seat, or ``None`` (FEAT-588)."""
+        if pool is None:
+            return None
+        async with pool._condition:
+            if pool._status in ("closed", "recovery_required"):
+                return None
+            for seat in pool._seats:
+                from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
+
+                if seat.kind != "native":
+                    continue
+                key = _effective_key(seat)
+                if key is None or seat.label in tried_seats:
+                    continue
+                if eligible_labels is not None and seat.label not in eligible_labels:
+                    continue
+                if key in pool._busy_seats:
+                    continue
+                if key in pool._initial_exclusions or key in pool._local_exclusions:
+                    continue
+                view = pool._seat_views.get(key)
+                if view is None or not view.available or view.suspended or view.probe_unavailable:
+                    continue
+                return seat
+        return None
+
     async def _select_retry_seat(
         self,
         pool: Optional["ExecutionPool"],
@@ -3221,13 +3279,50 @@ class SddCoderEngine:
             # additionally restricted to `eligible_labels` when given.
             retry = await self._select_retry_seat(pool, seat.label, tried_seats, eligible_labels=eligible_labels)
             if retry is None and eligible_labels is not None:
+                native_retry_seat = await self._select_native_retry_seat(
+                    pool, tried_seats, eligible_labels=eligible_labels
+                )
+                if native_retry_seat is not None:
+                    assessment = await self._assessment_for(ctx, task, task.task_file, execution_id=execution_id)
+                    model = native_retry_seat.model or "haiku"
+                    native_retry = await self._reserve_native_attempt(
+                        ctx,
+                        task,
+                        native_retry_seat,
+                        model=model,
+                        assessment_id=assessment.assessment_id,
+                        execution_id=execution_id,
+                        pool=pool,
+                        attempt=2,
+                    )
+                    await self._emit_outcome(ctx, attempt_rec=rec, task_id=task.task_id, outcome="failed")
+                    self._latest_attempt[task.task_id] = rec
+                    return TaskResult(
+                        task_id=task.task_id,
+                        outcome="retry_native",
+                        branch=native_retry.branch,
+                        worktree_path=native_retry.worktree_path,
+                        attempts=attempts,
+                        native_retry=native_retry,
+                        diagnostics=rec.error,
+                    )
                 # Restricted task, no eligible retry seat left: make the block
                 # explicit rather than silently falling through with attempt
                 # 1's unrelated dispatch error as the only diagnostic (spec:
                 # "if none exists return a visible blocked/failed result with
                 # complex_model_unavailable diagnostic, preserving previous
                 # attempts").
-                no_retry_error = f"complex_model_unavailable: no eligible retry seat for {task.task_id}"
+                remaining = eligible_labels - tried_seats
+                if (
+                    pool is not None
+                    and remaining
+                    and all(candidate.kind == "native" for candidate in pool._seats if candidate.label in remaining)
+                ):
+                    no_retry_error = (
+                        f"complex_model_unavailable: MCP-only retry ladder has no eligible seat for {task.task_id}"
+                    )
+                else:
+                    no_retry_error = f"complex_model_unavailable: no eligible retry seat for {task.task_id}"
                 rec = rec.model_copy(
                     update={"error": f"{rec.error}\n{no_retry_error}" if rec.error else no_retry_error}
                 )

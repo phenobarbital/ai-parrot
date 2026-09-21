@@ -354,6 +354,8 @@ class TaskResult(BaseModel):
     diagnostics: str = ""
     development_output: Optional[DevelopmentOutput] = None
     lint: Optional[LintReport] = None
+    native_retry: Optional["NativePrep"] = None
+    """FEAT-588: native attempt-2 reservation for `retry_native` outcomes only."""
 
 
 class NativePrep(BaseModel):
