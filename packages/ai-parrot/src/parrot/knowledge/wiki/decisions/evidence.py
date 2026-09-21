@@ -14,6 +14,7 @@ import hashlib
 import io
 import logging
 import tokenize
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,7 +101,13 @@ def extract_python_citations(rel_path: str, source: str) -> tuple[list[Citation]
         never an exception: one bad file must not abort a whole sync.
     """
     try:
-        tree = ast.parse(source)
+        with warnings.catch_warnings():
+            # Scanned files are third-party to the wiki: their own
+            # SyntaxWarnings (e.g. an invalid escape sequence) are the
+            # author's problem, not a build diagnostic, and without a
+            # filename they surface as an unattributable ``<unknown>:NN``.
+            warnings.simplefilter("ignore", SyntaxWarning)
+            tree = ast.parse(source, filename=rel_path or "<unknown>")
     except SyntaxError as exc:
         return [], [DecisionDiagnostic(code=ADR_PARSE_FAILED, message=f"Python syntax error: {exc}", path=rel_path)]
 

@@ -11,6 +11,7 @@ from parrot.knowledge.wiki.decisions.evidence import (
     verify_freshness,
 )
 from parrot.knowledge.wiki.decisions.models import DecisionError, EvidenceRef
+from parrot.knowledge.wiki.decisions.parser import parse_adr
 from parrot.knowledge.wiki.symbols import sym_concept_id
 
 SOURCE = '''\
@@ -103,6 +104,25 @@ class TestFreshness:
         freshness, diagnostic = await verify_freshness(tmp_path, ref)
         assert freshness == "stale"
         assert diagnostic is not None
+
+    async def test_parsed_adr_sections_are_current_on_disk(self, tmp_path):
+        """Every parsed ADR span must verify against the untouched file.
+
+        The last section is the regression: a file ending in a newline used
+        to yield an end_line one past the file, so its stored hash could
+        never be reproduced and freshness read `stale` forever.
+        """
+        adr = (
+            "---\nid: ADR-7\nstatus: accepted\n---\n\n# ADR-7: Keep it local\n\n"
+            "## Context\nOne developer.\n\n## Decision\nUse one local file.\n\n"
+            "## Consequences\nA busy timeout handles concurrency.\n"
+        )
+        (tmp_path / "0007-local.md").write_text(adr, encoding="utf-8")
+        record, _ = parse_adr("0007-local.md", adr)
+        assert record is not None and record.evidence
+        for ref in record.evidence:
+            freshness, diagnostic = await verify_freshness(tmp_path, ref)
+            assert freshness == "current", f"{ref.start_line}-{ref.end_line}: {diagnostic}"
 
     async def test_deleted_source_is_missing(self, tmp_path):
         content = "a\nb\n"
