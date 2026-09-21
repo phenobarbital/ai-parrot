@@ -158,7 +158,9 @@ def _mcp_builder():
     return builder
 
 
-async def test_mcp_schema_and_issued_handles(tmp_path: Path, git_sandbox_feature, three_seat_roster, noop_probe) -> None:
+async def test_mcp_schema_and_issued_handles(
+    tmp_path: Path, git_sandbox_feature, three_seat_roster, noop_probe
+) -> None:
     """Both tools are discoverable and handles come only from admitted launches (two executions/worktrees)."""
     toolkit = SddCoderToolkit(roster=three_seat_roster, telemetry_dir=str(tmp_path / "telemetry"))
     tool_names = {t.name for t in toolkit.get_tools()}
@@ -262,9 +264,7 @@ async def test_cleanup_and_end_execution_block_unknown(
     assert excinfo.value.code == "execution_busy"
 
     # -- running --
-    await engine._background_registry._record_transition(  # noqa: SLF001
-        execution_id, pending_handle, state="running"
-    )
+    await engine._background_registry._record_transition(execution_id, pending_handle, state="running")  # noqa: SLF001
     with pytest.raises(CoderFailure) as excinfo:
         await engine.end_execution(execution_id)
     assert excinfo.value.code == "execution_busy"
