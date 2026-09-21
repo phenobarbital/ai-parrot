@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from ..auth.resolver import AbstractPermissionResolver
     from ..auth.grants import GrantGuard
     from ..auth.confirmation import ConfirmationGuard
+    from .toolkit import AbstractToolkit
 
 
 @dataclass(slots=True)
