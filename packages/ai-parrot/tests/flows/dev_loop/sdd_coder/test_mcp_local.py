@@ -26,6 +26,9 @@ EXPECTED = {
         "suspend_model",
         # FEAT-584 TASK-3560: native coders observe their own delivery events.
         "record_native_observation",
+        # FEAT-584 TASK-3561: read-only task context and delivery report projections.
+        "task_context",
+        "delivery_report",
     )
 }
 
