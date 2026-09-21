@@ -152,12 +152,18 @@ def _validate_expected_head(evidence: TaskCompletionEvidence, expected_head: str
 def _verify_evidence_refs(durable_root: Path, evidence: TaskCompletionEvidence) -> None:
     """Resolve every evidence reference against durable storage; never trust a claim.
 
-    Rejects an empty `validation_refs` (no green check recorded) and any
-    `EvidenceRef` whose content does not durably exist with matching hash
-    and size under *durable_root* -- `review_evidence` is never fabricated.
+    Rejects an empty `validation_refs` (no settled validation recorded) and
+    any `EvidenceRef` whose content does not durably exist with matching
+    hash and size under *durable_root* -- `review_evidence` is never
+    fabricated. NOTE: this only proves each ref is a settled, tamper-evident
+    record (existence + hash/size match) -- it does NOT inspect or require
+    a passing (`outcome == "completed"`) validation. The checkpoint stays
+    neutral raw evidence by design (see engine.py's `_assert_no_pending_validations`
+    docstring); a downstream reviewer must open the referenced logs to judge
+    pass/fail, per AC9's "checkpoint neutral y diff completo por referencias".
     """
     if not evidence.validation_refs:
-        raise InvalidEvidenceError("evidence.validation_refs must include at least one green validation reference")
+        raise InvalidEvidenceError("evidence.validation_refs must include at least one settled validation reference")
     for ref in (evidence.review_evidence, *evidence.validation_refs):
         _verify_one_ref(durable_root, ref)
 
