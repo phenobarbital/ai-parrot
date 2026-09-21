@@ -34,7 +34,7 @@
       "feature_id": "FEAT-586",
       "feature": "parrot-install-guide",
       "spec": "sdd/specs/parrot-install-guide.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "Extends packages/ai-parrot/tests/docs/test_getting_started_claims.py created by TASK-3584 (imports extract_claims/DocClaim; reads docs/getting-started.md).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3585-claim-verification-harness.md"
+      "completed_at": "2026-09-21T22:03:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3585-claim-verification-harness.md"
     },
     {
       "id": "TASK-3586",
