@@ -16,7 +16,8 @@ tags: [execution-plan, checkpointing, working-memory, replan, result-policy]
 Source of requirements: `sdd/proposals/plan-then-execute-hardening.brainstorm.md`, Option B.
 Supporting evidence: `sdd/proposals/plan-then-execute-design-drift.findings.md` and
 `sdd/proposals/handle-only-execution-design.input.md`.
-This draft is not ready for task decomposition until the approval blockers in §8 are resolved.
+The §8 approval blockers were resolved by the owner on 2026-09-21; the draft is ready
+for the normal spec review and task decomposition.
 
 ## 1. Motivation & Business Requirements
 
@@ -286,8 +287,14 @@ ready must not be interpreted as permission to regenerate an entire plan. Reconc
 root/child checkpoints under the root lease and either resume an accepted child or
 return `repair_interrupted`. Never autonomously make another planner call.
 
-The repair limit/default and expired-run policy remain explicit approval blockers in
-§8. No implementation may choose them from the recommendations in this draft.
+The repair limit, expired-run policy and run-identity contract were approved in §8
+(D1/D2/D3). `max_repair_rounds` is a host-only `PlanRecoveryConfig` field, range 0–2,
+default 2; no plan-level or tool-supplied argument may set, raise or lower it, so a
+model-authored plan can never widen its own repair budget. Two rounds is the default
+precisely because a crash or cancellation after attempt reservation consumes the
+attempt: a default of 1 would let one interrupted repair permanently exhaust the run.
+`max_repair_rounds=0` disables runtime repair entirely; `plan_repair` then returns
+`repair_limit_reached` without consuming an attempt or calling a planner.
 
 ### Data Models
 
@@ -296,7 +303,7 @@ Live tasks/clients/flows/locks stay outside persisted models.
 
 | Model | Fields / contract |
 |---|---|
-| `PlanRecoveryConfig` | `max_repair_rounds` (0–2, default pending §8); `max_restore_bytes=67108864`; `checkpoint_probe_timeout=2.0` positive finite seconds |
+| `PlanRecoveryConfig` | `max_repair_rounds` (0–2, default 2, host-only); `max_restore_bytes=67108864`; `checkpoint_probe_timeout=2.0` positive finite seconds |
 | `PlanDelta` | `nodes: list[PlanNode]`, nonempty; no plan-level changes or new IDs |
 | `PlanRunMetadata` | `schema_version=1`, root/parent/run IDs, original/effective plan, source, start/end timestamps, scope/task, allowed names, fingerprint, artifact mode, process identity, attempts used/limit, active child |
 | `PlanRun` | Derived run metadata, checkpoint ID, status, progress, manifest, recovery capability/reason; never separately persisted |
@@ -318,8 +325,8 @@ migration explicitly; do not describe the JSON as byte-identical.
 `checkpoint_store: CheckpointStore | str | None = None`,
 `durable_store: CheckpointStore | str | None = None`,
 `task_memory_runtime: TaskMemoryRuntime | None = None`, and `scope: TaskScope | None = None`.
-All existing constructor arguments retain their meaning. `None` recovery selects
-approved defaults after §8 resolution. Store/runtime objects are trusted host inputs.
+All existing constructor arguments retain their meaning. `None` recovery selects the
+approved defaults of §8 D1 (`max_repair_rounds=2`). Store/runtime objects are trusted host inputs.
 Borrowed resources are not closed by the toolkit; owned resources are cleaned up.
 
 Errors use `ToolResult(status="error", success=False, error=<bounded text>,
@@ -327,9 +334,23 @@ result={"code": ..., ...})`. Stable codes include `unknown_run`, `checkpoint_una
 `checkpoint_invalid`, `checkpoint_write_failed`, `run_busy`, `run_not_resumable`,
 `run_not_repairable`, `no_repairable_nodes`, `repair_limit_reached`, `repair_interrupted`,
 `delta_invalid`, `planner_unavailable`, `scope_mismatch`, `policy_mismatch`,
-`artifacts_unavailable`, `artifact_alias_conflict`, and `restore_budget_exceeded`.
-Expiration-specific codes depend on §8's retained-identity decision. Unknown-run
-diagnostics may list only a bounded set of locally known authorized IDs.
+`artifacts_unavailable`, `artifact_alias_conflict`, `restore_budget_exceeded` and
+`missing_or_expired`. Unknown-run diagnostics may list only a bounded set of locally
+known authorized IDs.
+
+Per §8 D3, `unknown_run` and `missing_or_expired` are **capability-scoped**, decided by
+the configured store tiers alone — never by a retained side record:
+
+| Configured tiers | Durable `latest(run_id)` | Code | Rationale |
+|---|---|---|---|
+| Durable configured | returns a checkpoint | *(not an error — resolve it)* | State is intact; durable storage has no TTL |
+| Durable configured | returns `None` | `unknown_run` | `DurableCheckpointStore` never expires a row (`store/durable.py:12`); deletion is explicit via `delete_flow`, so absence proves the run was never durably recorded |
+| Ephemeral only | n/a | `missing_or_expired` | `RedisCheckpointStore` keys carry `FLOW_CHECKPOINT_REDIS_TTL` (86400s, `conf.py:309`) refreshed on each write (`store/redis.py:100`); after expiry no evidence distinguishes the two cases |
+
+Every such error response carries the `artifact_mode`/`resume_level`/`recovery_reason`
+envelope, so the caller can tell which regime produced the code. The toolkit adds no
+receipt store, tombstone or second persisted object; this preserves the §8 decision that
+run state is derived from the checkpoint and never duplicated.
 
 ## 3. Module Breakdown
 
@@ -428,11 +449,13 @@ class PlanRunResolver:
                  scope: TaskScope, cache: dict[str, PlanRun]) -> None:
         """Bind trusted scope and store handles, never serialized clients."""
     async def resolve(self, run_id: str) -> PlanRun:
-        """Resolve latest authorized lineage; distinguish errors only with retained evidence."""
+        """Resolve latest authorized lineage; classify misses by configured tier capability."""
 ```
 
-M3's optional identity-receipt interface and file ownership are intentionally deferred
-to §8. Do not fill this gap with an invented `CheckpointStore.exists()` method.
+Identity receipts were rejected in §8 D3: M3 adds no receipt model, table or file. A
+miss is classified from the configured tiers alone per the §2 capability table, using
+only `latest()`/`get()`. Do not fill this gap with an invented `CheckpointStore.exists()`
+method, a tombstone key or a side index.
 
 ### Module 4: Checkpoint lifecycle and continuation lease
 
@@ -513,7 +536,7 @@ def merge_delta(plan: ExecutionPlan, delta: PlanDelta) -> ExecutionPlan:
 - **Path**: `tools/execution_plan/toolkit.py`, `tools/execution_plan/__init__.py`.
 - **Responsibility**: Wire M1–M5; preserve acquisition/validation modes and soft timeout;
   enforce approved repair budgets; expose two new tools with explicit schemas.
-- **Depends on**: M2–M5 and §8 policy decisions.
+- **Depends on**: M2–M5. The §8 policy decisions (D1–D3) are resolved and binding.
 - **Interface Skeleton**:
 
 ```python
@@ -589,7 +612,8 @@ async def test_plan_binding_caps_existing_registered_get_result() -> None:
 | Repair chain crash matrix | Crash before attempt reservation, after reservation, after delta acceptance, during child execution and before final consolidation |
 | Concurrency across processes | Two callers contend on the same root lease; loser spends zero LLM calls and dispatches zero tools |
 | Standalone compatibility | Existing FEAT-538 disabled surface/turn-shape regression remains intact |
-| Expiration identity | Conditional on §8: demonstrate expired vs unknown using retained evidence, including receipt retention boundary |
+| Expiration identity | Durable tier configured: an unrecorded ID yields `unknown_run`; ephemeral-only: a purged flow yields `missing_or_expired`; both responses carry the matching `resume_level`/`recovery_reason`. No receipt fixture exists |
+| Repair budget | `max_repair_rounds=0` refuses before any planner call; the default 2 permits a second attempt after one consumed by a simulated crash; a plan-supplied budget field is rejected, never honored |
 
 ### Test Data / Fixtures
 
@@ -623,7 +647,7 @@ report missing infrastructure as an explicit skip, not a successful recovery pro
 - [ ] AC13: Metadata-only reads load zero artifact payload bytes; restoration is bounded and never mutates evidence versions.
 - [ ] AC14: Soft timeout returns progress without cancellation; background task errors become bounded structured results.
 - [ ] AC15: §4 unit/regression suites pass; real durable/process recovery evidence is recorded separately from fake-store tests.
-- [ ] AC16: §8 policy and retention blockers are resolved and reflected consistently in config defaults, tests and docs before approval.
+- [ ] AC16: §8 D1–D3 are reflected consistently in config defaults (`max_repair_rounds=2`, host-only), the capability-scoped `unknown_run`/`missing_or_expired` classification, tests and docs; no receipt store, tombstone or second persisted run object is introduced.
 - [ ] AC17: Documentation explains the additive terminal schema and the exactly-once limitation for interrupted external calls.
 
 ## 6. Codebase Contract
@@ -735,8 +759,11 @@ def build_manifest(plan: Any, refs: Sequence[ArtifactRef], *,
 - `AgentsFlow.resume(node_factories=...)` does not exist; use `flow_factory`.
 - `AgentsFlow.from_definition(checkpoint_required=..., checkpoint_shared_data=...)`
   does not exist. Those options belong to its constructor.
-- `CheckpointStore.exists`, `was_created`, TTL tombstones and expired-vs-unknown lookup
-  do not exist. Redis lookup metadata expires with the checkpoint.
+- `CheckpointStore.exists`, `was_created` and TTL tombstones do not exist and must not
+  be added. Redis lookup metadata expires with the checkpoint
+  (`FLOW_CHECKPOINT_REDIS_TTL`, 86400s). `DurableCheckpointStore` has no TTL at all
+  (`store/durable.py:12`), so a durable `latest()` miss is itself the expired-vs-unknown
+  evidence — see §2 and §8 D3.
 - `CheckpointInputMetadata(workflow="execution-plan")` is invalid with today's Literal.
 - ArtifactRef is not automatically registered by the plan module for checkpoint serialization.
 - `ExecutionManifest.run_id`/`resume_level` do not exist; add toolkit models rather than
@@ -847,25 +874,54 @@ Exploration questions resolved by this codebase investigation:
 - [x] Auditar qué llamadores síncronos del catálogo existen fuera de `PlanToolNode` —
   Completed focused source audit; findings and limits recorded in §7.
 
-Approval blockers (questions sent to Jesus Lara during specification work):
+Approval blockers — **all resolved by Jesus Lara on 2026-09-21**:
 
-- [ ] Q1: ¿Cuál es el tope de rondas de replan por defecto, y es configurable por plan o
-  por toolkit? — *Owner: Jesus Lara*. Recommendation: toolkit-only 0–2 rounds, default
-  2; a default of 1 was offered as an alternative. Neither default is approved yet.
-- [ ] Q2: ¿`plan_repair` sobre un run expirado por TTL debe poder autorizar una
-  re-ejecución completa, o negarse? — *Owner: Jesus Lara*. Recommendation: refuse;
-  a fresh execution requires an explicit `plan_execute`. No automatic restart is authorized.
-- [ ] Q3: Expired-vs-unknown contradicts the available TTL lookup contract unless
-  identity survives expiry. — *Owner: Jesus Lara*. Approve a minimal retained identity
-  receipt in the execution-plan layer (scope and run identity only, no duplicated run
-  state), or relax the requirement to `missing_or_expired`. If receipts are approved,
-  specify their backend/retention and limits before approving M3/M4: finite receipt
-  retention only supports distinction within that retention window. The current
-  immutable ID alone cannot establish that a run ever existed.
+- [x] **D1** (was Q1): ¿Cuál es el tope de rondas de replan por defecto, y es configurable
+  por plan o por toolkit? — *Owner: Jesus Lara*. **Approved: toolkit-only, range 0–2,
+  default 2.** `PlanRecoveryConfig.max_repair_rounds` is a host constructor input only.
+  A plan may not set, raise or lower it, matching §2's rule that no plan-level or
+  tool-controlled policy widens recorded policy — plan metadata is model-influenced, and
+  precedent for a host-only bound already exists in `max_completed_runs`
+  (`tools/execution_plan/toolkit.py:110`). Default 2 rather than 1 because §2 makes a
+  crash or cancellation after attempt reservation *consume* the attempt: with a cap of 1,
+  a single interrupted repair would permanently exhaust the run's only recovery. Worst
+  case is 4 planner calls per run, since each round admits one structural correction call.
+  `0` disables runtime repair; `plan_repair` then returns `repair_limit_reached` without
+  consuming an attempt or calling a planner. Landed in §2 (repair paragraph, data models,
+  public interfaces), §3 M6, §4, §5 AC16.
+
+- [x] **D2** (was Q2): ¿`plan_repair` sobre un run expirado por TTL debe poder autorizar
+  una re-ejecución completa? — *Owner: Jesus Lara*. **Approved: refuse.** Without a
+  checkpoint there is no recorded per-node result set, no protected-node set, no frozen
+  allowlist and no eligible-ID set, so a "repair" of such a run is indistinguishable from
+  re-running the whole plan and would silently re-execute successful, side-effecting
+  nodes — precisely what D2-the-goal (§1) forbids. `plan_repair` returns the §2
+  capability-scoped miss code; a fresh run requires an explicit `plan_execute`. No
+  automatic restart is authorized anywhere in this feature. Landed in §2, §4, §5 AC16.
+
+- [x] **D3** (was Q3): Expired-vs-unknown vs the available TTL lookup contract. —
+  *Owner: Jesus Lara*. **Approved: capability-scoped distinction; identity receipts
+  rejected.** Source review during blocker resolution showed the escalated premise (R4)
+  holds for only one tier: `DurableCheckpointStore` has **no TTL or expiry** — "durability
+  is the point", deletion is explicit via `delete_flow` (`store/durable.py:12`) — while
+  `RedisCheckpointStore` expires its data keys at `FLOW_CHECKPOINT_REDIS_TTL` (86400s,
+  `conf.py:309`), refreshed on every write (`store/redis.py:100-103`), and
+  `FlowCheckpointer` write-throughs to durable whenever `durable=True`
+  (`checkpointer.py:240-251`). So when the durable tier is configured — exactly the
+  configuration §2 already requires for `resume_level=cross_restart` — a durable
+  `latest()` miss *proves* the run was never recorded and `unknown_run` is decidable with
+  no extra state. Ephemeral-only deployments return `missing_or_expired`, which is the
+  honest limit of their evidence. Receipts were rejected: a finite retention window only
+  reproduces, within that window, what the durable tier already provides indefinitely for
+  free, at the cost of a second persisted object that can desynchronize — contradicting
+  the resolved decision above that run state is derived from the checkpoint and nothing
+  else. No receipt backend, retention policy, tombstone or `CheckpointStore.exists()` is
+  added, so M3/M4 have no remaining precondition. Landed in §2 (error-code capability
+  table), §3 M3, §4, §5 AC16, §6.
 
 Target version uses `next`, consistent with the related WorkingMemory specification;
-author is inherited from the brainstorm. Status remains draft until these blockers
-and the normal spec review are complete.
+author is inherited from the brainstorm. With D1–D3 resolved, the remaining precondition
+for task decomposition is the normal spec review.
 
 ## 9. Design Research Cross-Check
 
@@ -879,15 +935,16 @@ source. No files were written under the pre-existing `sdd/state/FEAT-585/` direc
 | R1 | ArtifactRef loses type without registration | CONFIRM | Process-wide serializer registry is the existing supported hook | §2, M3, AC3 |
 | R2 | Durable artifacts do not hydrate catalog aliases | CONFIRM | Current aget is local-only | §2, M2, AC3/13 |
 | R3 | Backend without config does not impose a hard raw-read cap | CONFIRM | Fallback accepts caller override | §2, M2, AC10 |
-| R4 | TTL removes evidence needed for expired-vs-unknown | ESCALATE | Requires retained identity or a changed requirement | §8 Q3 |
+| R4 | TTL removes evidence needed for expired-vs-unknown | ESCALATE → RESOLVED | Escalated to the owner; resolved as §8 D3 after source review showed the durable tier has no TTL, so the distinction is decidable per configured tier without retained identity | §2, §3 M3, §6, §8 D3 |
 | R5 | Delta is not independently valid when it references successful parents | CONFIRM | Merge then validate full topology; seed protected results | §2, M5 |
 | R6 | Returned error/partial refs may be scheduler-completed | CONFIRM | Resume and repair must not conflate frontier and manifest status | §2, §4 |
 
 These are the spec author's source cross-checks, not suggestions from an independent reviewer.
-Summary: 5 confirmed · 0 rejected · 1 escalated.
+Summary: 5 confirmed · 0 rejected · 1 escalated and since resolved by owner decision (§8 D3).
 
 ## Revision History
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-21 | Jesus Lara / Codex | Initial researched draft; policy and identity-retention decisions pending |
+| 0.2 | 2026-09-21 | Jesus Lara / Claude | Resolved §8 blockers as D1–D3: host-only `max_repair_rounds` 0–2 default 2; refuse repair of a run with no checkpoint; capability-scoped `unknown_run`/`missing_or_expired` with identity receipts rejected. Propagated to §2, §3 M3/M6, §4, §5 AC16, §6, §9 R4 |
