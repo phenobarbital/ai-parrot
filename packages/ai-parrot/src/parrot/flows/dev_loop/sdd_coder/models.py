@@ -539,6 +539,18 @@ class CoderPlanArgs(_Args):
     _exec = field_validator("execution_id")(_check_uuid)
 
 
+class CoderPlanRequestArgs(CoderPlanArgs):
+    """`coder_plan` request arguments (FEAT-584 M3/R2): scope plus response projection.
+
+    Deliberately split from `CoderPlanArgs` itself: `coder_begin_execution`
+    reuses `CoderPlanArgs` directly, and `CoderRecordFeedbackArgs`/
+    `CoderRecordReviewArgs`/`CoderRecordNativeObservationArgs` all inherit
+    from it -- none of those may silently start accepting `response_mode`.
+    """
+
+    response_mode: Literal["full", "compact"] = "full"
+
+
 class CoderRunChunkArgs(_Args):
     feature: str
     worktree: str
@@ -586,10 +598,28 @@ class CoderRecordReviewArgs(CoderPlanArgs):
 class CoderWaitArgs(_Args):
     job_id: str
     timeout_seconds: int = Field(default=120, ge=1, le=300)
+    response_mode: Literal["full", "compact"] = "full"
 
 
 class CoderStatusArgs(_Args):
     job_id: str
+    response_mode: Literal["full", "compact"] = "full"
+
+
+class CoderReadArtifactArgs(_Args):
+    """`coder_read_artifact` arguments (FEAT-584 M3/R2): opaque, execution-scoped only.
+
+    `artifact_id` is never a filesystem path -- confinement to one
+    execution's own evidence directory happens entirely inside
+    `ExecutionEvidenceStore` (evidence.py), never here; this schema only
+    bounds shape and type.
+    """
+
+    execution_id: str = Field(..., min_length=1)
+    artifact_id: str = Field(..., min_length=1, max_length=128)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=8192, ge=1, le=16384)
+    _exec = field_validator("execution_id")(_check_uuid)
 
 
 class CoderCleanupArgs(_Args):
