@@ -6,7 +6,7 @@ type: feature
 status: approved
 base_branch: dev
 created: 2026-09-21
-revision: 0.2
+revision: 0.3
 source: "ledger issue:569e81756247 (bug, major) via /sdd-fix group fixgroup:47eb801095a6"
 projects: [ai-parrot, dev-loop]
 tags: [sdd-coder, retry, roster, complexity, FEAT-561, FEAT-559]
@@ -113,8 +113,18 @@ eligible native seat?"* and `_run_task` consumes it only after
 `_select_retry_seat` has returned `None`.
 
 The handoff is surfaced on `TaskResult` as a new optional field carrying a
-`NativePrep`-shaped reservation, with an `outcome` that `sdd-worker` already
-knows how to route. The engine never runs the attempt itself.
+`NativePrep`-shaped reservation, under the **already-declared**
+`TaskOutcome` member `"retry_native"` (`models.py:37`). The engine never runs
+the attempt itself.
+
+**`retry_native` is a reserved name with no implementation.** FEAT-549's spec
+(`sdd/specs/sdd-worker-subagents.spec.md:296`) and TASK-3115 both put it in the
+`TaskOutcome` literal, but a repo-wide search finds **no producer, no consumer,
+and no test** — `models.py:37` is its only occurrence in `packages/`. So this
+feature implements the outcome the original design reserved for exactly this
+case; it does not invent a new one, and `TaskOutcome` itself needs no edit.
+This is also what makes Q1's "distinct outcome" cheap: the distinction was
+always intended.
 
 **Constraint discovered during research — `prepare_native` cannot be reused
 as-is.** It raises `task_not_in_plan` when `not planned.native`
@@ -202,6 +212,7 @@ after it was filed. Use these:
 | `ChunkAssigner.retry_seat` | `roster.py:386` | native guard at `:411` |
 | `NativePrep` | `models.py:360` | fields incl. `attempt_uid`, `assessment_id`, `execution_id`, `bg_handle` |
 | `TaskResult` | `models.py` (`class TaskResult`) | Module 1 surface |
+| `TaskOutcome` | `models.py:30-39` | `"retry_native"` at `:37` — **declared, never produced/consumed/tested**; implement it, do not rename |
 | `ExecutionPoolView` | `models.py` | `model_config = ConfigDict(extra="forbid")` |
 | Shipped template | `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/sdd-coder.yaml:22-34` | 1 MCP strong seat + 1 native |
 | Operator mitigation | `.parrot/mcp-toolkits.yaml:96,106,114` | gitignored, per-machine — not a fix |
@@ -252,7 +263,8 @@ spec's stated assumption; no design change followed.
   separate from the routing `sdd-worker` already uses for a *planned* native
   attempt 1, so telemetry can distinguish "planned native" from "retried onto
   native". Module 1 and AC-1/AC-2 assume this; the orchestrator must route the
-  new outcome (R4).
+  new outcome (R4). Realized by the pre-declared, never-implemented
+  `TaskOutcome` member `"retry_native"` (`models.py:37`) — see §3 Module 1.
 - **Q2 — RESOLVED: yes.** Module 3's warning also fires when `strong_models`
   is empty — a roster in which *every* complex/unknown task blocks at
   admission is the most extreme case of the condition the warning exists to
