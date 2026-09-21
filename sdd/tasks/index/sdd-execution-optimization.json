@@ -30,7 +30,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -38,8 +38,8 @@
       "parallelism_notes": "Independiente del engine; usar sesión de prueba propia. El bloqueo externo del host no debe serializar M1/M2/M9.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3555-compaction-capability-spike.md"
+      "completed_at": "2026-09-21T01:09:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3555-compaction-capability-spike.md"
     },
     {
       "id": "TASK-3556",

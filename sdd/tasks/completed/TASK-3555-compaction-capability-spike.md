@@ -134,4 +134,37 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `e77d42d0cdc24639b7eb738bfac7aba5`). Filled
+`docs/dev_loop/sdd-compaction-capabilities.md` (the task's sole listed file) with real,
+byte-hashed evidence: read the installed `fast-jev-compaction` 0.3.0 plugin's
+`hooks/fast-jev.ts` / `types/claude-code.d.ts`, confirmed `SessionCompactArgs` (outbound)
+carries no `agentId` while the inbound `SessionCompactInput` event does — pinning down the
+subagent-addressing ambiguity the task asked about. Ran one live, network-verified
+experiment (real HTTP round-trip to the TypeSafe Jev backend against a synthetic 10-message
+transcript, 761ms, 13.66% reduction) reproducing the plugin's own `< minReductionRatio`
+fallback branch against source. The actual host-side `$.session.compact()` call for the
+main conversation or a subagent is unreachable from a coder-subagent's tool surface (no
+MCP tool / Bash / slash-command path reaches the engine's plugin-hook sandbox) — recorded
+as a registered blocker per the task's own AC language, not fabricated.
+
+Also found: `.claude/settings.json` is git-ignored, so `compaction_status()` is `false` in
+this worktree even though `true` in the main checkout — any M5 driver must resolve status
+per-worktree. Proposed a spec amendment for R6/M5 (receipt-reader design instead of a
+caller design) for the spec author, since no Python-reachable call surface to
+`$.session.compact()` exists.
+
+Deviation flagged: the task's Scope text asks to save redacted logs under
+`artifacts/logs/sdd-compaction-capabilities/`, which is NOT in the file table / Complexity
+Contract targets. Per prior confirmed feedback (`coder-feedback:e0daa670b250251730937ce3`,
+TASK-3421 unlisted-file-added), the coder did not create that directory and instead
+embedded all evidence directly in the one allowed document. File-table vs Scope-text
+mismatch left for the task owner to reconcile in a future revision.
+
+Validation:
+- `PYTHONPATH=packages/ai-parrot/src pytest tests/knowledge/wiki/test_claude_code_compaction.py -q` → 17 passed.
+- `python -m scripts.sdd.select_tests --tier merge --base 94a12aad6 --task-file <all FEAT-584 task files> --run` → 430 passed/1 deselected + 17 passed for the suites currently in scope (the run also attempted test files belonging to not-yet-implemented downstream tasks, e.g. `test_background_mcp.py` for TASK-3565, and correctly errored on those — expected, not a regression).
+- `git status --porcelain --untracked-files=all` clean before/after commit; only the one listed file ever appeared.
+
+Review: `coder-review:0b986ab044ce6efe5213b415` (zero fix commits — clean delivery).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 668521ms (~11m9s) · Tokens: 172747 (subagent total, in/out split not exposed for native).
