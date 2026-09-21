@@ -48,7 +48,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -56,8 +56,8 @@
       "parallelism_notes": "Owner único del reader y runner; independiente de core. Los tests MCP se añaden después para no fragmentar la unidad de ejecución.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3556-bounded-inspection-batch.md"
+      "completed_at": "2026-09-21T00:54:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3556-bounded-inspection-batch.md"
     },
     {
       "id": "TASK-3557",

@@ -371,4 +371,23 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Implemented in a prior session (sub-worktree `feat-FEAT-584-sdd-execution-optimization--TASK-3556-a1-36dcedbe853a42bc9a855dbf76f83829`,
+commits `7c7bd791a` feat + `abfe45730` style/lint autofix) and merged into the
+feature branch via `59e98a5cd`, plus a follow-up fix `86f742a5f` that updated
+a stale hardcoded tool-set assertion in
+`test_stdio_protocol.py` to include the new `source_inspect_batch` tool. That
+session's SDD-state bookkeeping (index status + task move) was never
+finalized, leaving the index stuck at `in-progress` and blocking `coder_plan`
+(`complexity_contract_invalid`: CREATE target `inspection_models.py` already
+on disk). This session reconciles that: verified all four listed files exist
+with the specified contents (`inspection_models.py`, `inspection.py`,
+`reader.py` MODIFY, `test_inspection.py`), re-ran validation and finalized
+state.
+
+Validation (2026-09-21, this session):
+- `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_inspection.py packages/ai-parrot-tools/tests/tool_optimizations/test_reader.py -q` → 35 passed.
+- `python -m scripts.sdd.select_tests --tier merge --base 94a12aad6 --task-file sdd/tasks/active/TASK-3556-bounded-inspection-batch.md --run` → 430 passed, 1 deselected.
+
+Seat: unknown (prior session, seat/model metadata not recorded before
+interruption) · Backend: unknown · Attempts: unknown · Duration: unknown ·
+Tokens: unknown. Recorded here as a known gap rather than guessed.
