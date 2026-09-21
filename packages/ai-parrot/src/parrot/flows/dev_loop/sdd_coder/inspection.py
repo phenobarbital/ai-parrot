@@ -44,10 +44,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict
 
@@ -322,9 +321,7 @@ async def delivery_report(
     sub_worktree_dirty: Optional[bool] = None
     sub_worktree_untracked: Optional[List[str]] = None
     if sub_worktree_present:
-        rc, status_out, _err = await _git(
-            "status", "--porcelain", "--untracked-files=all", cwd=sub_worktree_path
-        )
+        rc, status_out, _err = await _git("status", "--porcelain", "--untracked-files=all", cwd=sub_worktree_path)
         if rc == 0:
             lines = [line for line in status_out.splitlines() if line.strip()]
             sub_worktree_dirty = bool(lines)
