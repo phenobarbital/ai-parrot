@@ -576,6 +576,7 @@ async def prepare_review_checkpoint(
         # contract takes no user-supplied constraints parameter. Left empty
         # rather than fabricated -- never claimed as "no constraints exist".
         user_constraints=[],
+        context_id="main",
         pending_actions=pending_actions,
         settlement_ref=settlement_ref,
         neutral_brief=neutral_brief,
