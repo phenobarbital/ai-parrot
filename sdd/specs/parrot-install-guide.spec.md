@@ -10,7 +10,7 @@ tags: [installation, onboarding, getting-started, wikitoolkit, documentation]
 **Feature ID**: FEAT-586
 **Date**: 2026-09-21
 **Author**: Arturo Martinez
-**Status**: accepted
+**Status**: approved
 **Target version**: 1.0.5
 
 ---
