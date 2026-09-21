@@ -187,6 +187,34 @@ class BasicAgent(Chatbot, NotificationMixin):
         await runtime.start()
         self.logger.debug("Started task-memory runtime (durable=%s)", getattr(runtime.config, "durable", False))
 
+    def _iter_toolkit_owners(self) -> "list[Any]":
+        """Return each registered toolkit owner once, in registration order.
+
+        Resolves owners through ``parrot.tools.manager.get_toolkit_owner`` so a
+        toolkit registered as N wrapped ``ToolkitTool``s appears exactly once.
+        """
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is None:
+            return []
+        from parrot.tools.manager import get_toolkit_owner
+
+        if hasattr(tool_manager, "get_tools"):
+            tools = tool_manager.get_tools()
+            tool_iter = tools.values() if isinstance(tools, dict) else tools
+        elif hasattr(tool_manager, "all_tools"):
+            tool_iter = tool_manager.all_tools()
+        else:
+            tool_iter = getattr(tool_manager, "_tools", {}).values()
+        owners: "list[Any]" = []
+        seen: set[int] = set()
+        for tool in tool_iter:
+            owner = get_toolkit_owner(tool)
+            if owner is None or id(owner) in seen:
+                continue
+            seen.add(id(owner))
+            owners.append(owner)
+        return owners
+
     def _adopt_task_memory_from_toolkits(self) -> None:
         """Adopt the task memory of a registered WorkingMemoryToolkit.
 
@@ -210,24 +238,16 @@ class BasicAgent(Chatbot, NotificationMixin):
         except ImportError:
             return
 
-        if hasattr(tool_manager, "get_tools"):
-            tools = tool_manager.get_tools()
-            tool_iter = tools.values() if isinstance(tools, dict) else tools
-        elif hasattr(tool_manager, "all_tools"):
-            tool_iter = tool_manager.all_tools()
-        else:
-            tool_iter = getattr(tool_manager, "_tools", {}).values()
-
-        for tool in tool_iter:
-            if not isinstance(tool, WorkingMemoryToolkit):
+        for owner in self._iter_toolkit_owners():
+            if not isinstance(owner, WorkingMemoryToolkit):
                 continue
-            task_memory = getattr(tool, "_task_memory", None)
+            task_memory = getattr(owner, "_task_memory", None)
             if task_memory is None:
                 continue
             self.task_memory = task_memory
             self.logger.debug(
                 "Adopted task memory from WorkingMemoryToolkit '%s'",
-                getattr(tool, "name", tool),
+                getattr(owner, "name", owner),
             )
             return
 
@@ -249,22 +269,12 @@ class BasicAgent(Chatbot, NotificationMixin):
             from parrot.tools.working_memory import WorkingMemoryToolkit
         except ImportError:
             return
-        if hasattr(tool_manager, "get_tools"):
-            tools = tool_manager.get_tools()
-            if isinstance(tools, dict):
-                tool_iter = tools.values()
-            else:
-                tool_iter = tools
-        elif hasattr(tool_manager, "all_tools"):
-            tool_iter = tool_manager.all_tools()
-        else:
-            tool_iter = getattr(tool_manager, "_tools", {}).values()
-        for tool in tool_iter:
-            if isinstance(tool, WorkingMemoryToolkit) and tool._answer_memory is None:
-                tool._answer_memory = self.answer_memory
+        for owner in self._iter_toolkit_owners():
+            if isinstance(owner, WorkingMemoryToolkit) and owner._answer_memory is None:
+                owner._answer_memory = self.answer_memory
                 self.logger.debug(
                     "Auto-injected answer_memory into WorkingMemoryToolkit '%s'",
-                    getattr(tool, "name", tool),
+                    getattr(owner, "name", owner),
                 )
 
     async def _wire_tool_namespaces_into_working_memory(self) -> None:
