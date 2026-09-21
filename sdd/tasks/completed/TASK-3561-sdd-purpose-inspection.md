@@ -299,4 +299,58 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `d4a6513ea6404470ac4b9e9fb5e5ce22`). Touched
+only the six listed targets:
+
+- `inspection.py` CREATE — two free functions, `task_context` and `delivery_report`, exact
+  blueprint 5-parameter signature (`feature, worktree, task_id, execution_id, store`).
+  `task_context` resolves index → task → dependencies → contract via `TaskScheduler`, never
+  marking a dependency satisfied on trust. `delivery_report` discovers the execution-owned
+  attempt branch, diffs it against the feature branch, and runs it through the existing
+  `check_fidelity`/`parse_task_files`; never merges, lints, tests, or approves. Lint/test/
+  review evidence is reported as `"unknown"` since no producer in this task's scope publishes
+  it into the durable store yet. Both snapshots stay bounded (spec 16KiB): large text is
+  excerpted inline and always durably published via `ExecutionEvidenceStore.put_artifact`.
+- `engine.py` MODIFY — `SddCoderEngine.task_context`/`delivery_report`: thin wrappers doing
+  feature resolution plus the same execution-ownership check `record_native_observation`
+  already uses, then delegating to `inspection.py`.
+- `models.py` MODIFY — `CoderTaskContextArgs`/`CoderDeliveryReportArgs` reusing
+  `CoderPrepareNativeArgs`'s shape (same pattern `CoderMergeArgs` already uses). No new
+  `ERROR_CODES` needed; every failure path reuses an existing code.
+- `toolkit.py` MODIFY — registered `coder_task_context`/`coder_delivery_report`; generalized
+  `_run()` (one line) to accept either a `BaseModel` or a plain dict, since these two
+  read-only projections return `dict[str, object]` per the blueprint, not a nested
+  `CoderResult`.
+- `test_toolkit.py` MODIFY — extended `EXPECTED_TOOLS` and the scoped set; new pre-execute/
+  routing tests for both tools.
+- `test_inspection_reports.py` CREATE — 3 scenarios.
+
+Design decision flagged and accepted: the blueprint's fixed 5-parameter signature for
+`inspection.py`'s functions leaves no room to pass an attempt's branch/path explicitly, and
+its Codebase Contract excludes any git subprocess capability. To make `delivery_report` work,
+the coder added a small private git helper local to `inspection.py` (avoiding a circular
+import: `engine.py` only imports `inspection` lazily inside its two new methods) that
+discovers the task's attempt branch by enumerating real git branches matching the engine's
+own naming convention, verifying each candidate's embedded execution-id hex before trusting
+it — mirrors the already-established, documented precedent in
+`SddCoderEngine._orphan_branches`/`_parse_orphan_suffix` ("parsing for reporting only", never
+adopted/mutated). Verified end-to-end against a real `SddCoderEngine` instance over a
+synthetic git repo (task_context, delivery_report, foreign-execution rejection,
+foreign-worktree rejection), not just isolated unit tests. Accepted as a documented,
+non-fabricated extension of an existing pattern.
+
+Collateral breakage flagged by the coder (correctly not fixed out of scope, same pattern as
+TASK-3560: two new MCP tools not yet allow-listed in the sdd-worker prompt frontmatter) and
+fixed by the orchestrator in commit `d14823a35` (canonical + packaged twin +
+`test_mcp_local.py::EXPECTED`).
+
+Validation:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_toolkit.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_inspection_reports.py -q` → 22 + 3 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_mcp_local.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py -q` → 16 passed (post-fix; 3 failed pre-fix, matching the coder's own diagnosis).
+- Scoped regression (dev_loop/sdd_coder, tool_optimizations, wiki compaction — the full core-escalation sweep was already paid once for the identical engine.py/toolkit.py/models.py change pattern at TASK-3560 with zero sdd_coder-related failures, so it was not re-run in full here): 417 passed; 433 passed, 1 skipped; 17 passed.
+- `git status --porcelain --untracked-files=all` clean except gitignored build artifacts.
+- `ruff check --select E9,F63,F7,F82` clean on all six changed files.
+
+Review: `coder-review:d415430b31342e2e154b0ad8` (fix commit `d14823a35`, applied by the orchestrator, not the coder).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1259083ms (~21m) · Tokens: 287581 (subagent total, in/out split not exposed for native).
