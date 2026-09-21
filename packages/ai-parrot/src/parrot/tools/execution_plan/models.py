@@ -11,6 +11,7 @@ Tool-argument schemas (``PlanStatusArgs``, ``PlanArtifactsArgs``,
 ``AbstractToolArgsSchema`` convention (see
 ``.agent/workflows/create-parrot-tool.md``).
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -171,7 +172,9 @@ class PlanRecoveryConfig(BaseModel):
     max_restore_bytes: int = Field(
         default=67_108_864, gt=0, description="Cumulative exact-version restore budget per continuation."
     )
-    checkpoint_probe_timeout: float = Field(default=2.0, gt=0.0, description="Seconds for the pre-dispatch store probe.")
+    checkpoint_probe_timeout: float = Field(
+        default=2.0, gt=0.0, description="Seconds for the pre-dispatch store probe."
+    )
 
     @field_validator("checkpoint_probe_timeout")
     @classmethod
@@ -260,7 +263,9 @@ class PlanRunSummary(PlanRecoveryEnvelope, RunningSummary):
 
     model_config = ConfigDict(extra="forbid")
 
-    uncheckpointed_progress: bool = Field(default=False, description="True when nodes_done includes local-only progress.")
+    uncheckpointed_progress: bool = Field(
+        default=False, description="True when nodes_done includes local-only progress."
+    )
 
 
 class PlanRun(BaseModel):
@@ -277,7 +282,9 @@ class PlanRun(BaseModel):
     resume_level: ResumeLevel = Field(..., description="Storage capability.")
     resumable: bool = Field(..., description="Whether plan_resume may continue this run now.")
     recovery_reason: Optional[str] = Field(default=None, description="Why not resumable.")
-    dispatched_node_ids: List[str] = Field(default_factory=list, description="Nodes recorded as dispatched or completed.")
+    dispatched_node_ids: List[str] = Field(
+        default_factory=list, description="Nodes recorded as dispatched or completed."
+    )
 
 
 class PlanResumeArgs(AbstractToolArgsSchema):

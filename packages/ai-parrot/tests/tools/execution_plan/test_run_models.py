@@ -4,6 +4,7 @@ Covers ``PlanRecoveryConfig`` (D1 range enforcement), ``PlanDelta``,
 ``PlanRunMetadata`` (round-trip + schema-version pinning), ``PlanRunManifest``/
 ``PlanRunSummary`` (additive top-level keys) and ``PlanRunError.to_tool_result``.
 """
+
 from __future__ import annotations
 
 import math
@@ -22,6 +23,7 @@ from parrot.tools.execution_plan.models import (
     PlanRunMetadata,
     PlanRunSummary,
 )
+
 
 def _make_plan() -> ExecutionPlan:
     return ExecutionPlan(
