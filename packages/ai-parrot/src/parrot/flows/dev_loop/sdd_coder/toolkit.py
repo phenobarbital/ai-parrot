@@ -222,7 +222,9 @@ class SddCoderToolkit(AbstractToolkit):
                 payload, mode="full", execution_id=execution_id, store=self._engine._evidence_store  # noqa: SLF001
             )
         if not execution_id:
-            raise CoderFailure("execution_required", "compact response_mode requires a job bound to a known execution_id")
+            raise CoderFailure(
+                "execution_required", "compact response_mode requires a job bound to a known execution_id"
+            )
         if self._engine._evidence_store is None:  # noqa: SLF001 -- same-package internal bookkeeping (M2 pattern)
             raise CoderFailure("evidence_persistence_failed", "no durable evidence store is configured for this engine")
         return await project_response(
@@ -452,7 +454,9 @@ class SddCoderToolkit(AbstractToolkit):
         async def _r() -> Dict[str, Any]:
             store = self._engine._evidence_store  # noqa: SLF001 -- same-package internal bookkeeping (M2 pattern)
             if store is None:
-                raise CoderFailure("evidence_persistence_failed", "no durable evidence store is configured for this engine")
+                raise CoderFailure(
+                    "evidence_persistence_failed", "no durable evidence store is configured for this engine"
+                )
             try:
                 return await store.read_artifact(execution_id, artifact_id, offset, limit)
             except FileNotFoundError as exc:
