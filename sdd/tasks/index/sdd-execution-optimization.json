@@ -482,7 +482,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -494,8 +494,8 @@
       "parallelism_notes": "M5b decompuesta tras la enmienda Q1/M0 (commit d80bb0e1b). Depende de TASK-3555 (spike M0), TASK-3567 (checkpoint.py — context_id producer), TASK-3568 (phase_boundary.py — Protocol a implementar). Reservada vía reserve_ids.py FEAT-387; ledger commit 6b8528908.",
       "assigned_to": null,
       "started_at": "2026-09-21T15:02:54+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3577-claude-compaction-driver.md"
+      "completed_at": "2026-09-21T16:19:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3577-claude-compaction-driver.md"
     }
   ]
 }
