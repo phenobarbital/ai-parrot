@@ -1,4 +1,5 @@
 """Plan-scoped working-memory binding and exact-version recovery (FEAT-585 M2)."""
+
 from __future__ import annotations
 
 import logging
@@ -7,7 +8,13 @@ from typing import Any
 import pandas as pd
 
 from parrot.interfaces.artifact_store import PayloadResult
-from parrot.tools.working_memory.internals import CatalogEntry, EntryType, GenericEntry, VersionMetadata, WorkingMemoryCatalog
+from parrot.tools.working_memory.internals import (
+    CatalogEntry,
+    EntryType,
+    GenericEntry,
+    VersionMetadata,
+    WorkingMemoryCatalog,
+)
 from parrot.tools.working_memory.task_memory.models import ArtifactAvailability, EvidenceRef
 
 __all__ = ("PlanWorkingMemoryCatalog", "RestoreError")
@@ -72,7 +79,9 @@ class PlanWorkingMemoryCatalog(WorkingMemoryCatalog):
 
         result: PayloadResult = await backend.load_payload(scope, ref, max_bytes=max_bytes)
         if result.refusal is not None:
-            raise RestoreError("restore_budget_exceeded", f"{ref} refused under max_bytes={max_bytes}: {result.refusal}")
+            raise RestoreError(
+                "restore_budget_exceeded", f"{ref} refused under max_bytes={max_bytes}: {result.refusal}"
+            )
         if result.payload is None:
             raise RestoreError("missing_or_expired", f"{ref} has no readable payload")
 

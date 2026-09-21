@@ -1,4 +1,5 @@
 """FEAT-585 M2 — exact-version working-memory restoration tests."""
+
 from __future__ import annotations
 
 from typing import Any
