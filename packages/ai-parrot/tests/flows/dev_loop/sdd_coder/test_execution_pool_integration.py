@@ -24,6 +24,7 @@ import pytest
 
 from parrot.flows.dev_loop.dispatchers import DispatchExecutionError
 from parrot.flows.dev_loop.models import DevelopmentOutput, LLMCodeDispatchProfile
+from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy, StrongModelIdentity
 from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine, CoderFailure
 from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot, RosterConfig, RosterSeat, SeatProbeResult
 from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
@@ -1467,3 +1468,68 @@ async def test_real_wrapped_timeout_suspends_and_holds_across_chunks(
         assert done2.state == "done"
 
     assert len(fakes["nova"].calls) == 1, "seat 'a' must receive ZERO further invocations after its suspension"
+
+
+def _pool_for_roster_warning(tmp_path: Path, roster: RosterConfig) -> ExecutionPool:
+    """Build an execution pool whose advisory roster state can be inspected."""
+    return ExecutionPool(
+        execution_id=str(uuid4()),
+        feature_id="FEAT-588",
+        worktree_path=str(tmp_path),
+        roster=roster,
+        seats=roster.seats,
+        suspension_store=CoderSuspensionStore.from_root(tmp_path),
+        initial_exclusions=[],
+    )
+
+
+def test_empty_strong_models_is_reported_at_execution_start(tmp_path: Path) -> None:
+    """FEAT-588 AC-2: an empty allowlist blocks every complex task."""
+    roster = RosterConfig(seats=[RosterSeat(label="standard", backend="codex", model="gpt-5.6-terra")])
+
+    view = _pool_for_roster_warning(tmp_path, roster).view()
+
+    assert view.roster_warnings == [
+        "Roster has no strong models; every complex/unknown task will block at admission."
+    ]
+    assert view.status == "active"
+    assert not view.fallback_required
+    assert view.fallback_reason == ""
+
+
+def test_single_retry_capable_strong_seat_is_reported(tmp_path: Path) -> None:
+    """FEAT-588 AC-1: a native strong seat cannot provide an MCP retry."""
+    mcp_seat = RosterSeat(label="mcp-strong", backend="codex", model="gpt-5.6-terra")
+    native_seat = RosterSeat(label="native-strong", kind="native", model="haiku")
+    roster = RosterConfig(
+        seats=[mcp_seat, native_seat],
+        complexity=ComplexityPolicy(
+            strong_models=(
+                StrongModelIdentity(canonical_model="terra", backend="codex", model="gpt-5.6-terra"),
+                StrongModelIdentity(canonical_model="haiku", backend="native", model="haiku"),
+            )
+        ),
+    )
+
+    view = _pool_for_roster_warning(tmp_path, roster).view()
+
+    assert len(view.roster_warnings) == 1
+    assert "MCP retry-capable strong seats" in view.roster_warnings[0]
+
+
+def test_two_mcp_strong_seats_produce_no_warning(tmp_path: Path) -> None:
+    """FEAT-588 AC-3: a healthy two-MCP-strong-seat roster stays silent."""
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="mcp-one", backend="codex", model="gpt-5.6-terra"),
+            RosterSeat(label="mcp-two", backend="claude", model="claude-sonnet-5"),
+        ],
+        complexity=ComplexityPolicy(
+            strong_models=(
+                StrongModelIdentity(canonical_model="terra", backend="codex", model="gpt-5.6-terra"),
+                StrongModelIdentity(canonical_model="sonnet", backend="claude", model="claude-sonnet-5"),
+            )
+        ),
+    )
+
+    assert _pool_for_roster_warning(tmp_path, roster).view().roster_warnings == []

@@ -463,6 +463,8 @@ class ExecutionPoolView(BaseModel):
     fallback_reason: str = ""
     persisted: bool = True
     persistence_degraded: bool = False
+    roster_warnings: List[str] = Field(default_factory=list)
+    """FEAT-588 advisory notes about unavailable complex-task retry capacity."""
 
     _exec = field_validator("execution_id")(_check_uuid)
 
