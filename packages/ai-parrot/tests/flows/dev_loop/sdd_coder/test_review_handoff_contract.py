@@ -89,14 +89,14 @@ def test_coder_retains_delivery_scope(tmp_path: Path) -> None:
 
     # The block augments step (a) -- it must not displace the step's own bullets, nor
     # the delivery-feedback step that immediately follows.
-    for label, body in (("installed", installed_body), ("packaged", packaged_body)):
+    for _label, body in (("installed", installed_body), ("packaged", packaged_body)):
         assert body.index(_INSPECTION_HEADING) < body.index("- Read the full task file at `task_file`.")
         assert body.index("- Read the full task file at `task_file`.") < body.index(
             "### a.1) Apply Previous Delivery Feedback"
         )
 
     # Code-only delivery contract and the full native coder_feedback obligation stay intact.
-    for label, body in (("installed", installed_body), ("packaged", packaged_body)):
+    for _label, body in (("installed", installed_body), ("packaged", packaged_body)):
         assert "commit the code, and stop" in body
         assert "never touch SDD state" in body
         assert "Never claim a test ran" in body
