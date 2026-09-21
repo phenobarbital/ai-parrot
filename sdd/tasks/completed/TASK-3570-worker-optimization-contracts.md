@@ -195,4 +195,54 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `673c1e63ef384264bb12583e1bbc13d8`). Tocó solo
+los tres targets listados (ediciones idénticas en ambos twins, verificado byte-idéntico tras cada
+edición):
+
+- Frontmatter `tools:` — añadido `mcp__parrot-bounded-source__source_inspect_batch` (único tool
+  R1-R8 que los ripple patches TASK-3556/3561/3562/3565/3566/3568 no habían añadido aún; esos solo
+  tocaron la línea `tools:`, nunca el cuerpo del prompt — preservados todos, no revertidos).
+  Insertado el bloque '## Execution optimization (FEAT-584)' del blueprint verbatim tras
+  '## Orchestrator Loop (FEAT-549)'.
+- Tools previamente inertes ahora cableados en el loop: `coder_plan`/`coder_wait` piden
+  `response_mode="compact"`; paso 1/4 enrutan inspección de tarea por `coder_task_context`/
+  `coder_delivery_report` en vez de reads manuales; paso 3 añade disciplina de polling
+  `coder_bg_status` (sin ps/grep/sleep); el outcome `merged` del paso 4 lanza el merge-tier check
+  vía `coder_run_validation` + `coder_bg_status` en vez de un `select_tests --run` bloqueante en
+  Bash, y cierra la tarea vía `python -m scripts.sdd.finalize_task` (TASK-3566) en vez de la danza
+  manual Edit/Write/jq/mv del Fallback loop — elimina la contradicción previa donde el path "green"
+  del orquestador tomaba prestado el cierre mecánico del Fallback loop.
+- '## Completion' reescrita con un paso 0 explícito: persistir checkpoint de review
+  (`scripts.sdd.review_checkpoint prepare`, TASK-3567, solo path engine, requiere `coder_end_execution`
+  durablemente cerrado) → como mucho una compactación entre turnos según la matriz de soporte R6
+  (TASK-3568), registrando el `CompactionReceipt` real (nunca `/compact` vía Bash) → recargar/validar
+  el checkpoint (`checkpoint_stale` fuerza regeneración) → arrancar un code-reviewer fresco e
+  independiente desde esa evidencia neutral. Incluye variante explícita "sin engine" para el
+  Fallback loop/hosts sin servidor MCP: `review_checkpoint prepare` requiere un settlement de engine
+  que ese path nunca produce, así que se registra `checkpoint: unsupported_host` y se va directo a
+  code review — sin inventar una API de host adapter adelantada a M0/M5. El propio paso (g) manual
+  jq/mv del Fallback loop queda intacto (deliberado, no un descuido): `finalize_task` requiere
+  artefactos durables bajo `executions/<execution_id>/artifacts/...` que solo el path engine produce.
+
+Feedback previo verificado: solo los 3 archivos de la tabla tocados (`git status --porcelain
+--untracked-files=all` limpio tras commit; `git diff --name-only` confirma exactamente esos 3
+paths).
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py -q` (Validation
+  Command exacto) → 14 passed (8 preexistentes sin cambios + 6 nuevos: tools-realmente-invocados,
+  frontmatter tiene bounded-source, orden-de-secuencia-de-boundary, Fallback-nunca-asume-engine,
+  Completion-tiene-variante-sin-engine, nunca-invoca-/compact-vía-Bash).
+- Regresión adicional (no requerida, bajo riesgo): `test_worker_prompt_orchestrator.py
+  test_subagent_parity.py -q` → 24 passed, 1 skipped (twins siguen byte-idénticos, confirmado con
+  `diff`); `tool_optimizations/test_sdd_contracts.py -k "worker or sdd_worker"` → 4 passed.
+- `ruff check --select E9,F63,F7,F82` en el archivo de test → clean.
+- `git status --porcelain --untracked-files=all` limpio salvo artefactos gitignored.
+
+Sin desviaciones del blueprint. Los imports de prompt (`coder_task_context`, `coder_delivery_report`,
+`coder_bg_status`, `coder_run_validation`, `source_inspect_batch`, `finalize_task`,
+`review_checkpoint`) fueron verificados contra sus firmas/flags reales antes de escribirlos.
+
+Review: `coder-review:6704a16ddbc9c9699ebb17e1`.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~1007s · Tokens: 230338 (subagent total, in/out no separado para native).

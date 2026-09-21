@@ -325,7 +325,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -340,8 +340,8 @@
       "parallelism_notes": "Depende de TASK-3556/TASK-3561/TASK-3562/TASK-3565/TASK-3566/TASK-3568 por contratos públicos definitivos. Owner único de los dos worker Claude y su regresión.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3570-worker-optimization-contracts.md"
+      "completed_at": "2026-09-21T12:26:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3570-worker-optimization-contracts.md"
     },
     {
       "id": "TASK-3571",
