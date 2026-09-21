@@ -350,7 +350,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -361,8 +361,8 @@
       "parallelism_notes": "Depende de TASK-3567/TASK-3568 por handoff y outcomes; archivos separados del worker de TASK-3570.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3571-coder-reviewer-handoff.md"
+      "completed_at": "2026-09-21T12:36:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3571-coder-reviewer-handoff.md"
     },
     {
       "id": "TASK-3572",

@@ -242,4 +242,47 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `00476b58711c42ca950a1910e32710db`). Tocó solo
+los cinco targets listados:
+
+- `.claude/agents/sdd-coder.md` + twin empaquetado MODIFY — bloque `## Bounded inspection and
+  delivery (FEAT-584)` insertado tras `### a) Read and Understand Task`: descubrimiento wiki-first,
+  contrato completo de archivos/AC de la tarea, prohíbe background/log como criterio de aceptación,
+  conserva feedback completo del coder, aclara explícitamente que el cierre de tarea y la
+  compactación de feature siguen siendo responsabilidad del worker (AC13, nunca un compact por
+  tarea).
+- `.claude/agents/code-reviewer.md` + `sdd-codereview.md` MODIFY — bloque
+  `## Neutral checkpoint handoff (FEAT-584)` tras `## Your Review Process`/`## Steps`: bootstrap de
+  contexto fresco desde el checkpoint durable (TASK-3567), validación de HEAD/branch/spec/index/
+  convention-hash + evidence-ref, diff inmutable completo (no un brief compacto), cualquier revisión
+  cubierta cambiada invalida el checkpoint (AC9/AC17). Deliberadamente NO se hicieron twins
+  literales de estos dos archivos de reviewer — `code-reviewer.md` conserva su formato markdown de
+  severidad y cross-check adversarial; `sdd-codereview.md` conserva su propio veredicto JSON
+  `passed`/`findings`/`files_modified` + contrato fix-and-commit, según instrucción explícita de la
+  tarea.
+- `test_review_handoff_contract.py` CREATE — `test_neutral_review_context_contract` (marcadores
+  requeridos presentes, colocación de bloque precede los propios steps de cada archivo, el par
+  reviewer intencionalmente NO byte-idéntico pero comparte el contrato de checkpoint) y
+  `test_coder_retains_delivery_scope` (el par coder permanece byte-idéntico, siguiendo el convenio
+  de `test_subagent_parity.py`).
+
+Consistencia con TASK-3570 (ya mergeado) verificada explícitamente: se leyó su diff mergeado antes
+de editar para confirmar que el vocabulario de `ReviewCheckpoint` (checkpoint_id/branch/base_sha/
+implementation_head/spec_hash/index_hash/convention_hashes/evidence_refs) coincide con el usado en
+los bloques insertados aquí. Los cuatro anchors de MODIFY se verificaron byte-a-byte antes de
+editar (cada uno ocurre exactamente una vez, coincide con los números de línea de la tarea).
+
+Sin desviaciones del blueprint. Nada bajo `sdd/` tocado.
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_handoff_contract.py -q`
+  (Validation Command exacto) → 2 passed.
+- Regresión adicional (no requerida, bajo riesgo): `test_review_handoff_contract.py
+  test_subagent_parity.py test_worker_prompt_orchestrator.py -q` → 26 passed, 1 skipped.
+- `ruff check` → clean (2 residuals B007 en el nuevo test file son style debt, dejado para
+  `/sdd-done` per policy; lint autofix del engine: commit `4966b79da`).
+- `git status --porcelain --untracked-files=all` limpio salvo artefactos gitignored.
+
+Review: `coder-review:1ab4ec24e1307774b34652d4`.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~475s · Tokens: 155061 (subagent total, in/out no separado para native).
