@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 from parrot.tools.toolkit import AbstractToolkit  # verified: parrot/tools/toolkit.py:206
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import (
+    CoderBgStatusArgs,
     CoderCleanupArgs,
     CoderDeliveryReportArgs,
     CoderEndExecutionArgs,
@@ -28,6 +29,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderRecordReviewArgs,
     CoderResult,
     CoderRunChunkArgs,
+    CoderRunValidationArgs,
     CoderStatusArgs,
     CoderTaskContextArgs,
     CoderWaitArgs,
@@ -87,6 +89,9 @@ class SddCoderToolkit(AbstractToolkit):
         "coder_begin_execution": CoderPlanArgs,
         "coder_end_execution": CoderEndExecutionArgs,
         "coder_suspend_model": SuspendModelArgs,
+        # FEAT-584 M8/R8: deterministic background status + protected validation.
+        "coder_bg_status": CoderBgStatusArgs,
+        "coder_run_validation": CoderRunValidationArgs,
     }
 
     def __init__(
@@ -476,4 +481,53 @@ class SddCoderToolkit(AbstractToolkit):
         """
         return await self._run(
             "coder_cleanup", self._engine.cleanup(feature, worktree, keep_conflicted, execution_id=execution_id)
+        )
+
+    async def coder_bg_status(
+        self, execution_id: str, handle: str, since_revision: Optional[int] = None, tail_bytes: int = 2048
+    ) -> CoderResult:
+        """Read authoritative known background state without waiting for termination.
+
+        `handle` is opaque and only ever comes from a prior `coder_run_chunk`
+        (`bg_handle`), `coder_prepare_native` (`bg_handle`) or
+        `coder_run_validation` (`handle`) response -- never a PID, a log path
+        or anything invented by the model. Never spawns a shell, `ps`, `tail`
+        or `kill -0`, and never waits for the underlying process/job to
+        finish: `state=finished` reports a real receipt, not test success or
+        task acceptance -- check `outcome`/`exit_code` separately. `unknown`
+        after this engine loses the launch's ownership (e.g. a restart) is
+        never resurrected into `finished` from an absent PID or an empty log.
+        """
+        return await self._run(
+            "coder_bg_status",
+            self._engine.bg_status(execution_id, handle, since_revision=since_revision, tail_bytes=tail_bytes),
+        )
+
+    async def coder_run_validation(
+        self,
+        feature: str,
+        worktree: str,
+        execution_id: str,
+        task_ids: List[str],
+        tier: Literal["merge", "feature"],
+        timeout_seconds: int,
+        request_id: str,
+    ) -> CoderResult:
+        """Launch only a declared SDD validation and return a bg_handle without waiting for it.
+
+        Admits exactly the existing test selector's own tier-scoped plan
+        (`tier='merge'` for changed scope, `'feature'` for the full applicable
+        set) inside the protected sandbox -- never an arbitrary argv/script,
+        and never runs tests through this or any other read-only tool
+        directly. `task_ids` must already be declared in the feature's
+        per-spec index. `timeout_seconds` (1-7200) is mandatory and explicit
+        -- no expected duration is claimed without history. `request_id` is
+        stable idempotency: the SAME request/payload replays the SAME
+        handle; a DIFFERENT payload under a reused `request_id` is rejected,
+        never a second silent process. Every admitted validation must settle
+        before `coder_end_execution`/`coder_cleanup` on this worktree.
+        """
+        return await self._run(
+            "coder_run_validation",
+            self._engine.run_validation(feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id),
         )

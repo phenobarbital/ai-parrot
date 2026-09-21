@@ -92,6 +92,13 @@ ERROR_CODES: frozenset[str] = frozenset(
         "artifact_scope_mismatch",
         "evidence_persistence_failed",
         "evidence_invalid",
+        # FEAT-584 M8/R8: `coder_bg_status`/`coder_run_validation` error codes.
+        "background_not_found",
+        "background_scope_mismatch",
+        "background_source_unsupported",
+        "background_status_unavailable",
+        "validation_request_conflict",
+        "validation_scope_invalid",
     }
 )
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
@@ -365,6 +372,10 @@ class NativePrep(BaseModel):
     """ComplexityAssessment ID for native attempts, enabling attribution."""
     execution_id: str = ""
     """FEAT-559: the execution this native reservation belongs to."""
+    bg_handle: Optional[str] = None
+    """FEAT-584 M8/R8: opaque `coder_bg_status` handle registered for this native
+    reservation's launch (never set for a legacy/no-execution call -- a
+    `BackgroundRegistration` requires a real `execution_id`)."""
 
 
 class CoderJob(BaseModel):
@@ -382,6 +393,10 @@ class CoderJob(BaseModel):
     """FEAT-559: the execution that dispatched this chunk. Empty only for
     jobs journaled before this feature; `JobTable.create` always requires
     one for new jobs (never minted implicitly)."""
+    bg_handle: Optional[str] = None
+    """FEAT-584 M8/R8: opaque `coder_bg_status` handle for this dispatch's own
+    background registration -- `job_id` itself, never invented, and never set
+    without a durable registry/real `execution_id` behind it."""
 
 
 class CoderJobView(CoderJob):
@@ -671,6 +686,36 @@ class CoderEndExecutionArgs(_Args):
     """
 
     execution_id: str = Field(..., min_length=1)
+
+
+class CoderBgStatusArgs(_Args):
+    """`coder_bg_status` arguments (FEAT-584 M8/R8): opaque, execution-scoped read.
+
+    `handle` is caller-opaque free text emitted only at registration time --
+    never a PID or a path the model may invent -- so this schema only bounds
+    its shape (non-empty), never its content.
+    """
+
+    execution_id: str = Field(..., min_length=1)
+    handle: str = Field(..., min_length=1)
+    since_revision: Optional[int] = Field(default=None, ge=0)
+    tail_bytes: int = Field(default=2048, ge=0, le=4096)
+    _exec = field_validator("execution_id")(_check_uuid)
+
+
+class CoderRunValidationArgs(_Args):
+    """`coder_run_validation` arguments (FEAT-584 M8/R8): admits one protected, idempotent selection."""
+
+    feature: str
+    worktree: str
+    execution_id: str = Field(..., min_length=1)
+    task_ids: List[str] = Field(..., min_length=1)
+    tier: Literal["merge", "feature"]
+    timeout_seconds: int = Field(..., ge=1, le=7200)
+    request_id: str = Field(..., min_length=1)
+    _wt = field_validator("worktree")(_check_abs)
+    _tids = field_validator("task_ids")(_check_task_ids)
+    _exec = field_validator("execution_id")(_check_uuid)
 
 
 class NativeObservation(BaseModel):
