@@ -62,7 +62,9 @@ def _build_store(worktree: Path) -> ExecutionEvidenceStore:
     return ExecutionEvidenceStore(root)
 
 
-async def _run_prepare(*, feature: str, worktree: Path, execution_id: str, store: ExecutionEvidenceStore) -> dict[str, object]:
+async def _run_prepare(
+    *, feature: str, worktree: Path, execution_id: str, store: ExecutionEvidenceStore
+) -> dict[str, object]:
     checkpoint = await prepare_review_checkpoint(
         feature=feature, worktree=worktree, execution_id=execution_id, store=store
     )

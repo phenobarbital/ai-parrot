@@ -275,7 +275,9 @@ def _scan_validation_registrations_sync(root: Path, execution_id: str) -> List[B
         try:
             registration = BackgroundRegistration.model_validate(reg_raw)
         except ValidationError as exc:
-            raise CheckpointBusyError(f"background registration at {path} does not match the known schema: {exc}") from exc
+            raise CheckpointBusyError(
+                f"background registration at {path} does not match the known schema: {exc}"
+            ) from exc
         if registration.execution_id != execution_id:
             continue  # a foreign/stale record never trusted here
         if registration.kind != "validation":
@@ -349,7 +351,9 @@ async def _publish_review_checkpoint(store: ExecutionEvidenceStore, checkpoint: 
     await asyncio.to_thread(_atomic_write_json, path, checkpoint.model_dump(mode="json"))
 
 
-async def load_review_checkpoint(execution_id: str, checkpoint_id: str, *, store: ExecutionEvidenceStore) -> ReviewCheckpoint:
+async def load_review_checkpoint(
+    execution_id: str, checkpoint_id: str, *, store: ExecutionEvidenceStore
+) -> ReviewCheckpoint:
     """Load a previously published checkpoint by its emitted ID -- never an arbitrary path.
 
     Raises:
@@ -459,9 +463,7 @@ async def prepare_review_checkpoint(
     base_branch = str(header.get("base_branch") or "")
     spec_rel = str(header.get("spec") or "")
     if not feature_id or not base_branch or not spec_rel:
-        raise CheckpointIncompleteError(
-            f"per-spec index header at {index_path} is missing feature_id/base_branch/spec"
-        )
+        raise CheckpointIncompleteError(f"per-spec index header at {index_path} is missing feature_id/base_branch/spec")
 
     scheduler = await asyncio.to_thread(TaskScheduler.from_index_file, index_path)
     if scheduler is None:
@@ -607,7 +609,9 @@ async def validate_review_checkpoint(checkpoint: ReviewCheckpoint, *, worktree: 
 
     rc, branch_out, err = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=worktree)
     if rc != 0:
-        raise CheckpointStaleError(f"checkpoint_stale: could not resolve the current branch of {worktree}: {err.strip()}")
+        raise CheckpointStaleError(
+            f"checkpoint_stale: could not resolve the current branch of {worktree}: {err.strip()}"
+        )
     if branch_out.strip() != checkpoint.branch:
         raise CheckpointStaleError(
             f"checkpoint_stale: branch moved from {checkpoint.branch!r} to {branch_out.strip()!r}"
