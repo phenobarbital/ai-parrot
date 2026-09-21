@@ -225,9 +225,18 @@ def test_script_rejects_unsupported_python(): ...
 6. Move to `sdd/tasks/completed/`, index → done, fill the note.
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-21
+**Notes**: Created `scripts/install/install-parrot.sh` (all documented flags,
+`run()` transparency wrapper, Python guard before any install, OS detect,
+create-or-reuse venv, provider→extra mapping including CLI-backed
+`claude-code`→`claude-agent` / `codex-code`→`codex-agent`, `--install-cli`
+npm `@latest` installs, `--with-wiki`) and
+`packages/ai-parrot/tests/docs/test_install_posix.py` (syntax, dry-run,
+Python-guard tests). `chmod +x` applied; verified `100755` in the git index.
+All 3 validation tests pass; `black --check` clean after one
+auto-reformat. `ruff` is not installed in the shared `.venv` in this
+environment (dev extra not synced) so `ruff check` could not be run —
+flagged for the human/code review.
+**Deviations from spec**: none.
