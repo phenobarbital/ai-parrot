@@ -16,7 +16,7 @@
       "feature_id": "FEAT-588",
       "feature": "fixgroup-47eb801095a6",
       "spec": "sdd/specs/fixgroup-47eb801095a6.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies. Owns engine.py, models.py and test_engine_dispatch.py for this feature; TASK-3582 waits on it for models.py.",
       "assigned_to": null,
       "started_at": "2026-09-21T20:45:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3580-native-retry-handoff-engine.md"
+      "completed_at": "2026-09-21T21:58:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3580-native-retry-handoff-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3581",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-588",
       "feature": "fixgroup-47eb801095a6",
       "spec": "sdd/specs/fixgroup-47eb801095a6.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "Prompt-only change to the two sdd-worker.md twins plus their contract test; imports no symbol from TASK-3580 and shares no file with any task in this feature.",
       "assigned_to": null,
       "started_at": "2026-09-21T20:45:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3581-sdd-worker-routes-retry-native.md"
+      "completed_at": "2026-09-21T21:58:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3581-sdd-worker-routes-retry-native.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3582",
