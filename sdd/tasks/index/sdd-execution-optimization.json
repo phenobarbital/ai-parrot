@@ -164,7 +164,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -174,8 +174,8 @@
       "parallelism_notes": "Depende de TASK-3561 para serializar toolkit/models/test_toolkit y reutilizar consultas; views no toca engine.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3562-compact-coder-responses.md"
+      "completed_at": "2026-09-21T04:40:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3562-compact-coder-responses.md"
     },
     {
       "id": "TASK-3563",

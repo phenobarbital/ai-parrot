@@ -277,4 +277,53 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `0d79f10fba2c419c886685c577592229`). Touched
+only the five listed targets:
+
+- `views.py` CREATE — `project_response(payload, *, mode, execution_id, store)`. `full` returns
+  the unmodified `model_dump()` (bit-for-bit prior wire contract). `compact` persists the whole
+  payload as one immutable evidence artifact first (`store.put_artifact`), then builds a
+  structural projection keeping every identity/generation/state field, the next chunk's routing
+  decisions and assessment IDs, all task outcomes/errors/lint-errors (only heavy per-turn
+  telemetry like `turn_series`/`usage`/`budget_report` is dropped, recoverable from the full
+  artifact), and pages the pending/blocked id lists into their own durable artifact once the
+  16 KiB view budget would otherwise be exceeded (never silently truncated).
+- `toolkit.py` MODIFY — `coder_plan` gained `response_mode` routed through a new `_project`
+  helper; `coder_wait`/`coder_status` gained `response_mode`, resolving `execution_id`
+  server-side from the job snapshot's own field. New `coder_read_artifact(execution_id,
+  artifact_id, offset, limit)` tool reads via the engine's evidence store, mapping
+  `FileNotFoundError` to `artifact_not_found` and `ValueError` to `artifact_scope_mismatch`
+  (both codes already reserved by a prior task).
+- `models.py` MODIFY — `CoderPlanArgs` itself is UNCHANGED (still reused as-is by
+  `coder_begin_execution` and inherited by the record_* args classes); added a new
+  `CoderPlanRequestArgs(CoderPlanArgs)` subclass carrying `response_mode` for `coder_plan`
+  only. Added `response_mode` directly to `CoderWaitArgs`/`CoderStatusArgs`. Added
+  `CoderReadArtifactArgs`. No new `ERROR_CODES` needed.
+- `test_toolkit.py` MODIFY — extended `EXPECTED_TOOLS`/scoped set; new tests proving the
+  response_mode split (lifecycle/plan/wait/status tools expose it, record_* and
+  feedback_report tools do not) plus artifact-read routing/validation tests.
+- `test_compact_views.py` CREATE — 3 scenarios: full-mode wire compatibility, mandatory paging
+  round-trip (6000 blocked ids, compact view stays under 16 KiB, reconstructed list matches
+  exactly), byte reduction plus foreign-artifact rejection (20 tasks with heavy telemetry
+  shrink 50%+, every outcome survives, cross-execution read raises not-found).
+
+Collateral breakage flagged by the coder (correctly not fixed out of scope, same pattern as
+TASK-3560/TASK-3561: one new MCP tool, `coder_read_artifact`, not yet allow-listed) and fixed
+by the orchestrator in commit `1e50ca2b2` (canonical + packaged twin + `test_mcp_local.py`
+`EXPECTED`). The coder also correctly identified that TASK-3570 (worker-optimization-contracts,
+still pending, depends on this task among others) owns a comprehensive rewrite of these same
+two prompt files and left them untouched rather than doing that larger rewrite itself — the
+orchestrator's incremental patch is designed to be revalidated/preserved by TASK-3570 per its
+own Codebase Contract, not restored to a stale hash.
+
+Validation:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_toolkit.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_compact_views.py -q` → 30 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_models.py -q` → 40 passed (unmodified, confirms the `CoderPlanArgs` split does not regress existing assertions).
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_mcp_local.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py -q` → 16 passed (post-fix; 3 failed pre-fix, matching the coder's own diagnosis).
+- Scoped regression (dev_loop/sdd_coder, tool_optimizations, wiki compaction; full core-escalation sweep already paid once at TASK-3560 for this same file-touch pattern with zero sdd_coder-related failures, not re-run in full here): 425 passed; 433 passed, 1 skipped; 17 passed.
+- `git status --porcelain --untracked-files=all` clean except gitignored build artifacts.
+- `ruff check` on all five changed files → clean.
+
+Review: `coder-review:ffff15a0d80c13362f6d9f56` (fix commit `1e50ca2b2`, applied by the orchestrator, not the coder).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1002551ms (~16m43s) · Tokens: 257888 (subagent total, in/out split not exposed for native).
