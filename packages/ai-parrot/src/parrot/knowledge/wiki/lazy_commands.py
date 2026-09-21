@@ -12,6 +12,7 @@ moment Click actually needs to resolve an ``adr`` subcommand — help text and
 top-level listing for ``wiki --help`` are served from the static ``help``
 string passed at registration, never from the real module.
 """
+
 from __future__ import annotations
 
 import click

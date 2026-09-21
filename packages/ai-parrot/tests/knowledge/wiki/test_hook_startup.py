@@ -151,7 +151,9 @@ def test_hook_process_protocol_and_imports(tmp_path: Path) -> None:
 
     imported = _parse_importtime_modules(result.stderr)
     offenders = {
-        mod for mod in imported if any(mod == prefix or mod.startswith(f"{prefix}.") for prefix in _BANNED_IMPORT_PREFIXES)
+        mod
+        for mod in imported
+        if any(mod == prefix or mod.startswith(f"{prefix}.") for prefix in _BANNED_IMPORT_PREFIXES)
     }
     assert not offenders, f"hook fast path pulled in banned modules: {sorted(offenders)}"
 
