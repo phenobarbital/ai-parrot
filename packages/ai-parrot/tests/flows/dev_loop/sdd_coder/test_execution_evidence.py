@@ -32,7 +32,9 @@ class _SamplePayload(BaseModel):
     text: str
 
 
-def _make_event(execution_id: str, event_id: str, *, task_id: str = "TASK-1", payload: dict | None = None) -> WorkflowEvent:
+def _make_event(
+    execution_id: str, event_id: str, *, task_id: str = "TASK-1", payload: dict | None = None
+) -> WorkflowEvent:
     """Build a minimal valid `task.accepted` WorkflowEvent for one execution."""
     return WorkflowEvent(
         event_id=event_id,
@@ -134,9 +136,7 @@ def test_crash_tail_and_disk_failure(tmp_path: Path, monkeypatch: pytest.MonkeyP
     corrupt_execution_id = str(uuid.uuid4())
     corrupt_dir = tmp_path / "executions" / corrupt_execution_id
     corrupt_dir.mkdir(parents=True)
-    (corrupt_dir / "events.jsonl").write_text(
-        "not-json\n" + first_event.model_dump_json() + "\n", encoding="utf-8"
-    )
+    (corrupt_dir / "events.jsonl").write_text("not-json\n" + first_event.model_dump_json() + "\n", encoding="utf-8")
     with pytest.raises(EvidenceCorruptionError):
         asyncio.run(store.append_event(_make_event(corrupt_execution_id, "evt-x", payload={})))
 

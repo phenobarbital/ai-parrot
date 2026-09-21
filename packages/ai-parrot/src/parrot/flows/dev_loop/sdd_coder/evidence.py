@@ -248,9 +248,7 @@ class ExecutionEvidenceStore:
                 if not isinstance(record, dict) or record.get("event_id") != event.event_id:
                     continue
                 if raw_line != canonical:
-                    raise EvidenceConflictError(
-                        f"event_id {event.event_id!r} already recorded with different content"
-                    )
+                    raise EvidenceConflictError(f"event_id {event.event_id!r} already recorded with different content")
                 # Idempotent replay: already durably persisted, do not re-append.
                 return EvidenceRef(
                     artifact_id=event.event_id,
@@ -291,7 +289,7 @@ class ExecutionEvidenceStore:
             # it was never exposed as a published EvidenceRef.
             last_newline = raw.rfind(b"\n")
             good = raw[: last_newline + 1] if last_newline >= 0 else b""
-            dropped = raw[len(good):]
+            dropped = raw[len(good) :]
             self.logger.warning(
                 "Repairing incomplete crash tail in %s (%d bytes dropped)",
                 events_path,
@@ -307,9 +305,7 @@ class ExecutionEvidenceStore:
             try:
                 lines.append(raw_line.decode("utf-8"))
             except UnicodeDecodeError as exc:
-                raise EvidenceCorruptionError(
-                    f"interior corruption in {events_path}: invalid UTF-8: {exc}"
-                ) from exc
+                raise EvidenceCorruptionError(f"interior corruption in {events_path}: invalid UTF-8: {exc}") from exc
         return lines
 
     def _put_artifact_sync(self, execution_dir: Path, payload: BaseModel) -> EvidenceRef:
@@ -324,9 +320,7 @@ class ExecutionEvidenceStore:
 
             if final_path.exists():
                 if final_path.is_symlink():
-                    raise EvidenceCorruptionError(
-                        f"artifact path is a symlink, refusing to trust it: {final_path}"
-                    )
+                    raise EvidenceCorruptionError(f"artifact path is a symlink, refusing to trust it: {final_path}")
                 existing = final_path.read_bytes()
                 if existing != encoded:
                     raise EvidenceCorruptionError(
