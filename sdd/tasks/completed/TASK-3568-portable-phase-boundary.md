@@ -183,4 +183,59 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `1f84ea4979ba43e8a42b139e849edf74`). Tocó
+solo los dos targets listados:
+
+- `phase_boundary.py` CREATE — `PhaseBoundaryDriver` Protocol (`async supports(context_id)` /
+  `compact(checkpoint)`) y `prepare_review_boundary(checkpoint, *, driver, policy, store) ->
+  CompactionReceipt` (firma fija del blueprint). Solo la política Python portable; sin adaptador
+  Claude, sin instalación de plugin, sin inventar API de host — `compaction_status`
+  (`knowledge/wiki/claude_code/compaction.py:317`, el único Verified Import) se referencia solo en
+  el docstring del módulo, nunca invocado para decidir `driver.supports()` (R6: es diagnóstico de
+  instalación, no un handshake de capacidad — mismo patrón que TASK-3567 con su propio
+  contract_symbol no literalmente importado). Idempotency key = `sha256(checkpoint_id+context_id)`;
+  antes de invocar el driver escribe un `CompactionReceipt` placeholder `in_progress` bajo
+  `store.root/executions/<execution_id>/compaction/<key>.json`, con flock interprocess por key
+  (mismo convenio de manifest-por-key que `checkpoint.py`, no `put_artifact` direccionado por
+  contenido). Llamadas subsecuentes con la misma key (replay, concurrencia real vía
+  `asyncio.gather`, o sesión reanudada tras crash) ven el registro existente bajo el lock y lo
+  devuelven sin re-invocar el driver. `policy='off'` y `driver.supports()==False` cortocircuitan a
+  receipts terminales `skipped`/`unsupported` explícitos sin llamar `compact()`. Una excepción del
+  driver durante `compact()` no se atrapa y propaga al caller — el registro durable queda
+  `in_progress` para que la siguiente llamada lo observe y rechace el retry. Un receipt del driver
+  cuyo checkpoint_id/context_id no coincide con la solicitud se persiste como `failed` terminal y
+  lanza `PhaseBoundaryStaleHandoffError`, bloqueando continuación en vez de confiar en evidencia
+  desalineada.
+- `test_phase_boundary.py` CREATE — 3 escenarios: `test_once_per_checkpoint_and_context` (replay
+  secuencial + concurrencia real vía `asyncio.gather`, `call_count` del driver permanece en 1 en
+  ambos casos), `test_unsupported_off_and_fallback` (`policy=off` nunca llama al driver;
+  `supports()=False` → `unsupported` sin completar; `failed` reportado por el driver se ecoa
+  verbatim; un resultado `unsupported` durable nunca se re-pregunta a un driver que ahora diría sí),
+  `test_crash_timeout_and_stale_resume` (excepción no atrapada deja el registro `in_progress` y una
+  llamada de seguimiento reconcilia sin reintentar; receipt de identidad desalineada del driver
+  lanza `PhaseBoundaryStaleHandoffError` y su estado `failed` persistido bloquea cualquier retry en
+  replay).
+
+Decisión de diseño flagueada por el coder (requiere atención del orquestador, aceptada sin
+cambios): `ReviewCheckpoint.context_id` es `Optional` y ningún productor actual (`prepare_review_checkpoint`
+de TASK-3567) lo asigna — campo reservado para un futuro productor homologado con M0.
+`prepare_review_boundary` lanza `ValueError` si `checkpoint.context_id` es `None`/vacío en vez de
+fabricar un valor, ya que `CompactionReceipt.context_id` es un campo requerido no-vacío y no hay
+default independiente del productor en el contrato. Esto significa que la función NO es aún
+invocable end-to-end con el productor de checkpoint real de hoy hasta que una tarea posterior
+asigne `context_id` — consistente con la nota de scope de la propia tarea de que el adaptador de
+host/direccionamiento de contexto queda diferido a una M0 enmendada.
+
+Sin desviaciones del blueprint fuera de lo flagueado arriba. `.claude/agents/sdd-worker.md` NO fue
+tocado — esta tarea no registra tools MCP nuevos.
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_phase_boundary.py -q` → 3 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder -q` (regresión completa, post-merge) →
+  449 passed.
+- `ruff check` en ambos archivos → clean (lint autofix del engine: commit `fa2f04b5a`).
+- `git status --porcelain --untracked-files=all` limpio salvo artefactos de build gitignored.
+
+Review: `coder-review:18b89ff7fb38bd262cc9c461`.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~860s · Tokens: 199369 (subagent total, in/out no separado para native).
