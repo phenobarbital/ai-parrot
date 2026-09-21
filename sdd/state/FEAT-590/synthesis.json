@@ -1,0 +1,202 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-590",
+  "summary_oneline": "Tool-Call Delegate: local tool-calling-only model as a third execution step between PlanToolNode and AgentNode",
+  "detected_mode": "enrichment",
+  "overall_confidence": "medium",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/plan/node.py",
+      "symbol": "PlanToolNode",
+      "lines": "1-1121",
+      "role": "Reference implementation — DelegateToolNode follows this pattern, adding a propose_call step before ToolManager.execute_tool dispatch",
+      "evidence": ["F001", "F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/plan/models.py",
+      "symbol": "PlanNode",
+      "lines": "173-254",
+      "role": "Data model the DelegatePlanNode extends — adds instruction, facts, tools list, min_confidence, on_reject fields",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/plan/models.py",
+      "symbol": "ForEach",
+      "lines": "111-170",
+      "role": "Fan-out model reused by delegate nodes — same source/select/concurrency semantics",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/plan/compile.py",
+      "symbol": "ensure_tool_node_registered",
+      "lines": "133-154",
+      "role": "Registration pattern to follow — ensure_delegate_node_registered for NODE_REGISTRY['delegate']",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/plan/validator.py",
+      "symbol": "validate_plan",
+      "lines": "1-end",
+      "role": "Extension point — add delegate-specific rules (tool count, side-effect policy, instruction template resolution)",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/plan/guards.py",
+      "symbol": "PlanGuard",
+      "lines": "1-end",
+      "role": "Reusable CEL evaluator for the accept_when gate on delegate proposals",
+      "evidence": ["F007"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/manager.py",
+      "symbol": "ToolManager.execute_tool",
+      "lines": "1609-1668",
+      "role": "Dispatch target — accepted delegate proposals call this, same as PlanToolNode",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/abstract.py",
+      "symbol": "AbstractTool",
+      "lines": "200-201, 375",
+      "role": "Needs new metadata: delegate_safe flag and optional delegate_description",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+      "symbol": "WorkingMemoryToolkit.store_result",
+      "lines": null,
+      "role": "Storage target — delegate results stored here, same path as PlanToolNode",
+      "evidence": ["F008"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "description": "parrot.interfaces.* is a mixins package for bot capability interfaces (aws, database, http, etc.), NOT a Pydantic-contracts home. The proposal's suggested location parrot/interfaces/delegate.py breaks this convention.",
+      "implication": "The ToolCallDelegate protocol and ToolSpec/ToolCallProposal models should live in parrot/bots/flows/plan/delegate.py (co-locate with the module they extend), not in parrot/interfaces/.",
+      "evidence": ["F004"]
+    },
+    {
+      "description": "FEAT-585 (plan-then-execute-hardening, 16 tasks active) explicitly declares changes to bots/flows/plan/ models/validator/guards/compiler as NON-GOALS.",
+      "implication": "The delegate can safely extend plan/ files without conflicting with FEAT-585 work. The delegate could later benefit from FEAT-585's checkpointed execution recovery, but it is NOT a dependency.",
+      "evidence": ["F009"]
+    },
+    {
+      "description": "register_node(name) checks issubclass(cls, Node) and raises ValueError on duplicate names. NODE_REGISTRY is a dict, not a plugin system.",
+      "implication": "DelegateToolNode MUST extend Node from parrot.bots.flows.core.node. Registration must be idempotent (same pattern as ensure_tool_node_registered).",
+      "evidence": ["F002"]
+    },
+    {
+      "description": "The plan-then-execute design doc at claude/handle-only-execution-design.md does NOT exist on disk. The canonical references are sdd/specs/execution-plan-tool.spec.md (FEAT-419) and sdd/specs/plan-then-execute-hardening.spec.md (FEAT-585).",
+      "implication": "The proposal's references section needs updating.",
+      "evidence": ["F010"]
+    },
+    {
+      "description": "PlanToolNode.make_tool_node_factory closes over tool_manager, working_memory, permission_context, plan_run_id, step_mapping — these are runtime bindings, not plan text.",
+      "implication": "make_delegate_node_factory must follow the same closure pattern, additionally closing over the delegate pool/backend.",
+      "evidence": ["F001"]
+    },
+    {
+      "description": "No ToolSpec model exists in the codebase. The ToolManager has ToolSchemaAdapter for Bedrock format adaptation, but no standalone schema-export type.",
+      "implication": "ToolSpec is genuinely new, not duplicating an existing abstraction. The schema adapter may inform its design but is not a conflict.",
+      "evidence": ["F006"]
+    }
+  ],
+
+  "scope": {
+    "what_is_new": [
+      "ToolCallDelegate protocol (propose_call, extract, aclose)",
+      "ToolSpec and ToolCallProposal Pydantic models",
+      "NeedleDelegate backend implementation (with instance pool)",
+      "LlamaCppDelegate backend implementation (HTTP to llama-server)",
+      "DelegateToolNode (Node subclass for AgentsFlow)",
+      "make_delegate_node_factory closure",
+      "ensure_delegate_node_registered helper",
+      "DelegatePlanNode model (extends PlanNode concept)",
+      "Validator rules for delegate nodes (tool count, side-effect policy, instruction templates)",
+      "delegate_safe flag on AbstractTool",
+      "delegate_description optional override on tools",
+      "tool_specs() schema adapter function",
+      "Proposal trace log for fine-tuning data collection",
+      "ai-parrot[needle] and ai-parrot[llamacpp] optional extras"
+    ],
+    "what_changes": [
+      "plan/compile.py — to_flow_definition must handle type='delegate' nodes",
+      "plan/validator.py — validate_plan adds delegate-specific rules",
+      "parrot/tools/abstract.py — AbstractTool gains delegate_safe: bool = False and optional delegate_description: str | None",
+      "pyproject.toml — new optional extras for needle and llama-cpp-python"
+    ],
+    "non_goals": [
+      "Modifying PlanToolNode behavior",
+      "Changing AgentNode / AbstractClient",
+      "Auto-triggering delegates from PlanToolNode failures",
+      "Production fine-tuning pipeline (deferred to post-spike)",
+      "Async support in NeedleDelegate (wait for upstream)"
+    ],
+    "patterns_to_follow": [
+      "PlanToolNode and make_tool_node_factory closure pattern (F001)",
+      "ensure_tool_node_registered idempotent registration (F002)",
+      "PlanNode field structure and Pydantic ConfigDict(extra='forbid') (F003)",
+      "CEL guard compilation and evaluation for accept_when (F007)",
+      "Optional extras pattern in pyproject.toml (F011)"
+    ],
+    "integration_risks": [
+      "Needle 3 context window is undocumented — the spike (§10 of the proposal) must answer this before spec",
+      "Needle's thread safety is assumed non-reentrant — ProcessPoolExecutor is safe but adds latency; the spike must measure to_thread viability",
+      "Fine-tuned Needle returns confidence=None — the accept gate must handle this gracefully (already addressed in §6 of the proposal)",
+      "Adding delegate_safe to AbstractTool is a public API change — needs clear defaults (False) so existing tools are unaffected",
+      "The 5-tool ceiling per Needle call is a hard architectural constraint — plans that exceed it must split the step, and the validator must enforce this"
+    ]
+  },
+
+  "confidence_map": [
+    {"id": "C1", "claim": "Plan module (PlanToolNode, ExecutionPlan, ArtifactRef, validate_plan) is landed and working", "evidence": ["F001"], "confidence": "high", "reasoning": "Direct wiki query + file reads confirmed exports, factory, tests"},
+    {"id": "C2", "claim": "NODE_REGISTRY supports custom node types via register_node decorator", "evidence": ["F002"], "confidence": "high", "reasoning": "Source confirmed; dev-loop nodes already use same pattern"},
+    {"id": "C3", "claim": "DelegateToolNode can follow the same pattern as PlanToolNode (Node subclass, factory closure, same dispatch path)", "evidence": ["F001", "F002", "F005"], "confidence": "high", "reasoning": "Architecture is extensible by design — tool type is in config, not hardcoded"},
+    {"id": "C4", "claim": "parrot/interfaces/delegate.py is the WRONG location — should co-locate in plan/", "evidence": ["F004"], "confidence": "high", "reasoning": "Established convention confirmed by prior finding F012 in FEAT-449"},
+    {"id": "C5", "claim": "CEL guards from plan/guards.py can be reused for accept_when", "evidence": ["F007"], "confidence": "high", "reasoning": "CEL evaluator is generic; only the variable context changes"},
+    {"id": "C6", "claim": "delegate_safe flag and delegate_description do not conflict with existing AbstractTool API", "evidence": ["F006"], "confidence": "high", "reasoning": "No existing flags or metadata of this kind; default False is safe"},
+    {"id": "C7", "claim": "FEAT-585 does not conflict with delegate additions to plan/ files", "evidence": ["F009"], "confidence": "high", "reasoning": "FEAT-585 spec explicitly lists plan/ changes as NON-GOALS"},
+    {"id": "C8", "claim": "Needle 3 base model will achieve ≥90% accuracy on ai-parrot toolkits", "evidence": [], "confidence": "low", "reasoning": "Needle is trained on mobile-action datasets; scraping/HTTP/DB tools are out of distribution. The proposal itself marks this as unverified and gates on a spike"},
+    {"id": "C9", "claim": "Instance pool concurrency model (ProcessPoolExecutor) will achieve acceptable latency at p95", "evidence": [], "confidence": "low", "reasoning": "Neither thread safety nor GIL behavior is documented. Spike §10 must measure this"},
+    {"id": "C10", "claim": "The bounded replan mechanism (on_reject: escalate) will integrate with the plan runner's existing error handling", "evidence": ["F001", "F003"], "confidence": "medium", "reasoning": "ForEach.on_item_error exists with fail/collect/skip modes; escalate would be a new mode, but the infrastructure supports per-item error handling"}
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the ToolCallDelegate protocol live in plan/delegate.py (co-located) or in a new top-level module like parrot/delegate/ (independent package)?",
+      "blocks_claims": ["C4"],
+      "plausible_answers": [
+        "plan/delegate.py — keeps all plan-related code together, delegate is a plan concept",
+        "parrot/delegate/ — if the delegate will be used outside execution plans (e.g., standalone triage)",
+        "parrot/bots/flows/plan/delegate/ — subpackage with protocol, backends, node in separate files"
+      ]
+    },
+    {
+      "id": "U2",
+      "question": "Should the spike (§10) be a standalone task or the first task of the feature's task decomposition?",
+      "blocks_claims": ["C8", "C9"],
+      "plausible_answers": [
+        "First task of the feature — spike results inform later task scope but the feature ID is already allocated",
+        "Standalone pre-feature spike — separate branch, results determine whether to proceed to /sdd-spec"
+      ]
+    },
+    {
+      "id": "U3",
+      "question": "For the Epson use case (§8), is the 5-15% residue estimate based on observed data or a guess?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "Based on observed scraping failure rates from production runs",
+        "Estimated from general web scraping reliability metrics",
+        "Unknown — needs measurement before the delegate scope is sized"
+      ]
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence (C1-C7) and the design space is well-explored in the proposal. The spike (§10) gates implementation but not the spec — the spec should encode the spike as acceptance criteria. Two low-confidence claims (C8, C9) are about the backend, not the architecture, and the spec's modular backend design means they resolve independently."
+  }
+}
