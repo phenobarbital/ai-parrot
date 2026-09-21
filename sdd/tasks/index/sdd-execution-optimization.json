@@ -204,7 +204,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -214,8 +214,8 @@
       "parallelism_notes": "Depende de TASK-3563: segundo owner de background.py; aporta procesos reales al registro. No cambia JobTable ni toolkit.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3564-background-validation-supervisor.md"
+      "completed_at": "2026-09-21T05:18:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3564-background-validation-supervisor.md"
     },
     {
       "id": "TASK-3565",

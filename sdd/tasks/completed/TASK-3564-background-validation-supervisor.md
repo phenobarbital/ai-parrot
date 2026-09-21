@@ -200,4 +200,52 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `d3a550e8ee714e47a8abf45ce370c9a1`). Touched
+only the two listed targets:
+
+- `background.py` MODIFY — added `ValidationSupervisor` after `BackgroundRegistry`.
+  `start(*, feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id) ->
+  BackgroundRegistration` validates shape before anything is persisted; idempotency via
+  `handle = request_id`, `launch_id = sha256(canonical payload)`, reusing
+  `BackgroundRegistry.register`'s existing conflict check (same payload replays the same
+  handle, a different payload under the same request_id raises `BackgroundConflictError`).
+  Spawns the first invocation synchronously via `protected_argv` (own process-group,
+  `start_new_session=True`) and calls the reserved `registry._record_transition(state=
+  "running", ...)` before returning — `start()` never awaits the suite's completion. Draining,
+  the deadline, and the terminal `_record_transition(state="finished", ...)` run in a
+  background `asyncio.Task`, reusing TASK-3563's reserved internal method rather than adding a
+  parallel state path. Deadline handling: `os.killpg` (SIGTERM then SIGKILL after a grace
+  period), always reaps via `process.wait()`; a signal returncode or an isolated 124 is
+  preserved verbatim as `failed`, never reinterpreted as `timed_out`/success. A spawn/admission
+  failure propagates and releases the in-process claim so a retry under the same request_id
+  is not locked out.
+- `test_background_validation.py` CREATE — 3 tests.
+
+Design decisions flagged and accepted:
+1. Imported `changed_files` from the same already-verified `test_scope.select` module (the
+   Codebase Contract named only `plan_tests`, but `plan_tests` requires `changed_files` to be
+   called meaningfully at all) — verified by reading the source before use, not a fabricated
+   symbol.
+2. No `base_ref` parameter exists on the blueprint's fixed `start()` signature, so the coder
+   hardcoded `_DEFAULT_BASE_REF = "origin/dev"` (mirroring `select_tests.py`'s own CLI
+   default). A hotfix worktree (based on `origin/main`) would diff against the wrong base;
+   flagged as needing a signature-changing amendment in a future task, not silently patched.
+3. `task_ids` is validated for shape and folded into the idempotency hash, but the selection
+   relies purely on the selector's mirror/impact/core coverage over `changed_files`, not each
+   task's own declared Validation Commands (no `parse_validation_commands`/`TaskScheduler`
+   import was in this file's allowed list). Flagged as requiring a Codebase Contract amendment
+   if per-task declared-command coverage is actually required here.
+
+No MCP tool was registered (file table has no toolkit.py/models.py/engine.py) so the
+TASK-3560/3561/3562 allowlist collateral pattern does not apply.
+
+Validation:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_validation.py -q` → 3 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_status.py -q` → 5 passed (regression check, TASK-3563's suite).
+- Full scoped `packages/ai-parrot/tests/flows/dev_loop/sdd_coder` suite → 433 passed (up from 430 at TASK-3563).
+- `git status --porcelain --untracked-files=all` clean except gitignored build artifacts.
+- `ruff check` clean; verified no orphaned processes remained after the deadline/own-child test.
+
+Review: `coder-review:4a7c9ba0f21c5f069b3ff341` (zero fix commits — clean delivery).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1066180ms (~17m46s) · Tokens: 234053 (subagent total, in/out split not exposed for native).
