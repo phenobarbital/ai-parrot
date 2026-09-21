@@ -192,4 +192,47 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `e1cb2506a3654a8aa1fd270250329ba1`). Created
+only the two CREATE targets:
+
+- `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/evidence.py` — `ExecutionEvidenceStore`
+  with `append_event`, `put_artifact`, `read_artifact` matching the blueprint's constructor and
+  method signatures. `append_event` writes canonical JSON lines to
+  `executions/<uuid>/events.jsonl`, deduplicated by `event_id`, serialized both in process
+  (asyncio lock per execution) and cross process (flock, no-op fallback on non-POSIX). Repairs
+  a crash-truncated trailing line transparently; any other corruption raises a new
+  `EvidenceCorruptionError`; a conflicting re-append with different content raises a new
+  `EvidenceConflictError`; identical content is an idempotent no-op. `put_artifact` publishes
+  canonical-JSON content-addressed (sha256) artifacts via temp-file, fsync, atomic replace, so
+  a reader never observes a partial file. `read_artifact` uses confined path resolution (UUID
+  shape check, hex artifact id check, symlink rejection), a max page limit of 16384 bytes,
+  byte-safe UTF-8 pagination, plus a full-snapshot sha256 and size in every page.
+- `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_evidence.py` — the three
+  blueprint-named tests (`test_multiprocess_append_idempotency` with real multiprocessing
+  children, `test_crash_tail_and_disk_failure`, `test_artifact_scope_and_unicode_pages`) plus
+  one added test, `test_evidence_survives_temp_worktree_deletion`, exercising
+  `resolve_durable_root` directly to prove evidence outlives a deleted worktree directory (AC7).
+
+Design decision flagged for the downstream chain (TASK-3560 through TASK-3576 depend on this
+module transitively): two new exception classes, `EvidenceConflictError(ValueError)` and
+`EvidenceCorruptionError(RuntimeError)`, were introduced as the concrete mechanism for
+rejecting conflicting content and corruption since the blueprint did not pin an exact shape.
+Reviewed and accepted as the durable public contract: both are new symbols owned by this
+module, not calls into a fabricated pre-existing API, and both subclass a standard exception
+base so a generic catch still works.
+
+Environment note: this worktree's compiled Cython extensions
+(`parrot/utils/types*.so`, `parrot/utils/parsers/toml*.so`) were missing (gitignored build
+artifacts only present in the main checkout); copied from the main checkout into this
+worktree rather than rebuilt or synced, to unblock `import parrot` for validation. No shared
+environment was mutated.
+
+Validation:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_evidence.py -q` → 4 passed (stable across 5 repeated runs per the coder, re-verified once here).
+- `select_tests --tier merge` scoped to completed tasks (TASK-3555, TASK-3556, TASK-3557, TASK-3558) plus this one → dev_loop/sdd_coder core-escalation suite 405 passed; tool_optimizations suite 433 passed/1 deselected; wiki compaction suite 17 passed.
+- `git status --porcelain --untracked-files=all` clean except gitignored build artifacts.
+- `ruff check` on both new files → clean.
+
+Review: `coder-review:5c77598a728b4b673f67a397` (zero fix commits — clean delivery).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 604552ms (~10m5s) · Tokens: 150691 (subagent total, in/out split not exposed for native).

@@ -104,7 +104,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -114,8 +114,8 @@
       "parallelism_notes": "Depende de TASK-3558 por modelos. Solo evidence.py y sus pruebas; puede avanzar junto a M1/M9.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3559-durable-execution-evidence.md"
+      "completed_at": "2026-09-21T01:59:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3559-durable-execution-evidence.md"
     },
     {
       "id": "TASK-3560",
