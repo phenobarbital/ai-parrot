@@ -413,7 +413,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -424,8 +424,8 @@
       "parallelism_notes": "Depende de TASK-3559/TASK-3565 por eventos durables y receipts background definitivos. Script/tests propios; paralelo a documentación.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3574-execution-profile.md"
+      "completed_at": "2026-09-21T13:08:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3574-execution-profile.md"
     },
     {
       "id": "TASK-3575",

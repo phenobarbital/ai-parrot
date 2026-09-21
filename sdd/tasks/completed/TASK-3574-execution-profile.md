@@ -179,4 +179,54 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `ff32140d985c4d60aefdad2132a9ab0b`). Tocó solo
+los dos targets CREATE listados:
+
+- `scripts/sdd/profile_execution.py` CREATE — `main(argv)` entry point, sin importar
+  `parrot.flows.dev_loop.sdd_coder.*` (per convención de `select_tests.py`: nunca importar parrot).
+  Duck-types registros JSON con forma estructural de `WorkflowEvent` real (kind/execution_id/
+  task_id/attempt_uid/job_id/timestamp/source/payload) para poder consumir
+  `executions/<uuid>/events.jsonl` de producción sin dependencia dura del framework.
+  Unión "active" global calculada con UN solo pase real de interval-merge sobre los spans (start,
+  end) resueltos — nunca sumando uniones por categoría y restando overlap por separado —
+  eliminando estructuralmente el bug de doble-resta que describe la evidencia de la spec (36.2% vs
+  39.0% corregido). Los buckets por categoría son independientes, pueden solaparse, y su suma puede
+  legítimamente exceder la unión global (documentado). Spans de background/attempt/review/
+  compaction se resuelven SOLO desde `--events` (eventos start/finish identity-paired, o ventana ya
+  asentada `payload.started_at`/`ended_at`); las filas de transcript se usan exclusivamente para
+  estadísticas de requests/tokens y nunca pueden cerrar un span. Attempts consolidados por identidad
+  explícita `(execution_id, task_id, attempt_uid)`/`task_id`. Spans ≥120s siempre incluidos en la
+  unión y además expuestos en `active.long_spans` (nunca excluidos silenciosamente, per R7). Campos
+  de tokens desconocidos permanecen `null` en vez de default a 0. Pares de reloj cross-process
+  etiquetados `clock_basis: "identity_paired"` (proxy wall-clock); solo pares del mismo
+  `process_id` con `monotonic_s` obtienen `"identity_paired+monotonic_same_process"` +
+  `duration_precise_s` separado. Spans de fallback/self-implementation (`fallback.*`/
+  `category: "fallback_self_impl"`) en bucket completamente separado, excluidos de la unión
+  principal (AC22); `payload.baseline_excluded` enruta un span a `baseline.excluded_spans`
+  (visible pero excluido de totales).
+- `test_execution_profile.py` CREATE — 3 escenarios (validados 4 veces para estabilidad).
+
+**Concern flagueado por el coder (requiere revisión antes de M8/pilot):** el esquema JSON de
+eventos/transcript para esta tarea NO estaba fijado en ningún lugar del codebase — el Codebase
+Contract retuvo deliberadamente `optimization_models.WorkflowEvent` como import no verificado para
+esta tarea específica (a diferencia de tareas hermanas). El coder diseñó un esquema estructuralmente
+compatible con la forma real de `WorkflowEvent`, documentado en el docstring del módulo y comentarios
+inline, pero es su propia decisión de diseño acotada, no un contrato preexistente — vale una segunda
+mirada explícita antes de que esto se convierta en la base del wiring M8/pilot.
+
+Sin desviaciones fuera de lo flagueado. Nada bajo `sdd/` tocado.
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_profile.py -q`
+  (Validation Command exacto) → 3 passed (repetido 4 veces, estable).
+- Smoke-test manual del CLI standalone → confirmado funcional.
+- `ruff check` → clean (lint autofix del engine: commit `b975bd20b`).
+- `git status --porcelain --untracked-files=all` limpio salvo artefactos gitignored.
+
+Ledger: `wikitoolkit ledger open --kind tech_debt --severity minor` para el concern de esquema no
+fijado → `Ledger unavailable; NOT filed: shared ledger is read-only`. **NOT filed: shared ledger is
+read-only** — pendiente de un follow-up privilegiado; ver resumen final del feature.
+
+Review: `coder-review:02ac76dbb22e61143b0d0592`.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~834s · Tokens: 197454 (subagent total, in/out no separado para native).
