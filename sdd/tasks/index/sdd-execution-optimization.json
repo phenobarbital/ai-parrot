@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-21",
-  "completed_at": null,
+  "completed_at": "2026-09-21T16:50:35+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "decomposition_complete": false,
@@ -40,7 +40,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T01:09:40+00:00",
-      "file": "sdd/tasks/completed/TASK-3555-compaction-capability-spike.md"
+      "file": "sdd/tasks/completed/TASK-3555-compaction-capability-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3556",
@@ -58,7 +59,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T00:54:37+00:00",
-      "file": "sdd/tasks/completed/TASK-3556-bounded-inspection-batch.md"
+      "file": "sdd/tasks/completed/TASK-3556-bounded-inspection-batch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3557",
@@ -78,7 +80,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T01:24:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3557-inspection-mcp-benchmark.md"
+      "file": "sdd/tasks/completed/TASK-3557-inspection-mcp-benchmark.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3558",
@@ -96,7 +99,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T01:45:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3558-optimization-domain-models.md"
+      "file": "sdd/tasks/completed/TASK-3558-optimization-domain-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3559",
@@ -116,7 +120,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T01:59:56+00:00",
-      "file": "sdd/tasks/completed/TASK-3559-durable-execution-evidence.md"
+      "file": "sdd/tasks/completed/TASK-3559-durable-execution-evidence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3560",
@@ -136,7 +141,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T03:53:25+00:00",
-      "file": "sdd/tasks/completed/TASK-3560-native-events-integration.md"
+      "file": "sdd/tasks/completed/TASK-3560-native-events-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3561",
@@ -156,7 +162,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T04:19:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3561-sdd-purpose-inspection.md"
+      "file": "sdd/tasks/completed/TASK-3561-sdd-purpose-inspection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3562",
@@ -176,7 +183,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T04:40:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3562-compact-coder-responses.md"
+      "file": "sdd/tasks/completed/TASK-3562-compact-coder-responses.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3563",
@@ -196,7 +204,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T04:58:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3563-background-registry.md"
+      "file": "sdd/tasks/completed/TASK-3563-background-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3564",
@@ -216,7 +225,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T05:18:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3564-background-validation-supervisor.md"
+      "file": "sdd/tasks/completed/TASK-3564-background-validation-supervisor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3565",
@@ -237,7 +247,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T11:05:50+00:00",
-      "file": "sdd/tasks/completed/TASK-3565-background-mcp-gates.md"
+      "file": "sdd/tasks/completed/TASK-3565-background-mcp-gates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3566",
@@ -257,7 +268,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T10:31:49+00:00",
-      "file": "sdd/tasks/completed/TASK-3566-deterministic-task-finalization.md"
+      "file": "sdd/tasks/completed/TASK-3566-deterministic-task-finalization.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3567",
@@ -278,7 +290,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T11:32:41+00:00",
-      "file": "sdd/tasks/completed/TASK-3567-review-checkpoint.md"
+      "file": "sdd/tasks/completed/TASK-3567-review-checkpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3568",
@@ -299,7 +312,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T11:49:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3568-portable-phase-boundary.md"
+      "file": "sdd/tasks/completed/TASK-3568-portable-phase-boundary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3569",
@@ -317,7 +331,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T12:08:34+00:00",
-      "file": "sdd/tasks/completed/TASK-3569-lazy-wiki-hook-startup.md"
+      "file": "sdd/tasks/completed/TASK-3569-lazy-wiki-hook-startup.md",
+      "verification": "verified-with-issues"
     },
     {
       "id": "TASK-3570",
@@ -342,7 +357,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T12:26:55+00:00",
-      "file": "sdd/tasks/completed/TASK-3570-worker-optimization-contracts.md"
+      "file": "sdd/tasks/completed/TASK-3570-worker-optimization-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3571",
@@ -363,7 +379,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T12:36:12+00:00",
-      "file": "sdd/tasks/completed/TASK-3571-coder-reviewer-handoff.md"
+      "file": "sdd/tasks/completed/TASK-3571-coder-reviewer-handoff.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3572",
@@ -384,7 +401,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T12:44:10+00:00",
-      "file": "sdd/tasks/completed/TASK-3572-start-cross-host-contracts.md"
+      "file": "sdd/tasks/completed/TASK-3572-start-cross-host-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3573",
@@ -405,7 +423,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T12:52:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3573-review-done-flow-contracts.md"
+      "file": "sdd/tasks/completed/TASK-3573-review-done-flow-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3574",
@@ -426,7 +445,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T13:08:26+00:00",
-      "file": "sdd/tasks/completed/TASK-3574-execution-profile.md"
+      "file": "sdd/tasks/completed/TASK-3574-execution-profile.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3575",
@@ -452,7 +472,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T13:59:06+00:00",
-      "file": "sdd/tasks/completed/TASK-3575-optimization-workflow-regression.md"
+      "file": "sdd/tasks/completed/TASK-3575-optimization-workflow-regression.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3576",
@@ -473,7 +494,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
       "completed_at": "2026-09-21T16:25:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3576-optimization-rollout-evidence.md"
+      "file": "sdd/tasks/completed/TASK-3576-optimization-rollout-evidence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3577",
@@ -495,7 +517,8 @@
       "assigned_to": null,
       "started_at": "2026-09-21T15:02:54+00:00",
       "completed_at": "2026-09-21T16:19:39+00:00",
-      "file": "sdd/tasks/completed/TASK-3577-claude-compaction-driver.md"
+      "file": "sdd/tasks/completed/TASK-3577-claude-compaction-driver.md",
+      "verification": "verified"
     }
   ]
 }
