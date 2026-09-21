@@ -24,9 +24,35 @@ POLICY_MESSAGE = (
 )
 
 
+def existing_directory(path: Path) -> Path:
+    """Resolve ``path``, falling back to its nearest existing ancestor.
+
+    ``/sdd-done`` ends by removing the very worktree it runs in, and
+    ``git worktree prune`` can drop an administration directory underneath a
+    live session. Resolving strictly raises there, and because every native
+    Bash call is wrapped by this module, a single raise denies *every*
+    subsequent command — the session loses its own shell and cannot even
+    ``cd`` back to the primary checkout. Anchoring on the nearest surviving
+    ancestor keeps the sandbox on a real directory instead: for a removed
+    worktree that is the primary checkout's ``.claude/worktrees``, so the next
+    command lands back inside the primary checkout.
+
+    Args:
+        path: The directory to resolve, which may no longer exist.
+
+    Returns:
+        The resolved directory, or the closest ancestor that still exists.
+    """
+    candidate = Path(os.path.abspath(path))
+    for parent in (candidate, *candidate.parents):
+        if parent.is_dir():
+            return parent.resolve()
+    return Path(candidate.anchor or os.sep)
+
+
 def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
     """Find the checkout root and common Git directory, including pool worktrees."""
-    cwd = cwd.resolve(strict=True)
+    cwd = existing_directory(cwd)
     for root in (cwd, *cwd.parents):
         marker = root / ".git"
         if marker.is_dir():
@@ -35,11 +61,13 @@ def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
             content = marker.read_text(encoding="utf-8").strip()
             if not content.startswith("gitdir: "):
                 raise ValueError(f"Invalid Git worktree marker: {marker}")
-            git_dir = (root / content.removeprefix("gitdir: ")).resolve(strict=True)
+            git_dir = Path(os.path.abspath(root / content.removeprefix("gitdir: ")))
             common = git_dir / "commondir"
             if common.is_file():
-                git_dir = (git_dir / common.read_text(encoding="utf-8").strip()).resolve(strict=True)
-            return root, git_dir
+                git_dir = Path(os.path.abspath(git_dir / common.read_text(encoding="utf-8").strip()))
+            # A pruned administration directory leaves the checkout orphaned:
+            # keep it writable rather than denying the command outright.
+            return root, git_dir.resolve() if git_dir.is_dir() else None
     return cwd, None
 
 
@@ -193,7 +221,7 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         if inherited := os.environ.get("PYTHONPATH"):
             python_path += os.pathsep + inherited
         command.extend(["--setenv", "PYTHONPATH", python_path])
-    command.extend(["--chdir", str(cwd.resolve()), "--", *argv])
+    command.extend(["--chdir", str(existing_directory(cwd)), "--", *argv])
     return command
 
 

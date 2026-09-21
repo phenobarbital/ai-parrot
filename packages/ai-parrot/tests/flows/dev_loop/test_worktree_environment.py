@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -298,7 +299,9 @@ def test_real_native_hook_keeps_primary_environment_read_only(tmp_path: Path) ->
     command = "printf corrupt > .venv/editable.pth"
     response = policy.hook_response({"cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": command}})
     wrapped = response["hookSpecificOutput"]["updatedInput"]["command"]
-    result = subprocess.run(["/bin/bash", "-c", wrapped], capture_output=True, text=True, timeout=20)
+    # The assertion reads bash's own diagnostic, which is localized.
+    environ = {**os.environ, "LC_ALL": "C"}
+    result = subprocess.run(["/bin/bash", "-c", wrapped], capture_output=True, text=True, timeout=20, env=environ)
     assert result.returncode != 0
     assert "Read-only file system" in result.stderr
     assert target.read_text() == "original\n"
@@ -465,3 +468,68 @@ def test_real_hung_sandboxed_process_is_killed_at_tool_timeout(tmp_path: Path) -
     result = subprocess.run(argv, capture_output=True, text=True, timeout=20)
     assert result.returncode == 124, result
     assert "no such column: 624" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Vanished working directory: `/sdd-done` removes the worktree it runs in, so
+# the wrapper must keep serving commands instead of denying every one of them.
+# ---------------------------------------------------------------------------
+
+
+def test_removed_worktree_still_yields_a_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A deleted working directory anchors on its nearest surviving ancestor, never on a denial."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    shutil.rmtree(worktree)
+    response = policy.hook_response(
+        {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git worktree list"}}
+    )
+    output = response["hookSpecificOutput"]
+    assert "permissionDecision" not in output, output
+    argv = _sandboxed_argv(response)
+    assert Path(argv[argv.index("--chdir") + 1]).is_dir()
+    assert _writable_binds(argv) == [main.resolve()]
+
+
+def test_pruned_administration_directory_keeps_the_checkout_writable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`git worktree prune` must not strand a live session without a writable checkout."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    shutil.rmtree(main / ".git" / "worktrees" / "feat-x")
+    assert policy.repository_paths(worktree) == (worktree, None)
+    assert _writable_binds(policy.protected_argv(worktree, ["true"])) == [worktree.resolve()]
+
+
+def test_real_self_removal_leaves_a_usable_shell(tmp_path: Path) -> None:
+    """After `/sdd-done` removes its own worktree, the next sandboxed command still runs."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    admin_dir = main / ".claude" / "worktrees"
+    admin_dir.mkdir(parents=True)
+    feature = admin_dir / "feat-x"
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    removal = subprocess.run(
+        policy.protected_argv(feature, ["git", "worktree", "remove", str(feature)]),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert removal.returncode == 0, removal.stderr
+    assert not feature.exists()
+
+    # The session's working directory is gone, but its shell must survive it.
+    follow_up = subprocess.run(
+        policy.protected_argv(feature, ["git", "-C", str(main), "worktree", "list"]),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert follow_up.returncode == 0, follow_up.stderr
+    assert str(main) in follow_up.stdout
