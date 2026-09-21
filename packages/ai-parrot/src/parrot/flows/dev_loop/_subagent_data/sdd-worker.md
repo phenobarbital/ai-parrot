@@ -564,14 +564,14 @@ After all tasks are done, at the development-to-review boundary:
      completion summary (having already verified, from your own process/child accounting in this session, that
      nothing of yours is still running) and continue straight to code review below on the current worktree state.
    - **Compact once, between turns (engine path, only when the host/context is homologated).** Request exactly ONE
-     compaction attempt per `checkpoint_id`, per the host support matrix: main Claude conversation with a
-     homologated adapter → the runtime's between-turn compaction call, checked for a real receipt before
-     continuing; subagent/fork context → `unsupported_context` unless the runtime has proven it targets that loop;
-     Codex/Antigravity/any other unverified host → `unsupported_host`. Never invoke `/compact` through Bash, never
-     retry blindly on `in_progress`/timeout, and never claim that compacting yourself also compacted a native
-     child's context. Record the real `CompactionReceipt` outcome (`completed`/`skipped`/`unsupported`/`failed`/
-     `in_progress`) — `skipped`/`unsupported` is the correct explicit result until M0 and the approved M5 amendment
-     land, not a failure to paper over.
+     attempt per `checkpoint_id` through `prepare_review_boundary(...,
+     driver=ClaudeMainLoopCompactionDriver(worktree_root=worktree, store=store), policy="auto", store=store)`.
+     This driver is a receipt reader, never a `$.session.compact()` invoker: it gates the main context on the
+     worktree-local `compaction_status`, records `compaction.requested`, and records `compaction.finished` only from
+     a real receipt. With no observable receipt surface it returns explicit `failed`/`unknown`; subagent/fork remains
+     unsupported unless runtime evidence proves its target. Codex/Antigravity/any other unverified host is
+     `unsupported_host`. Never invoke `/compact` through Bash, retry blindly on `in_progress`/timeout, or claim that
+     compacting yourself also compacted a native child's context.
    - **Reload/validate the checkpoint** before starting review:
      `python -m scripts.sdd.review_checkpoint validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
      --checkpoint-id <id>`. A `checkpoint_stale` result (branch/HEAD/spec/index/convention hashes moved since
