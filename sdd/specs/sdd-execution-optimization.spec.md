@@ -194,15 +194,30 @@ Secuencia: persistir checkpoint → emitir handoff de fase → llegar a frontera
 
 | Contexto | Comportamiento contratado |
 |---|---|
-| Worker en conversación principal Claude con adaptador homologado | `$.session.compact({instructions: ...})` entre turnos; comprobar contexto/receipt antes de continuar |
-| Worker en subagente/fork | La API instalada no acepta agentId en SessionCompactArgs. No asumir direccionamiento; solo habilitar si la prueba del runtime demuestra que actúa sobre ese loop. En caso contrario, `unsupported_context` y reviewer fresco desde checkpoint. |
+| Worker en conversación principal Claude con adaptador homologado | **Diseño receipt-reader (enmienda M0, ver abajo)**: gatear con `compaction_status(worktree_root)` — evaluado **por worktree**, nunca asumido desde el checkout principal — antes de cualquier intento; falso ⇒ `unsupported_host` inmediato. Si es verdadero, emitir el `WorkflowEvent` `compaction.requested` ya declarado y observar la línea de receipt propia del plugin (`"<percent>% reduction; ..."` / `"fallback to built-in summary (...)"`) por el canal existente de `coder_record_native_observation`, con espera acotada. No existe llamada Python-side a `$.session.compact()`: ese `$` solo es alcanzable desde dentro de un hook module registrado del propio motor Claude Code, nunca desde un tool/Bash/subagente. Sin línea de receipt dentro de la espera acotada ⇒ `status=unknown`, nunca inferido `completed` por silencio. |
+| Worker en subagente/fork | La API instalada no acepta agentId en SessionCompactArgs (outbound); el evento inbound `session.compact` sí trae `agentId`, pero si el `$.session.compact()` invocado desde el callback de un turno de subagente termina compactando ese subagente o el loop principal sigue **indeterminado a nivel de tipos** (M0 no pudo obtener la prueba de runtime necesaria — requiere acceso host interactivo real). No asumir direccionamiento; solo habilitar si un spike de seguimiento con esa prueba lo demuestra. Mientras tanto, `unsupported_context` y reviewer fresco desde checkpoint. |
 | Codex/Antigravity u otro host sin adaptador verificado | `unsupported_host`, checkpoint y reviewer fresco; no instalar ni invocar Jev de forma indirecta |
 | Jev falla o no reduce suficiente | Permitir el fallback del host; registrar `builtin` solo con evidencia, o `unknown` si el backend no es observable |
-| Runtime ocupado, timeout o interrupción | Registrar estado; no relanzar a ciegas. Un timeout no prueba cancelación: esperar settlement o continuar desde checkpoint en un contexto nuevo, sin mutación concurrente del anterior. |
+| Runtime ocupado, timeout o interrupción | Registrar estado; no relanzar a ciegas. Un timeout no prueba cancelación: esperar settlement o continuar desde checkpoint en un contexto nuevo, sin mutación concurrente del anterior. El host no define semántica de timeout propia para `session.compact`; el bounded-wait es responsabilidad exclusiva de la capa SDD. |
 
 No usar `claude -p /compact` desde el worker ni reabrir en paralelo la misma sesión. El texto `/compact` en una respuesta no cuenta como ejecución. La presencia de settings/plugin/key tampoco prueba funcionamiento. `compaction_status` es diagnóstico de instalación, no handshake de capacidades.
 
-Un spike obligatorio M0 homologa el driver de frontera con un host real y fija el mecanismo de reanudación antes de implementar el adaptador específico. No cambiar la caché del plugin externo. La implementación del adaptador se registra en el mecanismo de plugins/instalación administrada del repo; sus archivos y evento de reanudación se fijan mediante enmienda de esta spec tras M0, evitando inventar APIs experimentales.
+**Enmienda tras el spike M0 obligatorio (TASK-3555, evidencia completa en
+`docs/dev_loop/sdd-compaction-capabilities.md`, hashes de fuente incluidos).** Hallazgo central: **no
+existe ninguna superficie de llamada Python-side hacia `$.session.compact()`** — es interno al
+sandbox de hooks del motor Claude Code, invocado automáticamente por `hooks/fast-jev.ts`'s
+`on('turn.complete', ...)`; ningún MCP tool, comando Bash ni slash-command típeado por un agente
+llega a ese objeto `$`. Por lo tanto el driver de frontera de M5 **no puede ser "una función Python
+que llama a `$.session.compact()`"** — se rescoge como **lector de receipts**, no como invocador (ver
+tabla de contexto arriba y M5 en §3). Tampoco existe un mecanismo de reanudación distinto: el host
+reemplaza el transcript in-place antes del siguiente turno; no hay checkpoint/receipt/handle de
+resume propio del host más allá de `tokensBefore`/`tokensAfter` opcionales. La continuidad para el
+reviewer debe construirse enteramente en la capa SDD con el `ReviewCheckpoint` ya existente (R4/R5),
+nunca esperando un evento de "resume" del host que no existe en la superficie revisada. El
+direccionamiento por subagente/fork sigue sin prueba de runtime y permanece `unsupported_context`
+(ver Q1 en §8, ahora dividida). No cambiar la caché del plugin externo; la implementación concreta
+del driver de host se registra en el mecanismo de plugins/instalación administrada del repo y se
+decompone en tareas separadas tras esta enmienda (ver M5 en §3).
 
 Compactar el worker puede reducir su contexto de continuación; un reviewer ya fresco no hereda automáticamente ese ahorro. Medir ambas fases por separado, incluyendo coste de compactación, pérdida de caché, relecturas y recuperación.
 
@@ -280,7 +295,7 @@ No afirmar `jev` por estar habilitado el plugin; exige un receipt/log verificabl
 | M2 Evidencia/eventos | sí, tras TASK | R3; identidad, persistencia e idempotencia explícitas |
 | M3 Vistas compactas | sí, tras TASK | R2; full compatible, contenido recuperable y páginas obligatorias |
 | M4 Cierre/checkpoint | sí, tras TASK | R4/R5; precondiciones, journal y sin aprobación sintética |
-| M5 Driver de compactación | no hasta M0 | Falta homologar scope y continuación del runtime; prohibido inventar API |
+| M5 Driver de compactación | sí, tras TASK (M0 completo, enmendado) | R6 enmendado; driver es lector de receipt, no invocador; subagente/fork sigue unsupported_context |
 | M6 Twins y revisión | sí para contratos comunes; parte host después de M0 | R1–R6, coherencia semántica entre hosts |
 | M7 Medición/regresión | sí, tras TASK | R7 y criterios de §4/§5 |
 | M8 Background supervisado | sí, tras TASK con blueprints | R8; handles emitidos, status sin polling de PID, validación protegida e idempotente |
@@ -292,7 +307,7 @@ No afirmar `jev` por estar habilitado el plugin; exige un receipt/log verificabl
 - **Responsibility:** probar conversación principal y subagente, identidad de contexto, rechazo durante turno, una única compactación, fallo Jev/fallback y continuación a review. Registrar versiones y hashes del plugin/type reference; no copiar todo el SDK externo.
 - **Depends on:** instalación existente, ninguna dependencia nueva.
 - **Interface Skeleton:** informe con `host_version`, `plugin_version`, `context_kind`, `can_target_context`, `between_turns`, `resume_mechanism`, `receipt_fields`, `evidence_refs`, `verdict`. No API productiva ni smoke automático con credenciales en unit tests.
-- **Salida de diseño:** enmienda de R6/M5 con archivos exactos del adaptador/instalador y contrato verificado, o verdict unsupported por host. El objetivo de compactación automática en un contexto soportado no puede darse por cumplido solo con mocks.
+- **Salida de diseño:** enmienda de R6/M5 con archivos exactos del adaptador/instalador y contrato verificado, o verdict unsupported por host. El objetivo de compactación automática en un contexto soportado no puede darse por cumplido solo con mocks. **Aplicado**: ver R6 y M5 arriba, evidencia completa en `docs/dev_loop/sdd-compaction-capabilities.md`.
 
 ### M1. Inspección concurrente y MCP local
 
@@ -432,13 +447,32 @@ Errores de dominio: `checkpoint_stale`, `checkpoint_busy`, `checkpoint_incomplet
 
 ### M5. Política y driver de frontera de compactación
 
-- **Paths decididos:** nuevo `.../sdd_coder/phase_boundary.py`; receipt/policy en `optimization_models.py`; documento de capacidad M0; tests `test_phase_boundary.py`.
-- **Paths del driver de host:** pendientes exclusivamente de M0; no crear un plugin nuevo por suposición. Instalación administrada se integrará con `knowledge/wiki/claude_code/compaction.py`, sin modificar el Jev externo ni almacenar credenciales nuevas.
-- **Depends on:** M0, M4. No asignar implementación del driver a un coder antes de enmendar contratos.
+- **Paths decididos:** `.../sdd_coder/phase_boundary.py` (M5a, ya implementado en TASK-3568: Protocol +
+  `prepare_review_boundary` con idempotencia/policy — la abstracción no cambia con esta enmienda);
+  receipt/policy en `optimization_models.py`; documento de capacidad M0
+  (`docs/dev_loop/sdd-compaction-capabilities.md`, completo); tests `test_phase_boundary.py`.
+- **Paths del driver de host (M5b, decompuesto tras esta enmienda):** nuevo
+  `.../sdd_coder/claude_compaction_driver.py` — implementación concreta de `PhaseBoundaryDriver` para
+  `context_kind="main"` únicamente, **lector de receipt, no invocador**: gatea con
+  `compaction_status(worktree_root)` por worktree; si es verdadero emite `compaction.requested` y
+  observa la línea de receipt del plugin vía el canal ya existente de `coder_record_native_observation`
+  con espera acotada, mapeando a `CompactionReceipt`; sin receipt ⇒ `status=unknown`. Para
+  `context_kind` de subagente/fork, `supports()` devuelve `False` incondicionalmente (permanece
+  `unsupported_context` hasta un spike de seguimiento con prueba de runtime real — ver Q1b en §8).
+  Instalación administrada se integra con `knowledge/wiki/claude_code/compaction.py`, sin modificar el
+  Jev externo ni almacenar credenciales nuevas. `checkpoint.context_id` (hoy `Optional`, sin productor)
+  debe recibir un valor determinista (p. ej. `"main"` para la conversación principal) desde su único
+  productor actual, `prepare_review_checkpoint` (TASK-3567) — esta enmienda autoriza modificar ese
+  productor para fijar `context_id`, dentro del alcance de la tarea del driver, no como refactor
+  separado.
+- **Depends on:** M0 (completo — spike TASK-3555), M4. Implementación del driver asignable a un coder
+  ahora que los contratos están enmendados; el `context_id` es el único gap de productor pendiente,
+  cerrado por la misma tarea del driver.
 - **Interface Skeleton:**
 
 ```python
-# new: .../sdd_coder/phase_boundary.py; interfaz propuesta, no API existente
+# .../sdd_coder/phase_boundary.py; SIN CAMBIOS por esta enmienda — la abstracción ya soporta
+# un compact() que observa en vez de invoca, siempre que cumpla la firma async existente.
 class PhaseBoundaryDriver(Protocol):
     """Capacidad del host: contexto correcto, frontera segura y receipt observable."""
     async def supports(self, context_id: str) -> bool:
@@ -451,9 +485,21 @@ async def prepare_review_boundary(
     policy: Literal['auto', 'off'], store: ExecutionEvidenceStore,
 ) -> CompactionReceipt:
     """Gestiona idempotencia/estado; nunca simula compactación ni lanza review a ciegas."""
+
+# new: .../sdd_coder/claude_compaction_driver.py; implementación concreta M5b
+class ClaudeMainLoopCompactionDriver:
+    """PhaseBoundaryDriver concreto: lee el receipt del plugin, nunca invoca $.session.compact()."""
+    async def supports(self, context_id: str) -> bool:
+        """True solo para context_id=='main' y compaction_status(worktree_root) verdadero."""
+    async def compact(self, checkpoint: ReviewCheckpoint) -> CompactionReceipt:
+        """Emite compaction.requested, observa receipt acotado; unknown si no aparece, nunca completed por silencio."""
 ```
 
-La coordinación Python expresa política; no presupone que Python pueda controlar el runtime de Claude. El driver de host debe demostrar cómo transporta el checkpoint, llama a la API real y reanuda review. `in_progress` tras crash exige reconciliación; no retry automático de una operación de estado desconocido.
+La coordinación Python expresa política; no presupone que Python pueda controlar el runtime de Claude
+más allá de observar sus propios receipts publicados. El driver de host no transporta el checkpoint
+al host ni reanuda review por una API del host — el host no ofrece ninguna; la continuidad depende
+enteramente de `ReviewCheckpoint`/`ExecutionEvidenceStore` (R4/R5), ya implementados. `in_progress`
+tras crash exige reconciliación; no retry automático de una operación de estado desconocido.
 
 ### M6. Prompts, twins y documentación operativa
 
@@ -744,7 +790,17 @@ No se introduce librería para scheduling, caching o transporte. Si M0 requiere 
 - [x] ¿Aumentar timeouts o eliminar revisión? No; ahorro debe proceder de menos turnos, menos payload y menos trabajo duplicado demostrado.
 - [x] ¿Reutilizar mecanismos existentes de tests y routing? Sí; no cambiar cobertura, clasificación ni roster en esta feature.
 - [x] ¿Incorporar coder_bg_status de §8.5? Sí: registro emitido por launch, consulta determinista sin espera, tail acotado, ownership, unknown explícito y supervisor para validaciones. No inferir procesos de otros hosts mediante ps/grep.
-- [ ] Q1 — M0: fijar transporte del checkpoint, contexto direccionable y reanudación automática del driver Claude instalado. **Owner:** implementador del spike + autor de spec. Bloquea descomposición de M5 específico, no contratos de M1–M4. Enmendar paths, firmas y evidencia antes de aprobar esa tarea.
+- [x] Q1 — M0: fijar transporte del checkpoint, contexto direccionable (conversación principal) y
+  reanudación automática del driver Claude instalado. **Resuelto** por el spike TASK-3555
+  (`docs/dev_loop/sdd-compaction-capabilities.md`): no existe transporte Python-side ni reanudación
+  host — el driver es un lector de receipt (R6/M5 enmendados arriba); la continuidad usa
+  `ReviewCheckpoint` existente. Desbloquea la descomposición de M5b (driver concreto).
+- [ ] Q1b — M5b (nueva, desdoblada de Q1): homologar direccionamiento de `$.session.compact()` para
+  subagente/fork con prueba de runtime real (el spike TASK-3555 no pudo obtenerla desde su rol: sin
+  superficie de hook-registration). **Owner:** operador con sesión Claude Code interactiva real +
+  spawn de subagente, observando qué loop dispara `session.compact` y con qué `agentId`. Mientras
+  abierta, subagente/fork permanece `unsupported_context` — no bloquea M5a/M5b (contexto principal) ni
+  el resto de la feature.
 - [ ] Q2 — Release: ejecutar piloto comparado y decidir defaults de despliegue. **Owner:** mantenedor. No afirmar ahorro de campo a partir de benchmarks sintéticos.
 
 ## 9. Design Research Cross-Check
@@ -755,7 +811,7 @@ No se introduce librería para scheduling, caching o transporte. Si M0 requiere 
 |---|---|---|
 | 26% es latencia proxy atribuida a bash-other, no Bash puro | CONFIRM | §1, R1, R7 |
 | La siguiente llamada merge puede ser de otra tarea | CONFIRM | R3, R7 |
-| Jev ya existe, pero scope entre padre e hijo no está garantizado | CONFIRM / ESCALATE capability | R6, M0, Q1 |
+| Jev ya existe, pero scope entre padre e hijo no está garantizado | CONFIRM / ESCALATE capability — confirmado sin resolver por el spike M0 (TASK-3555); permanece `unsupported_context` | R6, M0, Q1b |
 | Se requiere independencia de reviewer después de compactar | CONFIRM | R5 y AC9 |
 | Scheduler continuo y caché global amplían riesgos sin evidencia suficiente | REJECT para v1 | Non-Goals |
 | §8.5 prioriza chains conocidas, background y overhead de hooks | CONFIRM | R1b, R8, R9; batch independiente como complemento |
@@ -766,3 +822,4 @@ No se introduce librería para scheduling, caching o transporte. Si M0 requiere 
 |---|---|---|---|
 | 0.1 | 2026-09-21 | Codex / Jesús Lara | Spec basada en perfiles crudos; inspección MCP concurrente, respuestas compactas, cierre determinista, checkpoint y compactación Jev condicionada a capacidad verificada. |
 | 0.2 | 2026-09-21 | Codex / Jesús Lara | Incorpora adenda §8.5: consultas con propósito, coder_bg_status determinista, validación supervisada y arranque lazy del hook wiki. |
+| 0.3 | 2026-09-21 | Claude Sonnet 5 (sdd-worker) / Jesús Lara | Enmienda Q1/M0→M5 tras el spike TASK-3555 (`docs/dev_loop/sdd-compaction-capabilities.md`): rescoge el driver de frontera de compactación (R6, M5) de invocador a **lector de receipt** — no existe superficie Python-side hacia `$.session.compact()` ni mecanismo de reanudación del host; continuidad vía `ReviewCheckpoint` existente. Gate `compaction_status` por worktree. Desdobla Q1 en Q1 (resuelta) + Q1b (direccionamiento subagente/fork, sigue abierta, requiere spike de seguimiento con acceso host interactivo real). Desbloquea la descomposición de M5b (driver concreto) para TASK-3576. |
