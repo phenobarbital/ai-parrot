@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-21T18:40:00+00:00",
-  "completed_at": "2026-09-21T18:55:00+00:00",
+  "completed_at": "2026-09-21T20:15:00+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": "claude-opus-5:7e0222c8",
       "started_at": "2026-09-21T18:42:00+00:00",
       "completed_at": "2026-09-21T18:50:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3578-retire-dirty-task-worktree-engine.md"
+      "file": "sdd/tasks/completed/TASK-3578-retire-dirty-task-worktree-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3579",
@@ -43,7 +44,8 @@
       "assigned_to": "claude-opus-5:7e0222c8",
       "started_at": "2026-09-21T18:52:00+00:00",
       "completed_at": "2026-09-21T18:55:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3579-retire-dirty-task-worktree-docs.md"
+      "file": "sdd/tasks/completed/TASK-3579-retire-dirty-task-worktree-docs.md",
+      "verification": "verified"
     }
   ]
 }
