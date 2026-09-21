@@ -102,6 +102,25 @@ def test_orchestrator_loop_describes_background_native_agents():
     assert "every native task of the chunk has gone through `coder_merge`" in loop
 
 
+def test_worker_prompt_routes_retry_native_handoff():
+    """FEAT-588 R4: the orchestrator must know what to do with `retry_native`."""
+    text = (_repo_agents_dir() / "sdd-worker.md").read_text(encoding="utf-8")
+    assert "`retry_native`" in text
+    # AC-1: reservation comes from `native_retry`, not a second `coder_prepare_native` call.
+    assert "native_retry" in text
+    assert "do NOT call `coder_prepare_native` again" in text
+    # AC-1: dispatched via `Agent`, same as a planned native coder, and merged on notification.
+    assert 'Agent(subagent_type="sdd-coder"' in text
+    assert "never call `Agent` twice for the same task" in text
+    assert "`coder_merge(task_id)` on its notification" in text
+    # AC-1: attributed as a retry (attempt 2) with backend `native` and its own `attempt_uid`,
+    # never conflated with a planned native attempt.
+    assert "backend `native`" in text
+    assert "native_retry.attempt_uid" in text
+    assert "record it as a RETRY (attempt 2), never as a planned native" in text
+    assert "the two stay separable" in text
+
+
 def _fallback_loop(body: str) -> str:
     """Return just the `## Fallback: Sequential Loop` section (up to `## Completion`)."""
     return body.split("\n## Fallback: Sequential Loop", 1)[1].split("\n## Completion", 1)[0]
