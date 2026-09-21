@@ -224,6 +224,7 @@ None.
 | Test | Module | Description |
 |---|---|---|
 | `test_no_dirty_task_worktree_producer` | M1/M2 | In `test_engine_dispatch.py`. Asserts `"dirty_task_worktree"` appears nowhere in `sdd_coder/engine.py` or `sdd_coder/models.py` — the regression guard that keeps the contract from creeping back |
+| `test_retired_dirty_delivery_reason_still_replays` | M2 | In `test_suspensions.py`: a stored `dirty_delivery` incident still replays through `CoderSuspensionStore`, pinning §8 Q1 |
 | `test_classify_failure_reason_ignores_uncommitted_delivery` | M1 | In `test_engine_dispatch.py`, beside the existing `_classify_failure_reason` cases (`:788-860`): returns `None` for an error that previously classified as `dirty_delivery` |
 
 ### Integration Tests
@@ -251,7 +252,7 @@ Existing fixtures only: `git_sandbox_feature`, `noop_probe`,
 - [ ] **AC-2** `_run_task` returns the consolidation result unconditionally when `_run_attempt` reported no dispatch error; no retry is burned for an uncommitted-but-declared delivery.
 - [ ] **AC-3** `_classify_failure_reason` has no `dirty_delivery` branch, and no code path assigns `error_class="dirty_task_worktree"`.
 - [ ] **AC-4** `dirty_task_worktree` is absent from the `models.py` error-code enum; `dirty_feature_worktree` is still present.
-- [ ] **AC-5** `SuspensionReason` still accepts `"dirty_delivery"`, so a ledger row written before this feature still parses (see §8 Q1).
+- [ ] **AC-5** `SuspensionReason` still accepts `"dirty_delivery"`, so a ledger row written before this feature still parses; the Literal carries a docstring saying why it is permanent, and `test_retired_dirty_delivery_reason_still_replays` pins it (§8 Q1).
 - [ ] **AC-6** `docs/dev_loop/sdd-coder-orchestrator.md` describes the extract-and-commit behaviour; no sentence claims a dirty branch blocks the merge.
 - [ ] **AC-7** FEAT-549 AC-22 and its S5 row are annotated as superseded by FEAT-587, with the `ed267c217` citation.
 - [ ] **AC-8** `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/ -v` passes, with the three integration tests in §4 unmodified.
@@ -334,8 +335,40 @@ None.
 
 ## 8. Open Questions
 
-- [ ] **Q1** — Should `"dirty_delivery"` eventually be dropped from `SuspensionReason` (`coder_suspensions.py:49`) once no live ledger row carries it, or kept permanently as a read-compat member? This spec assumes **kept** (AC-5). *Owner: Jesus Lara*
-- [ ] **Q2** — `issue:88b5c7d679c1` has an empty `about`/`files` list, so `/sdd-fix`'s file-diff close key cannot be satisfied automatically. Confirm closing on `--resolved-by task:TASK-<NNN>` evidence alone. *Owner: Jesus Lara*
+- [x] **Q1 — RESOLVED 2026-09-21: `"dirty_delivery"` is kept PERMANENTLY.** The
+  question assumed the member could be dropped "once no live ledger row carries
+  it". That state is unreachable, and the evidence is decisive:
+  1. `SuspensionRecord.reason` is typed `SuspensionReason` (a Pydantic `Literal`,
+     `coder_suspensions.py:122`), so a stored row whose reason left the Literal
+     fails `model_validate_json`.
+  2. `CoderSuspensionStore._replay()` (`:296-312`) is **strict and fail-closed**:
+     one unparseable record raises `SuspensionHistoryError` for the *entire*
+     history, and `recent()`'s docstring states callers must not treat a failed
+     read as a clean history. The blast radius is total, not per-row.
+  3. **Four `dirty_delivery` rows exist right now** in `.parrot/ledger/events.jsonl`
+     (of 11 `coder_suspension` events) — `zai.glm-4.7-flash` 2026-09-17, and
+     `gpt-5.6-terra` three times on 2026-09-21 (10:21Z, 15:16Z, 16:23Z): the very
+     incidents that produced `issue:88b5c7d679c1`.
+  4. The log is **append-only** — expiry filters records, it never deletes them —
+     and is **gitignored** (`.gitignore:405`), so it is per-machine and cannot be
+     migrated centrally. Every machine that ran a coder seat before `ed267c217`
+     carries its own rows.
+
+  Dropping the member would brick suspension history everywhere such a row
+  exists. The Literal now carries a docstring recording this, and
+  `test_retired_dirty_delivery_reason_still_replays` pins it (mutation-checked:
+  removing the member makes the test fail with `ValidationError`). *Resolved by:
+  Jesus Lara, evidence gathered in-session.*
+- [x] **Q2 — RESOLVED 2026-09-21: yes, closed on task evidence alone.**
+  `issue:88b5c7d679c1` has an empty `about`/`files` list, so `/sdd-fix`'s second
+  close key ("at least one of its `files` appears in the diff") is structurally
+  unsatisfiable rather than merely unmet — no diff can ever contain a file from an
+  empty list. Closed with `--resolved-by task:TASK-3578`, `--actor agent:sdd-fix`.
+  *Resolved by: Jesus Lara.*
+
+> **Follow-up for the ledger, not for this feature**: the issue was filed without
+> an `about` scope, which is what forced Q2 and what routes such issues to the SDD
+> lane regardless of severity. Worth fixing at filing time, not here.
 
 ---
 
@@ -355,3 +388,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-21 | Jesus Lara | Initial draft — scoped to the contract left orphaned by `ed267c217` |
+| 0.2 | 2026-09-21 | Jesus Lara | §8 Q1/Q2 resolved from evidence; `dirty_delivery` retention documented and pinned by a test |
