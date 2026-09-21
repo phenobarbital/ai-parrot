@@ -40,6 +40,9 @@ EXPECTED_TOOLS = {
     # FEAT-584 M3/R2: recover a durable/paginated artifact a `compact`
     # response_mode referenced.
     "coder_read_artifact",
+    # FEAT-584 M8/R8: deterministic background status + protected validation.
+    "coder_bg_status",
+    "coder_run_validation",
 }
 
 
@@ -196,6 +199,8 @@ def test_registered_schemas_require_execution_identity(three_seat_roster):
         "coder_task_context",
         "coder_delivery_report",
         "coder_read_artifact",
+        "coder_bg_status",
+        "coder_run_validation",
     }
     unscoped = {"coder_wait", "coder_status", "coder_feedback_report"}
     for tool in toolkit.get_tools():
@@ -366,6 +371,171 @@ async def test_delivery_report_routes_through_run(three_seat_roster, monkeypatch
     )
     assert result.status == "error"
     assert result.error.code == "branch_not_found"
+
+
+async def test_bg_status_pre_execute_validates_schema(three_seat_roster):
+    """`coder_bg_status` bounds execution_id/handle/since_revision/tail_bytes before the engine runs."""
+    toolkit = _toolkit(three_seat_roster)
+    await toolkit._pre_execute(
+        "coder_bg_status", execution_id=VALID_EXECUTION_ID, handle="h-1", since_revision=None, tail_bytes=2048
+    )  # must not raise
+
+    async def _bad(**kwargs):
+        with pytest.raises(CoderFailure) as excinfo:
+            await toolkit._pre_execute("coder_bg_status", **kwargs)
+        assert excinfo.value.code == "invalid_arguments"
+
+    await _bad(execution_id="not-a-uuid", handle="h-1")
+    await _bad(execution_id=VALID_EXECUTION_ID, handle="")
+    await _bad(execution_id=VALID_EXECUTION_ID, handle="h-1", since_revision=-1)
+    await _bad(execution_id=VALID_EXECUTION_ID, handle="h-1", tail_bytes=-1)
+    await _bad(execution_id=VALID_EXECUTION_ID, handle="h-1", tail_bytes=4097)
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute("coder_bg_status", handle="h-1")
+    assert excinfo.value.code == "execution_required"
+
+
+async def test_bg_status_routes_through_run(three_seat_roster, monkeypatch):
+    """`coder_bg_status` maps a `BackgroundStatus` engine result through `_run` like every other tool."""
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundStatus
+
+    toolkit = _toolkit(three_seat_roster)
+    seen = {}
+
+    async def _bg_status(execution_id, handle, since_revision=None, tail_bytes=2048):
+        seen["args"] = (execution_id, handle, since_revision, tail_bytes)
+        return BackgroundStatus(
+            state="finished",
+            outcome="completed",
+            exit_code=0,
+            source="background-registry:validation",
+            authority="supervisor",
+            verified_at=None,
+            stale=False,
+            revision=1,
+            changed=True,
+            elapsed_ms=5,
+            next_poll_after_ms=5000,
+        )
+
+    monkeypatch.setattr(toolkit._engine, "bg_status", _bg_status)
+    result = await toolkit.coder_bg_status(execution_id=VALID_EXECUTION_ID, handle="h-1")
+    assert result.status == "ok"
+    assert result.data["state"] == "finished"
+    assert seen["args"] == (VALID_EXECUTION_ID, "h-1", None, 2048)
+
+    async def _raise(*args, **kwargs):
+        raise CoderFailure("background_not_found", "x")
+
+    monkeypatch.setattr(toolkit._engine, "bg_status", _raise)
+    result = await toolkit.coder_bg_status(execution_id=VALID_EXECUTION_ID, handle="h-1")
+    assert result.status == "error"
+    assert result.error.code == "background_not_found"
+
+
+async def test_run_validation_pre_execute_validates_schema(three_seat_roster):
+    """`coder_run_validation` bounds task_ids/tier/timeout_seconds/request_id before the engine runs."""
+    toolkit = _toolkit(three_seat_roster)
+    await toolkit._pre_execute(
+        "coder_run_validation",
+        feature="f",
+        worktree="/abs",
+        execution_id=VALID_EXECUTION_ID,
+        task_ids=["TASK-1"],
+        tier="merge",
+        timeout_seconds=60,
+        request_id="req-1",
+    )  # must not raise
+
+    async def _bad(**kwargs):
+        base = dict(
+            feature="f",
+            worktree="/abs",
+            execution_id=VALID_EXECUTION_ID,
+            task_ids=["TASK-1"],
+            tier="merge",
+            timeout_seconds=60,
+            request_id="req-1",
+        )
+        base.update(kwargs)
+        with pytest.raises(CoderFailure) as excinfo:
+            await toolkit._pre_execute("coder_run_validation", **base)
+        assert excinfo.value.code == "invalid_arguments"
+
+    await _bad(worktree="rel")
+    await _bad(task_ids=[])
+    await _bad(task_ids=["not-a-task-id"])
+    await _bad(tier="unknown")
+    await _bad(timeout_seconds=0)
+    await _bad(timeout_seconds=7201)
+    await _bad(request_id="")
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute(
+            "coder_run_validation",
+            feature="f",
+            worktree="/abs",
+            task_ids=["TASK-1"],
+            tier="merge",
+            timeout_seconds=60,
+            request_id="req-1",
+        )
+    assert excinfo.value.code == "execution_required"
+
+
+async def test_run_validation_routes_through_run(three_seat_roster, monkeypatch):
+    """`coder_run_validation` maps a `BackgroundRegistration` engine result through `_run`."""
+    from datetime import datetime, timezone
+
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration
+
+    toolkit = _toolkit(three_seat_roster)
+    seen = {}
+
+    async def _run_validation(feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id):
+        seen["args"] = (feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id)
+        return BackgroundRegistration(
+            handle="req-1",
+            execution_id=execution_id,
+            launch_id="launch-1",
+            owner_instance_id="owner-1",
+            kind="validation",
+            authority="supervisor",
+            worktree=worktree,
+            backend="pytest-subprocess",
+            started_at=datetime.now(timezone.utc),
+        )
+
+    monkeypatch.setattr(toolkit._engine, "run_validation", _run_validation)
+    result = await toolkit.coder_run_validation(
+        feature="f",
+        worktree="/abs",
+        execution_id=VALID_EXECUTION_ID,
+        task_ids=["TASK-1"],
+        tier="merge",
+        timeout_seconds=60,
+        request_id="req-1",
+    )
+    assert result.status == "ok"
+    assert result.data["handle"] == "req-1"
+    assert seen["args"] == ("f", "/abs", VALID_EXECUTION_ID, ["TASK-1"], "merge", 60, "req-1")
+
+    async def _raise(*args, **kwargs):
+        raise CoderFailure("validation_request_conflict", "x")
+
+    monkeypatch.setattr(toolkit._engine, "run_validation", _raise)
+    result = await toolkit.coder_run_validation(
+        feature="f",
+        worktree="/abs",
+        execution_id=VALID_EXECUTION_ID,
+        task_ids=["TASK-1"],
+        tier="merge",
+        timeout_seconds=60,
+        request_id="req-1",
+    )
+    assert result.status == "error"
+    assert result.error.code == "validation_request_conflict"
 
 
 async def test_toolkit_pre_execute_via_full_execute_path_never_reaches_engine(three_seat_roster, monkeypatch):

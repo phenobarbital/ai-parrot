@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Set, Tuple
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -73,11 +73,23 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     SeatProbeResult,
     TaskResult,
 )
-from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef, WorkflowEvent
+from parrot.flows.dev_loop.sdd_coder.optimization_models import (
+    BackgroundRegistration,
+    BackgroundStatus,
+    EvidenceRef,
+    WorkflowEvent,
+)
 from parrot.flows.dev_loop.sdd_coder.evidence import (
     EvidenceConflictError,
     EvidenceCorruptionError,
     ExecutionEvidenceStore,
+)
+from parrot.flows.dev_loop.sdd_coder.background import (
+    BackgroundBudgetExceededError,
+    BackgroundConflictError,
+    BackgroundNotFoundError,
+    BackgroundRegistry,
+    ValidationSupervisor,
 )
 from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityAssessment,
@@ -421,6 +433,27 @@ class SddCoderEngine:
         # writes flat `<feature_id>.jsonl` files directly under that root
         # while the store owns its own `executions/` subdirectory.
         self._evidence_store: Optional[ExecutionEvidenceStore] = None
+        # FEAT-584 M8/R8: durable handle registry + validation supervisor, bound to
+        # the SAME evidence store/root as `_evidence_store` (spec: "Reutilizar
+        # resolve_durable_root") and this engine instance's own unique owner id --
+        # only constructed when a durable store exists, since a handle registered
+        # only in memory could never survive a restart (background.py's own
+        # contract). `_instance_id` is unique per engine PROCESS instance, never
+        # reused, so `BackgroundRegistry.status()` can tell "this engine still
+        # owns the launch" from "a different (possibly restarted) engine does".
+        self._instance_id: str = uuid.uuid4().hex
+        self._background_registry: Optional[BackgroundRegistry] = None
+        self._validation_supervisor: Optional[ValidationSupervisor] = None
+        # handle -> the execution_id it was registered under by THIS engine
+        # instance (spec R8: "Poseer un handle no evita comprobar ownership") --
+        # engine-local bookkeeping, same pattern as `_manager_execution`/
+        # `_native_reservations` above.
+        self._handle_execution: Dict[str, str] = {}
+        # execution_id -> handles of validations THIS engine admitted for it,
+        # used to gate `end_execution`/`cleanup` on real settlement (spec R8:
+        # "pending/running/unknown de validaciones admitidas bloquean checkpoint
+        # y cleanup de su worktree").
+        self._validation_handles: Dict[str, Set[str]] = {}
         if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
             from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
 
@@ -428,6 +461,12 @@ class SddCoderEngine:
             telemetry_root = resolve_durable_root(effective_dir, worktree_base_path=self._base_path)
             self._sink = CoderTelemetrySink(telemetry_root)
             self._evidence_store = ExecutionEvidenceStore(telemetry_root)
+            self._background_registry = BackgroundRegistry(
+                store=self._evidence_store, owner_instance_id=self._instance_id
+            )
+            self._validation_supervisor = ValidationSupervisor(
+                registry=self._background_registry, store=self._evidence_store
+            )
 
     async def open(self) -> None:
         """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available.
@@ -731,6 +770,11 @@ class SddCoderEngine:
         # made `end_execution` fall straight through to the snapshot-enrichment
         # loop below with the in-flight reservation never having settled).
         if view.status != "closed":
+            # FEAT-584 M8/R8: pending/running/unknown admitted validations block
+            # close exactly like attempts/reservations/jobs do -- reuses the SAME
+            # execution_busy code (spec: "preservar execution_busy/recovery_required"),
+            # never a synthetic settlement.
+            await self._assert_no_pending_validations(execution_id)
             # Check admitted attempts
             snapshot = pool.snapshot()
             if snapshot.admitted_attempts:
@@ -776,11 +820,194 @@ class SddCoderEngine:
             pool._persistence_degraded = True
             self.logger.warning("failed to durably close execution %s; persistence status is degraded", execution_id)
 
+        # FEAT-584 M8/R8: publish a durable settlement artifact OUTSIDE the
+        # worktree, only reached once the busy gates above have already passed.
+        # This is a SEPARATE, out-of-worktree copy from the in-worktree snapshot
+        # above -- its own failure degrades the same `persistence_degraded` flag
+        # (never a new close-blocking error) so the existing close result/shape
+        # is preserved; a future checkpoint's own gate reads this artifact
+        # directly rather than trusting the flag as authority.
+        if self._evidence_store is not None:
+            try:
+                await self._evidence_store.put_artifact(execution_id, snapshot)
+            except (OSError, ValueError) as exc:
+                pool._persistence_degraded = True
+                self.logger.warning(
+                    "failed to publish durable settlement artifact for execution %s: %s", execution_id, exc
+                )
+
         # Release ownership after durable close
         if self._execution_owners.get(canonical_worktree) == execution_id:
             del self._execution_owners[canonical_worktree]
 
         return pool.view()
+
+    async def _assert_no_pending_validations(self, execution_id: str) -> None:
+        """Refuse while any admitted validation for *execution_id* has not settled (spec R8).
+
+        `pending`/`running`/`unknown` all block; only `finished` (regardless of
+        outcome -- never re-interpreted as acceptance here) counts as settled.
+        Reads the durable registry itself (never a cached in-memory outcome), so
+        a validation that settled after this engine restarted is still honored.
+        """
+        if self._background_registry is None:
+            return
+        handles = self._validation_handles.get(execution_id)
+        if not handles:
+            return
+        unsettled: List[str] = []
+        for handle in sorted(handles):
+            try:
+                status = await self._background_registry.status(execution_id, handle)
+            except BackgroundNotFoundError:
+                continue
+            if status.state != "finished":
+                unsettled.append(handle)
+        if unsettled:
+            raise CoderFailure(
+                "execution_busy",
+                f"execution {execution_id} has {len(unsettled)} background validation(s) not yet settled",
+                unsettled_handles=unsettled,
+            )
+
+    async def bg_status(
+        self,
+        execution_id: str,
+        handle: str,
+        since_revision: Optional[int] = None,
+        tail_bytes: int = 2048,
+    ) -> BackgroundStatus:
+        """Read known state and a bounded registered log without waiting for completion (spec R8).
+
+        `handle` is never adopted from an unregistered value -- it only
+        resolves against a launch THIS engine (or a prior instance sharing the
+        SAME durable store) actually registered. Owning a handle string alone
+        does not skip the ownership check: a handle THIS engine instance
+        registered under a different execution_id is rejected before the
+        registry is even consulted.
+
+        Args:
+            execution_id: The execution that must own this handle.
+            handle: The opaque handle emitted at registration time.
+            since_revision: When equal to the record's current revision, the
+                log tail is omitted and `changed=False`.
+            tail_bytes: Bounded registered-log tail to read, 0..4096.
+
+        Raises:
+            CoderFailure with codes:
+                - background_status_unavailable: no durable background registry is
+                  configured for this engine, or the read exceeded its 1s I/O budget
+                - execution_not_found: unknown execution_id
+                - background_scope_mismatch: handle registered under a different execution_id
+                - background_not_found: no registration exists for (execution_id, handle)
+                - background_source_unsupported: the registration is an unsupported
+                  external ("host_bridge") source with no verified receipt bridge
+        """
+        if self._background_registry is None:
+            raise CoderFailure(
+                "background_status_unavailable", "no durable background registry is configured for this engine"
+            )
+        if execution_id not in self._executions:
+            raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
+
+        owner_execution = self._handle_execution.get(handle)
+        if owner_execution is not None and owner_execution != execution_id:
+            raise CoderFailure(
+                "background_scope_mismatch",
+                f"handle {handle!r} was registered under a different execution_id, not {execution_id!r}",
+            )
+
+        try:
+            status = await self._background_registry.status(
+                execution_id, handle, since_revision=since_revision, tail_bytes=tail_bytes
+            )
+        except BackgroundNotFoundError as exc:
+            raise CoderFailure("background_not_found", str(exc)) from exc
+        except BackgroundBudgetExceededError as exc:
+            raise CoderFailure("background_status_unavailable", str(exc)) from exc
+
+        if status.source.endswith(":host_bridge"):
+            raise CoderFailure(
+                "background_source_unsupported",
+                "no verified receipt bridge exists for an external host_bridge background source",
+            )
+        return status
+
+    async def run_validation(
+        self,
+        feature: str,
+        worktree: str,
+        execution_id: str,
+        task_ids: List[str],
+        tier: Literal["merge", "feature"],
+        timeout_seconds: int,
+        request_id: str,
+    ) -> BackgroundRegistration:
+        """Admit only a declared, protected, idempotent validation selection (spec R8).
+
+        Delegates process ownership entirely to `ValidationSupervisor.start()`
+        (protected argv, bounded log, deadline, terminal receipt); this method
+        only establishes feature/execution ownership and validates that
+        `task_ids` are actually declared in the current per-spec index before
+        anything is admitted.
+
+        Args:
+            feature: Feature identifier (matches per-spec index header).
+            worktree: Absolute path to the feature worktree.
+            execution_id: The execution that must own this worktree.
+            task_ids: Declared TASK ids this validation covers.
+            tier: 'merge' (changed-scope) or 'feature' (full applicable set).
+            timeout_seconds: Explicit deadline, 1..7200.
+            request_id: Stable id providing idempotency for a repeated call.
+
+        Raises:
+            CoderFailure with codes:
+                - worktree_outside_base / feature_not_found: from `_resolve_feature`
+                - execution_not_found / execution_scope_mismatch: foreign/unknown execution
+                - background_status_unavailable: no durable validation supervisor configured
+                - validation_scope_invalid: a task_id is not declared in the index, or
+                  tier='feature' was called without the full applicable task set
+                - validation_request_conflict: request_id reused with a different payload
+                - invalid_arguments: a malformed request the supervisor itself rejected
+        """
+        ctx = await self._resolve_feature(feature, worktree)
+        self._require_execution_owns(ctx, execution_id)
+        if self._validation_supervisor is None:
+            raise CoderFailure(
+                "background_status_unavailable", "no durable validation supervisor is configured for this engine"
+            )
+
+        sched = await self._scheduler_for(ctx)
+        known_ids = {t.id for t in sched.all_tasks()}
+        for task_id in task_ids:
+            if task_id not in known_ids:
+                raise CoderFailure(
+                    "validation_scope_invalid", f"{task_id} is not declared in the per-spec index for {feature!r}"
+                )
+        if tier == "feature" and set(task_ids) != known_ids:
+            raise CoderFailure(
+                "validation_scope_invalid",
+                "tier='feature' requires the full applicable task set from the per-spec index",
+            )
+
+        try:
+            registration = await self._validation_supervisor.start(
+                feature=feature,
+                worktree=Path(ctx.worktree),
+                execution_id=execution_id,
+                task_ids=task_ids,
+                tier=tier,
+                timeout_seconds=timeout_seconds,
+                request_id=request_id,
+            )
+        except BackgroundConflictError as exc:
+            raise CoderFailure("validation_request_conflict", str(exc)) from exc
+        except ValueError as exc:
+            raise CoderFailure("invalid_arguments", str(exc)) from exc
+
+        self._handle_execution[registration.handle] = execution_id
+        self._validation_handles.setdefault(execution_id, set()).add(registration.handle)
+        return registration
 
     async def record_native_observation(
         self,
@@ -876,7 +1103,7 @@ class SddCoderEngine:
             ) from exc
 
         try:
-            return await self._evidence_store.append_event(event)
+            ref = await self._evidence_store.append_event(event)
         except EvidenceConflictError as exc:
             raise CoderFailure("observation_conflict", str(exc)) from exc
         except EvidenceCorruptionError as exc:
@@ -885,6 +1112,31 @@ class SddCoderEngine:
             raise CoderFailure("evidence_invalid", str(exc)) from exc
         except OSError as exc:
             raise CoderFailure("evidence_persistence_failed", str(exc)) from exc
+
+        # FEAT-584 M8/R8: best-effort link this observation to its registered
+        # `native_agent` handle -- native_observation is the ONLY authority that
+        # transitions it (host_observation authority: never an independent proof
+        # of a live process or a POSIX exit code). A registry hiccup here never
+        # invalidates the durable observation already persisted above.
+        if self._background_registry is not None:
+            try:
+                if obs.kind == "dispatched":
+                    await self._background_registry._record_transition(  # noqa: SLF001
+                        execution_id, obs.attempt_uid, state="running"
+                    )
+                elif obs.kind == "finished" and obs.terminal is not None:
+                    outcome = "completed" if obs.terminal in ("completed", "salvaged") else "failed"
+                    await self._background_registry._record_transition(  # noqa: SLF001
+                        execution_id, obs.attempt_uid, state="finished", outcome=outcome
+                    )
+            except BackgroundNotFoundError:
+                pass  # no registration exists (e.g. a legacy/no-execution attempt)
+            except Exception:  # noqa: BLE001 -- background linkage must never break the durable observation
+                self.logger.exception(
+                    "failed to link background handle for native observation attempt=%s", obs.attempt_uid
+                )
+
+        return ref
 
     def _require_execution_owns(self, ctx: _FeatureCtx, execution_id: str) -> None:
         """Same ownership check `record_native_observation` applies: reject a foreign/unknown execution.
@@ -1557,6 +1809,36 @@ class SddCoderEngine:
         self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)
         feedback_context = await self._feedback_for(ctx, planned, "native", model)
         self._feedback_contexts[attempt_uid] = feedback_context
+
+        # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
+        # `native_observation` (below) is the ONLY authority that later links it to
+        # an agent_id/transitions its state (host_observation authority: "no son
+        # prueba independiente de proceso vivo ni código POSIX"). Idempotent by
+        # construction: a duplicate `prepare_native` call reuses the SAME
+        # `attempt_uid` above, so `BackgroundRegistry.register` just replays.
+        bg_handle: Optional[str] = None
+        if self._background_registry is not None and execution_id is not None:
+            try:
+                registration = BackgroundRegistration(
+                    handle=attempt_uid,
+                    execution_id=execution_id,
+                    task_id=task_id,
+                    attempt_uid=attempt_uid,
+                    launch_id=attempt_uid,
+                    owner_instance_id=self._instance_id,
+                    kind="native_agent",
+                    authority="host_observation",
+                    worktree=ctx.worktree,
+                    backend="native-agent",
+                    started_at=datetime.now(timezone.utc),
+                )
+                await self._background_registry.register(registration)
+            except Exception:  # noqa: BLE001 -- background registration must never break prepare_native
+                self.logger.exception("failed to register background handle for native attempt %s", attempt_uid)
+            else:
+                self._handle_execution[attempt_uid] = execution_id
+                bg_handle = attempt_uid
+
         return NativePrep(
             task_id=task_id,
             task_file=planned.task_file,
@@ -1568,6 +1850,7 @@ class SddCoderEngine:
             coder_feedback=feedback_context,
             assessment_id=assessment_id,
             execution_id=execution_id or "",
+            bg_handle=bg_handle,
         )
 
     async def suspend_model(
@@ -1960,8 +2243,15 @@ class SddCoderEngine:
         exact execution scope are enumerated -- another execution's (or the legacy/
         no-execution scope's) managers, native reservations and jobs are untouched,
         even if they belong to the same engine instance/worktree.
+
+        FEAT-584 M8/R8: also refuses (`execution_busy`) while THIS execution has
+        an admitted validation that has not settled -- same gate `end_execution`
+        applies, so a worktree a background validation is still reading is never
+        removed out from under it.
         """
         await self._resolve_feature(feature, worktree)
+        if execution_id:
+            await self._assert_no_pending_validations(execution_id)
         scope = execution_id or ""
         removed: List[str] = []
         kept: List[str] = []
@@ -2994,10 +3284,48 @@ class SddCoderEngine:
                     results.append(TaskResult(task_id=tid, outcome="failed", diagnostics=str(raw)))
             snapshot = self._jobs.snapshot(job.job_id)
             await self._journal(ctx.worktree, snapshot.model_copy(update={"tasks": results}))
+            # FEAT-584 M8/R8: settle the SAME registered handle with the real
+            # logical outcome from this dispatch -- never a fabricated POSIX
+            # exit_code (background.py itself rejects one for kind='mcp_job').
+            if job.job_id in self._handle_execution:
+                outcome = "failed" if any(isinstance(raw, BaseException) for raw in raw_results) else "completed"
+                try:
+                    await self._background_registry._record_transition(  # noqa: SLF001 -- same-package internal API
+                        execution_id, job.job_id, state="finished", outcome=outcome
+                    )
+                except Exception:  # noqa: BLE001 -- background settlement must never break dispatch
+                    self.logger.exception("failed to settle background handle for job %s", job.job_id)
             return results
 
         job = self._jobs.create(ctx.feature_id, list(task_ids), runner, execution_id=execution_id or "")
         self._job_worktrees[job.job_id] = ctx.worktree
+        # FEAT-584 M8/R8: register a real background handle for this dispatch --
+        # `bg_handle` is `job_id` itself (never a second invented id), added
+        # WITHOUT changing `job_id` (spec: "coder_run_chunk añade bg_handle sin
+        # cambiar job_id"). Only possible with a durable registry AND a real
+        # execution_id -- `BackgroundRegistration.execution_id` requires a UUID.
+        if self._background_registry is not None and execution_id:
+            try:
+                registration = BackgroundRegistration(
+                    handle=job.job_id,
+                    execution_id=execution_id,
+                    launch_id=job.job_id,
+                    owner_instance_id=self._instance_id,
+                    kind="mcp_job",
+                    authority="engine",
+                    worktree=ctx.worktree,
+                    backend="engine-job-table",
+                    started_at=datetime.now(timezone.utc),
+                )
+                await self._background_registry.register(registration)
+                await self._background_registry._record_transition(  # noqa: SLF001 -- same-package internal API
+                    execution_id, job.job_id, state="running"
+                )
+            except Exception:  # noqa: BLE001 -- background registration must never break dispatch
+                self.logger.exception("failed to register background handle for job %s", job.job_id)
+            else:
+                self._handle_execution[job.job_id] = execution_id
+                job = job.model_copy(update={"bg_handle": job.job_id})
         await self._journal(ctx.worktree, job)
         return job
 
