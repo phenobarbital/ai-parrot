@@ -12,6 +12,7 @@ from parrot.tools.toolkit import AbstractToolkit  # verified: parrot/tools/toolk
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import (
     CoderCleanupArgs,
+    CoderDeliveryReportArgs,
     CoderEndExecutionArgs,
     CoderError,
     CoderFeedbackReportArgs,
@@ -26,6 +27,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     CoderResult,
     CoderRunChunkArgs,
     CoderStatusArgs,
+    CoderTaskContextArgs,
     CoderWaitArgs,
     RosterConfig,
     SuspendModelArgs,
@@ -66,6 +68,9 @@ class SddCoderToolkit(AbstractToolkit):
         "coder_record_review": CoderRecordReviewArgs,
         # FEAT-584 M2/R3: worker-reported native observation (no acceptance, no release).
         "coder_record_native_observation": CoderRecordNativeObservationArgs,
+        # FEAT-584 M1b/R1b: purposeful, side-effect-free reads (same shape as prepare_native).
+        "coder_task_context": CoderTaskContextArgs,
+        "coder_delivery_report": CoderDeliveryReportArgs,
         # FEAT-559: split from CoderPlanArgs -- the repository-wide feedback report
         # is read-only and never starts or requires an execution (CoderPlanArgs
         # itself now REQUIRES execution_id, so reusing it here would be a bug).
@@ -169,12 +174,17 @@ class SddCoderToolkit(AbstractToolkit):
                 except KeyError:
                     continue
 
-    async def _run(self, operation: str, coro: Awaitable[BaseModel]) -> CoderResult:
+    async def _run(self, operation: str, coro: Awaitable[Union[BaseModel, Dict[str, Any]]]) -> CoderResult:
         t0 = time.monotonic()
         try:
             data = await coro
+            # FEAT-584 M1b: `coder_task_context`/`coder_delivery_report` resolve to a plain
+            # bounded dict (`inspection.py`'s own return type), not a `CoderResult`-nested
+            # BaseModel like every other tool here -- accept both rather than forcing a
+            # throwaway wrapper model onto a read-only projection.
+            payload = data.model_dump() if isinstance(data, BaseModel) else dict(data)
             return CoderResult(
-                status="ok", operation=operation, data=data.model_dump(), elapsed_ms=int((time.monotonic() - t0) * 1000)
+                status="ok", operation=operation, data=payload, elapsed_ms=int((time.monotonic() - t0) * 1000)
             )
         except CoderFailure as exc:
             return CoderResult(
@@ -276,6 +286,33 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run(
             "coder_record_native_observation",
             self._engine.record_native_observation(feature, worktree, execution_id, observation),
+        )
+
+    async def coder_task_context(self, feature: str, worktree: str, task_id: str, execution_id: str) -> CoderResult:
+        """Inspect task context and blockers without modifying SDD state.
+
+        Snapshot of the task's index entry, dependency status (unmet
+        dependencies are always listed in `blockers`, never treated as
+        satisfied) and declared file contract, replacing a manual
+        index -> task -> dependencies -> contract read chain. Never marks a
+        task ready on trust and never converts an unaccepted dependency into
+        ready.
+        """
+        return await self._run(
+            "coder_task_context", self._engine.task_context(feature, worktree, task_id, execution_id)
+        )
+
+    async def coder_delivery_report(self, feature: str, worktree: str, task_id: str, execution_id: str) -> CoderResult:
+        """Inspect delivery scope and known evidence; never validates, autofixes or merges.
+
+        Reports the execution-owned attempt branch, commit count, diff stat,
+        changed/out-of-scope files (per the existing file-fidelity contract)
+        and the sub-worktree's own status. Never runs tests or a merge:
+        lint/test/review evidence not already durably recorded is reported
+        as `"unknown"`, never fabricated as a pass.
+        """
+        return await self._run(
+            "coder_delivery_report", self._engine.delivery_report(feature, worktree, task_id, execution_id)
         )
 
     async def coder_feedback_report(self, feature: str, worktree: str) -> CoderResult:

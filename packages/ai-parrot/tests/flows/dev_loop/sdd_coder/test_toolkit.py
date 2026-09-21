@@ -34,6 +34,9 @@ EXPECTED_TOOLS = {
     "coder_suspend_model",
     # FEAT-584 M2/R3: worker-reported native observation (no acceptance, no release).
     "coder_record_native_observation",
+    # FEAT-584 M1b/R1b: purposeful, side-effect-free reads.
+    "coder_task_context",
+    "coder_delivery_report",
 }
 
 
@@ -187,6 +190,8 @@ def test_registered_schemas_require_execution_identity(three_seat_roster):
         "coder_record_feedback",
         "coder_record_review",
         "coder_record_native_observation",
+        "coder_task_context",
+        "coder_delivery_report",
     }
     unscoped = {"coder_wait", "coder_status", "coder_feedback_report"}
     for tool in toolkit.get_tools():
@@ -271,6 +276,92 @@ async def test_record_native_observation_routes_through_run(three_seat_roster, m
     )
     assert result.status == "error"
     assert result.error.code == "attempt_not_found"
+
+
+async def test_task_context_pre_execute_validates_schema(three_seat_roster):
+    """`coder_task_context` shares `CoderPrepareNativeArgs`' shape: task_id/execution_id/absolute worktree."""
+    toolkit = _toolkit(three_seat_roster)
+    await toolkit._pre_execute(
+        "coder_task_context", feature="f", worktree="/abs", task_id="TASK-1", execution_id=VALID_EXECUTION_ID
+    )  # must not raise
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute(
+            "coder_task_context", feature="f", worktree="/abs", task_id="not-a-task-id", execution_id=VALID_EXECUTION_ID
+        )
+    assert excinfo.value.code == "invalid_arguments"
+
+    with pytest.raises(CoderFailure) as excinfo2:
+        await toolkit._pre_execute("coder_task_context", feature="f", worktree="/abs", task_id="TASK-1")
+    assert excinfo2.value.code == "execution_required"
+
+
+async def test_delivery_report_pre_execute_validates_schema(three_seat_roster):
+    """`coder_delivery_report` shares the same strict argument shape."""
+    toolkit = _toolkit(three_seat_roster)
+    await toolkit._pre_execute(
+        "coder_delivery_report", feature="f", worktree="/abs", task_id="TASK-1", execution_id=VALID_EXECUTION_ID
+    )  # must not raise
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute(
+            "coder_delivery_report", feature="f", worktree="rel", task_id="TASK-1", execution_id=VALID_EXECUTION_ID
+        )
+    assert excinfo.value.code == "invalid_arguments"
+
+
+async def test_task_context_routes_through_run(three_seat_roster, monkeypatch):
+    """`coder_task_context` maps a plain dict engine result through `_run` like every other tool."""
+    toolkit = _toolkit(three_seat_roster)
+    seen = {}
+
+    async def _task_context(feature, worktree, task_id, execution_id):
+        seen["args"] = (feature, worktree, task_id, execution_id)
+        return {"task_id": task_id, "ready": True, "blockers": []}
+
+    monkeypatch.setattr(toolkit._engine, "task_context", _task_context)
+    result = await toolkit.coder_task_context(
+        feature="f", worktree="/abs", task_id="TASK-1", execution_id=VALID_EXECUTION_ID
+    )
+    assert result.status == "ok"
+    assert result.data == {"task_id": "TASK-1", "ready": True, "blockers": []}
+    assert seen["args"] == ("f", "/abs", "TASK-1", VALID_EXECUTION_ID)
+
+    async def _raise(*args, **kwargs):
+        raise CoderFailure("task_not_in_plan", "x")
+
+    monkeypatch.setattr(toolkit._engine, "task_context", _raise)
+    result = await toolkit.coder_task_context(
+        feature="f", worktree="/abs", task_id="TASK-1", execution_id=VALID_EXECUTION_ID
+    )
+    assert result.status == "error"
+    assert result.error.code == "task_not_in_plan"
+
+
+async def test_delivery_report_routes_through_run(three_seat_roster, monkeypatch):
+    """`coder_delivery_report` maps a plain dict engine result through `_run` like every other tool."""
+    toolkit = _toolkit(three_seat_roster)
+
+    async def _delivery_report(feature, worktree, task_id, execution_id):
+        return {"task_id": task_id, "branch": "b", "lint_evidence": "unknown"}
+
+    monkeypatch.setattr(toolkit._engine, "delivery_report", _delivery_report)
+    result = await toolkit.coder_delivery_report(
+        feature="f", worktree="/abs", task_id="TASK-1", execution_id=VALID_EXECUTION_ID
+    )
+    assert result.status == "ok"
+    assert result.data["branch"] == "b"
+    assert result.data["lint_evidence"] == "unknown"
+
+    async def _raise(*args, **kwargs):
+        raise CoderFailure("branch_not_found", "x")
+
+    monkeypatch.setattr(toolkit._engine, "delivery_report", _raise)
+    result = await toolkit.coder_delivery_report(
+        feature="f", worktree="/abs", task_id="TASK-1", execution_id=VALID_EXECUTION_ID
+    )
+    assert result.status == "error"
+    assert result.error.code == "branch_not_found"
 
 
 async def test_toolkit_pre_execute_via_full_execute_path_never_reaches_engine(three_seat_roster, monkeypatch):
