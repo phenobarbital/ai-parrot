@@ -66,7 +66,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -76,8 +76,8 @@
       "parallelism_notes": "Depende de TASK-3556 por implementación M1. Tests de integración y benchmark propios; no comparte fuentes del runner.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3557-inspection-mcp-benchmark.md"
+      "completed_at": "2026-09-21T01:24:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3557-inspection-mcp-benchmark.md"
     },
     {
       "id": "TASK-3558",

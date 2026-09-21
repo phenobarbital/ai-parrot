@@ -193,4 +193,39 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `5f6447a05b5441159c2e977788108651`). Read
+TASK-3556's delivered `inspection.py`/`inspection_models.py` first. Created only the two
+CREATE targets:
+
+- `packages/ai-parrot-tools/tests/tool_optimizations/integration/test_inspection_mcp.py`
+  — real stdio JSON-RPC subprocess discovery + a 4-item mixed batch (ok/ok/not_found/git_status)
+  asserting stdout purity, `isError` False, per-item identity preservation, `partial`/`consistent`
+  flags; plus an in-process raw-argument-rejection test (six malformed shapes) using
+  `create_toolkit_mcp_server`.
+- `packages/ai-parrot-tools/tests/tool_optimizations/test_inspection_benchmark.py` — times 8
+  items at concurrency=4 vs concurrency=1 via a controlled monkeypatched sleep (never real disk
+  timing), asserting the 2 to 4 overlap band, identical outputs, and a p50 ratio bound; evidence
+  written to `artifacts/logs/` (gitignored).
+
+The MODIFY target (`test_stdio_protocol.py`) was already updated correctly by TASK-3556's own
+follow-up fix commit (`86f742a5f`); verified the anchor content and left it untouched per
+instructions not to restore a stale hash.
+
+Flagged (not fixed, pre-existing, out of scope): mixing test files across
+`tool_optimizations/` root and `tool_optimizations/integration/` in a single `pytest a b c`
+invocation can drop the `tmp_repo_with_yaml` fixture for the last integration file in
+argument order. Reproduced on baseline files alone (`test_inspection.py` +
+`test_raw_mcp_validation.py` + `test_stdio_protocol.py`, none touched by this task) — a
+pre-existing conftest/rootdir collection quirk, not introduced here. The task's own
+Validation Commands run each file separately, which is what was run.
+
+Validation:
+- `pytest packages/ai-parrot-tools/tests/tool_optimizations/integration/test_inspection_mcp.py -q` → 2 passed.
+- `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_inspection_benchmark.py -q` → 1 passed.
+- `pytest packages/ai-parrot-tools/tests/tool_optimizations/integration/test_stdio_protocol.py -q` → 6 passed.
+- `select_tests --tier merge` scoped to completed tasks (TASK-3555, TASK-3556, TASK-3557) → 433 passed, 1 deselected, plus 17 passed.
+- `git status --porcelain --untracked-files=all` clean except gitignored `artifacts/logs/`.
+
+Review: `coder-review:35bf067c1681b2cdc7d1251e` (zero fix commits — clean delivery).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 718699ms (~12m) · Tokens: 189535 (subagent total, in/out split not exposed for native).
