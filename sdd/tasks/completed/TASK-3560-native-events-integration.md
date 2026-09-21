@@ -278,4 +278,59 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completed 2026-09-21 by native sonnet coder (attempt `75123a2c770847e9926fbc3ad938ec36`). Touched
+only the five listed targets:
+
+- `engine.py` MODIFY — added `self._evidence_store: Optional[ExecutionEvidenceStore]`
+  constructed alongside the existing telemetry sink under the same
+  `telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY` gate (no new conf var, no
+  behavior change for callers that never pass `telemetry_dir`). Added
+  `record_native_observation(feature, worktree, execution_id, observation) -> EvidenceRef`:
+  resolves the feature, validates the raw observation dict against `NativeObservation`,
+  checks the execution owns the given feature/worktree, checks `attempt_uid` matches the
+  execution's own native reservation for `task_id`, then appends a `delivery.observed`
+  `WorkflowEvent`. Maps `EvidenceConflictError` to `observation_conflict`,
+  `EvidenceCorruptionError`/`OSError` to `evidence_persistence_failed`, schema/`ValueError`
+  to `evidence_invalid`. Never touches pool release/merge/consolidate.
+- `models.py` MODIFY — extended `ERROR_CODES` with the five spec-mandated codes plus
+  `attempt_not_found` (a pre-existing gap: `suspend_model` already raised it but it was
+  missing from the closed set; a tightly-coupled 1-line fix, not scope creep). Added
+  `NativeObservation` and `CoderRecordNativeObservationArgs(CoderPlanArgs)`.
+- `toolkit.py` MODIFY — registered `coder_record_native_observation` in `arg_models` and
+  routed it through the existing generic `_run()`.
+- `test_toolkit.py` MODIFY — extended `EXPECTED_TOOLS` and the execution_id-scoped set; two
+  new tests for `_pre_execute` validation and `_run` success/error mapping.
+- `test_native_observations.py` CREATE — three scenarios: valid observation leaves pool
+  admission/merge gates untouched; foreign execution and unknown attempt fail before any
+  durable write, a valid observation settles, a same-event_id different-content retry is
+  rejected (`observation_conflict`); a forced `append_event` `OSError` surfaces as
+  `evidence_persistence_failed` while a subsequent real `merge()` for the same task still
+  succeeds.
+
+Design decision flagged and accepted: the blueprint's engine method signature literally said
+`-> dict[str, object]`, but `SddCoderToolkit._run()` calls `.model_dump()` on the return
+value, requiring a `BaseModel`. Resolved by returning `EvidenceRef` (the same type
+`ExecutionEvidenceStore.append_event` already returns), consistent with every other engine
+method `_run()` composes with — a necessary resolution of a contradiction between two
+blueprint-declared signatures, not an invented API.
+
+Collateral breakage flagged by the coder (correctly not fixed out of scope) and fixed by
+the orchestrator: two sibling test files hardcode the toolkit's exposed tool-name set
+independently of `test_toolkit.py` (`test_mcp_local.py::EXPECTED`,
+`test_execution_pool_integration.py::test_mcp_and_prompt_twins`, the latter also requiring
+every registered MCP tool to be allow-listed in the sdd-worker prompt frontmatter, both
+canonical and packaged twin). Fixed in commit `8181d58ca` (not recordable via
+`coder_record_review`'s `fix_commits` since it does not follow the
+`fix(<feature>): TASK-N review fixes` message convention the tool validates against;
+recorded here instead), following the identical precedent of TASK-3556's own follow-up fix
+(`86f742a5f`).
+
+Validation:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_toolkit.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_native_observations.py -q` → 21 passed.
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_mcp_local.py packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py -q` → 16 passed (post-fix; 3 failed pre-fix, matching the coder's own diagnosis).
+- `select_tests --tier merge` escalated to core (engine.py is a core module): full `packages/ai-parrot/tests` sweep → 2240 passed, 24 failed, 28 errors — every failure/error confined to the unrelated `packages/ai-parrot-integrations` satellite package (Telegram, Matrix, Jira, Slack, voice-demo-browser modules with no dependency on `sdd_coder`); zero failures in `packages/ai-parrot/tests` itself. Confirmed pre-existing/environmental, not a regression from this task. `tool_optimizations` suite 433 passed/1 deselected; wiki compaction suite 17 passed.
+- `git status --porcelain --untracked-files=all` clean except gitignored build artifacts.
+
+Review: `coder-review:2cbeef63345c2d8dac9d8e5f` (fix commit `8181d58ca`, applied by the orchestrator, not the coder).
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 1110335ms (~18m30s) · Tokens: 286754 (subagent total, in/out split not exposed for native).
