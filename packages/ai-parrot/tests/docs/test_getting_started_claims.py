@@ -264,7 +264,10 @@ def test_hello_world_snippet_executes(monkeypatch) -> None:
     # GoogleGenAIClient (see docstring above). Only needed if the real
     # satellite/its own deps aren't importable in this environment.
     try:
-        import parrot.clients.google  # noqa: F401
+        # Guard on the SYMBOL, not the module: parrot.clients.google can
+        # import as a namespace module while GoogleGenAIClient is absent
+        # (satellite not installed) — the module-only guard missed that case.
+        from parrot.clients.google import GoogleGenAIClient  # noqa: F401
     except ImportError:
         fake_google = types.ModuleType("parrot.clients.google")
 
