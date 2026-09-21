@@ -4,6 +4,7 @@ Every request kind is validated *before* any I/O runs: a duplicate id, a
 malformed range, an abbreviated commit id or an out-of-shape cursor is
 rejected by Pydantic at admission time, never discovered mid-batch.
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Literal
@@ -62,13 +63,15 @@ def _check_cursor(value: str | None) -> str | None:
 
 class InspectionModel(BaseModel):
     """Reject undeclared arguments before effects."""
+
     model_config = ConfigDict(extra="forbid")
 
 
 class ReadRequest(InspectionModel):
     """Read a bounded revision-checked line range."""
+
     id: str = Field(min_length=1)
-    kind: Literal['read']
+    kind: Literal["read"]
     path: str
     start_line: int | None = Field(default=None, ge=1)
     end_line: int | None = Field(default=None, ge=1)
@@ -90,15 +93,17 @@ class ReadRequest(InspectionModel):
 
 class InfoRequest(InspectionModel):
     """Inspect metadata without returning unbounded source."""
+
     id: str = Field(min_length=1)
-    kind: Literal['info']
+    kind: Literal["info"]
     path: str
 
 
 class SearchRequest(InspectionModel):
     """Search literal text in confined paths."""
+
     id: str = Field(min_length=1)
-    kind: Literal['search']
+    kind: Literal["search"]
     paths: list[str] = Field(min_length=1, max_length=8)
     text: str = Field(min_length=1, max_length=1024)
     max_matches: int = Field(default=20, ge=1, le=100)
@@ -113,9 +118,10 @@ class SearchRequest(InspectionModel):
 
 class FilesRequest(InspectionModel):
     """List bounded repository-relative paths under validated roots."""
+
     id: str = Field(min_length=1)
-    kind: Literal['files']
-    paths: list[str] = Field(default_factory=lambda: ['.'], min_length=1, max_length=8)
+    kind: Literal["files"]
+    paths: list[str] = Field(default_factory=lambda: ["."], min_length=1, max_length=8)
     continuation: str | None = None
 
     @model_validator(mode="after")
@@ -127,14 +133,16 @@ class FilesRequest(InspectionModel):
 
 class GitStatusRequest(InspectionModel):
     """Read status without index refresh or writes."""
+
     id: str = Field(min_length=1)
-    kind: Literal['git_status']
+    kind: Literal["git_status"]
 
 
 class GitDiffNamesRequest(InspectionModel):
     """Compare immutable full Git commit ids."""
+
     id: str = Field(min_length=1)
-    kind: Literal['git_diff_names']
+    kind: Literal["git_diff_names"]
     base_sha: str
     head_sha: str
 
@@ -149,12 +157,13 @@ class GitDiffNamesRequest(InspectionModel):
 
 InspectionRequest = Annotated[
     ReadRequest | InfoRequest | SearchRequest | FilesRequest | GitStatusRequest | GitDiffNamesRequest,
-    Field(discriminator='kind'),
+    Field(discriminator="kind"),
 ]
 
 
 class InspectionBatchArgs(InspectionModel):
     """Bound batch cardinality, admission and response size."""
+
     requests: list[InspectionRequest] = Field(min_length=1, max_length=8)
     concurrency: int = Field(default=4, ge=1, le=4)
     max_output_bytes: int = Field(default=24576, ge=4096, le=24576)
@@ -172,9 +181,10 @@ class InspectionBatchArgs(InspectionModel):
 
 class InspectionItem(InspectionModel):
     """One stable item result even when peers fail."""
+
     id: str
     kind: str
-    status: Literal['ok', 'error', 'cancelled']
+    status: Literal["ok", "error", "cancelled"]
     data: dict[str, object] = Field(default_factory=dict)
     error_code: str | None = None
     elapsed_ms: int = Field(ge=0)
@@ -184,6 +194,7 @@ class InspectionItem(InspectionModel):
 
 class InspectionBatch(InspectionModel):
     """Ordered response with snapshot consistency and measured byte cost."""
+
     schema_version: Literal[1] = 1
     items: list[InspectionItem]
     partial: bool

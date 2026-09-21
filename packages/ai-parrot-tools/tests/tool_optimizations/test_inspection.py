@@ -1,4 +1,5 @@
 """Regression scenarios for FEAT-584; use isolated fixtures, never live providers."""
+
 import asyncio
 import json
 from pathlib import Path

@@ -523,7 +523,10 @@ class InspectionRunner:
             )
         except _ItemTimeout:
             return InspectionItem(
-                id=request.id, kind=request.kind, status="error", error_code="item_timeout",
+                id=request.id,
+                kind=request.kind,
+                status="error",
+                error_code="item_timeout",
                 elapsed_ms=self._elapsed_ms(started),
             )
         if code != 0:
@@ -538,7 +541,10 @@ class InspectionRunner:
         entries = [line for line in out.decode("utf-8", "replace").splitlines() if line]
         return self._bound_item(
             InspectionItem(
-                id=request.id, kind=request.kind, status="ok", data={"entries": entries},
+                id=request.id,
+                kind=request.kind,
+                status="ok",
+                data={"entries": entries},
                 elapsed_ms=self._elapsed_ms(started),
             )
         )
@@ -552,7 +558,10 @@ class InspectionRunner:
             )
         except _ItemTimeout:
             return InspectionItem(
-                id=request.id, kind=request.kind, status="error", error_code="item_timeout",
+                id=request.id,
+                kind=request.kind,
+                status="error",
+                error_code="item_timeout",
                 elapsed_ms=self._elapsed_ms(started),
             )
         if code != 0:
@@ -567,7 +576,10 @@ class InspectionRunner:
         names = [line for line in out.decode("utf-8", "replace").splitlines() if line]
         return self._bound_item(
             InspectionItem(
-                id=request.id, kind=request.kind, status="ok", data={"paths": names},
+                id=request.id,
+                kind=request.kind,
+                status="ok",
+                data={"paths": names},
                 elapsed_ms=self._elapsed_ms(started),
             )
         )
