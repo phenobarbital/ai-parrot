@@ -828,9 +828,7 @@ class SddCoderEngine:
         try:
             obs = NativeObservation.model_validate(observation)
         except PydanticValidationError as exc:
-            raise CoderFailure(
-                "evidence_invalid", "observation failed schema validation", errors=exc.errors()
-            ) from exc
+            raise CoderFailure("evidence_invalid", "observation failed schema validation", errors=exc.errors()) from exc
 
         if execution_id not in self._executions:
             raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
@@ -852,9 +850,7 @@ class SddCoderEngine:
             )
 
         if self._evidence_store is None:
-            raise CoderFailure(
-                "evidence_persistence_failed", "no durable evidence store is configured for this engine"
-            )
+            raise CoderFailure("evidence_persistence_failed", "no durable evidence store is configured for this engine")
 
         try:
             event = WorkflowEvent(

@@ -672,7 +672,9 @@ class NativeObservation(BaseModel):
     def _reject_reversed_span(self) -> "NativeObservation":
         """Reject an invented (reversed) span when both endpoints are supplied."""
         if self.started_at is not None and self.ended_at is not None and self.ended_at < self.started_at:
-            raise ValueError(f"observation has a reversed span: ended_at {self.ended_at} < started_at {self.started_at}")
+            raise ValueError(
+                f"observation has a reversed span: ended_at {self.ended_at} < started_at {self.started_at}"
+            )
         return self
 
 

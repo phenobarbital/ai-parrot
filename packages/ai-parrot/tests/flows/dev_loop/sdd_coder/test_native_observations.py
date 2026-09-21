@@ -61,9 +61,7 @@ async def test_observation_does_not_settle_attempt(tmp_path: Path, git_sandbox_f
     pool = engine._executions[execution_id]
     assert prep.attempt_uid in pool._admitted  # noqa: SLF001 -- asserting the reservation is still live
 
-    ref = await engine.record_native_observation(
-        "demo", str(worktree), execution_id, _observation(prep.attempt_uid)
-    )
+    ref = await engine.record_native_observation("demo", str(worktree), execution_id, _observation(prep.attempt_uid))
     assert ref.artifact_id == "evt-1"
 
     # The reservation is untouched: no release, no settlement, no merge side effect.
@@ -104,18 +102,14 @@ async def test_foreign_or_conflicting_identity(tmp_path: Path, git_sandbox_featu
 
     # Unknown attempt: well-formed but never issued by this execution.
     with pytest.raises(CoderFailure) as excinfo:
-        await engine.record_native_observation(
-            "demo", str(worktree), execution_id, _observation(uuid.uuid4().hex)
-        )
+        await engine.record_native_observation("demo", str(worktree), execution_id, _observation(uuid.uuid4().hex))
     assert excinfo.value.code == "attempt_not_found"
 
     # Neither failure wrote anything durable.
     assert not events_path.exists()
 
     # A genuinely valid observation settles durably.
-    ref = await engine.record_native_observation(
-        "demo", str(worktree), execution_id, _observation(prep.attempt_uid)
-    )
+    ref = await engine.record_native_observation("demo", str(worktree), execution_id, _observation(prep.attempt_uid))
     assert ref.artifact_id == "evt-1"
 
     # Contradictory event_id: same id, different agent_id -> rejected as a conflict.
@@ -136,9 +130,7 @@ async def test_foreign_or_conflicting_identity(tmp_path: Path, git_sandbox_featu
     assert prep.attempt_uid in pool._admitted  # noqa: SLF001
 
 
-async def test_telemetry_failure_is_reported(
-    tmp_path: Path, git_sandbox_feature, noop_probe, monkeypatch
-) -> None:
+async def test_telemetry_failure_is_reported(tmp_path: Path, git_sandbox_feature, noop_probe, monkeypatch) -> None:
     """Observational write failures are visible but do not invalidate a correct merge."""
     worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
     roster = RosterConfig(seats=[RosterSeat(label="h", kind="native", model="haiku")])
@@ -158,9 +150,7 @@ async def test_telemetry_failure_is_reported(
     monkeypatch.setattr(engine._evidence_store, "append_event", _broken_append_event)
 
     with pytest.raises(CoderFailure) as excinfo:
-        await engine.record_native_observation(
-            "demo", str(worktree), execution_id, _observation(prep.attempt_uid)
-        )
+        await engine.record_native_observation("demo", str(worktree), execution_id, _observation(prep.attempt_uid))
     assert excinfo.value.code == "evidence_persistence_failed"
 
     # The observation write failure is visible (raised), but a genuinely correct
