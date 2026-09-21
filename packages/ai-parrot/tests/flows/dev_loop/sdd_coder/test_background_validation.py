@@ -53,9 +53,7 @@ def _make_supervisor(
 def _single_invocation_plan(argv: tuple[str, ...], *, tier: str = "merge") -> ScopePlan:
     """A `ScopePlan` carrying exactly one controlled, synthetic pytest-shaped invocation."""
     invocation = PytestInvocation(distribution="root", argv=argv, targets=())
-    return ScopePlan(
-        tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=()
-    )
+    return ScopePlan(tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=())
 
 
 async def _settle(supervisor: ValidationSupervisor, execution_id: str, handle: str) -> None:
@@ -308,9 +306,7 @@ async def test_lost_owner_blocks_settlement(tmp_path: Path, monkeypatch: pytest.
     monkeypatch.setattr(
         background_module,
         "plan_tests",
-        lambda **_: _single_invocation_plan(
-            (sys.executable, "-c", "import time; time.sleep(1)"), tier="feature"
-        ),
+        lambda **_: _single_invocation_plan((sys.executable, "-c", "import time; time.sleep(1)"), tier="feature"),
     )
     running_registration = await supervisor.start(
         feature="demo-feature",
