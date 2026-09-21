@@ -24,6 +24,8 @@ EXPECTED = {
         "begin_execution",
         "end_execution",
         "suspend_model",
+        # FEAT-584 TASK-3560: native coders observe their own delivery events.
+        "record_native_observation",
     )
 }
 
