@@ -114,8 +114,9 @@ ProcessPoolExecutor latency profile — both gated on the spike (§10).
   adaptation but is not a standalone schema-export type.
   *Evidence*: F006
 
-- **Design doc reference is stale.** `claude/handle-only-execution-design.md`
-  does not exist on disk. The canonical references are
+- **Design doc reference path was wrong.** The original proposal cited
+  `claude/handle-only-execution-design.md` — the actual file is at
+  `artifacts/proposals/handle-only-execution-design.md`. Canonical specs:
   `sdd/specs/execution-plan-tool.spec.md` (FEAT-419) and
   `sdd/specs/plan-then-execute-hardening.spec.md` (FEAT-585).
   *Evidence*: F010
@@ -488,7 +489,7 @@ Happy path needs **no delegate**: `PlanToolNode` over `WebScrapingToolkit`. The 
 
 - ~~`register_node("tool")(PlanToolNode)`~~ → **LANDED** (TASK-2179, commit `d7b4819db`)
 - ~~`run_execution_plan` tool with `build_manifest()`~~ → **LANDED** as `ExecutionPlanToolkit._run_plan` (TASK-2180)
-- ~~`claude/handle-only-execution-design.md`~~ → **DOES NOT EXIST**. Canonical refs: `sdd/specs/execution-plan-tool.spec.md`, `sdd/specs/plan-then-execute-hardening.spec.md`
+- ~~`claude/handle-only-execution-design.md`~~ → **actual path: `artifacts/proposals/handle-only-execution-design.md`**. Canonical specs: `sdd/specs/execution-plan-tool.spec.md`, `sdd/specs/plan-then-execute-hardening.spec.md`
 - `ResultPolicy` → FEAT-585 TASK-3597 (`PlanPlanner.replan / repair_delta`), **still active**
 - Bounded replan → FEAT-585 TASK-3596/3597, **still active**
 

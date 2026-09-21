@@ -12,13 +12,13 @@ parent_id: null
 
 ## Summary
 
-The proposal references `claude/handle-only-execution-design.md` as context — this file DOES NOT EXIST on disk. The actual specification is at `sdd/specs/execution-plan-tool.spec.md` (FEAT-419). The hardening spec is at `sdd/specs/plan-then-execute-hardening.spec.md` (FEAT-585). The proposal's §9 "Pending per the plan-then-execute doc" items should reference these specs instead.
+The proposal referenced `claude/handle-only-execution-design.md` — the actual file is at `artifacts/proposals/handle-only-execution-design.md`. The canonical specifications are `sdd/specs/execution-plan-tool.spec.md` (FEAT-419) and `sdd/specs/plan-then-execute-hardening.spec.md` (FEAT-585). The proposal's §9 "Pending per the plan-then-execute doc" items should reference these specs instead.
 
 ## Citations
 
-- path: `claude/handle-only-execution-design.md`
+- path: `artifacts/proposals/handle-only-execution-design.md`
   excerpt: |
-    NOT FOUND — file does not exist on disk
+    Original design doc (was referenced as claude/handle-only-execution-design.md)
 
 - path: `sdd/specs/execution-plan-tool.spec.md`
   excerpt: |
@@ -30,4 +30,4 @@ The proposal references `claude/handle-only-execution-design.md` as context — 
 
 ## Notes
 
-The design doc was likely the working document that became the FEAT-419 spec. The enriched proposal should update all references to point at the current specs.
+The design doc at `artifacts/proposals/` was the working document that became the FEAT-419 spec. The enriched proposal now references the correct path and the current specs.
