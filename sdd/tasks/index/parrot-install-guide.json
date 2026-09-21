@@ -72,7 +72,7 @@
       "feature_id": "FEAT-586",
       "feature": "parrot-install-guide",
       "spec": "sdd/specs/parrot-install-guide.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +80,8 @@
       "parallelism_notes": "No dependencies — mirrors TASK-3586's flag set from the spec (§3 M4); distinct files from every other task.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3587-powershell-installer-script.md"
+      "completed_at": "2026-09-21T21:58:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3587-powershell-installer-script.md"
     },
     {
       "id": "TASK-3588",

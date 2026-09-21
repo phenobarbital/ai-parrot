@@ -192,9 +192,21 @@ def test_powershell_script_syntax(): ...   # skipped when pwsh absent
 6. Move to `sdd/tasks/completed/`, index → done, fill the note.
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-21
+**Notes**: Created `scripts/install/install-parrot.ps1` (mirrors
+`install-parrot.sh`'s flags/contract: `-Provider` — never `-Host` —,
+`-Extras`, `-Venv`, `-Python`, `-WithWiki`, `-InstallCli`, `-SystemDeps`,
+`-DryRun`, `-Help`; `Run` transparency helper; Python guard before any
+other step; create-or-reuse venv; same provider→extra mapping) and
+`packages/ai-parrot/tests/docs/test_install_powershell.py`
+(`test_powershell_script_syntax`, `pytest.mark.skipif` when `pwsh` is
+absent). `pwsh` is not installed in this environment, so the syntax test
+skips cleanly here (verified) rather than actually parsing — brace/paren
+balance was checked manually (34/34, 45/45) as a best-effort substitute;
+CI (TASK-3588) is where this test will actually execute the parser.
+`black --check` clean on the new Python test file. `ruff` is not installed
+in the shared `.venv` in this environment (dev extra not synced) so
+`ruff check` could not be run — flagged for the human/code review.
+**Deviations from spec**: none.
