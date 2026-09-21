@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure
 from parrot.flows.dev_loop.sdd_coder.models import CoderResult, RosterConfig
@@ -37,6 +37,9 @@ EXPECTED_TOOLS = {
     # FEAT-584 M1b/R1b: purposeful, side-effect-free reads.
     "coder_task_context",
     "coder_delivery_report",
+    # FEAT-584 M3/R2: recover a durable/paginated artifact a `compact`
+    # response_mode referenced.
+    "coder_read_artifact",
 }
 
 
@@ -192,6 +195,7 @@ def test_registered_schemas_require_execution_identity(three_seat_roster):
         "coder_record_native_observation",
         "coder_task_context",
         "coder_delivery_report",
+        "coder_read_artifact",
     }
     unscoped = {"coder_wait", "coder_status", "coder_feedback_report"}
     for tool in toolkit.get_tools():
@@ -497,3 +501,106 @@ async def test_toolkit_status_and_wait_carry_the_per_seat_rollup(three_seat_rost
         assert seat["seat"] == "a" and seat["backend"] == "nova"
         assert seat["tasks_handled"] == ["TASK-1"] and seat["tasks_merged"] == 1
         assert seat["input_tokens"] == 10 and seat["usage_known"] is True
+
+
+# -- FEAT-584 M3/R2: response_mode schema split + coder_read_artifact -------
+
+
+def test_response_mode_schema_split_from_lifecycle_and_review_tools(three_seat_roster):
+    """`coder_plan`/`coder_wait`/`coder_status` expose `response_mode`; the tools that
+    reuse/inherit `CoderPlanArgs`' OLD shape (begin_execution, feedback, review,
+    native observation) must never silently accept it too."""
+    toolkit = _toolkit(three_seat_roster)
+    schemas = {t.name: t.get_schema()["parameters"]["properties"] for t in toolkit.get_tools()}
+
+    for name in ("coder_plan", "coder_wait", "coder_status"):
+        assert "response_mode" in schemas[name], f"{name} must expose response_mode"
+
+    for name in (
+        "coder_begin_execution",
+        "coder_record_feedback",
+        "coder_record_review",
+        "coder_record_native_observation",
+        "coder_feedback_report",
+    ):
+        assert "response_mode" not in schemas[name], f"{name} must NOT inherit response_mode"
+
+
+async def test_pre_execute_rejects_bad_response_mode(three_seat_roster):
+    """Only the literal 'full'/'compact' values are accepted; the default is 'full'."""
+    toolkit = _toolkit(three_seat_roster)
+    await toolkit._pre_execute(
+        "coder_plan", feature="f", worktree="/abs", execution_id=VALID_EXECUTION_ID
+    )  # default -- must not raise
+    await toolkit._pre_execute(
+        "coder_plan", feature="f", worktree="/abs", execution_id=VALID_EXECUTION_ID, response_mode="compact"
+    )  # must not raise
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute(
+            "coder_plan", feature="f", worktree="/abs", execution_id=VALID_EXECUTION_ID, response_mode="summary"
+        )
+    assert excinfo.value.code == "invalid_arguments"
+
+    with pytest.raises(CoderFailure) as excinfo2:
+        await toolkit._pre_execute("coder_wait", job_id="j", response_mode="nope")
+    assert excinfo2.value.code == "invalid_arguments"
+
+
+async def test_read_artifact_pre_execute_validates_schema(three_seat_roster):
+    toolkit = _toolkit(three_seat_roster)
+
+    await toolkit._pre_execute(
+        "coder_read_artifact", execution_id=VALID_EXECUTION_ID, artifact_id="a" * 64, offset=0, limit=8192
+    )  # must not raise
+
+    async def _bad(**kwargs):
+        with pytest.raises(CoderFailure) as excinfo:
+            await toolkit._pre_execute("coder_read_artifact", **kwargs)
+        assert excinfo.value.code == "invalid_arguments"
+
+    await _bad(execution_id="not-a-uuid", artifact_id="a" * 64)
+    await _bad(execution_id=VALID_EXECUTION_ID, artifact_id="a" * 64, offset=-1)
+    await _bad(execution_id=VALID_EXECUTION_ID, artifact_id="a" * 64, limit=0)
+    await _bad(execution_id=VALID_EXECUTION_ID, artifact_id="a" * 64, limit=16385)
+    await _bad(execution_id=VALID_EXECUTION_ID, artifact_id="")
+
+    with pytest.raises(CoderFailure) as excinfo:
+        await toolkit._pre_execute("coder_read_artifact", artifact_id="a" * 64)
+    assert excinfo.value.code == "execution_required"
+
+
+async def test_read_artifact_no_store_configured_is_evidence_persistence_failed(three_seat_roster):
+    """No `telemetry_dir`/`DEV_LOOP_CODER_TELEMETRY` was configured for this toolkit -- no store exists."""
+    toolkit = _toolkit(three_seat_roster)
+    assert toolkit._engine._evidence_store is None  # noqa: SLF001 -- asserting the fixture's own precondition
+
+    result = await toolkit.coder_read_artifact(execution_id=VALID_EXECUTION_ID, artifact_id="a" * 64)
+    assert result.status == "error"
+    assert result.error.code == "evidence_persistence_failed"
+
+
+async def test_read_artifact_routes_through_run(three_seat_roster, tmp_path):
+    """A published artifact round-trips; a foreign execution/unknown id is `artifact_not_found`."""
+    from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
+    from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef
+
+    toolkit = _toolkit(three_seat_roster)
+    store = ExecutionEvidenceStore(tmp_path)
+    toolkit._engine._evidence_store = store  # noqa: SLF001 -- same pattern as test_native_observations.py
+
+    class _Payload(BaseModel):
+        text: str
+
+    ref: EvidenceRef = await store.put_artifact(VALID_EXECUTION_ID, _Payload(text="hello world"))
+
+    result = await toolkit.coder_read_artifact(execution_id=VALID_EXECUTION_ID, artifact_id=ref.artifact_id)
+    assert result.status == "ok"
+    assert result.data["eof"] is True
+    assert "hello world" in result.data["content"]
+
+    # Cross-execution access to the SAME artifact_id fails: never found under a foreign scope.
+    foreign_execution_id = "22222222-2222-4222-8222-222222222222"
+    result = await toolkit.coder_read_artifact(execution_id=foreign_execution_id, artifact_id=ref.artifact_id)
+    assert result.status == "error"
+    assert result.error.code == "artifact_not_found"
