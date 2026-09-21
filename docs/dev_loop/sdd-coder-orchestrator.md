@@ -198,6 +198,8 @@ Prefer `coder_task_context` and `coder_delivery_report` for known task/delivery 
 
 `coder_plan`, `coder_wait`, and `coder_status` retain `response_mode="full"` as their public default. The worker may explicitly request `"compact"`, but must recover mandatory evidence/pages with `coder_read_artifact` before dispatch, validation, merge, or acceptance. Compact output never changes routing, coverage, ownership, retry, fidelity, or the 90-second client poll.
 
+The durable evidence store behind `compact` views, `coder_read_artifact`, `coder_record_native_observation` and review checkpoints is **always bound** — it does not depend on `DEV_LOOP_CODER_TELEMETRY`. Its root is `SDD_CODER_TELEMETRY_DIR` when set, otherwise `<main checkout>/artifacts/logs/sdd-coder-usage` derived via git; an explicit root that is relative or lands under the worktree base still fails engine construction. Only when no root can be derived at all does the engine start without a store and log a warning, and every dependent call then reports `evidence_persistence_failed`.
+
 ### Review boundary and compaction (FEAT-584)
 
 After settlement: persist checkpoint; request at most one supported between-turn compaction; record its actual receipt; reload/validate the checkpoint; start a fresh independent reviewer. Do not compact per task/tool, inside a tool call, while work is live, or by invoking `/compact` through Bash.
@@ -393,7 +395,7 @@ native tasks and re-merges).
 To collect and analyze token usage:
 
 1. Enable telemetry by setting these environment variables:
-   - `DEV_LOOP_CODER_TELEMETRY=true` (master switch, default False)
+   - `DEV_LOOP_CODER_TELEMETRY=true` (master switch for the usage-row sink, default False; the durable evidence store is bound regardless)
    - `DEV_LOOP_CODER_LEDGER=true` (bind the observational ledger, default True)
    - `SDD_CODER_TELEMETRY_DIR=/absolute/path` (durable dir, "" = derive from main checkout)
 
