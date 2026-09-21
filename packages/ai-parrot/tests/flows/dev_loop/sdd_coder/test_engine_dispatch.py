@@ -670,6 +670,88 @@ class TestComplexityDispatchAdmission:
         assert len(result.tasks[0].attempts) == 1, "no retry attempt when no eligible seat exists"
         assert "complex_model_unavailable" in result.tasks[0].diagnostics
 
+    async def test_pool_based_retry_never_selects_native_seat(self, git_sandbox_feature, noop_probe):
+        """issue:e01c03baf493: the execution-pool retry path
+        (`SddCoderEngine._select_retry_seat`'s pool branch) must never hand a
+        `kind="native"` seat to `_run_attempt` -- a native seat has no
+        dispatcher (`_run_attempt` asserts `seat.backend is not None`), and
+        `_run_task` never routes a retry through `coder_prepare_native`. Before
+        this fix, a healthy native strong seat was selected and crashed the
+        attempt with an unhandled `AssertionError`, discarding attempt 1's real
+        `complex_model_unavailable` diagnostic. This mirrors
+        `test_no_eligible_retry_seat_reports_complex_model_unavailable` above,
+        but through the execution-pool (`execution_id`) path every real
+        `coder_plan`/`coder_run_chunk` call actually uses."""
+        import uuid
+
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({"nova": "fail"})
+        roster = RosterConfig(
+            seats=[
+                RosterSeat(label="weak1", backend="nova", model="qwen"),
+                RosterSeat(label="weak2", backend="nova", model="mistral"),
+                RosterSeat(label="strong-native", kind="native", model="sonnet-5"),
+            ],
+            complexity=ComplexityPolicy(
+                strong_models=(StrongModelIdentity(canonical_model="sonnet-5", backend="native", model="sonnet-5"),)
+            ),
+        )
+        engine = SddCoderEngine(
+            roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+        )
+
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+        plan = await engine.plan("demo", str(worktree), execution_id=execution_id)
+        engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(  # noqa: SLF001
+            plan, "TASK-0001", "unknown"
+        )
+
+        job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"], execution_id=execution_id)
+        result = await engine.wait(job.job_id, 5)
+
+        task_result = result.tasks[0]
+        assert task_result.outcome == "failed"
+        assert (
+            len(task_result.attempts) == 1
+        ), f"retry must never select the native seat, expected no attempt 2: {task_result.attempts}"
+        assert "complex_model_unavailable" in task_result.diagnostics
+        assert "AssertionError" not in task_result.diagnostics
+        assert "prepare_native" not in task_result.diagnostics
+
+    async def test_eligible_retry_labels_fails_closed_on_missing_assessment(self, git_sandbox_feature, noop_probe):
+        """issue:e01c03baf493: `_eligible_retry_labels` must never treat a
+        missing/unresolvable cached assessment as "unrestricted" (`None`) --
+        that is the only way `_select_retry_seat` could ever be handed an
+        unrestricted candidate set for a task whose classification is actually
+        `complex`/`unknown`. A missing assessment for a task already mid-retry
+        is an anomaly, not evidence the task is a standard, unrestricted one."""
+        import uuid
+
+        from parrot.flows.dev_loop.sdd_coder.models import PlannedTask
+
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({})
+        roster = RosterConfig(seats=[RosterSeat(label="weak", backend="nova", model="qwen")])
+        engine = SddCoderEngine(
+            roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+        )
+
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+        plan = await engine.plan("demo", str(worktree), execution_id=execution_id)
+        assert "TASK-0001" in plan.assessments
+        plan_without_assessment = plan.model_copy(
+            update={"assessments": {k: v for k, v in plan.assessments.items() if k != "TASK-0001"}}
+        )
+        engine._plan_cache[f"FEAT-549:{execution_id}"] = plan_without_assessment  # noqa: SLF001
+
+        ctx = await engine._resolve_feature("demo", str(worktree))  # noqa: SLF001
+        task = PlannedTask(task_id="TASK-0001", task_file="x.md", title="x", seat_label="weak", backend="nova")
+        eligible = await engine._eligible_retry_labels(ctx, task, execution_id=execution_id)  # noqa: SLF001
+
+        assert eligible == set(), "a missing assessment must fail closed (empty set), never None (unrestricted)"
+
 
 class TestDurableRootGuard:
     def test_root_under_worktree_base_raises(self, tmp_path):
@@ -982,3 +1064,84 @@ class TestCooldownStartsAtFailureObservation:
                 suspended_until = datetime.fromisoformat(view.suspended_until)
                 # suspended_until should be after after_failure (cooldown starts at observation)
                 assert suspended_until > after_failure
+
+
+def _code_string_literals(module) -> set[str]:
+    """Every str constant in `module`'s source EXCEPT docstrings.
+
+    A retired contract survives as prose in a docstring or comment explaining why
+    it was retired -- that is documentation, not a code path. Only a string the
+    module actually evaluates can still produce the old behaviour, so that is what
+    the FEAT-587 guard below asserts on.
+    """
+    import ast
+
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+    docstrings = {
+        doc
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        for doc in [ast.get_docstring(node, clean=False)]
+        if doc is not None
+    }
+    return {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value not in docstrings
+    }
+
+
+class TestDirtyTaskWorktreeContractRetired:
+    """FEAT-587: the `dirty_task_worktree` contract no longer exists in code."""
+
+    def test_no_dirty_task_worktree_producer(self):
+        """Neither the engine nor the error-code enum may still evaluate the retired contract (AC-1, AC-4)."""
+        from parrot.flows.dev_loop.sdd_coder import engine as engine_mod
+        from parrot.flows.dev_loop.sdd_coder import models as models_mod
+
+        for module in (engine_mod, models_mod):
+            offenders = sorted(
+                literal
+                for literal in _code_string_literals(module)
+                if "dirty_task_worktree" in literal or literal == "dirty_delivery"
+            )
+            assert offenders == [], f"{module.__name__} still evaluates {offenders}"
+
+    def test_dirty_feature_worktree_is_untouched(self):
+        """The *feature*-worktree precondition is a different, still-live check (AC-4)."""
+        from parrot.flows.dev_loop.sdd_coder.models import ERROR_CODES
+
+        assert "dirty_feature_worktree" in ERROR_CODES
+        assert "dirty_task_worktree" not in ERROR_CODES
+
+    def test_classify_failure_reason_ignores_uncommitted_delivery(self):
+        """An uncommitted-but-declared delivery is never charged against the model (AC-3)."""
+        from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+        engine = SddCoderEngine(
+            roster=_roster(("a", "nova")),
+        )
+        assert (
+            engine._classify_failure_reason(
+                error="dirty_task_worktree: uncommitted/untracked changes:\n?? packages/x/t1.py",
+                error_class="dirty_task_worktree",
+            )
+            is None
+        )
+        # Controls: the classifier still classifies what it should, so the
+        # assertion above cannot pass by it returning None for everything.
+        assert (
+            engine._classify_failure_reason(
+                error="TimeoutError: dispatch timed out",
+                error_class="DispatchExecutionError",
+            )
+            == "timeout"
+        )
+        assert (
+            engine._classify_failure_reason(
+                error="",
+                error_class="RuntimeError",
+                outcome="fidelity_violation",
+            )
+            == "fidelity_violation"
+        )

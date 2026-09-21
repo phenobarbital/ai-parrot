@@ -4,6 +4,7 @@ FEAT-485: Creates a StdioMCPServer for any AbstractToolkit-based class,
 with optional LLM wiring and tool filtering (include/exclude/llm_dependent).
 """
 
+import asyncio
 import contextlib
 import importlib
 import logging
@@ -22,8 +23,115 @@ from typing import Any
 from parrot.mcp.local_server import StdioMCPServer
 from parrot.mcp.server_base import LocalServerConfig
 from parrot.mcp.toolkit_config import load_toolkits_config
+from parrot.tools.toolkit import AbstractToolkit
 
 logger = logging.getLogger(__name__)
+
+#: Overall wall-clock budget for releasing an owned toolkit's resources on
+#: server shutdown (see `_ToolkitStdioMCPServer.stop`). A module constant
+#: rather than a literal so tests can shrink it instead of waiting out the
+#: real budget.
+_CLEANUP_TIMEOUT_SECONDS = 10.0
+
+
+class _ToolkitStdioMCPServer(StdioMCPServer):
+    """A `StdioMCPServer` that also owns the factory-instantiated toolkit.
+
+    FEAT-580 M4: `create_toolkit_mcp_server` builds the toolkit once at
+    startup but never released it afterwards — any resources the toolkit
+    acquired via its `_open()`/`auto_open` lifecycle (DB pools, HTTP
+    sessions, a spawned LSP server process, etc.) leaked for the rest of
+    the process's life. This subclass retains a reference to that toolkit
+    and releases it whenever the server stops — on a clean stdin EOF, on
+    an unhandled error in `start()`, or on an explicit `stop()` call —
+    bounded by `_CLEANUP_TIMEOUT_SECONDS` so one misbehaving toolkit can
+    never wedge shutdown, with every failure caught and logged in
+    isolation rather than propagated.
+
+    Private: constructed only by `create_toolkit_mcp_server`, whose public
+    signature, return type (`StdioMCPServer`) and tool filtering are
+    unchanged by this class's existence.
+    """
+
+    def __init__(self, config: LocalServerConfig, toolkit: AbstractToolkit) -> None:
+        super().__init__(config)
+        self._owned_toolkit = toolkit
+        self._stop_lock = asyncio.Lock()
+        self._released = False
+
+    async def start(self) -> None:
+        """Serve until stdin EOF or an error, then always release owned resources."""
+        try:
+            await super().start()
+        finally:
+            await self.stop()
+
+    async def stop(self) -> None:
+        """Stop the read loop, then release the owned toolkit's resources.
+
+        Idempotent and concurrency-safe: safe to call more than once (e.g.
+        both from `start()`'s `finally` and from a caller-driven shutdown
+        path) and safe to call concurrently — only the first caller to
+        acquire the internal lock actually runs the release; the rest
+        return immediately once it completes. The whole release is bounded
+        by `_CLEANUP_TIMEOUT_SECONDS`; a timeout (or any other failure) is
+        logged and swallowed, never propagated, so `stop()` itself can
+        never hang or raise on behalf of a broken toolkit.
+        """
+        await super().stop()
+
+        async with self._stop_lock:
+            if self._released:
+                return
+            self._released = True
+
+            try:
+                await asyncio.wait_for(self._release_toolkit(), timeout=_CLEANUP_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                self.logger.error(
+                    "Timed out releasing owned toolkit %s after %.0fs",
+                    type(self._owned_toolkit).__name__,
+                    _CLEANUP_TIMEOUT_SECONDS,
+                )
+
+    async def _release_toolkit(self) -> None:
+        """Close `_open()`-acquired resources, then run the toolkit's cleanup hook.
+
+        Mirrors `ToolManager.cleanup_toolkits`'s two-phase, error-isolated
+        release: `_close()` only runs if `_open()` ever actually ran (a
+        toolkit whose `_open()` raised, or one that never opted into
+        `auto_open`, is left alone), and each phase's failure is caught
+        and logged independently so one broken phase never skips the
+        other.
+        """
+        toolkit = self._owned_toolkit
+
+        if getattr(toolkit, "_opened", False):
+            try:
+                await toolkit._close()
+            except Exception as exc:  # noqa: BLE001 -- isolated shutdown logging
+                self.logger.error("Error in _close() for owned toolkit %s: %s", type(toolkit).__name__, exc)
+            finally:
+                toolkit._opened = False
+
+        # AbstractToolkit.cleanup() AND .stop() are both concrete no-op hooks
+        # (never absent), so `getattr(toolkit, "cleanup", None) or
+        # getattr(toolkit, "stop", None)` always short-circuits on the first
+        # branch and never reaches an existing toolkit's stop()-only
+        # override (e.g. WebScrapingToolkit, RSSFeedReaderToolkit,
+        # MassiveToolkit release their real resources exclusively via
+        # stop()). Call both hooks, independently error-isolated, so a
+        # subclass overriding either one still gets released.
+        for hook_name in ("cleanup", "stop"):
+            cleanup_fn = getattr(toolkit, hook_name, None)
+            if not callable(cleanup_fn):
+                continue
+            try:
+                result = cleanup_fn()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as exc:  # noqa: BLE001 -- isolated shutdown logging
+                self.logger.error("Error in %s() for owned toolkit %s: %s", hook_name, type(toolkit).__name__, exc)
 
 
 def create_toolkit_mcp_server(
@@ -83,7 +191,7 @@ def create_toolkit_mcp_server(
         except ImportError as e:
             # Try to suggest the package extra
             if "parrot_tools" in section.class_path:
-                extra_hint = f"  Try: uv pip install ai-parrot-tools[scraping] " f"or ai-parrot-tools[browsing]"
+                extra_hint = "  Try: uv pip install ai-parrot-tools[scraping] " "or ai-parrot-tools[browsing]"
             else:
                 extra_hint = ""
             raise ImportError(
@@ -149,7 +257,8 @@ def create_toolkit_mcp_server(
         if drop_tools:
             filtered_tools = [t for t in filtered_tools if t.name not in drop_tools]
 
-    # Build and return server
-    server = StdioMCPServer(LocalServerConfig(name=f"parrot-{name}", version="1.0.0"))
+    # Build and return server — FEAT-580 M4: retain the instantiated
+    # toolkit so its resources get released on server shutdown.
+    server = _ToolkitStdioMCPServer(LocalServerConfig(name=f"parrot-{name}", version="1.0.0"), toolkit)
     server.register_tools(filtered_tools)
     return server

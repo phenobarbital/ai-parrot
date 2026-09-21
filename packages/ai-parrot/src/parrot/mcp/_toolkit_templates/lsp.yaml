@@ -1,0 +1,35 @@
+# parrot:summary: Optional Python semantic evidence (LSP) for SDD research/coding/review seats — FEAT-580 pilot.
+# parrot:requires_llm: false
+# parrot:requires_dist: parrot_tools
+  lsp:
+    class: parrot_tools.lsp.toolkit.LSPToolkit
+    # FEAT-580 SDD LSP research pilot — read docs/sdd/lsp-pilot.md before
+    # installing. Explicit and per-worktree only: importing this module,
+    # listing tools (`parrot mcp-local lsp --list`) and installing this
+    # template never spawn Pyright, never scan source and never touch the
+    # network — constructing LSPToolkit only validates this trusted,
+    # in-memory config.
+    #
+    # `environment_id` below is the packaged "operator-unconfigured"
+    # sentinel: every lsp_* call returns status="unavailable" before any
+    # process starts until it is replaced with a real, immutable
+    # per-environment identifier (docs/sdd/lsp-pilot.md, "Environment
+    # identity"). Changing it later invalidates every stored diagnostic
+    # baseline.
+    kwargs:
+      config:
+        repo_root: {{repo_root}}
+        environment_id: operator-unconfigured
+        # Uncomment and adjust once a pinned Pyright 1.1.414
+        # (`pyright-langserver --stdio`) and a supported Node.js runtime
+        # are provisioned on PATH for this worktree's interpreter:
+        # server_command: [pyright-langserver, --stdio]
+        # version_command: [pyright, --version]
+        # expected_server_version: "1.1.414"
+        # python_path: {{repo_root}}/.venv/bin/python
+        # source_roots: []
+        # startup_timeout_s: 20
+        # request_timeout_s: 10
+        # diagnostics_timeout_s: 20
+        # idle_timeout_s: 120
+        # node_heap_mb: 1024

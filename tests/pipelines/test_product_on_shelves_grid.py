@@ -1,4 +1,5 @@
 """Tests for ProductOnShelves grid-based detection refactor (TASK-590)."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from PIL import Image
@@ -17,7 +18,7 @@ def _make_config(detection_grid=None) -> MagicMock:
     """Build a mock PlanogramConfig."""
     config = MagicMock()
     config.detection_grid = detection_grid
-    config.object_identification_prompt = None
+    config.object_identification_prompt = "Identify the products"  # required since FEAT-574 (TASK-3442)
     config.get_planogram_description.return_value = MagicMock(shelves=[])
     return config
 
@@ -59,17 +60,13 @@ class TestGetGridStrategy:
 
     def test_no_grid_type_returns_no_grid(self):
         """detection_grid with NO_GRID type returns NoGrid."""
-        pos = _make_product_on_shelves(
-            detection_grid=DetectionGridConfig(grid_type=GridType.NO_GRID)
-        )
+        pos = _make_product_on_shelves(detection_grid=DetectionGridConfig(grid_type=GridType.NO_GRID))
         strategy = pos.get_grid_strategy()
         assert isinstance(strategy, NoGrid)
 
     def test_horizontal_bands_returns_horizontal_bands(self):
         """detection_grid with HORIZONTAL_BANDS returns HorizontalBands."""
-        pos = _make_product_on_shelves(
-            detection_grid=DetectionGridConfig(grid_type=GridType.HORIZONTAL_BANDS)
-        )
+        pos = _make_product_on_shelves(detection_grid=DetectionGridConfig(grid_type=GridType.HORIZONTAL_BANDS))
         strategy = pos.get_grid_strategy()
         assert isinstance(strategy, HorizontalBands)
 
@@ -91,9 +88,7 @@ class TestDetectObjects:
     @pytest.mark.asyncio
     async def test_no_grid_type_uses_legacy_path(self):
         """detection_grid with NO_GRID uses legacy path."""
-        pos = _make_product_on_shelves(
-            detection_grid=DetectionGridConfig(grid_type=GridType.NO_GRID)
-        )
+        pos = _make_product_on_shelves(detection_grid=DetectionGridConfig(grid_type=GridType.NO_GRID))
         image = _make_image()
 
         await pos.detect_objects(img=image, roi=None, macro_objects=None)
@@ -124,9 +119,9 @@ class TestDetectObjects:
         pos.config.get_planogram_description.return_value = planogram
 
         # LLM returns one detection per call
-        pos.pipeline.llm.detect_objects = AsyncMock(return_value=[
-            {"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}
-        ])
+        pos.pipeline.llm.detect_objects = AsyncMock(
+            return_value=[{"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}]
+        )
 
         image = _make_image()
         products, shelves = await pos.detect_objects(img=image, roi=None, macro_objects=None)
@@ -146,9 +141,9 @@ class TestDetectObjects:
         roi.bbox.get_pixel_coordinates.return_value = (100, 50, 700, 550)
 
         # LLM returns box at (10, 5, 100, 80) in crop-relative coords
-        pos.pipeline.llm.detect_objects = AsyncMock(return_value=[
-            {"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}
-        ])
+        pos.pipeline.llm.detect_objects = AsyncMock(
+            return_value=[{"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}]
+        )
 
         products, _ = await pos.detect_objects(img=image, roi=roi, macro_objects=None)
 
@@ -158,7 +153,7 @@ class TestDetectObjects:
         # Actually box_2d = [ymin, xmin, ymax, xmax] = [10, 5, 100, 80]
         # In code: x1, y1, x2, y2 = box → 10+100=110, 5+50=55, 100+100=200, 80+50=130
         assert box.x1 == 10 + 100  # 110
-        assert box.y1 == 5 + 50    # 55
+        assert box.y1 == 5 + 50  # 55
 
     @pytest.mark.asyncio
     async def test_roi_offset_applied_in_grid_path(self):
@@ -183,9 +178,9 @@ class TestDetectObjects:
         roi.bbox.get_pixel_coordinates.return_value = (100, 50, 700, 550)
 
         # LLM returns box at (10, 5, 100, 80)
-        pos.pipeline.llm.detect_objects = AsyncMock(return_value=[
-            {"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}
-        ])
+        pos.pipeline.llm.detect_objects = AsyncMock(
+            return_value=[{"label": "ES-C220", "box_2d": [10, 5, 100, 80], "confidence": 0.9, "type": "product"}]
+        )
 
         image = _make_image(800, 600)
         products, _ = await pos.detect_objects(img=image, roi=roi, macro_objects=None)
@@ -195,8 +190,8 @@ class TestDetectObjects:
         # Grid cell is at (0,0,...) in crop space, then offset applied
         # box_2d [10, 5, 100, 80] → parsed in detector as x1=5, y1=10
         # then ROI offset: x1 += 100, y1 += 50
-        assert box.x1 == 5 + 100   # 105
-        assert box.y1 == 10 + 50   # 60
+        assert box.x1 == 5 + 100  # 105
+        assert box.y1 == 10 + 50  # 60
 
     @pytest.mark.asyncio
     async def test_returns_tuple_format(self):

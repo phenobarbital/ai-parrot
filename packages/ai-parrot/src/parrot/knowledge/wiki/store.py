@@ -607,7 +607,41 @@ class BaseWikiStore(ABC):
 
     # -- shared concrete behaviour ----------------------------------------
 
-    def _assert_writable(self) -> None:
+    async def compare_and_swap_page(
+        self,
+        page: WikiPageRecord,
+        expected_content_hash: Optional[str],
+    ) -> bool:
+        """Insert only if absent, or atomically replace an exact hash.
+
+        The one write primitive with a revision precondition (FEAT-578
+        Module 2). Every managed ``adr`` mutation goes through it, so a
+        concurrent reviewer can never silently overwrite another's audit
+        history.
+
+        Args:
+            page: The full replacement record. Its ``content_hash`` is the
+                new stored hash.
+            expected_content_hash: The hash the caller last read. ``None``
+                means insert-only — succeed if the row is absent, fail if
+                any row already exists (it does NOT match a NULL hash).
+
+        Returns:
+            ``True`` when the write landed; ``False`` when the precondition
+            did not hold (row present for an insert, or a differing stored
+            hash). A ``False`` return is a lost race, not an error.
+
+        Raises:
+            NotImplementedError: On backends that do not support a
+                conditional write. Concrete by design rather than abstract,
+                so out-of-tree ``BaseWikiStore`` subclasses stay
+                instantiable; callers surface this as
+                ``ADR_WRITE_UNSUPPORTED``.
+            PermissionError: When the store was opened read-only.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support compare_and_swap_page")
+
+    def _assert_writable(self) -> None:  # noqa: B027  (deliberate concrete no-op hook)
         """Hook for stores that can be opened read-only.
 
         The base implementation is a no-op; :class:`SQLiteWikiStore`
@@ -1530,6 +1564,32 @@ class SQLiteWikiStore(BaseWikiStore):
             await self._upsert_pages_conn(conn, pages)
         return len(pages)
 
+    async def compare_and_swap_page(
+        self,
+        page: WikiPageRecord,
+        expected_content_hash: Optional[str],
+    ) -> bool:
+        """Conditionally write one page inside a single immediate transaction.
+
+        See :meth:`BaseWikiStore.compare_and_swap_page` for the contract.
+        """
+        self._assert_writable()
+        async with self._write("compare_and_swap_page") as conn:
+            cursor = await conn.execute(
+                "SELECT content_hash FROM pages WHERE concept_id = ?",
+                (page.concept_id,),
+            )
+            row = await cursor.fetchone()
+            if expected_content_hash is None:
+                if row is not None:
+                    return False
+            else:
+                if row is None or row[0] != expected_content_hash:
+                    return False
+            await self._upsert_pages_conn(conn, [page])
+        self.logger.debug("compare_and_swap_page: wrote %s", page.concept_id)
+        return True
+
     async def add_edges(self, edges: list[tuple]) -> int:
         """Insert typed edges.
 
@@ -1859,7 +1919,7 @@ class SQLiteWikiStore(BaseWikiStore):
         """
         if not concept_ids:
             return {}
-        out: dict[str, Optional[str]] = {cid: None for cid in concept_ids}
+        out: dict[str, Optional[str]] = dict.fromkeys(concept_ids)
         placeholders = ",".join("?" for _ in concept_ids)
         async with self._read() as conn:
             async with conn.execute(
@@ -2193,6 +2253,7 @@ class SQLiteWikiStore(BaseWikiStore):
         """
         _SYNCHRONOUS_NAMES = {0: "OFF", 1: "NORMAL", 2: "FULL", 3: "EXTRA"}
         async with self._open(writable=False) as conn:
+
             async def _one(pragma: str) -> Any:
                 async with conn.execute(f"PRAGMA {pragma}") as cur:
                     row = await cur.fetchone()

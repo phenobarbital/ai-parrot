@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Iterable, Set
+from typing import Any, Dict, List, Optional, Tuple, Set
 from enum import Enum
 import re
 import unicodedata
@@ -8,48 +8,65 @@ from pydantic import BaseModel, Field
 
 class ComplianceStatus(str, Enum):
     """Possible compliance statuses for shelf checks"""
+
     COMPLIANT = "compliant"
     NON_COMPLIANT = "non_compliant"
     MISSING = "missing"
     MISPLACED = "misplaced"
 
+
 # Enhanced compliance result models (add these to your compliance models)
 class TextComplianceResult(BaseModel):
     """Result of text compliance checking"""
+
     required_text: str
     found: bool
     matched_features: List[str] = Field(default_factory=list)
     confidence: float
     match_type: str
 
+
 class BrandComplianceResult(BaseModel):
     """Result of brand logo compliance checking"""
+
     expected_brand: str
     found_brand: Optional[str] = None
     found: bool = False
     confidence: float = 0.0
 
+
+class ShelfAssessment(BaseModel):
+    """Additive shelf assessment metadata (FEAT-574). Every field is optional so legacy producers need not set it."""
+
+    assessment_status: Optional[str] = Field(default=None, description="complete | inconclusive | legacy_unmeasured")
+    coverage: Optional[float] = Field(default=None, description="Resolved facings / expected facings on this shelf")
+    strict_score: Optional[float] = Field(default=None)
+    lenient_score: Optional[float] = Field(default=None)
+    expected_facings: Optional[int] = Field(default=None)
+    resolved_facings: Optional[int] = Field(default=None)
+    unresolved_facing_ids: List[str] = Field(default_factory=list)
+    rule_results: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class ComplianceResult(BaseModel):
     """Final compliance check result"""
+
     shelf_level: str = Field(description="Shelf level being checked")
     expected_products: List[str] = Field(description="Products expected on this shelf")
     found_products: List[str] = Field(description="Products actually found")
     missing_products: List[str] = Field(description="Expected but not found")
     unexpected_products: List[str] = Field(description="Found but not expected")
-    compliance_status: ComplianceStatus = Field(
-        description="Overall compliance for this shelf"
-    )
-    compliance_score: float = Field(
-        ge=0.0,
-        le=1.0,
-        description="Compliance score"
-    )
+    compliance_status: ComplianceStatus = Field(description="Overall compliance for this shelf")
+    compliance_score: float = Field(ge=0.0, le=1.0, description="Compliance score")
     text_compliance_results: List[TextComplianceResult] = Field(default_factory=list)
     brand_compliance_result: Optional[BrandComplianceResult] = Field(
         None, description="Result of the brand logo compliance check."
     )
     text_compliance_score: float = Field(default=1.0)
     overall_text_compliant: bool = Field(default=True)
+    assessment: Optional[ShelfAssessment] = Field(
+        default=None, description="Additive assessment metadata; None for legacy producers."
+    )
 
 
 class TextMatcher:
@@ -96,8 +113,8 @@ class TextMatcher:
     def _ngrams(tokens: List[str], n_from: int, n_to: int) -> Set[str]:
         grams: Set[str] = set()
         for n in range(max(1, n_from), max(n_from, n_to) + 1):
-            for i in range(0, max(0, len(tokens) - n + 1)):
-                grams.add(" ".join(tokens[i:i+n]))
+            for i in range(max(0, len(tokens) - n + 1)):
+                grams.add(" ".join(tokens[i : i + n]))
         return grams
 
     @staticmethod
@@ -122,9 +139,9 @@ class TextMatcher:
         cls,
         required_text: str,
         visual_features: List[str],
-        match_type: str = "contains",      # "contains" | "regex" | "ngram" | "auto"
+        match_type: str = "contains",  # "contains" | "regex" | "ngram" | "auto"
         case_sensitive: bool = False,
-        confidence_threshold: float = 0.6, # only used by ngram/auto
+        confidence_threshold: float = 0.6,  # only used by ngram/auto
         ngram_range: Tuple[int, int] = (1, 3),
         min_token_len: int = 2,
     ):
@@ -137,7 +154,7 @@ class TextMatcher:
         # Normalize all feature strings; keep both raw and normalized for substring/case options
         norm_features: List[str] = []
         raw_features: List[str] = []
-        for f in (visual_features or []):
+        for f in visual_features or []:
             if not isinstance(f, str):
                 continue
             raw_features.append(cls._strip_ocr_prefix(f))
@@ -151,7 +168,7 @@ class TextMatcher:
                 found=bool(found),
                 matched_features=matched_feats,
                 confidence=float(max(0.0, min(1.0, confidence))),
-                match_type=match_kind
+                match_type=match_kind,
             )
 
         # ----- 1) Regex (if explicitly requested)
@@ -171,7 +188,7 @@ class TextMatcher:
         # ----- 2) Contains (fast path)
         if match_type == "contains":
             needle = req_norm_cs if case_sensitive else req_norm
-            for raw, norm in zip(raw_features, norm_features):
+            for raw, norm in zip(raw_features, norm_features, strict=True):
                 haystack = raw if case_sensitive else norm
                 if needle and needle in haystack:
                     return _result(True, 1.0, "contains", [needle])
@@ -179,7 +196,7 @@ class TextMatcher:
 
         # ----- 3) N-gram / Auto (n-gram + fuzzy + contains fallback)
         # quick exact-substring fallback (case-insensitive)
-        for raw, norm in zip(raw_features, norm_features):
+        for _raw, norm in zip(raw_features, norm_features, strict=True):
             if req_norm and req_norm in norm:
                 return _result(True, 1.0, "contains", [required_text])
 
@@ -187,7 +204,7 @@ class TextMatcher:
         best_hits: List[str] = []
         best_kind = "ngram"
 
-        for raw, norm in zip(raw_features, norm_features):
+        for _raw, norm in zip(raw_features, norm_features, strict=True):
             # n-gram containment
             feat_tokens = cls._tokenize(norm, min_len=min_token_len)
             feat_grams = cls._ngrams(feat_tokens, ngram_range[0], ngram_range[1])

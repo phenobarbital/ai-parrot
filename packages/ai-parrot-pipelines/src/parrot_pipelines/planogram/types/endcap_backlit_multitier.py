@@ -202,12 +202,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=_RawDetections,
                         max_tokens=8192,
                     )
@@ -412,12 +411,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=_RawDetections,
                         max_tokens=8192,
                     )
@@ -1106,12 +1104,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         )
 
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     structured_output=_RawDetections,
                     max_tokens=4096,
                 )
@@ -1257,12 +1254,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         prompt = self._build_section_prompt(section.products, category, brand)
 
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     structured_output=_RawDetections,
                     max_tokens=4096,
                 )
@@ -1504,12 +1500,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         )
 
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     structured_output=_RawDetections,
                     max_tokens=4096,
                 )
@@ -1680,12 +1675,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         prompt = self._build_section_prompt(product_names, category, brand)
 
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=crop_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     structured_output=_RawDetections,
                     max_tokens=4096,
                 )

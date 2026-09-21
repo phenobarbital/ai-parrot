@@ -35,6 +35,7 @@ def test_available_templates_lists_packaged_names():
         "database-query",
         "scraping",
         "browsing",
+        "lsp",
         "memory",
     }
 

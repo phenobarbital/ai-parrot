@@ -1,4 +1,5 @@
 """Tests for PlanogramComplianceHandler — planogram compliance REST endpoint."""
+
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +23,7 @@ from parrot.pipelines.models import PlanogramConfig, EndcapGeometry
 # Helpers — minimal JPEG bytes (valid 1×1 JPEG)
 # ---------------------------------------------------------------------------
 
+
 def _make_jpeg_bytes() -> bytes:
     """Return minimal valid JPEG image bytes (1x1 white pixel)."""
     try:
@@ -41,7 +43,7 @@ def _make_jpeg_bytes() -> bytes:
             b"\x00\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00"
             b"\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4"
             b"\x00\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00"
-            b"\x00\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07\"q\x142"
+            b'\x00\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07"q\x142'
             b"\x81\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18"
             b"\x19\x1a%&'()*456789:CDEFGHIJSTUVWXYZcdefghijstuvwxyz\x83\x84\x85"
             b"\x86\x87\x88\x89\x8a\x92\x93\x94\x95\x96\x97\x98\x99\x9a\xa2\xa3"
@@ -203,19 +205,11 @@ class TestPostEndpoint:
             _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
-        with (
-            patch(
-                "parrot_pipelines.handlers.planogram_compliance.GoogleGenAIClient",
-                MagicMock(),
-            ),
-            patch(
-                "parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance",
-                MagicMock(),
-            ),
+        with patch(
+            "parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance",
+            MagicMock(),
         ):
             response = await handler.post()
 
@@ -233,9 +227,7 @@ class TestPostEndpoint:
             _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
             # No image part
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 400
@@ -250,9 +242,7 @@ class TestPostEndpoint:
             # No config_name part
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 400
@@ -267,9 +257,7 @@ class TestPostEndpoint:
             _MockPart("config_name", b"NonExistentConfig"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 404
@@ -285,9 +273,7 @@ class TestPostEndpoint:
             _MockPart("config_name", b"InactiveConfig"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         response = await handler.post()
         assert response.status == 404
@@ -456,9 +442,7 @@ class TestEndToEndCompliance:
             _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
             _MockPart("image", jpeg, filename="store.jpg"),
         ]
-        handler.request.multipart = AsyncMock(
-            return_value=_MockMultipartReader(parts)
-        )
+        handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
 
         # Create a small PNG for the overlay
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as overlay_f:
@@ -472,25 +456,20 @@ class TestEndToEndCompliance:
             "shelf_regions": [],
             "overlay_path": overlay_path,
             "rendered_image": None,
+            "assessment_status": "complete",
+            "coverage": 1.0,
+            "errors": [],
         }
 
         mock_pipeline_instance = AsyncMock()
         mock_pipeline_instance.run = AsyncMock(return_value=fake_result)
         mock_pipeline_class = MagicMock(return_value=mock_pipeline_instance)
 
-        mock_llm_instance = MagicMock()
-        mock_llm_class = MagicMock(return_value=mock_llm_instance)
-
         # Use patch.start/stop so mocks persist for the background asyncio task
-        p1 = patch(
-            "parrot_pipelines.handlers.planogram_compliance.GoogleGenAIClient",
-            mock_llm_class,
-        )
         p2 = patch(
             "parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance",
             mock_pipeline_class,
         )
-        p1.start()
         p2.start()
         try:
             post_response = await handler.post()
@@ -505,7 +484,6 @@ class TestEndToEndCompliance:
                     break
                 await asyncio.sleep(0.1)
         finally:
-            p1.stop()
             p2.stop()
 
         assert job is not None
@@ -529,3 +507,109 @@ class TestEndToEndCompliance:
 
         # Cleanup overlay
         Path(overlay_path).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-574 (TASK-3447): new columns, NULL prompts, provider-neutral pipeline
+# ---------------------------------------------------------------------------
+
+
+def test_build_config_hydrates_new_columns(planogram_db_row, job_manager):
+    row = {
+        **planogram_db_row,
+        "slots_definition": {"version": 1, "shelves": []},
+        "llm_backend": "anthropic:claude-sonnet-5",
+    }
+    config = _make_handler(job_manager)._build_planogram_config(row)
+    assert config.slots_definition == {"version": 1, "shelves": []}
+    assert config.llm_backend == "anthropic:claude-sonnet-5"
+
+
+def test_build_config_decodes_json_string(planogram_db_row, job_manager):
+    row = {**planogram_db_row, "slots_definition": '{"version": 1, "shelves": []}'}
+    assert _make_handler(job_manager)._build_planogram_config(row).slots_definition["version"] == 1
+    absent = _make_handler(job_manager)._build_planogram_config(planogram_db_row)
+    assert absent.slots_definition is None and absent.llm_backend is None
+
+
+def test_build_config_null_prompts(planogram_db_row, job_manager):
+    row = {**planogram_db_row, "roi_detection_prompt": None, "object_identification_prompt": None}
+    config = _make_handler(job_manager)._build_planogram_config(row)
+    assert config.roi_detection_prompt is None and config.object_identification_prompt is None
+    row = {k: v for k, v in planogram_db_row.items() if not k.endswith("_prompt")}
+    config = _make_handler(job_manager)._build_planogram_config(row)
+    assert config.roi_detection_prompt is None and config.object_identification_prompt is None
+
+
+def test_handler_module_has_no_google_client():
+    import parrot_pipelines.handlers.planogram_compliance as mod
+
+    assert not hasattr(mod, "GoogleGenAIClient") and not hasattr(mod, "DEFAULT_LLM_MODEL")
+    source = Path(mod.__file__).read_text()
+    assert "GoogleGenAIClient" not in source and "DEFAULT_LLM_MODEL" not in source
+
+
+async def _run_job(handler, job_manager, pipeline_class):
+    parts = [
+        _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
+        _MockPart("image", _make_jpeg_bytes(), filename="store.jpg"),
+    ]
+    handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
+    patcher = patch("parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance", pipeline_class)
+    patcher.start()
+    try:
+        response = await handler.post()
+        job_id = response.data["job_id"]
+        job = None
+        for _ in range(20):
+            job = job_manager.get_job(job_id)
+            if job and job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                break
+            await asyncio.sleep(0.1)
+    finally:
+        patcher.stop()
+    return response, job
+
+
+@pytest.mark.asyncio
+async def test_job_result_has_additive_fields(planogram_db_row, job_manager):
+    """Result carries assessment_status / coverage / errors + the five legacy keys; no llm= argument."""
+    fake_result = {
+        "overall_compliant": False,
+        "overall_compliance_score": 0.5,
+        "compliance_results": [],
+        "overlay_path": None,
+        "assessment_status": "inconclusive",
+        "coverage": 0.6,
+        "errors": ["img0: something"],
+    }
+    pipeline = AsyncMock()
+    pipeline.run = AsyncMock(return_value=fake_result)
+    pipeline_class = MagicMock(return_value=pipeline)
+    response, job = await _run_job(_make_handler(job_manager, db_row=planogram_db_row), job_manager, pipeline_class)
+    assert response.status == 202
+    assert job.status == JobStatus.COMPLETED, job.error
+    result = job.result
+    for key in (
+        "overall_compliant",
+        "overall_compliance_score",
+        "rendered_image_base64",
+        "content_type",
+        "shelf_results",
+    ):
+        assert key in result
+    assert result["assessment_status"] == "inconclusive"
+    assert result["coverage"] == pytest.approx(0.6)
+    assert result["errors"] == ["img0: something"]
+    assert "llm" not in pipeline_class.call_args.kwargs
+    assert set(pipeline_class.call_args.kwargs) == {"planogram_config"}
+
+
+@pytest.mark.asyncio
+async def test_construction_value_error_fails_job(planogram_db_row, job_manager):
+    """PlanogramCompliance raising ValueError → POST 202, job FAILED with the message."""
+    pipeline_class = MagicMock(side_effect=ValueError("slots_definition missing"))
+    response, job = await _run_job(_make_handler(job_manager, db_row=planogram_db_row), job_manager, pipeline_class)
+    assert response.status == 202
+    assert job.status == JobStatus.FAILED
+    assert "slots_definition missing" in job.error

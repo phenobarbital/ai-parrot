@@ -23,11 +23,22 @@ def built_project_root(tmp_path: Path) -> Path:
 
 
 class TestMCPServerStructuralRegistration:
-    def test_registers_nine_tools(self, built_project_root: Path):
+    def test_registers_wiki_structural_and_decision_tools(self, built_project_root: Path):
         server = create_wiki_mcp_server(built_project_root)
         names = set(server.tools.keys())
-        assert {"wiki_symbol_lookup", "wiki_code_outline", "wiki_blast_radius"} <= names
-        assert len(names) == 9
+        assert names == {
+            "wiki_query",
+            "wiki_page",
+            "wiki_related",
+            "wiki_remember",
+            "wiki_note",
+            "wiki_status",
+            "wiki_symbol_lookup",
+            "wiki_code_outline",
+            "wiki_blast_radius",
+            "wiki_decision_why",
+            "wiki_decisions_for_symbol",
+        }
 
     @pytest.mark.asyncio
     async def test_symbol_lookup_over_stdio_tool(self, built_project_root: Path):

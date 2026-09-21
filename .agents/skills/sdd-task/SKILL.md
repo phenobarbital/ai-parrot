@@ -1,6 +1,6 @@
 ---
 name: sdd-task
-description: Decompose an approved SDD spec into atomic task files and a per-spec task index, then create the feature or hotfix worktree.
+description: Decompose an approved SDD spec into atomic task files, validate their contracts and dependency graph, and commit the per-spec task index.
 ---
 
 # SDD Task
@@ -17,7 +17,8 @@ no ledger issue is ever auto-promoted.
 ## Purpose
 
 Create atomic, bounded, testable task artifacts from an approved spec and commit
-them to the spec's base branch before creating a worktree.
+them to the spec's base branch. This command creates no worktree (FEAT-552);
+`$sdd-start` provisions it on the machine that implements the task.
 
 ## Guardrails
 
@@ -65,6 +66,26 @@ them to the spec's base branch before creating a worktree.
    - re-read each referenced file to verify freshness
    - add task-specific references for touched files
    - include "Does NOT Exist" entries
+
+#### Implementation Blueprint (mandatory, per task)
+
+Populate `## Implementation Blueprint` from the spec's Interface Skeletons.
+Use one block per declared file: CREATE blocks give whole-file starting points;
+MODIFY blocks quote verified anchors and their occurrence counts. Disambiguate
+non-unique anchors with surrounding context. Keep imports, signatures, wiring,
+docstrings and types complete; every import must be in Verified Imports.
+Bound remaining design decisions by their acceptance criteria. Include ordered
+steps, a reason for each non-trivial instruction, and the template's FILL IN
+checklist. No block should exceed about 80 lines; split oversized tasks.
+Blueprint gaps are planning instructions only: completed implementation files
+must contain no unfinished placeholders.
+
+#### Validation Commands (mandatory, per task — FEAT-563)
+
+Place `## Validation Commands` immediately after `## Acceptance Criteria`.
+Use one backticked pytest command per bullet, targeting test files or node IDs;
+never bare pytest or directory-wide test operands. Set new index headers to
+`"validation_contract": "required"` so missing or broad commands fail validation.
 
 #### Delegation Contract (optional, per task)
 
@@ -125,10 +146,16 @@ Example:
      `HOTFIX-<JIRA-KEY>-1`, `HOTFIX-<JIRA-KEY>-2`, and so on.
    - `--from-issue <issue-id>` (FEAT-566): the promoted task still gets a
      normally-reserved `TASK-NNN` here — a ledger issue id is never used as
-     a task id. Seed Context/Scope from `wikitoolkit ledger context
-     <issue-id>`; record `discovered_from: <issue-id>` in the task so
-     `wikitoolkit ledger close <issue-id>` can be run as a separate,
-     explicit step once the task is filed.
+     a task id. Seed Context/Scope from the selected issue and
+     `wikitoolkit ledger context <issue.files...>` using repo-relative paths,
+     not the issue ID. Preserve the selected FixPlan/claimed issue passed by
+     `$sdd-fix`; a fresh ready-work query would omit that claimed issue.
+     For standalone promotion locate the issue in `wikitoolkit ledger plan-fix --json`.
+     Record `discovered_from: <issue-id>`. Filing a task is not resolution:
+     run `wikitoolkit ledger close <issue-id>` separately only after implementation
+     and validation, with the two-key evidence required by `$sdd-fix`.
+     Deprecated (FEAT-572): prefer `sdd-fix <issue-id>`, which routes the issue's group to
+     the Fast or SDD lane; `--from-issue` stays for one deprecation cycle only.
 8. Create task files:
    - directory: `sdd/tasks/active/`
    - template: `sdd/templates/task.md`
@@ -141,17 +168,20 @@ Example:
    - each task entry includes id, slug, title, feature metadata, spec, status,
      priority, effort, dependencies, parallel fields, assignment timestamps,
      and file path
-10. Commit:
+10. Validate the task graph before committing:
+    - run `python -m scripts.sdd.check_task_graph sdd/tasks/index/<feature-slug>.json`
+    - errors block the commit: fix file overlaps without dependency paths,
+      unknown dependencies, cycles, and validation-contract errors, then rerun
+    - resolve every warning: justify/remove edges, check possible missing
+      dependencies, and replace generic parallelism notes with task evidence
+    - report the task count, wave count and maximum width; justify width 1
+      for multi-task features
+11. Commit:
    - clear staging with `git reset HEAD`
    - stage only `sdd/tasks/index/<feature-slug>.json` and new active task
      files
    - verify cached names
    - commit `sdd: add <N> tasks for FEAT-NNN - <feature-slug>`
-11. Create worktree after commit:
-   - feature:
-     `git worktree add -b feat-<FEAT-ID>-<slug> .claude/worktrees/feat-<FEAT-ID>-<slug> HEAD`
-   - hotfix:
-     `git worktree add -b hotfix-<JIRA-KEY>-<slug> .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main`
 
 ## Output
 
@@ -169,10 +199,9 @@ Generated and committed <N> tasks for FEAT-NNN - <feature-slug>
 Tasks created:
   TASK-NNN - <title> [priority/effort]
 Delegated: <D>/<N> tasks carry a Delegation Contract (list them, or "none")
-Worktree created:
-  .claude/worktrees/feat-<FEAT-ID>-<slug>
+Graph: <N> tasks, <W> waves, max width <M>
+Worktree: not created; sdd-start provisions it before implementation.
 Next:
-  cd .claude/worktrees/<worktree-name>
   $sdd-start TASK-NNN
 ```
 
@@ -182,4 +211,4 @@ Next:
 - `sdd/WORKFLOW.md`
 - `scripts/sdd/sdd_meta.py`
 - `scripts/sdd/reserve_ids.py`
-
+- `scripts/sdd/check_task_graph.py`

@@ -75,6 +75,15 @@ reviewer might push a small follow-up commit after review.
 
 ## Steps
 
+## Neutral checkpoint handoff (FEAT-584)
+Start in a fresh review context with the durable checkpoint and the user's constraints.
+Validate HEAD, branch, spec/index/convention hashes and evidence refs before reviewing.
+Read the complete immutable diff through bounded references; a compact brief is not the diff.
+Keep pending criteria, done-with-issues and findings visible; ignore implementer conclusions.
+Reuse valid mechanical evidence when appropriate, but rerun tests after changes or doubts.
+Preserve independent adversarial checks, integration coverage and existing severity policy.
+Any changed covered revision invalidates the checkpoint and previous approval.
+
 1. Inspect the change: read the diff (e.g. `git -C <worktree> diff` or the
    provided diff) and the touched files for context.
 2. For each acceptance criterion, decide whether the change satisfies it;

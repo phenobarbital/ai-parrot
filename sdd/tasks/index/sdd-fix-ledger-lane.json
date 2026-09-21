@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-17T23:52:42.158653+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-20T00:52:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root of the graph — imports nothing from other tasks. Owns events.py, index.py, test_ledger_events.py, test_ledger_index.py; TASK-3388 also edits events.py/test_ledger_events.py and is serialized behind this task.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3387-unclaimed-event-kind-and-reducer.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:14:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3387-unclaimed-event-kind-and-reducer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3388",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3387: file overlap on packages/.../ledger/events.py and tests/knowledge/wiki/test_ledger_events.py (serialize, lower id first); needs no symbol from it. Adds SEVERITY_ORDER that TASK-3389 imports.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3388-severity-order-and-ready-work-sort.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:19:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3388-severity-order-and-ready-work-sort.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3389",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,9 +65,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3388: imports SEVERITY_ORDER from ledger/events.py (created there). Creates two new files only (fix_planner.py, test_ledger_fix_planner.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3389-fix-planner-models-and-grouping.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:29:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3389-fix-planner-models-and-grouping.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3390",
@@ -74,7 +77,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,9 +86,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3389: appends to fix_planner.py and test_ledger_fix_planner.py it created and imports FixGroup/FixIssue/FixPlan/ParentFeature/files_for/group_issues from it.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3390-fix-planner-lanes-slug-and-plan.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:36:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3390-fix-planner-lanes-slug-and-plan.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3391",
@@ -94,7 +98,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,9 +108,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3387: constructs LedgerEvent(kind=\"issue.unclaimed\") — the Literal member it adds; depends_on TASK-3388: file overlap on ledger/service.py (ready_work edit) and tests/knowledge/wiki/test_ledger_service.py. Runs alongside TASK-3389.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3391-service-unclaim-close-evidence-index-status.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:43:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3391-service-unclaim-close-evidence-index-status.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3392",
@@ -115,7 +120,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,9 +130,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3390: imports plan_fix_batch/FixPlan/Lane from ledger/fix_planner.py; depends_on TASK-3391: calls LedgerService.unclaim, close_issue(resolved_by=), feature_index_status. Owns cli.py and new test_cli_plan_fix.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3392-cli-plan-fix-unclaim-resolved-by.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:51:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3392-cli-plan-fix-unclaim-resolved-by.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3393",
@@ -136,7 +142,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -145,9 +151,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3391: forwards resolved_by= to LedgerService.close_issue (kwarg added there). Owns tools.py and test_ledger_tools.py; runs alongside TASK-3392.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3393-mcp-ledger-close-resolved-by.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-20T00:30:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3393-mcp-ledger-close-resolved-by.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3394",
@@ -156,7 +163,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -165,9 +172,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3392: the twins invoke `wikitoolkit ledger plan-fix --json`, `ledger unclaim` and `close --resolved-by`, which that task creates in cli.py. Creates three new markdown files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3394-sdd-fix-twins.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:55:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3394-sdd-fix-twins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3395",
@@ -176,16 +184,17 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: edits only pointer text in six existing twin files (sdd-next ×3, sdd-task ×3) touched by no other task; names /sdd-fix without reading its files. Parity tests arrive in TASK-3396.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3395-retarget-next-and-deprecate-from-issue.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:14:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3395-retarget-next-and-deprecate-from-issue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3396",
@@ -194,7 +203,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -204,9 +213,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3394: reads the three /sdd-fix twin files it creates; depends_on TASK-3395: asserts the retargeted sdd-next/sdd-task wording it writes. Owns tests/sdd/test_ledger_workflow_twins.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3396-fix-twin-parity-tests.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-20T00:34:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3396-fix-twin-parity-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3397",
@@ -215,7 +225,7 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -225,9 +235,10 @@
       "parallel": true,
       "parallelism_notes": "depends_on TASK-3390: imports plan_fix_batch; depends_on TASK-3391: calls LedgerService.unclaim / close_issue(resolved_by=). New module tests/knowledge/wiki/test_ledger_fix_lifecycle.py — deliberately NOT extending test_ledger_index.py (TASK-3387's file).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3397-fix-lane-lifecycle-integration-tests.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-20T00:35:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3397-fix-lane-lifecycle-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3398",
@@ -236,16 +247,36 @@
       "feature_id": "FEAT-572",
       "feature": "sdd-fix-ledger-lane",
       "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: docs/sdd/WORKFLOW.md, docs/sdd/PLATFORM.md, sdd/WORKFLOW.md and the new tests/sdd/test_sdd_fix_docs.py are touched by no other task; the command contract comes from the spec.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3398-docs-sdd-fix.md"
+      "started_at": "2026-09-19T21:56:38+00:00",
+      "completed_at": "2026-09-19T22:14:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3398-docs-sdd-fix.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3554",
+      "slug": "sdd-coder-retry-native-seat-crash-and-fail-closed-eligibility",
+      "title": "sdd-coder pool-based retry crashes on a native strong seat and can silently drop the complex/unknown eligibility restriction",
+      "feature_id": "FEAT-572",
+      "feature": "sdd-fix-ledger-lane",
+      "spec": "sdd/specs/sdd-fix-ledger-lane.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: owns packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/engine.py and packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py, neither touched by any other task in this index. Filed from ledger issue:e01c03baf493 (FEAT-572 sdd-fix-ledger-lane's own dogfood run against FEAT-561's complexity routing).",
+      "assigned_to": null,
+      "started_at": "2026-09-20T00:00:00+00:00",
+      "completed_at": "2026-09-20T02:30:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3554-sdd-coder-retry-native-seat-crash-and-fail-closed-eligibility.md",
+      "verification": "verified"
     }
   ]
 }

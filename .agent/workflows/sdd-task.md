@@ -238,13 +238,21 @@ file, the task is too big.
    **`--from-issue <issue-id>` (FEAT-566):** the promoted task still gets a
    normally-reserved `TASK-<NNN>` from `reserve_ids.py` above — a ledger
    issue id is never used as (or in place of) a task id. Seed the task's
-   Context/Scope from `wikitoolkit ledger context <issue-id>` (title, body,
-   `about` targets), and link back to the source issue by including
-   `discovered_from: <issue-id>` in the generated task's frontmatter/notes
-   so `wikitoolkit ledger close <issue-id> --reason "promoted to TASK-<NNN>"`
-   can be run once the task is filed. Promotion never runs `ledger close`
-   automatically — that stays an explicit, separate step for the human/agent
-   doing the promotion.
+   Context/Scope from the selected issue and its file context. When called by
+   `/sdd-fix`, preserve its selected FixPlan/claimed issue as the handoff; do not
+   re-query ready work to recover an issue that is now claimed. For standalone
+   promotion, locate the issue in `wikitoolkit ledger plan-fix --json` first.
+   Use `wikitoolkit ledger context <issue.files...>` with repo-relative file
+   paths, not the issue ID. Include `discovered_from: <issue-id>` in the task.
+   Promotion never runs `ledger close`: filing a task is not resolution.
+   Close separately only after implementation and validation, with the
+   two-key evidence required by `/sdd-fix`.
+   **Deprecated (FEAT-572)**: `--from-issue` remains for one deprecation cycle but is no
+   longer the ledger entry point — it can only append a task to an *existing* spec, which
+   for a finished feature (per-spec index `completed_at` set) is wrong. Use `/sdd-fix
+   <issue-id>` instead: it plans the issue's group, routes it to the Fast lane (branch → PR)
+   or the SDD lane (reuse the open parent spec, else mint a fresh `FEAT-<NNN>`), and closes
+   by evidence.
    Fill the template's `## Implementation Blueprint` section for every task
    per §3's rules; a task without one is incomplete.
 

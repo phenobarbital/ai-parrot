@@ -4,7 +4,7 @@ exit_code: 0
 
 --- stdout (tail) ---
 .............................................                            [100%]
-45 passed in 8.53s
+45 passed in 2.13s
 
 --- stderr (tail) ---
 

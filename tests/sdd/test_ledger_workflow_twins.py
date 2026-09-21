@@ -173,5 +173,110 @@ class TestStartNextTwins:
             assert "discovered_from" in content, (platform, path)
 
 
+# --------------------------------------------------------------------------
+# FEAT-572 — /sdd-fix twins and /sdd-next retargeting
+# --------------------------------------------------------------------------
+
+
+class TestFixTwins:
+    """Mirrors TestCodereviewTwins; asserts the TASK-3394 twin token contract."""
+
+    CLAUDE = ".claude/commands/sdd-fix.md"
+    ANTIGRAVITY = ".agent/workflows/sdd-fix.md"
+    CODEX = ".agents/skills/sdd-fix/SKILL.md"
+    ALL = (CLAUDE, ANTIGRAVITY, CODEX)
+
+    def test_complete_procedure_is_identical_across_hosts(self) -> None:
+        """Prevent loss of execution rules when adapting the fix skill for a host."""
+        bodies = []
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            if content.startswith("---\n"):
+                content = content.split("---\n", 2)[2].lstrip()
+            # Host adaptations are limited to the title and skill invocation prefix.
+            body = content.split("\n", 1)[1].replace("$sdd-", "/sdd-").strip()
+            bodies.append(body)
+        assert bodies[0] == bodies[1] == bodies[2]
+
+    def test_workflow_files_exist(self):
+        for file_path in self.ALL:
+            assert (_WORKTREE_ROOT / file_path).exists(), f"Missing workflow file: {file_path}"
+
+    def test_basic_content_verification(self):
+        assert len(read_workflow_file(self.CLAUDE)) > 1000 and "# /sdd-fix" in read_workflow_file(self.CLAUDE)
+        assert len(read_workflow_file(self.ANTIGRAVITY)) > 1000 and "# /sdd-fix" in read_workflow_file(self.ANTIGRAVITY)
+        assert len(read_workflow_file(self.CODEX)) > 100 and "# SDD Fix" in read_workflow_file(self.CODEX)
+
+    def test_all_twins_call_plan_fix_json(self):
+        """Twins INVOKE the plan; they never parse `ledger ready` text (S9)."""
+        for path in self.ALL:
+            assert "wikitoolkit ledger plan-fix --json" in read_workflow_file(path), path
+
+    def test_all_twins_document_both_lanes(self):
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            assert "Fast lane" in content, path
+            assert "SDD lane" in content, path
+            assert "--lane" in content, path
+
+    def test_all_twins_require_resolved_by_on_close(self):
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            assert "ledger close" in content, path
+            assert "--resolved-by" in content, path
+            assert "two keys" in content, path
+
+    def test_all_twins_release_unfixed_issues(self):
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            assert "ledger unclaim" in content, path
+            assert "ledger claim" in content, path
+
+    def test_all_twins_require_a_pr_on_the_fast_lane(self):
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            assert "gh pr create --base dev" in content, path
+            assert "git push origin dev" not in content, path
+            assert "--no-pr" not in content, path
+
+    def test_no_twin_calls_acknowledge(self):
+        for path in self.ALL:
+            assert "ledger acknowledge" not in read_workflow_file(path), path
+
+    def test_all_twins_reuse_open_parent_or_mint(self):
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            assert "parents" in content, path
+            assert "reserve_ids" in content, path
+            assert "ensure_worktree" in content, path
+
+    def test_read_only_ledger_exits_without_claiming(self):
+        for path in self.ALL:
+            content = read_workflow_file(path)
+            assert "shared ledger is read-only" in content, path
+            assert "ledger context" in content, path
+            assert "--max-tokens 3000" in content, path
+
+
+class TestSddNextRetarget:
+    """S9: /sdd-fix replaces --from-issue as the ledger entry point (TASK-3395)."""
+
+    NEXT = TestStartNextTwins.NEXT
+    TASK = TestStartNextTwins.TASK
+
+    def test_all_sdd_next_twins_point_at_sdd_fix(self):
+        for platform, path in self.NEXT.items():
+            content = read_workflow_file(path)
+            assert "sdd-fix" in content, (platform, path)
+            assert "sdd-task --from-issue" not in content, (platform, path)
+
+    def test_all_sdd_task_twins_carry_from_issue_deprecation(self):
+        for platform, path in self.TASK.items():
+            content = read_workflow_file(path)
+            assert "Deprecated" in content, (platform, path)
+            assert "sdd-fix" in content, (platform, path)
+            assert "--from-issue" in content, (platform, path)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

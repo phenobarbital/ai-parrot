@@ -29,6 +29,8 @@ import errno
 import json
 import logging
 import os
+import re
+import shutil
 import subprocess
 from collections import Counter
 from collections.abc import Iterator
@@ -91,7 +93,8 @@ from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.ledger.service import LedgerService
-from parrot.knowledge.wiki.ledger.events import IssueKind
+from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -486,7 +489,7 @@ def _normalize_scores(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     scores = [float(r.get("score", 0.0)) for r in rows]
     lo, hi = min(scores), max(scores)
     span = hi - lo
-    for row, score in zip(rows, scores):
+    for row, score in zip(rows, scores, strict=True):
         row["score"] = 1.0 if span <= 0 else (score - lo) / span
     return rows
 
@@ -749,7 +752,7 @@ async def _ingest_files(
     # read per file), so only the files that will actually be re-ingested
     # get registered.
     pending: list[tuple[Any, Path]] = []
-    for file_slice, abs_path in zip(scan.files, paths):
+    for file_slice, abs_path in zip(scan.files, paths, strict=True):
         entry = known.get(str(abs_path))
         must_force = force or file_slice.rel_path in force_rel_paths
         if entry is not None and not must_force and not sources.entry_is_stale(entry):
@@ -818,6 +821,37 @@ async def _ingest_files(
     return {"written": written, "unchanged": unchanged, "written_rel_paths": written_rel_paths}
 
 
+async def _refresh_adr_plane(
+    store: BaseWikiStore, root: Path, config: WikiProjectConfig, paths: list[str] | None = None
+) -> None:
+    """Refresh the ADR decision plane after ordinary ingestion (FEAT-578).
+
+    A no-op when the feature is disabled or no ADR source exists. NEVER
+    generates candidates and never invokes a model — an ordinary build stays
+    fully offline (AC5).
+    """
+    if not config.decisions.enabled:
+        return
+    from parrot.knowledge.wiki.decisions.ingest import refresh_decisions
+
+    try:
+        result = await refresh_decisions(store, root, config.decisions, paths)
+    except Exception as exc:  # noqa: BLE001 — a build must not fail on the ADR plane
+        _cli_logger.warning("ADR refresh skipped: %s", exc)
+        return
+    if result.created or result.updated or result.unchanged or result.missing or result.unresolved:
+        _cli_logger.info(
+            "ADR refresh: %d created, %d updated, %d unchanged, %d missing, %d unresolved",
+            result.created,
+            result.updated,
+            result.unchanged,
+            result.missing,
+            result.unresolved,
+        )
+    for diagnostic in result.diagnostics:
+        _cli_logger.warning("ADR refresh diagnostic: %s: %s", diagnostic.code, diagnostic.message)
+
+
 # --------------------------------------------------------------------------
 # Roblox scan enrichment integration (FEAT-532 TASK-2909)
 # --------------------------------------------------------------------------
@@ -843,15 +877,26 @@ async def _discovered_paths_for_mapping(root: Path, scan: Any, sources: SourceCo
     """
     from_scan = {fs.rel_path for fs in scan.files}
     known_sources = await asyncio.to_thread(sources.list_sources)
-    from_manifest: set[str] = set()
+    from_manifest = await asyncio.to_thread(_resolve_manifest_rel_paths, root, known_sources)
+    return frozenset(from_scan | from_manifest)
+
+
+def _resolve_manifest_rel_paths(root: Path, known_sources: Any) -> set[str]:
+    """Blocking helper: resolve each manifest source URI relative to ``root``.
+
+    Isolated from ``_discovered_paths_for_mapping`` so the filesystem-bound
+    ``Path.resolve()`` calls run once via ``asyncio.to_thread`` instead of
+    blocking the event loop directly inside an ``async def``.
+    """
     resolved_root = root.resolve()
+    from_manifest: set[str] = set()
     for entry in known_sources:
         try:
             rel = Path(entry.source_uri).resolve().relative_to(resolved_root).as_posix()
         except ValueError:
             continue
         from_manifest.add(rel)
-    return frozenset(from_scan | from_manifest)
+    return from_manifest
 
 
 async def _load_active_roblox_catalog() -> Any | None:
@@ -999,8 +1044,9 @@ async def _prune_removed(
     """
     expected_files = {fs.record.concept_id for fs in scan.files}
     expected_dirs = {r.concept_id for r in scan.dir_records}
-    expected_uris = {str((root / fs.rel_path).resolve()) for fs in scan.files}
-    root_prefix = str(root.resolve()) + os.sep
+    resolved_root = await asyncio.to_thread(root.resolve)
+    expected_uris = await asyncio.to_thread(lambda: {str((root / fs.rel_path).resolve()) for fs in scan.files})
+    root_prefix = str(resolved_root) + os.sep
     removed = 0
 
     #: `dir:` ids that this run's removals could have emptied.
@@ -1015,7 +1061,7 @@ async def _prune_removed(
             # Another corpus sharing this plane — not ours to prune.
             live_source_ids.add(entry.source_id)
             continue
-        for parent in PurePosixPath(Path(entry.source_uri).relative_to(root.resolve()).as_posix()).parents:
+        for parent in PurePosixPath(Path(entry.source_uri).relative_to(resolved_root).as_posix()).parents:
             emptied_dirs.add(f"dir:{parent if str(parent) != '.' else '.'}")
         await store.replace_source_slice(entry.source_id, [], [])
         await asyncio.to_thread(sources.remove_source, entry.source_id)
@@ -1612,6 +1658,10 @@ def build(
                 for path in scan.skipped:
                     click.echo(f"  - {path}")
 
+        # FEAT-578: refresh the ADR decision plane LAST — after ordinary
+        # ingestion, export/graph generation and deletion handling above.
+        _run(_refresh_adr_plane(_open_store(root, config), root, config))
+
 
 def _changed_files_from_git(root: Path) -> list[str]:
     """Relative paths touched by the last commit (post-commit hook).
@@ -1792,6 +1842,10 @@ def upsert(
             raise
         if not quiet:
             click.echo(f"Upserted {counts['written']} page(s), " f"removed {counts['removed']}.")
+
+        # FEAT-578: refresh the ADR decision plane LAST — after ordinary
+        # ingestion and deletion handling above.
+        _run(_refresh_adr_plane(_open_store(root, config), root, config))
 
 
 @wiki.command()
@@ -2091,6 +2145,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     # from `read_store`, which may be a federated span.
     if isinstance(store, SQLiteWikiStore):
         payload["sqlite"] = _run(store.sqlite_settings())
+        # The `sqlite3` CLI is never required by wikitoolkit itself (the
+        # store talks to the DB through Python's stdlib `sqlite3` module
+        # only) — this is purely a convenience hint for a human/agent who
+        # wants to inspect `.parrot/wiki.db` or `.parrot/ledger/ledger.db`
+        # directly instead of going through `wikitoolkit`/MCP tools.
+        payload["sqlite_cli"] = shutil.which("sqlite3") is not None
 
     payload["roblox_api"] = get_roblox_status()
     if as_json:
@@ -2144,6 +2204,11 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
             click.echo("           : performance pragmas ENABLED")
         else:
             click.echo("           : performance pragmas disabled")
+        if not payload.get("sqlite_cli"):
+            click.echo(
+                "           : sqlite3 CLI not found on PATH — optional, only needed to "
+                "inspect the .db files directly (e.g. `apt install sqlite3`)"
+            )
 
     roblox_api = payload.get("roblox_api")
     if roblox_api is None:
@@ -2190,6 +2255,22 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
         click.echo(json.dumps(payload, indent=2, default=str))
         return
     click.echo(text)
+
+
+# FEAT-578: the ADR decision plane. Its commands live in decisions/cli.py to
+# keep this module's size in check. Registration is lazy (FEAT-584 /
+# TASK-3569): `decisions.cli` (and the service/store/structural chain it
+# pulls in) is only imported once an `adr` subcommand is actually resolved,
+# so the `claude-hook` fast path — and every other `wikitoolkit` invocation
+# that never touches ADRs — no longer pays that import cost.
+from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup  # noqa: E402  (bottom import breaks a cycle)
+
+wiki.add_command(
+    LazyAdrGroup(
+        name="adr",
+        help="Architectural decisions: ingest ADRs, look them up, and review candidates.",
+    )
+)
 
 
 @wiki.group(name="symbols")
@@ -2634,6 +2715,51 @@ def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
 # Ledger commands (FEAT-566 — SDD Work Ledger)
 # --------------------------------------------------------------------------
 
+_SPEC_PARENT_RE = re.compile(r"^spec:(FEAT-\d+)$")
+
+
+def _load_ledger_snapshot(root: Path) -> list[dict[str, Any]]:
+    """Open rows from the committed ``sdd/ledger/issues.jsonl`` — the busy-index fallback for plan-fix."""
+    path = root / "sdd" / "ledger" / "issues.jsonl"
+    rows: list[dict[str, Any]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("status") == "open":
+            rows.append(row)
+    return rows
+
+
+def _spec_parent_ids(rows: list[dict[str, Any]]) -> set[str]:
+    """``FEAT-<NNN>`` ids from rows whose ``discovered_from`` is ``spec:FEAT-<NNN>`` (other forms yield nothing)."""
+    return {m.group(1) for row in rows if (m := _SPEC_PARENT_RE.match(str(row.get("discovered_from") or "")))}
+
+
+def _dedupe_slugs(plan: FixPlan, specs_dir: Path) -> None:
+    """Suffix colliding ``suggested_slug`` values with ``-2``, ``-3``… in group order (deterministic, I/O lives here)."""
+    try:
+        seen = {p.name[: -len(".spec.md")] for p in specs_dir.glob("*.spec.md")} if specs_dir.exists() else set()
+    except OSError:
+        return
+    for group in plan.groups:
+        base = group.suggested_slug
+        slug = base
+        n = 2
+        while slug in seen:
+            slug = f"{base}-{n}"
+            n += 1
+        group.suggested_slug = slug
+        seen.add(slug)
+
 
 @wiki.group(name="ledger")
 def ledger() -> None:
@@ -2709,7 +2835,7 @@ def ledger_claim(issue_id: str, actor: str) -> None:
             raise SystemExit(1)
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); cannot claim")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("acknowledge")
@@ -2731,11 +2857,12 @@ def ledger_acknowledge(issue_id: str, reason: str, actor: str) -> None:
 @click.argument("issue_id")
 @click.option("--reason", required=True, help="Reason for closing.")
 @click.option("--actor", default="agent:cli", help="Actor closing the issue.")
-def ledger_close(issue_id: str, reason: str, actor: str) -> None:
+@click.option("--resolved-by", default=None, help="Evidence ref: commit:<sha> or task:TASK-<NNN>.")
+def ledger_close(issue_id: str, reason: str, actor: str, resolved_by: str | None) -> None:
     """Close an issue."""
     service = LedgerService.from_root()
     try:
-        success = _run(service.close_issue(issue_id, reason, actor))
+        success = _run(service.close_issue(issue_id, reason, actor, resolved_by=resolved_by))
         if success:
             click.echo(f"Closed {issue_id}")
         else:
@@ -2743,6 +2870,70 @@ def ledger_close(issue_id: str, reason: str, actor: str) -> None:
             raise SystemExit(1)
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); issue queued (index_pending)")
+
+
+@ledger.command("plan-fix")
+@click.option("--kind", type=click.Choice(["bug", "tech_debt", "feature_gap", "vulnerability"]), default=None)
+@click.option("--severity", type=click.Choice(["critical", "major", "minor", "low"]), default=None)
+@click.option("--lane", type=click.Choice(["fast", "sdd"]), default=None, help="Force the lane for every group.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the FixPlan as JSON (stdout only).")
+def ledger_plan_fix(kind: str | None, severity: str | None, lane: str | None, as_json: bool) -> None:
+    """Plan a fix batch: severity-ordered, file-grouped, lane-labelled (FEAT-572)."""
+    service = LedgerService.from_root()
+    try:
+        rows = _run(service.ready_work(kind=cast(IssueKind, kind) if kind else None))
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); planning from committed snapshot", err=True)
+        rows = _load_ledger_snapshot(service.shared_root)
+    parents = _spec_parent_ids(rows)
+    try:
+        status = _run(service.feature_index_status(parents)) if parents else {}
+    except OSError as exc:
+        click.echo(f"Index directory unreadable ({exc}); parents reported as not open", err=True)
+        status = {}
+    try:
+        plan = plan_fix_batch(
+            rows,
+            kind=cast(IssueKind, kind) if kind else None,
+            severity=cast(IssueSeverity, severity) if severity else None,
+            lane_override=cast(Lane, lane) if lane else None,
+            parent_index_status=status,
+        )
+    except ValueError as exc:  # S7: --lane fast on a critical/vulnerability group
+        click.echo(f"Refused: {exc}", err=True)
+        raise SystemExit(1) from exc
+    _dedupe_slugs(plan, service.shared_root / "sdd" / "specs")
+    if as_json:
+        click.echo(plan.model_dump_json(indent=2))
+        return
+    if not plan.groups:
+        click.echo("No ready issues.")
+        return
+    for group in plan.groups:
+        click.echo(
+            f"{group.group_id} [{group.max_severity}] lane={group.lane} "
+            f"slug={group.suggested_slug} ({group.lane_reason})"
+        )
+        for issue in group.issues:
+            click.echo(f"  {issue.issue_id} [{issue.severity}] {issue.title} ({issue.kind})")
+
+
+@ledger.command("unclaim")
+@click.argument("issue_id")
+@click.option("--reason", required=True, help="Why the claim is being released.")
+@click.option("--actor", default="agent:cli", help="Actor releasing the claim.")
+def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
+    """Release a claim so the issue returns to `ledger ready`."""
+    service = LedgerService.from_root()
+    try:
+        if _run(service.unclaim(issue_id, reason, actor)):
+            click.echo(f"Unclaimed {issue_id}")
+        else:
+            click.echo(f"Could not unclaim {issue_id} (not claimed or unknown)")
+            raise SystemExit(1)
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); cannot unclaim")
+        raise SystemExit(2) from exc
 
 
 @ledger.command("context")
@@ -2799,7 +2990,7 @@ def ledger_sync() -> None:
         # (unlike open/close's soft index_pending success) — the cursor is
         # unchanged, the whole batch rolled back, nothing to report as done.
         click.echo(f"Ledger index is busy ({exc.operation}); sync failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("rebuild")
@@ -2829,7 +3020,7 @@ def ledger_rebuild() -> None:
         click.echo("Ledger index rebuilt (SDD spec/task graph re-ingested)")
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); rebuild failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("ingest-sdd")
@@ -2850,7 +3041,7 @@ def ledger_ingest_sdd() -> None:
         )
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); ingest failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
 
 @ledger.command("compact")
@@ -2862,7 +3053,7 @@ def ledger_compact(older_than: int) -> None:
         folded = _run(service.compact(older_than_days=older_than))
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); compact failed")
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
     click.echo(f"Compacted: {folded} issue(s) folded (events.jsonl untouched)")
 
 
@@ -3364,6 +3555,14 @@ def remember(
     from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
 
     existing = _run(store.get_page(page_id, include_body=False))
+
+    from parrot.knowledge.wiki.tools import _reject_managed_page
+
+    managed = _reject_managed_page(existing, page_id)
+    if managed:
+        click.echo(managed, err=True)
+        raise SystemExit(2)
+
     body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
     _run(
         store.upsert_pages(
@@ -3489,6 +3688,14 @@ def note(
     page = _run(store.get_page(page_id, include_body=True))
     if page is None:
         raise click.ClickException(f'Page {page_id!r} not found. Search first: wikitoolkit query "..."')
+
+    from parrot.knowledge.wiki.tools import _reject_managed_page
+
+    managed = _reject_managed_page(page, page_id)
+    if managed:
+        click.echo(managed, err=True)
+        raise SystemExit(2)
+
     asserted_by = _authoring_identity(by)
     stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
     body = str(page.get("body") or "")

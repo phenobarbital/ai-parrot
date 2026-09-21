@@ -28,6 +28,16 @@ validate it, and close it in the same branch/worktree.
 
 ## Workflow
 
+## Deterministic task inspection and closure (FEAT-584)
+Keep wiki-first and read the complete task contract through bounded references.
+Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
+Use the existing declared test selector, environment protection and semantic delivery review.
+Finalize only with structured green evidence and the exact implementation HEAD; call
+python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
+Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
+Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
+
 1. Resolve task:
    - scan `sdd/tasks/index/*.json`, excluding `_orphans.json`
    - match task `id` or `slug`
@@ -35,10 +45,13 @@ validate it, and close it in the same branch/worktree.
 2. Validate:
    - status must be `pending`, or explicitly confirmed `in-progress`
    - every dependency in `depends_on` must be `done`
-3. Detect context:
-   - note current branch
-   - prefer running inside `.claude/worktrees/`
-   - if outside a worktree, confirm the current branch is intentional
+3. Ensure the worktree before changing task state (FEAT-552):
+   - resolve `feature`, `feature_id`, `spec`, `type`, and `base_branch` from the index header
+   - run `python -m scripts.sdd.ensure_worktree --slug <feature-slug> --feature-id <FEAT-ID> --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json`
+   - for hotfixes pass `--jira-key <KEY>` instead of `--feature-id`
+   - on a non-zero exit, STOP and report the error; never fall back to implementing on `base_branch`
+   - on success, enter the returned worktree path and re-read its task/index before proceeding
+   - the helper is idempotent when already inside the correct worktree
 4. Mark in progress:
    - update only the task entry in `sdd/tasks/index/<feature>.json`
    - set `status: in-progress`
@@ -131,5 +144,5 @@ Stop and report if:
 - `sdd/templates/task.md`
 - `sdd/tasks/index/`
 - `scripts/sdd/close_task.sh`
+- `scripts/sdd/ensure_worktree.py`
 - `sdd/WORKFLOW.md`
-

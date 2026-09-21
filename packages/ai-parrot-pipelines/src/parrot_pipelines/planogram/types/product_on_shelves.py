@@ -7,7 +7,7 @@ poster/header panels and shelved products below).
 import asyncio
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Literal, Optional, Sequence, Tuple
 from collections import defaultdict
 from parrot_pipelines.planogram.grid.models import DetectionGridConfig, GridType
 from parrot_pipelines.planogram.grid.horizontal_bands import HorizontalBands
@@ -15,6 +15,34 @@ from parrot_pipelines.planogram.grid.detector import GridDetector
 from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGrid
 from PIL import Image
 from .abstract import AbstractPlanogramType
+import numpy as np
+from ..comparison.definition import RuleBinding, SlotsDefinition
+from ..comparison.projection import finalize_comparison, project_compliance
+from ..comparison.registration import register_image
+from ..comparison.scoring import merge_positions, score_shelves, summarize
+from ..contracts import (
+    ComparisonResult,
+    CycleContext,
+    FixtureMembership,
+    Identification,
+    IdentificationResult,
+    IdentifyStrategy,
+    ObservationSource,
+    PerceptionResult,
+    RuleOutcome,
+    Shape,
+    ShapeKind,
+    Slot,
+)
+from ..identification.detector import llm_detect_shapes
+from ..identification.identify import identify_full_image
+from ..perception.membership import assign_membership
+from ..perception.ocr import read_crop
+from ..perception.profiles import ShapeCandidate, ShapeProfile
+from ..perception.rows import detect_shelf_edges
+from ..perception.shapes import propose_shapes
+from ..perception.slots import AnchorRule, build_slots, candidate_shape_id
+from .ink_wall import resolve_identity
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -23,6 +51,7 @@ from parrot.models.detections import (
     BoundingBox,
     Detections,
 )
+from parrot.models.detections import AisleConfig, PlanogramDescription, TextRequirement
 from parrot.models.compliance import (
     ComplianceResult,
     BrandComplianceResult,
@@ -43,6 +72,12 @@ class ProductOnShelves(AbstractPlanogramType):
         pipeline: Parent PlanogramCompliance instance.
         config: The PlanogramConfig for this compliance run.
     """
+
+    identify_strategy: ClassVar[IdentifyStrategy] = IdentifyStrategy.FULL_IMAGE
+    requires_slots_definition: ClassVar[bool] = True
+    min_usable_shapes: ClassVar[int] = 3
+    uses_enhanced_image: ClassVar[bool] = False
+    DEFAULT_PERCEPTION_MODE: ClassVar[Literal["cv", "llm_detector"]] = "llm_detector"
 
     def __init__(self, pipeline: Any, config: Any) -> None:
         super().__init__(pipeline, config)
@@ -220,6 +255,611 @@ class ProductOnShelves(AbstractPlanogramType):
         # ── end illumination enrichment ───────────────────────────────────────
 
         return identified_products, shelf_regions
+
+    # ------------------------------------------------------------------
+    # FEAT-574 cycle hooks (perceive / identify). Legacy methods above/below are unchanged.
+    # ------------------------------------------------------------------
+
+    def _perception_mode(self) -> str:
+        """Return the perception mode of this configuration.
+
+        Returns:
+            ``"cv"`` or ``"llm_detector"``.
+
+        Raises:
+            ValueError: When planogram_config["perception_mode"] is not "cv" or "llm_detector".
+        """
+        raw = (self.config.planogram_config or {}).get("perception_mode", self.DEFAULT_PERCEPTION_MODE)
+        if raw not in ("cv", "llm_detector"):
+            raise ValueError(f"Invalid perception_mode '{raw}'. Use 'cv' or 'llm_detector'.")
+        return raw
+
+    def get_shape_profiles(self) -> List[ShapeProfile]:
+        """Shape profiles for product bodies, boxes, fact tags and the backlit/poster zone.
+
+        PROVISIONAL (spike: inconclusive) — docs/pipelines/planogram-perception-spike.md accepted no profile,
+        so these are the spike's candidate values; ``DEFAULT_PERCEPTION_MODE`` stays ``"llm_detector"``.
+
+        Returns:
+            The profiles evaluated by ``propose_shapes`` in ``"cv"`` mode.
+        """
+        return [
+            ShapeProfile(
+                name="product_body",
+                kind=ShapeKind.PRODUCT.value,
+                min_width=0.06,
+                max_width=0.30,
+                min_height=0.08,
+                max_height=0.45,
+                min_aspect=0.5,
+                max_aspect=2.5,
+                polarity="edge",
+                min_rectangularity=0.70,
+                min_contrast_std=5.0,
+            ),
+            ShapeProfile(
+                name="product_box",
+                kind=ShapeKind.BOX.value,
+                min_width=0.04,
+                max_width=0.20,
+                min_height=0.05,
+                max_height=0.25,
+                min_aspect=0.4,
+                max_aspect=2.0,
+                polarity="edge",
+                min_rectangularity=0.80,
+                min_contrast_std=5.0,
+            ),
+            ShapeProfile(
+                name="fact_tag",
+                kind=ShapeKind.FACT_TAG.value,
+                min_width=0.03,
+                max_width=0.12,
+                min_height=0.02,
+                max_height=0.08,
+                min_aspect=1.2,
+                max_aspect=4.0,
+                polarity="bright",
+            ),
+            ShapeProfile(
+                name="backlit_zone",
+                kind=ShapeKind.ZONE.value,
+                min_width=0.40,
+                max_width=1.0,
+                min_height=0.06,
+                max_height=0.35,
+                min_aspect=1.5,
+                max_aspect=12.0,
+                polarity="bright",
+                min_rectangularity=0.80,
+                min_contrast_std=5.0,
+                thresholds=(200, 220, 240),
+            ),
+        ]
+
+    def fallback_detection_prompt(self) -> Optional[str]:
+        """Prompt for the LLM detector: the legacy product-hint prompt (see _detect_legacy).
+
+        The hint wording is duplicated from ``_detect_legacy`` (which must not be modified); the output part asks
+        for the ``Detections`` fields the detector parses. Hints are sorted so the prompt (and the vision cache
+        key) is deterministic. A configured ``object_identification_prompt`` replaces the hint section.
+
+        Returns:
+            The detection prompt.
+        """
+        try:
+            description = self.config.get_planogram_description()
+            shelves = getattr(description, "shelves", None) or []
+        except Exception:  # noqa: BLE001 - migrated configs may not describe shelves the legacy way
+            shelves = []
+        hints = sorted(
+            {p.name for s in shelves for p in (getattr(s, "products", None) or []) if getattr(p, "name", "")}
+        )
+        hints_str = ", ".join(hints)
+        instructions = getattr(self.config, "object_identification_prompt", None) or (
+            "Detect all retail products, empty slots, and shelf regions in this image.\n"
+            "Use the provided reference images to identify specific products.\n\n"
+            "IMPORTANT:\n"
+            '- If you see a cardboard box containing a product image/name, label it as "[Product Name] box".\n'
+            '- If you see the bare product itself (e.g. a loose printer), label it as "[Product Name]".\n'
+            f"- Prefer the following product names if they match: {hints_str}\n"
+            '- If an item is NOT in the list, provide a descriptive name (e.g. "Ink Bottle", "Printer") '
+            'rather than just "unknown".\n'
+            '- Do not output "unknown" unless strictly necessary.\n'
+        )
+        kinds = ", ".join(kind.value for kind in ShapeKind)
+        return (
+            f"{instructions}\n"
+            "Return one detection per physical object: label = one of "
+            f"{kinds}; content = the product name as described above (or the legible text); bbox = x1, y1, x2, y2 "
+            "normalised to 0..1; confidence 0..1."
+        )
+
+    async def perceive(self, image: Image.Image, image_id: str, ctx: CycleContext) -> PerceptionResult:
+        """Stage 1 on the untouched full-resolution image (no ROI gate).
+
+        ``"cv"`` mode proposes shapes with the (provisional) profiles through ``ctx.executor``;
+        ``"llm_detector"`` mode asks the vision adapter for boxes. Both converge on the same tail:
+        zones split from products, rows (shelf edges, then row consensus), one slot per product shape,
+        optional OCR of fact tags and zones, and fixture membership.
+
+        Args:
+            image: Untouched full-resolution image.
+            image_id: Image identifier.
+            ctx: Per-run services.
+
+        Returns:
+            The perception result.
+        """
+        arr = np.asarray(image.convert("RGB"))[:, :, ::-1].copy()  # BGR for OpenCV
+        size = (image.width, image.height)
+        self._images_for_rules()[image_id] = image  # compare() evaluates rules on the source images
+        mode = self._perception_mode()
+        if mode == "cv":
+            candidates = await ctx.executor.run(propose_shapes, arr, self.get_shape_profiles())
+            shapes = [self._candidate_to_shape(image_id, c) for c in candidates]
+            detection_source = ObservationSource.CV.value
+        else:
+            shapes = await llm_detect_shapes(arr, image_id, ctx, prompt=self.fallback_detection_prompt() or "")
+            detection_source = ObservationSource.LLM.value
+        zones = [s for s in shapes if s.kind == ShapeKind.ZONE]
+        others = [s for s in shapes if s.kind != ShapeKind.ZONE]
+        edges = await ctx.executor.run(detect_shelf_edges, arr)
+        others, slots, row_count = self._rows_and_slots(image_id, others, edges, size)
+        ocr_available = bool(getattr(ctx.ocr, "available", False))
+        if ocr_available:
+            others, zones = await self._ocr_tags_and_zones(arr, others, zones, ctx)
+        others = assign_membership(others, zones, size)
+        self.logger.debug("perceive[%s] mode=%s shapes=%d slots=%d", image_id, mode, len(others), len(slots))
+        return PerceptionResult(
+            image_id=image_id,
+            image_size=size,
+            shapes=others,
+            slots=slots,
+            zones=zones,
+            row_count=row_count,
+            detection_source=detection_source,
+            ocr_available=ocr_available,
+            legacy=None,
+            errors=[],
+        )
+
+    @staticmethod
+    def _candidate_to_shape(image_id: str, candidate: ShapeCandidate) -> Shape:
+        """CV candidate -> Shape with the id scheme ``build_slots`` uses for anchors."""
+        try:
+            kind = ShapeKind(candidate.kind)
+        except ValueError:
+            kind = ShapeKind.UNKNOWN
+        return Shape(
+            shape_id=candidate_shape_id(image_id, candidate),
+            image_id=image_id,
+            kind=kind,
+            box=DetectionBox(
+                x1=candidate.x1,
+                y1=candidate.y1,
+                x2=candidate.x2,
+                y2=candidate.y2,
+                confidence=max(0.0, min(1.0, candidate.score)),
+            ),
+            profile=candidate.profile,
+            source=ObservationSource.CV,
+        )
+
+    def _rows_and_slots(
+        self, image_id: str, shapes: List[Shape], edges: Sequence[int], size: Tuple[int, int]
+    ) -> Tuple[List[Shape], List[Slot], int]:
+        """Rows of product shapes (between shelf edges, else by vertical centre) and one slot per product.
+
+        Fact tags never become slots. Returns the shapes with ``row_index`` / ``slot_index`` set.
+        """
+        products = [s for s in shapes if s.kind in (ShapeKind.PRODUCT, ShapeKind.BOX, ShapeKind.UNKNOWN)]
+        if not products:
+            return shapes, [], 0
+
+        def centre_y(shape: Shape) -> float:
+            return (shape.box.y1 + shape.box.y2) / 2
+
+        bands: Dict[int, List[Shape]] = {}
+        if edges:
+            bounds = [0, *sorted(edges), size[1]]
+            for shape in products:
+                band = next((i for i in range(len(bounds) - 1) if bounds[i] <= centre_y(shape) < bounds[i + 1]), 0)
+                bands.setdefault(band, []).append(shape)
+        else:
+            ordered = sorted(products, key=lambda s: (centre_y(s), s.box.x1))
+            height = sorted(s.box.y2 - s.box.y1 for s in ordered)[len(ordered) // 2]
+            band = 0
+            bands[band] = [ordered[0]]
+            for shape in ordered[1:]:
+                if abs(centre_y(shape) - centre_y(bands[band][-1])) > height / 2:
+                    band += 1
+                    bands[band] = []
+                bands[band].append(shape)
+        by_candidate: Dict[str, str] = {}
+        rows: List[List[ShapeCandidate]] = []
+        for band in sorted(bands):
+            row: List[ShapeCandidate] = []
+            for shape in sorted(bands[band], key=lambda s: s.box.x1):
+                candidate = ShapeCandidate(
+                    profile=shape.profile or "shape",
+                    kind=shape.kind.value,
+                    x1=shape.box.x1,
+                    y1=shape.box.y1,
+                    x2=shape.box.x2,
+                    y2=shape.box.y2,
+                    score=shape.box.confidence,
+                )
+                by_candidate[candidate_shape_id(image_id, candidate)] = shape.shape_id
+                row.append(candidate)
+            rows.append(row)
+        slots = build_slots(rows, size, image_id=image_id, rule=AnchorRule.SHAPE_IS_SLOT, fill_gaps=False)
+        slots = [
+            s.model_copy(update={"anchor_shape_id": by_candidate.get(s.anchor_shape_id or "", s.anchor_shape_id)})
+            for s in slots
+        ]
+        position = {s.anchor_shape_id: (s.row_index, s.slot_index) for s in slots}
+        updated = [
+            (
+                s.model_copy(update={"row_index": position[s.shape_id][0], "slot_index": position[s.shape_id][1]})
+                if s.shape_id in position
+                else s
+            )
+            for s in shapes
+        ]
+        return updated, slots, len(rows)
+
+    @staticmethod
+    async def _ocr_tags_and_zones(
+        arr: np.ndarray, shapes: List[Shape], zones: List[Shape], ctx: CycleContext
+    ) -> Tuple[List[Shape], List[Shape]]:
+        """Local OCR of fact tags and zones through the CPU executor (text never read here otherwise)."""
+
+        async def read(shape: Shape) -> Shape:
+            crop = arr[shape.box.y1 : shape.box.y2, shape.box.x1 : shape.box.x2]
+            text, conf = await ctx.executor.run(read_crop, crop)
+            return shape.model_copy(update={"ocr_text": text or None, "ocr_confidence": conf if text else None})
+
+        tags = [s for s in shapes if s.kind == ShapeKind.FACT_TAG]
+        read_tags = {s.shape_id: s for s in await asyncio.gather(*(read(s) for s in tags))}
+        read_zones = list(await asyncio.gather(*(read(z) for z in zones)))
+        return [read_tags.get(s.shape_id, s) for s in shapes], read_zones
+
+    async def identify(
+        self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext
+    ) -> IdentificationResult:
+        """Stage 2: one full-image call (image + stage-1 JSON).
+
+        The vocabulary is the list of ``Descriptors`` field NAMES the definition uses — never an expected SKU.
+
+        Args:
+            image: Untouched full-resolution image.
+            perception: Stage-1 output.
+            ctx: Per-run services.
+
+        Returns:
+            The identification result.
+        """
+        arr = np.asarray(image.convert("RGB"))[:, :, ::-1].copy()
+        vocabulary: List[str] = []
+        if ctx.definition is not None:
+            facings = ctx.definition.all_facings()
+            vocabulary = [
+                name
+                for name in ("family", "colors", "pack", "xl")
+                if any(getattr(f.descriptors, name) not in (None, [], "") for f in facings)
+            ]
+        return await identify_full_image(arr, perception, ctx, vocabulary=vocabulary)
+
+    # ------------------------------------------------------------------
+    # FEAT-574 compare hook and rule evaluation (bindings -> RuleOutcome)
+    # ------------------------------------------------------------------
+
+    def _images_for_rules(self) -> Dict[str, Image.Image]:
+        """Per-run image cache filled by ``perceive`` (the compare hook receives no images)."""
+        images = getattr(self, "_cycle_images", None)
+        if images is None:
+            images = {}
+            self._cycle_images = images
+        return images
+
+    def _observed_zones(self, zone_id: str) -> List[Tuple[str, Shape]]:
+        """Observed zone shapes matched to a definition zone, per image (definition order ↔ top-to-bottom)."""
+        ctx_data = getattr(self, "_rule_context", None) or {}
+        definition: Optional[SlotsDefinition] = ctx_data.get("definition")
+        if definition is None:
+            return []
+        zone_ids = [z.zone_id for z in definition.zones]
+        if zone_id not in zone_ids:
+            return []
+        rank = zone_ids.index(zone_id)
+        matched: List[Tuple[str, Shape]] = []
+        for perception in ctx_data.get("perceptions", []):
+            zones = sorted(perception.zones, key=lambda z: (z.box.y1, z.box.x1))
+            if rank < len(zones):
+                matched.append((perception.image_id, zones[rank]))
+        return matched
+
+    def _facing_views(self, facing_id: str) -> List[Tuple[str, Optional[Identification], Optional[Slot]]]:
+        """(image_id, identification, slot) of every observation registered to a facing."""
+        ctx_data = getattr(self, "_rule_context", None) or {}
+        views: List[Tuple[str, Optional[Identification], Optional[Slot]]] = []
+        for reg in ctx_data.get("registrations", []):
+            idents = ctx_data.get("identifications", {}).get(reg.image_id, {})
+            slots = ctx_data.get("slots", {}).get(reg.image_id, {})
+            for shape_id, target in reg.assignments.items():
+                if target == facing_id:
+                    views.append((reg.image_id, idents.get(shape_id), slots.get(shape_id)))
+        return views
+
+    def _target_texts(self, target_id: str) -> Tuple[bool, List[str]]:
+        """(observed, text features) of a rule target: zone OCR text and/or identification text."""
+        ctx_data = getattr(self, "_rule_context", None) or {}
+        definition: Optional[SlotsDefinition] = ctx_data.get("definition")
+        features: List[str] = []
+        observed = False
+        zone_targets = [target_id]
+        facing_targets = [target_id]
+        if definition is not None and any(s.shelf_id == target_id for s in definition.shelves):
+            zone_targets = [z.zone_id for z in definition.zones if z.shelf_id == target_id]
+            facing_targets = [f.facing_id for f in definition.all_facings() if f.shelf_id == target_id]
+        for zone_id in zone_targets:
+            for _image_id, zone in self._observed_zones(zone_id):
+                if zone.membership == FixtureMembership.OFF_FIXTURE:
+                    continue
+                observed = True
+                if zone.ocr_text:
+                    features.extend([f"ocr:{zone.ocr_text}", zone.ocr_text])
+        for facing_id in facing_targets:
+            for _image_id, ident, _slot in self._facing_views(facing_id):
+                if ident is None:
+                    continue
+                observed = True
+                for text in (ident.text, ident.product, *ident.evidence):
+                    if text:
+                        features.extend([f"ocr:{text}", text])
+        return observed, [self._normalize_ocr_text(f) for f in features if f]
+
+    async def _evaluate_rules(
+        self,
+        bindings: Sequence[RuleBinding],
+        images: Dict[str, Image.Image],
+        identifications: Sequence[IdentificationResult],
+        ctx: CycleContext,
+    ) -> Dict[str, RuleOutcome]:
+        """Evaluate every bound non-product rule once.
+
+        Args:
+            bindings: Validated rule bindings.
+            images: Source images keyed by image id.
+            identifications: Stage-2 outputs.
+            ctx: Per-run services (errors sink).
+
+        Returns:
+            rule_id → RuleOutcome. Rules that cannot be evaluated are returned with assessed=False.
+        """
+        outcomes: Dict[str, RuleOutcome] = {}
+        for binding in bindings:
+            try:
+                if binding.kind == "illumination":
+                    outcome = await self._rule_illumination(binding, images, ctx)
+                elif binding.kind == "text_requirements":
+                    outcome = self._rule_text(binding, identifications)
+                elif binding.kind == "visual_features":
+                    outcome = self._rule_visual(binding, identifications)
+                elif binding.kind == "zone_present":
+                    outcome = self._rule_zone_present(binding, identifications)
+                else:
+                    raise ValueError(f"Unknown rule kind '{binding.kind}'")
+            except Exception as exc:  # noqa: BLE001 - isolate one rule; never fail the run
+                self.logger.warning("Rule %s not assessed: %s", binding.rule_id, exc)
+                ctx.errors.append(f"rule {binding.rule_id}: {exc}")
+                outcome = RuleOutcome(
+                    rule_id=binding.rule_id, assessed=False, passed=None, score=0.0, penalty=0.0, detail=str(exc)
+                )
+            outcomes[binding.rule_id] = outcome
+        return outcomes
+
+    def _unassessed(self, binding: RuleBinding, detail: str) -> RuleOutcome:
+        """Unknown is not failure."""
+        return RuleOutcome(rule_id=binding.rule_id, assessed=False, passed=None, score=0.0, penalty=0.0, detail=detail)
+
+    async def _rule_illumination(
+        self, binding: RuleBinding, images: Dict[str, Image.Image], ctx: CycleContext
+    ) -> RuleOutcome:
+        """params: {"required": "on"|"off", "penalty": float=0.5, "name": str}.
+
+        One ``_check_illumination`` call per (image, zone); ``None`` ⇒ unassessed.
+        """
+        required = str(binding.params.get("required", "on")).strip().lower()
+        penalty = float(binding.params.get("penalty", 0.5))
+        name = str(binding.params.get("name") or binding.target_id)
+        targets: List[Tuple[str, Optional[DetectionBox]]] = [
+            (image_id, zone.box)
+            for image_id, zone in self._observed_zones(binding.target_id)
+            if zone.membership != FixtureMembership.OFF_FIXTURE
+        ]
+        if not targets:
+            targets = [(image_id, slot.box) for image_id, _i, slot in self._facing_views(binding.target_id) if slot]
+        if not targets:
+            return self._unassessed(binding, "illumination target not observed")
+        cache: Dict[Tuple[str, Tuple[int, int, int, int]], Optional[str]] = getattr(self, "_illumination_cache", {})
+        self._illumination_cache = cache
+        for image_id, box in targets:
+            img = images.get(image_id)
+            if img is None or box is None:
+                continue
+            key = (image_id, (box.x1, box.y1, box.x2, box.y2))
+            if key not in cache:
+                cache[key] = await self._check_illumination(img, zone_bbox=box)
+            state = self._extract_illumination_state([cache[key]] if cache[key] else [])
+            if state is None:
+                continue
+            if state == required:
+                return RuleOutcome(
+                    rule_id=binding.rule_id, assessed=True, passed=True, score=1.0, penalty=0.0, detail=None
+                )
+            return RuleOutcome(
+                rule_id=binding.rule_id,
+                assessed=True,
+                passed=False,
+                score=0.0,
+                penalty=penalty,
+                detail=f"{name} — backlight {state.upper()} (required: {required.upper()})",
+            )
+        return self._unassessed(binding, "illumination could not be determined")
+
+    def _rule_text(self, binding: RuleBinding, identifications: Sequence[IdentificationResult]) -> RuleOutcome:
+        """params: {"requirements": [TextRequirement dicts]} — legacy semantics (score = Σ conf(found) / len(all))."""
+        requirements = [
+            TextRequirement(**r) if isinstance(r, dict) else r for r in binding.params.get("requirements", [])
+        ]
+        if not requirements:
+            return self._unassessed(binding, "no text requirements")
+        observed, features = self._target_texts(binding.target_id)
+        if not observed:
+            return self._unassessed(binding, "text target not observed")
+        results = [
+            TextMatcher.check_text_match(
+                required_text=req.required_text,
+                visual_features=features,
+                match_type=req.match_type,
+                case_sensitive=req.case_sensitive,
+                confidence_threshold=req.confidence_threshold,
+            )
+            for req in requirements
+        ]
+        score = sum(r.confidence for r in results if r.found) / len(results)
+        mandatory_missing = [
+            req.required_text for req, r in zip(requirements, results, strict=True) if req.mandatory and not r.found
+        ]
+        return RuleOutcome(
+            rule_id=binding.rule_id,
+            assessed=True,
+            passed=not mandatory_missing,
+            score=max(0.0, min(1.0, score)),
+            penalty=0.0,
+            detail=f"missing mandatory text: {', '.join(mandatory_missing)}" if mandatory_missing else None,
+        )
+
+    def _rule_visual(self, binding: RuleBinding, identifications: Sequence[IdentificationResult]) -> RuleOutcome:
+        """params: {"expected": [str], "threshold": float=0.5} → self._calculate_visual_feature_match(expected, detected)."""
+        expected = [str(e) for e in binding.params.get("expected", [])]
+        observed, detected = self._target_texts(binding.target_id)
+        if not observed:
+            return self._unassessed(binding, "visual target not identified")
+        score = self._calculate_visual_feature_match(expected, detected)
+        threshold = float(binding.params.get("threshold", 0.5))
+        return RuleOutcome(
+            rule_id=binding.rule_id,
+            assessed=True,
+            passed=score >= threshold,
+            score=max(0.0, min(1.0, score)),
+            penalty=0.0,
+            detail=None,
+        )
+
+    def _rule_zone_present(self, binding: RuleBinding, identifications: Sequence[IdentificationResult]) -> RuleOutcome:
+        """score 1.0 when the bound zone was observed on_fixture in any image, else 0.0 (assessed=True)."""
+        observed = self._observed_zones(binding.target_id)
+        if any(zone.membership == FixtureMembership.ON_FIXTURE for _i, zone in observed):
+            return RuleOutcome(rule_id=binding.rule_id, assessed=True, passed=True, score=1.0, penalty=0.0)
+        if any(zone.membership == FixtureMembership.UNCERTAIN for _i, zone in observed):
+            return self._unassessed(binding, "zone membership uncertain")
+        return RuleOutcome(
+            rule_id=binding.rule_id, assessed=True, passed=False, score=0.0, penalty=0.0, detail="zone not observed"
+        )
+
+    def _canonical_identity(self, identification: Identification, definition: SlotsDefinition) -> Identification:
+        """Map what was read to a definition product id (exact id, then identifier / signature / alias rules)."""
+        if not identification.product and not identification.text:
+            return identification
+        by_id = {f.product.casefold(): f.product for f in definition.all_facings()}
+        product = by_id.get((identification.product or "").casefold().strip())
+        if product is None:
+            product, _candidates = resolve_identity(identification, definition)
+        if product is None:
+            return identification  # keep what was read: a different product stays detectable as a mismatch
+        return identification.model_copy(update={"product": product})
+
+    def _cycle_description(self) -> PlanogramDescription:
+        """PlanogramDescription for weights/thresholds; minimal when the config no longer describes shelves."""
+        try:
+            return self.config.get_planogram_description()
+        except Exception as exc:  # noqa: BLE001 - migrated configs may omit the legacy keys
+            self.logger.debug("ProductOnShelves: minimal PlanogramDescription (%s)", exc)
+            cfg = self.config.planogram_config or {}
+            return PlanogramDescription(
+                brand=str(cfg.get("brand", "")),
+                category=str(cfg.get("category", "")),
+                aisle=AisleConfig(name=str(cfg.get("aisle", "") or "aisle")),
+                shelves=[],
+            )
+
+    async def compare(
+        self,
+        perceptions: Sequence[PerceptionResult],
+        identifications: Sequence[IdentificationResult],
+        ctx: CycleContext,
+    ) -> ComparisonResult:
+        """Stage 3: registration → merge → rules → shelf scores → summary → ComplianceResult projection.
+
+        Expected products come only from the slots definition; only on-fixture observations are registered.
+
+        Args:
+            perceptions: Stage-1 outputs.
+            identifications: Stage-2 outputs.
+            ctx: Per-run services.
+
+        Returns:
+            The finalised comparison (``overall_compliant`` only via ``finalize_comparison``).
+        """
+        definition: SlotsDefinition = ctx.definition
+        description = self._cycle_description()
+        by_image = {i.image_id: i for i in identifications}
+        registrations = []
+        canonical: List[Identification] = []
+        idents_by_image: Dict[str, Dict[str, Identification]] = {}
+        slots_by_image: Dict[str, Dict[str, Slot]] = {}
+        for perception in perceptions:
+            ident = by_image.get(perception.image_id)
+            idents = [
+                self._canonical_identity(i, definition)
+                for i in (ident.identifications if ident else [])
+                if i.image_id in (None, perception.image_id)
+            ]
+            idents = [i.model_copy(update={"image_id": perception.image_id}) for i in idents]
+            on_fixture = {s.shape_id for s in perception.shapes if s.membership == FixtureMembership.ON_FIXTURE}
+            on_fixture |= {
+                s.shape_id for s in (ident.added if ident else []) if s.membership == FixtureMembership.ON_FIXTURE
+            }
+            slots = [s for s in perception.slots if s.anchor_shape_id in on_fixture]
+            registrations.append(register_image(perception.image_id, slots, idents, definition))
+            canonical.extend(idents)
+            idents_by_image[perception.image_id] = {i.shape_id: i for i in idents}
+            slots_by_image[perception.image_id] = {
+                **{s.slot_id: s for s in slots},
+                **{s.anchor_shape_id: s for s in slots if s.anchor_shape_id},
+            }
+        positions = merge_positions(definition, registrations, canonical, ctx.credit_policy)
+        self._rule_context = {
+            "definition": definition,
+            "perceptions": list(perceptions),
+            "registrations": registrations,
+            "identifications": idents_by_image,
+            "slots": slots_by_image,
+        }
+        try:
+            outcomes = await self._evaluate_rules(ctx.bindings, self._images_for_rules(), identifications, ctx)
+        finally:
+            self._rule_context = None
+            self._illumination_cache = {}
+        shelf_scores = score_shelves(positions, definition, ctx.bindings, outcomes, description, ctx.credit_policy)
+        result = summarize(shelf_scores, positions, definition, ctx.evidence_weights)
+        result = result.model_copy(update={"position_results": positions, "shelf_scores": shelf_scores})
+        result = finalize_comparison(result, project_compliance(shelf_scores, positions, definition, description))
+        self._images_for_rules().clear()
+        return result
 
     async def _detect_with_grid(
         self,
@@ -619,8 +1259,8 @@ class ProductOnShelves(AbstractPlanogramType):
             # Build found_readable — update labels for illumination-mismatch products.
             _mismatch_j = {j_idx: det for (_, j_idx, det, _, _) in illum_mismatches}
             found_readable = []
-            for k, (used, (f_ptype, f_base), (_, _, original_label)) in enumerate(
-                zip(consumed, found_keys, found_lookup)
+            for k, (_used, (_f_ptype, _f_base), (_, _, original_label)) in enumerate(
+                zip(consumed, found_keys, found_lookup, strict=True)
             ):
                 label = original_label
                 if k in _mismatch_j:
@@ -633,7 +1273,9 @@ class ProductOnShelves(AbstractPlanogramType):
                 missing.append(f"{expected_readable[i_idx]} — backlight {det.upper()} (required: {exp_s.upper()})")
             unexpected = []
             if not shelf_cfg.allow_extra_products:
-                for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
+                for used, (f_ptype, f_base), (_, _, original_label) in zip(
+                    consumed, found_keys, found_lookup, strict=True
+                ):
                     if not used and (f_ptype, f_base) not in globally_matched_keys:
                         # Also protect products that ARE expected somewhere else in
                         # the planogram but landed on the wrong shelf due to spatial
@@ -822,12 +1464,11 @@ class ProductOnShelves(AbstractPlanogramType):
         msg = None
         for attempt in range(max_attempts):
             try:
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         structured_output=Detections,
                         max_tokens=8192,
                     )
@@ -891,9 +1532,6 @@ class ProductOnShelves(AbstractPlanogramType):
                 panel_det.bbox.x1 = min(panel_det.bbox.x1, promo_graphic_det.bbox.x1)
                 panel_det.bbox.x2 = max(panel_det.bbox.x2, promo_graphic_det.bbox.x2)
 
-        config_width_percent = geometry.width_margin_percent
-        config_height_percent = geometry.height_margin_percent
-        config_top_margin_percent = geometry.top_margin_percent
         side_margin_percent = geometry.side_margin_percent
 
         # If planogram has is_background shelves (e.g. a wide promotional panel
@@ -942,7 +1580,7 @@ class ProductOnShelves(AbstractPlanogramType):
         full_height_hint = False
         if endcap and getattr(endcap, "position", None) == "header" and getattr(endcap, "full_height_roi", True):
             shelves = getattr(planogram, "shelves", []) or []
-            has_non_header = any(getattr(s, "level", None) and getattr(s, "level") != "header" for s in shelves)
+            has_non_header = any(getattr(s, "level", None) and s.level != "header" for s in shelves)
             full_height_hint = has_non_header
         if full_height_hint:
             ey2 = 1.0
@@ -1273,7 +1911,7 @@ class ProductOnShelves(AbstractPlanogramType):
 
         # If no shelf_regions were supplied, fall back to only detected-tag levels
         if not shelf_reg_by_level:
-            shelf_reg_by_level = {lvl: None for lvl in detected_by_shelf}
+            shelf_reg_by_level = dict.fromkeys(detected_by_shelf)
 
         shelf_map: Dict[str, List[str]] = defaultdict(list)
         img_w, img_h = img.size
@@ -1354,12 +1992,11 @@ class ProductOnShelves(AbstractPlanogramType):
                     "commas (e.g. 'ES-C220, RR-60, ES-400'). "
                     "If no fact tags are readable, return 'UNKNOWN'."
                 )
-                async with self.pipeline.roi_client as client:
+                async with self.pipeline.llm as client:
                     msg = await client.ask_to_image(
                         image=row_img,
                         prompt=prompt,
-                        model="gemini-3.5-flash",
-                        no_memory=True,
+                        **self._vision_kwargs(),
                         max_tokens=128,
                     )
                 raw = (msg.output or "").strip() if msg else ""
