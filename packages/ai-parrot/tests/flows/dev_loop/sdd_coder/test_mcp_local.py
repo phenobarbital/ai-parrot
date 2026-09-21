@@ -31,6 +31,9 @@ EXPECTED = {
         "delivery_report",
         # FEAT-584 TASK-3562: paginated read of a durable evidence artifact.
         "read_artifact",
+        # FEAT-584 TASK-3565: background job status and validation-handle gates.
+        "bg_status",
+        "run_validation",
     )
 }
 
