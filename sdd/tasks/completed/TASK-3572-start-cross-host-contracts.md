@@ -276,4 +276,44 @@ Los escenarios en los blueprints son el mínimo verificable. Usar repos/procesos
 
 ## Completion Note
 
-Pendiente de ejecución. Registrar autor, fecha, evidencia, validaciones y desviaciones; no rellenar con éxito anticipado.
+Completado 2026-09-21 por coder nativo sonnet (attempt `a346bc66cb4847c3981e257ecd006fc3`). Tocó solo
+los seis targets listados (5 MODIFY + 1 CREATE):
+
+- `.claude/commands/sdd-start.md`, `.agent/workflows/sdd-start.md`,
+  `.agents/skills/sdd-start/SKILL.md`, `.codex/agents/sdd-worker.toml`,
+  `.agent/agents/sdd-worker/agent.md` — bloque "## Deterministic task inspection and closure
+  (FEAT-584)" del blueprint insertado tras cada anchor verificado byte-a-byte, como una nueva
+  subsección preliminar, sin borrar/reescribir los pasos existentes — mismo patrón establecido por
+  TASK-3570/3571 (ya mergeadas, verificadas primero en este worktree). Para el TOML (host Codex)
+  confirmado parseable con `tomllib` stdlib, sin referencias `mcp__...` que ese host no puede
+  invocar. Para `agent.md` (Antigravity, sin MCP) confirmado que sigue sin referencias `mcp__` y que
+  el lenguaje `unsupported_host`/"never call Claude /compact" satisface AC12/AC13 también para ese
+  host.
+- `test_start_optimization_contract.py` CREATE — `test_start_twins_preserve_semantic_gates`
+  (bloque de cierre y sus marcadores presentes en los cuatro twins Markdown; referencias
+  preexistentes a `close_task.sh`/índice per-spec y el invariante sin-MCP de `agent.md`
+  sobreviven) y `test_host_variants_remain_honest` (parsea el TOML Codex con `tomllib`, asserts
+  `unsupported_host` + "never call Claude /compact" + "Do not compact for every task." + sin
+  referencia `mcp__` en TOML y agent.md).
+
+Interpretación flagueada por el coder (aceptada, consistente con el precedente ya mergeado): el
+blueprint no especificaba nivel de línea más allá de "insertar" vs "reemplazar"; se resolvió
+insertando como nueva subsección (preservando "conservando checks y referencias al índice por
+spec" literalmente) en vez de una reescritura mayor que sustituya el bloque mecánico close_task.sh/
+jq por una llamada a `finalize_task` (eso ocurrió solo dentro de `sdd-worker.md` por TASK-3570, un
+archivo distinto fuera del scope de esta tarea). No se tocó `.claude/agents/sdd-worker.md` (ya
+cubierto por TASK-3570) ni ningún twin `.codex/skills` (no existe en este checkout).
+
+Sin desviaciones fuera de lo flagueado. Nada bajo `sdd/` tocado.
+
+Validación:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_start_optimization_contract.py -q`
+  (Validation Command exacto) → 2 passed.
+- `python3 -c "import tomllib; tomllib.load(open('.codex/agents/sdd-worker.toml','rb'))"` → parsea
+  limpio.
+- `ruff check` → clean.
+- `git status --porcelain --untracked-files=all` limpio salvo artefactos gitignored.
+
+Review: `coder-review:dd3b967bc35193753d7cafce`.
+
+Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~397s · Tokens: 144478 (subagent total, in/out no separado para native).
