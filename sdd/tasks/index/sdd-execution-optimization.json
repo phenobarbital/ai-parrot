@@ -307,7 +307,7 @@
       "feature": "sdd-execution-optimization",
       "feature_id": "FEAT-584",
       "spec": "sdd/specs/sdd-execution-optimization.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -315,8 +315,8 @@
       "parallelism_notes": "Independiente del engine y de todos los prompts; único owner de cli.py. Revalidar cambios recientes de wiki antes de implementar.",
       "assigned_to": null,
       "started_at": "2026-09-21T00:25:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3569-lazy-wiki-hook-startup.md"
+      "completed_at": "2026-09-21T12:08:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3569-lazy-wiki-hook-startup.md"
     },
     {
       "id": "TASK-3570",
