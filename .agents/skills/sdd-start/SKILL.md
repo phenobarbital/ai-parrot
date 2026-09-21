@@ -28,6 +28,16 @@ validate it, and close it in the same branch/worktree.
 
 ## Workflow
 
+## Deterministic task inspection and closure (FEAT-584)
+Keep wiki-first and read the complete task contract through bounded references.
+Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
+Use the existing declared test selector, environment protection and semantic delivery review.
+Finalize only with structured green evidence and the exact implementation HEAD; call
+python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
+Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
+Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
+
 1. Resolve task:
    - scan `sdd/tasks/index/*.json`, excluding `_orphans.json`
    - match task `id` or `slug`
