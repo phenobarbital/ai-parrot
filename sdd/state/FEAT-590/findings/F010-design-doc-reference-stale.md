@@ -12,11 +12,11 @@ parent_id: null
 
 ## Summary
 
-The proposal referenced `claude/handle-only-execution-design.md` — the actual file is at `artifacts/proposals/handle-only-execution-design.md`. The canonical specifications are `sdd/specs/execution-plan-tool.spec.md` (FEAT-419) and `sdd/specs/plan-then-execute-hardening.spec.md` (FEAT-585). The proposal's §9 "Pending per the plan-then-execute doc" items should reference these specs instead.
+The proposal referenced `claude/handle-only-execution-design.md` — the actual file is at `sdd/proposals/handle-only-execution-design.input.md`. The canonical specifications are `sdd/specs/execution-plan-tool.spec.md` (FEAT-419) and `sdd/specs/plan-then-execute-hardening.spec.md` (FEAT-585). The proposal's §9 "Pending per the plan-then-execute doc" items should reference these specs instead.
 
 ## Citations
 
-- path: `artifacts/proposals/handle-only-execution-design.md`
+- path: `sdd/proposals/handle-only-execution-design.input.md`
   excerpt: |
     Original design doc (was referenced as claude/handle-only-execution-design.md)
 
