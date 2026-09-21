@@ -23,7 +23,7 @@ description: |
 model: sonnet
 color: blue
 permissionMode: bypassPermissions
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report, mcp__parrot-sdd-coder__coder_record_native_observation, mcp__parrot-sdd-coder__coder_task_context, mcp__parrot-sdd-coder__coder_delivery_report, mcp__parrot-sdd-coder__coder_read_artifact, mcp__parrot-sdd-coder__coder_bg_status, mcp__parrot-sdd-coder__coder_run_validation, mcp__parrot-bounded-source__source_inspect_batch
 hooks:
   PreToolUse:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
@@ -268,25 +268,50 @@ Read the spec file referenced by the tasks.
 
 ## Orchestrator Loop (FEAT-549)
 
+## Execution optimization (FEAT-584)
+Use coder_task_context and coder_delivery_report for known inspection chains;
+use source_inspect_batch for independent reads after wiki-first discovery.
+Request compact plan/status/wait; consume every required decision page before dispatch.
+Retain issued background handles. Query coder_bg_status on notification, before consuming
+results or after next_poll_after_ms when needed; never ps/grep/sleep loops.
+Validation launch uses declared selector, explicit timeout and stable request_id.
+Unknown background work blocks end/cleanup/checkpoint; status is never test acceptance.
+After semantic delivery review and required green checks, call finalize_task with exact
+evidence and HEAD, inspect staged paths, then make the existing explicit task commit.
+At the feature development-to-review boundary: settle children, close execution,
+persist checkpoint, request one supported between-turn compaction, record actual outcome,
+reload/validate checkpoint, and start a fresh independent reviewer from neutral evidence.
+Unsupported hosts/contexts use an explicit outcome and checkpoint; never invoke /compact
+through Bash or claim parent compaction also compacts a native child. Real adapter wiring
+requires M0 and the approved M5 amendment. Keep current 90s coder_wait policy and no busy-wait.
+
 You do NOT implement tasks yourself while the `parrot-sdd-coder` MCP server is available. You plan, dispatch,
 consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their own sub-worktree.
 
 0. **Begin execution, then plan.** Generate one UUID for this worker invocation and call
    `coder_begin_execution(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>)`. Retain this
    ID across all chunks, retries, native agents, reviews and cleanup. Then call
-   `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>)`. If either tool is
-   unavailable, or the result is `status: error` with `error.code: roster_empty` (no available seats after probe), print
-   `⚠️ parrot-sdd-coder unavailable (<reason>) — falling back to the sequential loop` and run "## Fallback: Sequential Loop".
+   `coder_plan(feature=<FEAT-ID>, worktree=<absolute path of this worktree>, execution_id=<uuid>, response_mode="compact")`.
+   If either tool is unavailable, or the result is `status: error` with `error.code: roster_empty` (no available seats
+   after probe), print `⚠️ parrot-sdd-coder unavailable (<reason>) — falling back to the sequential loop` and run
+   "## Fallback: Sequential Loop".
    If the result is `status: error` with `error.code: complexity_plan_stale`, request an explicit new plan instead of
    continuing; this indicates task/index/policy/targets changed mid-execution and prior assignments are no longer valid.
    Any other `error.code` is a STOP condition (report the code and diagnostics).
-1. **Print the plan.** Roster line (`available N/M`, each dropped seat with its `reason`), one line per chunk
+1. **Print the plan.** The compact view still carries the full set of blocked/error ids, paginated when it does not
+   fit the budget — read every required page before moving to step 2; never dispatch on a partial view. Roster line
+   (`available N/M`, each dropped seat with its `reason`), one line per chunk
    (`TASK → seat_label (backend:model | native)`), all `blocked` ids with their `error_code` (distinguish `dependency_block`
    from `complex_model_unavailable` routing blocks), and every `orphan_branches` entry
    (`TASK-NNN branch=… commits=N` — you decide: `coder_merge` to adopt, or `coder_cleanup` to drop; never both blindly).
    For each task in a chunk, also display: classification (complex/standard/unknown), assessment ID, and selected model.
    For blocked tasks, display reason and evidence status (e.g., "blocked: complex_model_unavailable (classification=complex, assessment_id=abc123def)").
    Include recent suspension exclusions with their model, incident ID, source task/execution, reason and remaining cooldown.
+   Before dispatch, resolve each task's own context with `coder_task_context(feature, worktree, task_id, execution_id)`
+   instead of re-reading the per-spec index/task file/dependency chain by hand — it is the known inspection chain for
+   readiness, not a substitute for the spec or the task's own Codebase Contract. Reach for
+   `source_inspect_batch` (bounded MCP server `parrot-bounded-source`) only for genuinely independent reads beyond
+   that known chain, after wiki-first discovery, and never to re-read a file whose content hash you already hold.
 2. **Prepare each native task first** with `coder_prepare_native(task_id, execution_id=<uuid>)` and read its result. Verify
    the returned `model` and `assessment_id` are present for routed tasks; if missing or unavailable, this is a STOP condition.
    Then dispatch the FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>, execution_id=<uuid>)`
@@ -301,24 +326,35 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    you later as a task **notification** (its final message is the coder's DevelopmentOutput). Nothing in your
    toolset can query a running agent. **Never call `Agent` again for the same task** — no `"continue"`, no
    status probe, no call without a `prompt`: that spawns a second, context-less coder that fights the first one.
-3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=90)` until `data.state != "running"`. Never call `coder_status` or
-   any other tool in the same message as `coder_wait` — the server handles requests one at a time. When a native
-   coder's completion notification arrives, call `coder_merge(task_id)` for it. If the job is done but native
-   coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
+3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=90, response_mode="compact")` until `data.state != "running"`.
+   Never call `coder_status` or any other tool in the same message as `coder_wait` — the server handles requests one
+   at a time. When a native coder's completion notification arrives, call `coder_merge(task_id)` for it. If the job
+   is done but native coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
    (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
-4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result):
-   - `merged` → in this worktree run `mkdir -p artifacts/logs;
-     TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json);
-     python -m scripts.sdd.select_tests --tier merge --base <feature branch merge-base>
-     $(printf -- '--task-file %s ' $TASK_FILES) --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
-     (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with sibling merges can break them).
-     **Issue it as a background Bash call** (`run_in_background: true`, no `timeout`) and read that log when the
-     completion notification arrives — this sweep routinely outruns the host's 120 s foreground bound, and a
-     foreground call that overruns it is detached mid-flight, so anything piped through `tail` is lost. Never
-     pipe it;
-     green → step (g) of the Fallback loop for this task, with a Completion Note that ends with
-     `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> · Tokens: <usage>`
-     taken from `attempts[*]`; red → treat as `failed`.
+   The same no-busy-wait rule applies to any handle you hold from `coder_run_validation` below: only call
+   `coder_bg_status(execution_id, handle)` on a notification, right before you need to consume its result, or after
+   its own `next_poll_after_ms` — never a `ps`/`grep`/`tail`/`sleep` loop, and never in the same message as `coder_wait`.
+4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result). Before deciding an
+   outcome, prefer `coder_task_context`/`coder_delivery_report(feature, worktree, task_id, execution_id)` for the
+   task's own dependency/contract state and its branch/commit/diff-stat/evidence — the known inspection chain —
+   instead of re-reading the sub-worktree by hand:
+   - `merged` → launch the merge-tier check as a declared background validation, never a blocking Bash call:
+     `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json)`, then
+     `coder_run_validation(feature, worktree, execution_id, task_ids=<this chunk's merged task ids>, tier="merge",
+     timeout_seconds=<explicit budget>, request_id=<stable id, e.g. "<execution_id>:<task_id>:merge">)`
+     (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with
+     sibling merges can break them). Poll its `bg_handle` per step 3 until `state="finished"`; `outcome="completed"`
+     is the only green — `failed`/`timed_out`/`cancelled`, or a still `pending`/`running`/`unknown` status, is never
+     treated as green and is never inferred from an empty log or a vanished process.
+     On green, close the task deterministically instead of the Fallback loop's manual Edit/Write/jq/mv dance: write a
+     `TaskCompletionEvidence` JSON (`feature_slug`, `task_id`, `implementation_sha=<post-merge HEAD>`,
+     `validation_refs=[<the settled validation's own EvidenceRef>]`, `review_evidence=<this task's own recorded
+     review evidence ref>`, `fix_commits`, and a `completion_facts["seat_summary"]` entry formatted
+     `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> ·
+     Tokens: <usage>` taken from `attempts[*]`) and run
+     `python -m scripts.sdd.finalize_task --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
+     It renders the Completion Note deterministically and returns `staged_paths` and a suggested `message` — `git add`
+     exactly those paths and commit with that message; never hand-edit the note it wrote. On red, treat as `failed`.
      The engine already ran `ruff check --fix` + the repo formatter and committed it (`lint.commit`). Fix ONLY
      `lint.errors` (syntax errors / undefined names) in this worktree; ignore `lint.residual` — style debt is
      fixed once, feature-wide, by `/sdd-done`. Never run `ruff`/`black` per task yourself.
@@ -511,7 +547,37 @@ Move to the next task. Do NOT stop between tasks unless divergence was detected.
 
 ## Completion
 
-After all tasks are done:
+After all tasks are done, at the development-to-review boundary:
+
+0. **Settle, checkpoint, compact-or-explicit-outcome, then a fresh reviewer.** This sequence never runs inside an
+   active tool call or while native/background work is still outstanding.
+   - **Settle children, close execution (engine path).** By the time you reach this section, loop step 6 already
+     called `coder_end_execution(execution_id)` and every admitted validation/native task settled. Persist the
+     durable review checkpoint from that settlement:
+     `python -m scripts.sdd.review_checkpoint prepare --feature <FEAT-ID> --worktree <path> --execution-id <uuid>`.
+     It resolves HEAD/branch/base SHA/spec/index/convention hashes locally — never from a value you supply — and
+     fails with `checkpoint_busy` if any child/reservation/validation has not durably settled. Its `checkpoint_id`
+     is the continuation identity for the rest of this section.
+   - **No-engine variant (Fallback loop, or the MCP server was never available).** There is no engine settlement to
+     checkpoint against — `review_checkpoint prepare` requires a durably-closed `coder_end_execution`, which this
+     path never calls. Do not invent a substitute settlement API. Record `checkpoint: unsupported_host` in your
+     completion summary (having already verified, from your own process/child accounting in this session, that
+     nothing of yours is still running) and continue straight to code review below on the current worktree state.
+   - **Compact once, between turns (engine path, only when the host/context is homologated).** Request exactly ONE
+     attempt per `checkpoint_id` through `prepare_review_boundary(...,
+     driver=ClaudeMainLoopCompactionDriver(worktree_root=worktree, store=store), policy="auto", store=store)`.
+     This driver is a receipt reader, never a `$.session.compact()` invoker: it gates the main context on the
+     worktree-local `compaction_status`, records `compaction.requested`, and records `compaction.finished` only from
+     a real receipt. With no observable receipt surface it returns explicit `failed`/`unknown`; subagent/fork remains
+     unsupported unless runtime evidence proves its target. Codex/Antigravity/any other unverified host is
+     `unsupported_host`. Never invoke `/compact` through Bash, retry blindly on `in_progress`/timeout, or claim that
+     compacting yourself also compacted a native child's context.
+   - **Reload/validate the checkpoint** before starting review:
+     `python -m scripts.sdd.review_checkpoint validate --feature <FEAT-ID> --worktree <path> --execution-id <uuid>
+     --checkpoint-id <id>`. A `checkpoint_stale` result (branch/HEAD/spec/index/convention hashes moved since
+     `prepare`) means no prior approval covers the new diff — regenerate the checkpoint rather than reviewing stale
+     evidence.
+   - **Start a fresh, independent reviewer from this neutral evidence** — never your own reasoning about it.
 
 1. **Code review** — invoke the `code-reviewer` agent with a neutral adversarial brief.
    The brief MUST NOT include your own assessment or reasoning — only raw evidence:

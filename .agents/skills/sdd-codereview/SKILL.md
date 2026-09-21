@@ -27,6 +27,16 @@ Reads the task file from `sdd/tasks/completed/`, loads all referenced source fil
 
 ## Workflow
 
+## Durable review boundary (FEAT-584)
+Before feature review, settle owned attempts and supervised validations and close execution.
+Unknown activity is a blocker, never evidence of an idle worktree. Persist the checkpoint,
+record actual supported compaction outcome once per checkpoint/context, revalidate and start
+a fresh reviewer. Unsupported contexts continue from checkpoint with an explicit reason.
+Keep review criteria, adversarial checks, full lint, integration validation and ledger gates.
+Changes after checkpoint require new hashes/evidence and invalidate old review coverage.
+For sdd-done, preserve existing verification stamping, approval and push/merge policy;
+do not run task closure again on base_branch and do not clean worktrees with unknown activity.
+
 1. Resolve task:
    - Accept full path, `TASK-NNN`, or slug.
    - Match against `sdd/tasks/completed/TASK-*.md`.
