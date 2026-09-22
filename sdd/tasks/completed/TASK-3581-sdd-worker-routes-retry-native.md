@@ -246,3 +246,21 @@ would break on any harmless rewording of the bullet.
 
 ### Completion Note
 (Agent fills this in when done)
+
+## Completion Note
+
+- Task: TASK-3581
+- Feature: fixgroup-47eb801095a6
+- Implementation SHA: 17962a8a40acef80417f064c020ed8f63f95c9e5
+- Closed at (UTC): 2026-09-21T21:58:40+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| ac_verification | AC-1..AC-5 covered by test_worker_prompt_routes_retry_native_handoff (asserts native_retry reservation source, forbidden second coder_prepare_native call, Agent dispatch, coder_merge on notification, retry attribution); md5sum-verified twin parity, test_subagent_parity.py green |
+| merge_tier_validation | coder_run_validation (tier=merge, TASK-3580+TASK-3581) timed_out after 600s inside packages/ai-parrot-integrations/tests/integrations/telegram/test_oauth2_integration.py::TestHandleWebAppDataRoutes::test_handle_web_app_data_routes_to_strategy -- confirmed reproducible locally, unrelated to files changed by this task (.claude/agents/sdd-worker.md + twin + test_worker_prompt_orchestrator.py only); pre-existing environment defect, filed to the ledger separately |
+| review_feedback_id | coder-review:61021130c943cde2fd42e4ca |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 271.35s · Tokens: 109308(subagent total, 36 tool uses) |
+| task_scoped_tests | pytest packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py test_subagent_parity.py (combined with TASK-3580 suites) -> 180 passed, 1 skipped |

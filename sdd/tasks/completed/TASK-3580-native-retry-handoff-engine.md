@@ -415,3 +415,21 @@ lets a native seat reach `_run_attempt`. Model the fixtures on the existing
 
 ### Completion Note
 (Agent fills this in when done)
+
+## Completion Note
+
+- Task: TASK-3580
+- Feature: fixgroup-47eb801095a6
+- Implementation SHA: 17962a8a40acef80417f064c020ed8f63f95c9e5
+- Closed at (UTC): 2026-09-21T21:58:16+00:00
+- Fix commits: 299e13770b25c1e5062fc0a9c4c6f6ce63282db9
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| ac_verification | AC-1..AC-6, AC-9 covered by new tests in TestComplexityDispatchAdmission (test_all_native_remainder_hands_off_instead_of_blocking, test_run_attempt_never_receives_a_native_seat, test_no_eligible_seat_of_any_kind_is_unchanged); ruff/black clean per engine lint.commit=299e13770 |
+| merge_tier_validation | coder_run_validation (tier=merge, TASK-3580+TASK-3581) timed_out after 600s inside packages/ai-parrot-integrations/tests/integrations/telegram/test_oauth2_integration.py::TestHandleWebAppDataRoutes::test_handle_web_app_data_routes_to_strategy -- confirmed reproducible locally, unrelated to files changed by this task (engine.py/models.py/test_engine_dispatch.py only); pre-existing environment defect, filed to the ledger separately |
+| review_feedback_id | coder-review:2436ab8ff1e982ec440ab01b |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 260.41s · Tokens: n/a |
+| task_scoped_tests | pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_dispatch.py test_roster.py test_integration_chunk.py (combined with TASK-3581 suites) -> 180 passed, 1 skipped |

@@ -370,6 +370,16 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      not find an available seat.
    - `plan_stale` → replan the task with the current pool generation; do not consume an attempt.
    - `not_dispatched` → keep the task pending; do not treat it as completed.
+   - `retry_native` → the task's attempt 2 was reserved on a NATIVE seat because no MCP strong seat was
+     left (FEAT-588). The reservation is in `native_retry`; do NOT call `coder_prepare_native` again.
+     Dispatch it exactly like a planned native coder — `Agent(subagent_type="sdd-coder",
+     model=<native_retry.model>, prompt="Implement <native_retry.task_file> in worktree
+     <native_retry.worktree_path> (branch <native_retry.branch>). Work only there. Complexity
+     assessment: <native_retry.assessment_id>. Previous delivery feedback:
+     <native_retry.coder_feedback>")` — then `coder_merge(task_id)` on its notification, same as any
+     native coder, and never call `Agent` twice for the same task. Attribute it with backend `native`
+     and `native_retry.attempt_uid`, and record it as a RETRY (attempt 2), never as a planned native
+     attempt — the distinct outcome exists so the two stay separable.
    **At EVERY coder handoff, capture your confirmed corrections** using the protocol below, before marking the task
    complete or dispatching another chunk. This applies to bugs fixed after merge, rejected deliveries, and native
    deliveries as well as MCP ones. Do not wait for the final feature review.
