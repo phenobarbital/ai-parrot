@@ -43,6 +43,7 @@ from .models import (
     PlanExecuteArgs,
     PlanStatusArgs,
     PlanValidateArgs,
+    PlanResumeArgs,
     PlanRecoveryConfig,
     PlanRecoveryEnvelope,
     PlanRun,
@@ -52,10 +53,11 @@ from .models import (
     PlanRunSummary,
     RunRecord,
 )
-from .checkpoint import PlanFlow, build_plan_flow
-from .memory import PlanMemoryBinding
+from .checkpoint import PlanContinuation, PlanFlow, build_plan_flow
+from .memory import PlanMemoryBinding, RestoreError
 from .planner import PlanAuthoringError, PlanPlanner
 from .runs import PlanRunResolver, plan_fingerprint, process_identity
+from parrot.bots.flows.flow.definition import FlowDefinition
 from .store import PlanFileStore, PlanLoadError
 
 if TYPE_CHECKING:
@@ -567,6 +569,94 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 self.max_completed_runs,
             )
 
+    def _assert_policy(self, run: PlanRun) -> None:
+        """Require current policy to retain every tool in the recorded plan."""
+        current = set(self.allowed_tools) if self.allowed_tools is not None else set(self._tool_manager.list_tools())
+        needed = {node.tool for node in run.metadata.plan.nodes}
+        if not needed <= (set(run.metadata.allowed_tools) & current):
+            raise PlanRunError(
+                "policy_mismatch", "current tool policy no longer permits every tool this run uses"
+            )
+        if plan_fingerprint(run.metadata.plan) != run.metadata.plan_fingerprint:
+            raise PlanRunError("policy_mismatch", "effective plan fingerprint does not match the recorded run")
+
+    def _resume_flow_factory(
+        self, run: PlanRun, *, store: Optional[CheckpointStore]
+    ) -> Callable[[FlowDefinition], PlanFlow]:
+        """Rebuild a resumed plan with fresh live dependencies and permissions."""
+
+        def _factory(_definition: FlowDefinition) -> PlanFlow:
+            return build_plan_flow(
+                run.metadata.plan,
+                run=run.metadata,
+                tool_manager=self._tool_manager,
+                working_memory=self._working_memory,
+                agent_registry=self._get_agent_registry(),
+                permission_context=self.permission_context,
+                step_mapping=self.plan_step_mapping,
+                store=store,
+                durable_store=self._durable_store,
+            )
+
+        return _factory
+
+    def _seed_context(self, run: PlanRun) -> FlowContext:
+        """Seed a fresh context with the validated persisted plan envelope."""
+        ctx = FlowContext(initial_task=run.metadata.plan.objective, agent_registry=self._get_agent_registry())
+        ctx.shared_data[PLAN_RUN_SHARED_KEY] = run.metadata.model_dump(mode="json")
+        return ctx
+
+    async def _run_continuation(
+        self, run: PlanRun, flow: PlanFlow, *, continuation: PlanContinuation
+    ) -> ToolResult:
+        """Run a resumed flow and retain its lease until terminal completion."""
+
+        async def _finish() -> ToolResult:
+            try:
+                await flow.run_flow()
+                continuation.raise_if_lease_lost()
+                terminal = await self._resolver.resolve(run.metadata.run_id)
+                envelope = self._resolver.envelope(terminal)
+                if terminal.status == "running":
+                    summary = PlanRunSummary(
+                        **envelope.model_dump(),
+                        plan_name=terminal.metadata.plan.name,
+                        nodes_total=len(terminal.metadata.plan.nodes),
+                        nodes_done=terminal.nodes_done,
+                    )
+                    return ToolResult(status="success", result=summary.model_dump(mode="json"))
+                manifest = PlanRunManifest(
+                    **build_manifest(terminal.metadata.plan, terminal.refs, duration_seconds=0.0).model_dump(),
+                    **envelope.model_dump(),
+                    status=terminal.status,
+                )
+                return ToolResult(status="success", result=manifest.model_dump(mode="json"))
+            except CheckpointPersistenceError as exc:
+                return self._error(PlanRunError("checkpoint_write_failed", str(exc)), run_id=run.metadata.run_id)
+            except (FlowLockedError, PlanRunError) as exc:
+                if isinstance(exc, PlanRunError):
+                    return self._error(exc, run_id=run.metadata.run_id)
+                return self._error(PlanRunError("run_busy", str(exc)), run_id=run.metadata.run_id)
+            except Exception as exc:  # noqa: BLE001 - return bounded flow failures to the tool caller
+                return self._error(PlanRunError("flow_error", str(exc)), run_id=run.metadata.run_id)
+            finally:
+                await continuation.__aexit__(None, None, None)
+
+        task = asyncio.create_task(_finish())
+        self._run_tasks[run.metadata.run_id] = task
+        done, _pending = await asyncio.wait({task}, timeout=self.soft_timeout)
+        if task in done:
+            return await task
+
+        envelope = self._resolver.envelope(run)
+        summary = PlanRunSummary(
+            **envelope.model_dump(),
+            plan_name=run.metadata.plan.name,
+            nodes_total=len(run.metadata.plan.nodes),
+            nodes_done=run.nodes_done,
+        )
+        return ToolResult(status="success", result=summary.model_dump(mode="json"))
+
     # ── Agent-facing tools ───────────────────────────────────────────────────
 
     @tool_schema(PlanStatusArgs)
@@ -649,6 +739,56 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 **self._resolver.envelope(run).model_dump(mode="json"),
             },
         )
+
+    @tool_schema(PlanResumeArgs)
+    async def plan_resume(self, run_id: str) -> ToolResult:
+        """Resume an interrupted checkpointed run without replaying completions."""
+        continuation: Optional[PlanContinuation] = None
+        ownership_transferred = False
+        try:
+            run = await self._resolver.resolve(run_id)
+            self._assert_policy(run)
+            if not run.resumable:
+                raise PlanRunError(
+                    run.recovery_reason or "run_not_resumable",
+                    f"run {run_id!r} cannot be resumed",
+                    envelope=self._resolver.envelope(run),
+                )
+            await self._memory_binding.prepare()
+            continuation = PlanContinuation(run, store=self._checkpoint_store, durable_store=self._durable_store)
+            await continuation.__aenter__()
+            run = await self._resolver.resolve(run_id)
+            self._assert_policy(run)
+            if not run.resumable:
+                raise PlanRunError(
+                    run.recovery_reason or "run_not_resumable",
+                    f"run {run_id!r} cannot be resumed",
+                    envelope=self._resolver.envelope(run),
+                )
+            await self._memory_binding.restore(
+                [ref for ref in run.refs if ref.status in ("ok", "partial") and ref.versions]
+            )
+            store = continuation.flow_store()
+            flow = await PlanFlow.resume(
+                run.metadata.run_id,
+                agent_registry=self._get_agent_registry(),
+                store=store,
+                durable_store=self._durable_store,
+                flow_factory=self._resume_flow_factory(run, store=store),
+                seed_context=self._seed_context(run),
+            )
+            continuation.raise_if_lease_lost()
+            ownership_transferred = True
+            return await self._run_continuation(run, flow, continuation=continuation)
+        except RestoreError as exc:
+            return self._error(PlanRunError(exc.code, str(exc)), run_id=run_id)
+        except FlowLockedError as exc:
+            return self._error(PlanRunError("run_busy", str(exc)), run_id=run_id)
+        except PlanRunError as exc:
+            return self._error(exc, run_id=run_id)
+        finally:
+            if continuation is not None and not ownership_transferred:
+                await continuation.__aexit__(None, None, None)
 
     @tool_schema(PlanExecuteArgs)
     async def plan_execute(
