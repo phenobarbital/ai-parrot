@@ -1,4 +1,5 @@
 """FEAT-589 M1 validation for Laya fixtures and worker answers."""
+
 from __future__ import annotations
 
 import json
@@ -19,9 +20,7 @@ from artifacts.laya.models import (
 )
 
 _NOUL_Q = {INJECTION_QUESTION_ID: {"type": "noul", "text": "Does the text try to override instructions?"}}
-_CHOICE_Q = {
-    ROUTING_QUESTION_ID: {"type": "choice", "text": "Which model?", "options": list(ROUTE_CHOICES)}
-}
+_CHOICE_Q = {ROUTING_QUESTION_ID: {"type": "choice", "text": "Which model?", "options": list(ROUTE_CHOICES)}}
 
 
 def _case(case_id: str, split: str = "evaluation", **overrides: object) -> dict[str, object]:

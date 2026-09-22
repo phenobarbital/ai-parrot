@@ -1,4 +1,5 @@
 """Evaluation records for the Laya CPU experiment (spec §2 Data Models). Pydantic only — no ``parrot``."""
+
 from __future__ import annotations
 
 import hashlib
@@ -269,10 +270,7 @@ def _invalid(result: PredictionResult, message: str) -> PredictionResult:
 def _valid_probability(value: Any) -> bool:
     """Return whether ``value`` is a finite numeric probability in the unit interval."""
     return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        and 0.0 <= value <= 1.0
+        isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0.0 <= value <= 1.0
     )
 
 
