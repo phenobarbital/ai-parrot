@@ -180,4 +180,19 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `gpt-5.6-terra` (codex), dispatched via the `parrot-sdd-coder`
+MCP orchestrator, attempt_uid `9eac7302ccfb417b8ce6507173976fbd`. Merged clean on the
+first attempt; `black` lint reported 0 errors/residuals. Reviewed and recorded
+(`coder-review:26f944c2854be3a08bcedc67`, no corrections needed).
+
+**Validation**: re-verified directly by the orchestrator post-merge —
+`pytest packages/ai-parrot/tests/tools/execution_plan/test_planner_delegate_rules.py
+packages/ai-parrot/tests/tools/execution_plan/test_planner.py -q` → 15 passed (planner
+suite unmodified per its own AC).
+
+**Merge-tier validation deviation (disclosed):** same as TASK-3625/3626's note — the
+feature-wide `coder_run_validation` (tier=merge) sweep could not reach a clean
+`completed` outcome due to a confirmed pre-existing, unrelated environment defect (25
+collection errors + an integrations-suite hang, neither touching `planner.py`). Filed as
+`issue:c3c59277ef77` (critical). This task is closed on its own directly-verified scoped
+test evidence.

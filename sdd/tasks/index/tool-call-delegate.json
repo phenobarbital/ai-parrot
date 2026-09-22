@@ -34,7 +34,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +42,8 @@
       "parallelism_notes": "no deps: two class attributes on AbstractTool (tools/abstract.py:333)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3625-abstracttool-delegate-flags.md"
+      "completed_at": "2026-09-22T23:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3625-abstracttool-delegate-flags.md"
     },
     {
       "id": "TASK-3626",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "no deps: rewrites plan/models.py (_PlanNodeBase, DelegatePlanNode, AnyPlanNode, ArtifactRef.escalated) + first edit of plan/__init__.py",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3626-plan-language-union.md"
+      "completed_at": "2026-09-22T23:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3626-plan-language-union.md"
     },
     {
       "id": "TASK-3627",
@@ -217,7 +217,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -225,8 +225,8 @@
       "parallelism_notes": "no deps: planner.py only; plain-data kwargs (tool names, max_tools), no delegate import",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3634-planner-delegate-rules.md"
+      "completed_at": "2026-09-22T23:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3634-planner-delegate-rules.md"
     },
     {
       "id": "TASK-3635",

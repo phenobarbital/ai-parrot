@@ -359,4 +359,25 @@ Standard. Remember step 1 happens before any edit.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by native seat `sonnet`, dispatched as an `sdd-coder` Agent, attempt_uid
+`0e61ee39055e47dfb177e694ec118a88`. Merged clean; `black` lint autofixed formatting on
+2 files with 0 residual errors. Reviewed and recorded
+(`coder-review:12b1cd2c4bcaa2a64e8142f0`, no corrections needed).
+
+Frozen fingerprint (AC2) verified byte-identical before/after the refactor
+(`8f249908b2dd285c6da1aad02293048c25b15081045c630513a4e53d8d710ca1`), satisfying G7.
+Delivery's own run: 59 tests passing across `test_delegate_models.py` (new, 7 tests),
+`test_plan.py` (37, unmodified per AC11), `test_run_models.py` + `test_checkpoint_resume.py`
+(15, unmodified per AC11).
+
+**Validation**: re-verified directly by the orchestrator post-merge —
+`pytest packages/ai-parrot/tests/bots/flows/plan/test_delegate_models.py
+packages/ai-parrot/tests/bots/flows/plan/test_plan.py -q` → 44 passed.
+
+**Merge-tier validation deviation (disclosed):** same as TASK-3625's note — the
+feature-wide `coder_run_validation` (tier=merge) sweep for this task's import-impact
+(`plan/models.py` has very wide reach) could not reach a clean `completed` outcome due
+to a confirmed pre-existing, unrelated environment defect (25 collection errors +
+integrations-suite hang, neither touching `plan/`). Filed as `issue:c3c59277ef77`
+(critical). This task is closed on its own directly-verified scoped test evidence,
+which is unambiguously green (44/44, plus the delivering agent's own 59/59).
