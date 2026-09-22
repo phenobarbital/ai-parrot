@@ -9,10 +9,103 @@
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
-    {"id":"TASK-3619","slug":"polly-backend-and-config","title":"Amazon Polly backend, configuration, and dependency extra","feature_id":"FEAT-591","feature":"speech-report-models","spec":"sdd/specs/speech-report-models.spec.md","status":"pending","priority":"high","effort":"M","depends_on":[],"parallel":true,"parallelism_notes":"Root task owns the Polly backend, config, package export, and synthesizer selection branch. TASK-3620 depends on it because both modify synthesizer.py.","assigned_to":null,"started_at":null,"completed_at":null,"file":"sdd/tasks/active/TASK-3619-polly-backend-and-config.md"},
-    {"id":"TASK-3620","slug":"shared-synthesizer-cache","title":"Process-wide synthesizer cache and Supertonic first-load lock","feature_id":"FEAT-591","feature":"speech-report-models","spec":"sdd/specs/speech-report-models.spec.md","status":"pending","priority":"high","effort":"M","depends_on":["TASK-3619"],"parallel":true,"parallelism_notes":"Serialized after TASK-3619 because both modify synthesizer.py; otherwise owns cache and Supertonic lock files and tests.","assigned_to":null,"started_at":null,"completed_at":null,"file":"sdd/tasks/active/TASK-3620-shared-synthesizer-cache.md"},
-    {"id":"TASK-3621","slug":"google-wav-and-telegram-converter","title":"Google WAV output and Telegram MIME-aware conversion","feature_id":"FEAT-591","feature":"speech-report-models","spec":"sdd/specs/speech-report-models.spec.md","status":"pending","priority":"high","effort":"M","depends_on":[],"parallel":true,"parallelism_notes":"Independent of Polly/cache work: owns Google backend, Telegram wrapper, and their dedicated tests with no overlapping feature files.","assigned_to":null,"started_at":null,"completed_at":null,"file":"sdd/tasks/active/TASK-3621-google-wav-and-telegram-converter.md"},
-    {"id":"TASK-3622","slug":"speech-report-routing","title":"speech_report backend and mode routing","feature_id":"FEAT-591","feature":"speech-report-models","spec":"sdd/specs/speech-report-models.spec.md","status":"pending","priority":"high","effort":"L","depends_on":["TASK-3619","TASK-3620","TASK-3621"],"parallel":true,"parallelism_notes":"Consumes Polly selector/cache helpers and truthful WAV behavior through its lazy TTS integration; owns agent.py and test_basic_agent_new.py.","assigned_to":null,"started_at":null,"completed_at":null,"file":"sdd/tasks/active/TASK-3622-speech-report-routing.md"},
-    {"id":"TASK-3623","slug":"speech-report-tts-documentation","title":"Document speech_report TTS backends","feature_id":"FEAT-591","feature":"speech-report-models","spec":"sdd/specs/speech-report-models.spec.md","status":"pending","priority":"medium","effort":"S","depends_on":["TASK-3622"],"parallel":true,"parallelism_notes":"Documentation describes the finalized public routing attributes and behavior from TASK-3622; it exclusively creates the new guide.","assigned_to":null,"started_at":null,"completed_at":null,"file":"sdd/tasks/active/TASK-3623-speech-report-tts-documentation.md"}
+    {
+      "id": "TASK-3619",
+      "slug": "polly-backend-and-config",
+      "title": "Amazon Polly backend, configuration, and dependency extra",
+      "feature_id": "FEAT-591",
+      "feature": "speech-report-models",
+      "spec": "sdd/specs/speech-report-models.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task owns the Polly backend, config, package export, and synthesizer selection branch. TASK-3620 depends on it because both modify synthesizer.py.",
+      "assigned_to": null,
+      "started_at": "2026-09-22T22:35:38+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3619-polly-backend-and-config.md"
+    },
+    {
+      "id": "TASK-3620",
+      "slug": "shared-synthesizer-cache",
+      "title": "Process-wide synthesizer cache and Supertonic first-load lock",
+      "feature_id": "FEAT-591",
+      "feature": "speech-report-models",
+      "spec": "sdd/specs/speech-report-models.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3619"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Serialized after TASK-3619 because both modify synthesizer.py; otherwise owns cache and Supertonic lock files and tests.",
+      "assigned_to": null,
+      "started_at": "2026-09-22T22:35:38+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3620-shared-synthesizer-cache.md"
+    },
+    {
+      "id": "TASK-3621",
+      "slug": "google-wav-and-telegram-converter",
+      "title": "Google WAV output and Telegram MIME-aware conversion",
+      "feature_id": "FEAT-591",
+      "feature": "speech-report-models",
+      "spec": "sdd/specs/speech-report-models.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent of Polly/cache work: owns Google backend, Telegram wrapper, and their dedicated tests with no overlapping feature files.",
+      "assigned_to": null,
+      "started_at": "2026-09-22T22:35:38+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3621-google-wav-and-telegram-converter.md"
+    },
+    {
+      "id": "TASK-3622",
+      "slug": "speech-report-routing",
+      "title": "speech_report backend and mode routing",
+      "feature_id": "FEAT-591",
+      "feature": "speech-report-models",
+      "spec": "sdd/specs/speech-report-models.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-3619",
+        "TASK-3620",
+        "TASK-3621"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes Polly selector/cache helpers and truthful WAV behavior through its lazy TTS integration; owns agent.py and test_basic_agent_new.py.",
+      "assigned_to": null,
+      "started_at": "2026-09-22T22:35:38+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3622-speech-report-routing.md"
+    },
+    {
+      "id": "TASK-3623",
+      "slug": "speech-report-tts-documentation",
+      "title": "Document speech_report TTS backends",
+      "feature_id": "FEAT-591",
+      "feature": "speech-report-models",
+      "spec": "sdd/specs/speech-report-models.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3622"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documentation describes the finalized public routing attributes and behavior from TASK-3622; it exclusively creates the new guide.",
+      "assigned_to": null,
+      "started_at": "2026-09-22T22:35:38+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3623-speech-report-tts-documentation.md"
+    }
   ]
 }
