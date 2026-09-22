@@ -1,11 +1,11 @@
 """Host-side owner of one isolated Laya inference subprocess (spec §3 Module 2)."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import os
-import sys
 import time
 from collections import deque
 from pathlib import Path
@@ -63,28 +63,44 @@ class LayaWorker:
 
     def _argv(self) -> list[str]:
         c = self.config
-        return [str(c.worker_python), "-m", c.worker_module, "--checkpoint", str(c.checkpoint_path), "--revision", c.checkpoint_revision]
+        return [
+            str(c.worker_python),
+            "-m",
+            c.worker_module,
+            "--checkpoint",
+            str(c.checkpoint_path),
+            "--revision",
+            c.checkpoint_revision,
+        ]
 
     async def __aenter__(self) -> "LayaWorker":
         """Start the worker and await a validated ready record within the startup deadline."""
         t0 = time.perf_counter()
         self._proc = await asyncio.create_subprocess_exec(
-            *self._argv(), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            cwd=str(_REPO_ROOT), env={**os.environ, "PYTHONUNBUFFERED": "1"}
+            *self._argv(),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(_REPO_ROOT),
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
         self._stderr_task = asyncio.create_task(self._drain_stderr())
         try:
             line = await asyncio.wait_for(self._proc.stdout.readline(), self.config.startup_timeout_s)
         except asyncio.TimeoutError:
             await self._shutdown()
-            raise WorkerStartupError("startup_timeout", f"no ready record within {self.config.startup_timeout_s}s") from None
+            raise WorkerStartupError(
+                "startup_timeout", f"no ready record within {self.config.startup_timeout_s}s"
+            ) from None
         except asyncio.CancelledError:
             await self._shutdown()
             raise
 
         if not line:
             await self._shutdown()
-            raise WorkerStartupError("worker_failed", f"worker exited before ready; stderr tail: {list(self.stderr_tail)}")
+            raise WorkerStartupError(
+                "worker_failed", f"worker exited before ready; stderr tail: {list(self.stderr_tail)}"
+            )
 
         try:
             record = json.loads(line)
@@ -109,9 +125,15 @@ class LayaWorker:
 
     async def predict(self, request: PredictionRequest) -> PredictionResult:
         """Serialize inference; return validated result or explicit operational error."""
+
         def _err(code: str, msg: str, roundtrip_ms: float | None = None) -> PredictionResult:
-            return PredictionResult(request_id=request.request_id, status="error", roundtrip_ms=roundtrip_ms,
-                                    error_code=code, error_message=msg)
+            return PredictionResult(
+                request_id=request.request_id,
+                status="error",
+                roundtrip_ms=roundtrip_ms,
+                error_code=code,
+                error_message=msg,
+            )
 
         if self.failed or self._proc is None or self._proc.stdin is None:
             return _err("worker_failed", "worker is not running (terminated after an earlier failure)")
@@ -125,7 +147,9 @@ class LayaWorker:
             except asyncio.TimeoutError:
                 self.failed = True
                 await self._shutdown()  # a hung prediction is terminated and reaped, never abandoned (spec §7)
-                return _err("inference_timeout", f"no result within {self.config.prediction_timeout_s}s; worker terminated")
+                return _err(
+                    "inference_timeout", f"no result within {self.config.prediction_timeout_s}s; worker terminated"
+                )
             except asyncio.CancelledError:
                 await self._shutdown()
                 raise
@@ -152,7 +176,10 @@ class LayaWorker:
             if record.get("request_id") != request.request_id:
                 self.failed = True
                 await self._shutdown()
-                return _err("worker_protocol_error", f"request_id mismatch: {record.get('request_id')!r} != {request.request_id!r}")
+                return _err(
+                    "worker_protocol_error",
+                    f"request_id mismatch: {record.get('request_id')!r} != {request.request_id!r}",
+                )
 
             self.peak_rss_kb = record.pop("peak_rss_kb", None)
             record.pop("type")

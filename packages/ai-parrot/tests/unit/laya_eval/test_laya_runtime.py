@@ -1,4 +1,5 @@
 """FEAT-589 M2 — LayaWorker against a fake protocol child (spec §4 'Worker protocol/deadlines')."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,7 @@ from artifacts.laya.models import EvaluationConfig, PredictionRequest
 from artifacts.laya.runtime import LayaWorker, WorkerStartupError
 
 # Fake child: behaviour is selected by --revision (startup-delay / hang / noisy / bad-id / ok).
-FAKE_CHILD = textwrap.dedent('''
+FAKE_CHILD = textwrap.dedent("""
     import json, sys, time, os
     args = sys.argv; rev = args[args.index("--revision") + 1]
     if rev == "startup-delay":
@@ -31,7 +32,7 @@ FAKE_CHILD = textwrap.dedent('''
         answers = {q: {"type": "noul", "noul": 0.1, "confidence": 0.9} for q in req["questions"]}
         sys.stdout.write(json.dumps({"type": "result", "request_id": rid, "status": "ok", "answers": answers,
             "inference_ms": 2.0, "error_code": None, "error_message": None, "peak_rss_kb": 1234}) + "\\n"); sys.stdout.flush()
-''')
+""")
 
 
 @pytest.fixture
@@ -42,9 +43,16 @@ def fake_module(tmp_path, monkeypatch) -> str:
 
 
 def _cfg(module: str, revision: str, tmp_path: Path, **kw) -> EvaluationConfig:
-    return EvaluationConfig(worker_python=Path(sys.executable), checkpoint_path=tmp_path, checkpoint_revision=revision,
-                            output_dir=tmp_path / "out", worker_module=module, startup_timeout_s=kw.pop("startup", 20.0),
-                            prediction_timeout_s=kw.pop("predict", 5.0), **kw)
+    return EvaluationConfig(
+        worker_python=Path(sys.executable),
+        checkpoint_path=tmp_path,
+        checkpoint_revision=revision,
+        output_dir=tmp_path / "out",
+        worker_module=module,
+        startup_timeout_s=kw.pop("startup", 20.0),
+        prediction_timeout_s=kw.pop("predict", 5.0),
+        **kw,
+    )
 
 
 def _req(rid: str = "r1") -> PredictionRequest:
