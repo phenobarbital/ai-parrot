@@ -267,7 +267,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -278,8 +278,8 @@
       "parallelism_notes": "Integration module drives evaluate.main/build_live_agent/parse_args_to_config from TASK-3616 (artifacts/laya/evaluate.py); unit module imports _DECISION/LayaEvaluationAgent from TASK-3611 (artifacts/laya/routing.py). Creates two test files under normal (non-ignored) paths.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3617-laya-mocked-e2e-and-isolation-tests.md"
+      "completed_at": "2026-09-22T12:25:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3617-laya-mocked-e2e-and-isolation-tests.md"
     },
     {
       "id": "TASK-3618",
