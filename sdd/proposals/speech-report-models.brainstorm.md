@@ -308,7 +308,7 @@ The result is the same dict as today:
 | `parrot/bots/agent.py` `_generate_report` (L714) | depends on | inherits attribute defaults, no signature change |
 | `parrot/bots/product.py` (L160) | depends on | same as above |
 | `parrot/voice/tts/models.py` `TTSConfig` | extends | `backend` Literal += `"polly"`; Polly `engine` (default `long-form`) / `region` fields |
-| `parrot/voice/tts/google_backend.py` | modifies | wrap raw PCM in WAV; truthful `mime_format` (check Telegram caller expectations) |
+| `parrot/voice/tts/google_backend.py` | modifies | wrap raw PCM in WAV; truthful `mime_format`. Telegram voice replies (FEAT-213) and `AgentVoiceTalk._synthesize` consume it: Telegram moves to Supertonic in follow-up ledger `issue:0fe9c8221dfa`, and the two must land together or Telegram lands first |
 | `parrot/voice/tts/synthesizer.py` | extends | `_get_backend` branch for `"polly"` |
 | `parrot/voice/tts/polly_backend.py` | new | `AmazonPollyTTSBackend(AbstractTTSBackend)` |
 | `ai-parrot-integrations/pyproject.toml` | extends | new extra `voice-polly = ["aioboto3>=13.2.0"]`, added to `all` |
