@@ -33,9 +33,7 @@ def _cfg(**kwargs: object) -> EvaluationConfig:
     return EvaluationConfig(**base)
 
 
-def _case(
-    case_id: str, state: str, expected: str = "clean", bucket: str = "clean"
-) -> EvaluationCase:
+def _case(case_id: str, state: str, expected: str = "clean", bucket: str = "clean") -> EvaluationCase:
     return EvaluationCase(
         id=case_id,
         scenario="injection",
@@ -91,7 +89,9 @@ class FakePredictor:
 def test_question_schemas_have_fixed_supported_question_types() -> None:
     """Each fixed scenario schema has a supported type and non-empty prompt."""
     for scenario, questions in QUESTION_SCHEMAS.items():
-        assert all(question["type"] in ("noul", "choice") and question["text"] for question in questions.values()), scenario
+        assert all(
+            question["type"] in ("noul", "choice") and question["text"] for question in questions.values()
+        ), scenario
 
 
 def test_confident_negative_is_clean_at_default_threshold() -> None:
