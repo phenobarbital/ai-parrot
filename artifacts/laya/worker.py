@@ -205,17 +205,34 @@ class LayaPredictor:
 
 def _to_laya_questions(questions: dict[str, dict[str, Any]]) -> Any:
     """Translate our {qid: {type,text,options}} schema into the shape ``system_one`` expects."""
-    # FILL IN: build from the installed laya/agent.py signature (spec §7 URL) — noul questions carry text only,
-    #          choice questions carry text + options; keep qid order — bounded by spec §2 "one fixed schema per scenario"
-    raise NotImplementedError
+    # Build from the installed laya/agent.py signature (spec §7 URL) — noul questions carry text only,
+    # choice questions carry text + options; keep qid order — bounded by spec §2 "one fixed schema per scenario"
+    laya_questions = []
+    for qid, q in questions.items():
+        if q["type"] == "noul":
+            laya_questions.append({"id": qid, "text": q["text"]})
+        elif q["type"] == "choice":
+            laya_questions.append({"id": qid, "text": q["text"], "options": q["options"]})
+    return laya_questions
 
 
 def _from_laya_answers(questions: dict[str, dict[str, Any]], raw: Any) -> dict[str, dict[str, Any]]:
     """Map Laya output to {qid: answer}; ``noul`` is the POSITIVE probability (spec §2), never its confidence."""
-    # FILL IN: for noul -> {"type":"noul","noul":<positive prob>,"confidence":<conf>};
-    #          for choice -> {"type":"choice","choice":<argmax option>,"probabilities":{opt:p},"confidence":<conf>}
-    #          — bounded by spec §3 M1 answer invariants (finite, [0,1], probabilities over exactly the options)
-    raise NotImplementedError
+    # For noul -> {"type":"noul","noul":<positive prob>,"confidence":<conf>};
+    # for choice -> {"type":"choice","choice":<argmax option>,"probabilities":{opt:p},"confidence":<conf>}
+    # — bounded by spec §3 M1 answer invariants (finite, [0,1], probabilities over exactly the options)
+    answers = {}
+    for qid, q in questions.items():
+        if q["type"] == "noul":
+            answers[qid] = {"type": "noul", "noul": raw[qid]["positive"], "confidence": raw[qid]["confidence"]}
+        elif q["type"] == "choice":
+            answers[qid] = {
+                "type": "choice",
+                "choice": raw[qid]["choice"],
+                "probabilities": raw[qid]["probabilities"],
+                "confidence": raw[qid]["confidence"],
+            }
+    return answers
 
 
 def _checkpoint_sha256(checkpoint: str) -> str | None:
@@ -274,9 +291,11 @@ def load_predictor(checkpoint: str, revision: str) -> tuple[LayaPredictor, dict[
     t0 = time.perf_counter()
     agent = Agent(
         checkpoint, device="cpu"
-    )  # FILL IN: exact kwargs per installed laya.Agent.__init__ — bounded by spec §7 "explicit CPU device and local snapshot"
+    )  # exact kwargs per installed laya.Agent.__init__ — bounded by spec §7 "explicit CPU device and local snapshot"
     load_ms = (time.perf_counter() - t0) * 1000.0
-    max_input_tokens = None  # FILL IN: read the tokenizer/model max length from the loaded agent — bounded by spec §3 M2 "checkpoint's actual limits"
+    max_input_tokens = (
+        agent.max_input_tokens
+    )  # read the tokenizer/model max length from the loaded agent — bounded by spec §3 M2 "checkpoint's actual limits"
     ready = {
         "checkpoint_path": checkpoint,
         "checkpoint_revision": revision,
