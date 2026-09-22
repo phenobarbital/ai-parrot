@@ -49,10 +49,25 @@ the live Converse round-trip — §8 Q1 resolved to a runtime guard instead.
 |---|---|---|
 | `examples/planogram/aws/nova_vision.py` | CREATE | `NovaAnswer` + `NovaVisionClient` |
 | `examples/planogram/tests/test_nova2_shim.py` | CREATE | Unit tests for the `_assert_has_image` guard |
+| `examples/planogram/tests/conftest.py` | MODIFY | Deviation (see CORRECTION-1 below): add `examples/planogram/aws/` to `sys.path` so the blueprint's test import resolves |
 
 ---
 
 ## Codebase Contract (Anti-Hallucination)
+
+> **CORRECTION-1 (applied post-merge by the orchestrator, commit 1928b9af2):**
+> The blueprint's `test_nova2_shim.py` import
+> (`from examples.planogram.aws.nova_vision import NovaVisionClient`) never
+> resolves: a third-party `examples` distribution is installed in the shared
+> `.venv` with its own `__init__.py`, and a regular package found anywhere on
+> `sys.path` always wins over a same-named repo-local namespace directory,
+> regardless of `sys.path` order. Confirmed by running this task's own
+> declared `pytest` command, which failed with
+> `ModuleNotFoundError: No module named 'examples.planogram'`. Fixed by
+> adding `examples/planogram/aws/` to `sys.path` in the shared
+> `examples/planogram/tests/conftest.py` (added to this task's file table
+> above) and switching the test to a bare sibling import
+> (`from nova_vision import NovaVisionClient`).
 
 ### Verified Imports
 ```python
@@ -400,10 +415,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3640
+- Feature: nova-image-planogram
+- Implementation SHA: 1928b9af24d3c5252892fbd54b92d46db1e4e9d6
+- Closed at (UTC): 2026-09-22T23:58:32+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| deviation | Blueprint's from examples.planogram.aws.nova_vision import ... test import never resolves (shadowed by a third-party examples distribution in .venv). Fixed post-merge in fix(nova-image-planogram): TASK-3640 review fixes commit 1928b9af2 using a bare sibling import + conftest.py sys.path addition (repo-level defect, not attributable to the delivering model). |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 190.68s · Tokens: n/a |
+| test_command | pytest examples/planogram/tests/test_nova2_shim.py -v |
+| test_result | 4 passed (after fix commit 1928b9af2 correcting a blueprint import defect) |
+| tests_passed | True |

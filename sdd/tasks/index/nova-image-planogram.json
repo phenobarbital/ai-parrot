@@ -35,7 +35,7 @@
       "feature_id": "FEAT-592",
       "feature": "nova-image-planogram",
       "spec": "sdd/specs/nova-image-planogram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "Needs the .gitignore negation block from TASK-3639 (.gitignore): without it git add of examples/planogram/aws/nova_vision.py silently does nothing. No code dependency on TASK-3641 - the schema instruction crosses as a plain str.",
       "assigned_to": null,
       "started_at": "2026-09-22T23:24:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3640-nova-converse-transport-shim.md"
+      "completed_at": "2026-09-22T23:58:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3640-nova-converse-transport-shim.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3641",
