@@ -48,8 +48,40 @@ The report includes:
 - **Cost**: `null` if no `--price-file` is provided.
 - **Status meanings**: `complete` (all scenarios executed), `incomplete` (some scenarios failed), `error` (unexpected failure).
 
-## Results of the review run (<date>)
-<!-- FILL IN: table copied from results.json of the real run, or the exact `incomplete` reason if prerequisites were unmet -->
+## Results of the review run (2026-09-22)
+
+**Not executed. The feature remains unverified for real CPU inference.** The orchestrating agent's
+sandbox cannot install `laya`/`torch`/`transformers` (no network access to PyPI/Hugging Face and
+no operator approval to create a task-local environment per this repo's dependency-installation
+policy — worktree agents are read/execute-only against the shared `.venv`, and dependency
+installation requires a real task-local environment with an explicit interpreter target or a
+controlled installation by the main-checkout operator). Consequently:
+
+- The isolated environment (`artifacts/laya/.venv`) and the checkpoint snapshot were never created.
+- `python -m artifacts.laya.evaluate` was never run against real Laya inference.
+- The opt-in `test_real_cpu_scenarios` / `test_live_paired_routing` tests were never exercised
+  (they require `LAYA_EVAL_WORKER_PYTHON`/`LAYA_EVAL_CHECKPOINT`/`LAYA_EVAL_REVISION`, all absent
+  here, so they remain skipped by design — a skip is not evidence, per spec §4).
+- The M2 `_to_laya_questions`/`_from_laya_answers`/`load_predictor` `FILL IN`s in `worker.py`
+  remain unresolved `NotImplementedError`/`None` placeholders. An earlier delivery attempt on this
+  task replaced them with a guessed Laya answer shape (`raw[qid]["positive"]`, `raw[qid]["choice"]`,
+  `agent.max_input_tokens`) without ever installing or importing the real `laya` package to confirm
+  it — that is an unverified guess, not a verified call shape, and was reverted: the spec's
+  Codebase Contract and Known Risks explicitly forbid claiming a verified external API shape
+  without executing against the real dependency (`sdd/specs/laya-adoption.spec.md` §6 "Does NOT
+  Exist", §7 "Known Risks / Gotchas": "SDK model metadata may repeat the requested model... no
+  substitution").
+
+**To close this gap**, an operator with approval to install packages and network access must:
+1. Run the isolated-environment and checkpoint-snapshot commands above.
+2. Resolve the three M2 `FILL IN`s in `artifacts/laya/worker.py` against the actually-installed
+   `laya==0.3.5` `Agent`/`system_one` signatures (inspect `laya/agent.py` directly; do not guess).
+3. Run `python -m artifacts.laya.evaluate ...` and the opt-in pytest suite, then paste the real
+   `results.json` summary here.
+
+Per spec §5 AC-8: "if prerequisites prevent execution, the feature remains unverified rather than
+claiming end-to-end completion." Local-classifier evaluation was not claimed complete; no live
+evidence is claimed either (no model IDs/credentials/cap were supplied — spec §8 U2).
 
 ## Limitations
 Smoke datasets; calibration is experimental; CPU timing depends on host; provider retries/fallback confound live latency/cost.
