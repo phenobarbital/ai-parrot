@@ -16,7 +16,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "exclusive: downloads models and runs a local llama-server; writes sdd/state/FEAT-590/spike/ (orchestrator/human, not a coder seat); gates TASK-3632/3633/3637",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3624-delegate-backend-spike.md"
+      "completed_at": "2026-09-22T23:26:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3624-delegate-backend-spike.md"
     },
     {
       "id": "TASK-3625",

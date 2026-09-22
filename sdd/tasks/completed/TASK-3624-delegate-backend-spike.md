@@ -275,4 +275,43 @@ None (spike). The evidence is `decision.md`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Run by the orchestrator (no coder seat, per this task's own scope note) inside the
+FEAT-590 feature worktree, 2026-09-23. Real end-to-end spike, no fabricated numbers:
+
+- Downloaded a prebuilt CPU-only `llama-server` (`ggml-org/llama.cpp` release
+  `b11115`) and `Qwen/Qwen2.5-0.5B-Instruct-GGUF` (`q4_k_m`, ~491 MB); installed
+  `cactus-needle==3.0.4` into an isolated task-local venv (`uv venv` +
+  `uv pip install --python`, never `uv add`, never the shared repo `.venv`).
+- Built `cases.jsonl` (57 cases: 45 targeted + 12 abstention) from the REAL,
+  live `AbstractTool.get_schema()` output of 3 ai-parrot toolkits actually
+  instantiated in-process: `WorkingMemoryToolkit` (13 tools), `QuerysourceToolkit`
+  (7 tools), `RSSFeedReaderToolkit` (4 tools). `WebBrowsingToolkit` (web
+  scraping) could not be imported through the worktree's PYTHONPATH (a
+  pre-existing compiled-extension gap, `parrot.utils.types`/`parrot.utils.parsers.toml`
+  — unrelated to this feature); documented as a spike-environment limitation
+  in decision.md rather than skipped silently.
+- Ran the full 57-case set against both backends for real: llama.cpp via HTTP
+  (`json_schema` oneOf grammar against a live local `llama-server`), Needle via
+  `asyncio.to_thread` (and, separately, an isolated bounded-timeout probe of
+  `ProcessPoolExecutor`, which reproducibly hung — recorded, not glossed over).
+- Found and fixed a real schema-composition bug while building the llama.cpp
+  probe (nested `$ref`/`$defs` must be hoisted + namespaced to the document
+  root, or every tool with a `$ref`'d argument 400s) — folded into decision.md
+  as an implementation note for TASK-3632.
+- Results: llama.cpp 57.9% exact-match / 58.3% abstention P·R; Needle (base,
+  untuned) 47.4% exact-match / 73.3%·91.7% abstention P·R. Both below the 90%
+  bar → **Option B** (fine-tune first, no confidence gate) per spec §2; NOT
+  the DROP branch. M1–M5/M8 unaffected. Needle recommended as the fine-tuning
+  target; llama.cpp ships as an immediately-usable fallback backend.
+- `ruff check scripts/spikes/tool_call_delegate_spike.py` — clean.
+- Validation command (`pytest .../plan/test_plan.py -q`) — 37 passed (required
+  copying the main checkout's compiled `.so` extensions into the worktree
+  first — pre-existing, documented gotcha for running tests from a worktree
+  in this repo; none of those `.so` files are tracked or committed).
+- Scratch environment (`.task-venv/`, ~600 MB: task venv, downloaded model +
+  binary, throwaway case-builder/probe scripts) was gitignored throughout and
+  deleted after the run; only the 3 declared deliverable files were committed.
+- No divergence from the task's Codebase Contract. `cactus-needle`'s real API
+  (`Needle(tools=<callables with _needle_tool attr>, ...)`, `.complete() ->
+  dict` with `function_calls`) differs from the proposal's assumed shape, as
+  the contract flagged as unverified — recorded, not guessed around.
