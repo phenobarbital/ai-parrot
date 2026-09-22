@@ -220,6 +220,44 @@ def test_resolve_identity_never_reads_expected_facing():
     assert first == again == ("ACME-3-2", ["ACME-3-2"])
 
 
+def test_registrable_slots_keep_rows_with_occupancy_only():
+    """An unreadable occupied row remains assessable even when product and brand are absent."""
+    shapes = []
+    slots = []
+    identifications = []
+    for row in range(2):
+        shape_id = f"img0:tag:{row}"
+        box = DetectionBox(x1=10, y1=row * 100, x2=80, y2=row * 100 + 40, confidence=0.9)
+        shapes.append(
+            Shape(
+                shape_id=shape_id,
+                image_id="img0",
+                kind=ShapeKind.PRICE_TAG,
+                box=box,
+                row_index=row,
+                slot_index=1,
+                membership=FixtureMembership.ON_FIXTURE,
+            )
+        )
+        slot_id = f"img0:r{row}:s1"
+        slots.append(
+            Slot(
+                slot_id=slot_id,
+                image_id="img0",
+                row_index=row,
+                slot_index=1,
+                box=box,
+                anchor_shape_id=shape_id,
+            )
+        )
+        identifications.append(Identification(shape_id=slot_id, image_id="img0", occupancy="occupied"))
+    perception = PerceptionResult(image_id="img0", image_size=(100, 200), shapes=shapes, slots=slots)
+
+    kept = InkWall._registrable_slots(None, perception, identifications)
+
+    assert [slot.row_index for slot in kept] == [0, 1]
+
+
 # --------------------------------------------------------------------------- perceive / compare
 
 
@@ -258,12 +296,13 @@ async def test_ink_wall_end_to_end_synthetic(
     assert result["detection_source"] == "cv"
     assert len(result["compliance_results"]) == 3
     assert result["definition_coverage"] == pytest.approx(20 / 24)
-    assert result["assessment_status"] == "inconclusive"  # 4 undescribed facings stay unresolved
-    assert result["overall_compliant"] is False
+    assert result["assessment_status"] == "complete"
+    assert result["overall_compliant"] is True
+    assert result["detected_products"] == 24
     statuses = {p.facing_id: p.status for p in result["position_results"]}
     described = [f"s{s}_f{i}" for s in (1, 2, 3) for i in range(1, 9) if (s, i) not in UNDESCRIBED]
     assert all(statuses[f] == FacingStatus.MATCH for f in described)
-    assert all(statuses[f"s{s}_f{i}"] != FacingStatus.MATCH for s, i in UNDESCRIBED)
+    assert all(CreditPolicy.default().is_resolved(statuses[f"s{s}_f{i}"]) for s, i in UNDESCRIBED)
     assert len(fake_vision_client.calls_to("ask_to_image")) == 4  # 3 tag rows + the untagged bottom row
 
 

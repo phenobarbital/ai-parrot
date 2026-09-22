@@ -23,9 +23,12 @@ def test_credit_policy_defaults_and_validation() -> None:
     assert policy.strict[FacingStatus.MATCH] == 1.0
     assert policy.lenient[FacingStatus.MATCH] == 1.0
 
-    for status in (FacingStatus.MISPLACED, FacingStatus.VARIANT_UNRESOLVED, FacingStatus.INFERRED_PRESENT):
+    assert policy.strict[FacingStatus.MISPLACED] == 0.0
+    assert policy.lenient[FacingStatus.MISPLACED] == 0.5
+
+    for status in (FacingStatus.VARIANT_UNRESOLVED, FacingStatus.INFERRED_PRESENT):
         assert policy.strict[status] == 0.0
-        assert policy.lenient[status] == 0.5
+        assert policy.lenient[status] == 1.0
 
     for status in (
         FacingStatus.MISMATCH,
@@ -62,9 +65,16 @@ def test_credit_policy_defaults_and_validation() -> None:
         CreditPolicy(strict=missing_strict, lenient=lenient)
 
 
-def test_is_resolved_is_exactly_four_statuses() -> None:
+def test_is_resolved_includes_occupied_expected_positions() -> None:
     policy = CreditPolicy.default()
-    resolved = {FacingStatus.MATCH, FacingStatus.MISPLACED, FacingStatus.MISMATCH, FacingStatus.EMPTY}
+    resolved = {
+        FacingStatus.MATCH,
+        FacingStatus.MISPLACED,
+        FacingStatus.VARIANT_UNRESOLVED,
+        FacingStatus.MISMATCH,
+        FacingStatus.EMPTY,
+        FacingStatus.INFERRED_PRESENT,
+    }
     for status in FacingStatus:
         assert policy.is_resolved(status) == (status in resolved)
 

@@ -278,10 +278,12 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestration (codex/gpt-5.6-terra seat, attempt_uid=01a8fcfa12b5458d8b4b68ea39a32c4d)
+**Date**: 2026-09-22
+**Status**: done-with-issues
+**Notes**: `plan_resume` itself (refusal codes, exact-version restore wiring, fresh factory contract) is implemented per spec and its own local tests are correct — merged commit-clean (lint auto-fixed, commit 744f2403d, residual_count=0).
+However, `test_checkpoint_resume.py::test_resume_does_not_redispatch_completed_and_completes_rest` and `::test_resume_never_calls_planner` FAIL on a **confirmed pre-existing, deep architectural gap outside this task's scope**, not a defect in this task's own delivery: `AgentsFlow._run_flow_scheduler()`'s required-checkpoint barrier (`_await_required_barrier()`, `flow.py` ~2293-2321) only fires inside the `if explicit_mode:` branch. `PlanFlow` is built via `from_definition()` (deliberately — see `flow.py`'s own `resume()` docstring on why `from_definition()` was chosen over the explicit-edge path for predicate/back-edge fidelity), which sets `self._definition` and makes `explicit_mode` always `False`. So the incremental per-node-completion checkpoint write never fires for ANY plan flow — only the start/terminal checkpoints get written. Reproduced directly: after an interrupted 3-node run (a→b→c, cancelled mid-flight at c), the persisted checkpoint has `put_calls=1`, `node_states=[]` — a/b's completions were never persisted, so `plan_resume` rebuilds with zero completed-node state and re-dispatches everything.
+This is core `AgentsFlow` scheduler code, used far beyond plan execution, and not touched by any FEAT-585 task's file list — not something to patch unilaterally inside this task. Filed as `issue:7552079c55a1` (critical) with full reproduction, root cause and two candidate fixes. **This will very likely also block TASK-3601 (plan_repair) and TASK-3602 (integration recovery tests)**, both of which depend directly on this task and the same checkpoint machinery — flagged prominently for the next planning pass.
+Merge-tier validation followed the established baseline pattern (25 pre-existing unrelated collection errors post-TASK-3599-fix, advisors/amazon/anthropic/gemma4 clean, google slow) with no NEW collection regressions from this task; `timed_out` per protocol.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — the two failing tests correctly encode the spec's AC-3/R6 requirement; the implementation cannot satisfy it until the underlying `AgentsFlow` gap (ledger issue:7552079c55a1) is fixed.

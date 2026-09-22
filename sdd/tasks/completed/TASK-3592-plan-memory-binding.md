@@ -359,10 +359,39 @@ async def test_host_runtime_requires_scope_and_is_borrowed(): ...             # 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: codex / gpt-5.6-terra (via parrot-sdd-coder MCP orchestration), attempt_uid
+`29565c87ace34182a8536c3f268d3f4f`
+**Date**: 2026-09-22
 **Notes**:
+- Delivered exactly the 3 scoped files (`memory.py` +166, `working_memory/tool.py` +27,
+  `test_plan_memory.py` +102 lines), no out-of-scope files, no `sdd/` touched (fidelity_ok).
+- Reviewed by hand: `WorkingMemoryToolkit._enable_plan_memory` matches the blueprint exactly
+  (validates enabled task_memory/catalog, swaps `_task_memory`/`_catalog`, strips
+  `TASK_TOOL_METHODS` from `exclude_tools`, refreshes cached `get_result` wrapper schemas in
+  place). `PlanMemoryBinding.prepare()` is idempotent, reuses an already-enabled
+  `_task_memory` when present, requires scope for a host-supplied runtime, synthesizes and
+  caches a process scope (`_plan_scope`) otherwise, migrates every existing local entry via
+  `aput_generic` before calling `_enable_plan_memory` (keeps old catalog on failure per spec).
+  `restore()` enforces `max_restore_bytes` cumulatively and validates keys/versions
+  cardinality. `close()` only stops an owned runtime. The unused `TYPE_CHECKING` import of
+  `AnswerMemory` (never referenced as a type annotation, only in docstrings/comments) was
+  correctly dropped by the engine's lint pass — verified this is not the same class of bug
+  as TASK-3589's codec-registration regression (no import-time side effect here).
+- Merge-tier `coder_run_validation` (budget 300s) settled `outcome=timed_out` — same
+  established, pre-existing pattern as TASK-3589..3591 (25 unrelated `ai-parrot` collection
+  errors; `ai-parrot-advisors`/`-client-amazon`/`-client-anthropic`/`-client-gemma4` all clean;
+  `-client-google`'s slow video-reel-assembly suite, known from the earlier run to take ~9.5
+  minutes alone, still mid-flight at cutoff). No failure observed relates to this task's files
+  (`tools/execution_plan/memory.py`, `tools/working_memory/tool.py`). Local `pytest` remains
+  blocked by the pre-existing broken local venv (`parrot.utils.types` import error).
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
+
+**Addendum (2026-09-22, during TASK-3599 consolidation)**: "no failure observed relates to this
+task's files" above was premature — `test_plan_memory.py` (this task's own test file) was never
+actually collected/executed at the time of that statement, masked by an unrelated TASK-3594
+dead-code ImportError bug that TASK-3599 later activated. Once collection was unblocked,
+`test_activation_keeps_existing_entries_and_is_idempotent` failed for real:
+`toolkit.get_result("result")` was called without `await` (the method is `async def`) and the
+returned coroutine was subscripted directly. Fixed in commit `f605b9f81` (added `await`).
+Verified: `pytest test_plan_memory.py -q` → passed.

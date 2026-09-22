@@ -78,6 +78,7 @@ class PlanogramCompliance(AbstractPipeline):
         llm_concurrency: int = 4,
         llm_timeout: float = 120.0,
         vision_cache_dir: Optional[Path] = None,
+        enabled_ocr: bool = False,
         **kwargs: Any,
     ):
         """Build the pipeline and its planogram type composable.
@@ -91,6 +92,8 @@ class PlanogramCompliance(AbstractPipeline):
             llm_concurrency: Concurrent vision calls per run.
             llm_timeout: Timeout of one vision call (seconds).
             vision_cache_dir: Optional response cache directory for the vision adapter.
+            enabled_ocr: Enable optional local RapidOCR detection. Disabled by default; the LLM still
+                identifies products and occupancy when local OCR is disabled.
             **kwargs: Forwarded to the client constructor.
 
         Raises:
@@ -108,6 +111,7 @@ class PlanogramCompliance(AbstractPipeline):
         self.llm_concurrency = llm_concurrency
         self.llm_timeout = llm_timeout
         self.vision_cache_dir = vision_cache_dir
+        self.enabled_ocr = enabled_ocr
         self._definition: Any = None
         self._bindings: List[Any] = []
         self.planogram_config = planogram_config
@@ -144,8 +148,9 @@ class PlanogramCompliance(AbstractPipeline):
 
         Returns:
             The 8 legacy keys plus the additive keys (detections, identifications, position_results,
-            shelf_scores, coverage, definition_coverage, assessment_status, strict_compliance_score,
-            evidence_quality, detection_source, ocr_available, resolved_backend, renders, errors).
+            shelf_scores, coverage, detected_products, definition_coverage, assessment_status,
+            strict_compliance_score, evidence_quality, detection_source, ocr_available, resolved_backend,
+            renders, errors).
 
         Raises:
             ValueError: ``image_id`` is a sequence whose length differs from ``image``.
@@ -226,7 +231,7 @@ class PlanogramCompliance(AbstractPipeline):
         return CycleContext(
             vision=vision,
             executor=CpuExecutor(max_workers=self.cpu_workers),
-            ocr=OcrReader(),
+            ocr=OcrReader() if self.enabled_ocr else None,
             definition=self._definition,
             bindings=list(self._bindings),
             credit_policy=CreditPolicy.default(),
@@ -372,6 +377,7 @@ class PlanogramCompliance(AbstractPipeline):
             "position_results": comparison.position_results,
             "shelf_scores": comparison.shelf_scores,
             "coverage": comparison.coverage,
+            "detected_products": comparison.detected_products,
             "definition_coverage": comparison.definition_coverage,
             "assessment_status": AssessmentStatus(comparison.assessment_status).value,
             "strict_compliance_score": comparison.strict_compliance_score,

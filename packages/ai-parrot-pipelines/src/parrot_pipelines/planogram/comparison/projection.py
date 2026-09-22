@@ -19,8 +19,21 @@ from parrot_pipelines.planogram.contracts import (
 
 logger = logging.getLogger(__name__)
 
-_RESOLVED = {FacingStatus.MATCH, FacingStatus.MISPLACED, FacingStatus.MISMATCH, FacingStatus.EMPTY}
-_FOUND = {FacingStatus.MATCH, FacingStatus.MISPLACED, FacingStatus.MISMATCH, FacingStatus.VARIANT_UNRESOLVED}
+_RESOLVED = {
+    FacingStatus.MATCH,
+    FacingStatus.MISPLACED,
+    FacingStatus.MISMATCH,
+    FacingStatus.EMPTY,
+    FacingStatus.INFERRED_PRESENT,
+    FacingStatus.VARIANT_UNRESOLVED,
+}
+_FOUND = {
+    FacingStatus.MATCH,
+    FacingStatus.MISPLACED,
+    FacingStatus.MISMATCH,
+    FacingStatus.VARIANT_UNRESOLVED,
+    FacingStatus.INFERRED_PRESENT,
+}
 _DEFAULT_THRESHOLD = 0.8
 
 

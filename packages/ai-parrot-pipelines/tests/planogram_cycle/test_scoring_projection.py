@@ -149,12 +149,31 @@ def test_scoring_fixture_partial_identity():
     result = _run(definition, _description(["top"]), [reg], idents)
     shelf = result.shelf_scores[0]
     assert [p.status for p in result.position_results].count(FacingStatus.VARIANT_UNRESOLVED) == 4
-    assert shelf.facing_lenient == pytest.approx(0.8)
+    assert shelf.facing_lenient == pytest.approx(1.0)
     assert shelf.facing_strict == pytest.approx(0.6)
-    assert result.coverage == pytest.approx(0.6)
-    assert result.assessment_status == AssessmentStatus.INCONCLUSIVE
-    assert result.compliance_results[0].compliance_status == ComplianceStatus.NON_COMPLIANT
-    assert result.overall_compliant is False
+    assert shelf.occupied_facings == 10
+    assert result.detected_products == 10
+    assert result.coverage == pytest.approx(1.0)
+    assert result.assessment_status == AssessmentStatus.COMPLETE
+    assert result.compliance_results[0].compliance_status == ComplianceStatus.COMPLIANT
+    assert result.overall_compliant is True
+
+
+def test_occupied_unidentified_facing_is_full_lenient_presence_credit():
+    definition = _definition([("top", "top", 1)])
+    facing = definition.all_facings()[0]
+    reg, idents = _observe("img0", {facing.facing_id: _obs("img0", "", None)})
+
+    result = _run(definition, _description(["top"]), [reg], idents)
+
+    position = result.position_results[0]
+    shelf = result.shelf_scores[0]
+    assert position.status == FacingStatus.INFERRED_PRESENT
+    assert (position.strict_credit, position.lenient_credit) == (0.0, 1.0)
+    assert shelf.occupied_facings == 1 and shelf.occupied_fraction == 1.0
+    assert result.detected_products == 1
+    assert result.coverage == 1.0
+    assert result.compliance_results[0].found_products == ["Product top 1"]
 
 
 def test_scoring_fixture_incomplete_definition():
@@ -247,7 +266,7 @@ def test_scoring_fixture_weight_normalisation():
     observed = {}
     for idx, facing in enumerate(definition.all_facings()):
         observed[facing.facing_id] = (
-            _obs("img0", "", facing.product) if idx < 8 else _obs("img0", "", None, brand=BRAND)
+            _obs("img0", "", facing.product) if idx < 8 else _obs("img0", "", "OTHER", brand="Other")
         )
     bindings = validate_bindings(
         definition,
@@ -265,8 +284,8 @@ def test_scoring_fixture_weight_normalisation():
     reg, idents = _observe("img0", observed)
     result = _run(definition, _description(["top"]), [reg], idents, bindings, outcomes)
     shelf = result.shelf_scores[0]
-    assert shelf.facing_lenient == pytest.approx(0.9)
-    assert shelf.lenient_score == pytest.approx((0.9 * 0.8 + 0.1 + 0.2) / 1.1)  # 0.92727…
+    assert shelf.facing_lenient == pytest.approx(0.8)
+    assert shelf.lenient_score == pytest.approx((0.8 * 0.8 + 0.1 + 0.2) / 1.1)  # 0.85454…
     assert shelf.lenient_score < 1.0
 
 

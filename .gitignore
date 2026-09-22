@@ -433,3 +433,9 @@ examples/planogram/perception_spike/*
 # FEAT-574: example scripts added by later tasks of the same feature
 !examples/planogram/descriptor_assistant.py
 !examples/planogram/backend_benchmark.py
+# FEAT-574: ink-wall pipeline example (code only — generated definitions,
+# renders, reports and the vision cache are retailer-derived and stay ignored)
+!examples/planogram/pipelines/
+examples/planogram/pipelines/*
+!examples/planogram/pipelines/*.py
+!examples/planogram/pipelines/README.md

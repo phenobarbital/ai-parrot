@@ -179,6 +179,16 @@ only the marked gaps:
    not introduce a symbol the Codebase Contract does not list.
 5. **Derive from the spec's Interface Skeletons** (spec §3) and re-verify the
    anchors now; signatures fixed by the skeleton are not renegotiable.
+   **Start from the spec's §6 Edit Sites table** when it is populated: it already
+   carries the verbatim anchor, its `path:NN` and its occurrence count for every
+   file the modules touch, so do not search for the anchor again — but the table
+   was verified at spec time and code moves, so for every row you use, re-run
+   `grep -c '<anchor>' <path>` and use the fresh count. A count that no longer
+   matches the table means the anchor moved: re-locate it and correct the row's
+   `path:NN` in the task's blueprint (the spec is not rewritten at task time).
+   A count of `0` means the anchor is gone — stop and report the drift rather
+   than inventing a new attachment point. If §6 has no Edit Sites table (spec
+   predates it), derive the anchors yourself as in the rest of this step.
 6. **Size cap**: no block over ~80 lines. If a file needs more, split the task.
 7. **Explain-for-executor rule**: every non-trivial decision is written as an
    imperative instruction *plus its reason* ("do X — because Y"), in the

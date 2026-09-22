@@ -191,6 +191,28 @@ class ExistingClass(BaseClass):
 - ~~`parrot.module.NonExistentThing`~~ — does not exist
 - ~~`ClassName.phantom_method()`~~ — not a real method
 
+### Edit Sites (Blueprint Anchors)
+<!-- One row per file the §3 modules will touch. `/sdd-task` turns each row into an
+     Implementation Blueprint block, so the anchor is verified ONCE per feature here
+     instead of once per task. Keep it to files the modules actually change — this
+     table is re-read on every downstream turn, so rows must earn their place.
+
+     Verified against: <short SHA of the base commit at spec time>
+
+     Anchors go stale between spec time and task time. `/sdd-task` MUST re-run the
+     `grep -c` for every row it uses; this table saves the search, not the check. -->
+
+| File | Action | Verbatim anchor line | Verified at | Occurrences |
+|---|---|---|---|---|
+| `packages/<dist>/src/<pkg>/module/file.py` | MODIFY | `def existing_method(self) -> None:` | `file.py:NN` | 1 |
+| `packages/<dist>/src/<pkg>/module/new_file.py` | CREATE | — | — | — |
+
+- A **CREATE** row declares only the path the module adds; it needs no anchor.
+- **Occurrences > 1** means the one-line anchor is ambiguous. Quote 2–3 lines of
+  surrounding context in the anchor cell so the blueprint block can attach uniquely.
+- An anchor that cannot be verified is written `(unverified — check before use)`,
+  never guessed.
+
 ---
 
 ## 7. Implementation Notes & Constraints

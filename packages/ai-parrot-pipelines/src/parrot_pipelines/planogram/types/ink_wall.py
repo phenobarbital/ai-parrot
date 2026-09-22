@@ -298,7 +298,7 @@ class InkWall(AbstractPlanogramType):
         return finalize_comparison(comparison, project_compliance(shelves, positions, definition, description))
 
     def _registrable_slots(self, perception: PerceptionResult, idents: Sequence[Identification]) -> List[Slot]:
-        """On-fixture slots of rows that carry at least one read identity (fallback: one slot per shape)."""
+        """On-fixture slots of rows with occupancy or identity evidence (fallback: one slot per shape)."""
         slots = list(perception.slots) or self._fallback_slots(perception)
         on_tags = {s.shape_id for s in perception.shapes if s.membership == FixtureMembership.ON_FIXTURE}
         on_rows = {s.row_index for s in slots if s.anchor_shape_id in on_tags}
@@ -310,7 +310,13 @@ class InkWall(AbstractPlanogramType):
             return slot.row_index in on_rows or (last_row is not None and slot.row_index == last_row + 1)
 
         kept = [s for s in slots if on_fixture(s)]
-        read = {i.shape_id for i in idents if i.image_id == perception.image_id and (i.product or i.brand)}
+        read = {
+            i.shape_id
+            for i in idents
+            if i.image_id == perception.image_id
+            and not i.uncertain
+            and (i.occupancy in ("occupied", "empty") or i.product or i.brand)
+        }
         rows_with_evidence = {s.row_index for s in kept if s.slot_id in read or s.anchor_shape_id in read}
         return [s for s in kept if s.row_index in rows_with_evidence]
 

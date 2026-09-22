@@ -42,6 +42,7 @@ ADDITIVE_KEYS = {
     "position_results",
     "shelf_scores",
     "coverage",
+    "detected_products",
     "definition_coverage",
     "assessment_status",
     "strict_compliance_score",
@@ -362,3 +363,30 @@ def test_constructor_passes_config_backend(fake_vision_client, monkeypatch):
     assert pipe.resolved_backend.as_string() == "anthropic:claude-x"
     assert pipe.resolved_backend.origin == "config"
     assert (pipe.cpu_workers, pipe.llm_concurrency, pipe.llm_timeout) == (3, 2, 9.0)
+
+
+async def test_ocr_is_disabled_by_default_and_can_be_enabled(
+    pipeline, synthetic_shelf_image, fake_vision_client, monkeypatch
+):
+    created = 0
+
+    class _AvailableOcr:
+        available = True
+
+        def __init__(self) -> None:
+            nonlocal created
+            created += 1
+
+    monkeypatch.setattr(plan_module, "OcrReader", _AvailableOcr)
+
+    disabled_result = await pipeline.run(synthetic_shelf_image)
+    assert pipeline.enabled_ocr is False
+    assert disabled_result["ocr_available"] is False
+    assert created == 0
+
+    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={})
+    enabled_pipeline = PlanogramCompliance(planogram_config=config, llm=fake_vision_client, enabled_ocr=True)
+    enabled_result = await enabled_pipeline.run(synthetic_shelf_image)
+    assert enabled_pipeline.enabled_ocr is True
+    assert enabled_result["ocr_available"] is True
+    assert created == 1
