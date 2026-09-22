@@ -1,4 +1,5 @@
 """FEAT-589 M1 — committed English fixtures satisfy spec §4 'Test Data / Fixtures'."""
+
 from __future__ import annotations
 
 import hashlib
@@ -25,6 +26,7 @@ def test_injection_manifest_buckets_hashes_and_splits():
 def test_injection_texts_come_from_the_benchmark_corpus():
     pytest.importorskip("benchmarks.injection_guardrail_latency.corpus")
     from benchmarks.injection_guardrail_latency.corpus import build_eval_set
+
     texts, _, buckets = build_eval_set()
     corpus = set(zip(texts, buckets))
     for c in load_cases(FIXTURES / "injection.jsonl", "injection"):
@@ -54,15 +56,15 @@ def test_all_fixture_cases_are_english_by_declaration():
     # Check injection.jsonl
     cases = load_cases(FIXTURES / "injection.jsonl", "injection")
     assert all(c.language == "en" for c in cases)
-    
+
     # Check routing.jsonl
     cases = load_cases(FIXTURES / "routing.jsonl", "routing")
     assert all(c.language == "en" for c in cases)
-    
+
     # Check grounded.jsonl
     cases = load_cases(FIXTURES / "grounded.jsonl", "grounded")
     assert all(c.language == "en" for c in cases)
-    
+
     # Check that all files end with a newline
     for file_path in [FIXTURES / "injection.jsonl", FIXTURES / "routing.jsonl", FIXTURES / "grounded.jsonl"]:
         content = file_path.read_text(encoding="utf-8")
