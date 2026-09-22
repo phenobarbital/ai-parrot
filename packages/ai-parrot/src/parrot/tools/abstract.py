@@ -331,6 +331,15 @@ class AbstractTool(EventEmitterMixin, ABC):
     # tools an operator wants to hide from renderers without reverting the
     # whole catalog to an opt-in model.
     a2ui_hidden: bool = False
+    # FEAT-590 (Tool-Call Delegate, spec §3 Module 2): read-only or
+    # idempotent tools opt IN to being chosen by a tool-call delegate inside
+    # an ExecutionPlan. Default False — existing tools are unaffected, and a
+    # plan listing a non-safe tool in a delegate node is rejected unless the
+    # node and the host both allow side effects.
+    delegate_safe: bool = False
+    # FEAT-590: optional short description tuned for tiny local models;
+    # tool_specs() falls back to `description` when None.
+    delegate_description: Optional[str] = None
 
     def __init__(
         self,
