@@ -100,6 +100,51 @@ def _make_synth_mock(audio: bytes = b"OGG...") -> MagicMock:
     return s
 
 
+@pytest.mark.parametrize(
+    ("mime_format", "source_format"),
+    [
+        ("audio/wav", "wav"),
+        ("audio/mpeg", "mp3"),
+        ("audio/ogg", "ogg"),
+    ],
+)
+def test_tts_audio_to_ogg_decodes_container_by_mime(mime_format: str, source_format: str):
+    """Containerized TTS audio is decoded with the format matching its MIME."""
+    from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
+    with patch("pydub.AudioSegment") as audio_segment:
+        segment = audio_segment.from_file.return_value
+        segment.export.side_effect = lambda target, **kwargs: target.write(b"converted")
+
+        result = TelegramAgentWrapper._tts_audio_to_ogg(b"container", mime_format)
+
+    audio_segment.from_file.assert_called_once()
+    assert audio_segment.from_file.call_args.kwargs["format"] == source_format
+    segment.export.assert_called_once()
+    assert segment.export.call_args.kwargs == {"format": "ogg", "codec": "libopus"}
+    assert result == b"converted"
+
+
+def test_tts_audio_to_ogg_keeps_unknown_mime_as_raw_pcm():
+    """Unknown MIME types retain the legacy 24 kHz mono PCM fallback."""
+    from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
+    with patch("pydub.AudioSegment") as audio_segment:
+        segment = audio_segment.return_value
+        segment.export.side_effect = lambda target, **kwargs: target.write(b"converted")
+
+        result = TelegramAgentWrapper._tts_audio_to_ogg(b"pcm", "audio/unknown")
+
+    audio_segment.from_file.assert_not_called()
+    audio_segment.assert_called_once_with(
+        data=b"pcm",
+        sample_width=2,
+        frame_rate=24000,
+        channels=1,
+    )
+    assert result == b"converted"
+
+
 # ---------------------------------------------------------------------------
 # TelegramAgentConfig field tests
 # ---------------------------------------------------------------------------

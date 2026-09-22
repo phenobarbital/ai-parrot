@@ -84,6 +84,41 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         conversations: Per-chat conversation memories
     """
 
+    @staticmethod
+    def _tts_audio_to_ogg(audio: bytes, mime_format: str) -> bytes:
+        """Decode TTS audio by MIME type and export it as OGG/Opus.
+
+        Args:
+            audio: Source audio bytes.
+            mime_format: MIME type describing ``audio``. Unknown types retain
+                the legacy Gemini raw PCM interpretation.
+
+        Returns:
+            OGG/Opus encoded audio bytes suitable for Telegram voice notes.
+        """
+        import io
+
+        from pydub import AudioSegment
+
+        source_formats = {
+            "audio/wav": "wav",
+            "audio/mpeg": "mp3",
+            "audio/ogg": "ogg",
+        }
+        if mime_format in source_formats:
+            segment = AudioSegment.from_file(io.BytesIO(audio), format=source_formats[mime_format])
+        else:
+            segment = AudioSegment(
+                data=audio,
+                sample_width=2,
+                frame_rate=24000,
+                channels=1,
+            )
+
+        buffer = io.BytesIO()
+        segment.export(buffer, format="ogg", codec="libopus")
+        return buffer.getvalue()
+
     def __init__(
         self,
         agent: "AbstractBot",
@@ -3427,9 +3462,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             # when the input was a voice message and TTS is enabled.
             if self.config.tts_enabled and self.config.reply_in_kind and parsed.text and parsed.text.strip():
                 try:
-                    import io
                     from aiogram.types import BufferedInputFile
-                    from pydub import AudioSegment
 
                     # FIX-3: Strip Markdown before feeding text to TTS so
                     # the engine does not speak formatting tokens aloud
@@ -3452,21 +3485,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                             language=tts_language,
                         )
 
-                        # FIX-1: Google backend returns raw PCM (24 kHz mono
-                        # 16-bit); convert to OGG/Opus before send_voice so
-                        # Telegram accepts and plays the audio correctly.
-                        def _convert_pcm_to_ogg(raw_pcm: bytes) -> bytes:
-                            seg = AudioSegment(
-                                data=raw_pcm,
-                                sample_width=2,
-                                frame_rate=24000,
-                                channels=1,
-                            )
-                            buf = io.BytesIO()
-                            seg.export(buf, format="ogg", codec="libopus")
-                            return buf.getvalue()
-
-                        ogg_bytes = await asyncio.to_thread(_convert_pcm_to_ogg, tts_result.audio)
+                        ogg_bytes = await asyncio.to_thread(
+                            self._tts_audio_to_ogg,
+                            tts_result.audio,
+                            tts_result.mime_format,
+                        )
 
                         await self.bot.send_voice(
                             chat_id,
