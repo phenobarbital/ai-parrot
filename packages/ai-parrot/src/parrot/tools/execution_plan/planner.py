@@ -19,6 +19,7 @@ failures a repair round needs to detect. Instead the schema is embedded in
 the prompt and the response is parsed/validated here, raising a typed
 :class:`PlanAuthoringError` on failure.
 """
+
 from __future__ import annotations
 
 import json
@@ -110,9 +111,7 @@ def _client_from_model_config(model_config: Dict[str, Any]) -> AbstractClient:
     cfg = dict(model_config)
     provider = cfg.pop("name", None) or cfg.pop("llm", None) or cfg.pop("provider", None)
     if not provider:
-        raise ValueError(
-            "planner_llm model_config dict must set one of 'name'/'llm'/'provider'."
-        )
+        raise ValueError("planner_llm model_config dict must set one of 'name'/'llm'/'provider'.")
     if isinstance(provider, str) and ":" in provider:
         provider, parsed_model = LLMFactory.parse_llm_string(provider)
         cfg.setdefault("model", parsed_model)
@@ -147,7 +146,8 @@ class PlanPlanner:
     """
 
     def __init__(
-        self, planner_llm: Union[str, Dict[str, Any], Type[AbstractClient], AbstractClient],
+        self,
+        planner_llm: Union[str, Dict[str, Any], Type[AbstractClient], AbstractClient],
         catalog: Sequence[ToolCatalogEntry],
     ) -> None:
         """Resolve the planner client and bind the tool catalog.
@@ -177,16 +177,15 @@ class PlanPlanner:
         """
         self.logger.info(
             "Authoring plan: objective_len=%d catalog_size=%d",
-            len(objective), len(self.catalog),
+            len(objective),
+            len(self.catalog),
         )
         response_text = await self._call(self._authoring_prompt(objective))
         plan = self._parse_plan(response_text)
         self.logger.info("Authoring round produced plan %r", plan.name)
         return plan
 
-    async def repair(
-        self, plan_json: Dict[str, Any], report: ValidationReport
-    ) -> ExecutionPlan:
+    async def repair(self, plan_json: Dict[str, Any], report: ValidationReport) -> ExecutionPlan:
         """Re-prompt once with ``report``'s text embedded verbatim.
 
         Args:
@@ -297,8 +296,7 @@ class PlanPlanner:
             document = json.loads(text)
         except json.JSONDecodeError as exc:
             raise PlanAuthoringError(
-                f"Planner delta was not valid JSON: {exc}. "
-                f"Response started with: {response_text[:200]!r}"
+                f"Planner delta was not valid JSON: {exc}. " f"Response started with: {response_text[:200]!r}"
             ) from exc
         try:
             delta = PlanDelta.model_validate(document)
@@ -315,7 +313,9 @@ class PlanPlanner:
         """Make exactly one call to the resolved client and return its text."""
         async with self.client as entered:
             response = await entered.ask(
-                prompt=prompt, model=getattr(entered, "model", None), temperature=0.0,
+                prompt=prompt,
+                model=getattr(entered, "model", None),
+                temperature=0.0,
             )
         return _response_text(response)
 
@@ -347,10 +347,7 @@ class PlanPlanner:
             return "(no tools in catalog)"
         lines = []
         for entry in self.catalog:
-            args = ", ".join(
-                f"{arg.name}:{arg.type}{'' if arg.required else '?'}"
-                for arg in entry.args_summary
-            )
+            args = ", ".join(f"{arg.name}:{arg.type}{'' if arg.required else '?'}" for arg in entry.args_summary)
             lines.append(f"- {entry.name}({args}): {entry.description}")
         return "\n".join(lines)
 
@@ -363,15 +360,12 @@ class PlanPlanner:
             document = json.loads(text)
         except json.JSONDecodeError as exc:
             raise PlanAuthoringError(
-                f"Planner response was not valid JSON: {exc}. "
-                f"Response started with: {response_text[:200]!r}"
+                f"Planner response was not valid JSON: {exc}. " f"Response started with: {response_text[:200]!r}"
             ) from exc
         try:
             return ExecutionPlan.model_validate(document)
         except ValidationError as exc:
-            raise PlanAuthoringError(
-                f"Planner response failed ExecutionPlan validation: {exc}"
-            ) from exc
+            raise PlanAuthoringError(f"Planner response failed ExecutionPlan validation: {exc}") from exc
 
 
 def _extract_json_text(text: str) -> str:
