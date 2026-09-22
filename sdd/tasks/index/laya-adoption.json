@@ -56,7 +56,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,8 @@
       "parallelism_notes": "Test imports load_cases from TASK-3606 (artifacts/laya/models.py) to validate the JSONL it authors. Data-only task; touches no Python source.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3607-laya-english-fixtures.md"
+      "completed_at": "2026-09-22T12:04:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3607-laya-english-fixtures.md"
     },
     {
       "id": "TASK-3608",
