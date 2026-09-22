@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-21T00:00:00+00:00",
-  "completed_at": "2026-09-21T22:05:53+00:00",
+  "completed_at": "2026-09-22T01:48:51+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-21T21:55:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3584-guide-and-claim-convention.md"
+      "file": "sdd/tasks/completed/TASK-3584-guide-and-claim-convention.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3585",
@@ -45,7 +46,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-21T22:03:53+00:00",
-      "file": "sdd/tasks/completed/TASK-3585-claim-verification-harness.md"
+      "file": "sdd/tasks/completed/TASK-3585-claim-verification-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3586",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-21T21:57:35+00:00",
-      "file": "sdd/tasks/completed/TASK-3586-posix-installer-script.md"
+      "file": "sdd/tasks/completed/TASK-3586-posix-installer-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3587",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-21T21:58:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3587-powershell-installer-script.md"
+      "file": "sdd/tasks/completed/TASK-3587-powershell-installer-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3588",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-09-21T22:05:53+00:00",
-      "file": "sdd/tasks/completed/TASK-3588-ci-install-wiring.md"
+      "file": "sdd/tasks/completed/TASK-3588-ci-install-wiring.md",
+      "verification": "verified"
     }
   ]
 }
