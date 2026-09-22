@@ -58,9 +58,7 @@ async def test_resume_unknown_and_not_resumable_codes() -> None:
     """Unknown and terminal identities refuse without dispatching a tool."""
     store = SerializingFakeCheckpointStore()
     manager = CountingToolManager({"a": {"a": 1}, "b": {"b": 1}, "c": {"c": 1}})
-    toolkit = ExecutionPlanToolkit(
-        tool_manager=manager, working_memory=WorkingMemoryToolkit(), checkpoint_store=store
-    )
+    toolkit = ExecutionPlanToolkit(tool_manager=manager, working_memory=WorkingMemoryToolkit(), checkpoint_store=store)
 
     unknown = await toolkit.plan_resume("unknown")
     completed = await toolkit._run_plan(_plan(), source="plan_name")
@@ -75,9 +73,7 @@ async def test_resume_does_not_redispatch_completed_and_completes_rest() -> None
     """The completion frontier retains A/B and dispatches only the interrupted C."""
     store = SerializingFakeCheckpointStore()
     run_id, manager = await _interrupted_run(store)
-    resumed = ExecutionPlanToolkit(
-        tool_manager=manager, working_memory=WorkingMemoryToolkit(), checkpoint_store=store
-    )
+    resumed = ExecutionPlanToolkit(tool_manager=manager, working_memory=WorkingMemoryToolkit(), checkpoint_store=store)
     manager._gates["c"].set()
 
     result = await resumed.plan_resume(run_id)

@@ -574,9 +574,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         current = set(self.allowed_tools) if self.allowed_tools is not None else set(self._tool_manager.list_tools())
         needed = {node.tool for node in run.metadata.plan.nodes}
         if not needed <= (set(run.metadata.allowed_tools) & current):
-            raise PlanRunError(
-                "policy_mismatch", "current tool policy no longer permits every tool this run uses"
-            )
+            raise PlanRunError("policy_mismatch", "current tool policy no longer permits every tool this run uses")
         if plan_fingerprint(run.metadata.plan) != run.metadata.plan_fingerprint:
             raise PlanRunError("policy_mismatch", "effective plan fingerprint does not match the recorded run")
 
@@ -606,9 +604,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         ctx.shared_data[PLAN_RUN_SHARED_KEY] = run.metadata.model_dump(mode="json")
         return ctx
 
-    async def _run_continuation(
-        self, run: PlanRun, flow: PlanFlow, *, continuation: PlanContinuation
-    ) -> ToolResult:
+    async def _run_continuation(self, run: PlanRun, flow: PlanFlow, *, continuation: PlanContinuation) -> ToolResult:
         """Run a resumed flow and retain its lease until terminal completion."""
 
         async def _finish() -> ToolResult:
