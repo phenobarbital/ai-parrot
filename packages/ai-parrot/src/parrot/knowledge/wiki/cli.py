@@ -2936,6 +2936,26 @@ def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
         raise SystemExit(2) from exc
 
 
+@ledger.command("retract-feedback")
+@click.argument("feedback_ids", nargs=-1, required=True)
+@click.option("--reason", required=True, help="Why the recorded correction is wrong (kept in the audit trail).")
+@click.option("--actor", default="agent:cli", help="Actor withdrawing the correction, e.g. human:jesus.")
+def ledger_retract_feedback(feedback_ids: tuple[str, ...], reason: str, actor: str) -> None:
+    """Withdraw misattributed coder feedback (`coder-feedback:<digest>` ids) from model lessons."""
+    from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedbackStore
+
+    store = CoderFeedbackStore.from_root(Path.cwd())
+    missing = 0
+    for feedback_id in feedback_ids:
+        if _run(store.retract(feedback_id, reason, actor)):
+            click.echo(f"Retracted {feedback_id}")
+        else:
+            click.echo(f"Could not retract {feedback_id} (unknown or already retracted)")
+            missing += 1
+    if missing:
+        raise SystemExit(1)
+
+
 @ledger.command("context")
 @click.argument("file_paths", nargs=-1, required=True)
 @click.option("--max-tokens", default=3000, help="Token budget for context.")

@@ -111,10 +111,43 @@ class CoderFeedbackStore:
         await asyncio.to_thread(self.log.append, event)
         return CoderFeedbackReceipt(feedback_id=event.subject)
 
+    async def retract(self, feedback_id: str, reason: str, actor: str) -> bool:
+        """Withdraw a recorded correction by appending an `insight.superseded` tombstone.
+
+        The event log is append-only, so a misattributed lesson (FEAT-589: four
+        "forgot `git add -f`" defects charged to a codex model whose sandbox cannot
+        commit at all — the engine's extraction was the bug) is never rewritten out;
+        replay simply drops every recording of `feedback_id` made before the
+        tombstone. A later recording of the same occurrence counts again.
+
+        Args:
+            feedback_id: The `coder-feedback:<digest>` subject to withdraw.
+            reason: Why the correction is wrong; kept for the audit trail.
+            actor: Who withdraws it, e.g. `human:jesus`.
+
+        Returns:
+            `True` when a live record was retracted; `False` (nothing appended)
+            when `feedback_id` is unknown or already retracted.
+        """
+        live = {fb.feedback_id() for _ts, fb in await asyncio.to_thread(self._read)}
+        if feedback_id not in live:
+            return False
+        event = LedgerEvent(
+            kind="insight.superseded",
+            subject=feedback_id,
+            actor=actor,
+            payload={"category": "coder_feedback", "reason": reason, "retracted_by": actor},
+        )
+        await asyncio.to_thread(self.log.append, event)
+        return True
+
     def _read(self) -> list[tuple[str, CoderFeedback]]:
-        """Replay this plane only; duplicate recordings count once."""
+        """Replay this plane only; duplicate recordings count once; retractions drop earlier records."""
         records: dict[str, tuple[str, CoderFeedback]] = {}
         for event, _offset in self.log.iter_events():
+            if event.kind == "insight.superseded" and event.payload.get("category") == "coder_feedback":
+                records.pop(event.subject, None)
+                continue
             if event.kind != "insight.recorded" or event.payload.get("category") != "coder_feedback":
                 continue
             try:
