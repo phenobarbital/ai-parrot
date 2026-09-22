@@ -288,7 +288,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -300,8 +300,8 @@
       "parallelism_notes": "Runs the CLI from TASK-3616 (artifacts/laya/evaluate.py) and the opt-in test_real_cpu_scenarios from TASK-3617 (packages/ai-parrot/tests/integration/test_laya_evaluation.py) against a real environment; may modify artifacts/laya/worker.py after TASK-3609's preflight landed (same file, serialized). Creates its isolated env and snapshot under artifacts/laya/ (untracked), not in the shared .venv, so not exclusive.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3618-laya-readme-and-real-cpu-evidence.md"
+      "completed_at": "2026-09-22T12:37:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3618-laya-readme-and-real-cpu-evidence.md"
     }
   ]
 }
