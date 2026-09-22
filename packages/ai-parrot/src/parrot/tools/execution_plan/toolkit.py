@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Sequence, Set, Union
 
 from parrot.bots.flows.core.context import FlowContext
+from parrot.bots.flows.core.checkpoint import CheckpointStore, get_checkpoint_store
 from parrot.bots.flows.flow.flow import AgentsFlow
 from parrot.bots.flows.plan import (
     ArtifactRef,
@@ -32,6 +33,7 @@ from parrot.bots.flows.plan import (
 from parrot.registry.registry import AgentRegistry
 from parrot.tools.decorators import tool_schema
 from parrot.tools.toolkit import AbstractToolkit
+from parrot.tools.working_memory.task_memory.models import TaskScope
 
 from ..abstract import ToolResult
 from .catalog import build_catalog, validate_with_allowlist
@@ -40,15 +42,24 @@ from .models import (
     PlanExecuteArgs,
     PlanStatusArgs,
     PlanValidateArgs,
+    PlanRecoveryConfig,
+    PlanRecoveryEnvelope,
+    PlanRun,
+    PlanRunError,
+    PlanRunManifest,
+    PlanRunSummary,
     RunningSummary,
     RunRecord,
 )
+from .memory import PlanMemoryBinding
 from .planner import PlanAuthoringError, PlanPlanner
+from .runs import PlanRunResolver
 from .store import PlanFileStore, PlanLoadError
 
 if TYPE_CHECKING:
     from parrot.auth.permission import PermissionContext
     from parrot.tools.working_memory.tool import WorkingMemoryToolkit
+    from parrot.tools.working_memory.task_memory.config import TaskMemoryRuntime
 
 
 class _StructuralError(Exception):
@@ -109,6 +120,11 @@ class ExecutionPlanToolkit(AbstractToolkit):
         on_node_event: Optional[Callable[..., Any]] = None,
         max_completed_runs: int = 50,
         plan_step_mapping: Optional[Mapping[str, str]] = None,
+        recovery: Optional[PlanRecoveryConfig] = None,
+        checkpoint_store: Union["CheckpointStore", str, None] = None,
+        durable_store: Union["CheckpointStore", str, None] = None,
+        task_memory_runtime: Optional["TaskMemoryRuntime"] = None,
+        scope: Optional[TaskScope] = None,
         **kwargs: Any,
     ) -> None:
         """Initialise the toolkit with its live dependencies.
@@ -163,8 +179,68 @@ class ExecutionPlanToolkit(AbstractToolkit):
         # requires one unconditionally even though a plan can never contain
         # an agent-type node (PlanNode has no agent_ref field at all).
         self._agent_registry: Optional[AgentRegistry] = None
+        # FEAT-585 recovery wiring — trusted host inputs, borrowed, no I/O here.
+        self.recovery: PlanRecoveryConfig = recovery or PlanRecoveryConfig()
+        self._checkpoint_store: Optional[CheckpointStore] = self._resolve_store(checkpoint_store)
+        self._durable_store: Optional[CheckpointStore] = self._resolve_store(durable_store)
+        self._task_memory_runtime = task_memory_runtime
+        self._scope: Optional[TaskScope] = scope
+        self._memory_binding = PlanMemoryBinding(
+            working_memory,
+            runtime=task_memory_runtime,
+            scope=scope,
+            max_restore_bytes=self.recovery.max_restore_bytes,
+        )
+        self._plan_runs: Dict[str, PlanRun] = {}
+        self._resolver = PlanRunResolver(
+            store=self._checkpoint_store,
+            durable_store=self._durable_store,
+            scope=scope,
+            cache=self._plan_runs,
+        )
 
     # ── Internal executor path (spec §3 Module 2) ──────────────────────────
+
+    @staticmethod
+    def _resolve_store(arg: Union["CheckpointStore", str, None]) -> Optional[CheckpointStore]:
+        """Keep an omitted tier disabled; resolve configured names and instances."""
+        return None if arg is None else get_checkpoint_store(arg)
+
+    def _legacy_envelope(self, record: RunRecord) -> PlanRecoveryEnvelope:
+        """Build the honest recovery envelope for a pre-checkpoint run."""
+        return PlanRecoveryEnvelope(
+            run_id=record.run_id,
+            root_run_id=record.run_id,
+            checkpoint_enabled=False,
+            artifact_mode=self._memory_binding.artifact_mode,
+            resume_level="none",
+            resumable=False,
+            recovery_reason="checkpoint_unavailable",
+            max_repair_rounds=self.recovery.max_repair_rounds,
+        )
+
+    def _error(self, exc: PlanRunError, *, run_id: Optional[str] = None) -> ToolResult:
+        """Map a structured resolver error to the agent-facing result shape."""
+        result = exc.to_tool_result()
+        if exc.code == "unknown_run" and isinstance(result.result, dict):
+            result.result["known_run_ids"] = sorted(set(self._plan_runs) | set(self._runs))[:20]
+        self.logger.info("plan run error code=%s run_id=%s", exc.code, run_id)
+        return result
+
+    async def _resolve_or_legacy(self, run_id: str) -> tuple[Optional[PlanRun], Optional[RunRecord]]:
+        """Resolve checkpoint state first, retaining same-process legacy compatibility."""
+        try:
+            return await self._resolver.resolve(run_id), None
+        except PlanRunError as exc:
+            record = self._runs.get(run_id)
+            if record is not None and exc.code in ("unknown_run", "missing_or_expired", "checkpoint_unavailable"):
+                return None, record
+            raise
+
+    async def cleanup(self) -> None:
+        """Close owned plan-memory resources without closing borrowed stores."""
+        await self._memory_binding.close()
+        await super().cleanup()
 
     def _get_agent_registry(self) -> AgentRegistry:
         """Return the cached empty ``AgentRegistry``, creating it once."""
@@ -387,49 +463,83 @@ class ExecutionPlanToolkit(AbstractToolkit):
     @tool_schema(PlanStatusArgs)
     async def plan_status(self, run_id: str) -> ToolResult:
         """Return progress while a plan run executes, or its final manifest."""
-        record = self._runs.get(run_id)
-        if record is None:
-            return ToolResult(
-                status="error",
-                success=False,
-                result=None,
-                error=f"Unknown run_id {run_id!r}. Known: {sorted(self._runs)}",
-            )
+        try:
+            run, record = await self._resolve_or_legacy(run_id)
+        except PlanRunError as exc:
+            return self._error(exc, run_id=run_id)
 
-        if record.status == "running" or record.manifest is None:
-            summary = RunningSummary(
-                run_id=run_id,
-                plan_name=record.plan_name,
-                nodes_total=record.nodes_total,
-                nodes_done=record.nodes_done,
+        if record is not None:
+            envelope = self._legacy_envelope(record)
+            if record.status == "running" or record.manifest is None:
+                summary = PlanRunSummary(
+                    **envelope.model_dump(),
+                    plan_name=record.plan_name,
+                    nodes_total=record.nodes_total,
+                    nodes_done=record.nodes_done,
+                    uncheckpointed_progress=record.nodes_done > 0,
+                )
+                return ToolResult(status="success", result=summary.model_dump(mode="json"))
+            manifest = PlanRunManifest(
+                **record.manifest.model_dump(),
+                **envelope.model_dump(),
+                status=record.status,
+            )
+            return ToolResult(status="success", result=manifest.model_dump(mode="json"))
+
+        assert run is not None
+        envelope = self._resolver.envelope(run)
+        if run.status == "running":
+            summary = PlanRunSummary(
+                **envelope.model_dump(),
+                plan_name=run.metadata.plan.name,
+                nodes_total=len(run.metadata.plan.nodes),
+                nodes_done=run.nodes_done,
             )
             return ToolResult(status="success", result=summary.model_dump(mode="json"))
 
-        return ToolResult(status="success", result=record.manifest.model_dump(mode="json"))
+        manifest = PlanRunManifest(
+            **build_manifest(run.metadata.plan, run.refs, duration_seconds=0.0).model_dump(),
+            **envelope.model_dump(),
+            status=run.status,
+        )
+        return ToolResult(status="success", result=manifest.model_dump(mode="json"))
 
     @tool_schema(PlanArtifactsArgs)
     async def plan_artifacts(self, run_id: str) -> ToolResult:
         """Return the ArtifactRef list a run has produced so far."""
-        record = self._runs.get(run_id)
-        if record is None:
+        try:
+            run, record = await self._resolve_or_legacy(run_id)
+        except PlanRunError as exc:
+            return self._error(exc, run_id=run_id)
+
+        if record is not None:
+            if record.manifest is not None:
+                artifacts = [ref.model_dump(mode="json") for ref in record.manifest.artifacts]
+            else:
+                ctx = self._run_contexts.get(run_id)
+                artifacts = [
+                    value.model_dump(mode="json")
+                    for value in (ctx.results.values() if ctx is not None else ())
+                    if isinstance(value, ArtifactRef)
+                ]
             return ToolResult(
-                status="error",
-                success=False,
-                result=None,
-                error=f"Unknown run_id {run_id!r}. Known: {sorted(self._runs)}",
+                status="success",
+                result={
+                    "run_id": run_id,
+                    "artifacts": artifacts,
+                    **self._legacy_envelope(record).model_dump(mode="json"),
+                },
             )
 
-        if record.manifest is not None:
-            artifacts = [ref.model_dump(mode="json") for ref in record.manifest.artifacts]
-        else:
-            ctx = self._run_contexts.get(run_id)
-            artifacts = [
-                value.model_dump(mode="json")
-                for value in (ctx.results.values() if ctx is not None else ())
-                if isinstance(value, ArtifactRef)
-            ]
-
-        return ToolResult(status="success", result={"run_id": run_id, "artifacts": artifacts})
+        assert run is not None
+        return ToolResult(
+            status="success",
+            result={
+                "run_id": run_id,
+                "artifacts": [ref.model_dump(mode="json") for ref in run.refs],
+                **self._resolver.envelope(run).model_dump(mode="json"),
+            },
+        )
 
     @tool_schema(PlanExecuteArgs)
     async def plan_execute(

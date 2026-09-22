@@ -288,6 +288,7 @@ class TestRunRegistry:
 
         assert result.status == "error"
         assert result.success is False
+        assert result.result["code"] in ("unknown_run", "missing_or_expired", "checkpoint_unavailable")
         assert "does-not-exist" in result.error
 
         artifacts_result = await toolkit.plan_artifacts(run_id="does-not-exist")
