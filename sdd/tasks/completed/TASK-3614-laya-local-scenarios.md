@@ -342,10 +342,19 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (codex, model=gpt-5.6-terra, attempt_uid=4cae215f36df4911a68862783fbda0ee), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `artifacts/laya/scenarios.py`: `QUESTION_SCHEMAS` (one `noul` injection question, a fixed
+primary/cheap/abstain choice question, a grounded choice question requiring document evidence),
+`build_request`, `injection_verdict` (positive-probability-only, never confidence),
+`run_local_scenario` (warmup discarded, fatal worker errors propagate as error samples for the rest of
+the run), `run_regex_baseline` (identical texts, reports framework-metadata stripping) and
+`route_decisions_for`. Merge-tier validation initially failed (`No module named artifacts.laya.scenarios`)
+— THIRD occurrence of this model's gitignore-force-add defect on this feature (TASK-3605, TASK-3611,
+TASK-3614). Orchestrator force-added the unmodified file (commit
+9c63ed20393796cdc4cc96f76c486898e245062c) and recorded the recurrence as model feedback
+(coder-feedback:2dc3591d1159566f512e9174); a retroactive `coder_suspend_model` call was attempted but
+rejected (`attempt_not_found` — the reservation had already settled), so the pattern is flagged in
+feedback for future roster decisions instead. Full suite then 77/77 passed, 1 skipped.
 
 **Deviations from spec**: `scenarios.py` is an additional module under `artifacts/laya/` (spec §3 M4 lists only `evaluate.py` and `reporting.py`); it keeps the CLI module within the blueprint size cap.

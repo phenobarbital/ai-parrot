@@ -198,7 +198,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -209,8 +209,8 @@
       "parallelism_notes": "Imports the question-id constants and record models from TASK-3605 and calls validate_answers (via the fake predictor in its tests) from TASK-3606 (artifacts/laya/models.py). Not a use, no edge: artifacts/laya/runtime.py (TASK-3610) is mentioned only as documentation that LayaWorker satisfies the local Predictor protocol — scenarios.py never imports it; artifacts/laya/routing.py (TASK-3611) is imported lazily inside route_decisions_for, a path exercised only by TASK-3616, which depends on both. Sole owner of artifacts/laya/scenarios.py.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3614-laya-local-scenarios.md"
+      "completed_at": "2026-09-22T12:12:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3614-laya-local-scenarios.md"
     },
     {
       "id": "TASK-3615",
