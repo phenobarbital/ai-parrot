@@ -311,10 +311,16 @@ message includes the line number.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3606
+- Feature: laya-adoption
+- Implementation SHA: a2180e8da9f68d23a425f23031fe9f9462713ec3
+- Closed at (UTC): 2026-09-22T11:43:59+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_validation | completed (exit_code=0, 28 passed, chunk with TASK-3608) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 181.978s · Tokens: n/a |

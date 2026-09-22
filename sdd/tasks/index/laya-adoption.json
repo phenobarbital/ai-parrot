@@ -35,7 +35,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "Modifies artifacts/laya/models.py created by TASK-3605 (same file, serialized) and imports EvaluationCase/PredictionRequest/PredictionResult from it.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3606-laya-case-loading-and-answer-validation.md"
+      "completed_at": "2026-09-22T11:43:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3606-laya-case-loading-and-answer-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3607",
