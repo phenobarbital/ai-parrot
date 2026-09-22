@@ -23,8 +23,7 @@ if str(REPO_ROOT) not in sys.path:
 from artifacts.laya import evaluate  # noqa: E402
 
 LOG = REPO_ROOT / "artifacts" / "logs" / "laya_evaluation_pytest.log"
-FAKE_CHILD = textwrap.dedent(
-    """
+FAKE_CHILD = textwrap.dedent("""
     import json
     import os
     import sys
@@ -49,8 +48,7 @@ FAKE_CHILD = textwrap.dedent(
             "answers": answers, "inference_ms": 2.0, "error_code": None, "error_message": None,
             "peak_rss_kb": 1234}) + "\\n")
         sys.stdout.flush()
-    """
-)
+    """)
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -189,7 +187,9 @@ async def test_real_cpu_scenarios(tmp_path: Path) -> None:
     report = json.loads((output_dir / "results.json").read_text(encoding="utf-8"))
     assert result in (0, 3)
     assert report["environment"]["worker"]["device"] == "cpu"
-    assert all(metrics["n_cases"] > 0 and metrics["n_error"] == 0 for metrics in report["metrics"]["scenarios"].values())
+    assert all(
+        metrics["n_cases"] > 0 and metrics["n_error"] == 0 for metrics in report["metrics"]["scenarios"].values()
+    )
     assert report["status"] == "incomplete"
     assert any("--live not requested" in limitation for limitation in report["limitations"])
 
