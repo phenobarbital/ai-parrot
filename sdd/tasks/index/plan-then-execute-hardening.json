@@ -16,7 +16,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "Root task. Owns tools/manager.py and bots/agent.py for this feature; no other task touches them. Imports nothing created by the feature.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3589-toolkit-owner-discovery.md"
+      "completed_at": "2026-09-22T11:50:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3589-toolkit-owner-discovery.md"
     },
     {
       "id": "TASK-3590",
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +42,8 @@
       "parallelism_notes": "Root task. Sole writer of tools/execution_plan/models.py; only appends to it. Exports from __init__.py are deferred to TASK-3598, which owns that file.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3590-plan-run-models.md"
+      "completed_at": "2026-09-22T11:50:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3590-plan-run-models.md"
     },
     {
       "id": "TASK-3591",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Root task. Creates tools/execution_plan/memory.py (catalog subclass + RestoreError) using only existing working_memory/task_memory/artifact_store APIs; needs no feature model.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3591-plan-working-memory-catalog.md"
+      "completed_at": "2026-09-22T11:50:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3591-plan-working-memory-catalog.md"
     },
     {
       "id": "TASK-3592",
