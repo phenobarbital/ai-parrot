@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple
 
 from parrot.bots.flows.core.checkpoint import CheckpointPersistenceError, CheckpointStore, FlowCheckpoint
 from parrot.bots.flows.core.context import FlowContext
-from parrot.bots.flows.core.types import FlowResult
+from parrot.bots.flows.core.result import FlowResult
 from parrot.bots.flows.flow.flow import AgentsFlow
 from parrot.bots.flows.plan import (
     ExecutionPlan,
