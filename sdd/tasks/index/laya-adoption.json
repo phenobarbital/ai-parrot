@@ -158,7 +158,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -168,8 +168,8 @@
       "parallelism_notes": "Imports SampleResult/EvaluationReport/SCENARIO_LABELS from TASK-3605 (artifacts/laya/models.py). Sole owner of artifacts/laya/reporting.py.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3612-laya-reporting.md"
+      "completed_at": "2026-09-22T12:05:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3612-laya-reporting.md"
     },
     {
       "id": "TASK-3613",
