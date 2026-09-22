@@ -326,10 +326,11 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestration (codex/gpt-5.6-terra seat, attempt_uid=e6fa56b79eee433aa41a3261e45531ff)
+**Date**: 2026-09-22
+**Notes**: Implemented and merged commit-clean (lint auto-fixed by engine, commit d6615a5cd, residual_count=0).
+While investigating an anomalous merge-tier validation (collection error count jumped 27→37 vs the established baseline), I traced it to this task's own `toolkit.py` gaining `from .checkpoint import PlanFlow, build_plan_flow` — activating a **pre-existing, unrelated dead-code bug in `checkpoint.py`** (created by TASK-3594) that had never been exercised: `from parrot.bots.flows.core.types import FlowResult` where `FlowResult` actually lives in `.core.result`, not `.core.types`. Fixed in `checkpoint.py` (commit 25edda383, attributed to TASK-3594's Completion Note) to unblock collection for the whole `execution_plan` test package.
+Once collection was unblocked, `test_checkpointed_execution.py::test_no_store_and_metadata_false_both_report_fresh_execution` failed for real: `_execute_flow()` unconditionally overwrote `PlanRun.recovery_reason` to `"completed"`/`"terminal"` on any finish, even for checkpoint-disabled runs — contradicting this task's own AC-2 (`recovery_reason="checkpoint_unavailable"` must hold for `checkpoint_enabled=False` regardless of terminal status). Fixed in `toolkit.py` (commit 3781da5ef): only overwrite `recovery_reason` when `checkpoint_enabled` is True. Verified: `pytest test_checkpointed_execution.py -q` → 4 passed; full `tests/tools/execution_plan/` → 157 passed (was blocked at collection before the fix).
+Feedback recorded (coder-feedback:d2214edf36a6fa0a7a3f8dc1, pattern `recovery-reason-overwrites-terminal-precedence`). Review re-recording with the corrected `fix_commits` was rejected by the tool (`invalid_arguments` on every retry, in and out of a batch) after the original `fix_commits=[]` review had already been recorded before this defect was found — the original review record is now stale/inaccurate; this Completion Note and the feedback record are the authoritative evidence of the correction.
 
 **Deviations from spec**: none

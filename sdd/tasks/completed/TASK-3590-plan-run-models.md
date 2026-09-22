@@ -381,10 +381,24 @@ def test_error_to_tool_result_is_bounded(): ...          # AC-5
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (resumed interrupted session; original implementation by a prior
+coder attempt, merged as commits fe8b4646a/330467d1d/5bfed9a36 before this session began)
+**Date**: 2026-09-22
 **Notes**:
+- Implementation verified by hand against this task's Codebase Contract and Implementation
+  Blueprint: all new models (`PlanRecoveryConfig`, `PlanDelta`, `PlanRunMetadata`,
+  `PlanRecoveryEnvelope`, `PlanRunManifest`, `PlanRunSummary`, `PlanRun`, `PlanResumeArgs`,
+  `PlanRepairArgs`, `PlanRunError`), constants (`PLAN_RUN_SHARED_KEY`,
+  `PLAN_RUN_SCHEMA_VERSION`) and `Literal` aliases (`ResumeLevel`, `ArtifactMode`,
+  `RunStatus`) appended at end of file exactly per blueprint; `PlanRunError.to_tool_result()`
+  FILL IN implemented correctly (merges manifest/envelope under `"manifest"`, bounds
+  `error` to <=500 chars). No deviations.
+- See TASK-3589's Completion Note for the full account of the merge-tier validation run
+  (settled `outcome=timed_out` after exercising ~20/24 distributions with only pre-existing,
+  unrelated failures) and the one regression found+fixed in that task (unrelated to this
+  task's file, `tools/execution_plan/models.py`, which this run's `ai-parrot` distribution
+  collection-abort also could not exercise — see TASK-3589 note for the same pre-existing
+  25-collection-error/local-venv caveats). This task's new `test_run_models.py` was reviewed
+  by hand against the Test Specification and matches AC-1..AC-5.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
