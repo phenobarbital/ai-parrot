@@ -40,6 +40,7 @@ _CallResult = Tuple[List[Identification], List[Shape], List[str]]
 _MARK_COLOUR = (0, 255, 0)
 _LABEL_BG = (0, 0, 0)
 _LABEL_FG = (255, 255, 255)
+_EMPTY_IDENTITY_TOKENS = frozenset({"", "none", "null", "unknown", "n/a", "na", "empty", "empty slot"})
 
 
 def _target_id(target: Target) -> str:
@@ -178,6 +179,36 @@ def _inside(box: DetectionBox, strip: DetectionBox) -> bool:
     return strip.x1 <= cx <= strip.x2 and strip.y1 <= cy <= strip.y2
 
 
+def _has_identity_evidence(identification: Identification) -> bool:
+    """Whether structured identity fields prove that a product is present.
+
+    Free-form evidence is deliberately excluded: only explicit product, brand, text, or descriptor values
+    may resolve an omitted/defaulted occupancy value.
+    """
+
+    def meaningful(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return value.strip().casefold() not in _EMPTY_IDENTITY_TOKENS
+        if isinstance(value, dict):
+            return any(meaningful(item) for item in value.values())
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return any(meaningful(item) for item in value)
+        return bool(value)
+
+    values = (identification.product, identification.brand, identification.text, identification.descriptors)
+    return any(meaningful(value) for value in values)
+
+
+def _normalise_occupancy(identification: Identification) -> Identification:
+    """Treat explicit identity fields as occupied when the model left occupancy at its default."""
+
+    if identification.occupancy == "unknown" and _has_identity_evidence(identification):
+        return identification.model_copy(update={"occupancy": "occupied"})
+    return identification
+
+
 def validate_response(
     response: IdentificationResponse,
     perception: PerceptionResult,
@@ -214,7 +245,8 @@ def validate_response(
         if item.shape_id in by_id:
             errors.append(f"duplicate id {item.shape_id} (first occurrence kept)")
             continue
-        by_id[item.shape_id] = item.model_copy(update={"image_id": perception.image_id, "source": source})
+        normalised = _normalise_occupancy(item)
+        by_id[item.shape_id] = normalised.model_copy(update={"image_id": perception.image_id, "source": source})
     identifications: List[Identification] = []
     for target_id in known:
         identifications.append(
@@ -297,6 +329,7 @@ async def _run_call(
     mark_list = [(n, _as_tuple(t.box)) for n, t in enumerate(targets, start=1)] if marks else []
     areas = [_area(t, strip, n if marks else None, perception) for n, t in enumerate(targets, start=1)]
     prompt = build_identify_prompt(areas, vocabulary)
+    retry_error: Optional[str] = None
     try:
         png = await ctx.executor.run(render_marked_strip, image, _as_tuple(strip), mark_list)
         answer = await ctx.vision.ask(
@@ -307,9 +340,34 @@ async def _run_call(
         message = f"identify_failed: {exc}"
         uncertain = [_uncertain(_target_id(t), perception.image_id, source, message) for t in targets]
         return uncertain, [], [f"{perception.image_id}: {message}"]
+    requested_ids = {_target_id(target) for target in targets}
+    returned_ids = {item.shape_id for item in answer.existing_identifications}
+    missing_ids = sorted(requested_ids - returned_ids)
+    if missing_ids:
+        repair_prompt = (
+            f"{prompt}\n\nCORRECTION: Your previous response omitted these required area ids: "
+            f"{json.dumps(missing_ids)}. Return a complete replacement response with exactly one "
+            "existing_identifications entry for every requested area."
+        )
+        try:
+            answer = await ctx.vision.ask(
+                repair_prompt,
+                [png],
+                IdentificationResponse,
+                stage=IDENTIFY_STAGE,
+                prompt_version=IDENTIFY_PROMPT_VERSION,
+            )
+        except VisionError as exc:
+            retry_error = f"{perception.image_id}: identify_incomplete_retry_failed: {exc}"
     idents, added, errors = validate_response(
         answer, perception, strip=None if full_image else strip, next_shape_id=next_shape_id
     )
+    if retry_error is not None:
+        errors.append(retry_error)
+    final_ids = {item.shape_id for item in answer.existing_identifications}
+    final_missing_ids = sorted(requested_ids - final_ids)
+    if final_missing_ids:
+        errors.append(f"{perception.image_id}: identify_incomplete: missing {json.dumps(final_missing_ids)}")
     # A padded strip may contain a neighbouring chunk's target: keep only this call's targets (+ additions).
     own = {_target_id(t) for t in targets} | {s.shape_id for s in added}
     return [i for i in idents if i.shape_id in own], added, errors

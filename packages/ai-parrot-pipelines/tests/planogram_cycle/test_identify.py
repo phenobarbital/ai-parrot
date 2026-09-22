@@ -177,6 +177,22 @@ def test_unknown_and_missing_existing_ids(perception):
     assert missing.uncertain and missing.raw_confidence == 0.0 and missing.evidence == ["missing_in_response"]
 
 
+def test_identity_fields_resolve_defaulted_occupancy_without_using_evidence(perception):
+    """Structured identity proves presence; prose alone cannot turn an unknown slot into occupied."""
+    response = IdentificationResponse(
+        existing_identifications=[
+            Identification(shape_id="img0:r0:s1", brand="HP", evidence=["package visible"]),
+            Identification(shape_id="img0:r0:s2", product="null", text="Empty Slot", evidence=["package visible"]),
+            Identification(shape_id="img0:r0:s3", evidence=["HP 62XL package visible"]),
+        ]
+    )
+    idents, _, _ = validate_response(response, perception, strip=None, next_shape_id=_counter())
+    by_id = {item.shape_id: item for item in idents}
+    assert by_id["img0:r0:s1"].occupancy == "occupied"
+    assert by_id["img0:r0:s2"].occupancy == "unknown"
+    assert by_id["img0:r0:s3"].occupancy == "unknown"
+
+
 async def test_failed_strip_is_isolated(perception):
     row0 = [s.slot_id for s in perception.slots if s.row_index == 0]
     adapter = StubAdapter(_answer(row0), VisionError("boom"))
@@ -198,6 +214,16 @@ async def test_full_image_makes_one_call(perception):
     result = await identify_full_image(_image(), perception, _ctx(adapter), vocabulary=[])
     assert len(adapter.calls) == 1
     assert len(result.identifications) == 6 and not any(i.uncertain for i in result.identifications)
+
+
+async def test_incomplete_response_is_retried_once(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    adapter = StubAdapter(_answer(ids[:-1]), _answer(ids))
+    result = await identify_full_image(_image(), perception, _ctx(adapter), vocabulary=[])
+    assert len(adapter.calls) == 2
+    assert "CORRECTION" in adapter.calls[1]
+    assert ids[-1] in adapter.calls[1]
+    assert len(result.identifications) == 6 and not any(item.uncertain for item in result.identifications)
 
 
 async def test_strips_split_large_rows():
