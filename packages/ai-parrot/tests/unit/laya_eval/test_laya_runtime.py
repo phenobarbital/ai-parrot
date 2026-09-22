@@ -105,8 +105,7 @@ async def test_cancellation_shuts_child_down_then_propagates(fake_module, tmp_pa
 
 
 async def test_missing_worker_module_is_worker_failed_startup(tmp_path):
-    async with LayaWorker(_cfg("no_such_module_xyz", "ok", tmp_path)) as w:
-        with pytest.raises(WorkerStartupError) as ei:
-            async with w:
-                pass
-        assert ei.value.error_code == "worker_failed"
+    with pytest.raises(WorkerStartupError) as ei:
+        async with LayaWorker(_cfg("no_such_module_xyz", "ok", tmp_path)):
+            pass
+    assert ei.value.error_code == "worker_failed"
