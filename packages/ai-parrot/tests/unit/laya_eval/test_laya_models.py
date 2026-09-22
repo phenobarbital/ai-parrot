@@ -1,4 +1,5 @@
 """FEAT-589 M1 — record models: forbidden extras, finite numbers, label membership, error codes."""
+
 from __future__ import annotations
 
 import math

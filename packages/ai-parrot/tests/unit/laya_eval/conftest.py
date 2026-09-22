@@ -1,4 +1,5 @@
 """Make the repository-root ``artifacts`` namespace importable for the Laya evaluation tests."""
+
 from __future__ import annotations
 
 import sys
