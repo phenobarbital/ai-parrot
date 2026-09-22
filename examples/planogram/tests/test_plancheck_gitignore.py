@@ -1,4 +1,5 @@
 """FEAT-565 M0: the planogram example's code is trackable, retailer data and photos are not."""
+
 from __future__ import annotations
 
 import subprocess
