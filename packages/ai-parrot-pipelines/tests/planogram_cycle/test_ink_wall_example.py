@@ -226,6 +226,8 @@ def _result() -> dict:
                 strict_score=0.1,
                 coverage=0.2,
                 visible_fraction=0.5,
+                occupied_facings=9,
+                occupied_fraction=9 / 17,
             )
         ],
         "compliance_results": [
@@ -249,6 +251,7 @@ def _result() -> dict:
             ),
         ],
         "overall_compliance_score": 0.25,
+        "detected_products": 9,
         "strict_compliance_score": 0.1,
         "coverage": 0.2,
         "definition_coverage": 1.0,
@@ -266,6 +269,8 @@ def test_format_report_covers_every_section(runner):
     assert "google:gemini-flash-latest" in report and "local_ocr=True" in report
     assert "photo1 4032x3024" in report and "identified=1" in report and "occupied=1" in report
     assert "shelf_1" in report and "25.0%" in report and "10.0%" in report
+    assert "nonempty" in report and "52.9%" in report
+    assert "detected products     : 9 occupied facings" in report
     assert "match=1" in report and "variant_unresolved=1" in report
     assert "p002_f1" in report and "candidates: HP 902, HP 902XL" in report
     assert "assessment_status    : inconclusive" in report

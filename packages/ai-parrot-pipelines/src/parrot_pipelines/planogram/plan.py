@@ -148,8 +148,9 @@ class PlanogramCompliance(AbstractPipeline):
 
         Returns:
             The 8 legacy keys plus the additive keys (detections, identifications, position_results,
-            shelf_scores, coverage, definition_coverage, assessment_status, strict_compliance_score,
-            evidence_quality, detection_source, ocr_available, resolved_backend, renders, errors).
+            shelf_scores, coverage, detected_products, definition_coverage, assessment_status,
+            strict_compliance_score, evidence_quality, detection_source, ocr_available, resolved_backend,
+            renders, errors).
 
         Raises:
             ValueError: ``image_id`` is a sequence whose length differs from ``image``.
@@ -376,6 +377,7 @@ class PlanogramCompliance(AbstractPipeline):
             "position_results": comparison.position_results,
             "shelf_scores": comparison.shelf_scores,
             "coverage": comparison.coverage,
+            "detected_products": comparison.detected_products,
             "definition_coverage": comparison.definition_coverage,
             "assessment_status": AssessmentStatus(comparison.assessment_status).value,
             "strict_compliance_score": comparison.strict_compliance_score,

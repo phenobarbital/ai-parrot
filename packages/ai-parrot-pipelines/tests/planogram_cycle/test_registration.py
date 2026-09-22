@@ -111,6 +111,64 @@ def test_zero_anchor_alignment_is_ambiguous():
     assert reg.ambiguous is True and reg.assignments == {}
 
 
+def test_full_height_occupancy_registers_without_identity_anchors():
+    """All shelf rows are structurally known; occupancy is enough to retain every facing assessment."""
+    definition = _definition(shelves=2)
+    slots = [_slot("img0", row, idx) for row in range(2) for idx in range(1, 5)]
+    idents = [_ident(slot, product=None).model_copy(update={"occupancy": "occupied"}) for slot in slots]
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert reg.row_to_shelf == {0: "shelf_1", 1: "shelf_2"}
+    assert len(reg.assignments) == 8
+
+
+def test_identity_anchor_extends_registration_to_occupancy_only_slots():
+    """One identity establishes the offset; neighbouring occupied slots must not disappear as DP gaps."""
+    definition = _definition(shelves=2)
+    slots = [_slot("img0", row, idx) for row in range(2) for idx in range(1, 5)]
+    idents = []
+    for slot in slots:
+        product = f"P{slot.row_index + 1}-{slot.slot_index}" if slot.slot_index == 2 else None
+        idents.append(_ident(slot, product=product).model_copy(update={"occupancy": "occupied"}))
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert len(reg.assignments) == 8
+
+
+def test_empty_slot_identity_placeholders_do_not_shift_alignment():
+    """LLMs sometimes emit product='empty'; occupancy wins and the placeholder is neutral for registration."""
+    definition = _definition(shelves=1, per_shelf=5)
+    slots = [_slot("img0", 0, idx) for idx in range(1, 6)]
+    idents = [_ident(slot, product=f"P1-{slot.slot_index}") for slot in slots]
+    idents[2] = idents[2].model_copy(update={"product": "empty", "brand": "empty", "occupancy": "empty"})
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert reg.assignments[slots[2].anchor_shape_id] == "s1_f3"
+    assert len(reg.assignments) == 5
+
+
+def test_partial_view_can_start_after_unobserved_definition_facings():
+    """Leading planogram gaps are free, so a right-side crop aligns to the suffix rather than slot one."""
+    definition = _definition(shelves=2, per_shelf=6)
+    slots = [_slot("img0", row, idx) for row in range(2) for idx in range(1, 4)]
+    idents = []
+    for slot in slots:
+        expected_slot = slot.slot_index + 3
+        idents.append(_ident(slot, product=f"P{slot.row_index + 1}-{expected_slot}"))
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert reg.assignments["img0:t0:1"] == "s1_f4"
+    assert reg.assignments["img0:t1:3"] == "s2_f6"
+
+
 def test_more_rows_than_shelves_is_ambiguous():
     definition = _definition(shelves=2)
     slots, idents = _rows("img0", (1, 2, 1))

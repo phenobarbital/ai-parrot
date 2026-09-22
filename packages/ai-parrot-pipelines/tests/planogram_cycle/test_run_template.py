@@ -42,6 +42,7 @@ ADDITIVE_KEYS = {
     "position_results",
     "shelf_scores",
     "coverage",
+    "detected_products",
     "definition_coverage",
     "assessment_status",
     "strict_compliance_score",

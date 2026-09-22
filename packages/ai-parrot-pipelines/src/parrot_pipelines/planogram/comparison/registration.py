@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from itertools import combinations
+from statistics import median
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, Field
@@ -65,7 +66,7 @@ def _pair_score(identification: Optional[Identification], facing: FacingDefiniti
     Returns:
         One of the ``SCORE_*`` constants.
     """
-    if identification is None or identification.uncertain:
+    if identification is None or identification.uncertain or identification.occupancy == "empty":
         return SCORE_NEUTRAL
     observed_product = _norm(identification.product)
     if observed_product and observed_product == _norm(facing.product):
@@ -114,15 +115,19 @@ def _align_row(
             if i > 0 and j > 0:
                 candidates.append((dp[i - 1][j - 1] + scores[i - 1][j - 1], "match"))
             if j > 0:
-                candidates.append((dp[i][j - 1] + (GAP_END_DEFINITION if j == m else GAP_INTERIOR), "skip-facing"))
+                penalty = GAP_END_DEFINITION if i == 0 else GAP_INTERIOR
+                candidates.append((dp[i][j - 1] + penalty, "skip-facing"))
             if i > 0:
-                candidates.append((dp[i - 1][j] + (GAP_END_OBSERVED if i == n else GAP_INTERIOR), "skip-slot"))
+                penalty = GAP_END_OBSERVED if j == 0 else GAP_INTERIOR
+                candidates.append((dp[i - 1][j] + penalty, "skip-slot"))
             dp[i][j] = max(candidates, key=lambda c: (c[0], _MOVE_RANK[c[1]]))[0]
 
     best_i, best_j, best = 0, 0, dp[0][0]
     for i in range(n + 1):
         for j in range(m + 1):
-            if dp[i][j] > best or (dp[i][j] == best and j < best_j):
+            # At equal evidence score, consume more observed slots. This extends a confidently
+            # anchored alignment across occupied/empty slots whose product text is unreadable.
+            if dp[i][j] > best or (dp[i][j] == best and (i, j) > (best_i, best_j)):
                 best, best_i, best_j = dp[i][j], i, j
 
     mapping: Dict[str, str] = {}
@@ -136,10 +141,31 @@ def _align_row(
             if scores[i - 1][j - 1] == SCORE_SAME_PRODUCT:
                 anchors += 1
             i, j = i - 1, j - 1
-        elif j > 0 and dp[i][j] == dp[i][j - 1] + (GAP_END_DEFINITION if j == m else GAP_INTERIOR):
+        elif j > 0 and dp[i][j] == dp[i][j - 1] + (GAP_END_DEFINITION if i == 0 else GAP_INTERIOR):
             j -= 1
         else:
             i -= 1
+
+    # The evidence-scored path establishes the horizontal offset. Fill the rest of that
+    # observed row geometrically so empty, inferred-present and mismatching slots remain
+    # visible to compliance instead of disappearing as DP gaps.
+    facing_index = {facing.facing_id: index for index, facing in enumerate(facings)}
+    offsets = [
+        facing_index[mapping[identification.shape_id]] - index
+        for index, identification in enumerate(idents)
+        if identification is not None and identification.shape_id in mapping
+    ]
+    if offsets:
+        offset = round(median(offsets))
+        used_facings = set(mapping.values())
+        for index, identification in enumerate(idents):
+            target = index + offset
+            if identification is None or identification.shape_id in mapping or not 0 <= target < len(facings):
+                continue
+            facing_id = facings[target].facing_id
+            if facing_id not in used_facings:
+                mapping[identification.shape_id] = facing_id
+                used_facings.add(facing_id)
     return round(best, 4), mapping, anchors
 
 
@@ -196,7 +222,8 @@ def register_image(
         return ImageRegistration(image_id=image_id, ambiguous=True)
     anchors = sum(cache[(row, best_combo[k])][2] for k, row in enumerate(row_ids))
     margin = best_total - runner_up if runner_up != -float("inf") else None
-    if anchors == 0 or (margin is not None and margin < MARGIN_LOW):
+    full_height = len(row_ids) == len(shelves)
+    if (anchors == 0 and not full_height) or (margin is not None and margin < MARGIN_LOW):
         logger.debug("register_image(%s): ambiguous (anchors=%d, margin=%s)", image_id, anchors, margin)
         return ImageRegistration(image_id=image_id, ambiguous=True)
 
