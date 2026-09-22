@@ -19,8 +19,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Sequence, Set, Union
 
 from parrot.bots.flows.core.context import FlowContext
-from parrot.bots.flows.core.checkpoint import CheckpointStore, get_checkpoint_store
-from parrot.bots.flows.flow.flow import AgentsFlow
+from parrot.bots.flows.core.checkpoint import (
+    CheckpointPersistenceError,
+    CheckpointStore,
+    FlowLockedError,
+    get_checkpoint_store,
+)
 from parrot.bots.flows.plan import (
     ArtifactRef,
     ExecutionPlan,
@@ -38,6 +42,7 @@ from parrot.tools.working_memory.task_memory.models import TaskScope
 from ..abstract import ToolResult
 from .catalog import build_catalog, validate_with_allowlist
 from .models import (
+    PLAN_RUN_SHARED_KEY,
     PlanArtifactsArgs,
     PlanExecuteArgs,
     PlanStatusArgs,
@@ -47,13 +52,15 @@ from .models import (
     PlanRun,
     PlanRunError,
     PlanRunManifest,
+    PlanRunMetadata,
     PlanRunSummary,
     RunningSummary,
     RunRecord,
 )
+from .checkpoint import PlanFlow, build_plan_flow
 from .memory import PlanMemoryBinding
 from .planner import PlanAuthoringError, PlanPlanner
-from .runs import PlanRunResolver
+from .runs import PlanRunResolver, plan_fingerprint, process_identity
 from .store import PlanFileStore, PlanLoadError
 
 if TYPE_CHECKING:
@@ -183,6 +190,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         self.recovery: PlanRecoveryConfig = recovery or PlanRecoveryConfig()
         self._checkpoint_store: Optional[CheckpointStore] = self._resolve_store(checkpoint_store)
         self._durable_store: Optional[CheckpointStore] = self._resolve_store(durable_store)
+        self._store_probe: Optional[bool] = None
         self._task_memory_runtime = task_memory_runtime
         self._scope: Optional[TaskScope] = scope
         self._memory_binding = PlanMemoryBinding(
@@ -248,6 +256,48 @@ class ExecutionPlanToolkit(AbstractToolkit):
             self._agent_registry = AgentRegistry()
         return self._agent_registry
 
+    async def _probe_checkpoint_store(self) -> bool:
+        """Probe the configured store once without making outages fatal to fresh runs."""
+        if self._checkpoint_store is None:
+            return False
+        if self._store_probe is not None:
+            return self._store_probe
+        try:
+            await asyncio.wait_for(
+                self._checkpoint_store.latest("__plan_probe__"),
+                timeout=self.recovery.checkpoint_probe_timeout,
+            )
+            self._store_probe = True
+        except (ConnectionError, OSError, asyncio.TimeoutError) as exc:
+            self.logger.warning("checkpoint store unreachable (%s); plan runs execute without checkpointing", exc)
+            self._store_probe = False
+        except Exception as exc:  # noqa: BLE001 - configuration errors are explicit
+            raise PlanRunError("checkpoint_unavailable", f"checkpoint store misconfigured: {exc}") from exc
+        return self._store_probe
+
+    def _new_run_metadata(
+        self, plan: ExecutionPlan, *, source: str, run_id: str, checkpointed: bool
+    ) -> PlanRunMetadata:
+        """Build the persisted recovery envelope for a newly accepted root run."""
+        del checkpointed
+        allowed = sorted(self.allowed_tools) if self.allowed_tools is not None else sorted(self._tool_manager.list_tools())
+        scope = self._memory_binding.scope
+        mode = self._memory_binding.artifact_mode
+        return PlanRunMetadata(
+            run_id=run_id,
+            root_run_id=run_id,
+            plan=plan,
+            original_plan=plan,
+            source=source,
+            started_at=datetime.now(timezone.utc),
+            scope_key=scope.cache_key() if scope is not None else None,
+            allowed_tools=allowed,
+            plan_fingerprint=plan_fingerprint(plan),
+            artifact_mode=mode,
+            process_id=process_identity() if mode == "memory" else None,
+            max_repair_rounds=self.recovery.max_repair_rounds,
+        )
+
     async def _run_plan(self, plan: ExecutionPlan, *, source: str) -> ToolResult:
         """Compile, run and bound the response to ``soft_timeout``.
 
@@ -265,38 +315,35 @@ class ExecutionPlanToolkit(AbstractToolkit):
             ``ExecutionManifest`` (run finished within ``soft_timeout``) or
             a :class:`RunningSummary` (run continues in the background).
         """
-        ensure_tool_node_registered(PlanToolNode)
-        definition = to_flow_definition(plan)
-        # Allocated before the factory rather than beside the RunRecord:
-        # every node's attempt receipt is correlated to this run id
-        # (FEAT-538), so it has to exist before any node is built.
-        run_id = f"run_{uuid.uuid4().hex[:8]}"
-        factory = make_tool_node_factory(
-            self._tool_manager,
-            self._working_memory,
-            permission_context=self.permission_context,
-            plan_run_id=run_id,
-            step_mapping=self.plan_step_mapping,
-        )
+        run_id = str(uuid.uuid4())
+        try:
+            probe_ok = await self._probe_checkpoint_store()
+        except PlanRunError as exc:
+            return self._error(exc, run_id=run_id)
+        checkpointed = probe_ok and plan.metadata.checkpoint and self._checkpoint_store is not None
+        try:
+            await self._memory_binding.prepare()
+        except Exception as exc:  # noqa: BLE001 - activation failure dispatches nothing
+            return self._error(
+                PlanRunError("artifacts_unavailable", f"plan memory activation failed: {exc}"), run_id=run_id
+            )
+        metadata = self._new_run_metadata(plan, source=source, run_id=run_id, checkpointed=checkpointed)
         agent_registry = self._get_agent_registry()
-        flow = AgentsFlow.from_definition(
-            definition,
+        flow = build_plan_flow(
+            plan,
+            run=metadata,
+            tool_manager=self._tool_manager,
+            working_memory=self._working_memory,
             agent_registry=agent_registry,
-            node_factories={"tool": factory},
-            # FEAT-399 flow-level checkpointing defaults to
-            # PlanMetadata.checkpoint=True and would otherwise require a
-            # live checkpoint store (Redis by default) before the first
-            # node ever dispatches — silently contradicting this feature's
-            # own "pure in-RAM v1, no persistent backend" design (spec §1
-            # Non-Goals). The toolkit's RunRecord registry is the v1
-            # resumability story; explicitly disable flow-level
-            # checkpointing regardless of what a plan file's `metadata`
-            # block says.
-            checkpoint=False,
+            permission_context=self.permission_context,
+            step_mapping=self.plan_step_mapping,
+            store=self._checkpoint_store if checkpointed else None,
+            durable_store=self._durable_store if checkpointed else None,
         )
 
         plan_node_ids: Set[str] = {node.id for node in plan.nodes}
         ctx = FlowContext(initial_task=plan.objective, agent_registry=agent_registry)
+        ctx.shared_data[PLAN_RUN_SHARED_KEY] = metadata.model_dump(mode="json")
         started_monotonic = time.monotonic()
         record = RunRecord(
             run_id=run_id,
@@ -309,6 +356,14 @@ class ExecutionPlanToolkit(AbstractToolkit):
         )
         self._runs[run_id] = record
         self._run_contexts[run_id] = ctx
+        self._plan_runs[run_id] = PlanRun(
+            metadata=metadata,
+            status="running",
+            checkpoint_enabled=checkpointed,
+            resume_level=("none" if not checkpointed else self._memory_binding.resume_level_hint),
+            resumable=False,
+            recovery_reason=None if checkpointed else "checkpoint_unavailable",
+        )
 
         flow.add_node_event_listener(self._make_progress_listener(run_id, plan_node_ids))
         if self._on_node_event is not None:
@@ -324,8 +379,25 @@ class ExecutionPlanToolkit(AbstractToolkit):
             exc = task.exception()
             record = self._runs.get(run_id, record)
             if record.manifest is not None:
-                return ToolResult(status="success", result=record.manifest.model_dump(mode="json"))
+                run = self._plan_runs[run_id]
+                envelope = PlanRecoveryEnvelope(
+                    run_id=run_id,
+                    root_run_id=run_id,
+                    checkpoint_enabled=run.checkpoint_enabled,
+                    artifact_mode=metadata.artifact_mode,
+                    resume_level=run.resume_level,
+                    resumable=run.resumable,
+                    recovery_reason=run.recovery_reason,
+                    max_repair_rounds=self.recovery.max_repair_rounds,
+                )
+                manifest = PlanRunManifest(
+                    **record.manifest.model_dump(), **envelope.model_dump(), status=record.status
+                )
+                return ToolResult(status="success", result=manifest.model_dump(mode="json"))
+            run = self._plan_runs.get(run_id)
             reason = record.flow_error or (str(exc) if exc is not None else None)
+            if run is not None and run.recovery_reason is not None:
+                return self._error(PlanRunError(run.recovery_reason, reason or run.recovery_reason), run_id=run_id)
             return ToolResult(
                 status="error",
                 success=False,
@@ -333,11 +405,20 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 error=f"Plan run {run_id!r} finished without a manifest" + (f": {reason}" if reason else ""),
             )
 
-        summary = RunningSummary(
+        run = self._plan_runs[run_id]
+        summary = PlanRunSummary(
             run_id=run_id,
+            root_run_id=run_id,
+            checkpoint_enabled=checkpointed,
+            artifact_mode=metadata.artifact_mode,
+            resume_level=run.resume_level,
+            resumable=False,
+            recovery_reason=run.recovery_reason,
+            max_repair_rounds=self.recovery.max_repair_rounds,
             plan_name=plan.name,
             nodes_total=record.nodes_total,
             nodes_done=record.nodes_done,
+            uncheckpointed_progress=not checkpointed,
         )
         return ToolResult(status="success", result=summary.model_dump(mode="json"))
 
@@ -362,13 +443,16 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 record = self._runs.get(run_id)
                 if record is not None:
                     record.nodes_done += 1
+                run = self._plan_runs.get(run_id)
+                if run is not None:
+                    run.nodes_done += 1
 
         return _listener
 
     async def _execute_flow(
         self,
         run_id: str,
-        flow: AgentsFlow,
+        flow: PlanFlow,
         plan: ExecutionPlan,
         ctx: FlowContext,
         started_monotonic: float,
@@ -383,13 +467,14 @@ class ExecutionPlanToolkit(AbstractToolkit):
         record = self._runs.get(run_id)
         try:
             await flow.run_flow(ctx)
+        except CheckpointPersistenceError as exc:
+            self._fail_run(run_id, code="checkpoint_write_failed", message=str(exc), flow=flow)
+            return
+        except FlowLockedError as exc:
+            self._fail_run(run_id, code="run_busy", message=str(exc), flow=flow)
+            return
         except Exception as exc:  # noqa: BLE001 - recorded, never re-raised
-            self.logger.error("Plan run %r failed at the flow level: %s", run_id, exc)
-            if record is not None:
-                record.status = "failed"
-                record.finished_at = datetime.now(timezone.utc)
-                record.flow_error = str(exc)[:500]
-            self._evict_completed_runs()
+            self._fail_run(run_id, code="flow_error", message=str(exc), flow=flow)
             return
 
         refs = []
@@ -434,7 +519,30 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 record.status = "partial"
             else:
                 record.status = "failed"
+        run = self._plan_runs.get(run_id)
+        if run is not None:
+            run.refs = refs
+            run.nodes_done = len(refs)
+            run.status = record.status if record is not None else "failed"
+            run.resumable = False
+            run.recovery_reason = "completed" if run.status == "completed" else "terminal"
 
+        self._evict_completed_runs()
+
+    def _fail_run(self, run_id: str, *, code: str, message: str, flow: Any) -> None:
+        """Record a flow-level failure on both the legacy and recovery caches."""
+        self.logger.error("Plan run %r failed (%s): %s", run_id, code, message[:300])
+        record = self._runs.get(run_id)
+        if record is not None:
+            record.status = "failed"
+            record.finished_at = datetime.now(timezone.utc)
+            record.flow_error = message[:500]
+        run = self._plan_runs.get(run_id)
+        if run is not None:
+            run.status = "failed"
+            run.recovery_reason = code
+            run.resumable = False
+            run.checkpoint_id = getattr(getattr(flow, "_checkpointer", None), "_last_checkpoint_id", None)
         self._evict_completed_runs()
 
     def _evict_completed_runs(self) -> None:
