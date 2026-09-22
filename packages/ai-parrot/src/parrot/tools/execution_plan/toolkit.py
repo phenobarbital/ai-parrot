@@ -522,7 +522,11 @@ class ExecutionPlanToolkit(AbstractToolkit):
             run.nodes_done = len(refs)
             run.status = record.status if record is not None else "failed"
             run.resumable = False
-            run.recovery_reason = "completed" if run.status == "completed" else "terminal"
+            if run.checkpoint_enabled:
+                run.recovery_reason = "completed" if run.status == "completed" else "terminal"
+            # else: checkpointing was never enabled for this run — keep the
+            # "checkpoint_unavailable" reason set at creation (AC-2): a
+            # terminal status does not retroactively grant recovery capability.
 
         self._evict_completed_runs()
 
