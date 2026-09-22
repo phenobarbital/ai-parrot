@@ -21,7 +21,9 @@ pytestmark = pytest.mark.asyncio
 
 def _metadata(run_id: str = "root") -> PlanRunMetadata:
     """Build a minimal root plan envelope for a checkpointed continuation."""
-    plan = ExecutionPlan(name="continuation", objective="continue", nodes=[PlanNode(id="step", tool="tool")])
+    plan = ExecutionPlan(
+        name="continuation", objective="continue", nodes=[PlanNode(id="step", tool="tool", store_as="step_out")]
+    )
     return PlanRunMetadata(
         run_id=run_id,
         root_run_id=run_id,
@@ -60,7 +62,7 @@ def _run(metadata: PlanRunMetadata, checkpoint_id: int = 1) -> PlanRun:
     return PlanRun(
         metadata=metadata,
         checkpoint_id=checkpoint_id,
-        status="suspended",
+        status="running",
         checkpoint_enabled=True,
         resume_level="process",
         resumable=True,
