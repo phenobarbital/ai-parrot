@@ -354,6 +354,8 @@ class TaskResult(BaseModel):
     diagnostics: str = ""
     development_output: Optional[DevelopmentOutput] = None
     lint: Optional[LintReport] = None
+    native_retry: Optional["NativePrep"] = None
+    """FEAT-588: native attempt-2 reservation for `retry_native` outcomes only."""
 
 
 class NativePrep(BaseModel):
@@ -461,6 +463,8 @@ class ExecutionPoolView(BaseModel):
     fallback_reason: str = ""
     persisted: bool = True
     persistence_degraded: bool = False
+    roster_warnings: List[str] = Field(default_factory=list)
+    """FEAT-588 advisory notes about unavailable complex-task retry capacity."""
 
     _exec = field_validator("execution_id")(_check_uuid)
 

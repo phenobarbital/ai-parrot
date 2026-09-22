@@ -684,6 +684,8 @@ class TestComplexityDispatchAdmission:
         `coder_plan`/`coder_run_chunk` call actually uses."""
         import uuid
 
+        from parrot.knowledge.wiki.ledger.coder_suspensions import ModelKey
+
         worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
         builder = fake_builder_factory({"nova": "fail"})
         roster = RosterConfig(
@@ -706,18 +708,114 @@ class TestComplexityDispatchAdmission:
         engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(  # noqa: SLF001
             plan, "TASK-0001", "unknown"
         )
+        # A busy native seat cannot be handed off. The diagnostic must describe
+        # the MCP-only retry selector instead of claiming a generic shortage.
+        await engine._executions[execution_id].admit(
+            "TASK-OTHER", ModelKey(backend="native", model="sonnet-5")
+        )  # noqa: SLF001
 
         job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"], execution_id=execution_id)
         result = await engine.wait(job.job_id, 5)
 
         task_result = result.tasks[0]
         assert task_result.outcome == "failed"
-        assert (
-            len(task_result.attempts) == 1
-        ), f"retry must never select the native seat, expected no attempt 2: {task_result.attempts}"
-        assert "complex_model_unavailable" in task_result.diagnostics
+        assert len(task_result.attempts) == 1
+        assert task_result.native_retry is None
+        assert "MCP-only retry ladder" in task_result.diagnostics
         assert "AssertionError" not in task_result.diagnostics
-        assert "prepare_native" not in task_result.diagnostics
+
+    async def test_all_native_remainder_hands_off_instead_of_blocking(self, git_sandbox_feature, noop_probe):
+        """FEAT-588 AC-1/AC-2/AC-3: a failed strong MCP attempt hands off to native."""
+        import uuid
+
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({"nova": "fail"})
+        roster = RosterConfig(
+            seats=[
+                RosterSeat(label="mcp", backend="nova", model="mcp-strong"),
+                RosterSeat(label="native", kind="native", model="native-strong"),
+            ],
+            complexity=ComplexityPolicy(
+                strong_models=(
+                    StrongModelIdentity(canonical_model="mcp", backend="nova", model="mcp-strong"),
+                    StrongModelIdentity(canonical_model="native", backend="native", model="native-strong"),
+                )
+            ),
+        )
+        engine = SddCoderEngine(
+            roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+        )
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+        plan = await engine.plan("demo", str(worktree), execution_id=execution_id)
+        task_id = next(task.task_id for chunk in plan.chunks for task in chunk.tasks if task.seat_label == "mcp")
+        engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(plan, task_id, "complex")  # noqa: SLF001
+
+        job = await engine.run_chunk("demo", str(worktree), [task_id], execution_id=execution_id)
+        result = await engine.wait(job.job_id, 5)
+
+        task_result = result.tasks[0]
+        assert task_result.outcome == "retry_native"
+        assert task_result.native_retry is not None
+        assert task_result.native_retry.seat_label == "native"
+        assert task_result.native_retry.assessment_id
+        assert task_result.native_retry.execution_id == execution_id
+        assert task_result.native_retry.branch.endswith("-a2-" + execution_id.replace("-", ""))
+        assert len(task_result.attempts) == 1
+        assert task_result.attempts[0].attempt == 1
+        assert set(builder.dispatchers) == {"nova"}, "native handoff must never call _run_attempt"
+
+    async def test_run_attempt_never_receives_a_native_seat(self, git_sandbox_feature, noop_probe):
+        """FEAT-588 AC-4: both retry selectors retain their MCP-only dispatch contract."""
+        import uuid
+
+        from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner
+
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        roster = RosterConfig(
+            seats=[
+                RosterSeat(label="mcp", backend="nova", model="mcp-strong"),
+                RosterSeat(label="native", kind="native", model="native-strong"),
+            ]
+        )
+        engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+        pool = engine._executions[execution_id]  # noqa: SLF001
+
+        retry = await engine._select_retry_seat(pool, "mcp", {"mcp"}, eligible_labels={"native"})  # noqa: SLF001
+        assert retry is None
+        assert ChunkAssigner(roster.seats).retry_seat("mcp", {"mcp"}, eligible_labels={"native"}) is None
+
+    async def test_no_eligible_seat_of_any_kind_is_unchanged(self, git_sandbox_feature, noop_probe):
+        """FEAT-588 AC-5: no remaining strong seat retains the prior failed result."""
+        import uuid
+
+        worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+        builder = fake_builder_factory({"nova": "fail"})
+        roster = RosterConfig(
+            seats=[RosterSeat(label="mcp", backend="nova", model="mcp-strong")],
+            complexity=ComplexityPolicy(
+                strong_models=(StrongModelIdentity(canonical_model="mcp", backend="nova", model="mcp-strong"),)
+            ),
+        )
+        engine = SddCoderEngine(
+            roster=roster, probe=noop_probe, worktree_base_path=str(base_path), dispatcher_builder=builder
+        )
+        execution_id = str(uuid.uuid4())
+        await engine.begin_execution("demo", str(worktree), execution_id)
+        plan = await engine.plan("demo", str(worktree), execution_id=execution_id)
+        task_id = next(task.task_id for chunk in plan.chunks for task in chunk.tasks)
+        engine._plan_cache[f"FEAT-549:{execution_id}"] = _force_classification(plan, task_id, "complex")  # noqa: SLF001
+
+        job = await engine.run_chunk("demo", str(worktree), [task_id], execution_id=execution_id)
+        result = await engine.wait(job.job_id, 5)
+
+        task_result = result.tasks[0]
+        assert task_result.outcome == "failed"
+        assert len(task_result.attempts) == 1
+        assert "complex_model_unavailable" in task_result.diagnostics
+        assert task_result.native_retry is None
 
     async def test_eligible_retry_labels_fails_closed_on_missing_assessment(self, git_sandbox_feature, noop_probe):
         """issue:e01c03baf493: `_eligible_retry_labels` must never treat a

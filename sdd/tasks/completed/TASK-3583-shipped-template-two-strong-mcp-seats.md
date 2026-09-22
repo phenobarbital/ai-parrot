@@ -230,3 +230,21 @@ re-shuffled or `gpt-5.6-luna` is swapped for another model.
 
 ### Completion Note
 (Agent fills this in when done)
+
+## Completion Note
+
+- Task: TASK-3583
+- Feature: fixgroup-47eb801095a6
+- Implementation SHA: 63dde6449e69462339a8f954abef1a9fb9e7acd0
+- Closed at (UTC): 2026-09-21T22:10:11+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| ac_verification | AC-1..AC-4 verified: second strong MCP seat gpt-5.6-luna added to both roster and complexity.strong_models with matching (backend,model) pair; YAML parses cleanly; rationale comment present citing issue:569e81756247; AC-5 respected (no google_coding seat added); test_shipped_template_has_two_retry_capable_strong_seats reuses the real eligible_seats() rather than a hand-rolled rule |
+| merge_tier_validation | coder_run_validation (tier=merge, TASK-3582+TASK-3583) timed_out after 180s -- same deterministic pre-existing hang in packages/ai-parrot-integrations/tests/integrations/telegram/test_oauth2_integration.py already confirmed unrelated and filed as issue:1dbb2aac09ba |
+| review_feedback_id | coder-review:c94222b1879ef486e84fe6ea |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: 230.77s · Tokens: 112182(subagent total, 34 tool uses) |
+| task_scoped_tests | pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_roster.py test_complexity_routing.py -> 118 passed combined |

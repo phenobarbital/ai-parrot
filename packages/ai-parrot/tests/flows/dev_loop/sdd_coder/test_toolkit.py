@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from parrot import conf
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure
 from parrot.flows.dev_loop.sdd_coder.models import CoderResult, RosterConfig
 from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
@@ -740,26 +741,14 @@ async def test_read_artifact_pre_execute_validates_schema(three_seat_roster):
     assert excinfo.value.code == "execution_required"
 
 
-async def test_default_engine_binds_evidence_store_without_telemetry_switch(three_seat_roster, monkeypatch, tmp_path):
-    """The durable evidence store is NOT gated on the observational telemetry opt-in.
+async def test_read_artifact_no_store_configured_is_evidence_persistence_failed(three_seat_roster, monkeypatch):
+    """No `telemetry_dir`/`DEV_LOOP_CODER_TELEMETRY` was configured for this toolkit -- no store exists.
 
-    The FEAT-584 worker protocol unconditionally requests `response_mode="compact"`,
-    records native observations and persists review checkpoints -- all of which need
-    `_evidence_store`. A default install (no `telemetry_dir`, `DEV_LOOP_CODER_TELEMETRY`
-    off) must therefore still bind the store; only the `CoderTelemetrySink` stays opt-in.
+    `conf.DEV_LOOP_CODER_TELEMETRY` is resolved once from the environment at import time, so a
+    developer/CI machine with `DEV_LOOP_CODER_TELEMETRY=true` in its own env would otherwise make
+    this test flake against ambient state instead of the toolkit's own default. Pin it explicitly.
     """
-    from parrot.flows.dev_loop.sdd_coder import engine as engine_mod
-
-    derived = tmp_path / "derived-main-checkout-root"
-    calls: list = []
-
-    def _derive(configured, *, worktree_base_path):
-        calls.append(configured)
-        return derived
-
-    monkeypatch.setattr(engine_mod.conf, "DEV_LOOP_CODER_TELEMETRY", False)
-    monkeypatch.setattr(engine_mod.conf, "SDD_CODER_TELEMETRY_DIR", "")
-    monkeypatch.setattr(engine_mod, "resolve_durable_root", _derive)
+    monkeypatch.setattr(conf, "DEV_LOOP_CODER_TELEMETRY", False)
     toolkit = _toolkit(three_seat_roster)
     engine = toolkit._engine  # noqa: SLF001 -- same-package internal bookkeeping (M2 pattern)
 

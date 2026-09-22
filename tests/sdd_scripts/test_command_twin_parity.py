@@ -1,6 +1,8 @@
 """Body parity between `.claude/commands/<name>.md` and its `.agent/workflows/<name>.md` twin (FEAT-545).
 
-The twin may differ ONLY by a leading YAML frontmatter block and by exactly
+The two may differ ONLY by their leading YAML frontmatter blocks — each side
+carries its own host-specific metadata (the command pins a `model:`, the twin
+carries a workflow `description:`) — and by exactly
 ONE documented per-command substitution line (each references
 `AGENTS.md`/`sdd/WORKFLOW.md` where the `.claude/commands/` original
 references `CLAUDE.md`). Rather than dropping whatever is on the tolerated
@@ -61,11 +63,12 @@ def _apply_expected_substitution(name: str, original_text: str) -> str:
 @pytest.mark.parametrize("name", _TWINNED)
 def test_command_twin_parity(name: str) -> None:
     """`.agent/workflows/<name>.md` body == `.claude/commands/<name>.md` body,
-    modulo frontmatter and the one documented substitution."""
+    modulo each side's own frontmatter and the one documented substitution."""
     original = _REPO_ROOT / ".claude" / "commands" / f"{name}.md"
     twin = _REPO_ROOT / ".agent" / "workflows" / f"{name}.md"
     if not original.is_file() or not twin.is_file():
         pytest.skip(f"{name}: command or twin missing at this checkout")
+    original_text = original.read_text(encoding="utf-8")
     got = _strip_frontmatter(twin.read_text(encoding="utf-8")).strip()
-    want = _apply_expected_substitution(name, original.read_text(encoding="utf-8")).strip()
+    want = _strip_frontmatter(_apply_expected_substitution(name, original_text)).strip()
     assert got == want, f"{name}.md drifted between .claude/commands/ and .agent/workflows/"

@@ -4,7 +4,7 @@ title: Evaluate Laya for typed classification and agent model routing
 slug: laya-adoption
 type: feature
 base_branch: dev
-status: review
+status: approved
 projects: [ai-parrot, ai-parrot-client-jev]
 tags: [laya, classification, model-routing, guardrails, evaluation]
 proposal: sdd/proposals/laya-adoption.proposal.md
@@ -17,7 +17,7 @@ updated: 2026-09-21
 **Feature ID**: FEAT-589
 **Date**: 2026-09-21
 **Author**: Codex, for Jesus Lara
-**Status**: review
+**Status**: approved
 **Target version**: standalone evaluation; no package release required
 
 The proposal's FEAT-585 is a research-state identity, not this feature's reserved identity.

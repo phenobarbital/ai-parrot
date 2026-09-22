@@ -189,9 +189,28 @@ def test_ci_runs_doc_and_script_checks(): ...
 6. Move to `sdd/tasks/completed/`, index → done, fill the note.
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-21
+**Notes**: Added an `install-guide` job to `.github/workflows/ci.yml`
+(checkout, setup-python 3.12, setup-uv, a NavConfig `env/dev/.env`
+scaffold step matching sibling jobs since `parrot.bots.agent` — imported
+by the hello-world test — needs it, doc-claim/script tests, `bash -n`
+syntax check, a soft `pwsh`-presence-gated PowerShell parse, and one
+`--dry-run` install), and
+`packages/ai-parrot/tests/docs/test_ci_install_wiring.py`
+(`test_ci_runs_doc_and_script_checks`, asserting `ci.yml` references the
+doc-test path, both installer scripts, and a `--dry-run` invocation).
+Verified: `.github/workflows/ci.yml` parses via `yaml.safe_load` (9 jobs,
+including `install-guide`); `bash -n scripts/install/install-parrot.sh`
+and a real `bash scripts/install/install-parrot.sh --dry-run --provider
+anthropic` both ran clean. `pwsh` itself is not installed in this
+environment, so the soft PowerShell-parse step could not be exercised
+end-to-end here — it degrades to its `echo`-and-continue branch, verified
+by inspection; the step is written to actually parse whenever `pwsh` is
+present, e.g. on the CI runner. Full `packages/ai-parrot/tests/docs/`
+suite: 14 passed, 1 skipped (the `pwsh`-gated one). `black --check` clean.
+`ruff` is not installed in the shared `.venv` in this environment (dev
+extra not synced) so `ruff check` could not be run — flagged for the
+human/code review.
+**Deviations from spec**: none.

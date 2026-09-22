@@ -291,9 +291,35 @@ def test_extract_claims_ignores_plain_comments() -> None:
 6. Move this file to `sdd/tasks/completed/`, set index → done, fill the note.
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-21
+**Notes**: Created `docs/getting-started.md` (all 8 sections, anchors for
+python-range/extra/script/provider/envvar/dep) and
+`packages/ai-parrot/tests/docs/test_getting_started_claims.py`
+(`DocClaim`, `ANCHOR_RE`, `extract_claims()`, `test_guide_exists`,
+`test_extract_claims_parses_all_kinds`, `test_extract_claims_ignores_plain_comments`).
+All 3 validation tests pass. `black --check` clean; `ruff` is not installed
+in the shared `.venv` in this environment (dev extra not synced) so
+`ruff check` could not be run — flagged for the human/code review.
+**Deviations from spec**: During TASK-3585 prep work I empirically verified
+(direct execution) two pre-existing, out-of-scope bugs that affect the
+guide's hello-world section (§4), neither of which this task's file list
+permits fixing:
+  1. `BasicAgent.__init__` (`packages/ai-parrot/src/parrot/bots/agent.py`,
+     ~line 113) unconditionally does `from ..clients.google import
+     GoogleGenAIClient` regardless of the `llm=` argument passed — so
+     `BasicAgent(...)` raises `ImportError` whenever `ai-parrot-client-google`
+     (or its own `google-genai` dependency) isn't importable, even when the
+     caller only wants e.g. `llm="anthropic"`.
+  2. `examples/basic_agent.py`'s literal `answer, response =
+     await agent.invoke(question)` raises `ValueError: too many values to
+     unpack` against the current `BaseBot.invoke()`, which returns a single
+     `AIMessage`, not a 2-tuple.
+  Neither `parrot/bots/agent.py` nor `examples/basic_agent.py` is in this
+  task's (or any FEAT-586 task's) Files to Create/Modify list, and AC17
+  forbids runtime code changes, so both are left untouched. The guide's §4
+  snippet instead documents the corrected pattern (`response =
+  await agent.invoke(...)` then reads `.output`) with an explicit `llm=`
+  and `from_database=False`, and both findings are reported for code review
+  / ledger filing rather than fixed here.

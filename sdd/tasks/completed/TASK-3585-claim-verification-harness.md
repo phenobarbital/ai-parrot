@@ -261,9 +261,46 @@ def test_failure_message_names_file_and_line(tmp_path): ...
 6. Move to `sdd/tasks/completed/`, index → done, fill the note.
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe
+**Completed by**: sdd-worker (Claude Sonnet 5)
+**Date**: 2026-09-21
+**Notes**: Added `_pyproject()`, `_claims()`, `_declared_provider_keys()`,
+`test_python_range_matches_pyproject`, `test_named_extras_exist`,
+`test_named_scripts_exist`, `test_named_providers_are_registered`,
+`test_named_dep_floors_match`, `test_hello_world_snippet_executes`,
+`test_failure_message_names_file_and_line` to
+`packages/ai-parrot/tests/docs/test_getting_started_claims.py`. All 10
+tests in the module pass. `test_named_providers_are_registered` asserts
+against the live `parrot.clients` entry-point registry when a satellite is
+installed, falling back to the provider keys declared in each
+`ai-parrot-client-*` satellite's own `pyproject.toml` in this repo tree
+when none is installed (covers a bare-install CI environment per spec §7
+risk). `test_hello_world_snippet_executes` registers a real,
+dotted-path-resolvable mocked `EntryPoint` (same pattern as
+`tests/unit/clients/test_factory_discovery.py`) under the `google`
+provider key, pointing at a module-level offline `AbstractClient` stub, so
+`BasicAgent`'s default LLM resolution runs fully offline.
+**IMPORTANT — environment gotcha discovered while building this test**:
+running `PYTHONPATH=packages/ai-parrot/src pytest ...` (literally as
+worded in `.claude/rules/worktree-management.md` §4) *replaces* an
+already-set `PYTHONPATH` in this shell that lists every workspace member's
+`src/` (including every `ai-parrot-client-*` satellite) — under that
+literal form, `entry_points(group="parrot.clients")` silently returns
+empty and `parrot.clients.google` fails to import. The fix is to prepend,
+not replace: `PYTHONPATH="$(pwd)/packages/ai-parrot/src:$PYTHONPATH"`.
+Worth a doc fix for whoever hits this next; not filed as a ledger issue
+since it is a documentation clarification, not a code defect.
+**Deviations from spec**: none in this task's own scope. Two pre-existing,
+out-of-scope bugs were confirmed by direct execution while building this
+test (both already logged in TASK-3584's Completion Note and both to be
+raised at code review / filed to the ledger):
+  1. `BasicAgent.__init__` (`parrot/bots/agent.py`) unconditionally imports
+     `GoogleGenAIClient` regardless of `llm=`, so it needs `parrot.clients
+     .google` to be importable (or faked, as this test does) even when a
+     different provider is requested.
+  2. `examples/basic_agent.py`'s literal `answer, response = await
+     agent.invoke(question)` raises `ValueError: too many values to
+     unpack` against the current `BaseBot.invoke()` (returns one
+     `AIMessage`).
+`ruff check` could not be run — not installed in the shared `.venv` in
+this environment (dev extra not synced); `black --check` is clean.
