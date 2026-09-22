@@ -21,7 +21,7 @@ async def test_activation_keeps_existing_entries_and_is_idempotent() -> None:
 
     task_memory = await binding.prepare()
 
-    assert toolkit.get_result("result")["key"] == "result"
+    assert (await toolkit.get_result("result"))["key"] == "result"
     assert task_memory.config.enabled is True
     assert await binding.prepare() is task_memory
     await binding.close()
