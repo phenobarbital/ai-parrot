@@ -1,4 +1,5 @@
 """FEAT-590 M1: protocol, adapter, trace sink."""
+
 from __future__ import annotations
 
 import json

@@ -3,6 +3,7 @@
 Protocol symbols import eagerly; the node and the backends resolve lazily so
 importing the plan package never pulls ``needle`` or opens sockets (AC14).
 """
+
 from __future__ import annotations
 
 import importlib

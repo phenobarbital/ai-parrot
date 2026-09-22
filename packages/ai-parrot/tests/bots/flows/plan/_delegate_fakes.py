@@ -1,4 +1,5 @@
 """Shared fakes for FEAT-590 delegate tests (mirror test_node.py's fakes)."""
+
 from __future__ import annotations
 
 import asyncio

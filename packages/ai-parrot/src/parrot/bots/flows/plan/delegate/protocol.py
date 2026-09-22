@@ -3,6 +3,7 @@
 A delegate proposes exactly one tool call from a short instruction; it never
 chats, never produces free text, and never executes anything. Code disposes.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +11,20 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Protocol, Sequence, Type, Union, runtime_checkable
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Mapping,
+    Optional,
+    Protocol,
+    Sequence,
+    Type,
+    Union,
+    runtime_checkable,
+)
 
 from pydantic import BaseModel, ConfigDict, Field
 
