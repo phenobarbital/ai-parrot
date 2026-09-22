@@ -2,6 +2,7 @@
 
 Run inside the isolated environment:  <worker_python> -m artifacts.laya.worker --checkpoint <dir> --revision <rev>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -59,28 +60,81 @@ def serve(stdin: Any, predictor: Predictor, out: Any = None) -> int:
             request_id = obj.get("request_id", "") if isinstance(obj, dict) else ""
             problem = _validate_request(obj)
             if problem:
-                _emit({"type": "result", "request_id": request_id, "status": "error", "answers": {}, "inference_ms": None,
-                       "error_code": "worker_protocol_error", "error_message": problem, "peak_rss_kb": _peak_rss_kb()}, out)
+                _emit(
+                    {
+                        "type": "result",
+                        "request_id": request_id,
+                        "status": "error",
+                        "answers": {},
+                        "inference_ms": None,
+                        "error_code": "worker_protocol_error",
+                        "error_message": problem,
+                        "peak_rss_kb": _peak_rss_kb(),
+                    },
+                    out,
+                )
                 continue
             t0 = time.perf_counter()
             answers = predictor.predict(obj["state"], obj["questions"])
             inference_ms = (time.perf_counter() - t0) * 1000.0
             missing_or_bad = [qid for qid in obj["questions"] if not isinstance(answers.get(qid), dict)]
             if missing_or_bad:
-                _emit({"type": "result", "request_id": request_id, "status": "error", "answers": {}, "inference_ms": inference_ms,
-                       "error_code": "worker_failed",
-                       "error_message": f"predictor returned no answer for question(s): {missing_or_bad}",
-                       "peak_rss_kb": _peak_rss_kb()}, out)
+                _emit(
+                    {
+                        "type": "result",
+                        "request_id": request_id,
+                        "status": "error",
+                        "answers": {},
+                        "inference_ms": inference_ms,
+                        "error_code": "worker_failed",
+                        "error_message": f"predictor returned no answer for question(s): {missing_or_bad}",
+                        "peak_rss_kb": _peak_rss_kb(),
+                    },
+                    out,
+                )
                 continue
-            _emit({"type": "result", "request_id": request_id, "status": "ok", "answers": answers, "inference_ms": inference_ms,
-                   "error_code": None, "error_message": None, "peak_rss_kb": _peak_rss_kb()}, out)
+            _emit(
+                {
+                    "type": "result",
+                    "request_id": request_id,
+                    "status": "ok",
+                    "answers": answers,
+                    "inference_ms": inference_ms,
+                    "error_code": None,
+                    "error_message": None,
+                    "peak_rss_kb": _peak_rss_kb(),
+                },
+                out,
+            )
         except json.JSONDecodeError as exc:
-            _emit({"type": "result", "request_id": request_id, "status": "error", "answers": {}, "inference_ms": None,
-                   "error_code": "worker_protocol_error", "error_message": f"invalid JSON: {exc}", "peak_rss_kb": _peak_rss_kb()}, out)
+            _emit(
+                {
+                    "type": "result",
+                    "request_id": request_id,
+                    "status": "error",
+                    "answers": {},
+                    "inference_ms": None,
+                    "error_code": "worker_protocol_error",
+                    "error_message": f"invalid JSON: {exc}",
+                    "peak_rss_kb": _peak_rss_kb(),
+                },
+                out,
+            )
         except Exception as exc:  # predictor failure: record, keep serving
             print(traceback.format_exc(), file=sys.stderr)
-            _emit({"type": "result", "request_id": request_id, "status": "error", "answers": {}, "inference_ms": None,
-                   "error_code": "worker_failed", "error_message": f"{type(exc).__name__}: {exc}", "peak_rss_kb": _peak_rss_kb()}, out)
+            _emit(
+                {
+                    "type": "result",
+                    "request_id": request_id,
+                    "status": "error",
+                    "answers": {},
+                    "inference_ms": None,
+                    "error_code": "worker_failed",
+                    "error_message": f"{type(exc).__name__}: {exc}",
+                    "peak_rss_kb": _peak_rss_kb(),
+                },
+                out,
+            )
     return 0
 
 
@@ -110,6 +164,7 @@ def _to_laya_questions(questions: dict[str, dict[str, Any]]) -> Any:
     # FILL IN: build from the installed laya/agent.py signature (spec §7 URL) — noul questions carry text only,
     #          choice questions carry text + options; keep qid order — bounded by spec §2 "one fixed schema per scenario"
     raise NotImplementedError
+
 
 def _from_laya_answers(questions: dict[str, dict[str, Any]], raw: Any) -> dict[str, dict[str, Any]]:
     """Map Laya output to {qid: answer}; ``noul`` is the POSITIVE probability (spec §2), never its confidence."""
@@ -173,12 +228,20 @@ def load_predictor(checkpoint: str, revision: str) -> tuple[LayaPredictor, dict[
     from laya import Agent  # noqa: PLC0415 — optional runtime, worker env only
 
     t0 = time.perf_counter()
-    agent = Agent(checkpoint, device="cpu")  # FILL IN: exact kwargs per installed laya.Agent.__init__ — bounded by spec §7 "explicit CPU device and local snapshot"
+    agent = Agent(
+        checkpoint, device="cpu"
+    )  # FILL IN: exact kwargs per installed laya.Agent.__init__ — bounded by spec §7 "explicit CPU device and local snapshot"
     load_ms = (time.perf_counter() - t0) * 1000.0
     max_input_tokens = None  # FILL IN: read the tokenizer/model max length from the loaded agent — bounded by spec §3 M2 "checkpoint's actual limits"
-    ready = {"checkpoint_path": checkpoint, "checkpoint_revision": revision, "checkpoint_sha256": _checkpoint_sha256(checkpoint),
-             "packages": _package_versions(("laya", "torch", "transformers")), "max_input_tokens": max_input_tokens,
-             "torch_threads": _torch_threads(), "load_ms": load_ms}
+    ready = {
+        "checkpoint_path": checkpoint,
+        "checkpoint_revision": revision,
+        "checkpoint_sha256": _checkpoint_sha256(checkpoint),
+        "packages": _package_versions(("laya", "torch", "transformers")),
+        "max_input_tokens": max_input_tokens,
+        "torch_threads": _torch_threads(),
+        "load_ms": load_ms,
+    }
     return LayaPredictor(agent, max_input_tokens), ready
 
 
@@ -192,17 +255,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         predictor, ready = load_predictor(args.checkpoint, args.revision)
     except ImportError as exc:
-        _emit({"type": "error", "error_code": "dependency_missing", "error_message": f"{exc}; see artifacts/laya/README.md"})
+        _emit(
+            {
+                "type": "error",
+                "error_code": "dependency_missing",
+                "error_message": f"{exc}; see artifacts/laya/README.md",
+            }
+        )
         return 3
     except FileNotFoundError as exc:
-        _emit({"type": "error", "error_code": "checkpoint_missing", "error_message": f"checkpoint directory not found: {exc}"})
+        _emit(
+            {
+                "type": "error",
+                "error_code": "checkpoint_missing",
+                "error_message": f"checkpoint directory not found: {exc}",
+            }
+        )
         return 3
     except Exception as exc:
         print(traceback.format_exc(), file=sys.stderr)
         _emit({"type": "error", "error_code": "worker_failed", "error_message": f"{type(exc).__name__}: {exc}"})
         return 3
-    _emit({"type": "ready", "worker_pid": os.getpid(), "device": "cpu", "python": platform.python_version(),
-           "platform": platform.platform(), **ready})
+    _emit(
+        {
+            "type": "ready",
+            "worker_pid": os.getpid(),
+            "device": "cpu",
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            **ready,
+        }
+    )
     return serve(sys.stdin, predictor)
 
 

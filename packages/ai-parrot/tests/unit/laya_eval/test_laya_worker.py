@@ -1,4 +1,5 @@
 """FEAT-589 M2 — worker protocol with a fake predictor; dependency-missing path as a real subprocess."""
+
 from __future__ import annotations
 
 import io
@@ -47,7 +48,9 @@ def test_malformed_lines_yield_protocol_errors_and_loop_continues():
 
 
 def test_predictor_exception_becomes_worker_failed_not_exit():
-    req = json.dumps({"request_id": "r3", "state": "s", "questions": {"q": {"type": "choice", "text": "t", "options": ["a", "b"]}}})
+    req = json.dumps(
+        {"request_id": "r3", "state": "s", "questions": {"q": {"type": "choice", "text": "t", "options": ["a", "b"]}}}
+    )
     (rec,) = _run([req], _Fake(error=RuntimeError("boom")))
     assert rec["status"] == "error" and rec["error_code"] == "worker_failed" and "boom" in rec["error_message"]
 
@@ -63,7 +66,13 @@ def test_confident_negative_noul_answer_passed_through_untouched():
 
 def test_incomplete_answers_yield_worker_failed():
     """A predictor that drops a requested question id is a worker failure, not a silent partial ``ok``."""
-    req = json.dumps({"request_id": "r5", "state": "s", "questions": {"q1": {"type": "noul", "text": "t"}, "q2": {"type": "noul", "text": "t2"}}})
+    req = json.dumps(
+        {
+            "request_id": "r5",
+            "state": "s",
+            "questions": {"q1": {"type": "noul", "text": "t"}, "q2": {"type": "noul", "text": "t2"}},
+        }
+    )
     fake = _Fake(answers={"q1": {"type": "noul", "noul": 0.5, "confidence": 0.5}})
 
     class _Partial(_Fake):
@@ -87,8 +96,13 @@ def _laya_importable() -> bool:
 def test_main_without_laya_emits_dependency_missing_and_exit_3(tmp_path):
     if _laya_importable():
         pytest.skip("laya is importable in this interpreter; the dependency-missing path cannot be exercised")
-    proc = subprocess.run([sys.executable, "-m", "artifacts.laya.worker", "--checkpoint", str(tmp_path), "--revision", "x"],
-                          cwd=REPO_ROOT, capture_output=True, text=True, timeout=60)
+    proc = subprocess.run(
+        [sys.executable, "-m", "artifacts.laya.worker", "--checkpoint", str(tmp_path), "--revision", "x"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     assert proc.returncode == 3
     first = json.loads(proc.stdout.splitlines()[0])
     assert first["type"] == "error" and first["error_code"] == "dependency_missing"
@@ -100,7 +114,10 @@ def test_main_with_missing_checkpoint_dir(tmp_path):
     missing = tmp_path / "does-not-exist"
     proc = subprocess.run(
         [sys.executable, "-m", "artifacts.laya.worker", "--checkpoint", str(missing), "--revision", "x"],
-        cwd=REPO_ROOT, capture_output=True, text=True, timeout=60,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     assert proc.returncode == 3
     first = json.loads(proc.stdout.splitlines()[0])
