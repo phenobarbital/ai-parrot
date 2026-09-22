@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import math
-import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +24,7 @@ def nearest_rank_percentile(values: list[float], p: float) -> float | None:
 
 def confusion_matrix(samples: list[SampleResult], labels: tuple[str, ...]) -> dict[str, dict[str, int]]:
     """Return ``{expected: {predicted: count}}`` over ``labels`` plus an ``"__error__"`` predicted column."""
-    matrix = {e: {p: 0 for p in (*labels, "__error__")} for e in labels}
+    matrix = {e: dict.fromkeys((*labels, "__error__"), 0) for e in labels}
     for s in samples:
         column = s.predicted if s.status == "ok" and s.predicted in labels else "__error__"
         matrix[s.expected][column] += 1
