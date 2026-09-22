@@ -10,6 +10,7 @@ Intended location in the repo::
 
     packages/ai-parrot/src/parrot/bots/flows/plan/
 """
+
 from .compile import (
     END_NODE_ID,
     PLAN_NODE_TYPE,
@@ -20,7 +21,9 @@ from .compile import (
 from .facets import estimate_bytes, extract_facets, merge_facets
 from .guards import GuardCompilationError, PlanGuard, compile_guard
 from .models import (
+    AnyPlanNode,
     ArtifactRef,
+    DelegatePlanNode,
     ExecutionManifest,
     ExecutionPlan,
     FacetSpec,
@@ -44,7 +47,9 @@ from .validator import (
 )
 
 __all__ = (
+    "AnyPlanNode",
     "ArtifactRef",
+    "DelegatePlanNode",
     "END_NODE_ID",
     "ExecutionManifest",
     "ExecutionPlan",
