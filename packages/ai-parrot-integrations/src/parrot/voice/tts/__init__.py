@@ -14,9 +14,11 @@ Future backends (architecture ready, not yet implemented):
 Added by FEAT-213 (Telegram Voice Reply TTS Output).
 Mirrors the structure of ``parrot.voice.transcriber`` for symmetry.
 """
+
 from .backend import AbstractTTSBackend
 from .google_backend import GoogleTTSBackend
 from .models import SynthesisResult, TTSConfig
+from .polly_backend import AmazonPollyTTSBackend
 from .synthesizer import VoiceSynthesizer
 
 __all__ = [
@@ -26,6 +28,7 @@ __all__ = [
     "AbstractTTSBackend",
     # Backend Implementations
     "GoogleTTSBackend",
+    "AmazonPollyTTSBackend",
     # Config and Results
     "TTSConfig",
     "SynthesisResult",
