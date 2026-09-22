@@ -873,3 +873,38 @@ async def test_cleanup_cannot_cross_execution(git_sandbox_feature, noop_probe, t
     with pytest.raises(CoderFailure) as excinfo:
         await engine.end_execution(exec_b)
     assert excinfo.value.code == "execution_busy"
+
+
+async def test_engine_commits_gitignored_declared_work(git_sandbox_feature, noop_probe):
+    """A declared CREATE file under a git-ignored directory is still the deliverable.
+
+    Real tasks declare files under `artifacts/` (ignored by the repo-root
+    `.gitignore`). A sandboxed coder cannot commit, so the engine's extraction
+    must see the ignored-but-declared file and stage it with `-f`; an ignored file
+    the task does NOT declare (runtime state, caches) is neither staged nor reported.
+    """
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    task_md = worktree / "sdd/tasks/active/TASK-0002-demo.md"
+    task_md.write_text(task_md.read_text().replace("pkg/t2.py", "artifacts/demo/t2.py"))
+    rc, _out, err = await _git("commit", "-am", "TASK-0002 targets artifacts/", cwd=worktree)
+    assert rc == 0, err
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0002", 1)
+    path = Path(await manager.create("TASK-0002.a1"))
+    (path / "artifacts" / "demo").mkdir(parents=True)
+    (path / "artifacts" / "demo" / "t2.py").write_text("# ignored dir, declared file\n")
+    (path / "artifacts" / "runtime-state.json").write_text("{}\n")
+
+    result = await engine.merge("demo", str(worktree), "TASK-0002")
+    assert result.outcome == "merged", result.diagnostics
+
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert "engine-committed coder deliverable" in log
+    assert (worktree / "artifacts" / "demo" / "t2.py").read_text() == "# ignored dir, declared file\n"
+    _rc, tracked, _err = await _git("ls-files", "artifacts", cwd=worktree)
+    assert tracked.split() == ["artifacts/demo/t2.py"]
