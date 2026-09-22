@@ -3,6 +3,7 @@
 Pure-function tests only: no AWS, no network, no credentials. Per spec §8 Q1 the
 live Converse round-trip is guarded at runtime, not covered by a test.
 """
+
 from __future__ import annotations
 
 import pytest

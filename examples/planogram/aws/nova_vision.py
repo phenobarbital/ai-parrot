@@ -3,6 +3,7 @@
 Prototype for the eventual ``BedrockConverseBase`` image support; today that client
 drops image attachments outright (verified: bedrock.py:725-745).
 """
+
 from __future__ import annotations
 
 import json
@@ -74,10 +75,7 @@ class NovaVisionClient:
         """
         total = sum(len(block["image"]["source"]["bytes"]) for block in blocks if "image" in block)
         if total == 0:
-            raise RuntimeError(
-                "Converse request carries no image block - refusing to send a "
-                "text-only vision call"
-            )
+            raise RuntimeError("Converse request carries no image block - refusing to send a " "text-only vision call")
         return total
 
     @staticmethod
