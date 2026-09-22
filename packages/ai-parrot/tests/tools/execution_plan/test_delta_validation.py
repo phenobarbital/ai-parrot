@@ -1,4 +1,5 @@
 """FEAT-585 M5 — delta eligibility/merge/validation matrix (D2, AC7)."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -225,7 +226,9 @@ def test_validate_delta_codes(mutation, code: str) -> None:
     plan = _make_plan()
     run = _run(plan, _base_refs(), status="failed", allowed=["tool_a", "tool_b", "tool_b2", "tool_c", "tool_d"])
     delta = mutation()
-    report = validate_delta(delta, run=run, tool_manager=_tool_manager(), allowed_tools=list(run.metadata.allowed_tools))
+    report = validate_delta(
+        delta, run=run, tool_manager=_tool_manager(), allowed_tools=list(run.metadata.allowed_tools)
+    )
     assert not report.ok
     assert code in {issue.code for issue in report.errors}
 
@@ -237,7 +240,9 @@ def test_delta_dependency_on_success_validates_without_listing_parent() -> None:
     # Replace only the eligible for_each node "b"; its dependency "a" (ok) is
     # not listed in the delta at all.
     delta = PlanDelta(nodes=[_valid_replacement_for_b()])
-    report = validate_delta(delta, run=run, tool_manager=_tool_manager(), allowed_tools=list(run.metadata.allowed_tools))
+    report = validate_delta(
+        delta, run=run, tool_manager=_tool_manager(), allowed_tools=list(run.metadata.allowed_tools)
+    )
     assert report.ok, report
 
 

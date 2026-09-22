@@ -8,6 +8,7 @@ R5). So the delta is merged into the original node set, the merged
 protected ids, identity preservation, key collisions and allowlist
 intersection — are checked on top, never patched into the frozen validator.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, FrozenSet, List, Sequence
