@@ -33,7 +33,9 @@ pytestmark = pytest.mark.asyncio
 
 def _plan() -> ExecutionPlan:
     """Create the one-node execution plan used by toolkit recovery tests."""
-    return ExecutionPlan(name="recovery", objective="recover", nodes=[PlanNode(id="step", tool="tool")])
+    return ExecutionPlan(
+        name="recovery", objective="recover", nodes=[PlanNode(id="step", tool="tool", store_as="step_out")]
+    )
 
 
 def _metadata(plan: ExecutionPlan, **overrides: Any) -> PlanRunMetadata:
