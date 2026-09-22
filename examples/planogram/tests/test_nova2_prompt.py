@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from examples.planogram.aws.prompt import (
+from prompt import (
     NOVA_PROMPT_VERSION,
     NOVA_STAGE,
     PlanogramVocabulary,
