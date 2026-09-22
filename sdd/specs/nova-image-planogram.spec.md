@@ -184,6 +184,7 @@ class RunStats(BaseModel):
     calls: int = 0                     # every ask_to_image that reached Bedrock
     cache_hits: int = 0
     incomplete_retries: int = 0        # the missing-id repair prompt
+    image_bytes_sent: int = 0          # total PNG bytes actually transmitted (§9 S9 guard)
     input_tokens: int = 0
     output_tokens: int = 0
     wall_seconds: float = 0.0
@@ -257,6 +258,7 @@ class NovaVisionClient:
       """
       output: str
       usage: Dict[str, int]          # {"input_tokens", "output_tokens"} from Converse
+      image_bytes: int               # PNG bytes actually transmitted (§9 S9 guard)
 
   class NovaVisionClient:
       """``ask_to_image``-compatible Bedrock Converse image transport for Nova.
@@ -320,12 +322,27 @@ class NovaVisionClient:
           is rendered by ``_schema_instruction`` and appended to the prompt text.
           ``reference_images`` become additional image blocks in the same user message.
 
+          Before sending, the assembled content blocks are checked: a request that
+          carries no image block is REFUSED, never sent (§9 S9 / §8 Q1). A text-only
+          Converse call returns plausible JSON and would silently turn the whole
+          experiment into a measurement of nothing.
+
           Returns:
-              NovaAnswer whose ``output`` is the model's text and whose ``usage``
-              carries the Converse token counts.
+              NovaAnswer whose ``output`` is the model's text, whose ``usage`` carries
+              the Converse token counts, and whose ``image_bytes`` is the PNG payload
+              actually transmitted.
 
           Raises:
-              RuntimeError: Converse returned no text content block.
+              RuntimeError: the assembled request carries no image content block, or
+                  Converse returned no text content block.
+          """
+
+      @staticmethod
+      def _assert_has_image(blocks: Sequence[Dict[str, Any]]) -> int:
+          """Guard: the request must carry at least one image block; return its total bytes.
+
+          Raises:
+              RuntimeError: no block in ``blocks`` is an ``{"image": ...}`` block.
           """
 
       @staticmethod
@@ -529,8 +546,10 @@ class NovaVisionClient:
 
 The user resolved: **no automated test for the shim** ("throwaway prototype code
 superseded by the real `BedrockConverseBase` image support; manual runs against live
-Nova are sufficient validation"). §9 S9 contests that and is escalated as §8 Q1 — if the
-answer flips, the fake-Converse test below is what gets added.
+Nova are sufficient validation"). §9 S9 contested that; §8 Q1 closed it by adopting the
+*failure mode* without the *test form* — `NovaVisionClient._assert_has_image` refuses to
+send a request that carries no image block, and `RunStats.image_bytes_sent` makes the
+transmitted payload auditable per run. There is therefore no fake-`aioboto3` test.
 
 ### Unit Tests
 | Test | Module | Description |
@@ -545,9 +564,8 @@ answer flips, the fake-Converse test below is what gets added.
 ### Test Data / Fixtures
 ```python
 # No new fixtures. examples/planogram/tests/conftest.py is untouched.
-# If §8 Q1 flips to "add the test", the fixture would be a fake aioboto3 client
-# asserting the Converse payload (modelId, image content block bytes/format,
-# inferenceConfig, schema instruction) without network access — see §9 S9.
+# The transport is guarded at runtime instead (§8 Q1): _assert_has_image raises
+# before the call, so a text-only vision request cannot reach Bedrock unnoticed.
 ```
 
 ---
@@ -565,7 +583,7 @@ answer flips, the fake-Converse test below is what gets added.
       product it labels in `annotated.jpg`.
 - [ ] AC5 — `run.json` records the resolved model id (with geo prefix), region, prompt
       version, target count, `strips`, `calls`, `cache_hits`, `incomplete_retries`,
-      token counts and wall time (G5, §9 S8).
+      `image_bytes_sent`, token counts and wall time (G5, §9 S8).
 - [ ] AC6 — No file under `packages/` is modified by this feature (`git diff --name-only
       origin/dev...HEAD | grep '^packages/'` is empty) (G3).
 - [ ] AC7 — `git check-ignore -q examples/planogram/aws/nova2.py` exits 1 (not ignored),
@@ -583,6 +601,9 @@ answer flips, the fake-Converse test below is what gets added.
       appears in `examples/planogram/aws/` (`ruff` TID251 plus review).
 - [ ] AC14 — Re-running with the same `--cache-dir` issues zero provider calls and
       produces byte-identical `detections.json`.
+- [ ] AC15 — A Converse request assembled without an image content block is refused by
+      `_assert_has_image` before reaching Bedrock, and `run.json` reports a non-zero
+      `image_bytes_sent` on every successful run (§8 Q1, §9 S9).
 
 ---
 
@@ -877,6 +898,13 @@ Verified against: `f9d362cd5`
   recorded as errors. Never treat a short answer as a failure.
 - **Strips can exceed the model's practical attention.** Cap targets per call at 8, as
   `identify_strips` does; split longer rows into sub-strips.
+- **A text-only Converse call fails silently.** Bedrock accepts a request with no image
+  block and Nova answers from the prompt alone, producing well-formed JSON with invented
+  identities — an experiment that looks successful and measures nothing. `ask_to_image`
+  therefore refuses to send a request whose assembled blocks contain no image, and
+  `RunStats.image_bytes_sent` makes the transmitted payload auditable (§8 Q1, §9 S9).
+  This guard is the one piece of the shim that must survive the lift into
+  `BedrockConverseBase`.
 - **`examples/planogram/` is git-ignored by default.** Without M1's negation rules, new
   files silently never reach a commit (§9 S11).
 
@@ -907,13 +935,16 @@ Verified against: `f9d362cd5`
 - [x] Region and model access — *Resolved in brainstorm*: `us-east-1`, Nova 2 Lite access already granted; the default `us.amazon.nova-2-lite-v1:0` is correct there.
 - [x] Fixture test for the shim — *Resolved in brainstorm*: no test; the shim is throwaway prototype code, manual live runs suffice. **Contested by §9 S9 — see Q1.**
 - [x] Cost/latency target — *Resolved in brainstorm*: no hard target; record cost and latency in `run.json` and decide qualitatively alongside accuracy.
-- [ ] **Q1** — The design-research seat argues the Converse transport is the highest-risk
-  code in this feature and that a fake-`aioboto3` test asserting the exact payload
-  (model id, image content block format and bytes, schema instruction, temperature,
-  token limit, text extraction, error and close behaviour) would catch a silently
-  text-only request *before* a live experiment produces numbers that look real but are
-  not. This contradicts the resolved "no test" answer. Keep "no test", or add this one
-  transport test? — *Owner: Jesus Lara*
+- [x] **Q1** — The design-research seat argues the Converse transport is the highest-risk
+  code in this feature and that a fake-`aioboto3` test asserting the exact payload would
+  catch a silently text-only request *before* a live experiment produces numbers that
+  look real but are not. This contradicts the resolved "no test" answer. Keep "no test",
+  or add this one transport test? — *Owner: Jesus Lara*: **runtime self-check, no test
+  file.** `ask_to_image` asserts its own assembled request carries an image content block
+  and refuses to send a text-only vision call; `RunStats.image_bytes_sent` records the
+  image payload actually transmitted. This closes the exact failure the reviewer named
+  while honouring "no test files for throwaway prototype code" — and, unlike a test, the
+  guard travels with the shim when it is lifted into `BedrockConverseBase`.
 
 ---
 
@@ -935,11 +966,11 @@ Verified against: `f9d362cd5`
 | S6 | Define the flattening join and bbox convention explicitly (api) | CONFIRM | Verified: `Identification` carries no box (`contracts.py:101-114`) and `IdentificationResult` none either (137-142). Without an explicit join the flat output cannot be produced. | §2 Data Models, §3 M4 |
 | S7 | Validate `--boxes` against the decoded image (testing) | CONFIRM | Verified: `from_strip_norm` trusts `image_size` (`slots.py:263`). Adopted as runtime fail-fast validation (AC9); the automated-test half folds into Q1. | §3 M5, §5 AC9, §7 |
 | S8 | Make the real retry and cost envelope visible (risk) | CONFIRM | Verified: two independent repair paths — `repair_retries` (`vision.py:143`) and the missing-id retry (`identify.py:344-359`) — so one strip can cost three calls. Material to the cost objective. | §2 Data Models, §5 AC5, §7 |
-| S9 | Test the exact Converse payload without AWS (testing) | ESCALATE | Directly contradicts the user's resolved "no test" answer. The counter-argument is substantive: a silently text-only Converse request is exactly the failure that would invalidate the experiment while looking like a result. The user decides. | §8 Q1 |
+| S9 | Test the exact Converse payload without AWS (testing) | CONFIRM (variant) | Escalated to the user as §8 Q1, then resolved: the *failure mode* is adopted, the *test form* is declined. A runtime guard in `ask_to_image` refuses to send a request carrying no image block, and `RunStats.image_bytes_sent` makes the transmitted payload visible per run — closing the silently-text-only hole without a test file for code that is explicitly throwaway. The guard also survives the lift into `BedrockConverseBase`, which a test under `examples/` would not. | §3 M2, §2 Data Models, §5 AC15, §7, §8 Q1 |
 | S10 | Canonicalize the resolved Nova model before caching (api) | CONFIRM | Verified: `models.py:150` maps the alias while `region_prefix="us"` (`nova/client.py:93`) adds the profile; `cache_key` keys on the backend string (`vision.py:63`). | §3 M2, §7 |
 | S11 | Make ignored example files reliably trackable (risk) | CONFIRM | Verified: `.gitignore:418` ignores the tree and the repo convention is negation rules (`.gitignore:438-441`), not `git add -f`. Corrects the brainstorm. | §2 Overview, §3 M1, §5 AC7 |
 
-Summary: **10** confirmed · **0** rejected · **1** escalated.
+Summary: **11** confirmed (one as a variant) · **0** rejected · **0** escalated — §8 Q1 closed by the user.
 
 ---
 
@@ -977,3 +1008,4 @@ Summary: **10** confirmed · **0** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-23 | Jesus Lara | Initial draft from `proposals/nova-image-planogram.brainstorm.md` (Option A), with 10 design-research suggestions folded in and 1 escalated. |
+| 0.2 | 2026-09-23 | Jesus Lara | §8 Q1 resolved: the Converse transport is guarded at runtime (`_assert_has_image` + `RunStats.image_bytes_sent`) instead of by a fake-`aioboto3` test. S9 → CONFIRM (variant); no open questions remain. |
