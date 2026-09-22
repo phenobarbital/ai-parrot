@@ -28,11 +28,7 @@ from parrot.bots.flows.core.checkpoint import (
 from parrot.bots.flows.plan import (
     ArtifactRef,
     ExecutionPlan,
-    PlanToolNode,
     build_manifest,
-    ensure_tool_node_registered,
-    make_tool_node_factory,
-    to_flow_definition,
 )
 from parrot.registry.registry import AgentRegistry
 from parrot.tools.decorators import tool_schema
@@ -54,7 +50,6 @@ from .models import (
     PlanRunManifest,
     PlanRunMetadata,
     PlanRunSummary,
-    RunningSummary,
     RunRecord,
 )
 from .checkpoint import PlanFlow, build_plan_flow
@@ -280,7 +275,9 @@ class ExecutionPlanToolkit(AbstractToolkit):
     ) -> PlanRunMetadata:
         """Build the persisted recovery envelope for a newly accepted root run."""
         del checkpointed
-        allowed = sorted(self.allowed_tools) if self.allowed_tools is not None else sorted(self._tool_manager.list_tools())
+        allowed = (
+            sorted(self.allowed_tools) if self.allowed_tools is not None else sorted(self._tool_manager.list_tools())
+        )
         scope = self._memory_binding.scope
         mode = self._memory_binding.artifact_mode
         return PlanRunMetadata(
