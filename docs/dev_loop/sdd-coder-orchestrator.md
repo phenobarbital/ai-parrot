@@ -198,6 +198,8 @@ Prefer `coder_task_context` and `coder_delivery_report` for known task/delivery 
 
 `coder_plan`, `coder_wait`, and `coder_status` retain `response_mode="full"` as their public default. The worker may explicitly request `"compact"`, but must recover mandatory evidence/pages with `coder_read_artifact` before dispatch, validation, merge, or acceptance. Compact output never changes routing, coverage, ownership, retry, fidelity, or the 90-second client poll.
 
+The durable evidence store behind `compact` views, `coder_read_artifact`, `coder_record_native_observation` and review checkpoints is **always bound** — it does not depend on `DEV_LOOP_CODER_TELEMETRY`. Its root is `SDD_CODER_TELEMETRY_DIR` when set, otherwise `<main checkout>/artifacts/logs/sdd-coder-usage` derived via git; an explicit root that is relative or lands under the worktree base still fails engine construction. Only when no root can be derived at all does the engine start without a store and log a warning, and every dependent call then reports `evidence_persistence_failed`.
+
 ### Review boundary and compaction (FEAT-584)
 
 After settlement: persist checkpoint; request at most one supported between-turn compaction; record its actual receipt; reload/validate the checkpoint; start a fresh independent reviewer. Do not compact per task/tool, inside a tool call, while work is live, or by invoking `/compact` through Bash.
@@ -393,7 +395,7 @@ native tasks and re-merges).
 To collect and analyze token usage:
 
 1. Enable telemetry by setting these environment variables:
-   - `DEV_LOOP_CODER_TELEMETRY=true` (master switch, default False)
+   - `DEV_LOOP_CODER_TELEMETRY=true` (master switch for the usage-row sink, default False; the durable evidence store is bound regardless)
    - `DEV_LOOP_CODER_LEDGER=true` (bind the observational ledger, default True)
    - `SDD_CODER_TELEMETRY_DIR=/absolute/path` (durable dir, "" = derive from main checkout)
 
@@ -430,8 +432,13 @@ as the unbudgeted comparison baseline.
   `coder_status(job_id)` rather than re-dispatching. If the server
   restarted mid-job, the branch/worktree persists and surfaces as an orphan
   on the next `coder_plan`.
-- **`dirty_task_worktree`** — the coder left uncommitted or untracked
-  changes; nothing is merged until the branch is clean.
+- **uncommitted coder deliveries** — a sandboxed seat has `.git` read-only by
+  design and cannot commit; the engine extracts the task's **declared** files
+  itself and commits them on the attempt branch (`_commit_declared_changes`,
+  FEAT-587 / `ed267c217`). There is no `dirty_task_worktree` rejection. A file
+  the coder produced but the task does not declare is never merged and never
+  dropped: it surfaces as `fidelity_violation` with `unexpected_files` and the
+  `undeclared_files_left_uncommitted` diagnostic.
 - **Redis warnings** — dispatch telemetry to Redis is best-effort; a single
   startup warning when `REDIS_URL` is unreachable is expected and harmless.
   Set `REDIS_URL` to enable live event streams.

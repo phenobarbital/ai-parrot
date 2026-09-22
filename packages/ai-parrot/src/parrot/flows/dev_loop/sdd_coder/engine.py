@@ -110,6 +110,7 @@ from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
     OutcomeRow,
     build_attempt_row,
+    resolve_durable_root,
 )
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
@@ -454,19 +455,65 @@ class SddCoderEngine:
         # "pending/running/unknown de validaciones admitidas bloquean checkpoint
         # y cleanup de su worktree").
         self._validation_handles: Dict[str, Set[str]] = {}
-        if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
-            from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
-
-            effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
-            telemetry_root = resolve_durable_root(effective_dir, worktree_base_path=self._base_path)
-            self._sink = CoderTelemetrySink(telemetry_root)
-            self._evidence_store = ExecutionEvidenceStore(telemetry_root)
+        # The durable evidence store is ALWAYS bound when a durable root resolves:
+        # the FEAT-584 worker protocol unconditionally requests `compact` views,
+        # records native observations and persists review checkpoints, and spec R3
+        # makes those persistence failures block the transition that depends on
+        # them. Gating the store on the observational telemetry opt-in shipped a
+        # default install where every one of those paths failed with
+        # `evidence_persistence_failed` (FEAT-588 incident). Only the
+        # `CoderTelemetrySink` (usage rows, an analysis dataset) remains opt-in.
+        effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
+        durable_root = self._resolve_durable_root(
+            effective_dir, strict=effective_dir is not None or bool(conf.DEV_LOOP_CODER_TELEMETRY)
+        )
+        if durable_root is not None:
+            self._evidence_store = ExecutionEvidenceStore(durable_root)
             self._background_registry = BackgroundRegistry(
                 store=self._evidence_store, owner_instance_id=self._instance_id
             )
             self._validation_supervisor = ValidationSupervisor(
                 registry=self._background_registry, store=self._evidence_store
             )
+            if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
+                self._sink = CoderTelemetrySink(durable_root)
+
+    def _resolve_durable_root(self, configured: Optional[str], *, strict: bool) -> Optional[Path]:
+        """Resolve the out-of-worktree durable root, or `None` with a warning.
+
+        Explicit operator intent -- a configured root (`telemetry_dir` kwarg or
+        `SDD_CODER_TELEMETRY_DIR`) or the `DEV_LOOP_CODER_TELEMETRY` opt-in -- is
+        `strict`: an unresolvable or invalid root (relative path, root under the
+        worktree base, no git common dir) still raises `ValueError` at
+        construction exactly as before (FEAT-554 R7 guard), never silently
+        degrades. Only the implicit default (nothing configured, telemetry off,
+        main checkout located via git) degrades to "no durable store" -- every
+        consumer then reports `evidence_persistence_failed` explicitly instead of
+        the engine refusing to construct.
+
+        Args:
+            configured: Explicit absolute root, or `None` to derive it from the
+                main checkout via git.
+            strict: Re-raise instead of degrading when the root cannot be resolved.
+
+        Returns:
+            The validated root, or `None` when no root could be derived and
+            `strict` is false.
+
+        Raises:
+            ValueError: the root is invalid or unresolvable and `strict` is true.
+        """
+        try:
+            return resolve_durable_root(configured, worktree_base_path=self._base_path)
+        except ValueError as exc:
+            if strict:
+                raise
+            self.logger.warning(
+                "No durable evidence store for this engine (compact views, native observations and "
+                "review checkpoints will fail with evidence_persistence_failed): %s",
+                exc,
+            )
+            return None
 
     async def open(self) -> None:
         """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available.
@@ -2904,10 +2951,6 @@ class SddCoderEngine:
         if outcome == "fidelity_violation":
             return "fidelity_violation"
 
-        # Check for dirty delivery
-        if error_class == "dirty_task_worktree" or (error and error.startswith("dirty_task_worktree:")):
-            return "dirty_delivery"
-
         # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError.
         # The real production wrap (`dispatchers/llm.py`'s `except TimeoutError as
         # exc: raise DispatchExecutionError(f"Dispatch exceeded {timeout}s
@@ -3162,13 +3205,14 @@ class SddCoderEngine:
         execution_id: Optional[str] = None,
         pool: Optional["ExecutionPool"] = None,
     ) -> TaskResult:
-        """Run up to two attempts, retrying dispatch and dirty-worktree failures on another MCP seat.
+        """Run up to two attempts, retrying DISPATCH failures on another MCP seat.
 
-        A clean dispatcher response is not sufficient for success: an agent can
-        return ``DevelopmentOutput`` after exhausting its turn budget while
-        leaving its changes uncommitted. Treat that first-attempt
-        ``dirty_task_worktree`` outcome as retryable, but preserve fidelity
-        violations and merge conflicts for the orchestrator to handle.
+        A seat that delivers its declared files without committing them is not a
+        failure: ``.git`` is read-only to a sandboxed seat by design, and
+        ``_consolidate`` extracts and commits the deliverable itself via
+        ``_commit_declared_changes`` (ed267c217 / FEAT-587). Only dispatch errors
+        are retried on a fresh seat; fidelity violations and merge conflicts are
+        preserved for the orchestrator to handle.
 
         FEAT-559: When execution_id/pool are provided, uses pool-based admission
         gating, failure classification, and healthy-model retry selection.
@@ -3182,23 +3226,23 @@ class SddCoderEngine:
         attempts.append(rec)
 
         if not err:
+            # A consolidation result is always terminal (merged, fidelity_violation,
+            # merge_conflict or failed) and belongs to the orchestrator -- never a
+            # reason to burn the second attempt on another seat. FEAT-587 retired the
+            # `dirty_task_worktree` branch that used to sit here: `_consolidate` now
+            # extracts and commits an uncommitted-but-declared delivery itself.
             result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
-            if not (result.outcome == "failed" and result.diagnostics.startswith("dirty_task_worktree:")):
-                final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
-                self._latest_attempt[task.task_id] = rec
-                await self._emit_outcome(
-                    ctx,
-                    attempt_rec=rec,
-                    task_id=task.task_id,
-                    outcome=result.outcome,
-                    conflict_file_count=len(result.conflict_files),
-                    unexpected_file_count=len(result.unexpected_files),
-                )
-                return final_result
-
-            err = result.diagnostics
-            rec = rec.model_copy(update={"error": err, "error_class": "dirty_task_worktree"})
-            attempts[-1] = rec
+            final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
+            self._latest_attempt[task.task_id] = rec
+            await self._emit_outcome(
+                ctx,
+                attempt_rec=rec,
+                task_id=task.task_id,
+                outcome=result.outcome,
+                conflict_file_count=len(result.conflict_files),
+                unexpected_file_count=len(result.unexpected_files),
+            )
+            return final_result
 
         if err:
             # FEAT-559: Classify failure and suspend model if qualifying

@@ -1,3 +1,11 @@
+---
+model: opus
+description: /sdd-task — Decompose a Spec into SDD Tasks
+# Per-task Codebase Contract, Complexity/Delegation Contract and Implementation
+# Blueprint. Pinned to opus so it neither inherits Fable 5.1 (2x the rate) nor
+# drops to sonnet for the per-edit-site verification work.
+---
+
 # /sdd-task — Decompose a Spec into SDD Tasks
 
 Decompose an approved Feature Specification into atomic, assignable implementation tasks.

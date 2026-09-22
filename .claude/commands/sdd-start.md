@@ -1,3 +1,10 @@
+---
+model: sonnet
+description: /sdd-start — Start an SDD Task
+# Implementation executor: resolves the task, checks deps, ensures the worktree and
+# writes code. Pinned so it never inherits an Opus/Fable session model.
+---
+
 # /sdd-start — Start an SDD Task
 
 Pick up a task from the SDD task index by ID or slug, validate it is ready, mark it in-progress,
