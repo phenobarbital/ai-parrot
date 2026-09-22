@@ -10,7 +10,7 @@ tags: [execution-plan, delegate, needle, llama-cpp, tool-calling, local-model]
 **Feature ID**: FEAT-590
 **Date**: 2026-09-23
 **Author**: Jesus Lara (spec drafted by Claude from `sdd/proposals/tool-call-delegate.proposal.md`)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -57,7 +57,8 @@ produce free text. It exposes exactly two verbs: `propose_call()` and
   `1 ≤ len(tools) ≤ delegate.max_tools`, side-effect policy, template references.
 - G4: An accept gate. The proposed name must be in `node.tools`, the
   arguments must validate against that tool's `args_schema`, the confidence
-  gate must pass (skipped when confidence is `None`), and the optional CEL
+  gate must pass (only when `min_confidence` is set; an unscored proposal,
+  `confidence=None`, is then **rejected**, verdict `unscored`), and the optional CEL
   `accept_when` must pass. Rejected proposals follow `on_reject`
   (`fail` | `retry_backend` | `escalate`).
 - G5: Two backends behind the same protocol: `LlamaCppDelegate` (HTTP to
@@ -294,7 +295,7 @@ See the §3 Interface Skeletons. Public entry points: `ToolCallDelegate`,
       plan_run_id: Optional[str]; node_id: str; item_index: Optional[int]
       instruction: str; facts: Dict[str, str]; tools: List[str]
       proposal: ToolCallProposal
-      verdict: Literal["accepted", "declined", "unknown_tool", "invalid_args", "low_confidence", "guard_false", "input_too_long", "side_effect_denied", "backend_error"]
+      verdict: Literal["accepted", "declined", "unknown_tool", "invalid_args", "low_confidence", "unscored", "guard_false", "input_too_long", "side_effect_denied", "backend_error"]
       final_call: Optional[Dict[str, Any]]   # {"name", "arguments"} actually dispatched, if any
       created_at: datetime
       # Bounded: string fields capped at the sink's max_field_chars with a "…[truncated]" marker
@@ -455,7 +456,9 @@ See the §3 Interface Skeletons. Public entry points: `ToolCallDelegate`,
           """resolve instruction+facts (self._resolve_args) → len check vs max_input_chars → tool_specs →
           propose_call → gate → _call_with_retry(args, index=index, tool=proposal.name).
           Gate order: declined(name None) → unknown_tool → invalid_args → side_effect_denied
-          → low_confidence (skipped when confidence is None OR min_confidence is None — see §8 Q-S8) → guard_false (accept_when).
+          → confidence gate: skipped entirely when node.min_confidence is None; otherwise
+            confidence None → `unscored` (REJECT, §8 Q-S8), confidence < min → `low_confidence`
+          → guard_false (accept_when).
           invalid_args = any key not in the tool's schema properties, missing required keys, or
           AbstractTool.validate_args(**args) raising (abstract.py:719); ToolDefinition → shape check only.
           The ORIGINAL proposal arguments (not a model dump) are dispatched, so ToolManager.execute_tool
@@ -590,8 +593,8 @@ Needle or a live `llama-server`. Live backend tests are marked
 | `test_delta_targeting_delegate_rejected` | M4 | `delta_delegate_not_repairable` |
 | `test_plan_tool_node_unchanged_after_refactor` | M5 | Existing `test_node.py` passes unmodified |
 | `test_delegate_accept_dispatches_proposed_tool` | M5 | `execute_tool` called with the proposed name/args; ArtifactRef ok |
-| `test_delegate_gate_verdicts` | M5 | declined / unknown_tool / invalid_args / low_confidence / guard_false / input_too_long each rejected with the right trace verdict |
-| `test_confidence_none_skips_gate` | M5 | Neither 0 nor 1 |
+| `test_delegate_gate_verdicts` | M5 | declined / unknown_tool / invalid_args / low_confidence / unscored / guard_false / input_too_long each rejected with the right trace verdict |
+| `test_confidence_gate_unscored` | M5 | `min_confidence=None` → gate skipped for any confidence; `min_confidence` set + `confidence=None` → rejected `unscored`, never coerced to 0 or 1 |
 | `test_on_reject_retry_backend_uses_next_delegate` | M5 | Chain hop, then fail when exhausted |
 | `test_on_reject_escalate_recorded_even_with_skip` | M5 | `escalated` count, `escalate:` prefix, status partial |
 | `test_single_node_escalate_returns_error_ref` | M5 | Not raised |
@@ -636,8 +639,9 @@ Needle or a live `llama-server`. Live backend tests are marked
   `allow_delegate_side_effects=True`.
 - [ ] AC6: Instructions over `max_input_chars` are rejected (verdict
   `input_too_long`), never truncated.
-- [ ] AC7: `confidence is None` skips the confidence gate (default pending §8 Q-S8). It is never
-  treated as 0 or 1.
+- [ ] AC7: With `min_confidence` unset, the confidence gate is skipped. With
+  it set, a proposal with `confidence is None` is rejected (verdict
+  `unscored`, then `on_reject` applies). `None` is never coerced to 0 or 1.
 - [ ] AC8: Accepted proposals are dispatched **only** through
   `ToolManager.execute_tool()`, with the node's `permission_context`, and
   stored exactly as a `PlanToolNode` stores them.
@@ -851,8 +855,10 @@ Verified against: `d689c43c8`
   non-reentrant engine until M0 measures it.
 - **5-tool ceiling.** Needle switches to retrieval above 5 tools, which makes
   it unpredictable. This is enforced statically (AC4).
-- **Fine-tuned confidence is `None`.** The gate must treat it as unavailable
-  (AC7). Whether that default should become reject-when-threshold-set is §8 Q-S8.
+- **Fine-tuned confidence is `None`.** A node that sets `min_confidence`
+  rejects unscored proposals (AC7, §8 Q-S8). Plans targeting a fine-tuned
+  backend (option B) must leave `min_confidence` unset and rely on schema
+  validation and `accept_when`. The planner rules (M8) and the docs (M9) say so.
 - **`retry_backend` and `max_tools`.** A fallback delegate whose `max_tools`
   is below `len(tools)` is skipped in the chain, not called.
 - **Trace volume.** A large `for_each` triage writes one row per item per hop.
@@ -877,7 +883,7 @@ Verified against: `d689c43c8`
 - [x] Should the spike be the first task of FEAT-590 or a separate experiment? — *Resolved during /sdd-spec*: First task (M0). It gates only M6/M7/M9 (AC1).
 - [x] How does a delegate node enter the plan language? — *Resolved during /sdd-spec*: A discriminated union with a callable discriminator defaulting to `tool`, and `PlanNode.type` excluded from the dump.
 - [x] What does `on_reject="escalate"` do? — *Resolved during /sdd-spec*: It records the item in the manifest (`escalate:` error prefix, `ArtifactRef.escalated`, status partial/error). There is no automatic replan, and delegate nodes are not repair-eligible in v1.
-- [ ] **Q-S8 (from design research S8)**: When `min_confidence` is set and a backend returns `confidence=None` (fine-tuned Needle), should the proposal be accepted (the proposal §A.6 rule this spec encodes today: "gate not available") or rejected by default, with an explicit opt-in such as `on_unscored: "accept"` or backend agreement? — *Owner: Jesus Lara*. It blocks the M5 gate default. The M0 decision (option A/B/C) informs it.
+- [x] **Q-S8 (from design research S8)**: When `min_confidence` is set and a backend returns `confidence=None`, accept or reject? — *Resolved by Jesus Lara, 2026-09-23*: **reject when a threshold is set** (verdict `unscored`). With no threshold, the gate is skipped. This supersedes proposal §A.6's "gate not available" rule.
 - [ ] Is the Epson 5–15% residue estimate based on observed data? — *Owner: Jesus Lara*. It doesn't block the architecture. It sets the value of the first application (proposal §A.8).
 - [ ] Should the delegate support standalone use outside execution plans (AgentCrew, ad-hoc triage)? — *Owner: Jesus Lara*. v1 is plan-only, and the protocol is kept plan-agnostic so it can be added later without changes.
 
@@ -898,7 +904,7 @@ Verified against: `d689c43c8`
 | S5 | One runtime arg-validation contract (api) | CONFIRM | Uses `validate_args` (abstract.py:719) + unknown-key rejection, and dispatches the original args once via the manager | M5, AC9b |
 | S6 | Side-effect policy from host config + re-check at dispatch (risk) | CONFIRM | Host flag already in design; added the runtime `side_effect_denied` re-check | M5, AC9c |
 | S7 | Rejection/escalation as persisted outcomes (risk) | CONFIRM | Made "intentionally terminal" explicit; verified partial is not repair-eligible (repair.py:49-60) | M5, §2 |
-| S8 | `confidence=None` must not silently bypass a set threshold (risk) | ESCALATE | Contradicts proposal §A.6 ("gate not available"); the exploration doc is authoritative, so the user decides | §8 Q-S8 |
+| S8 | `confidence=None` must not silently bypass a set threshold (risk) | ESCALATE → resolved | Escalated because it contradicts proposal §A.6; the user chose reject-when-threshold-set | §8 Q-S8, M5, AC7 |
 | S9 | Bounded, redacted traces kept out of checkpoints (risk) | CONFIRM | Opt-in sink, `max_field_chars`, `redact` hook, never in context/checkpoint | M1, AC10 |
 | S10 | Separate backends; no llama-cpp-python; picklable worker (alternative) | CONFIRM | Already HTTP-only; added the top-level picklable worker for the process executor | M6, M7 |
 | S11 | Adversarial boundary tests (testing) | CONFIRM | Added never-dispatch-on-reject, extra-keys, re-check and checkpoint-hygiene tests | §4 |
@@ -940,3 +946,4 @@ Summary: **11** confirmed · **0** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-23 | Jesus Lara / Claude | Initial draft from the FEAT-590 proposal; 3 open questions resolved at spec time; codex design research folded in (11 confirmed, 1 escalated) |
+| 0.2 | 2026-09-23 | Jesus Lara | Q-S8 resolved: reject unscored proposals when `min_confidence` is set; status → approved |
