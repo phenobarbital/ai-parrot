@@ -96,7 +96,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -106,8 +106,8 @@
       "parallelism_notes": "Modifies artifacts/laya/worker.py created by TASK-3608 (same file, serialized): inserts check_context_budget above LayaPredictor and wires serve()/predict().",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3609-laya-context-budget-preflight.md"
+      "completed_at": "2026-09-22T12:04:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3609-laya-context-budget-preflight.md"
     },
     {
       "id": "TASK-3610",

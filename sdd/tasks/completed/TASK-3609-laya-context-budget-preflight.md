@@ -240,10 +240,12 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (google-compat, model=gemini-3.5-flash, attempt_uid=a9a37e9884ba46ec9ff08e4cf5d035d3), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Added `ContextOverflow` and `check_context_budget` to `artifacts/laya/worker.py`, wired into
+`LayaPredictor.predict()` and `serve()`'s exception mapping so an oversized request becomes
+`error_code="context_overflow"` rather than a silent truncation, per spec §3 Module 2. Clean delivery,
+correctly force-added. Merge-tier validation: 71/71 passed, 1 skipped (unrelated benchmarks-import
+sys.path quirk). No corrections needed.
 
 **Deviations from spec**: none
