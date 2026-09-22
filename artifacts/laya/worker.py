@@ -293,7 +293,9 @@ def load_predictor(checkpoint: str, revision: str) -> tuple[LayaPredictor, dict[
         checkpoint, device="cpu"
     )  # exact kwargs per installed laya.Agent.__init__ — bounded by spec §7 "explicit CPU device and local snapshot"
     load_ms = (time.perf_counter() - t0) * 1000.0
-    max_input_tokens = agent.max_input_tokens  # read the tokenizer/model max length from the loaded agent — bounded by spec §3 M2 "checkpoint's actual limits"
+    max_input_tokens = (
+        agent.max_input_tokens
+    )  # read the tokenizer/model max length from the loaded agent — bounded by spec §3 M2 "checkpoint's actual limits"
     ready = {
         "checkpoint_path": checkpoint,
         "checkpoint_revision": revision,
