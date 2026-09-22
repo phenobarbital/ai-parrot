@@ -172,6 +172,7 @@ class PlanogramComplianceHandler(BaseView):
                     "content_type": content_type,
                     "assessment_status": result.get("assessment_status"),
                     "coverage": result.get("coverage"),
+                    "detected_products": result.get("detected_products", 0),
                     "errors": list(result.get("errors") or []),
                 }
 

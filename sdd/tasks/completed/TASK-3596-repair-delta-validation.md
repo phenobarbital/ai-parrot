@@ -271,10 +271,25 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: native / sonnet (sdd-coder subagent), attempt_uid `3b5feabc1ffb4d9a942fdbb877bce624`
+**Date**: 2026-09-22
 **Notes**:
+- Delivered exactly the 2 scoped files: `repair.py` (`eligible_repair_nodes`,
+  `protected_node_ids`, `merge_delta`, `validate_delta`) and `test_delta_validation.py`.
+  No out-of-scope files; `sdd/` untouched.
+- **Real local test evidence** (this worktree's compiled `.so` extensions were available to
+  the native coder): `pytest test_delta_validation.py -q` → 16 passed; regression check
+  `pytest test_catalog.py -q` → 10 passed; ruff clean after fixing one self-introduced F841.
+  Covers all 7 `validate_delta` issue codes, the D2 partial-is-not-error guard, R5
+  dependency-on-omitted-success, and allowlist-intersection-never-widened.
+- Coder self-checked all 3 prior feedback patterns; none applicable (explicit status-literal
+  branching not hasattr duck-typing; no filesystem paths touched; `merge_delta`'s only side
+  effect — raise on unknown id, never append/drop — verified to match its own docstring
+  contract, and `validate_delta` never calls `merge_delta` when toolkit-invariant issues
+  exist, so an unvalidated delta can never reach the frozen validator).
+- Merge-tier `coder_run_validation` for this chunk (see TASK-3594's Completion Note) settled
+  `outcome=timed_out` on the same established pre-existing pattern; no failure relates to
+  `repair.py`. This task's own real local run (above) is the stronger evidence for its
+  correctness.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

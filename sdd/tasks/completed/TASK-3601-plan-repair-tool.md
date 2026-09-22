@@ -298,10 +298,11 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestration (native Claude Sonnet 5 agent, subagent id ab927f963824f46cf, attempt_uid=117620740abb4664b5108efecc5ff1f6)
+**Date**: 2026-09-22
+**Notes**: Clean delivery — 8/8 own tests pass (`test_runtime_repair.py`), dependency suites (`test_delta_validation.py`, `test_delta_planner.py`) pass. Merged commit-clean (lint residual_count=0). Review recorded (coder-review:c602035c90c9217cd92c2fc6), no fix commits needed.
+The coder independently identified and correctly worked around the known, ledger-filed pre-existing blocker (`issue:7552079c55a1`) — did not attempt to fix `flow.py`, left `test_checkpoint_resume.py` untouched, and confirmed the two known failures reproduce exactly as predicted. It also caught and fixed a real bug in the task's own blueprint pseudocode: `_reconcile_lineage`'s described check (`run.metadata.active_child_run_id`) can never be truthy after `PlanRunResolver.resolve()` (which always returns the terminal-most leaf's own metadata — that's its own exit condition), so the coder substituted the working-equivalent signal `run.metadata.parent_run_id is not None and run.status == "running"`, verified via its own test.
+Local verification (this session): full `tests/tools/execution_plan/` → 170 passed, 5 failed — all 5 failures are the SAME pre-existing ledger-issue:7552079c55a1 symptom already documented on TASK-3600/TASK-3602 (2 in `test_checkpoint_resume.py`, 3 in `test_integration_recovery.py`); no new regressions from this task.
+Merge-tier validation launched (`102a3ed1-a205-40ff-837e-79b1e65a0b93:TASK-3601:merge`); expected to follow the established baseline pattern.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: the `_reconcile_lineage` signal substitution above (functionally equivalent, verified by test) and the manual lease-ownership pattern (matching `plan_resume`'s own established idiom, avoiding a double-`__aexit__` that a literal `async with PlanContinuation(...)` would cause) — both corrections to the blueprint's shorthand pseudocode, not deviations from the task's ordered contract or acceptance criteria.

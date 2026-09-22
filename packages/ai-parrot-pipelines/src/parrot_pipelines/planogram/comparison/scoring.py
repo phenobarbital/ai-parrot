@@ -34,7 +34,14 @@ _DEFAULT_VISUAL_WEIGHT = 0.2
 _DEFAULT_TEXT_WEIGHT = 0.1
 _HEADER_VISUAL_SHARE = 0.2  # header/endcap: visual weight = endcap.product_weight * 0.2 (today's rule)
 
-_RESOLVED = {FacingStatus.MATCH, FacingStatus.MISPLACED, FacingStatus.MISMATCH, FacingStatus.EMPTY}
+_RESOLVED = {
+    FacingStatus.MATCH,
+    FacingStatus.MISPLACED,
+    FacingStatus.MISMATCH,
+    FacingStatus.EMPTY,
+    FacingStatus.INFERRED_PRESENT,
+    FacingStatus.VARIANT_UNRESOLVED,
+}
 _OCCUPIED = {
     FacingStatus.MATCH,
     FacingStatus.MISPLACED,
@@ -133,6 +140,7 @@ def _ref(obs: Identification) -> ObservationRef:
         source=obs.source,
         raw_confidence=obs.raw_confidence,
         product=obs.product,
+        occupancy=obs.occupancy,
     )
 
 
@@ -361,7 +369,9 @@ def score_shelves(
         lenient_term = facing_lenient if count else zone_score
         resolved = sum(1 for p in facings if policy.is_resolved(p.status))
         visible = sum(1 for p in facings if p.status != FacingStatus.NOT_VISIBLE)
-        occupied = sum(1 for p in facings if p.status in _OCCUPIED)
+        occupied = sum(
+            1 for p in facings if p.status in _OCCUPIED or any(o.occupancy == "occupied" for o in p.observations)
+        )
         rule_results = [
             outcomes[b.rule_id]
             for b in shelf_bindings
@@ -378,6 +388,7 @@ def score_shelves(
                 lenient_score=_combine(lenient_term, text_score, visual_score, (wp, wt, wv), multiplier),
                 coverage=resolved / count if count else 1.0,
                 visible_fraction=visible / count if count else 0.0,
+                occupied_facings=occupied,
                 occupied_fraction=occupied / count if count else 0.0,
                 rule_results=rule_results,
             )
@@ -419,6 +430,7 @@ def summarize(
         strict_compliance_score=strict,
         overall_compliant=False,
         coverage=coverage,
+        detected_products=sum(score.occupied_facings for score in shelf_scores),
         definition_coverage=definition_coverage(definition)[0],
         evidence_quality=evidence_quality,
         assessment_status=AssessmentStatus.COMPLETE if complete else AssessmentStatus.INCONCLUSIVE,

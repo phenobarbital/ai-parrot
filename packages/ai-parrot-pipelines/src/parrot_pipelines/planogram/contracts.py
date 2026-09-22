@@ -174,6 +174,7 @@ class ObservationRef(BaseModel):
     source: ObservationSource
     raw_confidence: float = 0.0
     product: Optional[str] = None
+    occupancy: str = "unknown"
 
 
 class RuleOutcome(BaseModel):
@@ -212,6 +213,7 @@ class ShelfScore(BaseModel):
     lenient_score: float = 0.0  # shelf_compliance(s, lenient)
     coverage: float = 0.0
     visible_fraction: float = 0.0
+    occupied_facings: int = 0  # unique merged expected facings with any occupied observation
     occupied_fraction: float = 0.0
     rule_results: List[RuleOutcome] = Field(default_factory=list)
 
@@ -246,19 +248,18 @@ class CreditPolicy(BaseModel):
 
     @classmethod
     def default(cls) -> "CreditPolicy":
-        """The provisional table of spec §2."""
-        lenient_boosted = {
-            FacingStatus.MISPLACED,
-            FacingStatus.VARIANT_UNRESOLVED,
-            FacingStatus.INFERRED_PRESENT,
-        }
+        """Default credits: presence at the expected slot is a full lenient match."""
+        partial_lenient = {FacingStatus.MISPLACED}
         strict: Dict[FacingStatus, float] = {}
         lenient: Dict[FacingStatus, float] = {}
         for status in FacingStatus:
             if status is FacingStatus.MATCH:
                 strict[status] = 1.0
                 lenient[status] = 1.0
-            elif status in lenient_boosted:
+            elif status in {FacingStatus.INFERRED_PRESENT, FacingStatus.VARIANT_UNRESOLVED}:
+                strict[status] = 0.0
+                lenient[status] = 1.0
+            elif status in partial_lenient:
                 strict[status] = 0.0
                 lenient[status] = 0.5
             else:
@@ -267,12 +268,14 @@ class CreditPolicy(BaseModel):
         return cls(strict=strict, lenient=lenient)
 
     def is_resolved(self, status: FacingStatus) -> bool:
-        """True for MATCH, MISPLACED, MISMATCH, EMPTY — the statuses that count for coverage."""
+        """Whether occupancy/compliance was resolved for coverage."""
         return status in {
             FacingStatus.MATCH,
             FacingStatus.MISPLACED,
             FacingStatus.MISMATCH,
             FacingStatus.EMPTY,
+            FacingStatus.INFERRED_PRESENT,
+            FacingStatus.VARIANT_UNRESOLVED,
         }
 
 
@@ -299,6 +302,7 @@ class ComparisonResult(BaseModel):
     strict_compliance_score: Optional[float] = None
     overall_compliant: bool = False
     coverage: Optional[float] = None
+    detected_products: int = 0  # sum of unique occupied facings across shelves
     definition_coverage: Optional[float] = None
     evidence_quality: Optional[float] = None
     assessment_status: AssessmentStatus = AssessmentStatus.INCONCLUSIVE

@@ -11,7 +11,7 @@ from .abstract import AbstractTool, ToolResult, _run_tool_output_guardrails
 from .compression import CompressionStage, CompressorRegistry
 from .compression import (
     codecs as _compression_codecs,
-)  # noqa: F401 — import side effect: registers built-in codecs (json_compact, ...) before CompressorRegistry.load() validates the core manifest below
+)  # noqa: F401 - import side effect: registers built-in codecs before CompressorRegistry.load()
 from .compression.budget import BudgetRouter
 from .compression.tee import CompressionTee
 from .mcp_mixin import MCPToolManagerMixin
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from ..auth.resolver import AbstractPermissionResolver
     from ..auth.grants import GrantGuard
     from ..auth.confirmation import ConfirmationGuard
+    from .toolkit import AbstractToolkit
 
 
 @dataclass(slots=True)
@@ -47,6 +48,28 @@ class ToolNameCollisionError(ValueError):
     tools fall back to the previous warn-and-skip behaviour to avoid
     breaking untouched toolkits during the migration.
     """
+
+
+def get_toolkit_owner(tool: Any) -> Optional["AbstractToolkit"]:
+    """Return the toolkit that owns ``tool``, or ``None``.
+
+    A toolkit is reachable two ways: it is registered directly (``tool`` IS
+    an ``AbstractToolkit``), or one of its methods is registered as a
+    ``ToolkitTool`` whose ``bound_method.__self__`` is the owner. Anything
+    else (plain ``AbstractTool``, ``ToolDefinition``, ``None``) has no owner.
+
+    Args:
+        tool: Any object a ``ToolManager`` iterable may yield.
+
+    Returns:
+        The owning ``AbstractToolkit`` instance, or ``None``.
+    """
+    from .toolkit import AbstractToolkit as _AbstractToolkit
+
+    if isinstance(tool, _AbstractToolkit):
+        return tool
+    owner = getattr(getattr(tool, "bound_method", None), "__self__", None)
+    return owner if isinstance(owner, _AbstractToolkit) else None
 
 
 class ToolFormat(Enum):
@@ -156,7 +179,7 @@ class ToolSchemaAdapter:
                     obj["additionalProperties"] = False
 
                 # Recursively clean nested objects
-                for key, value in obj.items():
+                for _key, value in obj.items():
                     remove_unsupported_constraints(value)
             elif isinstance(obj, list):
                 for item in obj:
@@ -2586,7 +2609,7 @@ class ToolManager(MCPToolManagerMixin):
         from .working_memory import WorkingMemoryToolkit
 
         for tool in self._tools.values():
-            owner = getattr(getattr(tool, "bound_method", None), "__self__", None)
+            owner = get_toolkit_owner(tool)
             if isinstance(owner, WorkingMemoryToolkit):
                 return owner
         return None

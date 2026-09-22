@@ -331,10 +331,47 @@ See the CREATE block above — it is the scaffold. Add one test asserting
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (resumed interrupted session; original implementation by a prior
+coder attempt, merged as commits 740673155/6ac1efbcc/b651dac05 before this session began)
+**Date**: 2026-09-22
 **Notes**:
+- Implementation verified by hand against this task's Codebase Contract and Implementation
+  Blueprint: `get_toolkit_owner()` added to `tools/manager.py`, `_find_working_memory_toolkit`
+  routed through it, `BasicAgent._iter_toolkit_owners()` added and used by both
+  `_adopt_task_memory_from_toolkits` / `_inject_answer_memory_into_toolkits` with `id(owner)`
+  dedup — matches the blueprint exactly, no deviations.
+- **Regression found and fixed in this session**: the engine's automatic `ruff check --fix`
+  (commit `6ac1efbcc`) removed a required side-effect import in `manager.py`
+  (`from .compression import codecs as _compression_codecs`) because its `# noqa: F401` sat on
+  the closing paren of a multi-line import, a line ruff's F401 diagnostic does not bind to.
+  This silently broke `CompressorRegistry.load()` (`ValueError: Unknown codec 'columnar' ...
+  (known: <none registered>)`) for every caller constructing `ToolManager()` — confirmed via
+  `ai-parrot-client-anthropic`'s suite (12 failed -> 13 passed after the fix). Fixed in commit
+  `9be7b1b51` by restoring the import as a single line with the noqa on the same line (mirrors
+  `tools/compression/codecs/__init__.py`'s own idiom).
+- **Validation status**: the required merge-tier `coder_run_validation` (tier=merge) was run
+  twice. It genuinely settled with `outcome=timed_out` (900s budget) — never treated as green.
+  Before timing out it exercised ~20 of ~24 workspace distributions in full: `ai-parrot-advisors`
+  (6 passed), `ai-parrot-client-amazon` (69 passed), `ai-parrot-client-anthropic` (13 passed,
+  post-fix), `ai-parrot-client-gemma4`/`-google` (208 passed, 8 pre-existing unrelated
+  `test_reel_assembly.py` video-encoding failures)/`-groq`/`-hf`/`-local`/`-meta`/`-moonshot`/
+  `-nvidia`/`-openai` (54 passed)/`-openrouter`/`-vllm`/`-zai`, `ai-parrot-embeddings`
+  (213 passed, 1 pre-existing unrelated namespace-surface failure), and part of
+  `ai-parrot-integrations`. Every observed failure across the whole run (video reel assembly,
+  a grok client `NameError: chat_kwargs`, jev entry-points, embeddings namespace drift,
+  assorted integrations tests) is pre-existing and unrelated to this task's files
+  (`tools/manager.py`, `bots/agent.py`) — confirmed by identical failure sets before and after
+  the codec fix, and by none of them touching toolkit-owner discovery or working-memory
+  injection. The `ai-parrot` distribution's own pytest run could not execute any test at all
+  (25 pre-existing, unrelated collection errors abort the whole session before test execution
+  — a known separate environment issue, e.g. `test_expense_approval.py`,
+  `test_marketnews_tool.py`), so this task's own new `test_toolkit_owner.py` could not be
+  proven to pass by the merge-tier run either; it was reviewed by hand against the Test
+  Specification and matches AC-1..AC-4 exactly (five cases: direct instance, wrapped method,
+  unrelated object, duplicate-wrapper dedup, explicit-binding preserved).
+- Local `pytest` execution is blocked by a pre-existing, documented environment issue
+  (`ModuleNotFoundError: No module named 'parrot.utils.types'` — navigator-session version
+  mismatch in this machine's `.venv`), unrelated to this feature.
 
-**Deviations from spec**: none
+**Deviations from spec**: none. Codec-registration regression fix (commit `9be7b1b51`) is an
+engine-lint-autofix correction, not a spec deviation.
