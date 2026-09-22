@@ -134,7 +134,7 @@ async def test_large_fanout_restart_preserves_skip_existing() -> None:
                 store_as="item_{index}",
                 depends_on=["list"],
                 args={"item": "{item}"},
-                for_each=ForEach(source="{artifacts.list_out}", select="items[]", skip_existing=True),
+                for_each=ForEach(source="{artifacts.list}", select="items[]", skip_existing=True),
             ),
         ],
     )
