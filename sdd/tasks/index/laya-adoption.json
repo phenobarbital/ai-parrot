@@ -116,7 +116,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -128,8 +128,8 @@
       "parallelism_notes": "Imports EvaluationConfig/PredictionRequest/PredictionResult from TASK-3605 and validate_answers from TASK-3606 (artifacts/laya/models.py); launches `-m artifacts.laya.worker` with the argparse flags TASK-3608 defines (artifacts/laya/worker.py) and parses its ready/result records.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3610-laya-runtime-transport.md"
+      "completed_at": "2026-09-22T12:04:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3610-laya-runtime-transport.md"
     },
     {
       "id": "TASK-3611",

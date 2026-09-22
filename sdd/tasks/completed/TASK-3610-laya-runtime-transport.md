@@ -420,10 +420,16 @@ See the CREATE block above. Wrap the whole file in a 60 s per-test budget
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (nova, model=zai.glm-4.7-flash, attempt_uid=1687128551fe4f2c9a18a43f06c4d538, attempt 2 after codex-spark attempt 1 failed on an infra error — model not supported for this ChatGPT account), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `artifacts/laya/runtime.py` with `LayaWorker` (`__aenter__`/`predict`/`__aexit__`),
+`ReadyRecord` and `WorkerStartupError`, plus a fake-protocol-child test suite covering ready/ok, startup
+timeout, inference timeout + reap, stderr noise retention, mismatched request id, and cancellation.
+Merge-tier validation initially failed (1 failed, 70 passed):
+`test_missing_worker_module_is_worker_failed_startup` wrapped `LayaWorker`'s raising `__aenter__` OUTSIDE
+`pytest.raises`, with a redundant unreachable inner `async with w:` inside it. Orchestrator fixed the
+test structure to match the sibling `test_startup_timeout_terminates_child` pattern (commit
+cec98db6239392cebd8caa9e4ed435ac12b83034). Recorded as model feedback
+(coder-feedback:df1d248582fc81949fb84873). Full suite then 71/71 passed, 1 skipped.
 
 **Deviations from spec**: none
