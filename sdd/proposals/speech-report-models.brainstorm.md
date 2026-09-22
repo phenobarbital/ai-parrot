@@ -54,7 +54,8 @@ for the Gemini calls.
   Non-default backends in `script` mode **force a single narrator** (the script
   is requested with 1 speaker).
 - **Output format** (decided): **backend-native**. Supertonic gives WAV, Polly
-  gives MP3 (or OGG), Gemini gives WAV. The file extension follows the actual
+  gives MP3 (or OGG), Gemini gives WAV (raw PCM wrapped in a WAV header, the one
+  exception). The file extension follows the actual
   format. The return dict keeps its shape (`script_path`, `podcast_path`).
 - **Dependency direction** (decided): core `ai-parrot` must not hard-depend on
   `ai-parrot-integrations`. `parrot.voice.tts` is **imported lazily** only when a
@@ -236,17 +237,23 @@ The result is the same dict as today:
    - `script` mode: build `ConversationalScriptConfig` as today. For non-Gemini
      backends, pass `num_speakers=1`. Call `client.create_conversation_script`
      and save the script.
-   - `verbatim` mode: use the report text, optionally lightly normalised
-     (strip markdown). Skip `self.client` entirely.
+   - `verbatim` mode: use the report text, normalised (markdown stripped), and
+     save it to `generated_scripts/` as the `script_path`. Skip `self.client`
+     entirely.
+   - For non-Gemini backends, markdown normalisation applies in both modes.
 3. **Audio stage**
    - `gemini`: the existing `client.generate_speech(prompt_data, output_directory)`.
    - Any other backend: lazily import `parrot.voice.tts`, build a `TTSConfig`,
-     `await VoiceSynthesizer(cfg).synthesize(text, language=...)`, and write the
-     bytes to `podcasts/<name>.<ext>`, where `ext` comes from `mime_format`.
-     `close()` the synthesizer in `finally`.
+     fetch the synthesizer from a **process-wide cache** keyed by that config
+     (built lazily under an `asyncio.Lock`, so the Supertonic ONNX model loads
+     once per process), `await synth.synthesize(text, language=...)`, and write
+     the bytes to `podcasts/<name>.<ext>`, where `ext` comes from `mime_format`.
 4. **Polly backend**: `aioboto3` session → `polly.synthesize_speech(Text=...,
-   OutputFormat="mp3"|"ogg_vorbis"|"pcm", VoiceId=..., Engine="neural"|
-   "generative"|"long-form", LanguageCode=...)`, then `await AudioStream.read()`.
+   OutputFormat="mp3"|"ogg_vorbis"|"pcm", VoiceId=..., Engine="long-form"
+   (default) | "generative" | "neural", LanguageCode=...)`, then
+   `await AudioStream.read()`. The region is configurable and defaults to one
+   where long-form exists (us-east-1). The default voice comes from the
+   long-form set.
    Text longer than the per-request limit is chunked on sentence boundaries and
    the MP3/OGG frames are concatenated in order.
 5. Replace the stray `print("✅ Multi-voice ...")` at `agent.py:678` with
@@ -254,23 +261,27 @@ The result is the same dict as today:
 
 ### Edge Cases & Error Handling
 
+- **No fallback**: any non-default backend failure raises; it never silently
+  falls back to Gemini.
 - **`parrot.voice.tts` not installed**: raise an `ImportError` naming
   `ai-parrot-integrations[voice-supertonic]` / `[voice-polly]`. `_generate_report`
   already catches and logs podcast failures (`agent.py:744`).
 - **Supertonic weights missing** (`SUPERTONIC_MODEL_PATH` unset or the directory
-  is absent): surface the backend's error. There is no silent fallback to Gemini
-  (open question).
+  is absent): surface the backend's error. There is no fallback to Gemini.
 - **Gemini PCM**: `GoogleTTSBackend` returns raw PCM (24 kHz mono s16le) under the
-  requested `mime_format`. We must wrap it in WAV, otherwise the "native" file is
-  unplayable.
+  requested `mime_format`. It is wrapped in a WAV header (decided), and the
+  backend reports `audio/wav` truthfully.
 - **Polly credentials**: Polly cannot use a Bedrock bearer token
   (`AWS_BEARER_TOKEN_BEDROCK`). It needs IAM keys, a profile or a role. Fail
   with a clear message.
-- **Polly long-form engine** exists only in some regions and voices. If the
-  engine/voice/region combination is invalid, report the AWS error unchanged.
+- **Polly long-form engine** (the default) exists only in some regions and
+  voices. If the engine/voice/region combination is invalid, report the AWS
+  error unchanged. Chunks are synthesised sequentially and joined in order, and
+  a failed chunk fails the whole report.
 - **Empty report**: `ValueError` from the backend, the same contract as today.
-- **Supertonic first-call latency**: the ONNX load is heavy, so the synthesizer
-  should be cached per agent instead of rebuilt per call (open question).
+- **Supertonic first-call latency**: the ONNX load is heavy. The process-wide
+  cache means it happens once per process, and concurrent first calls wait on
+  the same lock instead of loading the model twice.
 - **Language**: pass `speech_language` through. Supertonic and Polly voices are
   language-specific, and a mismatched voice/language pair is a configuration
   error.
@@ -296,7 +307,8 @@ The result is the same dict as today:
 | `parrot/bots/agent.py` `BasicAgent.speech_report` | modifies | new kwargs/attrs; default path unchanged |
 | `parrot/bots/agent.py` `_generate_report` (L714) | depends on | inherits attribute defaults, no signature change |
 | `parrot/bots/product.py` (L160) | depends on | same as above |
-| `parrot/voice/tts/models.py` `TTSConfig` | extends | `backend` Literal += `"polly"`; Polly engine/format fields |
+| `parrot/voice/tts/models.py` `TTSConfig` | extends | `backend` Literal += `"polly"`; Polly `engine` (default `long-form`) / `region` fields |
+| `parrot/voice/tts/google_backend.py` | modifies | wrap raw PCM in WAV; truthful `mime_format` (check Telegram caller expectations) |
 | `parrot/voice/tts/synthesizer.py` | extends | `_get_backend` branch for `"polly"` |
 | `parrot/voice/tts/polly_backend.py` | new | `AmazonPollyTTSBackend(AbstractTTSBackend)` |
 | `ai-parrot-integrations/pyproject.toml` | extends | new extra `voice-polly = ["aioboto3>=13.2.0"]`, added to `all` |
@@ -458,10 +470,11 @@ from parrot.models.outputs import SpeakerConfig, SpeechGenerationPrompt    # use
 - [x] Dependency direction — *Owner: Jesus*: lazy import of `parrot.voice.tts` with a clear ImportError naming the extra.
 - [x] Multi-voice on non-Gemini backends — *Owner: Jesus*: force a single narrator.
 - [x] Output format — *Owner: Jesus*: backend-native (extension follows `mime_format`).
-- [ ] Flag value naming: user said `aws_nova` but the engine is Polly. Use `aws_polly` (recommended; no alias, since hard cuts are OK), or keep `aws_nova` as the public name? — *Owner: Jesus*
-- [ ] Gemini raw PCM: accept the WAV wrap as the one exception to "backend-native", or route `google_tts` through `generate_speech(output_directory=...)`, which already writes WAV? — *Owner: Jesus*
-- [ ] `verbatim` mode `script_path`: save the (normalised) report text as the script file, or return `None`? — *Owner: Jesus*
-- [ ] Supertonic model reuse: cache a `VoiceSynthesizer` on the agent (lazy, closed on agent shutdown) versus build and close per call (simpler, reloads ONNX each report)? — *Owner: Jesus*
-- [ ] Polly long text: chunk + concatenate `synthesize_speech` calls (sync, simple) versus `StartSpeechSynthesisTask` to S3 (async job, needs a bucket)? Default engine `long-form` versus `neural`/`generative`? — *Owner: Jesus*
-- [ ] Failure policy: should a non-default backend failure fall back to the Gemini path, or fail (logged by `_generate_report`)? — *Owner: Jesus*
-- [ ] Markdown normalisation in `verbatim` mode (strip headings, tables and links before TTS): in scope? — *Owner: Jesus*
+- [x] Flag value naming — *Owner: Jesus*: `aws_polly` (no `aws_nova` alias). Full set: `gemini` (default) | `google_tts` | `supertonic` | `aws_polly`.
+- [x] Gemini raw PCM — *Owner: Jesus*: wrap the PCM (24 kHz mono s16le) in a WAV header. This is the one documented exception to "backend-native". `GoogleTTSBackend` is also fixed so `SynthesisResult.mime_format` reports what it actually returns.
+- [x] `verbatim` mode `script_path` — *Owner: Jesus*: save the exact (normalised) text sent to TTS under `generated_scripts/`, so the audio stays auditable.
+- [x] Synthesizer reuse — *Owner: Jesus*: a **process-wide cache** keyed by the effective backend config (backend, voice, language, format and backend knobs), shared across agents and built lazily under an `asyncio.Lock`. This is the same idea as the shared pipeline in `liveavatar/voice_provider.py`. Closing at process shutdown is best-effort.
+- [x] Polly long text — *Owner: Jesus*: chunk on sentence boundaries under the per-request limit, call `synthesize_speech` once per chunk in order, and join the MP3/OGG frames. No S3 task and no bucket.
+- [x] Default Polly engine — *Owner: Jesus*: `long-form`. Caveat: it is only available in some regions (us-east-1) and supports only a few voices (e.g. Danielle, Gregory, Ruth, Patrick). The default voice must come from that set and the region must be configurable. Other engines (`generative`/`neural`) remain selectable.
+- [x] Failure policy — *Owner: Jesus*: fail and never fall back to Gemini. `_generate_report` already logs the error and continues without a podcast.
+- [x] Markdown normalisation — *Owner: Jesus*: yes, in **both** modes, for the non-Gemini backends: strip headings, emphasis, links (keep the text), code fences and inline code; drop or flatten tables. The default Gemini multi-speaker path is unchanged.
