@@ -131,7 +131,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -141,8 +141,8 @@
       "parallelism_notes": "Appends LeaseDelegatingStore / PlanContinuation / degraded_lock to checkpoint.py created by TASK-3594 (same file → serialized); imports select_latest from runs.py (transitively via TASK-3594).",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3595-plan-continuation-lease.md"
+      "completed_at": "2026-09-22T12:35:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3595-plan-continuation-lease.md"
     },
     {
       "id": "TASK-3596",
@@ -172,7 +172,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Imports PlanDelta from TASK-3590 (models.py); its tests import ScriptedPlannerClient from TASK-3593's _recovery_fakes.py. Sole writer of execution_plan/planner.py for this feature.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3597-planner-replan.md"
+      "completed_at": "2026-09-22T12:35:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3597-planner-replan.md"
     },
     {
       "id": "TASK-3598",
