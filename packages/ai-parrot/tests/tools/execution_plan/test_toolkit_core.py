@@ -5,6 +5,7 @@ TASK-2180 scope: constructor wiring, `_run_plan`, `plan_status`,
 (`plan_execute`/`plan_validate`) is TASK-2184 — these tests call
 `_run_plan` directly with programmatically built `ExecutionPlan`s.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,7 +41,9 @@ class _FakeToolManager:
         return list(self._tools)
 
     async def execute_tool(
-        self, tool_name: str, parameters: Dict[str, Any],
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
         permission_context: Optional[Any] = None,
     ) -> Any:
         self.calls.append((tool_name, dict(parameters)))
@@ -68,7 +71,8 @@ def _single_node_plan(tool: str = "fast", node_id: str = "n1") -> ExecutionPlan:
 class TestExecutorPath:
     async def test_toolkit_constructible_with_only_required_deps(self, wm_toolkit):
         toolkit = ExecutionPlanToolkit(
-            tool_manager=_FakeToolManager({}), working_memory=wm_toolkit,
+            tool_manager=_FakeToolManager({}),
+            working_memory=wm_toolkit,
         )
         assert toolkit.soft_timeout == 60.0
         assert toolkit.allowed_tools is None
@@ -77,7 +81,9 @@ class TestExecutorPath:
     async def test_manifest_within_soft_timeout(self, wm_toolkit):
         manager = _FakeToolManager({"fast": {"x": 1}})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=5.0,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=5.0,
         )
         plan = _single_node_plan(tool="fast")
 
@@ -91,7 +97,9 @@ class TestExecutorPath:
     async def test_soft_timeout_returns_running_summary_and_completes(self, wm_toolkit):
         manager = _FakeToolManager({"slow": {"ok": True}}, delays={"slow": 0.3})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=0.01,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=0.01,
         )
         plan = _single_node_plan(tool="slow")
 
@@ -115,7 +123,9 @@ class TestExecutorPath:
 
         manager = _FakeToolManager({"listing": {"keys": ["a", "b"]}, "get": get})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=5.0,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=5.0,
         )
         plan = ExecutionPlan(
             name="partial-plan",
@@ -123,8 +133,11 @@ class TestExecutorPath:
             nodes=[
                 PlanNode(id="listing", tool="listing", store_as="listing"),
                 PlanNode(
-                    id="fetch", tool="get", args={"key": "{item}"},
-                    store_as="report_{index}", depends_on=["listing"],
+                    id="fetch",
+                    tool="get",
+                    args={"key": "{item}"},
+                    store_as="report_{index}",
+                    depends_on=["listing"],
                     for_each=ForEach(source="{artifacts.listing}", select="keys[]"),
                 ),
             ],
@@ -135,9 +148,7 @@ class TestExecutorPath:
         assert result.status == "success"
         assert result.result["nodes_failed"] >= 1
 
-    async def test_hard_failed_node_downstream_dependent_shows_as_error(
-        self, wm_toolkit
-    ):
+    async def test_hard_failed_node_downstream_dependent_shows_as_error(self, wm_toolkit):
         """A hard (non-`for_each`) node failure must not silently drop its
         downstream dependent from the manifest — every plan node must be
         accounted for, even one the scheduler never dispatched."""
@@ -147,7 +158,9 @@ class TestExecutorPath:
 
         manager = _FakeToolManager({"fail_tool": fail, "ok_tool": {"ok": True}})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=5.0,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=5.0,
         )
         plan = ExecutionPlan(
             name="linear-hard-failure",
@@ -178,18 +191,20 @@ class TestExecutorPath:
 
         manager = _FakeToolManager({"fast": {"ok": True}})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=5.0,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=5.0,
         )
         plan = ExecutionPlan(
-            name="no-checkpoint-plan", objective="must not touch a checkpoint store",
+            name="no-checkpoint-plan",
+            objective="must not touch a checkpoint store",
             nodes=[PlanNode(id="n1", tool="fast", store_as="k1")],
         )
 
         with patch(
             "parrot.bots.flows.flow.flow.get_checkpoint_store",
             side_effect=AssertionError(
-                "get_checkpoint_store must never be called — checkpointing "
-                "must be disabled for plan runs"
+                "get_checkpoint_store must never be called — checkpointing " "must be disabled for plan runs"
             ),
         ):
             result = await toolkit._run_plan(plan, source="plan_name")
@@ -201,7 +216,9 @@ class TestExecutorPath:
         big_payload = {"findings": [{"id": i} for i in range(1000)]}
         manager = _FakeToolManager({"fast": big_payload})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit, soft_timeout=5.0,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=5.0,
         )
         plan = _single_node_plan(tool="fast")
 
@@ -225,7 +242,8 @@ class TestExecutorPath:
         previous = NODE_REGISTRY.pop("tool", None)
         try:
             toolkit = ExecutionPlanToolkit(
-                tool_manager=_FakeToolManager({}), working_memory=wm_toolkit,
+                tool_manager=_FakeToolManager({}),
+                working_memory=wm_toolkit,
             )
             assert "tool" not in NODE_REGISTRY
 
@@ -243,8 +261,10 @@ class TestRunRegistry:
     async def test_eviction_bounds(self, wm_toolkit):
         manager = _FakeToolManager({"fast": {"ok": True}})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit,
-            soft_timeout=5.0, max_completed_runs=3,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=5.0,
+            max_completed_runs=3,
         )
 
         for i in range(6):
@@ -257,8 +277,10 @@ class TestRunRegistry:
     async def test_in_flight_run_never_evicted(self, wm_toolkit):
         manager = _FakeToolManager({"slow": {"ok": True}}, delays={"slow": 0.3})
         toolkit = ExecutionPlanToolkit(
-            tool_manager=manager, working_memory=wm_toolkit,
-            soft_timeout=0.01, max_completed_runs=1,
+            tool_manager=manager,
+            working_memory=wm_toolkit,
+            soft_timeout=0.01,
+            max_completed_runs=1,
         )
 
         slow_plan = _single_node_plan(tool="slow", node_id="slow_node")
@@ -281,13 +303,15 @@ class TestRunRegistry:
 
     async def test_unknown_run_id_tool_error(self, wm_toolkit):
         toolkit = ExecutionPlanToolkit(
-            tool_manager=_FakeToolManager({}), working_memory=wm_toolkit,
+            tool_manager=_FakeToolManager({}),
+            working_memory=wm_toolkit,
         )
 
         result = await toolkit.plan_status(run_id="does-not-exist")
 
         assert result.status == "error"
         assert result.success is False
+        assert result.result["code"] in ("unknown_run", "missing_or_expired", "checkpoint_unavailable")
         assert "does-not-exist" in result.error
 
         artifacts_result = await toolkit.plan_artifacts(run_id="does-not-exist")
