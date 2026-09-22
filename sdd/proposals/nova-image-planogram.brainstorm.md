@@ -10,7 +10,7 @@ tags: [nova, bedrock, planogram, vision, object-detection]
 
 **Date**: 2026-09-23
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: Option A
 
 ---
@@ -845,8 +845,8 @@ from parrot.conf import DEFAULT_LLM_MODEL                               # backen
 - [x] Self-contained vs. reusing pipeline helpers — *Owner: Jesus Lara*: reuse the pipeline helpers; write only the Nova transport locally.
 - [x] Result destination — *Owner: Jesus Lara*: `--output <dir>` containing `detections.json` and an annotated image.
 - [x] Model, region and credentials — *Owner: Jesus Lara*: `parrot.conf` `AWS_CREDENTIALS` resolution, default model `us.amazon.nova-2-lite-v1:0`.
-- [ ] The closed-set decision conflicts with `build_identify_prompt`'s contract ("Must NOT mention a planogram or expected products", identify.py:125). Confirm the example may carry its own closed-set prompt builder permanently, or whether a closed-set mode should eventually be promoted into the pipeline as an opt-in — *Owner: Jesus Lara*
-- [ ] Does the closed-set vocabulary come from the planogram's `product`/`brand` fields only, or also from the descriptor fields (`display_name`, `family`, `xl`, `colors`, `pack`, `aliases`) documented in `examples/planogram/README.md`? The latter is richer but makes the prompt considerably longer per strip — *Owner: Jesus Lara*
-- [ ] Which region and IAM identity will be used for the first runs, and is Nova 2 Lite model access already granted there? Bedrock model access is per-account/per-region and is a common first-run blocker — *Owner: Jesus Lara*
-- [ ] Should a recorded-response fixture test live under `examples/planogram/tests/` (where `conftest.py` already exists) so the shim is covered without hitting AWS, given that `examples/` is git-ignored and not collected by CI? — *Owner: Jesus Lara*
-- [ ] Is there a target cost/latency per photo that would decide whether Nova replaces or merely supplements the Google backend? Without one, the example produces numbers nobody can act on — *Owner: Jesus Lara*
+- [x] The closed-set decision conflicts with `build_identify_prompt`'s contract ("Must NOT mention a planogram or expected products", identify.py:125). Confirm the example may carry its own closed-set prompt builder permanently, or whether a closed-set mode should eventually be promoted into the pipeline as an opt-in — *Owner: Jesus Lara*: example-local permanently. The pipeline's open-set contract stays untouched. If closed-set proves superior on accuracy, promoting it into the pipeline is a separate follow-up feature, not part of this one.
+- [x] Does the closed-set vocabulary come from the planogram's `product`/`brand` fields only, or also from the descriptor fields (`display_name`, `family`, `xl`, `colors`, `pack`, `aliases`) documented in `examples/planogram/README.md`? The latter is richer but makes the prompt considerably longer per strip — *Owner: Jesus Lara*: `product` + `brand` fields only. Keeps prompts short and token cost low per strip; Nova gets the core identifiers without the extra descriptor noise.
+- [x] Which region and IAM identity will be used for the first runs, and is Nova 2 Lite model access already granted there? Bedrock model access is per-account/per-region and is a common first-run blocker — *Owner: Jesus Lara*: `us-east-1`, model access already granted. The default `us.amazon.nova-2-lite-v1:0` model id is correct for this region.
+- [x] Should a recorded-response fixture test live under `examples/planogram/tests/` (where `conftest.py` already exists) so the shim is covered without hitting AWS, given that `examples/` is git-ignored and not collected by CI? — *Owner: Jesus Lara*: no test. The shim is throwaway prototype code that will be superseded by the real `BedrockConverseBase` image support. Manual runs against live Nova are sufficient validation.
+- [x] Is there a target cost/latency per photo that would decide whether Nova replaces or merely supplements the Google backend? Without one, the example produces numbers nobody can act on — *Owner: Jesus Lara*: no hard target. Record cost and latency per photo in `run.json` for comparison, but the go/no-go decision is qualitative after seeing accuracy + cost together — not gated on a specific $/photo threshold.
