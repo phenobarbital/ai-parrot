@@ -1,6 +1,9 @@
 """Evaluation records for the Laya CPU experiment (spec §2 Data Models). Pydantic only — no ``parrot``."""
+
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from pathlib import Path
 from typing import Any, Literal
@@ -207,3 +210,108 @@ class EvaluationReport(_Record):
     samples: list[SampleResult] = Field(default_factory=list)
     metrics: dict[str, Any] = Field(default_factory=dict)
     limitations: list[str] = Field(default_factory=list)
+
+
+_SUM_TOLERANCE = 0.001
+
+
+def manifest_sha256(path: Path) -> str:
+    """Return the hex SHA-256 of the file's exact bytes (spec §4 corpus hash)."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_cases(path: Path, scenario: str) -> list[EvaluationCase]:
+    """Validate JSONL cases; reject duplicate IDs, unknown labels and split overlap.
+
+    Args:
+        path: JSONL file, one case object per non-empty line, in the order to evaluate.
+        scenario: One of ``SCENARIOS``; every case must declare this scenario.
+
+    Returns:
+        Cases in file order.
+
+    Raises:
+        ValueError: On a malformed line, a wrong ``scenario``, a duplicate ``id`` or a case
+            text that appears in both the ``calibration`` and ``evaluation`` splits.
+    """
+    if scenario not in SCENARIO_LABELS:
+        raise ValueError(f"unknown scenario {scenario!r}")
+    cases: list[EvaluationCase] = []
+    seen_ids: set[str] = set()
+    by_split: dict[str, set[str]] = {"calibration": set(), "evaluation": set()}
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+            case = EvaluationCase(**payload)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid JSONL case at line {lineno}: {exc}") from exc
+        if case.scenario != scenario:
+            raise ValueError(f"case at line {lineno} has scenario {case.scenario!r}, expected {scenario!r}")
+        if case.id in seen_ids:
+            raise ValueError(f"duplicate case id {case.id!r} at line {lineno}")
+        seen_ids.add(case.id)
+        by_split[case.split].add(case.state)
+        cases.append(case)
+    overlap = by_split["calibration"] & by_split["evaluation"]
+    if overlap:
+        raise ValueError(f"{len(overlap)} state(s) present in both calibration and evaluation splits")
+    return cases
+
+
+def _invalid(result: PredictionResult, message: str) -> PredictionResult:
+    """Return an ``invalid_answer`` error copy of ``result`` (never raise for worker output)."""
+    return result.model_copy(
+        update={"status": "error", "answers": {}, "error_code": "invalid_answer", "error_message": message}
+    )
+
+
+def _valid_probability(value: Any) -> bool:
+    """Return whether ``value`` is a finite numeric probability in the unit interval."""
+    return (
+        isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and 0.0 <= value <= 1.0
+    )
+
+
+def validate_answers(request: PredictionRequest, result: PredictionResult) -> PredictionResult:
+    """Validate required question IDs, answer types, choice membership and finite probabilities.
+
+    Returns ``result`` unchanged when it is already an error or fully valid; otherwise an
+    ``invalid_answer`` error result carrying the first defect found.
+    """
+    if result.status == "error":
+        return result
+    if result.request_id != request.request_id:
+        return _invalid(result, f"request_id mismatch: {result.request_id!r} != {request.request_id!r}")
+    for qid, question in request.questions.items():
+        answer = result.answers.get(qid)
+        if answer is None:
+            return _invalid(result, f"missing answer for question {qid!r}")
+        question_type = question.get("type")
+        if answer.get("type") != question_type:
+            return _invalid(result, f"wrong answer type for question {qid!r}")
+        if question_type == "noul":
+            if not _valid_probability(answer.get("noul")) or not _valid_probability(answer.get("confidence")):
+                return _invalid(result, f"invalid noul probability for question {qid!r}")
+        elif question_type == "choice":
+            options = question.get("options")
+            probabilities = answer.get("probabilities")
+            if not isinstance(options, list) or not all(isinstance(option, str) for option in options):
+                return _invalid(result, f"invalid choice options for question {qid!r}")
+            if answer.get("choice") not in options or not isinstance(probabilities, dict):
+                return _invalid(result, f"invalid choice answer for question {qid!r}")
+            if set(probabilities) != set(options):
+                return _invalid(result, f"choice probabilities do not cover options for question {qid!r}")
+            if not all(_valid_probability(value) for value in probabilities.values()):
+                return _invalid(result, f"invalid choice probability for question {qid!r}")
+            if abs(sum(probabilities.values()) - 1.0) > _SUM_TOLERANCE:
+                return _invalid(result, f"choice probabilities do not sum to one for question {qid!r}")
+            if not _valid_probability(answer.get("confidence")):
+                return _invalid(result, f"invalid choice confidence for question {qid!r}")
+        else:
+            return _invalid(result, f"unknown question type for question {qid!r}")
+    extra = set(result.answers) - set(request.questions)
+    if extra:
+        return _invalid(result, f"unexpected answers: {sorted(extra)}")
+    return result
