@@ -10,7 +10,7 @@ tags: [nova, bedrock, planogram, vision, object-detection]
 **Feature ID**: FEAT-592
 **Date**: 2026-09-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.6
 
 ---
