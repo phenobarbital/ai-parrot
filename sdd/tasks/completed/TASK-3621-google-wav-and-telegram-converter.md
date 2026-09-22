@@ -84,3 +84,27 @@ test_telegram_voice_reply.py: `return_value=SynthesisResult(audio=audio, mime_fo
 
 - `pytest packages/ai-parrot-integrations/tests/voice/tts/test_google_backend.py -v`
 - `pytest packages/ai-parrot-integrations/tests/test_telegram_voice_reply.py -v`
+
+### Completion Note
+
+Implemented by a prior interrupted sdd-worker/parrot-sdd-coder session and merged into
+the feature branch at commit `537110c0d` (+lint autofix `7eab199f3`, merge commit
+`0c0ab2b00`); this session resumed the feature, found the code already merged with the
+per-spec index stuck at `in-progress`, and finalized SDD bookkeeping only — no
+implementation changes were made here.
+
+Verified before closing:
+- File fidelity: `git show --stat 537110c0d` matches the task's file contract exactly
+  (4 files, all listed MODIFY targets, no unlisted files).
+- Task's own Validation Commands (`PYTHONPATH=packages/ai-parrot-integrations/src`,
+  matching this distribution only): `test_google_backend.py` and
+  `test_telegram_voice_reply.py` both pass clean.
+- The `coder_run_validation(tier="merge")` gate could not settle for the same reason
+  documented on TASK-3619's Completion Note: the full `packages/ai-parrot-integrations/
+  tests` merge-tier sweep hangs deterministically, unrelated to this task's diff —
+  filed as `issue:312c1988479b` [critical].
+
+Feedback/review recording: none — this execution did not dispatch or observe this
+attempt (it ran under a prior, now-lost execution id), so no `attempt_uid` is
+available to attribute `coder_record_feedback`/`coder_record_review` to. No confirmed
+defect was found in the delivered code.

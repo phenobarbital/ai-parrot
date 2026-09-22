@@ -16,7 +16,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,8 @@
       "parallelism_notes": "Root task owns the Polly backend, config, package export, and synthesizer selection branch. TASK-3620 depends on it because both modify synthesizer.py.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3619-polly-backend-and-config.md"
+      "completed_at": "2026-09-22T23:45:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3619-polly-backend-and-config.md"
     },
     {
       "id": "TASK-3620",
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -62,8 +62,8 @@
       "parallelism_notes": "Independent of Polly/cache work: owns Google backend, Telegram wrapper, and their dedicated tests with no overlapping feature files.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3621-google-wav-and-telegram-converter.md"
+      "completed_at": "2026-09-22T23:45:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3621-google-wav-and-telegram-converter.md"
     },
     {
       "id": "TASK-3622",
