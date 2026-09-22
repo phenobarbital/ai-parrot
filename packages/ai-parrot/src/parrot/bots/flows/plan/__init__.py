@@ -10,6 +10,7 @@ Intended location in the repo::
 
     packages/ai-parrot/src/parrot/bots/flows/plan/
 """
+
 from .compile import (
     END_NODE_ID,
     PLAN_NODE_TYPE,

@@ -1,4 +1,5 @@
 """FEAT-590: plan-language discriminated union."""
+
 from __future__ import annotations
 
 import pytest
@@ -15,8 +16,14 @@ _LEGACY_PLAN = {
     "objective": "back-compat",
     "nodes": [
         {"id": "list", "tool": "s3_filter_reports", "args": {"prefix": "p/"}, "store_as": "listing"},
-        {"id": "fetch", "tool": "s3_get", "args": {"key": "{item}"}, "store_as": "r_{index}",
-         "depends_on": ["list"], "for_each": {"source": "{artifacts.list}", "select": "keys[]"}},
+        {
+            "id": "fetch",
+            "tool": "s3_get",
+            "args": {"key": "{item}"},
+            "store_as": "r_{index}",
+            "depends_on": ["list"],
+            "for_each": {"source": "{artifacts.list}", "select": "keys[]"},
+        },
     ],
 }
 
