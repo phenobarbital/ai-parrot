@@ -16,7 +16,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Root task. Creates artifacts/laya/models.py (schemas only) and the laya_eval test conftest that every later test module loads; imports nothing created by the feature.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3605-laya-evaluation-models.md"
+      "completed_at": "2026-09-22T11:37:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3605-laya-evaluation-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3606",
