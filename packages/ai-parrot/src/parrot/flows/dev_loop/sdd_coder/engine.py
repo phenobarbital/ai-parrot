@@ -2159,6 +2159,16 @@ class SddCoderEngine:
         scope by naming extra files in its output. `sdd/` paths are never staged at
         all, so a coder cannot reach SDD state through this path either.
 
+        Declared files that live under a git-ignored path (`artifacts/` in this repo,
+        `.gitignore:279`) never show up in `git status`, so they are asked for by name
+        with `git ls-files --others --ignored` and staged with `--force`. Without this,
+        a sandboxed seat's CREATE under `artifacts/` was invisible here, the attempt
+        diff came back empty, fidelity passed vacuously and the delivery was reported
+        `merged` while nothing had landed (FEAT-589: four codex deliveries, each
+        misattributed to the model as a "forgot `git add -f`" defect). Ignored files
+        the task does NOT declare (runtime state, caches) are neither staged nor
+        reported as leftovers — they are not part of the delivery.
+
         Args:
             task: The task being consolidated.
             expected: Declared files from the task markdown (`parse_task_files`).
@@ -2172,15 +2182,36 @@ class SddCoderEngine:
             violation, never a silently-dropped file.
         """
         _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
-        if not self._dirty_paths(status):
+        dirty = self._dirty_paths(status)
+        declared = {p for p in expected if not p.startswith("sdd/")}
+        # Declared-but-ignored deliverables: a pathspec-limited `ls-files` names exactly
+        # the declared paths git would otherwise hide. Missing or tracked declared paths
+        # simply produce no entry (verified: rc 0, no stderr).
+        ignored_declared: List[str] = []
+        if declared:
+            _rc, ignored, _err = await _git(
+                "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", *sorted(declared), cwd=path
+            )
+            ignored_declared = [p for p in ignored.split("\0") if p]
+        if not dirty and not ignored_declared:
             return None
 
-        declared = {p for p in expected if not p.startswith("sdd/")}
         # dict.fromkeys: preserve git's order while dropping the duplicate a rename
         # produces when both of its ends are declared.
-        to_stage = list(dict.fromkeys(p for p in self._dirty_paths(status) if p in declared))
+        to_stage = list(dict.fromkeys([p for p in dirty if p in declared] + ignored_declared))
         if to_stage:
-            await _git("add", "--", *to_stage, cwd=path)
+            # `--force` is what lets an ignored declared path in; it is safe because
+            # `to_stage` is already restricted to the task's own declared files.
+            rc, _out, err = await _git("add", "--force", "--", *to_stage, cwd=path)
+            if rc != 0:
+                await _git("reset", "--quiet", "--", *to_stage, cwd=path)
+                return TaskResult(
+                    task_id=task.task_id,
+                    outcome="failed",
+                    branch=branch,
+                    worktree_path=path,
+                    diagnostics=f"extract_stage_failed: {err.strip()}",
+                )
             rc, _out, err = await _git(
                 "commit",
                 "--no-verify",
