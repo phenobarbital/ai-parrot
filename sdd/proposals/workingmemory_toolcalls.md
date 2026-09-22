@@ -1,8 +1,9 @@
 # Adding WorkingMemory to ToolManager
 
-if a WorkingMemoryToolkit is added to an agent (and is passed by reference to the agent's ToolManager) then results can be automatically registered into the WorkingMemoryToolkit by an id (maybe {tool name}_{turn_id}_{random number})  
+if a WorkingMemoryToolkit is added to an agent (and is passed by reference to the agent's ToolManager) then results can be automatically registered into the WorkingMemoryToolkit by an ID (maybe {tool name}_{turn_id}_{random number})  
+And generating an internal document proof of execution.
 
-
+Something like this:
 - Execution Proof voucher
 ```
 {
@@ -19,7 +20,7 @@ if a WorkingMemoryToolkit is added to an agent (and is passed by reference to th
 }
 ```
 
-Flow:
+Proposed Flow:
 ```
 flowchart TD
     P["LLM thinking"] -->|"Subtarea acotada"| S["Modelo pequeño"]
@@ -34,7 +35,7 @@ flowchart TD
     A -->|"Agregados y evidencia"| P
 ```
 
-Thinking LLM pass a "Plan" to the small LLM (like needle3), model proposed calls, the runtime executes the code and returns the proof of execution, when all tools are retrieved, those execution vouchers are returned to the master LLM client.
+Thinking LLM pass a "Plan" to the small LLM (like needle3 or cloud-based cheap models as haiku), model proposed calls, the runtime executes the code and returns the proof of execution, when all tools are retrieved, those execution vouchers are returned to the master LLM client.
 
 With this approach, any data would stay in the working memory and only the Execution Proof voucher is moving between agents, a tool on any agent (a tool served by WorkingMemoryToolkit) allow agents to retrieve data using the Execution Proof voucher.
 

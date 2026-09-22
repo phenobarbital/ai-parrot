@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-590",
+  "feature_slug": "tool-call-delegate",
+  "started_at": "2026-09-21T22:00:00+00:00",
+  "updated_at": "2026-09-21T22:30:00+00:00",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/tool-call-delegate.proposal.md",
+    "raw_path": "sdd/state/FEAT-590/source.md",
+    "fetched_at": "2026-09-21T22:00:00+00:00",
+    "summary_oneline": "Tool-Call Delegate: local tool-calling-only model as a Flow step between PlanToolNode and AgentNode"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-09-21T22:00:00+00:00",
+      "completed_at": "2026-09-21T22:00:10+00:00",
+      "duration_seconds": 10
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-09-21T22:01:00+00:00",
+      "completed_at": "2026-09-21T22:02:00+00:00",
+      "duration_seconds": 60,
+      "queries_total": 23,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-590/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-09-21T22:02:00+00:00",
+      "completed_at": "2026-09-21T22:15:00+00:00",
+      "duration_seconds": 780,
+      "queries_executed": 23,
+      "queries_skipped": 0,
+      "depth_reached": 2,
+      "files_read": 6,
+      "grep_calls": 0,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-09-21T22:15:00+00:00",
+      "completed_at": "2026-09-21T22:20:00+00:00",
+      "duration_seconds": 300,
+      "synthesis_path": "sdd/state/FEAT-590/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 10,
+      "claims_high_conf": 7,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 2,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "skipped",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "questions_total": 0,
+      "questions_answered": 0,
+      "skipped_reason": "auto mode without --no-gate; 3 unknowns deferred to spec phase"
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-09-21T22:20:00+00:00",
+      "completed_at": "2026-09-21T22:30:00+00:00",
+      "duration_seconds": 600,
+      "proposal_path": "sdd/proposals/tool-call-delegate.proposal.md",
+      "commit_sha": "1d65d704f",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence (C1-C7) and the design space is well-explored. The spike gates implementation, not the spec."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 6,
+    "grep_calls": 0,
+    "git_calls": 1,
+    "wall_seconds": 1800
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Proposal committed. Next: /sdd-spec FEAT-590"
+  }
+}

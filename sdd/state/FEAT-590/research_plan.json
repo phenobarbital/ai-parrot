@@ -1,0 +1,30 @@
+{
+  "plan_version": "1.0",
+  "mode": "enrichment",
+  "wiki_available": true,
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "intent": "Locate PlanToolNode and node registration mechanism", "query": "PlanToolNode execution plan node registration", "priority": 1},
+    {"id": "Q002", "type": "wiki_query", "intent": "Find ToolManager.execute_tool dispatch", "query": "ToolManager execute_tool args_schema tool dispatch", "priority": 1},
+    {"id": "Q003", "type": "wiki_query", "intent": "Find WorkingMemory store_result and ArtifactRef", "query": "WorkingMemory store result artifact", "priority": 1},
+    {"id": "Q004", "type": "wiki_query", "intent": "Find parrot.interfaces contract pattern", "query": "parrot interfaces protocol contract pattern", "priority": 1},
+    {"id": "Q005", "type": "wiki_page", "intent": "Read plan/__init__.py exports", "page_id": "file:packages/ai-parrot/src/parrot/bots/flows/plan/__init__.py", "priority": 2},
+    {"id": "Q006", "type": "wiki_page", "intent": "Read make_tool_node_factory implementation", "page_id": "sym:packages/ai-parrot/src/parrot/bots/flows/plan/node.py#make_tool_node_factory", "priority": 2},
+    {"id": "Q007", "type": "wiki_page", "intent": "Read ToolManager.execute_tool signature", "page_id": "sym:packages/ai-parrot/src/parrot/tools/manager.py#ToolManager.execute_tool", "priority": 2},
+    {"id": "Q008", "type": "wiki_query", "intent": "Find ensure_tool_node_registered and compile pattern", "query": "ensure_tool_node_registered compile plan flow definition", "priority": 2},
+    {"id": "Q009", "type": "wiki_query", "intent": "Find PlanNode and ForEach model fields", "query": "PlanNode model ExecutionPlan NodeDefinition config", "priority": 2},
+    {"id": "Q010", "type": "wiki_query", "intent": "Find CEL guard evaluation in plan", "query": "CEL guard expression evaluate plan when condition", "priority": 2},
+    {"id": "Q011", "type": "wiki_query", "intent": "Check for existing delegate_safe flag on AbstractTool", "query": "AbstractTool tool flag metadata delegate safe", "priority": 2},
+    {"id": "Q012", "type": "wiki_query", "intent": "Find FEAT-585 hardening changes relevant to delegate", "query": "FEAT-585 plan-then-execute hardening PlanFlow checkpoint recovery", "priority": 2},
+    {"id": "Q013", "type": "read", "intent": "Read plan/node.py header and PlanToolNode class", "target": "packages/ai-parrot/src/parrot/bots/flows/plan/node.py", "lines": "1-100", "priority": 3},
+    {"id": "Q014", "type": "read", "intent": "Read plan/models.py PlanNode and ForEach", "target": "packages/ai-parrot/src/parrot/bots/flows/plan/models.py", "lines": "1-120", "priority": 3},
+    {"id": "Q015", "type": "read", "intent": "Read plan/compile.py registration and compilation", "target": "packages/ai-parrot/src/parrot/bots/flows/plan/compile.py", "lines": "1-80", "priority": 3},
+    {"id": "Q016", "type": "wiki_page", "intent": "Read interfaces convention finding", "page_id": "file:sdd/state/FEAT-449/findings/F012-contracts-home.md", "priority": 3},
+    {"id": "Q017", "type": "wiki_page", "intent": "Read FEAT-585 spec non-goals", "page_id": "file:sdd/specs/plan-then-execute-hardening.spec.md", "priority": 3},
+    {"id": "Q018", "type": "wiki_query", "intent": "Check NODE_REGISTRY and register_node", "query": "NODE_REGISTRY register_node flow node types", "priority": 3},
+    {"id": "Q019", "type": "wiki_page", "intent": "Read register_node decorator source", "page_id": "sym:packages/ai-parrot/src/parrot/bots/flows/flow/flow.py#register_node.decorator", "priority": 3},
+    {"id": "Q020", "type": "git_log", "intent": "Recent changes to plan module", "path": "packages/ai-parrot/src/parrot/bots/flows/plan/", "since": "2026-08-01", "priority": 3},
+    {"id": "Q021", "type": "glob", "intent": "Check design doc existence", "pattern": "claude/handle-only-execution-design.md", "priority": 3},
+    {"id": "Q022", "type": "wiki_query", "intent": "Check ResultPolicy / bounded replan status", "query": "ResultPolicy bounded replan escalate", "priority": 3},
+    {"id": "Q023", "type": "wiki_query", "intent": "Check ForEach fan-out details", "query": "ForEach for_each fan out on_item_error skip_existing source", "priority": 3}
+  ]
+}

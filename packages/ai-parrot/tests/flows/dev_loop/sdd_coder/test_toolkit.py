@@ -750,11 +750,117 @@ async def test_read_artifact_no_store_configured_is_evidence_persistence_failed(
     """
     monkeypatch.setattr(conf, "DEV_LOOP_CODER_TELEMETRY", False)
     toolkit = _toolkit(three_seat_roster)
-    assert toolkit._engine._evidence_store is None  # noqa: SLF001 -- asserting the fixture's own precondition
+    engine = toolkit._engine  # noqa: SLF001 -- same-package internal bookkeeping (M2 pattern)
+
+    assert calls == [None], "the root must be DERIVED (no configuration), not skipped"
+    assert engine._evidence_store is not None  # noqa: SLF001
+    assert engine._evidence_store.root == derived  # noqa: SLF001
+    assert engine._background_registry is not None  # noqa: SLF001
+    assert engine._validation_supervisor is not None  # noqa: SLF001
+    assert engine._sink is None  # noqa: SLF001 -- observational telemetry remains opt-in
+
+    # An unknown artifact is now a scope error, never "no store configured".
+    result = await toolkit.coder_read_artifact(execution_id=VALID_EXECUTION_ID, artifact_id="a" * 64)
+    assert result.status == "error"
+    assert result.error.code == "artifact_not_found"
+
+
+async def test_read_artifact_unresolvable_durable_root_is_evidence_persistence_failed(
+    three_seat_roster, monkeypatch, caplog
+):
+    """When no durable root can be resolved the engine degrades to no store and says so."""
+    import logging
+
+    from parrot.flows.dev_loop.sdd_coder import engine as engine_mod
+
+    def _unresolvable(configured, *, worktree_base_path):
+        raise ValueError("simulated: git common dir unavailable")
+
+    monkeypatch.setattr(engine_mod.conf, "SDD_CODER_TELEMETRY_DIR", "")
+    monkeypatch.setattr(engine_mod, "resolve_durable_root", _unresolvable)
+    with caplog.at_level(logging.WARNING, logger=engine_mod.__name__):
+        toolkit = _toolkit(three_seat_roster)
+    assert toolkit._engine._evidence_store is None  # noqa: SLF001
+    assert toolkit._engine._sink is None  # noqa: SLF001
+    assert any("durable evidence store" in rec.getMessage() for rec in caplog.records)
 
     result = await toolkit.coder_read_artifact(execution_id=VALID_EXECUTION_ID, artifact_id="a" * 64)
     assert result.status == "error"
     assert result.error.code == "evidence_persistence_failed"
+
+
+async def test_compact_plan_succeeds_with_telemetry_disabled_on_a_derived_root(
+    three_seat_roster, noop_probe, git_sandbox_feature, monkeypatch, tmp_path
+):
+    """FEAT-588 incident, end to end: default install (telemetry off, nothing configured) must plan compactly.
+
+    `coder_plan(..., response_mode="compact")` used to fail with
+    `evidence_persistence_failed` on every default install because the store was
+    gated on `DEV_LOOP_CODER_TELEMETRY`. The compact view must now be produced,
+    persisted as a durable artifact and be recoverable via `coder_read_artifact`.
+    """
+    import uuid
+
+    from parrot.flows.dev_loop.sdd_coder import engine as engine_mod
+    from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine
+
+    worktree, _branch, base_path, _index_path = git_sandbox_feature
+    derived = tmp_path / "derived-main-checkout-root"
+    monkeypatch.setattr(engine_mod.conf, "DEV_LOOP_CODER_TELEMETRY", False)
+    monkeypatch.setattr(engine_mod.conf, "SDD_CODER_TELEMETRY_DIR", "")
+    monkeypatch.setattr(engine_mod, "resolve_durable_root", lambda configured, *, worktree_base_path: derived)
+
+    engine = SddCoderEngine(roster=three_seat_roster, probe=noop_probe, worktree_base_path=str(base_path))
+    assert engine._sink is None  # noqa: SLF001 -- usage rows stay opt-in
+    toolkit = SddCoderToolkit(roster=three_seat_roster)
+    toolkit._engine = engine  # noqa: SLF001 -- same swap pattern as test_optimization_workflow_contracts
+
+    execution_id = str(uuid.uuid4())
+    begin = await toolkit.coder_begin_execution("demo", str(worktree), execution_id)
+    assert begin.status == "ok", begin.error
+
+    plan = await toolkit.coder_plan("demo", str(worktree), execution_id, response_mode="compact")
+    assert plan.status == "ok", plan.error
+    assert "evidence_ref" in plan.data
+
+    read_back = await toolkit.coder_read_artifact(execution_id, plan.data["evidence_ref"]["artifact_id"], limit=16384)
+    assert read_back.status == "ok", read_back.error
+    assert (derived / "executions" / execution_id).is_dir()
+
+    end = await toolkit.coder_end_execution(execution_id)
+    assert end.status == "ok", end.error
+
+
+def test_telemetry_switch_only_gates_the_sink_and_shares_the_store_root(three_seat_roster, tmp_path):
+    """An explicit `telemetry_dir` binds BOTH the sink and the store to the same root (spec R3)."""
+    toolkit = SddCoderToolkit(roster=three_seat_roster, telemetry_dir=str(tmp_path / "telemetry"))
+    engine = toolkit._engine  # noqa: SLF001
+
+    assert engine._sink is not None  # noqa: SLF001
+    assert engine._evidence_store is not None  # noqa: SLF001
+    assert engine._evidence_store.root == (tmp_path / "telemetry").resolve()  # noqa: SLF001
+
+
+def test_telemetry_opt_in_with_unresolvable_root_still_raises(three_seat_roster, monkeypatch):
+    """`DEV_LOOP_CODER_TELEMETRY=true` is operator intent: an unresolvable root keeps failing loudly."""
+    from parrot.flows.dev_loop.sdd_coder import engine as engine_mod
+
+    def _unresolvable(configured, *, worktree_base_path):
+        raise ValueError("simulated: git common dir unavailable")
+
+    monkeypatch.setattr(engine_mod.conf, "SDD_CODER_TELEMETRY_DIR", "")
+    monkeypatch.setattr(engine_mod.conf, "DEV_LOOP_CODER_TELEMETRY", True)
+    monkeypatch.setattr(engine_mod, "resolve_durable_root", _unresolvable)
+    with pytest.raises(ValueError, match="git common dir unavailable"):
+        _toolkit(three_seat_roster)
+
+
+def test_explicit_telemetry_dir_under_worktree_base_still_raises(three_seat_roster, tmp_path):
+    """Explicit operator configuration never degrades silently -- the R7 guard keeps raising."""
+    base = tmp_path / "worktrees"
+    base.mkdir()
+    with pytest.raises(ValueError, match="cannot be inside or equal to worktree base path"):
+        SddCoderToolkit(roster=three_seat_roster, worktree_base_path=str(base), telemetry_dir=str(base / "t"))
 
 
 async def test_read_artifact_routes_through_run(three_seat_roster, tmp_path):

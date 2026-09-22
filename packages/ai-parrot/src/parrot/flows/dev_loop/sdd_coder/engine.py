@@ -110,6 +110,7 @@ from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
     OutcomeRow,
     build_attempt_row,
+    resolve_durable_root,
 )
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
@@ -454,19 +455,65 @@ class SddCoderEngine:
         # "pending/running/unknown de validaciones admitidas bloquean checkpoint
         # y cleanup de su worktree").
         self._validation_handles: Dict[str, Set[str]] = {}
-        if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
-            from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
-
-            effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
-            telemetry_root = resolve_durable_root(effective_dir, worktree_base_path=self._base_path)
-            self._sink = CoderTelemetrySink(telemetry_root)
-            self._evidence_store = ExecutionEvidenceStore(telemetry_root)
+        # The durable evidence store is ALWAYS bound when a durable root resolves:
+        # the FEAT-584 worker protocol unconditionally requests `compact` views,
+        # records native observations and persists review checkpoints, and spec R3
+        # makes those persistence failures block the transition that depends on
+        # them. Gating the store on the observational telemetry opt-in shipped a
+        # default install where every one of those paths failed with
+        # `evidence_persistence_failed` (FEAT-588 incident). Only the
+        # `CoderTelemetrySink` (usage rows, an analysis dataset) remains opt-in.
+        effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
+        durable_root = self._resolve_durable_root(
+            effective_dir, strict=effective_dir is not None or bool(conf.DEV_LOOP_CODER_TELEMETRY)
+        )
+        if durable_root is not None:
+            self._evidence_store = ExecutionEvidenceStore(durable_root)
             self._background_registry = BackgroundRegistry(
                 store=self._evidence_store, owner_instance_id=self._instance_id
             )
             self._validation_supervisor = ValidationSupervisor(
                 registry=self._background_registry, store=self._evidence_store
             )
+            if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
+                self._sink = CoderTelemetrySink(durable_root)
+
+    def _resolve_durable_root(self, configured: Optional[str], *, strict: bool) -> Optional[Path]:
+        """Resolve the out-of-worktree durable root, or `None` with a warning.
+
+        Explicit operator intent -- a configured root (`telemetry_dir` kwarg or
+        `SDD_CODER_TELEMETRY_DIR`) or the `DEV_LOOP_CODER_TELEMETRY` opt-in -- is
+        `strict`: an unresolvable or invalid root (relative path, root under the
+        worktree base, no git common dir) still raises `ValueError` at
+        construction exactly as before (FEAT-554 R7 guard), never silently
+        degrades. Only the implicit default (nothing configured, telemetry off,
+        main checkout located via git) degrades to "no durable store" -- every
+        consumer then reports `evidence_persistence_failed` explicitly instead of
+        the engine refusing to construct.
+
+        Args:
+            configured: Explicit absolute root, or `None` to derive it from the
+                main checkout via git.
+            strict: Re-raise instead of degrading when the root cannot be resolved.
+
+        Returns:
+            The validated root, or `None` when no root could be derived and
+            `strict` is false.
+
+        Raises:
+            ValueError: the root is invalid or unresolvable and `strict` is true.
+        """
+        try:
+            return resolve_durable_root(configured, worktree_base_path=self._base_path)
+        except ValueError as exc:
+            if strict:
+                raise
+            self.logger.warning(
+                "No durable evidence store for this engine (compact views, native observations and "
+                "review checkpoints will fail with evidence_persistence_failed): %s",
+                exc,
+            )
+            return None
 
     async def open(self) -> None:
         """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available.
