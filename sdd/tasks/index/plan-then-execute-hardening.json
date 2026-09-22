@@ -256,7 +256,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -268,8 +268,8 @@
       "parallelism_notes": "Modifies toolkit.py after TASK-3600 (same file → serialized; reuses its _run_continuation/_seed_context/_assert_policy); imports eligible_repair_nodes / merge_delta / validate_delta from TASK-3596 (repair.py) and PlanPlanner.replan / repair_delta from TASK-3597 (planner.py).",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3601-plan-repair-tool.md"
+      "completed_at": "2026-09-22T13:39:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3601-plan-repair-tool.md"
     },
     {
       "id": "TASK-3602",
