@@ -288,7 +288,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
