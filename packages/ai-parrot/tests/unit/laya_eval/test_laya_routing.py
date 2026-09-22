@@ -113,7 +113,9 @@ async def test_unbound_decision_leaves_parent_behaviour_unchanged() -> None:
 async def test_bound_decision_injects_copy_and_reaches_super() -> None:
     client = FakeClient()
     original = {"prompt": "p", "use_tools": False}
-    token = _DECISION.set(RouteDecision(choice="cheap", selected_model="claude-cheap-id", confidence=0.9, reason="cheap"))
+    token = _DECISION.set(
+        RouteDecision(choice="cheap", selected_model="claude-cheap-id", confidence=0.9, reason="cheap")
+    )
     try:
         message = await _agent(client).execute_llm_call(client, "ask", **original)
     finally:
