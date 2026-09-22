@@ -12,9 +12,7 @@ import pytest
 from artifacts.laya import evaluate
 from artifacts.laya.models import EvaluationConfig
 
-
-FAKE_CHILD = textwrap.dedent(
-    """
+FAKE_CHILD = textwrap.dedent("""
     import json
     import os
     import sys
@@ -36,8 +34,7 @@ FAKE_CHILD = textwrap.dedent(
             "answers": answers, "inference_ms": 2.0, "error_code": None, "error_message": None,
             "peak_rss_kb": 1234}) + "\\n")
         sys.stdout.flush()
-    """
-)
+    """)
 
 
 def _argv(tmp_path: Path, *extra: str) -> list[str]:
