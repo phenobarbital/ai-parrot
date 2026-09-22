@@ -240,7 +240,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -257,8 +257,8 @@
       "parallelism_notes": "Imports load_cases/manifest_sha256 (TASK-3606, models.py), reads the default fixtures directory files created by TASK-3607 (artifacts/laya/fixtures/*.jsonl, routing_rubrics.json), LayaWorker/WorkerStartupError (TASK-3610, runtime.py), LayaEvaluationAgent (TASK-3611, routing.py), load_prices/summarize/write_report (TASK-3612, reporting.py), LiveCallBudget/LivePreflightError/preflight_live (TASK-3613) and load_rubrics/run_live_routing_pairs (TASK-3615) from live.py, QUESTION_SCHEMAS/run_local_scenario/run_regex_baseline/route_decisions_for (TASK-3614, scenarios.py). Sole owner of artifacts/laya/evaluate.py.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3616-laya-evaluate-cli.md"
+      "completed_at": "2026-09-22T12:19:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3616-laya-evaluate-cli.md"
     },
     {
       "id": "TASK-3617",

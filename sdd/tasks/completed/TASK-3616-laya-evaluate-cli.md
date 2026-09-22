@@ -392,10 +392,20 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (codex, model=gpt-5.6-terra, attempt_uid=ada7ffcc9b3c4de1a74130077264dc57), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `artifacts/laya/evaluate.py`: `build_parser`/`parse_args_to_config` (CLI flags map 1:1
+to `EvaluationConfig`, `--fixtures` defaults to `artifacts/laya/fixtures`, output-dir-not-empty and
+missing-fixture/rubric preflight before execution), `collect_environment`, `build_live_agent` (one direct
+`AnthropicClient` + `LayaEvaluationAgent`), `run_evaluation` (starts `LayaWorker`, runs requested
+scenarios through `run_local_scenario`, computes route decisions, runs live pairs only when `--live`
+preflight passes, else marks the report `incomplete` with the reason — never a stack trace on missing
+worker prerequisites) and `main` (exit codes 0/2/3 exactly as specified). Merge-tier validation initially
+failed (`No module named artifacts.laya.evaluate`) — the FOURTH and final occurrence of this model's
+gitignore-force-add defect on this feature (TASK-3605, TASK-3611, TASK-3614, TASK-3616; 4/4 of its
+CREATE-under-`artifacts/`-deliveries on this feature). Orchestrator force-added the unmodified file
+(commit e8bc4da1ac47f39935d09b5dd6b917ea834dd01b) and recorded the pattern as model feedback
+(coder-feedback:298a2946b86d3c0a452654ca). Full suite then 89/89 passed, 1 skipped; verified
+`python -m artifacts.laya.evaluate --help` exits 0 without Laya installed (AC-2).
 
 **Deviations from spec**: none
