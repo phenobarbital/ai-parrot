@@ -473,6 +473,17 @@ This step prevents AI hallucinations during implementation. You MUST:
    each line that touches existing code carrying `# verified: path:NN`. These
    skeletons are what `/sdd-task` turns into per-task Implementation Blueprints,
    so a name fixed here is not renegotiable later.
+7. **Edit Sites (§6, Blueprint Anchors)**: for every file the §3 modules will
+   MODIFY, record the verbatim anchor line the change attaches to, its
+   `path:NN`, and its occurrence count (`grep -c '<anchor>' <path>`); for every
+   file they CREATE, record just the path. Record the base commit the table was
+   verified against. `/sdd-task` builds one Implementation Blueprint block per
+   row, so verifying the anchor once here replaces re-deriving it in each of the
+   feature's 15–30 tasks. Two rules keep the table from becoming a liability:
+   an occurrence count `> 1` means the anchor is ambiguous and must carry 2–3
+   lines of surrounding context, and the table lists only files the modules
+   actually touch — it is re-read on every downstream turn, so prose and
+   speculative rows are pure cost.
 
 #### Identify delegation-eligible modules
 
