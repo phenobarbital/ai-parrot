@@ -10,6 +10,7 @@ encode or decode touches an `ArtifactRef` — otherwise `FlowStateSerializer`
 degrades it to a lossy repr (finding R1) and `project_run` fails closed with
 `checkpoint_invalid` rather than silently trusting a `repr()` string.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -69,14 +70,18 @@ def process_identity() -> str:
 
 def plan_fingerprint(plan: ExecutionPlan) -> str:
     """sha256 over canonical JSON of the effective plan."""
-    return hashlib.sha256(json.dumps(plan.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(plan.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def read_run_metadata(checkpoint: FlowCheckpoint) -> PlanRunMetadata:
     """Parse the ``plan_run`` envelope; anything malformed is ``checkpoint_invalid``."""
     raw = checkpoint.context.shared_data.get(PLAN_RUN_SHARED_KEY)
     if not isinstance(raw, dict):
-        raise PlanRunError("checkpoint_invalid", f"checkpoint {checkpoint.flow_id}@{checkpoint.checkpoint_id} has no plan_run envelope")
+        raise PlanRunError(
+            "checkpoint_invalid", f"checkpoint {checkpoint.flow_id}@{checkpoint.checkpoint_id} has no plan_run envelope"
+        )
     try:
         return PlanRunMetadata.model_validate(raw)
     except Exception as exc:  # noqa: BLE001 - converted to a bounded structured error
@@ -181,9 +186,13 @@ def project_run(checkpoint: FlowCheckpoint, *, metadata: PlanRunMetadata) -> Pla
     )
 
 
-async def select_latest(store: Optional[CheckpointStore], durable_store: Optional[CheckpointStore], flow_id: str) -> Optional[FlowCheckpoint]:
+async def select_latest(
+    store: Optional[CheckpointStore], durable_store: Optional[CheckpointStore], flow_id: str
+) -> Optional[FlowCheckpoint]:
     """Greatest checkpoint_id across configured tiers; equal ids with different state are corruption."""
-    candidates = [cp for cp in [await s.latest(flow_id) for s in (store, durable_store) if s is not None] if cp is not None]
+    candidates = [
+        cp for cp in [await s.latest(flow_id) for s in (store, durable_store) if s is not None] if cp is not None
+    ]
     if not candidates:
         return None
     best = max(candidates, key=lambda cp: cp.checkpoint_id)
@@ -258,15 +267,21 @@ class PlanRunResolver:
                 raise PlanRunError("checkpoint_invalid", f"run {run_id!r} repair lineage cycles back to {child_id!r}")
             hops += 1
             if hops > max_hops:
-                raise PlanRunError("checkpoint_invalid", f"run {run_id!r} repair lineage exceeds its recorded repair_children bound")
+                raise PlanRunError(
+                    "checkpoint_invalid", f"run {run_id!r} repair lineage exceeds its recorded repair_children bound"
+                )
             visited.add(child_id)
 
             child_checkpoint = await select_latest(self._store, self._durable, child_id)
             if child_checkpoint is None:
-                raise PlanRunError("checkpoint_invalid", f"run {run_id!r} active_child_run_id {child_id!r} has no checkpoint")
+                raise PlanRunError(
+                    "checkpoint_invalid", f"run {run_id!r} active_child_run_id {child_id!r} has no checkpoint"
+                )
             child_metadata = read_run_metadata(child_checkpoint)
             if child_metadata.root_run_id != metadata.root_run_id:
-                raise PlanRunError("checkpoint_invalid", f"child run {child_id!r} does not share root_run_id with {run_id!r}")
+                raise PlanRunError(
+                    "checkpoint_invalid", f"child run {child_id!r} does not share root_run_id with {run_id!r}"
+                )
             self._check_scope(child_id, child_metadata)
             child_run = project_run(child_checkpoint, metadata=child_metadata)
 

@@ -3,6 +3,7 @@
 These fakes are imported by every FEAT-585 recovery test module (TASK-3593..3603) —
 keep this file's public surface stable; new tests depend on it verbatim.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -74,8 +75,14 @@ class SerializingFakeCheckpointStore(CheckpointStore):
                 continue
             if status is not None and latest.status != status:
                 continue
-            flows.append({"flow_id": flow_id, "flow_name": latest.flow_name, "status": latest.status,
-                          "checkpoint_id": latest.checkpoint_id})
+            flows.append(
+                {
+                    "flow_id": flow_id,
+                    "flow_name": latest.flow_name,
+                    "status": latest.status,
+                    "checkpoint_id": latest.checkpoint_id,
+                }
+            )
         return flows
 
     async def delete_flow(self, flow_id: str) -> None:

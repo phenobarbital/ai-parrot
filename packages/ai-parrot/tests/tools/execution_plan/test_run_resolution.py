@@ -5,6 +5,7 @@ type, ``project_run`` ordering/counters/pending-vs-blocked, the resolver's
 repair-lineage consolidation, capability-scoped tier classification and
 scope enforcement.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -110,7 +111,9 @@ async def test_artifact_ref_checkpoint_roundtrip() -> None:
     plan = _chain_plan(("a",))
     metadata = _metadata(plan, run_id="run-roundtrip", root_run_id="run-roundtrip")
     ref = ArtifactRef(node_id="a", status="ok", keys=["a_out"], bytes_stored=12)
-    checkpoint = _checkpoint(status="completed", results={"a": ref}, errors={}, metadata=metadata, flow_id="run-roundtrip")
+    checkpoint = _checkpoint(
+        status="completed", results={"a": ref}, errors={}, metadata=metadata, flow_id="run-roundtrip"
+    )
 
     store = SerializingFakeCheckpointStore()
     await store.put(checkpoint)
@@ -250,7 +253,9 @@ async def test_resolver_rejects_cycle_missing_ancestor_schema() -> None:
 
     # Cycle: active_child_run_id points back at the run itself.
     cycle_metadata = _metadata(plan, run_id="root-cycle", root_run_id="root-cycle", active_child_run_id="root-cycle")
-    cycle_checkpoint = _checkpoint(status="failed", results={}, errors={}, metadata=cycle_metadata, flow_id="root-cycle")
+    cycle_checkpoint = _checkpoint(
+        status="failed", results={}, errors={}, metadata=cycle_metadata, flow_id="root-cycle"
+    )
     await store.put(cycle_checkpoint)
     with pytest.raises(PlanRunError) as cycle_exc:
         await resolver.resolve("root-cycle")
@@ -264,7 +269,9 @@ async def test_resolver_rejects_cycle_missing_ancestor_schema() -> None:
         active_child_run_id="ghost-child",
         repair_children=["ghost-child"],
     )
-    missing_checkpoint = _checkpoint(status="failed", results={}, errors={}, metadata=missing_metadata, flow_id="root-missing")
+    missing_checkpoint = _checkpoint(
+        status="failed", results={}, errors={}, metadata=missing_metadata, flow_id="root-missing"
+    )
     await store.put(missing_checkpoint)
     with pytest.raises(PlanRunError) as missing_exc:
         await resolver.resolve("root-missing")
@@ -272,7 +279,9 @@ async def test_resolver_rejects_cycle_missing_ancestor_schema() -> None:
 
     # schema_version mismatch: fails closed at read_run_metadata (consulted by resolve()).
     schema_metadata = _metadata(plan, run_id="root-schema", root_run_id="root-schema")
-    schema_checkpoint = _checkpoint(status="running", results={}, errors={}, metadata=schema_metadata, flow_id="root-schema")
+    schema_checkpoint = _checkpoint(
+        status="running", results={}, errors={}, metadata=schema_metadata, flow_id="root-schema"
+    )
     bad_envelope = dict(schema_metadata.model_dump(mode="json"))
     bad_envelope["schema_version"] = 2
     schema_checkpoint.context.shared_data["plan_run"] = bad_envelope
@@ -296,7 +305,9 @@ async def test_tier_classification() -> None:
     assert durable_exc.value.code == "unknown_run"
     assert classify_miss(durable_resolver._store, durable_resolver._durable) == "unknown_run"
 
-    ephemeral_resolver = PlanRunResolver(store=SerializingFakeCheckpointStore(), durable_store=None, scope=None, cache={})
+    ephemeral_resolver = PlanRunResolver(
+        store=SerializingFakeCheckpointStore(), durable_store=None, scope=None, cache={}
+    )
     with pytest.raises(PlanRunError) as ephemeral_exc:
         await ephemeral_resolver.resolve("missing-run")
     assert ephemeral_exc.value.code == "missing_or_expired"
@@ -339,7 +350,9 @@ async def test_select_latest_prefers_greatest_id_and_detects_corruption() -> Non
     metadata = _metadata(plan, run_id="run-sel", root_run_id="run-sel")
     ref = ArtifactRef(node_id="a", status="ok")
     older = _checkpoint(status="running", results={}, errors={}, metadata=metadata, checkpoint_id=1, flow_id="run-sel")
-    newer = _checkpoint(status="completed", results={"a": ref}, errors={}, metadata=metadata, checkpoint_id=2, flow_id="run-sel")
+    newer = _checkpoint(
+        status="completed", results={"a": ref}, errors={}, metadata=metadata, checkpoint_id=2, flow_id="run-sel"
+    )
 
     store = SerializingFakeCheckpointStore()
     durable = SerializingFakeCheckpointStore(durable=True)
@@ -353,7 +366,9 @@ async def test_select_latest_prefers_greatest_id_and_detects_corruption() -> Non
 
     conflicting_store = SerializingFakeCheckpointStore()
     conflicting_durable = SerializingFakeCheckpointStore(durable=True)
-    diverged = _checkpoint(status="failed", results={}, errors={}, metadata=metadata, checkpoint_id=2, flow_id="run-sel")
+    diverged = _checkpoint(
+        status="failed", results={}, errors={}, metadata=metadata, checkpoint_id=2, flow_id="run-sel"
+    )
     await conflicting_store.put(newer)
     await conflicting_durable.put(diverged)
 
