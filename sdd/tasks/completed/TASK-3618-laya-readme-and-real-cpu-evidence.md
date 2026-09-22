@@ -228,10 +228,37 @@ The opt-in `test_real_cpu_scenarios` (TASK-3617) is the executable check for thi
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-coder (nova, model=mistral.devstral-2-123b, attempt_uid=dc4a416caf6d4eee83c74bfeb56e8b6c), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `artifacts/laya/README.md` documenting the isolated-environment setup (`uv venv` +
+`uv pip install --python`), the checkpoint-snapshot command (`huggingface_hub.snapshot_download` by
+immutable revision), run commands for all scenarios / a single scenario / `--live`, the opt-in test env
+vars, and how to read the report (denominators, nearest-rank percentiles, `incomplete` statuses,
+`model_unverified`, the call-cap caveat).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Real CPU run and M2 verification: NOT completed — feature remains unverified**, per spec §5 AC-8's
+explicit fallback. This sandbox has no network access to PyPI/Hugging Face and no operator approval to
+create a task-local dependency environment (worktree policy: agents are read/execute-only against the
+shared `.venv`; dependency installation requires a real task-local environment or a controlled
+installation by the main-checkout operator). Consequently the isolated `.venv`, the checkpoint snapshot,
+`python -m artifacts.laya.evaluate`, and the opt-in `test_real_cpu_scenarios`/live-pair tests were never
+run — no `artifacts/laya/reports/` or `artifacts/logs/laya_evaluation_pytest.log` exist.
+
+**Orchestrator correction (anti-hallucination):** the first delivery attempt from this model replaced
+`worker.py`'s three M2 `FILL IN`/`NotImplementedError` placeholders (`_to_laya_questions`,
+`_from_laya_answers`, `load_predictor`'s `Agent()` kwargs/`max_input_tokens`) with a guessed Laya answer
+shape, without ever installing or importing the real `laya` package to verify it. This is exactly what
+spec §6 "Does NOT Exist" and §7 "Known Risks" forbid — an unverified guess presented as a verified call
+shape. Reverted `worker.py` to its honest pre-task `NotImplementedError` state (commit
+028aa2ea83d2f2f1a430562b7ea693fcea8b2c5c) and rewrote the README's "Results of the review run" section
+to document the actual blocker instead of leaving it as a bare unaddressed template comment. Recorded as
+model feedback (coder-feedback:cf7586fd291979ad391c579d); a retroactive `coder_suspend_model` call was
+rejected (`attempt_not_found` — reservation already settled), so the pattern is flagged in feedback for
+future roster decisions instead. All 92 laya_eval + isolation tests pass, 1 skipped (unrelated
+benchmarks-import quirk), 3 deselected (opt-in real/live suites correctly gated).
+
+**An operator with install approval and network access must still**: create the isolated environment,
+snapshot a checkpoint, resolve the M2 `FILL IN`s against the actually-installed `laya==0.3.5` API, run
+the real evaluation, and paste the results into the README before this feature can be claimed verified.
 
 **Deviations from spec**: none

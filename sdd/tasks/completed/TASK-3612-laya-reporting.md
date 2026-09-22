@@ -344,10 +344,15 @@ See the CREATE block above. Add a Markdown snapshot check that `report.md` conta
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (native, backend=native, model=haiku, attempt_uid=a054817e6f0f4af18ff5bb0899d114b1), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `artifacts/laya/reporting.py` (stdlib-only, no numpy/pandas): `nearest_rank_percentile`,
+`confusion_matrix` (with an `__error__` column so failed samples stay visible), `summarize` (per-scenario
+metrics with explicit denominators, `repeat==0` for quality metrics, prediction-flip counts across
+repeats), `render_markdown`, `write_report` (refuses to overwrite a non-empty output dir) and
+`load_prices`. Clean delivery, correctly force-added (`artifacts/laya/reporting.py`), only the two
+declared files committed — no `sdd/` files touched, matching this model's corrected
+`coder-touches-sdd-state` lesson. Merge-tier validation: 71/71 passed, 1 skipped (unrelated
+benchmarks-import sys.path quirk).
 
 **Deviations from spec**: none

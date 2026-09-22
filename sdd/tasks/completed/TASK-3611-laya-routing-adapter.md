@@ -348,10 +348,16 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (codex, model=gpt-5.6-terra, attempt_uid=259e1d90ea57417fb44c99369910fc33), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `artifacts/laya/routing.py` with `choose_route()` (allowlisted primary/cheap/abstain
+mapping, falls back to primary with a distinct reason on abstain/invalid/error/low-confidence) and
+`LayaEvaluationAgent` (`ask_routed()` binds a `RouteDecision` ContextVar, `execute_llm_call()` copies
+kwargs, injects the selected model and delegates to `super().execute_llm_call`, resetting the ContextVar
+in `finally`). Merge-tier validation initially failed (`No module named artifacts.laya.routing`): the
+coder created `routing.py` on disk but never `git add -f`'d it past `.gitignore`'s `artifacts/` rule —
+the same defect this model made on TASK-3605 in this same feature. Orchestrator force-added the
+unmodified file (commit ca98183a16d4d8054f144aa14312d10da645690f). Recorded as recurring model feedback
+(coder-feedback:fb88c2ea4281dfbf093125c1). Full suite then 71/71 passed, 1 skipped.
 
 **Deviations from spec**: none

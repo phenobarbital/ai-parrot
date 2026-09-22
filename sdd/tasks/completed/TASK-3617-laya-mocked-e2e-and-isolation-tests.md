@@ -319,10 +319,19 @@ See the CREATE blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (codex, model=gpt-5.6-terra, attempt_uid=2953adbd49524a91bdcb518bbcdbf443), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `packages/ai-parrot/tests/unit/test_laya_evaluation.py` (interleaved
+`ask_routed`/`execute_llm_call` isolation across concurrent calls with independent model kwargs and
+unchanged client defaults, plus a confident-negative injection check through `scenarios`) and
+`packages/ai-parrot/tests/integration/test_laya_evaluation.py` (mocked end-to-end run via
+`evaluate.main()` with a fake protocol worker and fake client — no downloads or credentials — plus the
+two explicit opt-in suites, real CPU scenarios and live paired routing, gated behind
+`LAYA_EVAL_WORKER_PYTHON`/`LAYA_EVAL_LIVE`/etc. environment variables and skipping with a reason when
+absent, never presented as live evidence). Clean delivery — this task creates only files under
+`packages/ai-parrot/tests/`, not the gitignored `artifacts/` root, so this model's recurring
+force-add defect (TASK-3605/3611/3614/3616) did not apply here. Merge-tier validation: 92 passed,
+1 skipped (unrelated benchmarks-import quirk), 3 deselected (opt-in real/live suites correctly gated
+by pytest markers, not run by default).
 
 **Deviations from spec**: none

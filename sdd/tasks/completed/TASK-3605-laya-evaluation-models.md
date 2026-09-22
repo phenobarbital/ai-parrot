@@ -443,11 +443,17 @@ through `model_dump_json()` / `model_validate_json()` with an empty sample list.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3605
+- Feature: laya-adoption
+- Implementation SHA: aa8ff03daf18d4efb8ef2bd98049116a6ab5ca62
+- Closed at (UTC): 2026-09-22T11:37:47+00:00
+- Fix commits: aa8ff03daf18d4efb8ef2bd98049116a6ab5ca62
 
-**Deviations from spec**: `EvaluationConfig.worker_module`, `EvaluationConfig.price_file` and
-`SampleResult.arm` are additive fields not in the §2 table (see Blueprint "Why").
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| merge_validation | completed (exit_code=0, 7 passed) |
+| orchestrator_fix | force-added 2 gitignored files (artifacts/laya/__init__.py, models.py) the coder created on disk but never staged past .gitignore |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 193.474s · Tokens: n/a |

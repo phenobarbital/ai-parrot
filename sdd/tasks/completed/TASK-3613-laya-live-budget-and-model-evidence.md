@@ -337,10 +337,17 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (native, backend=native, model=sonnet, attempt_uid=d43266ec3de24273a44f1f503fa8b915), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Created `artifacts/laya/live.py`: `LivePreflightError` (`error_code="live_config_missing"`),
+`preflight_live(config, env)` (no-op without `--live`; lists every missing input — primary/cheap model,
+positive `max_live_calls`, `ANTHROPIC_API_KEY` — in one error), `LiveCallBudget` (`reserve()`/
+`reserve_pair()`, pair requires ≥2 remaining slots, failed calls still consume their slot — no refund
+API), `ModelEvidence` (Pydantic, `extra="forbid"`) and `extract_model_evidence(message, requested_model)`
+which reads `actual_model` ONLY from `AIMessage.raw_response["model"]` when that raw response is a dict
+— `AIMessage.model` alone is recorded separately as `reported_model` and never treated as proof — plus
+the three Anthropic fallback-metadata keys, and `error_code="model_unverified"` when no raw evidence
+exists. Clean delivery, correctly force-added, only the two declared files committed. Merge-tier
+validation: 71/71 passed, 1 skipped (unrelated benchmarks-import sys.path quirk).
 
 **Deviations from spec**: none
