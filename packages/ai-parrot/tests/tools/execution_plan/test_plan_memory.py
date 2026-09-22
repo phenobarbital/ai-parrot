@@ -92,7 +92,9 @@ async def test_host_runtime_requires_scope_and_is_borrowed() -> None:
 
     await runtime.start(start_scheduler=False)
     scope = TaskScope(chatbot_id="execution-plan", user_id="host-user", session_id="host-session")
-    binding = PlanMemoryBinding(WorkingMemoryToolkit(), runtime=runtime, scope=scope, max_restore_bytes=64 * 1024 * 1024)
+    binding = PlanMemoryBinding(
+        WorkingMemoryToolkit(), runtime=runtime, scope=scope, max_restore_bytes=64 * 1024 * 1024
+    )
     await binding.prepare()
     await binding.close()
 

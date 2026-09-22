@@ -41,7 +41,7 @@ from .internals import (
 )
 
 if TYPE_CHECKING:
-    from parrot.memory import AnswerMemory
+    pass
 
 
 class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):
