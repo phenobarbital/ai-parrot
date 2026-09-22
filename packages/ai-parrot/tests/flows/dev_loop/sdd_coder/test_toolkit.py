@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from parrot import conf
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure
 from parrot.flows.dev_loop.sdd_coder.models import CoderResult, RosterConfig
 from parrot.flows.dev_loop.sdd_coder.toolkit import SddCoderToolkit
@@ -740,8 +741,14 @@ async def test_read_artifact_pre_execute_validates_schema(three_seat_roster):
     assert excinfo.value.code == "execution_required"
 
 
-async def test_read_artifact_no_store_configured_is_evidence_persistence_failed(three_seat_roster):
-    """No `telemetry_dir`/`DEV_LOOP_CODER_TELEMETRY` was configured for this toolkit -- no store exists."""
+async def test_read_artifact_no_store_configured_is_evidence_persistence_failed(three_seat_roster, monkeypatch):
+    """No `telemetry_dir`/`DEV_LOOP_CODER_TELEMETRY` was configured for this toolkit -- no store exists.
+
+    `conf.DEV_LOOP_CODER_TELEMETRY` is resolved once from the environment at import time, so a
+    developer/CI machine with `DEV_LOOP_CODER_TELEMETRY=true` in its own env would otherwise make
+    this test flake against ambient state instead of the toolkit's own default. Pin it explicitly.
+    """
+    monkeypatch.setattr(conf, "DEV_LOOP_CODER_TELEMETRY", False)
     toolkit = _toolkit(three_seat_roster)
     assert toolkit._engine._evidence_store is None  # noqa: SLF001 -- asserting the fixture's own precondition
 
