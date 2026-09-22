@@ -1133,6 +1133,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             structured_config.get("thinking_config") and "off" or "default",
             len(format_prompt),
         )
+        # No model hint: this helper runs *inside* another turn (ask / ask_stream / invoke) and
+        # borrows that turn's client. Hinting `reformat_model` here could rebuild the loop-local
+        # client for a different model class and leave the rest of the turn on the wrong endpoint.
+        await self._ensure_client()
         _reformat_start = time.perf_counter()
         structured_response = await self.client.aio.models.generate_content(
             model=reformat_model,
@@ -4134,6 +4138,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             model,
                         )
 
+            await self._ensure_client(model=model)
             chat = self.client.aio.chats.create(
                 model=model, history=history, config=GenerateContentConfig(**generation_config_args)
             )
@@ -4525,6 +4530,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         contents = []
         files = req.get("files")
         if files:
+            # Hint-free, like ask_batch's own ensure: payloads are built concurrently for requests
+            # that may name different models, and hinting each one would thrash the loop-local
+            # client. The Files API does not depend on the model's endpoint class.
+            await self._ensure_client()
             for file_path in files:
                 path = Path(file_path).resolve()
                 self.logger.info(f"Uploading {path.name} to Gemini File API for batch request...")
@@ -4887,6 +4896,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         output_file_name = job.dest.file_name
         self.logger.info(f"Downloading batch job results from: {output_file_name}")
 
+        # Public entry point: the caller may hold only the job handle, never having opened the client.
+        await self._ensure_client()
         results_bytes = await self.client.aio.files.download(file=output_file_name)
         results_text = results_bytes.decode("utf-8")
 
@@ -5178,6 +5189,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         try:
             self.logger.info(f"Starting Deep Research Interaction: {prompt}")
 
+            # Build the loop-local client first: ask()/ask_stream() route here before their own
+            # ensure, and `hasattr(None, "interactions")` is False — an unbuilt client would be
+            # misreported below as an SDK too old for the interactions API.
+            await self._ensure_client()
+
             # Check if interactions API is supported
             if not hasattr(self.client, "interactions"):
                 raise NotImplementedError(
@@ -5356,6 +5372,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self.logger.info(f"Initiating RAG pipeline for prompt: '{prompt[:50]}...'")
 
         model = model.value if isinstance(model, GoogleModel) else model
+        await self._ensure_client(model=model)
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
@@ -5636,8 +5653,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             resolved_model = self._resolve_invoke_model(model)
             max_tokens = self._resolve_max_tokens(max_tokens, resolved_model, for_invoke=True)
 
-            if not self.client:
-                raise RuntimeError("GoogleGenAIClient not initialised. Use async context manager.")
+            # Per-loop cache contract (docs/clients/per-loop-cache.md): build the client instead of
+            # demanding the caller opened one — an async context manager is no longer required.
+            await self._ensure_client(model=resolved_model)
 
             needs_two_call = use_tools and config is not None
 
