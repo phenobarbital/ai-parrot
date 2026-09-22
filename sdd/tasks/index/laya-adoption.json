@@ -76,7 +76,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -86,8 +86,8 @@
       "parallelism_notes": "worker.py is stdlib-only, but its tests parse worker output through PredictionResult and ERROR_CODES from TASK-3605 (artifacts/laya/models.py). Creates artifacts/laya/pyproject.toml, a standalone manifest outside the uv workspace (no lockfile or shared env change, so not exclusive).",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3608-laya-worker-entry-point.md"
+      "completed_at": "2026-09-22T11:46:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3608-laya-worker-entry-point.md"
     },
     {
       "id": "TASK-3609",
