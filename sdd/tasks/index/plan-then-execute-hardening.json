@@ -193,7 +193,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "Imports PlanMemoryBinding from TASK-3592 (memory.py) and PlanRunResolver / process_identity from TASK-3593 (runs.py). First of the four sequential toolkit.py writers (3598 → 3599 → 3600 → 3601); sole writer of execution_plan/__init__.py; modifies test_toolkit_core.py (also modified by TASK-3599, which depends on this).",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3598-toolkit-recovery-config.md"
+      "completed_at": "2026-09-22T12:47:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3598-toolkit-recovery-config.md"
     },
     {
       "id": "TASK-3599",
