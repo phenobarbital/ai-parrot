@@ -178,7 +178,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -188,8 +188,8 @@
       "parallelism_notes": "Imports EvaluationConfig from TASK-3605 (artifacts/laya/models.py). Creates artifacts/laya/live.py, which TASK-3615 later appends to.",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3613-laya-live-budget-and-model-evidence.md"
+      "completed_at": "2026-09-22T12:05:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3613-laya-live-budget-and-model-evidence.md"
     },
     {
       "id": "TASK-3614",
