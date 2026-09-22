@@ -15,10 +15,34 @@ import resource
 import sys
 import time
 import traceback
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
 _REAL_STDOUT = sys.stdout  # protocol channel; sys.stdout is rebound to stderr in main()
+
+
+class ContextOverflow(Exception):
+    """Raised before inference when the tokenized request exceeds the checkpoint's input limit."""
+
+
+def check_context_budget(
+    count_tokens: Callable[[str], int], state: str, questions: dict[str, dict[str, Any]], limit: int | None
+) -> str | None:
+    """Return None when the request fits ``limit`` tokens, else a message describing the overflow.
+
+    Counts ``state`` plus every question text and every choice option; never truncates anything
+    (spec §3 Module 2). ``limit=None`` means the limit is unknown and the check is skipped.
+    """
+    if limit is None:
+        return None
+    total = count_tokens(state)
+    for q in questions.values():
+        total += count_tokens(q.get("text", ""))
+        for opt in q.get("options", []) or []:
+            total += count_tokens(str(opt))
+    if total > limit:
+        return f"request needs {total} tokens but the checkpoint accepts at most {limit}; evidence is not truncated"
+    return None
 
 
 class Predictor(Protocol):
@@ -120,6 +144,20 @@ def serve(stdin: Any, predictor: Predictor, out: Any = None) -> int:
                 },
                 out,
             )
+        except ContextOverflow as exc:
+            _emit(
+                {
+                    "type": "result",
+                    "request_id": request_id,
+                    "status": "error",
+                    "answers": {},
+                    "inference_ms": None,
+                    "error_code": "context_overflow",
+                    "error_message": str(exc),
+                    "peak_rss_kb": _peak_rss_kb(),
+                },
+                out,
+            )
         except Exception as exc:  # predictor failure: record, keep serving
             print(traceback.format_exc(), file=sys.stderr)
             _emit(
@@ -148,12 +186,18 @@ def _peak_rss_kb() -> int | None:
 class LayaPredictor:
     """Adapter from our question schema to ``laya.Agent.system_one`` (verify against installed 0.3.5 — TASK-3618)."""
 
-    def __init__(self, agent: Any, max_input_tokens: int | None) -> None:
+    def __init__(
+        self, agent: Any, max_input_tokens: int | None, count_tokens: Callable[[str], int] | None = None
+    ) -> None:
         self._agent = agent
         self.max_input_tokens = max_input_tokens
+        self._count_tokens = count_tokens or (lambda s: len(s.split()))
 
     def predict(self, state: str, questions: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         """Run ``system_one`` once and map its output back to our answer schema."""
+        problem = check_context_budget(self._count_tokens, state, questions, self.max_input_tokens)
+        if problem:
+            raise ContextOverflow(problem)
         laya_questions = _to_laya_questions(questions)
         raw = self._agent.system_one(state, laya_questions)
         return _from_laya_answers(questions, raw)
