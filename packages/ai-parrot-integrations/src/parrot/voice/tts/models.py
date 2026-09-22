@@ -44,7 +44,7 @@ class TTSConfig(BaseModel):
         cfg = TTSConfig(backend="supertonic", voice="F1", total_step=8, speed=1.05)
     """
 
-    backend: Literal["google", "elevenlabs", "openai", "supertonic"] = Field(
+    backend: Literal["google", "elevenlabs", "openai", "supertonic", "polly"] = Field(
         default="google",
         description=(
             "TTS backend to use ('google' default; 'supertonic' sub-second "
@@ -77,6 +77,14 @@ class TTSConfig(BaseModel):
         gt=0.0,
         le=3.0,
         description=("Supertonic only: speech-rate multiplier (>1 = faster). " "Ignored by other backends."),
+    )
+    polly_engine: Literal["long-form", "generative", "neural", "standard"] = Field(
+        default="long-form",
+        description="Amazon Polly engine. Ignored by non-Polly backends.",
+    )
+    polly_region: Optional[str] = Field(
+        default=None,
+        description="Amazon Polly AWS region. None uses AWS_POLLY_REGION then us-east-1.",
     )
 
     model_config = {

@@ -11,6 +11,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.voice.tts import (
+    AmazonPollyTTSBackend,
     AbstractTTSBackend,
     GoogleTTSBackend,
     SynthesisResult,
@@ -25,9 +26,10 @@ from parrot.voice.tts import (
 
 
 def test_public_exports_present():
-    """All five public symbols are importable from parrot.voice.tts."""
+    """All TTS public symbols are importable from parrot.voice.tts."""
     assert AbstractTTSBackend is not None
     assert GoogleTTSBackend is not None
+    assert AmazonPollyTTSBackend is not None
     assert VoiceSynthesizer is not None
     assert TTSConfig is not None
     assert SynthesisResult is not None
@@ -44,7 +46,14 @@ def test_voice_tts_all_list():
     """parrot.voice.tts.__all__ contains the expected names."""
     import parrot.voice.tts as tts_module
 
-    expected = {"VoiceSynthesizer", "AbstractTTSBackend", "GoogleTTSBackend", "TTSConfig", "SynthesisResult"}
+    expected = {
+        "VoiceSynthesizer",
+        "AbstractTTSBackend",
+        "GoogleTTSBackend",
+        "AmazonPollyTTSBackend",
+        "TTSConfig",
+        "SynthesisResult",
+    }
     actual = set(tts_module.__all__)
     assert expected == actual
 

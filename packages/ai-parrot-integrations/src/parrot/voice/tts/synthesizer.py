@@ -93,15 +93,29 @@ class VoiceSynthesizer:
                     total_step=self.config.total_step,
                     speed=self.config.speed,
                 )
+            elif backend_name == "polly":
+                from .polly_backend import AmazonPollyTTSBackend
+
+                self.logger.info(
+                    "VoiceSynthesizer: creating AmazonPollyTTSBackend (voice=%s, engine=%s, region=%s)",
+                    self.config.voice,
+                    self.config.polly_engine,
+                    self.config.polly_region,
+                )
+                self._backend = AmazonPollyTTSBackend(
+                    voice=self.config.voice,
+                    engine=self.config.polly_engine,
+                    region=self.config.polly_region,
+                )
             elif backend_name in ("elevenlabs", "openai"):
                 raise ValueError(
                     f"TTS backend not implemented: '{backend_name}'. "
-                    "Available backends: 'google', 'supertonic' (FEAT-231)."
+                    "Available backends: 'google', 'supertonic', 'polly' (FEAT-591)."
                 )
             else:
                 raise ValueError(
                     f"Unknown TTS backend: '{backend_name}'. "
-                    "Supported values: 'google', 'supertonic', "
+                    "Supported values: 'google', 'supertonic', 'polly', "
                     "'elevenlabs', 'openai'."
                 )
         return self._backend

@@ -51,6 +51,17 @@ def test_synthesizer_default_config():
     assert s.config.mime_format == "audio/ogg"
 
 
+def test_synthesizer_creates_polly_backend():
+    """_get_backend lazily creates the Amazon Polly backend."""
+    from parrot.voice.tts.polly_backend import AmazonPollyTTSBackend
+
+    synthesizer = VoiceSynthesizer(TTSConfig(backend="polly"))
+    backend = synthesizer._get_backend()
+
+    assert isinstance(backend, AmazonPollyTTSBackend)
+    assert backend._engine == "long-form"
+
+
 # ---------------------------------------------------------------------------
 # Backend selection errors
 # ---------------------------------------------------------------------------
