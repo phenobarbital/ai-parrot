@@ -16,7 +16,7 @@
       "feature_id": "FEAT-592",
       "feature": "nova-image-planogram",
       "spec": "sdd/specs/nova-image-planogram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies: modifies only .gitignore and test_plancheck_gitignore.py, which no other task touches. Root of the graph.",
       "assigned_to": null,
       "started_at": "2026-09-22T23:24:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3639-gitignore-tracking-rules.md"
+      "completed_at": "2026-09-22T23:31:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3639-gitignore-tracking-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3640",
