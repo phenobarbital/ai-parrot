@@ -271,10 +271,10 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestration (native Claude Sonnet 5 agent, subagent id a3919ea143473ba4e)
+**Date**: 2026-09-22
+**Notes**: Implemented and merged commit-clean (lint auto-fixed by engine, residual_count=0). Local task validation: `test_delta_planner.py` (6 passed), `test_planner.py` (15 passed, no regression), `ruff check` clean.
+`coder_record_review` was attempted for this native delivery but rejected with `invalid_arguments: review must match a known attempt's task, backend and actual model` — this session did not retain the `attempt_uid` `coder_prepare_native` issued for TASK-3597 (context from the original dispatch turn was not available when consolidating). Per protocol, NOT fabricating an attempt_uid: **feedback/review NOT recorded** in the coder-feedback plane for this delivery.
+Merge-tier validation (`102a3ed1-a205-40ff-837e-79b1e65a0b93:TASK-3595:merge`, launched covering the prior task in the same wave) followed the same established, reproducible pre-existing-failure pattern seen across this execution's earlier validations (25-26 pre-existing unrelated collection errors in `ai-parrot`'s own suite from a known local-environment `.so`-extension gap, plus a slow `ai-parrot-client-google` suite) and did not settle to `completed` within budget. No failure attributable to this task's own files (`planner.py`, `test_delta_planner.py`) was observed. Treating as `failed` per protocol; closing via manual SDD-state update with this documented evidence.
 
 **Deviations from spec**: none

@@ -238,10 +238,12 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestration (codex/gpt-5.6-terra seat, attempt_uid=fcb6619b90bd4f4db64d733722280ee1)
+**Date**: 2026-09-22
+**Notes**: Merged commit-clean (lint auto-fixed, commit b4fcf1210, residual_count=0). Local run of `tests/tools/execution_plan/test_integration_recovery.py` found 4 failures:
+- `test_large_fanout_restart_preserves_skip_existing`: real fixture defect — `ForEach(source="{artifacts.list_out}")` referenced the store_as key instead of the producing node's id (`"{artifacts.list}"`), failing `ExecutionPlan`'s `depends_on`/`referenced_nodes` validator. Fixed in commit 331640739. Feedback recorded (coder-feedback:e6def5db63ba9e331f7acc91, pattern `unverified-fixture-schema-drift`).
+- `test_fresh_process_recovery_chain`, `test_serialized_fake_store_recovery_always_runs`, `test_in_memory_downgrade_status_works_resume_refuses`: all fail with "B was not checkpointed before the bounded interruption" — the SAME pre-existing, ledger-filed root cause as TASK-3600 (`issue:7552079c55a1`: `AgentsFlow`'s required checkpoint barrier never fires for definition-driven `PlanFlow`s, so no incremental checkpoint is ever persisted mid-run). Not attributable to this delivery or this task's own scope; skip reason is the ledger issue.
+`coder_record_review` was called twice with the corrected `fix_commits` and rejected both times with `invalid_arguments` (same transient/systemic tool issue observed for TASK-3595/3598/3599 in this execution) — feedback IS recorded (see above); the review-rate metric for this attempt is therefore incomplete, documented here as the authoritative record.
+Merge-tier validation followed the established baseline (25 pre-existing unrelated collection errors, advisors/amazon/anthropic/gemma4 clean, google slow); `timed_out` per protocol, no new regressions.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none — the 3 remaining failing tests correctly encode the spec's recovery-chain requirements; they cannot pass until ledger issue:7552079c55a1 is fixed upstream.

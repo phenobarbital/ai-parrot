@@ -445,10 +445,42 @@ async def test_select_latest_prefers_greatest_id_and_detects_corruption(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: native / sonnet (sdd-coder subagent), attempt_uid `dc8368af811c4668b55324d87d6bd06e`
+**Date**: 2026-09-22
 **Notes**:
+- Delivered exactly the 3 scoped files: `runs.py` (`register_plan_checkpoint_types`,
+  `plan_fingerprint`, `read_run_metadata`, `project_run`, `select_latest`, `classify_miss`,
+  `PlanRunResolver`), `_recovery_fakes.py` (`SerializingFakeCheckpointStore`,
+  `ScriptedPlannerClient`, `CountingToolManager`), `test_run_resolution.py` (9 tests,
+  AC-1..AC-5). No out-of-scope files; `sdd/` untouched.
+- 9 new tests pass; regression checks against `test_serializer.py` (12 passed) and
+  `test_run_models.py` (11 passed, unmodified) confirm no drift in dependencies. ruff clean.
+- Self-checked all 3 prior coder-feedback patterns (hasattr-duck-typing-ordering,
+  unisolated-real-$HOME-in-tests, unscoped-removal-reuse) against this delivery; none
+  applicable (no hasattr branching — uses explicit `isinstance(value, ArtifactRef)`;
+  no filesystem paths touched; no wider-scoped helper reused for a narrower operation).
+- **Ledger-worthy finding reported by the coder** (test-fake-only workaround, in this task's
+  own file scope, not a defect in this delivery): `SerializingFakeCheckpointStore.put()`'s
+  blueprint-given body (`self._serializer.encode(checkpoint.model_dump(mode="python"))`)
+  cannot round-trip a registered Pydantic type nested inside `ContextSnapshot.results`
+  (a `dict[str, Any]` field) — Pydantic v2.12.5's `model_dump()` flattens the nested
+  `BaseModel` to a plain dict before `FlowStateSerializer` can tag it, and pre-encoding via
+  `to_safe_with_meta()` first triggers the serializer's own `__type__`-key collision-escape
+  guard on the second pass, corrupting the envelope. Fixed locally in `_recovery_fakes.py` by
+  restoring the raw (live-object) `results` onto the `model_dump()`'d payload before the
+  single `encode()` call. The coder flagged this as a likely latent defect in the shared
+  FEAT-399 `FlowStateSerializer`/`FlowCheckpointer` double-encode interaction that would
+  affect any OTHER registered type once exercised against a real byte-based store (Redis/
+  Durable) rather than an object-holding fake — worth a ledger issue at feature completion
+  review; every existing checkpoint-store test fake in the repo stores live objects directly
+  and never exercised this path. **Filed at feature-completion code review, not here** (per
+  the SDD-worker protocol: deferred findings are filed once, at the adversarial review step).
+- Design decisions documented as code comments where the Implementation Notes were
+  underspecified: resumable/recovery_reason precedence order; lineage consolidation keeps the
+  deepest child's `PlanRunMetadata` on the returned `PlanRun`; a child's synthesized `blocked`
+  refs never override a parent's real ref (only the child's own `dispatched_node_ids` do).
+- Merge-tier `coder_run_validation` for the TASK-3592/TASK-3593 chunk hit the same
+  established pre-existing timeout pattern as earlier tasks in this feature (see TASK-3592's
+  Completion Note) — no failure relates to `runs.py` or `_recovery_fakes.py`.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

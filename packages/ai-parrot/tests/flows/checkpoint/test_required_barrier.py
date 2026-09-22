@@ -382,3 +382,77 @@ async def test_non_required_mode_still_attaches_listener(fake_store) -> None:
     # checkpoints it wrote along the way prove it fired.
     history = await fake_store.history("listener-flow", limit=20)
     assert len(history) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Definition-driven mode barrier (issue:7552079c55a1)
+# ---------------------------------------------------------------------------
+
+
+def _definition_linear_flow(sink: list, *, flow_id: str, store, required: bool) -> AgentsFlow:
+    """a -> b via FlowDefinition (definition-driven mode, NOT explicit-edge)."""
+
+    def _step_factory(node_def: NodeDefinition, deps: set, succs: set) -> _StepNode:
+        return _StepNode(node_id=node_def.id, sink=sink, label=node_def.config.get("label", ""),
+                         dependencies=deps, successors=succs)
+
+    defn = FlowDefinition(
+        flow="required-barrier-defn",
+        nodes=[
+            NodeDefinition(id="a", type="required-barrier.step", config={"label": "a"}),
+            NodeDefinition(id="b", type="required-barrier.step", config={"label": "b"}),
+        ],
+        edges=[{"from": "a", "to": "b"}],
+    )
+    flow = AgentsFlow.from_definition(
+        defn,
+        agent_registry=_StubRegistry(),
+        node_factories={"required-barrier.step": _step_factory},
+        checkpoint=True,
+        checkpoint_store=store,
+        flow_id=flow_id,
+    )
+    flow._checkpoint_required = required
+    return flow
+
+
+async def test_definition_driven_required_barrier_blocks_downstream(fake_store) -> None:
+    """Definition-driven flows must fire the required barrier before downstream dispatch."""
+    put_blocked = asyncio.Event()
+    put_may_proceed = asyncio.Event()
+    real_put = fake_store.put
+
+    async def _blocking_put(checkpoint):
+        put_blocked.set()
+        await put_may_proceed.wait()
+        await real_put(checkpoint)
+
+    fake_store.put = _blocking_put
+
+    sink: list = []
+    flow = _definition_linear_flow(sink, flow_id="defn-barrier-1", store=fake_store, required=True)
+
+    run_task = asyncio.create_task(flow.run_flow(FlowContext(initial_task="t")))
+
+    await asyncio.wait_for(put_blocked.wait(), timeout=2.0)
+    assert sink == ["a"], f"Expected only 'a' before barrier, got {sink}"
+
+    put_may_proceed.set()
+    result = await asyncio.wait_for(run_task, timeout=2.0)
+
+    assert result.status.value == "completed"
+    assert sink == ["a", "b"]
+
+
+async def test_definition_driven_put_failure_raises(fake_store) -> None:
+    """Definition-driven flow: checkpoint failure must prevent downstream dispatch."""
+    fake_store.put = AsyncMock(side_effect=ConnectionError("store unavailable"))
+
+    sink: list = []
+    flow = _definition_linear_flow(sink, flow_id="defn-barrier-2", store=fake_store, required=True)
+
+    with pytest.raises(CheckpointPersistenceError):
+        await flow.run_flow(FlowContext(initial_task="t"))
+
+    assert sink == ["a"]
+    assert "b" not in sink

@@ -271,10 +271,8 @@ grep -c "plan_resume" docs/toolkits/execution_plan_toolkit.md               # ex
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestration (nova/minimax.minimax-m2.5 seat, attempt 2, attempt_uid=596694d750334fa09e236cc7901cca10 — attempt 1 on nova/glm timed out at max_turns=60 with no final_output, auto-retried by the engine)
+**Date**: 2026-09-22
+**Notes**: Merged commit-clean (381e7e5d1). Verified via grep: "does not match wrapped" (the removed workaround comment) → 0 matches; "plan_resume" → 4 matches, matching the delivery's own claimed verification exactly. Review recorded (coder-review:48361066d1f756a906bf14ec), no fix commits needed.
 
 **Deviations from spec**: none

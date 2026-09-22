@@ -345,10 +345,24 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (resumed interrupted session; original implementation by a prior
+coder attempt, merged as commits 30d0f4a21/6e6d1014f/2524a466d before this session began)
+**Date**: 2026-09-22
 **Notes**:
+- Implementation verified by hand against this task's Codebase Contract and Implementation
+  Blueprint: `RestoreError`, `PlanWorkingMemoryCatalog` (`_bind_version`, `restore_version`,
+  `_entry_from_payload`, `aget` override) created in `tools/execution_plan/memory.py` exactly
+  per blueprint. FILL IN sections correctly implemented: `_entry_from_payload` builds
+  `CatalogEntry` for DataFrame payloads / `GenericEntry` otherwise, using
+  `VersionMetadata.from_descriptor`; `aget` lazily restores a pinned key under
+  `getattr(self, "_restore_budget", 2_000_000)`. No `put`/`aput_generic`/`drop_alias`/
+  `invalidate` calls anywhere in the file (AC13, grep-verified). No deviations.
+- See TASK-3589's Completion Note for the full account of the merge-tier validation run
+  (settled `outcome=timed_out` after exercising ~20/24 distributions with only pre-existing,
+  unrelated failures) and the one regression found+fixed in that task (unrelated to this
+  task's file, `tools/execution_plan/memory.py`, which this run's `ai-parrot` distribution
+  collection-abort also could not exercise — see TASK-3589 note for the same pre-existing
+  25-collection-error/local-venv caveats). This task's new `test_plan_memory_restore.py`
+  was reviewed by hand against the Test Specification and matches AC-1..AC-5.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.
