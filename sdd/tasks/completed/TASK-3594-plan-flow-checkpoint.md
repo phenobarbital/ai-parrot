@@ -315,10 +315,33 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: codex / gpt-5.6-terra (via parrot-sdd-coder MCP orchestration), attempt_uid
+`71bf09db34dd44ab9ceebf7eb26d5550`
+**Date**: 2026-09-22
 **Notes**:
+- Delivered exactly the 2 scoped files: `checkpoint.py` (`plan_run_projector`, `PlanFlow`,
+  `build_plan_flow`) and `test_checkpoint_lifecycle.py`. No out-of-scope files, `sdd/`
+  untouched.
+- Reviewed by hand: `PlanFlow.__init__` forces `checkpoint_required=True`,
+  `checkpoint_shared_data=plan_run_projector`, `checkpoint_include_responses=False` only when
+  `checkpoint=True` is passed — matches the interface skeleton. `_run_flow_scheduler` writes a
+  `status="running"` checkpoint before delegating to the base scheduler and a
+  `status="failed"/"completed"` terminal checkpoint after, re-raising `CancelledError`
+  untouched (never swallows cancellation). `build_plan_flow` registers the tool-node factory
+  and plan checkpoint types, computes `enabled`/`durable` from `store`/`plan.metadata.checkpoint`/
+  `durable_store`, and binds `flow_id=run.run_id`. No edits to `bots/flows/flow/flow.py` or the
+  checkpoint package (AC1 respected).
+- Merge-tier `coder_run_validation` (180s budget) settled `outcome=timed_out` — same
+  established pre-existing pattern (25→26 collection errors in `ai-parrot`'s own distribution;
+  the +1 is this task's own new `test_checkpoint_lifecycle.py`, which inherits the *identical*
+  pre-existing worktree limitation as the other 25 — missing compiled `.so` extensions for
+  `parrot.utils.types` in a bare git worktree, already known and explicitly worked around
+  elsewhere in the repo, e.g. `tests/unit/stores/conftest.py`'s `parrot.utils.types` stub and
+  `tests/knowledge/graphindex/conftest.py`'s main-repo-`src`-on-`sys.path` shim — `tests/tools/
+  execution_plan/` has no such local conftest, so its new test inherits the same collection
+  failure as every other file under `ai-parrot/tests` in this environment; NOT a defect
+  introduced by this task). `ai-parrot-advisors`/`-client-amazon`/`-client-anthropic`/
+  `-client-gemma4` all clean; `-client-google`'s known-slow video-reel suite still mid-flight
+  at cutoff. Local `pytest` remains blocked by the same pre-existing broken local venv.
 
-**Deviations from spec**: none
+**Deviations from spec**: none.

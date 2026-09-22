@@ -110,7 +110,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Imports PLAN_RUN_SHARED_KEY / PlanRunMetadata from TASK-3590 (models.py) and register_plan_checkpoint_types from TASK-3593 (runs.py); its tests import SerializingFakeCheckpointStore from TASK-3593's _recovery_fakes.py. Creates checkpoint.py.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3594-plan-flow-checkpoint.md"
+      "completed_at": "2026-09-22T12:28:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3594-plan-flow-checkpoint.md"
     },
     {
       "id": "TASK-3595",
@@ -151,7 +151,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "Imports PlanDelta and PlanRun from TASK-3590 (models.py); its tests import CountingToolManager from TASK-3593's _recovery_fakes.py. Creates repair.py (sole writer).",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3596-repair-delta-validation.md"
+      "completed_at": "2026-09-22T12:28:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3596-repair-delta-validation.md"
     },
     {
       "id": "TASK-3597",
