@@ -386,3 +386,12 @@ async def test_host_runtime_requires_scope_and_is_borrowed(): ...             # 
   blocked by the pre-existing broken local venv (`parrot.utils.types` import error).
 
 **Deviations from spec**: none.
+
+**Addendum (2026-09-22, during TASK-3599 consolidation)**: "no failure observed relates to this
+task's files" above was premature — `test_plan_memory.py` (this task's own test file) was never
+actually collected/executed at the time of that statement, masked by an unrelated TASK-3594
+dead-code ImportError bug that TASK-3599 later activated. Once collection was unblocked,
+`test_activation_keeps_existing_entries_and_is_idempotent` failed for real:
+`toolkit.get_result("result")` was called without `await` (the method is `async def`) and the
+returned coroutine was subscripted directly. Fixed in commit `f605b9f81` (added `await`).
+Verified: `pytest test_plan_memory.py -q` → passed.

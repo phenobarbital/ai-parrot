@@ -345,3 +345,17 @@ See the CREATE block above.
   at cutoff. Local `pytest` remains blocked by the same pre-existing broken local venv.
 
 **Deviations from spec**: none.
+
+**Addendum (2026-09-22, during TASK-3599 consolidation)**: the "no such local conftest, so its
+new test inherits the same collection failure" reasoning above was WRONG for this file's own
+`checkpoint.py` — it was masking a REAL bug in this task's own delivery, not just inheriting a
+pre-existing environment gap. `checkpoint.py:14` imported `from parrot.bots.flows.core.types
+import FlowResult`, but `FlowResult` is defined in `.core.result`, not `.core.types`. This
+import was dead code (nothing imported `checkpoint.py` yet) until TASK-3599 wired `toolkit.py`
+to import from it, which activated the `ImportError` and broke collection for the entire
+`execution_plan` test package. Fixed in commit `25edda383` (`from .core.result import
+FlowResult`). Verified: `pytest tests/tools/execution_plan/ -q` → 157 passed after the fix
+(collection was previously blocked entirely). Lesson: a merge-tier validation's pre-existing
+collection-error count is a baseline to DIFF against on every subsequent task, not something to
+assume is stable — a jump in that count (27→37 when TASK-3599 landed) is a real regression
+signal, not automatically more of the same known noise.

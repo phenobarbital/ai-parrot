@@ -353,3 +353,17 @@ See the CREATE block above.
 Merge-tier validation (`102a3ed1-a205-40ff-837e-79b1e65a0b93:TASK-3595:merge`) did not settle to `completed` within its 180s budget — it followed the same established, reproducible pre-existing-failure pattern already observed across TASK-3589/3591/3592/3594/3596's validations this execution: ai-parrot's own suite is blocked by ~25-26 pre-existing, unrelated collection errors (missing compiled `.so` extensions for `parrot.utils.types`/`parrot.utils.parsers.toml` in this bare worktree — a documented, long-standing local-environment gap, see `.agent/skills/worktree-management` and `tests/unit/stores/conftest.py`'s explicit stub for the same issue), and `ai-parrot-client-google`'s suite alone takes ~9.5 minutes due to real video/audio encoding in `test_reel_assembly.py`. No failure attributable to this task's own files (`flow.py`, continuation/lease code) was observed in the portion of the sweep that did execute. Treating `outcome=timed_out` as failed per protocol; closing via manual SDD-state update with this documented evidence rather than fabricating a `completed` validation result.
 
 **Deviations from spec**: none
+
+**Addendum (2026-09-22, during TASK-3599 consolidation)**: "no failure attributable to this
+task's own files" above was premature — `test_continuation_conflict.py` (this task's own test
+file) was never actually collected/executed at the time of that statement, masked by an
+unrelated TASK-3594 dead-code ImportError bug that TASK-3599 later activated. Once collection
+was unblocked, this file had two real fixture defects of its own: `_metadata()` built a
+`PlanNode` without the required `store_as` field, and `_run()` constructed `PlanRun(status=
+"suspended")`, not a valid status literal (`running|completed|partial|failed`). Fixed in commit
+`f6ab7a0e8` (added `store_as`; changed to `status="running"` — an active, resumable, checkpointed
+run under continuation has not reached a terminal state). Verified: `pytest
+test_continuation_conflict.py -q` → 8 passed. Feedback recorded (coder-feedback:
+c18cf40e9a16382fa6a04724, pattern `unverified-fixture-schema-drift`) — the coder's own local
+test run for this task apparently never actually collected/ran this new file before declaring
+it green, since these defects would have failed immediately.
