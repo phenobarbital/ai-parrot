@@ -1,4 +1,5 @@
 """FEAT-589 M4 — reporting: nearest-rank percentiles, confusion matrix, nulls, failed samples, no overwrite."""
+
 from __future__ import annotations
 
 from pathlib import Path

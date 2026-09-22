@@ -1,4 +1,5 @@
 """Metrics and report writers for the Laya evaluation (spec §3 Module 4, §4 metrics)."""
+
 from __future__ import annotations
 
 import json
@@ -259,7 +260,9 @@ def render_markdown(report: EvaluationReport) -> str:
                 # Proportions
                 if "proportions" in routing:
                     props = routing["proportions"]
-                    lines.append(f"- Choice proportions: primary={props.get('primary', 0)}, cheap={props.get('cheap', 0)}, abstain={props.get('abstain', 0)}")
+                    lines.append(
+                        f"- Choice proportions: primary={props.get('primary', 0)}, cheap={props.get('cheap', 0)}, abstain={props.get('abstain', 0)}"
+                    )
 
                 # Per-arm statistics
                 if "arms" in routing:
