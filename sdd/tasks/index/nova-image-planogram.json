@@ -1,0 +1,133 @@
+{
+  "feature": "nova-image-planogram",
+  "feature_id": "FEAT-592",
+  "spec": "sdd/specs/nova-image-planogram.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-22T23:19:27.026594+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3639",
+      "slug": "gitignore-tracking-rules",
+      "title": "Git tracking rules for examples/planogram/aws/",
+      "feature_id": "FEAT-592",
+      "feature": "nova-image-planogram",
+      "spec": "sdd/specs/nova-image-planogram.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: modifies only .gitignore and test_plancheck_gitignore.py, which no other task touches. Root of the graph.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3639-gitignore-tracking-rules.md"
+    },
+    {
+      "id": "TASK-3640",
+      "slug": "nova-converse-transport-shim",
+      "title": "Nova Converse transport shim (NovaVisionClient)",
+      "feature_id": "FEAT-592",
+      "feature": "nova-image-planogram",
+      "spec": "sdd/specs/nova-image-planogram.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3639"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Needs the .gitignore negation block from TASK-3639 (.gitignore): without it git add of examples/planogram/aws/nova_vision.py silently does nothing. No code dependency on TASK-3641 - the schema instruction crosses as a plain str.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3640-nova-converse-transport-shim.md"
+    },
+    {
+      "id": "TASK-3641",
+      "slug": "planogram-vocabulary-closed-set-prompt",
+      "title": "Planogram vocabulary + closed-set identification prompt",
+      "feature_id": "FEAT-592",
+      "feature": "nova-image-planogram",
+      "spec": "sdd/specs/nova-image-planogram.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3639"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Needs the .gitignore negation block from TASK-3639 (.gitignore) to commit examples/planogram/aws/prompt.py. Independent of TASK-3640: prompt.py imports nothing from nova_vision.py (schema_instruction is a parameter).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3641-planogram-vocabulary-closed-set-prompt.md"
+    },
+    {
+      "id": "TASK-3642",
+      "slug": "strip-orchestration-and-flatten",
+      "title": "Strip orchestration and flattening",
+      "feature_id": "FEAT-592",
+      "feature": "nova-image-planogram",
+      "spec": "sdd/specs/nova-image-planogram.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-3641"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports build_nova_identify_prompt, PlanogramVocabulary, NOVA_PROMPT_VERSION and NOVA_STAGE from TASK-3641 (examples/planogram/aws/prompt.py). Inherits the TASK-3639 .gitignore edge transitively.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3642-strip-orchestration-and-flatten.md"
+    },
+    {
+      "id": "TASK-3643",
+      "slug": "cli-perception-and-outputs",
+      "title": "CLI, Stage-1 perception and run outputs",
+      "feature_id": "FEAT-592",
+      "feature": "nova-image-planogram",
+      "spec": "sdd/specs/nova-image-planogram.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-3640",
+        "TASK-3641",
+        "TASK-3642"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports NovaVisionClient from TASK-3640 (examples/planogram/aws/nova_vision.py), load_planogram_vocabulary from TASK-3641 (examples/planogram/aws/prompt.py), and identify_strips_closed_set/flatten/RunStats from TASK-3642 (examples/planogram/aws/identify.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3643-cli-perception-and-outputs.md"
+    },
+    {
+      "id": "TASK-3644",
+      "slug": "aws-example-readme",
+      "title": "examples/planogram/aws/README.md",
+      "feature_id": "FEAT-592",
+      "feature": "nova-image-planogram",
+      "spec": "sdd/specs/nova-image-planogram.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3639"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Needs the .gitignore negation block from TASK-3639 (.gitignore) - the README is un-ignored by the !examples/planogram/aws/README.md line specifically. Documents flags fixed by the spec, so it needs no code task first. Confirmed NOT a use: the only mention of examples/planogram/aws/nova2.py is the README's usage example and flag table, both fixed by spec \u00a73 Module 5, so the README can be written before TASK-3643 creates that file - no edge added.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3644-aws-example-readme.md"
+    }
+  ]
+}
