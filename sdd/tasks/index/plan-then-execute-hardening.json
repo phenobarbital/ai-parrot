@@ -70,7 +70,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Appends PlanMemoryBinding to memory.py created by TASK-3591 and imports PlanWorkingMemoryCatalog / RestoreError from it (same file → serialized). Sole writer of working_memory/tool.py (_enable_plan_memory).",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3592-plan-memory-binding.md"
+      "completed_at": "2026-09-22T12:19:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3592-plan-memory-binding.md"
     },
     {
       "id": "TASK-3593",
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Imports PLAN_RUN_SHARED_KEY, PlanRun, PlanRunError, PlanRunMetadata, PlanRecoveryEnvelope from TASK-3590 (models.py). Creates runs.py and the shared test fakes _recovery_fakes.py that TASK-3594/3595/3598..3603 import.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3593-plan-run-resolver.md"
+      "completed_at": "2026-09-22T12:19:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3593-plan-run-resolver.md"
     },
     {
       "id": "TASK-3594",
