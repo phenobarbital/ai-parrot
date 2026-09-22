@@ -1,6 +1,6 @@
 {
-  "next_task_id": 3624,
+  "next_task_id": 3639,
   "next_feature_id": 592,
-  "updated_at": "2026-09-22T22:23:08+00:00",
-  "updated_by": "speech-report-models"
+  "updated_at": "2026-09-22T22:33:05+00:00",
+  "updated_by": "tool-call-delegate"
 }
