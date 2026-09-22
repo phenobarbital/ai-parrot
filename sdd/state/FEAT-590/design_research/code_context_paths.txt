@@ -1,0 +1,12 @@
+packages/ai-parrot/src/parrot/bots/flows/plan/compile.py
+packages/ai-parrot/src/parrot/bots/flows/plan/guards.py
+packages/ai-parrot/src/parrot/bots/flows/plan/models.py
+packages/ai-parrot/src/parrot/bots/flows/plan/node.py
+packages/ai-parrot/src/parrot/bots/flows/plan/validator.py
+packages/ai-parrot/src/parrot/tools/abstract.py
+packages/ai-parrot/src/parrot/tools/manager.py
+packages/ai-parrot/src/parrot/tools/working_memory/tool.py
+packages/ai-parrot/src/parrot/tools/execution_plan/checkpoint.py
+packages/ai-parrot/src/parrot/tools/execution_plan/toolkit.py
+packages/ai-parrot/src/parrot/tools/execution_plan/planner.py
+packages/ai-parrot/src/parrot/tools/execution_plan/repair.py

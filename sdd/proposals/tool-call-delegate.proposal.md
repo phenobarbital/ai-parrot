@@ -4,7 +4,7 @@ title: "Tool-Call Delegate: local tool-calling-only model as a Flow step"
 slug: tool-call-delegate
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: file
   jira_key: null
