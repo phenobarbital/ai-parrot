@@ -60,6 +60,14 @@ def wm_toolkit() -> WorkingMemoryToolkit:
     return WorkingMemoryToolkit()
 
 
+@pytest.fixture
+def fake_store():
+    """Provide a deterministic serialized checkpoint store for plan-run tests."""
+    from ._recovery_fakes import SerializingFakeCheckpointStore
+
+    return SerializingFakeCheckpointStore()
+
+
 def _single_node_plan(tool: str = "fast", node_id: str = "n1") -> ExecutionPlan:
     return ExecutionPlan(
         name="single-node-plan",
