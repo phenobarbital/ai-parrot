@@ -219,7 +219,7 @@
       "feature_id": "FEAT-589",
       "feature": "laya-adoption",
       "spec": "sdd/specs/laya-adoption.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -230,8 +230,8 @@
       "parallelism_notes": "Appends to artifacts/laya/live.py created by TASK-3613 (same file, serialized) and uses its LiveCallBudget/extract_model_evidence; type-imports LayaEvaluationAgent and constructs RouteDecision per TASK-3611's ask_routed contract (artifacts/laya/routing.py).",
       "assigned_to": null,
       "started_at": "2026-09-22T11:27:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3615-laya-live-routing-pairs.md"
+      "completed_at": "2026-09-22T12:12:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3615-laya-live-routing-pairs.md"
     },
     {
       "id": "TASK-3616",

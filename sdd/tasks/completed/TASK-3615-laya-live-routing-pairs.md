@@ -303,10 +303,16 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-coder (native, backend=native, model=sonnet, attempt_uid=921afcba1fa74385b0ff52686b917540), consolidated by sdd-worker orchestrator
+**Date**: 2026-09-22
+**Notes**: Appended `load_rubrics`, `rubric_pass`, and `run_live_routing_pairs` to `artifacts/laya/live.py`.
+Each routing case reserves two budget slots via `LiveCallBudget.reserve_pair()` before dispatch; calls
+`agent.ask_routed` once per arm (primary bound, then the case's routed decision bound), records model
+evidence/usage/latency/rubric outcome per arm, wraps provider exceptions as `status="error"`/
+`error_code="provider_error"` with no substitution, never refunds a consumed slot on failure, and stops
+with a single `call_cap_reached` sample (no partial pair) when `reserve_pair()` fails. Clean delivery,
+correctly committed (only the two declared files; `live.py`'s `git add` printed the harmless
+already-tracked/`.gitignore` advisory since it was created by TASK-3613, confirmed staged as `M` not
+untracked). Merge-tier validation: 82/82 passed, 1 skipped (unrelated benchmarks-import quirk).
 
 **Deviations from spec**: none
