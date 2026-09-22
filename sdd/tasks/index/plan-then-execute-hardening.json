@@ -298,7 +298,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -309,8 +309,8 @@
       "parallelism_notes": "Exercises plan_repair from TASK-3601's toolkit.py and imports the Process helper from TASK-3602's test_integration_recovery.py. Creates only test_integration_repair.py.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3603-integration-repair-tests.md"
+      "completed_at": "2026-09-22T14:08:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3603-integration-repair-tests.md"
     },
     {
       "id": "TASK-3604",
@@ -319,7 +319,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -330,8 +330,8 @@
       "parallelism_notes": "Documents the injection behaviour delivered by TASK-3589 (agent.py/manager.py) and the final tool surface of toolkit.py delivered by TASK-3601; sole writer of docs/toolkits/execution_plan_toolkit.md.",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3604-docs-recovery-and-migration.md"
+      "completed_at": "2026-09-22T14:08:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3604-docs-recovery-and-migration.md"
     }
   ]
 }
