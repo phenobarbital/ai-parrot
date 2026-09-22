@@ -74,6 +74,11 @@ Use one block per declared file: CREATE blocks give whole-file starting points;
 MODIFY blocks quote verified anchors and their occurrence counts. Disambiguate
 non-unique anchors with surrounding context. Keep imports, signatures, wiring,
 docstrings and types complete; every import must be in Verified Imports.
+When the spec has a §6 Edit Sites table, start from its anchor rows and
+re-run `grep -c` for each row used: code may have moved since spec creation.
+If the count no longer matches, re-locate the anchor and correct the task
+blueprint; if it is zero, stop and report drift. Derive anchors normally only
+when an older spec has no Edit Sites table.
 Bound remaining design decisions by their acceptance criteria. Include ordered
 steps, a reason for each non-trivial instruction, and the template's FILL IN
 checklist. No block should exceed about 80 lines; split oversized tasks.

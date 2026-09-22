@@ -104,6 +104,11 @@ stay with the thinking model — eligibility never delegates a design choice.
    - Interface Skeletons for every module: public signatures and docstrings,
      with `verified: path:NN` anchors for existing code, and no implementation
      bodies. `$sdd-task` derives its Implementation Blueprints from these.
+   - an Edit Sites table in §6 for every file the modules modify: the verbatim
+     attachment anchor, `path:NN`, and its occurrence count verified with
+     `grep -c`. Record the base commit used for verification. When an anchor
+     is non-unique, include two or three lines of surrounding context; list
+     only actual module files. For created files, record the path only.
    - tests and acceptance criteria
    - mandatory Codebase Contract
    - Worktree Strategy
