@@ -1,4 +1,5 @@
 """FEAT-585 M7 — recovery across simulated process boundaries."""
+
 from __future__ import annotations
 
 import asyncio
@@ -169,7 +170,10 @@ async def test_actual_durable_artifacts_reconnect(tmp_path: Any, monkeypatch: py
         assert checkpoint is not None
         original_b = checkpoint.context.results["b"]
         restored = Process(
-            {key: dict(value) for key, value in original.store._bytes.items()}, runtime=runtime, scope=SCOPE, durable=True
+            {key: dict(value) for key, value in original.store._bytes.items()},
+            runtime=runtime,
+            scope=SCOPE,
+            durable=True,
         )
         monkeypatch.setattr("parrot.tools.execution_plan.runs.process_identity", lambda: "different-process")
         continuation = await restored.toolkit.plan_resume(run_id)
