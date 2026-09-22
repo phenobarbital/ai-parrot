@@ -240,5 +240,8 @@ async def test_live_paired_routing(tmp_path: Path) -> None:
     assert result == 0
     assert {sample["arm"] for sample in live_samples} == {"primary", "routed"}
     assert all(sample["actual_model"] for sample in live_samples if sample["status"] == "ok")
-    assert all(report["metrics"]["routing"]["arms"][arm]["usage"] is not None for arm in ("primary", "routed"))
+    assert all(
+        report["metrics"]["scenarios"]["routing"]["routing"]["arms"][arm]["usage"] is not None
+        for arm in ("primary", "routed")
+    )
     assert len(live_samples) <= int(max_live_calls)

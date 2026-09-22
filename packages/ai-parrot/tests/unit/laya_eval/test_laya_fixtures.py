@@ -28,7 +28,7 @@ def test_injection_texts_come_from_the_benchmark_corpus():
     from benchmarks.injection_guardrail_latency.corpus import build_eval_set
 
     texts, _, buckets = build_eval_set()
-    corpus = set(zip(texts, buckets))
+    corpus = set(zip(texts, buckets, strict=True))
     for c in load_cases(FIXTURES / "injection.jsonl", "injection"):
         assert (c.state, c.bucket) in corpus, c.id
 

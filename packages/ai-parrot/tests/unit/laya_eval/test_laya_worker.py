@@ -29,8 +29,8 @@ class _Fake:
 
 def _run(lines: list[str], predictor) -> list[dict]:
     out = io.StringIO()
-    assert worker.serve(io.StringIO("".join(l + "\n" for l in lines)), predictor, out) == 0
-    return [json.loads(l) for l in out.getvalue().splitlines()]
+    assert worker.serve(io.StringIO("".join(line + "\n" for line in lines)), predictor, out) == 0
+    return [json.loads(line) for line in out.getvalue().splitlines()]
 
 
 def test_ok_result_echoes_request_id_and_parses_as_prediction_result():

@@ -194,6 +194,30 @@ def render_markdown(report: EvaluationReport) -> str:
             lines.append(f"- {key}: {value}")
         lines.append("")
 
+    # Regex baseline (injection scenario only; JSON-equivalent lives at metrics["regex_baseline"])
+    regex_baseline = report.metrics.get("regex_baseline") if report.metrics else None
+    if regex_baseline:
+        agree = sum(1 for row in regex_baseline.values() if row["predicted"] == row["expected"])
+        stripped = sum(1 for row in regex_baseline.values() if row["framework_metadata_stripped"])
+        lines.append("## Regex Baseline (injection)")
+        lines.append(
+            f"- {len(regex_baseline)} cases; {agree} agree with the expected label; "
+            f"{stripped} had framework metadata stripped by the baseline (Laya sees the wrapper unstripped)."
+        )
+        lines.append("")
+
+    # Route decisions (routing scenario only; JSON-equivalent lives at metrics["route_decisions"])
+    route_decisions = report.metrics.get("route_decisions") if report.metrics else None
+    if route_decisions:
+        lines.append("## Route Decisions (routing)")
+        lines.append("| case | choice | selected_model | reason |")
+        lines.append("|---|---|---|---|")
+        for case_id, decision in sorted(route_decisions.items()):
+            lines.append(
+                f"| {case_id} | {decision['choice']} | {decision.get('selected_model')} | {decision['reason']} |"
+            )
+        lines.append("")
+
     # Per-scenario sections
     if report.metrics and "scenarios" in report.metrics:
         lines.append("## Results by Scenario")

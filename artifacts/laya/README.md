@@ -46,7 +46,12 @@ The report includes:
 - **Model unverified**: If the model is not verified, it is marked as such.
 - **Fallback samples**: Cases where the fallback mechanism was triggered.
 - **Cost**: `null` if no `--price-file` is provided.
-- **Status meanings**: `complete` (all scenarios executed), `incomplete` (some scenarios failed), `error` (unexpected failure).
+- **Status meanings**: `complete` (all requested scenarios executed with no operational failures),
+  `incomplete` (some scenarios failed, OR the requested scenarios included `routing` without `--live` —
+  which is the CLI's own default; running the exact command shown in "## Run" above always yields
+  `incomplete`/exit 3 by design, since live routing was never attempted, not because anything failed —
+  local-classifier evidence for injection/grounded/local-routing remains valid per spec §5 AC-8),
+  `error` (unexpected failure).
 
 ## Results of the review run (2026-09-22)
 
