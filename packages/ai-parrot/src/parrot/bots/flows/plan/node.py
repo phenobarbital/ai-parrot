@@ -790,8 +790,7 @@ class PlanToolNode(_BaseNode):
             )
 
         raise ToolExecutionError(
-            f"Node {self.node_id!r}: tool {tool_name!r} failed after "
-            f"{policy.max_attempts} attempt(s): {last}"
+            f"Node {self.node_id!r}: tool {tool_name!r} failed after " f"{policy.max_attempts} attempt(s): {last}"
         ) from last
 
     async def _dispatch(self, args: Dict[str, Any], *, tool: str) -> Any:
@@ -813,9 +812,7 @@ class PlanToolNode(_BaseNode):
 
     # ── Attempt receipts (FEAT-538) ───────────────────────────────────────
 
-    def _begin_attempt(
-        self, session: Any, *, attempt: int, index: Optional[int], tool: str
-    ) -> Optional["_Receipt"]:
+    def _begin_attempt(self, session: Any, *, attempt: int, index: Optional[int], tool: str) -> Optional["_Receipt"]:
         """Open this node's receipt for one physical attempt.
 
         The receipt carries the plan's run/node/item/attempt identifiers

@@ -1,4 +1,5 @@
 """FEAT-590: PlanToolNode extension hooks — inert by default, effective in a subclass."""
+
 from __future__ import annotations
 
 from typing import Any

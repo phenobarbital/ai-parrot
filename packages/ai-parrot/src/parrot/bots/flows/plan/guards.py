@@ -27,6 +27,7 @@ Examples::
     ctx.artifacts.listing.n_reports > 0 && ctx.errors == 0
     ctx.status.fetch_reports == "ok"
 """
+
 from __future__ import annotations
 
 import logging
@@ -61,9 +62,7 @@ def _load_evaluator():
         try:
             from cel_evaluator import CELPredicateEvaluator  # type: ignore # noqa: PLC0415
         except ImportError as exc:
-            raise GuardCompilationError(
-                "CEL guards require 'cel-python'. Install it, or omit 'when'."
-            ) from exc
+            raise GuardCompilationError("CEL guards require 'cel-python'. Install it, or omit 'when'.") from exc
     return CELPredicateEvaluator
 
 
@@ -88,9 +87,7 @@ class PlanGuard:
         try:
             self._evaluator = evaluator_cls(expression)
         except ValueError as exc:
-            raise GuardCompilationError(
-                f"Invalid 'when' expression {expression!r}: {exc}"
-            ) from exc
+            raise GuardCompilationError(f"Invalid 'when' expression {expression!r}: {exc}") from exc
 
     def evaluate(
         self,
