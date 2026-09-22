@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from examples.planogram.aws.nova_vision import NovaVisionClient
+from nova_vision import NovaVisionClient
 
 
 def _image_block(payload: bytes) -> dict:
