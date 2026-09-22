@@ -10,7 +10,7 @@ tags: [tts, speech-report, supertonic, polly, voice]
 **Feature ID**: FEAT-591
 **Date**: 2026-09-22
 **Author**: Jesus (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor (0.30.x)
 
 Source: `sdd/proposals/speech-report-models.brainstorm.md` (Option A). Follow-up: ledger `issue:0fe9c8221dfa` (make Supertonic the Telegram default).
