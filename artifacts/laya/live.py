@@ -1,4 +1,5 @@
 """Live-mode guards for the Laya evaluation: preflight, logical-call cap, model evidence (spec §2)."""
+
 from __future__ import annotations
 
 import os
@@ -75,13 +76,13 @@ class ModelEvidence(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     requested_model: str | None
-    reported_model: str | None          # AIMessage.model — NOT proof (factory echoes the request)
-    actual_model: str | None            # raw_response["model"] when available
+    reported_model: str | None  # AIMessage.model — NOT proof (factory echoes the request)
+    actual_model: str | None  # raw_response["model"] when available
     verified: bool
     mismatch: bool
     fallback_metadata: dict[str, Any] | None
     usage: dict[str, Any] | None
-    error_code: str | None              # "model_unverified" when actual_model is None
+    error_code: str | None  # "model_unverified" when actual_model is None
 
 
 def extract_model_evidence(message: AIMessage, requested_model: str | None) -> ModelEvidence:
@@ -91,6 +92,13 @@ def extract_model_evidence(message: AIMessage, requested_model: str | None) -> M
     meta = message.metadata or {}
     fallback = {k: meta[k] for k in ("used_fallback_model", "original_model", "fallback_model") if k in meta} or None
     usage = message.usage.model_dump() if message.usage else None
-    return ModelEvidence(requested_model=requested_model, reported_model=message.model, actual_model=actual,
-                         verified=actual is not None, mismatch=bool(actual and requested_model and actual != requested_model),
-                         fallback_metadata=fallback, usage=usage, error_code=None if actual else "model_unverified")
+    return ModelEvidence(
+        requested_model=requested_model,
+        reported_model=message.model,
+        actual_model=actual,
+        verified=actual is not None,
+        mismatch=bool(actual and requested_model and actual != requested_model),
+        fallback_metadata=fallback,
+        usage=usage,
+        error_code=None if actual else "model_unverified",
+    )
