@@ -1,4 +1,5 @@
 """FEAT-589 M2 — context budget preflight: boundary passes, overflow rejects, nothing is truncated."""
+
 from __future__ import annotations
 
 import io

@@ -25,8 +25,9 @@ class ContextOverflow(Exception):
     """Raised before inference when the tokenized request exceeds the checkpoint's input limit."""
 
 
-def check_context_budget(count_tokens: Callable[[str], int], state: str,
-                         questions: dict[str, dict[str, Any]], limit: int | None) -> str | None:
+def check_context_budget(
+    count_tokens: Callable[[str], int], state: str, questions: dict[str, dict[str, Any]], limit: int | None
+) -> str | None:
     """Return None when the request fits ``limit`` tokens, else a message describing the overflow.
 
     Counts ``state`` plus every question text and every choice option; never truncates anything
@@ -185,7 +186,9 @@ def _peak_rss_kb() -> int | None:
 class LayaPredictor:
     """Adapter from our question schema to ``laya.Agent.system_one`` (verify against installed 0.3.5 — TASK-3618)."""
 
-    def __init__(self, agent: Any, max_input_tokens: int | None, count_tokens: Callable[[str], int] | None = None) -> None:
+    def __init__(
+        self, agent: Any, max_input_tokens: int | None, count_tokens: Callable[[str], int] | None = None
+    ) -> None:
         self._agent = agent
         self.max_input_tokens = max_input_tokens
         self._count_tokens = count_tokens or (lambda s: len(s.split()))
