@@ -5016,6 +5016,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model = model.value if isinstance(model, GoogleModel) else model
         if not model:
             model = self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        # The loop-local SDK client must exist before `self.client` is touched: a caller that never
+        # entered the async context manager (e.g. a pipeline building its own client) would
+        # otherwise hit `self.client.aio` on None. The model hint also rebuilds the client when the
+        # requested model belongs to another model class (Gemini 3.x needs location='global').
+        await self._ensure_client(model=model)
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
