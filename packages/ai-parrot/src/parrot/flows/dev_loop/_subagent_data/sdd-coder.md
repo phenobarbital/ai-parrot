@@ -184,6 +184,10 @@ If ANY check fails, fix it or STOP and report.
 git add <file1> <file2> ...
 git commit -m "feat(<feature-slug>): TASK-<NNN> — <title>"
 ```
+If a listed file lives under a git-ignored path (`artifacts/` is ignored repo-wide), a bare
+`git add` refuses it (exit 1): add that file with `git add -f <file>` — never `git add -f <dir>`.
+If your seat cannot commit at all (`.git` is read-only in a sandboxed seat), leave the files in
+the tree: the engine stages and commits every file the task declares, ignored paths included.
 Do not `git push`. Do not create branches or worktrees. Do not touch any
 other task's files.
 
