@@ -50,6 +50,17 @@ TASK-3642 owns its own strip loop and consumes this module's builder directly.
 
 ## Codebase Contract (Anti-Hallucination)
 
+> **CORRECTION-1 (applied post-merge by the orchestrator):**
+> Same defect as TASK-3640 (commit 1928b9af2): the blueprint's
+> `test_nova2_prompt.py` import
+> (`from examples.planogram.aws.prompt import ...`) never resolves because a
+> third-party `examples` distribution installed in the shared `.venv`
+> shadows the repo-local `examples/` namespace directory regardless of
+> `sys.path` order. `examples/planogram/tests/conftest.py` already inserts
+> `examples/planogram/aws/` onto `sys.path` (fixed in 1928b9af2); this task's
+> test was switched to the matching bare sibling import
+> (`from prompt import ...`).
+
 ### Verified Imports
 ```python
 from pydantic import BaseModel   # v2, repo standard
@@ -403,10 +414,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3641
+- Feature: nova-image-planogram
+- Implementation SHA: 59af55b6dba4d1e50f92f6ccdc14e2896895c6bc
+- Closed at (UTC): 2026-09-22T23:59:42+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| deviation | Blueprint's from examples.planogram.aws.prompt import ... test import never resolves (shadowed by a third-party examples distribution in .venv, same defect as TASK-3640). Fixed post-merge in fix(nova-image-planogram): TASK-3641 review fixes commit 59af55b6d using a bare sibling import (repo-level defect, not attributable to the delivering model). |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 134.72s · Tokens: n/a |
+| test_command | pytest examples/planogram/tests/test_nova2_prompt.py -v |
+| test_result | 5 passed (after fix commit 59af55b6d correcting a blueprint import defect) |
+| tests_passed | True |

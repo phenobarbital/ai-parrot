@@ -56,7 +56,7 @@
       "feature_id": "FEAT-592",
       "feature": "nova-image-planogram",
       "spec": "sdd/specs/nova-image-planogram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "Needs the .gitignore negation block from TASK-3639 (.gitignore) to commit examples/planogram/aws/prompt.py. Independent of TASK-3640: prompt.py imports nothing from nova_vision.py (schema_instruction is a parameter).",
       "assigned_to": null,
       "started_at": "2026-09-22T23:24:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3641-planogram-vocabulary-closed-set-prompt.md"
+      "completed_at": "2026-09-22T23:59:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3641-planogram-vocabulary-closed-set-prompt.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3642",
