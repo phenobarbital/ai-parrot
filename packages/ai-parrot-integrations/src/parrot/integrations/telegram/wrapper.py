@@ -2070,7 +2070,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 if skill_def is not None:
                     # Activate the file skill so its body is injected as a
                     # transient prompt layer for this single ask().
-                    setattr(self.agent, "_active_skill", skill_def)
+                    self.agent._active_skill = skill_def
                     response = await self.agent.ask(
                         question,
                         output_mode=OutputMode.TELEGRAM,
@@ -2245,9 +2245,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if len(methods) > 1:
             prompt_text = "🔐 *Sign In*\n\n" "Tap the button below and choose how you'd like to authenticate."
         elif "google" in methods:
-            prompt_text = (
-                "🔐 *Google Sign-In*\n\n" "Tap the button below to sign in with your Google account."
-            )
+            prompt_text = "🔐 *Google Sign-In*\n\n" "Tap the button below to sign in with your Google account."
         elif "azure" in methods:
             prompt_text = (
                 "\U0001f510 *Azure SSO*\n\n" "Tap the button below to sign in with your organization's Azure account."

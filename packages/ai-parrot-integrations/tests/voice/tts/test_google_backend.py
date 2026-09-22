@@ -8,6 +8,7 @@ Tests cover:
 - custom voice is passed through
 - close() clears the client reference
 """
+
 import pytest
 import io
 import wave

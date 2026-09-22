@@ -11,6 +11,7 @@ converted to OGG/Opus by the caller (TASK-1409 / Telegram wrapper).
 
 Added by FEAT-213 (Telegram Voice Reply TTS Output).
 """
+
 from __future__ import annotations
 
 import logging
@@ -193,9 +194,7 @@ class GoogleTTSBackend(AbstractTTSBackend):
         # to generate_speech — we do not pass one, so we always use .output.
         audio_bytes = ai_message.output
         if not audio_bytes:
-            raise RuntimeError(
-                "GoogleGenAIClient.generate_speech returned no audio data"
-            )
+            raise RuntimeError("GoogleGenAIClient.generate_speech returned no audio data")
 
         self.logger.debug(
             "GoogleTTSBackend: received %d bytes of audio (mime=%s)",
