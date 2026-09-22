@@ -1,4 +1,5 @@
 """Amazon Polly text-to-speech backend."""
+
 from __future__ import annotations
 
 import logging
@@ -91,9 +92,7 @@ class AmazonPollyTTSBackend(AbstractTTSBackend):
             try:
                 import aioboto3
             except ImportError as exc:
-                raise ImportError(
-                    "Amazon Polly support requires ai-parrot-integrations[voice-polly]"
-                ) from exc
+                raise ImportError("Amazon Polly support requires ai-parrot-integrations[voice-polly]") from exc
             self._session = aioboto3.Session(**self._session_kwargs)
         return self._session
 

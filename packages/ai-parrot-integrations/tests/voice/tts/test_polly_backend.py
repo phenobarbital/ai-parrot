@@ -1,4 +1,5 @@
 """Unit tests for the Amazon Polly TTS backend."""
+
 from types import SimpleNamespace
 
 import pytest

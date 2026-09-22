@@ -8,6 +8,7 @@ Tests cover:
 - Unknown and unimplemented backends raise ValueError
 - close() releases the backend
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -18,9 +19,7 @@ from parrot.voice.tts.synthesizer import VoiceSynthesizer
 def _make_mock_backend(audio: bytes = b"AUDIO") -> MagicMock:
     """Return a MagicMock acting as an AbstractTTSBackend."""
     backend = MagicMock()
-    backend.synthesize = AsyncMock(
-        return_value=SynthesisResult(audio=audio, mime_format="audio/ogg")
-    )
+    backend.synthesize = AsyncMock(return_value=SynthesisResult(audio=audio, mime_format="audio/ogg"))
     backend.close = AsyncMock()
     return backend
 
