@@ -278,7 +278,7 @@
       "feature_id": "FEAT-585",
       "feature": "plan-then-execute-hardening",
       "spec": "sdd/specs/plan-then-execute-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -288,8 +288,8 @@
       "parallelism_notes": "Exercises plan_resume / plan_status / plan_artifacts from TASK-3600's toolkit.py through the public API; creates only test_integration_recovery.py (whose Process helper TASK-3603 imports).",
       "assigned_to": null,
       "started_at": "2026-09-21T21:39:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3602-integration-recovery-tests.md"
+      "completed_at": "2026-09-22T13:31:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3602-integration-recovery-tests.md"
     },
     {
       "id": "TASK-3603",
