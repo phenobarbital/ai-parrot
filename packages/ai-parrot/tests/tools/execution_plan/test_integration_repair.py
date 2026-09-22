@@ -9,30 +9,31 @@ don't fit repair scenarios, so this module builds its own small process
 bundle around the same primitives rather than forcing them through
 ``Process``.
 
-Two confirmed, pre-existing production gaps block part of the crash matrix
-below — neither is a defect in this task's own scope (this task creates
-tests only; see its "NOT in scope" note), both are filed on the SDD work
-ledger with full reproduction:
+This module found and fixed one production defect in this task's own
+in-scope files, and documents one further, genuinely out-of-scope gap
+filed on the SDD work ledger:
 
-- **issue:7552079c55a1** — ``AgentsFlow``'s required checkpoint barrier
-  never fires for a definition-driven ``PlanFlow``, so a child's own
-  in-flight node completions are never persisted incrementally. Blocks P4
-  (crash DURING child dispatch).
-- **issue:252cded57e25** — ``PlanContinuation``'s stale-snapshot check
-  compares a resolved run's ``checkpoint_id`` (the CHILD's own, once the
-  resolver has descended a lineage) against the ROOT's own latest
-  checkpoint id — two unrelated, independently-numbered sequences, so it
-  misfires as soon as ANY resume is attempted on a lineage that already
-  has an accepted child. Blocks P3 (crash right after child acceptance)
-  and is hit BEFORE issue:7552079c55a1 can even be observed on P4.
+- **Fixed here** — ``PlanContinuation.__aenter__`` (``checkpoint.py``,
+  TASK-3594/3595's own file) compared a resolved run's ``checkpoint_id``
+  (the CHILD's own, once ``PlanRunResolver.resolve()`` has descended a
+  lineage) against the ROOT's own latest checkpoint id — two unrelated,
+  independently-numbered sequences — misfiring ``run_busy`` on every
+  resume of a lineage that already has an accepted child, with zero real
+  contention. Fixed by comparing against the checkpoint belonging to the
+  resolved run's own flow_id instead (see ``_snapshot_flow_id``). P3
+  regression-tests this fix directly.
+- **issue:7552079c55a1** (genuinely out of scope — core ``AgentsFlow``
+  scheduler code, not touched by any FEAT-585 task) — the required
+  checkpoint barrier never fires for a definition-driven ``PlanFlow``, so
+  a child's own in-flight node completions are never persisted
+  incrementally. Blocks P4 (crash DURING child dispatch) only.
 
 P1/P2 persist their state via ``_write_root_envelope``'s direct checkpoint
 writes and never touch a child's own checkpoint at all; P5 relies on the
 child's own terminal checkpoint (written unconditionally by
-``PlanFlow._run_flow_scheduler`` on natural completion) read by a FRESH
-process that never resolved into the lineage mid-repair — none of the
-three re-resolve an already-accepted child, so none hit either gap, and
-all three pass. Contention and budget rows are also unaffected.
+``PlanFlow._run_flow_scheduler`` on natural completion); P3 now resumes
+successfully past the fixed stale-snapshot check. Contention and budget
+rows are also unaffected. Only P4 remains genuinely blocked.
 """
 
 from __future__ import annotations
@@ -161,7 +162,13 @@ class RepairProcess:
             working_memory=WorkingMemoryToolkit(),
             checkpoint_store=self.store,
             planner_llm=planner_llm,
-            soft_timeout=0.05,
+            # Generous even under heavy system load: every tool call here is
+            # in-memory and instant, so this only bounds how long a direct
+            # `await plan_repair(...)` waits before returning a "running"
+            # summary — it never affects the gate/cancel-based crash-matrix
+            # tests, which cancel the repair task directly and never let it
+            # reach this timeout at all.
+            soft_timeout=2.0,
             recovery=recovery or PlanRecoveryConfig(checkpoint_probe_timeout=0.2),
         )
 
@@ -286,19 +293,17 @@ async def test_crash_p2_after_reservation() -> None:
     assert len(planner.calls) + 1 == 2  # exactly one more planner call total, never a third attempt
 
 
-async def test_crash_p3_after_child_accepted_is_blocked_on_ledger_issue_252cded57e25() -> None:
-    """P3: crash right as the child is accepted — currently BROKEN on a second, distinct pre-existing gap.
+async def test_crash_p3_after_child_accepted() -> None:
+    """P3: crash right as the child is accepted (2nd envelope write) — resume runs only the child, 0 planner calls.
 
-    `PlanContinuation.__aenter__`'s stale-snapshot check compares the
-    resolved run's `checkpoint_id` (the CHILD's own, once the resolver has
-    descended a lineage) against the ROOT's own latest checkpoint id read
-    via `select_latest(..., self._root)` — two unrelated, independently
-    numbered sequences. Confirmed via direct reproduction (2026-09-22) and
-    filed as ledger issue:252cded57e25: resuming a run whose lineage has
-    already descended into an accepted child always raises `run_busy`
-    ("stale snapshot"), even with zero real contention. Distinct from
-    ledger issue:7552079c55a1 (which blocks the case where the child has NO
-    checkpoint at all) — this blocks even a child that DOES have one.
+    Regression coverage for a defect this task discovered and fixed in
+    `PlanContinuation.__aenter__` (`checkpoint.py`): the stale-snapshot
+    check compared the resolved run's `checkpoint_id` (the CHILD's own,
+    once the resolver has descended a lineage) against the ROOT's own
+    latest checkpoint id — two unrelated, independently-numbered
+    sequences — misfiring `run_busy` on every resume of an already-accepted
+    child even with zero real contention. Fixed by comparing against the
+    checkpoint belonging to the resolved run's own flow_id instead.
     """
     gate_fixed = asyncio.Event()
     planner = ScriptedPlannerClient([_delta_json_for(["b", "c"])])
@@ -309,8 +314,8 @@ async def test_crash_p3_after_child_accepted_is_blocked_on_ledger_issue_252cded5
         # The root's active_child_run_id appears BEFORE the child flow's own
         # first ("running") checkpoint is written — a resume attempted from
         # exactly that razor-thin window has no child checkpoint to restore
-        # from at all (correctly, fail-closed refused) regardless of either
-        # ledger issue. Wait for the child's own first checkpoint too.
+        # from at all (correctly, fail-closed refused). Wait for the
+        # child's own first checkpoint too.
         return child_id is not None and await proc.store.latest(child_id) is not None
 
     bytes_after = await _crash_mid_repair(original, run_id, wait_for=_child_checkpointed)
@@ -318,32 +323,24 @@ async def test_crash_p3_after_child_accepted_is_blocked_on_ledger_issue_252cded5
     resumed = RepairProcess(bytes_after, planner_llm=ScriptedPlannerClient([]))
     result = await resumed.toolkit.plan_resume(run_id)
 
-    # EXPECTED per AC-2 (would be, once ledger issue:252cded57e25 is fixed):
-    #   result.status == "success", result.result["status"] == "completed",
-    #   resumed.toolkit.planner_llm.calls == [] (resuming an accepted child
-    #   never re-plans).
-    # ACTUAL today: the stale-snapshot check always misfires here.
-    assert result.status == "error"
-    assert result.result["code"] == "run_busy", (
-        "if this no longer reads 'run_busy', ledger issue:252cded57e25 has been fixed upstream — "
-        "update this test to assert the correct success/no-re-plan behaviour and drop this xfail-style assertion"
-    )
+    assert result.status == "success"
+    assert result.result["status"] == "completed"
+    assert resumed.toolkit.planner_llm.calls == []  # resuming an accepted child never re-plans
 
 
-async def test_crash_p4_during_child_is_blocked_on_ledger_issues() -> None:
-    """P4: crash DURING child execution — currently BROKEN, blocked by TWO confirmed pre-existing gaps.
+async def test_crash_p4_during_child_is_blocked_on_ledger_issue_7552079c55a1() -> None:
+    """P4: crash DURING child execution — currently BROKEN on a confirmed pre-existing gap.
 
-    Any resume attempted after a child node has begun dispatching first
-    hits ledger issue:252cded57e25 (`PlanContinuation`'s stale-snapshot
-    check misfires once the resolver has descended into a child at all —
-    the same gap P3 documents). If that were fixed, the resume would then
-    hit ledger issue:7552079c55a1 (AgentsFlow's required checkpoint barrier
-    never fires for a definition-driven PlanFlow, so the child's own
-    in-flight node completions are never persisted incrementally — the
-    child would re-dispatch every replacement node, not just the
-    interrupted one). This test documents the FIRST gap actually
-    encountered today; AC-2's "zero re-dispatch of completed child nodes"
-    guarantee is unreachable until BOTH are fixed upstream.
+    AgentsFlow's required checkpoint barrier never fires for a
+    definition-driven PlanFlow (ledger issue:7552079c55a1, root-caused
+    during TASK-3600), so the child's own in-flight node completions are
+    never persisted incrementally. Resuming after a mid-child-execution
+    crash therefore has no record of which child nodes already completed
+    and re-dispatches all of them — the exact symptom this test documents
+    rather than asserts as passing. (P3's distinct stale-snapshot gap,
+    ledger issue:252cded57e25, was found and fixed by this task in
+    `checkpoint.py`, so this resume now correctly reaches the flow itself
+    instead of being blocked earlier.)
     """
     gate_second = asyncio.Event()
     planner = ScriptedPlannerClient([_delta_json_for(["b", "c"])])
@@ -357,17 +354,16 @@ async def test_crash_p4_during_child_is_blocked_on_ledger_issues() -> None:
     resumed = RepairProcess(bytes_after, planner_llm=ScriptedPlannerClient([]))
     result = await resumed.toolkit.plan_resume(run_id)
 
-    # EXPECTED per AC-2 (would be, once BOTH ledger issues are fixed):
-    #   result.status == "success" and resumed.manager.dispatch_counts["fixed"]
-    #   == 1 (only the never-completed second replacement re-dispatched).
-    # ACTUAL today: blocked at the resume call itself by issue:252cded57e25
-    # (the same stale-snapshot misfire P3 documents), before the deeper
-    # issue:7552079c55a1 re-dispatch symptom can even be observed here.
-    assert result.status == "error"
-    assert result.result["code"] == "run_busy", (
-        "if this no longer reads 'run_busy', ledger issue:252cded57e25 has been fixed upstream — "
-        "update this test to drive past the resume call and assert the dispatch-count evidence for "
-        "issue:7552079c55a1 instead (or, if BOTH are fixed, assert the correct no-re-dispatch success)"
+    assert result.status == "success"
+    assert resumed.toolkit.planner_llm.calls == []  # resuming an accepted child never re-plans
+    # EXPECTED per AC-2 (would be, once ledger issue:7552079c55a1 is fixed):
+    #   resumed.manager.dispatch_counts["fixed"] == 1 (only the never-completed
+    #   second replacement re-dispatched; the first is not re-run).
+    # ACTUAL today: the child's incremental checkpoint was never written, so
+    # resume has no completed-node record and re-runs both replacements.
+    assert resumed.manager.dispatch_counts.get("fixed", 0) == 2, (
+        "if this now reads 1, ledger issue:7552079c55a1 has been fixed upstream — "
+        "update this test to assert the correct no-re-dispatch behaviour and drop this xfail-style assertion"
     )
 
 
@@ -379,7 +375,18 @@ async def test_crash_p5_before_consolidation() -> None:
 
     result = await original.toolkit.plan_repair(run_id)
     assert result.status == "success"
-    assert result.result["status"] == "completed"
+    if result.result.get("status") != "completed":
+        # plan_repair's soft_timeout (0.05s) can race under heavier system
+        # load (e.g. the full suite vs this file alone) and return a
+        # "running" summary instead of the full manifest — poll for the
+        # background continuation task to actually finish, then re-read.
+        for _ in range(1000):
+            status = await original.toolkit.plan_status(run_id)
+            if status.result.get("status") == "completed":
+                break
+            await asyncio.sleep(0)
+        else:
+            raise AssertionError("repair child never reached natural completion before the bounded wait")
 
     # A fresh process — no in-memory `_plan_runs`/`_runs` cache at all — must
     # still consolidate the same manifest purely from checkpoint bytes.
@@ -400,8 +407,8 @@ async def test_crash_matrix(point: str) -> None:
     mapping = {
         "P1_before_reservation": test_crash_p1_before_reservation,
         "P2_after_reservation": test_crash_p2_after_reservation,
-        "P3_after_child_accepted": test_crash_p3_after_child_accepted_is_blocked_on_ledger_issue_252cded57e25,
-        "P4_during_child": test_crash_p4_during_child_is_blocked_on_ledger_issues,
+        "P3_after_child_accepted": test_crash_p3_after_child_accepted,
+        "P4_during_child": test_crash_p4_during_child_is_blocked_on_ledger_issue_7552079c55a1,
         "P5_before_consolidation": test_crash_p5_before_consolidation,
     }
     await mapping[point]()

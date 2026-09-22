@@ -275,7 +275,7 @@ class PlanMemoryBinding:
         for ref in refs:
             if len(ref.keys) != len(ref.versions):
                 raise RestoreError("checkpoint_invalid", f"node {ref.node_id!r}: keys/versions cardinality mismatch")
-            for key, version in zip(ref.keys, ref.versions):
+            for key, version in zip(ref.keys, ref.versions, strict=True):
                 remaining = self._max_restore_bytes - self._restored_bytes
                 if remaining <= 0:
                     raise RestoreError(

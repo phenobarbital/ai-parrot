@@ -208,6 +208,18 @@ class PlanContinuation:
         self._durable = durable_store
         self._ttl = ttl
         self._root = run.metadata.root_run_id
+        # The root lease is always acquired on `self._root` (spec: "one root
+        # lease across validation, authoring, and flow execution"), but the
+        # staleness check below must compare against the checkpoint that
+        # `run.checkpoint_id` actually belongs to: PlanRunResolver.resolve()
+        # returns the CHILD's own (independently-numbered) checkpoint_id
+        # once it has descended a repair-child lineage, while
+        # `run.metadata.run_id` tracks that same descent (it equals
+        # `root_run_id` for an undescended run, and the accepted child's own
+        # id once resolved into one) — using `self._root` there compared an
+        # unrelated flow's checkpoint sequence and misfired on every resume
+        # of an already-accepted child, even with zero real contention.
+        self._snapshot_flow_id = run.metadata.run_id
         self._holder = f"plan-continuation:{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
         self._heartbeat: Optional[asyncio.Task[None]] = None
         self.lease_lost = False
@@ -221,7 +233,7 @@ class PlanContinuation:
             raise PlanRunError("run_busy", f"run {self._root!r} is leased by another continuation")
         self._heartbeat = asyncio.create_task(self._heartbeat_loop())
         try:
-            latest = await select_latest(self._store, self._durable, self._root)
+            latest = await select_latest(self._store, self._durable, self._snapshot_flow_id)
             if latest is None or latest.checkpoint_id != self._run.checkpoint_id:
                 raise PlanRunError("run_busy", "stale snapshot: re-resolve the run")
         except BaseException:

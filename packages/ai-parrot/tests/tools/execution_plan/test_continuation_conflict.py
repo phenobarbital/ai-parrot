@@ -139,8 +139,12 @@ async def test_heartbeat_loss_sets_flag_and_raise_if_lease_lost() -> None:
 
     async with continuation:
         store._leases.clear()
-        while not continuation.lease_lost:
+        for _ in range(10000):
+            if continuation.lease_lost:
+                break
             await asyncio.sleep(0)
+        else:
+            raise AssertionError("heartbeat never observed the lost lease before the bounded wait")
         with pytest.raises(PlanRunError, match="lost") as error:
             continuation.raise_if_lease_lost()
         assert error.value.code == "run_busy"

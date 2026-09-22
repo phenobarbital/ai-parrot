@@ -117,10 +117,22 @@ analyst reads back from, available even while the run is still going.
 ### `plan_resume(run_id)`
 
 Continue an interrupted **checkpointed** run — in this process or, with a durable tier and a
-host-supplied scope, in a fresh one. Completed nodes are never re-dispatched; their exact
-`artifact_id@version` evidence is restored under a host-only byte budget. Never calls a
-planner. Refuses with `run_not_resumable`, `checkpoint_unavailable`, `artifacts_unavailable`,
-`scope_mismatch`, `policy_mismatch` or `run_busy`.
+host-supplied scope, in a fresh one. Completed nodes recorded on the run's own **terminal**
+checkpoint (natural completion, or interruption after only the initial "running" checkpoint)
+are never re-dispatched; their exact `artifact_id@version` evidence is restored under a
+host-only byte budget. Never calls a planner. Refuses with `run_not_resumable`,
+`checkpoint_unavailable`, `artifacts_unavailable`, `scope_mismatch`, `policy_mismatch` or
+`run_busy`.
+
+> ⚠️ **Known limitation**: `AgentsFlow`'s required checkpoint barrier only persists per-node
+> completions incrementally for the explicit-edge scheduler mode; a `PlanFlow` (built via
+> `from_definition()`, as every plan run is) currently only checkpoints at the *start* and
+> *terminal* of a run, not after each individual node. A run interrupted **mid-execution**
+> (after some but not all nodes have completed) therefore has no incremental record of that
+> partial progress, and a subsequent `plan_resume`/`plan_repair` re-dispatches every node —
+> not just the interrupted ones — for that specific case. Resuming a run that reached a real
+> terminal state (completed/failed/partial) before the interruption is unaffected. Tracked on
+> the SDD work ledger.
 
 ### `plan_repair(run_id)`
 

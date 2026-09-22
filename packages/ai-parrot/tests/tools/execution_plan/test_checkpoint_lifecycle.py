@@ -169,8 +169,12 @@ async def test_cancellation_releases_lease() -> None:
     flow = _flow(store, manager)
     task = asyncio.create_task(flow.run_flow(_context(_plan())))
 
-    while not manager.calls:
+    for _ in range(1000):
+        if manager.calls:
+            break
         await asyncio.sleep(0)
+    else:
+        raise AssertionError("tool was never dispatched before the bounded wait")
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
