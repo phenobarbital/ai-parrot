@@ -33,7 +33,7 @@ def test_tool_specs_uses_get_schema_and_strips_context() -> None:
 
     specs = tool_specs(FakeToolManager([tool], {}), ["search"])
 
-    assert specs == [
+    assert [spec.model_dump() for spec in specs] == [
         {
             "name": "search",
             "description": "Search indexed records",
@@ -49,7 +49,10 @@ def test_tool_specs_supports_tooldefinition() -> None:
 
     specs = tool_specs(type("Manager", (), {"get_tool": lambda self, name: definition})(), ["weather"])
 
-    assert specs[0].parameters is definition.input_schema
+    # Pydantic v2 validates Dict[str, Any] fields into a fresh dict even when the
+    # input is already a dict, so object identity is not preserved through the
+    # model boundary -- assert the authoritative content is passed through unchanged.
+    assert specs[0].parameters == definition.input_schema
     assert specs[0].description == "Weather lookup"
 
 
