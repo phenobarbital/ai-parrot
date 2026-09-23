@@ -90,7 +90,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "reads delegate_safe (TASK-3625); imports DelegatePlanNode + shares plan/__init__.py with TASK-3626; tests import FakeDelegate from TASK-3627's _delegate_fakes.py",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3628-delegate-validator-and-compiler.md"
+      "completed_at": "2026-09-23T00:12:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3628-delegate-validator-and-compiler.md"
     },
     {
       "id": "TASK-3629",
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -186,8 +186,8 @@
       "parallelism_notes": "endpoint + logprob mode come from TASK-3624 decision.md; implements ToolCallProposal/DelegateBackendError from TASK-3627 (delegate/protocol.py)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3632-llamacpp-delegate.md"
+      "completed_at": "2026-09-23T00:12:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3632-llamacpp-delegate.md"
     },
     {
       "id": "TASK-3633",
@@ -196,7 +196,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -207,8 +207,8 @@
       "parallelism_notes": "Needle API/executor choice from TASK-3624 decision.md; implements the TASK-3627 protocol; registered by TASK-3627's lazy delegate/__init__.py",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3633-needle-delegate.md"
+      "completed_at": "2026-09-23T00:12:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3633-needle-delegate.md"
     },
     {
       "id": "TASK-3634",

@@ -274,4 +274,16 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `gpt-5.6-terra` (codex), attempt_uid
+`7f1a63c4f5354675b35f178366766470`. Merged clean; `black` lint reported 0
+errors/residuals. Reviewed and recorded (`coder-review:ad99b06767861d9022b50773`,
+no corrections needed).
+
+**Validation**: re-verified directly by the orchestrator post-merge, combined with
+TASK-3627/3630/3632/3633's own test files — 68 passed, 2 skipped (integration tests
+gated on live backends).
+
+**Merge-tier validation deviation (disclosed):** same as prior tasks this feature —
+the feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
+blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
+scoped test evidence.
