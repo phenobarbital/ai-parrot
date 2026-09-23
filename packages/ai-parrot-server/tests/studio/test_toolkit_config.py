@@ -1,4 +1,5 @@
 """Tests for persisted Agent Studio toolkit configuration endpoints."""
+
 from __future__ import annotations
 
 import json
@@ -66,6 +67,7 @@ def _state(*, toolkits=None, servers=None, editable=True, owner="42", reason=Non
 
 def _store(monkeypatch, state, *, put_toolkit=None, delete_toolkit=None, put_mcp_servers=None, schema_for=None):
     """Install a deterministic AgentToolingStore fake for one handler test."""
+
     class Store:
         def __init__(self, handler):
             self.handler = handler
@@ -115,6 +117,7 @@ async def test_put_returns_persisted_reload_response(monkeypatch):
 @pytest.mark.asyncio
 async def test_put_read_only_409(monkeypatch):
     """Read-only definitions map persistence refusal to the public 409 code."""
+
     async def reject(*args):
         raise PermissionError("py agent")
 
@@ -130,6 +133,7 @@ async def test_put_read_only_409(monkeypatch):
 @pytest.mark.asyncio
 async def test_put_vault_failure_503(monkeypatch):
     """Vault failures do not leak implementation detail and return 503."""
+
     async def unavailable(*args):
         raise RuntimeError("vault unavailable")
 
@@ -145,7 +149,12 @@ async def test_put_vault_failure_503(monkeypatch):
 @pytest.mark.asyncio
 async def test_get_masks_specs_and_marks_unavailable(monkeypatch):
     """GET masks vaulted params and reports slugs no longer resolvable."""
-    state = _state(toolkits=[ToolkitSpec(slug="gone", params={}, secret_refs={}), ToolkitSpec(slug="jira", params={"token": "x"}, secret_refs={"token": "vault"})])
+    state = _state(
+        toolkits=[
+            ToolkitSpec(slug="gone", params={}, secret_refs={}),
+            ToolkitSpec(slug="jira", params={"token": "x"}, secret_refs={"token": "vault"}),
+        ]
+    )
     _store(
         monkeypatch,
         state,
@@ -185,6 +194,7 @@ async def test_options_unconfigured_409(monkeypatch):
 @pytest.mark.asyncio
 async def test_options_failure_502(monkeypatch):
     """Toolkit option lookup failures map to the stable options_failed response."""
+
     class BrokenToolkit(_OptionsToolkit):
         async def config_options(self, param):
             raise OSError("network")
@@ -222,7 +232,9 @@ async def test_options_ignores_query(monkeypatch):
 @pytest.mark.asyncio
 async def test_mcp_get_masks_server_secrets(monkeypatch):
     """MCP GET returns masked server credentials."""
-    server = AgentMCPServerSpec(name="source", params={"headers": {"Authorization": "secret"}}, secret_refs={"headers": "vault"})
+    server = AgentMCPServerSpec(
+        name="source", params={"headers": {"Authorization": "secret"}}, secret_refs={"headers": "vault"}
+    )
     _store(monkeypatch, _state(servers=[server]))
     handler = _handler(tc.StudioAgentMcpServersHandler, "GET", {"name": "agent"})
 
