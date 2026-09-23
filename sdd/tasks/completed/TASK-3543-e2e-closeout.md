@@ -190,5 +190,46 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24. Attempt 1 (seat gpt-5.6-terra/codex) failed immediately
+with `SubWorktreeMergeError` before producing any code; the engine
+auto-escalated to a native sonnet retry (attempt 2, attempt_uid
+`1061790d086c4fa3990b1a288138c27b`), which delivered the task cleanly.
+
+Modified `.claude/commands/sdd-done.md`: added Step 4.6 "Verify E2E Evidence
+(FEAT-581)", invoked before Step 5's report, Step 7's index stamp, Step 8's
+push, Step 9's merge-blocker check, Step 9.2's PR/merge and Step 11's
+cleanup. Reads the spec's `e2e.policy` frontmatter (default `optional`;
+malformed value treated as `required`+missing), runs the read-only
+`parrot e2e verify --plan sdd/state/<FEAT-ID>/e2e-plan.md`, and applies:
+`none` → exempt; `optional` → advisory only, never blocks; `required`/
+`invalid` → any status other than `PASS`+`gate_satisfied:true` aborts the
+whole command — explicitly NOT bypassable by `--force` (AC9). Mirrored the
+same contract in `.agents/skills/sdd-done/SKILL.md`.
+
+Created `tests/sdd_scripts/test_e2e_closeout_contract.py` (519 lines): a
+task-local `evaluate_closeout_gate()` encodes the decision table both docs
+describe, exercised against the real `parrot.e2e.evidence.verify_evidence`
+validator fed realistic on-disk evidence (never a mocked validator).
+Covers: missing plan, missing evidence (force=True/False both blocking,
+proving AC9), zero collection (BLOCKED), failed required node (FAIL),
+incomplete cleanup (FAIL), tampered/stale artifact (blocked), a fully-passing
+run (allowed), and AC8's bookkeeping-only descendant commit still passing.
+`optional` proven advisory across missing/failed/tampered evidence; `none`
+proven to never touch a plan/evidence path.
+
+Tests:
+- `pytest tests/sdd_scripts/test_e2e_closeout_contract.py -q` → 26 passed.
+- Regression: `pytest tests/sdd_scripts/test_e2e_spec_contract.py
+  tests/sdd_scripts/test_command_twin_parity.py
+  tests/sdd_scripts/test_command_contracts.py -q` → 35 passed, no
+  regressions (confirms `.claude/commands/sdd-done.md` has no tracked
+  twin-parity test in that suite).
+- `ruff check` clean; `black --check` clean.
+
+Only the 3 declared files touched (648 insertions); nothing under `sdd/`
+touched. `.agent/workflows/sdd-done.md` — a separate, already-stale
+pre-FEAT-145 legacy twin not covered by `test_command_twin_parity.py` and
+not in this task's declared scope — was deliberately left untouched
+(flagged by the implementing agent for a future task, not fixed here).
+
+No unresolved limitations. AC8/AC9 demonstrated by the new test suite.
