@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, List, Optional, Protocol, Sequence
 
 from .guards import GuardCompilationError, compile_guard
-from .models import ExecutionPlan, PlanNode
+from .models import DelegatePlanNode, ExecutionPlan, PlanNode
 from .paths import PathError, compile_path
 
 __all__ = ("PlanValidationError", "ValidationIssue", "ValidationReport", "validate_plan")
@@ -114,6 +114,8 @@ def validate_plan(
     tool_manager: Optional[ToolManagerLike] = None,
     *,
     check_guards: bool = True,
+    delegates: Optional[Sequence[Any]] = None,
+    allow_delegate_side_effects: bool = False,
 ) -> ValidationReport:
     """Validate ``plan`` and return every issue found.
 
@@ -126,6 +128,10 @@ def validate_plan(
             When ``None``, tool checks are skipped and reported as warnings.
         check_guards: Compile ``when`` expressions. Disable only where
             ``cel-python`` is unavailable.
+        delegates: Ordered ToolCallDelegate chain; the first delegate sets
+            the maximum number of tools for a delegate node.
+        allow_delegate_side_effects: Host policy for non-safe delegate tools;
+            plan text alone cannot grant this permission.
 
     Returns:
         A :class:`ValidationReport`; call ``raise_for_errors()`` to enforce.
@@ -147,7 +153,17 @@ def validate_plan(
     published = _published_facets(plan)
 
     for node in plan.nodes:
-        _check_tool(node, tool_manager, report)
+        if isinstance(node, DelegatePlanNode):
+            _check_delegate(
+                node,
+                tool_manager,
+                delegates,
+                allow_delegate_side_effects,
+                check_guards,
+                report,
+            )
+        else:
+            _check_tool(node, tool_manager, report)
         _check_paths(node, report)
         if check_guards:
             _check_guard(node, plan, known_ids, published, report)
@@ -210,6 +226,77 @@ def _check_tool(
                 f"Tool {node.tool!r} requires {sorted(missing)}, not provided.",
             )
         )
+
+
+def _check_delegate(
+    node: DelegatePlanNode,
+    tool_manager: Optional[ToolManagerLike],
+    delegates: Optional[Sequence[Any]],
+    allow_side_effects_host: bool,
+    check_guards: bool,
+    report: ValidationReport,
+) -> None:
+    """Validate a delegate node's candidate tools and acceptance guard."""
+    if len(set(node.tools)) != len(node.tools):
+        report.issues.append(
+            ValidationIssue(
+                node.id,
+                "duplicate_delegate_tools",
+                f"'tools' repeats names: {node.tools}.",
+            )
+        )
+
+    if not delegates:
+        report.issues.append(
+            ValidationIssue(
+                node.id,
+                "no_delegate_configured",
+                "Plan contains a delegate node but no ToolCallDelegate is configured on this toolkit.",
+            )
+        )
+    elif len(node.tools) > delegates[0].max_tools:
+        report.issues.append(
+            ValidationIssue(
+                node.id,
+                "too_many_delegate_tools",
+                f"Delegate node lists {len(node.tools)} tools, but the primary delegate permits "
+                f"at most {delegates[0].max_tools}.",
+            )
+        )
+
+    if tool_manager is not None:
+        available = sorted(tool_manager.list_tools() or [])
+        for tool_name in node.tools:
+            tool = tool_manager.get_tool(tool_name)
+            if tool is None:
+                suggestion = _closest(tool_name, available)
+                hint = f" Did you mean {suggestion!r}?" if suggestion else ""
+                report.issues.append(
+                    ValidationIssue(
+                        node.id,
+                        "unknown_tool",
+                        f"Tool {tool_name!r} is not registered.{hint}",
+                    )
+                )
+                continue
+
+            is_safe = getattr(tool, "delegate_safe", False)
+            node_permits = node.allow_side_effects
+            if not is_safe and not (node_permits and allow_side_effects_host):
+                report.issues.append(
+                    ValidationIssue(
+                        node.id,
+                        "delegate_side_effect",
+                        f"Tool {tool_name!r} is not delegate_safe; both node.allow_side_effects "
+                        "and the host allow_delegate_side_effects policy must be true.",
+                    )
+                )
+
+    if check_guards and node.accept_when:
+        try:
+            compile_guard(node.accept_when)
+        except GuardCompilationError as exc:
+            report.issues.append(ValidationIssue(node.id, "bad_accept_when", str(exc)))
 
 
 def _check_paths(node: PlanNode, report: ValidationReport) -> None:

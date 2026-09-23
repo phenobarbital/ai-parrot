@@ -12,9 +12,11 @@ Intended location in the repo::
 """
 
 from .compile import (
+    DELEGATE_NODE_TYPE,
     END_NODE_ID,
     PLAN_NODE_TYPE,
     START_NODE_ID,
+    ensure_delegate_node_registered,
     ensure_tool_node_registered,
     to_flow_definition,
 )
@@ -50,6 +52,7 @@ __all__ = (
     "AnyPlanNode",
     "ArtifactRef",
     "DelegatePlanNode",
+    "DELEGATE_NODE_TYPE",
     "END_NODE_ID",
     "ExecutionManifest",
     "ExecutionPlan",
@@ -71,6 +74,7 @@ __all__ = (
     "build_manifest",
     "compile_guard",
     "compile_path",
+    "ensure_delegate_node_registered",
     "ensure_tool_node_registered",
     "estimate_bytes",
     "extract_facets",

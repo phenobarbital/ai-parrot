@@ -23,14 +23,17 @@ from typing import Any, Dict, List
 from .models import ExecutionPlan
 
 __all__ = (
+    "DELEGATE_NODE_TYPE",
     "PLAN_NODE_TYPE",
     "END_NODE_ID",
     "START_NODE_ID",
+    "ensure_delegate_node_registered",
     "ensure_tool_node_registered",
     "to_flow_definition",
 )
 
 PLAN_NODE_TYPE = "tool"
+DELEGATE_NODE_TYPE = "delegate"
 START_NODE_ID = "__start__"
 END_NODE_ID = "__end__"
 
@@ -69,14 +72,21 @@ def to_flow_definition(plan: ExecutionPlan) -> Any:
     leaves = _leaf_ids(plan)
 
     for plan_node in plan.nodes:
+        tools = sorted(plan_node.tool_names())
+        is_delegate = getattr(plan_node, "type", "tool") == DELEGATE_NODE_TYPE
+        node_type = DELEGATE_NODE_TYPE if is_delegate else PLAN_NODE_TYPE
+        label = plan_node.description or (
+            ("delegate:" + "|".join(tools)) if is_delegate else plan_node.tool
+        )
+        metadata = {"plan": plan.name, "tools": tools} if is_delegate else {"plan": plan.name, "tool": plan_node.tool}
         nodes.append(
             NodeDefinition(
                 id=plan_node.id,
-                type=PLAN_NODE_TYPE,
-                label=plan_node.description or plan_node.tool,
+                type=node_type,
+                label=label,
                 max_retries=max(0, plan_node.retry.max_attempts - 1),
                 config=node_config(plan_node),
-                metadata={"plan": plan.name, "tool": plan_node.tool},
+                metadata=metadata,
             )
         )
         for dep in plan_node.depends_on:
@@ -152,3 +162,21 @@ def ensure_tool_node_registered(node_cls: Any) -> None:
             f"{NODE_REGISTRY[PLAN_NODE_TYPE].__name__}, not {node_cls.__name__}"
         )
     register_node(PLAN_NODE_TYPE)(node_cls)
+
+
+def ensure_delegate_node_registered(node_cls: Any) -> None:
+    """Register ``node_cls`` under ``"delegate"`` in ``NODE_REGISTRY``, once.
+
+    Mirror of :func:`ensure_tool_node_registered`: idempotent, raises when a
+    different class already owns the name.
+    """
+    from parrot.bots.flows.flow.flow import NODE_REGISTRY, register_node  # noqa: PLC0415
+
+    if NODE_REGISTRY.get(DELEGATE_NODE_TYPE) is node_cls:
+        return
+    if DELEGATE_NODE_TYPE in NODE_REGISTRY:
+        raise ValueError(
+            f"NODE_REGISTRY[{DELEGATE_NODE_TYPE!r}] is already "
+            f"{NODE_REGISTRY[DELEGATE_NODE_TYPE].__name__}, not {node_cls.__name__}"
+        )
+    register_node(DELEGATE_NODE_TYPE)(node_cls)
