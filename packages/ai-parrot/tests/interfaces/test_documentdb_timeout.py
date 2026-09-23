@@ -1,4 +1,5 @@
 """DocumentDb forwards a bounded connect timeout to the asyncdb driver."""
+
 from typing import Any, Optional
 
 import pytest

@@ -1,4 +1,5 @@
 """The package conftest keeps tests off real DocumentDB."""
+
 import time
 
 import pytest

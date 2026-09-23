@@ -4,6 +4,7 @@ Network isolation: no test may open a real DocumentDB connection. asyncdb's
 mongo driver can block for minutes on an unreachable host, which hung the full
 test sweep (ledger issue:312c1988479b).
 """
+
 import pytest
 
 
