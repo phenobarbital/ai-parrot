@@ -272,7 +272,15 @@ mutation occurred, consistent with the shared-environment read-only policy.
 The merge-time lint residual for this file (`F841` at line 111, `F811` redefinition of `get_metadata` at
 line 651 vs 526) was verified via `git show f638ba6fa --stat` and `grep -n "def get_metadata"` to PRE-EXIST
 this task's diff (the duplicate `get_metadata` and the unused `tools_list` predate TASK-3657's insertion point,
-confirmed against `registry.py`'s git history) — pre-existing repo debt, correctly left to `/sdd-done`, not
-introduced by this delivery.
+confirmed against `registry.py`'s git history) — pre-existing repo debt, not introduced by this delivery.
+
+**Post-review correction (2026-09-23, user request following the feature-level adversarial code review)**: on
+explicit request, both were fixed rather than left for `/sdd-done` — commit `2c65632c3`. `tools_list` was
+provably dead (assigned once, never read; `'tools'` passes through unchanged via `**merged_kwargs`); the
+duplicate `get_metadata` was byte-for-byte identical to the surviving one, so removing the undocumented first
+definition is behavior-preserving. `ruff check --select F841,F811,E9,F63,F7,F82`: clean.
+`pytest packages/ai-parrot/tests/registry -q`: 76 passed, 3 failed — confirmed (via `git stash` against the
+pre-fix file) identical with or without this change, i.e. a pre-existing `uvloop`/event-loop-policy test
+environment issue unrelated to this fix.
 
 **Deviations from spec**: none.
