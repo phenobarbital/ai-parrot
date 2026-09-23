@@ -209,7 +209,7 @@ class DocumentDb:
         engine = config.get("DOCUMENTDB_ENGINE", fallback="mongo")
         # Server-selection/connect timeout in seconds. asyncdb defaults to 600s,
         # which blocks a caller for 10 minutes when DocumentDB is unreachable.
-        timeout = config.getint("DOCUMENTDB_TIMEOUT", fallback=30)
+        timeout = config.getint("DOCUMENTDB_TIMEOUT", fallback=10)
 
         params = {
             "host": host,
