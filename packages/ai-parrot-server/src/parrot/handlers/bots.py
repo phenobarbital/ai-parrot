@@ -83,6 +83,9 @@ class _PBACHandlerMixin:
 
 _AGENT_SLUG_RE = re.compile(r"^[a-z0-9_-]+$")
 
+#: FEAT-593 — fields only the Agent Studio tooling endpoints may write (they vault secrets).
+STUDIO_ONLY_FIELDS: frozenset[str] = frozenset({"toolkit_config", "mcp_servers"})
+
 
 class PromptLibraryManagement(ModelView):
     """
@@ -864,6 +867,16 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
     async def _put_database(self, payload: dict):
         """Create agent in database and register into BotManager."""
+        if (blocked := STUDIO_ONLY_FIELDS.intersection(payload or {})):
+            return self.error(
+                response={
+                    "message": f"{sorted(blocked)} can only be written via /api/v1/astudio/agents/{{name}}/toolkits "
+                    "and /mcp-servers (secrets are stored in the vault).",
+                    "code": "use_studio_endpoint",
+                },
+                status=400,
+            )
+
         # FEAT-133: Shallow validation for new JSONB config fields.
         for _key in ("reranker_config", "parent_searcher_config"):
             if _key in payload and not isinstance(payload[_key], dict):
@@ -1128,6 +1141,16 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
     async def _post_database(self, agent: BotModel, payload: dict):
         """Update a database-backed agent."""
+        if (blocked := STUDIO_ONLY_FIELDS.intersection(payload or {})):
+            return self.error(
+                response={
+                    "message": f"{sorted(blocked)} can only be written via /api/v1/astudio/agents/{{name}}/toolkits "
+                    "and /mcp-servers (secrets are stored in the vault).",
+                    "code": "use_studio_endpoint",
+                },
+                status=400,
+            )
+
         # FEAT-133: Shallow validation for new JSONB config fields.
         for _key in ("reranker_config", "parent_searcher_config"):
             if _key in payload and not isinstance(payload[_key], dict):

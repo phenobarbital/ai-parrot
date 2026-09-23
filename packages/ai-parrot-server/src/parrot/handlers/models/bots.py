@@ -182,6 +182,16 @@ class BotModel(Model):
         ui_help="The bot’s tool threshold."
     )
     tools: List[str] = Field(default_factory=list, required=False, ui_help="The bot’s tools.")
+    toolkit_config: dict = Field(
+        required=False,
+        default_factory=dict,
+        ui_help="FEAT-593 — per-toolkit agent-level config {slug: ToolkitSpec}; secrets live in the vault.",
+    )
+    mcp_servers: list = Field(
+        required=False,
+        default_factory=list,
+        ui_help="FEAT-593 — agent-level MCP servers [AgentMCPServerSpec]; auth/headers/env live in the vault.",
+    )
     operation_mode: str = Field(default='adaptive', required=False, ui_help="The bot’s operation mode.")  # 'conversational', 'agentic', 'adaptive'
 
     # Knowledge Base
@@ -320,6 +330,7 @@ class BotModel(Model):
 
     def to_bot_config(self) -> dict:
         """Convert model instance to bot configuration dictionary."""
+        tooling = self._normalized_tooling()
         return {
             'name': self.name,
             'description': self.description,
@@ -337,7 +348,8 @@ class BotModel(Model):
             'tools_enabled': self.tools_enabled,
             'auto_tool_detection': self.auto_tool_detection,
             'tool_threshold': self.tool_threshold,
-            'tools': self.tools,
+            'tools': tooling.tools + tooling.toolkits,
+            'agent_mcp_servers': tooling.mcp_servers,
             'operation_mode': self.operation_mode,
             'use_vector': self.use_vector,
             'vector_store_config': self.vector_store_config,
@@ -353,6 +365,16 @@ class BotModel(Model):
             'language': self.language,
             'disclaimer': self.disclaimer,
         }
+
+    def _normalized_tooling(self):
+        """FEAT-593 — plain tool names + ToolkitSpecs + AgentMCPServerSpecs for this row."""
+        from parrot.tools.spec import normalize_tooling  # pylint: disable=import-outside-toplevel
+
+        return normalize_tooling(
+            self.tools,
+            mcp_servers=self.mcp_servers or [],
+            toolkit_config=self.toolkit_config or {},
+        )
 
     def is_agent_enabled(self) -> bool:
         """Check if this bot has agent capabilities enabled."""
