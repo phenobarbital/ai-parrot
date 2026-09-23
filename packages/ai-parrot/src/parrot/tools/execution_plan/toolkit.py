@@ -784,7 +784,9 @@ class ExecutionPlanToolkit(AbstractToolkit):
             delta = await planner.repair_delta(delta_json, report, plan=run.metadata.plan, eligible_node_ids=eligible)
         except PlanAuthoringError as exc:
             raise PlanRunError("delta_invalid", f"corrected delta unparseable: {exc}") from exc
-        report = validate_delta(delta, run=run, tool_manager=self._tool_manager, allowed_tools=allowed, **self._validation_kwargs())
+        report = validate_delta(
+            delta, run=run, tool_manager=self._tool_manager, allowed_tools=allowed, **self._validation_kwargs()
+        )
         if not report.ok:
             raise PlanRunError("delta_invalid", f"corrected delta still invalid:\n{report}")
         return delta
