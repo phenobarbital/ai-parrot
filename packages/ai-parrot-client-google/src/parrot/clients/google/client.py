@@ -3037,7 +3037,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         self.logger.warning(f"Failed to extract image from inline_data: {e}")
 
                 # Try as_image() method for parts that support it
-                elif hasattr(part, "as_image") and callable(getattr(part, "as_image")):
+                elif hasattr(part, "as_image") and callable(part.as_image):
                     try:
                         # Check if this part can be converted to an image
                         # The as_image() method is available on parts with image content
@@ -3532,9 +3532,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
                         )
                         final_config.max_output_tokens = (
-                            min(8192, generation_budget.max_output_tokens)
-                            if generation_budget is not None
-                            else 8192
+                            min(8192, generation_budget.max_output_tokens) if generation_budget is not None else 8192
                         )
                         continue
                     elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
@@ -3573,9 +3571,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if retry_count >= max_retries:
                         # FEAT-548 Finding #1: emit ClientCallFailedEvent
                         await self._emit_failed_call_safe(
-                            _lc_tc_google, client_name="google",
+                            _lc_tc_google,
+                            client_name="google",
                             model=str(model) if model else "",
-                            t0=ask_started, exc=e,
+                            t0=ask_started,
+                            exc=e,
                         )
                         raise
                     await asyncio.sleep(delay)
@@ -3603,9 +3603,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 if retry_count >= max_retries:
                     # FEAT-548 Finding #1: emit ClientCallFailedEvent
                     await self._emit_failed_call_safe(
-                        _lc_tc_google, client_name="google",
+                        _lc_tc_google,
+                        client_name="google",
                         model=str(model) if model else "",
-                        t0=ask_started, exc=e,
+                        t0=ask_started,
+                        exc=e,
                     )
                     raise
                 await asyncio.sleep(delay)
@@ -4613,9 +4615,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         except BaseException as _lc_stream_exc:
             # FEAT-548 Finding #1: emit ClientCallFailedEvent on unhandled error
             await self._emit_failed_call_safe(
-                _lc_tc_googles, client_name="google",
+                _lc_tc_googles,
+                client_name="google",
                 model=str(model) if model else "",
-                t0=_lc_t0_googles, exc=_lc_stream_exc,
+                t0=_lc_t0_googles,
+                exc=_lc_stream_exc,
             )
             raise
         finally:
@@ -5571,7 +5575,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         tc.result = self._maybe_scrub(result, tool_name=tc.name)  # FEAT-252
 
                 all_tool_calls.extend(tool_call_objects)
-                pass  # We're not doing a multi-turn here for stateless
+                # We're not doing a multi-turn here for stateless
 
         final_output = None
         _extracted_text = self._safe_extract_text(response)
