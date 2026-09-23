@@ -72,7 +72,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Consumes Polly selector/cache helpers and truthful WAV behavior through its lazy TTS integration; owns agent.py and test_basic_agent_new.py.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3622-speech-report-routing.md"
+      "completed_at": "2026-09-23T13:14:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3622-speech-report-routing.md"
     },
     {
       "id": "TASK-3623",
