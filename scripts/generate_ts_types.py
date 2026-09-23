@@ -67,6 +67,17 @@ def _models() -> dict[str, type[BaseModel]]:
         ToolsListResponse,
     )
     from parrot.server.ui.status import AdminStatus, AgentCounts, DependencyHealth
+    from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec
+    from parrot.tools.config_schema import ConfigOption, ToolkitSchemaEnvelope
+    from parrot.handlers.studio.models import (
+        ToolkitConfigPutRequest,
+        AgentToolkitsResponse,
+        ToolkitPersistResponse,
+        AgentMcpServersPutRequest,
+        AgentMcpServersResponse,
+        ToolkitOptionsResponse,
+    )
+    from parrot.handlers.toolkit_persistence import UserToolkitOverride
 
     return {
         "AdminStatus": AdminStatus,
@@ -83,6 +94,18 @@ def _models() -> dict[str, type[BaseModel]]:
         "AgentChatResponse": AgentChatResponse,
         "AgentChatMetadata": AgentChatMetadata,
         "AgentToolCall": AgentToolCall,
+        # FEAT-593 — Agent Studio tool configuration
+        "ToolkitSpec": ToolkitSpec,
+        "AgentMCPServerSpec": AgentMCPServerSpec,
+        "ConfigOption": ConfigOption,
+        "ToolkitSchemaEnvelope": ToolkitSchemaEnvelope,
+        "ToolkitConfigPutRequest": ToolkitConfigPutRequest,
+        "AgentToolkitsResponse": AgentToolkitsResponse,
+        "ToolkitPersistResponse": ToolkitPersistResponse,
+        "AgentMcpServersPutRequest": AgentMcpServersPutRequest,
+        "AgentMcpServersResponse": AgentMcpServersResponse,
+        "ToolkitOptionsResponse": ToolkitOptionsResponse,
+        "UserToolkitOverride": UserToolkitOverride,
     }
 
 
