@@ -15,7 +15,8 @@ Design constraints:
 - **Throttled**: at most one nudge per cooldown window (default 300 s,
   configurable via ``claude.nudge_cooldown_seconds`` in
   ``.parrot/wiki.json``) so search-heavy turns are not spammed.
-- **Fast**: imports are dependency-light (stdlib + pydantic).
+- **Fast**: module imports are stdlib-only; the pydantic config is loaded
+  only for payloads a stdlib prefilter cannot reject (FEAT-595).
 """
 
 from __future__ import annotations
@@ -26,15 +27,13 @@ import re
 import sys
 import time
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional, TextIO
+from typing import TYPE_CHECKING, Any, Optional, TextIO
 
 from parrot.knowledge.wiki.claude_code.assets import NUDGE_TEXT
-from parrot.knowledge.wiki.project import (
-    WikiProjectConfig,
-    find_project_root,
-    load_effective_config,
-)
-from parrot.knowledge.wiki.repo_scan import CODE_SUFFIXES, DOC_SUFFIXES
+from parrot.knowledge.wiki.file_suffixes import CODE_SUFFIXES, DOC_SUFFIXES
+
+if TYPE_CHECKING:
+    from parrot.knowledge.wiki.project import WikiProjectConfig
 
 #: Prefix of the throttle stamp files, inside the wiki storage directory.
 STATE_FILENAME = "claude_hook_nudge"
@@ -158,6 +157,39 @@ def _throttled(storage: Path, cooldown_seconds: int, now: float) -> bool:
     return False
 
 
+def _normalized_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
+    """The payload's ``tool_input``, or ``{}`` when absent or not a mapping."""
+    tool_input = payload.get("tool_input") or {}
+    return tool_input if isinstance(tool_input, dict) else {}
+
+
+def _prefilter_rejects(payload: dict[str, Any]) -> bool:
+    """Payload-only rejection evaluated before any config is loaded.
+
+    Mirrors the payload-dependent clauses of :func:`build_nudge` (event
+    name, Read suffix, Bash search-ness). Every clause of ``build_nudge``
+    is AND-ed, so rejecting here first yields the same decision while
+    skipping the pydantic/``project`` import on the common path
+    (FEAT-595). Tools other than ``Read``/``Bash`` are never rejected
+    here — the config may list arbitrary ``nudge_tools``.
+
+    Args:
+        payload: Parsed PreToolUse hook payload.
+
+    Returns:
+        ``True`` when no config could make this payload nudge.
+    """
+    if payload.get("hook_event_name") not in (None, "PreToolUse"):
+        return True
+    tool_name = str(payload.get("tool_name") or "")
+    tool_input = _normalized_tool_input(payload)
+    if tool_name == "Read":
+        return not _should_nudge_read(tool_input)
+    if tool_name == "Bash":
+        return not _should_nudge_bash(tool_input)
+    return False
+
+
 def build_nudge(
     payload: dict[str, Any],
     root: Optional[Path] = None,
@@ -179,12 +211,13 @@ def build_nudge(
         The hook response JSON object, or ``None`` when no nudge
         should be emitted.
     """
-    if payload.get("hook_event_name") not in (None, "PreToolUse"):
+    if _prefilter_rejects(payload):
         return None
+    # Deferred: pydantic + decisions.models cost ~150 ms, paid only by
+    # payloads the stdlib prefilter could not reject (FEAT-595).
+    from parrot.knowledge.wiki.project import find_project_root, load_effective_config
+
     tool_name = str(payload.get("tool_name") or "")
-    tool_input = payload.get("tool_input") or {}
-    if not isinstance(tool_input, dict):
-        tool_input = {}
 
     if root is None:
         cwd = Path(str(payload.get("cwd") or Path.cwd()))
@@ -197,11 +230,6 @@ def build_nudge(
         return None
     if not config.is_built(root):
         return None
-    if tool_name == "Read" and not _should_nudge_read(tool_input):
-        return None
-    if tool_name == "Bash" and not _should_nudge_bash(tool_input):
-        return None
-
     storage = config.storage_path(root)
     if _throttled(
         storage,

@@ -35,6 +35,7 @@ from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
 from parrot.knowledge.scan_excludes import SCAN_EXCLUDE_DIRS
+from parrot.knowledge.wiki.file_suffixes import CODE_SUFFIXES, DOC_SUFFIXES
 from parrot.knowledge.wiki.languages import all_scanners, scanned_suffixes, scanner_for, set_scan_root
 from parrot.knowledge.wiki.languages.python import PythonScanner
 from parrot.knowledge.wiki.store import WikiPageRecord, estimate_tokens
@@ -50,45 +51,6 @@ _PYTHON_SCANNER = PythonScanner()
 # --------------------------------------------------------------------------
 # Defaults
 # --------------------------------------------------------------------------
-
-#: File suffixes treated as source code (category ``module``).
-#:
-#: ``.svelte`` is claimed by the JS/TS scanner (FEAT-396), which analyses
-#: the component's ``<script>`` block — not its markup.
-CODE_SUFFIXES: frozenset[str] = frozenset(
-    {
-        ".py",
-        ".pyx",
-        ".pxd",
-        ".pyi",
-        ".rs",
-        ".go",
-        ".java",
-        ".kt",
-        ".c",
-        ".h",
-        ".cpp",
-        ".hpp",
-        ".js",
-        ".jsx",
-        ".ts",
-        ".tsx",
-        ".mjs",
-        ".svelte",
-        ".php",
-        ".pl",
-        ".pm",
-        ".t",
-        ".sql",
-        ".sh",
-        ".bash",
-        ".lua",
-        ".luau",
-    }
-)
-
-#: File suffixes treated as documentation (category ``document``).
-DOC_SUFFIXES: frozenset[str] = frozenset({".md", ".rst", ".txt", ".html", ".htm"})
 
 #: HTML suffixes get a ``<title>``-aware shallow summary instead of the
 #: markdown/rst summary helper (FEAT-394) — never a deep outline/edges.

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-595 — Lightweight wikitoolkit hook entry point
 **Spec**: `sdd/specs/fixgroup-c3a787516a75.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -319,4 +319,22 @@ def test_hook_import_is_light() -> None:
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py -q`
 
 ## Completion Note
-(Agent fills this in when done)
+
+Completed 2026-09-23 (Claude Opus 5.5, via `/sdd-fix issue:f0a40d0853f2`).
+
+- `file_suffixes.py` created; `CODE_SUFFIXES`/`DOC_SUFFIXES` moved verbatim, `repo_scan.py` re-imports them (identity asserted).
+- `hook.py`: suffixes from `file_suffixes`; `project` import deferred into `build_nudge` (`WikiProjectConfig` under
+  `TYPE_CHECKING`); new `_prefilter_rejects()` + `_normalized_tool_input()`; the now-redundant event/Read/Bash
+  checks later in `build_nudge` were removed (fully covered by the prefilter, throttle still last).
+- `claude_code/__init__.py`: PEP 562 `__getattr__` over `__all__`.
+- `claude_code/assets.py` imports only stdlib (`shutil`, `pathlib`, `typing`) — nothing to report.
+
+Evidence: fresh-process `import parrot.knowledge.wiki.claude_code.hook` = ~19 ms (was ~218 ms) and loads none of
+pydantic/click/project/repo_scan/cli/installer. Decision equivalence: the 18-row `test_build_nudge_decisions` table
+plus the unbuilt/throttle/custom-tool tests (21 tests) also pass when run against the **pre-change** `hook.py`
+(PYTHONPATH = main checkout at e46249734), so the new ordering yields identical decisions.
+
+Validation: `test_hook_prefilter.py` 23 passed; `test_hook_startup.py` passed; `test_installer_mcp.py` 2 failed
+(`TestMCPJsonInstall::test_install_creates_mcp_json` / `test_install_updates_stale_entry`) — pre-existing,
+identical failure on unchanged base (`shutil.which` resolves the venv's absolute path; noted in TASK-3569).
+`ruff check` clean on touched files.
