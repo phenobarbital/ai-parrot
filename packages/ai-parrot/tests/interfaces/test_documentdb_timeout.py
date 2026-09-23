@@ -21,10 +21,10 @@ def _patch_timeout(monkeypatch: pytest.MonkeyPatch, value: Optional[int]) -> Non
 
 
 def test_default_timeout_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without DOCUMENTDB_TIMEOUT the driver gets 30s, not asyncdb's 600s."""
+    """Without DOCUMENTDB_TIMEOUT the driver gets 10s, not asyncdb's 600s."""
     _patch_timeout(monkeypatch, None)
     driver = DocumentDb()._get_connection()
-    assert driver._timeout == 30
+    assert driver._timeout == 10
 
 
 def test_timeout_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

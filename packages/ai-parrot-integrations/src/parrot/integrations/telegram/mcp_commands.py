@@ -27,6 +27,12 @@ A minimal example::
 
 ``name`` is used as the DocumentDB compound key and as the MCP client id,
 so callers can later remove or re-add the server by that name.
+
+Persistence is opt-in via ``USE_DOCUMENTDB`` (``parrot.conf``, default
+``False``). When disabled, ``/add_mcp`` registers the server for the current
+session only (neither DocumentDB nor the DocumentDB-backed Vault is touched),
+``/list_mcp`` reports that saved servers are unavailable, and login-time
+rehydration is skipped.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ from .mcp_persistence import (
     TelegramMCPPersistenceService,
     TelegramMCPPublicParams,
     UserTelegramMCPConfig,  # noqa: F401 — re-exported for callers
+    documentdb_enabled,
 )
 from parrot.handlers.vault_utils import (
     delete_vault_credential,
@@ -252,7 +259,7 @@ async def rehydrate_user_mcp_servers(
     Returns:
         Number of MCP servers successfully registered.
     """
-    if tool_manager is None:
+    if tool_manager is None or not documentdb_enabled():
         return 0
 
     persistence = TelegramMCPPersistenceService()
@@ -373,10 +380,11 @@ async def add_mcp_handler(
 
     user_id = f"tg:{message.from_user.id}"
     name = config.name
-    vault_name: Optional[str] = f"tg_mcp_{name}" if secret_params else None
+    persist = documentdb_enabled()
+    vault_name: Optional[str] = f"tg_mcp_{name}" if secret_params and persist else None
     persistence = TelegramMCPPersistenceService()
 
-    # Step 1: persist public config
+    # Step 1: persist public config (a no-op when DocumentDB is disabled)
     try:
         await persistence.save(user_id, name, public_params, vault_name)
     except Exception as exc:  # noqa: BLE001
@@ -388,8 +396,9 @@ async def add_mcp_handler(
         )
         return
 
-    # Step 2: store secrets in Vault (if any)
-    if secret_params:
+    # Step 2: store secrets in Vault (if any). The Vault is DocumentDB-backed,
+    # so it is skipped along with persistence.
+    if secret_params and persist:
         try:
             await store_vault_credential(user_id, vault_name, secret_params)
         except Exception as exc:  # noqa: BLE001
@@ -423,10 +432,10 @@ async def add_mcp_handler(
         )
         return
 
-    await message.reply(
-        f"Connected {name!r} with {len(registered)} tool(s).",
-        parse_mode=None,
-    )
+    reply = f"Connected {name!r} with {len(registered)} tool(s)."
+    if not persist:
+        reply += " It is active for this session only (server persistence is disabled)."
+    await message.reply(reply, parse_mode=None)
     await _maybe_delete(message)
 
 
@@ -435,6 +444,13 @@ async def list_mcp_handler(message: Message) -> None:
     if message.from_user is None:
         return
     if await _reject_non_private(message):
+        return
+
+    if not documentdb_enabled():
+        await message.reply(
+            "Saved MCP servers are unavailable: server persistence is disabled.",
+            parse_mode=None,
+        )
         return
 
     user_id = f"tg:{message.from_user.id}"

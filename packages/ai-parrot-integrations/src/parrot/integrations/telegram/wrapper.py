@@ -488,10 +488,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         Per-user MCP servers live on the user's isolated ``ToolManager``
         clone built by ``_initialize_user_context``. The handler module
-        only needs (a) a resolver to fetch that per-user ToolManager on
-        demand and (b) the Redis client for persistence across restarts.
-        When Redis is absent the commands degrade gracefully — servers
-        still work for the current session but are not saved.
+        only needs a resolver to fetch that per-user ToolManager on demand.
+        Persistence across restarts (DocumentDB + Vault) is opt-in via
+        ``USE_DOCUMENTDB``; when disabled the commands degrade gracefully —
+        servers still work for the current session but are not saved.
         """
         from .mcp_commands import register_mcp_commands
 
