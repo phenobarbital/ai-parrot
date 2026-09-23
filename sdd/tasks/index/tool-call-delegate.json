@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-22T22:43:24+00:00",
-  "completed_at": "2026-09-23T00:45:34+00:00",
+  "completed_at": "2026-09-23T01:18:57+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -25,7 +25,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-22T23:26:33+00:00",
-      "file": "sdd/tasks/completed/TASK-3624-delegate-backend-spike.md"
+      "file": "sdd/tasks/completed/TASK-3624-delegate-backend-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3625",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-22T23:46:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3625-abstracttool-delegate-flags.md"
+      "file": "sdd/tasks/completed/TASK-3625-abstracttool-delegate-flags.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3626",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-22T23:46:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3626-plan-language-union.md"
+      "file": "sdd/tasks/completed/TASK-3626-plan-language-union.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3627",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:00:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3627-delegate-protocol-and-trace.md"
+      "file": "sdd/tasks/completed/TASK-3627-delegate-protocol-and-trace.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3628",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:12:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3628-delegate-validator-and-compiler.md"
+      "file": "sdd/tasks/completed/TASK-3628-delegate-validator-and-compiler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3629",
@@ -124,7 +129,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:20:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3629-allowlist-and-repair-delegate-aware.md"
+      "file": "sdd/tasks/completed/TASK-3629-allowlist-and-repair-delegate-aware.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3630",
@@ -144,7 +150,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:00:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3630-plantoolnode-invoke-hook-refactor.md"
+      "file": "sdd/tasks/completed/TASK-3630-plantoolnode-invoke-hook-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3631",
@@ -166,7 +173,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:13:18+00:00",
-      "file": "sdd/tasks/completed/TASK-3631-delegate-tool-node.md"
+      "file": "sdd/tasks/completed/TASK-3631-delegate-tool-node.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3632",
@@ -187,7 +195,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:12:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3632-llamacpp-delegate.md"
+      "file": "sdd/tasks/completed/TASK-3632-llamacpp-delegate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3633",
@@ -208,7 +217,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:12:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3633-needle-delegate.md"
+      "file": "sdd/tasks/completed/TASK-3633-needle-delegate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3634",
@@ -226,7 +236,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-22T23:46:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3634-planner-delegate-rules.md"
+      "file": "sdd/tasks/completed/TASK-3634-planner-delegate-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3635",
@@ -249,7 +260,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:28:56+00:00",
-      "file": "sdd/tasks/completed/TASK-3635-toolkit-and-flow-delegate-wiring.md"
+      "file": "sdd/tasks/completed/TASK-3635-toolkit-and-flow-delegate-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3636",
@@ -269,7 +281,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:45:25+00:00",
-      "file": "sdd/tasks/completed/TASK-3636-delegate-end-to-end-integration.md"
+      "file": "sdd/tasks/completed/TASK-3636-delegate-end-to-end-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3637",
@@ -290,7 +303,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:15:51+00:00",
-      "file": "sdd/tasks/completed/TASK-3637-needle-optional-extra.md"
+      "file": "sdd/tasks/completed/TASK-3637-needle-optional-extra.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3638",
@@ -312,7 +326,8 @@
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
       "completed_at": "2026-09-23T00:45:25+00:00",
-      "file": "sdd/tasks/completed/TASK-3638-tool-call-delegate-docs.md"
+      "file": "sdd/tasks/completed/TASK-3638-tool-call-delegate-docs.md",
+      "verification": "verified"
     }
   ]
 }
