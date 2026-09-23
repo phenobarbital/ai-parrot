@@ -4,6 +4,7 @@ from collections import defaultdict
 from enum import Enum
 import copy
 import difflib
+import json
 import re
 import asyncio
 import inspect
@@ -81,6 +82,7 @@ from ...core.exceptions import HumanInteractionInterrupt
 from ...auth.credentials import CredentialRequired  # FEAT-264 — per-user cred gate
 from ...security.redaction import OutputScrubber, ScrubPolicy  # FEAT-252 (TASK-1613)
 from .analysis import GoogleAnalysis
+from .budget import GenerationBudget, GenerationBudgetExceeded
 from .generation import GoogleGeneration
 
 logging.getLogger(name="PIL.TiffImagePlugin").setLevel(logging.ERROR)  # Suppress TiffImagePlugin warnings
@@ -173,6 +175,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model_garden: bool = False,
         reformat_model: Optional[Union[str, GoogleModel]] = None,
         combined_call_prefixes: Optional[tuple[str, ...]] = None,
+        generation_budget: Optional[GenerationBudget] = None,
         **kwargs,
     ):
         _require_google_sdk()
@@ -206,6 +209,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if combined_call_prefixes is not None
             else self._default_combined_call_prefixes
         )
+        # The live E2E runner owns and shares this optional per-run budget.
+        # ``None`` deliberately preserves every legacy caller's behavior.
+        self.generation_budget = generation_budget
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
         # FEAT-252 (TASK-1613): single chokepoint scrubber for all response text.
@@ -679,17 +685,69 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     "location": location,
                     "credentials": credentials,
                 }
+                client_kwargs.update(kwargs)
 
-                # Preview models require v1beta1 API version
-                if self._is_preview_model(resolved_model):
+                # Preview models require v1beta1 API version. Budgeted calls
+                # also set a one-attempt SDK policy so an SDK default cannot
+                # create an unreserved hidden request.
+                if self.generation_budget is not None:
+                    client_kwargs["http_options"] = HttpOptions(
+                        api_version="v1beta1" if self._is_preview_model(resolved_model) else None,
+                        retry_options=types.HttpRetryOptions(attempts=1),
+                    )
+                elif self._is_preview_model(resolved_model):
                     client_kwargs["http_options"] = HttpOptions(api_version="v1beta1")
 
-                client_kwargs.update(kwargs)
                 return genai.Client(**client_kwargs)
             except Exception as exc:
                 self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
                 raise
+        if self.generation_budget is not None:
+            kwargs["http_options"] = HttpOptions(retry_options=types.HttpRetryOptions(attempts=1))
         return genai.Client(api_key=self.api_key, **kwargs)
+
+    @staticmethod
+    def _budget_json_default(value: Any) -> Any:
+        """Convert SDK/Pydantic values into a deterministic budget payload."""
+        if hasattr(value, "model_dump"):
+            return value.model_dump(mode="json", exclude_none=False)
+        if hasattr(value, "to_json_dict"):
+            return value.to_json_dict()
+        if isinstance(value, Path):
+            return str(value)
+        return str(value)
+
+    async def _reserve_generation_budget(
+        self,
+        generation_budget: GenerationBudget,
+        *,
+        model: Any,
+        history: Any,
+        contents: Any,
+        config: Any,
+    ) -> None:
+        """Reserve a fully rendered nonstreaming Google request before sending it."""
+        payload = {
+            "model": self._as_model_str(model) or str(model),
+            "history": history,
+            "contents": contents,
+            "config": config,
+        }
+        request_bytes = len(
+            json.dumps(
+                payload,
+                default=self._budget_json_default,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        configured_tokens = getattr(config, "max_output_tokens", None)
+        output_tokens = generation_budget.max_output_tokens if configured_tokens is None else configured_tokens
+        output_tokens = min(output_tokens, generation_budget.max_output_tokens)
+        if getattr(config, "max_output_tokens", None) != output_tokens:
+            config.max_output_tokens = output_tokens
+        await generation_budget.reserve(request_bytes=request_bytes, output_tokens=output_tokens)
 
     async def close(self) -> None:
         """Close all per-loop SDK clients.
@@ -1056,6 +1114,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         *,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        generation_budget: Optional[GenerationBudget] = None,
+        history: Optional[Sequence[Any]] = None,
     ) -> Any:
         """Reformat a free-text model response into structured output via a second LLM call.
 
@@ -1134,10 +1194,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             len(format_prompt),
         )
         _reformat_start = time.perf_counter()
+        structured_generation_config = GenerateContentConfig(**structured_config)
+        if generation_budget is not None:
+            await self._reserve_generation_budget(
+                generation_budget,
+                model=reformat_model,
+                history=history,
+                contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
+                config=structured_generation_config,
+            )
         structured_response = await self.client.aio.models.generate_content(
             model=reformat_model,
             contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
-            config=GenerateContentConfig(**structured_config),
+            config=structured_generation_config,
         )
         _reformat_elapsed = time.perf_counter() - _reformat_start
         self.logger.info(
@@ -1881,6 +1950,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         initial_round_raw_usage: Optional[dict] = None,
         initial_round_duration_ms: float = 0.0,
         usage_state: Optional[Dict[str, Any]] = None,
+        generation_budget: Optional[GenerationBudget] = None,
+        history: Optional[Sequence[Any]] = None,
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
@@ -2204,6 +2275,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 self.logger.debug(f"Sending {len(next_prompt_parts)} responses back to model")
                 while retry_count < max_retries:
                     try:
+                        if generation_budget is not None:
+                            await self._reserve_generation_budget(
+                                generation_budget,
+                                model=model,
+                                history=history,
+                                contents=next_prompt_parts,
+                                config=current_config,
+                            )
                         current_response = await chat.send_message(next_prompt_parts, config=current_config)
                         finish_reason = getattr(current_response.candidates[0], "finish_reason", None)
                         if finish_reason:
@@ -2211,7 +2290,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             if finish_reason.name == "MAX_TOKENS" and _cur_cap is not None and _cur_cap < 8192:
                                 self.logger.warning("Hit MAX_TOKENS limit. Retrying with increased token limit.")
                                 retry_count += 1
-                                current_config.max_output_tokens = 8192
+                                current_config.max_output_tokens = (
+                                    min(8192, generation_budget.max_output_tokens)
+                                    if generation_budget is not None
+                                    else 8192
+                                )
                                 continue
                             elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
                                 # Diagnose: try to extract which tool was attempted
@@ -2254,6 +2337,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                                 await asyncio.sleep(2**retry_count)
                                 continue
                         break
+                    except GenerationBudgetExceeded:
+                        raise
                     except Exception as e:
                         error_str = str(e)
                         retry_count += 1
@@ -2371,7 +2456,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     "created. If what you gathered is not enough to fully "
                     "answer, say so explicitly and summarize what you did find."
                 )
+                if generation_budget is not None:
+                    await self._reserve_generation_budget(
+                        generation_budget,
+                        model=model,
+                        history=history,
+                        contents=synthesis_prompt,
+                        config=current_config,
+                    )
                 current_response = await chat.send_message(synthesis_prompt, config=current_config)
+            except GenerationBudgetExceeded:
+                raise
             except Exception as e:
                 self.logger.error("Forced synthesis turn failed: %s", e)
 
@@ -2942,7 +3037,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         self.logger.warning(f"Failed to extract image from inline_data: {e}")
 
                 # Try as_image() method for parts that support it
-                elif hasattr(part, "as_image") and callable(getattr(part, "as_image")):
+                elif hasattr(part, "as_image") and callable(part.as_image):
                     try:
                         # Check if this part can be converted to an image
                         # The as_image() method is available on parts with image content
@@ -3083,6 +3178,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 stop tool executes successfully, further tool-calling is
                 disabled and the model must produce a final text answer.
         """
+        generation_budget = self.generation_budget
+        if generation_budget is not None:
+            if deep_research or files or isinstance(system_prompt, list):
+                raise GenerationBudgetExceeded(
+                    "Budgeted Google ask does not support deep research, media, or remote prompt caching.",
+                    reason_code="unsupported_mode",
+                )
+
         max_retries = kwargs.pop("max_retries", 2)
         retry_on_fail = kwargs.pop("retry_on_fail", True)
 
@@ -3186,6 +3289,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             tool_type = kw_tool_type or "custom_functions"
         else:
             tool_type = kw_tool_type
+
+        if generation_budget is not None and tool_type == "builtin_tools":
+            raise GenerationBudgetExceeded(
+                "Budgeted Google ask does not support grounding tools.", reason_code="unsupported_mode"
+            )
 
         if _use_tools:
             # Reduce temperature to avoid hallucinations; thinking-only models
@@ -3332,7 +3440,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         afc_config = (
             generation_config.pop("automatic_function_calling", None) if isinstance(generation_config, dict) else None
         )
-        if afc_config is None and tool_type == "computer_use":
+        if generation_budget is not None:
+            afc_config = types.AutomaticFunctionCallingConfig(disable=True)
+        elif afc_config is None and tool_type == "computer_use":
             afc_config = types.AutomaticFunctionCallingConfig(disable=True)
 
         # FEAT-181: resolve List[CacheableSegment] → string before passing to
@@ -3370,6 +3480,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             automatic_function_calling=afc_config,
             **generation_config,
         )
+        if generation_budget is not None:
+            requested_tokens = getattr(final_config, "max_output_tokens", None)
+            final_config.max_output_tokens = min(
+                generation_budget.max_output_tokens,
+                requested_tokens if requested_tokens is not None else generation_budget.max_output_tokens,
+            )
         # FEAT-181: if we have pending cache segments, attempt to create
         # a Gemini CachedContent resource (fail-open on any error).
         if _pending_cache_segs:
@@ -3398,6 +3514,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         _lc_round1_t0 = time.perf_counter()
         while retry_count < max_retries:
             try:
+                if generation_budget is not None:
+                    await self._reserve_generation_budget(
+                        generation_budget,
+                        model=current_model,
+                        history=history,
+                        contents=prompt,
+                        config=final_config,
+                    )
                 response = await chat.send_message(message=prompt, config=final_config)
                 finish_reason = getattr(response.candidates[0], "finish_reason", None)
                 if finish_reason:
@@ -3407,7 +3531,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         self.logger.warning(
                             f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
                         )
-                        final_config.max_output_tokens = 8192
+                        final_config.max_output_tokens = (
+                            min(8192, generation_budget.max_output_tokens) if generation_budget is not None else 8192
+                        )
                         continue
                     elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
                         retry_count += 1
@@ -3429,6 +3555,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         await asyncio.sleep(2**retry_count)
                         continue
                 break
+            except GenerationBudgetExceeded:
+                raise
             except Exception as e:
                 # Handle specific network client error (socket/aiohttp issue)
                 if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
@@ -3443,9 +3571,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if retry_count >= max_retries:
                         # FEAT-548 Finding #1: emit ClientCallFailedEvent
                         await self._emit_failed_call_safe(
-                            _lc_tc_google, client_name="google",
+                            _lc_tc_google,
+                            client_name="google",
                             model=str(model) if model else "",
-                            t0=ask_started, exc=e,
+                            t0=ask_started,
+                            exc=e,
                         )
                         raise
                     await asyncio.sleep(delay)
@@ -3473,9 +3603,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 if retry_count >= max_retries:
                     # FEAT-548 Finding #1: emit ClientCallFailedEvent
                     await self._emit_failed_call_safe(
-                        _lc_tc_google, client_name="google",
+                        _lc_tc_google,
+                        client_name="google",
                         model=str(model) if model else "",
-                        t0=ask_started, exc=e,
+                        t0=ask_started,
+                        exc=e,
                     )
                     raise
                 await asyncio.sleep(delay)
@@ -3529,6 +3661,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             initial_round_raw_usage=_lc_round1_raw_usage,
             initial_round_duration_ms=_lc_round1_duration_ms,
             usage_state=_lc_usage_state,
+            generation_budget=generation_budget,
+            history=history,
         )
         model = current_model
 
@@ -3653,11 +3787,20 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         structured_config.get("thinking_config") and "off" or "default",
                         len(format_prompt),
                     )
+                    repair_config = GenerateContentConfig(**structured_config)
+                    if generation_budget is not None:
+                        await self._reserve_generation_budget(
+                            generation_budget,
+                            model=reformat_model,
+                            history=history,
+                            contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
+                            config=repair_config,
+                        )
                     _reformat_start = time.perf_counter()
                     structured_response = await self.client.aio.models.generate_content(
                         model=reformat_model,
                         contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
-                        config=GenerateContentConfig(**structured_config),
+                        config=repair_config,
                     )
                     _reformat_elapsed = time.perf_counter() - _reformat_start
                     self.logger.info(
@@ -3684,7 +3827,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     else:
                         self.logger.warning("No structured text received, falling back to original response")
                         final_output = assistant_response_text
-            except InvokeError:
+            except (InvokeError, GenerationBudgetExceeded):
                 # A truncated reformat response is a real error, not a fallback case.
                 raise
             except Exception as e:
@@ -3708,10 +3851,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         output_config,
                         temperature=temperature,
                         max_tokens=max_tokens,
+                        generation_budget=generation_budget,
+                        history=history,
                     )
                 else:
                     final_output = parsed
-            except InvokeError:
+            except (InvokeError, GenerationBudgetExceeded):
                 # A truncated reformat response is a real error, not a fallback case.
                 raise
             except Exception as e:
@@ -3725,8 +3870,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         output_config,
                         temperature=temperature,
                         max_tokens=max_tokens,
+                        generation_budget=generation_budget,
+                        history=history,
                     )
-                except InvokeError:
+                except (InvokeError, GenerationBudgetExceeded):
                     raise
                 except Exception as reformat_err:
                     self.logger.error("Recovery reformat also failed: %s", reformat_err)
@@ -4468,9 +4615,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         except BaseException as _lc_stream_exc:
             # FEAT-548 Finding #1: emit ClientCallFailedEvent on unhandled error
             await self._emit_failed_call_safe(
-                _lc_tc_googles, client_name="google",
+                _lc_tc_googles,
+                client_name="google",
                 model=str(model) if model else "",
-                t0=_lc_t0_googles, exc=_lc_stream_exc,
+                t0=_lc_t0_googles,
+                exc=_lc_stream_exc,
             )
             raise
         finally:
@@ -5426,7 +5575,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         tc.result = self._maybe_scrub(result, tool_name=tc.name)  # FEAT-252
 
                 all_tool_calls.extend(tool_call_objects)
-                pass  # We're not doing a multi-turn here for stateless
+                # We're not doing a multi-turn here for stateless
 
         final_output = None
         _extracted_text = self._safe_extract_text(response)
