@@ -10,6 +10,7 @@ Tests cover:
 - empty text raises ValueError.
 - a missing/unconfigured model raises ValueError (no silent degradation).
 """
+
 import asyncio
 import io
 import time
@@ -20,7 +21,6 @@ import pytest
 from parrot.voice.tts.models import SynthesisResult, TTSConfig
 from parrot.voice.tts.supertonic_backend import SupertonicTTSBackend
 from parrot.voice.tts.synthesizer import VoiceSynthesizer
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -77,9 +77,7 @@ def test_synthesizer_dispatches_supertonic():
 
 async def test_synthesize_returns_playable_container(supertonic_stub):
     """synthesize() returns a SynthesisResult with playable WAV bytes."""
-    result = await supertonic_stub.synthesize(
-        "Hola", mime_format="audio/wav", language="es-ES"
-    )
+    result = await supertonic_stub.synthesize("Hola", mime_format="audio/wav", language="es-ES")
     assert isinstance(result, SynthesisResult)
     assert result.mime_format == "audio/wav"
     assert result.audio  # non-empty

@@ -20,6 +20,7 @@ text-only is the *handler's* responsibility (FEAT-231, AgentVoiceTalk).
 
 Added by FEAT-231 (AgentTalk Voice Support).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -157,9 +158,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
             ) from exc
 
         model_path = self._resolve_model_path()
-        self.logger.info(
-            "SupertonicTTSBackend: loading ONNX model from %s", model_path
-        )
+        self.logger.info("SupertonicTTSBackend: loading ONNX model from %s", model_path)
         self._session = onnxruntime.InferenceSession(model_path)
         self.logger.info("SupertonicTTSBackend: ONNX model loaded")
 
@@ -204,9 +203,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
         effective_voice = voice or self.voice
         # The Supertonic container is always WAV; keep the label truthful even
         # if the caller requested a different MIME type.
-        target_format = (
-            mime_format if mime_format == _DEFAULT_MIME_FORMAT else _DEFAULT_MIME_FORMAT
-        )
+        target_format = mime_format if mime_format == _DEFAULT_MIME_FORMAT else _DEFAULT_MIME_FORMAT
 
         self.logger.debug(
             "SupertonicTTSBackend: synthesizing %d chars (voice=%s, lang=%s)",
@@ -215,9 +212,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
             language,
         )
 
-        pcm_bytes = await asyncio.to_thread(
-            self._synthesize_sync, text, effective_voice, language
-        )
+        pcm_bytes = await asyncio.to_thread(self._synthesize_sync, text, effective_voice, language)
         if not pcm_bytes:
             raise RuntimeError("Supertonic synthesis returned no audio data")
 
