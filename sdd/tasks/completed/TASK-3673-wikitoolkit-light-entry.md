@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-595 — Lightweight wikitoolkit hook entry point
 **Spec**: `sdd/specs/fixgroup-c3a787516a75.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3672
@@ -210,4 +210,32 @@ hard assertion without flakiness.
 - `pytest packages/ai-parrot-tools/tests/tool_optimizations/test_installation.py -q`
 
 ## Completion Note
-(Agent fills this in when done)
+
+Completed 2026-09-23 (Claude Opus 5.5, via `/sdd-fix issue:f0a40d0853f2`).
+
+- `entry.py` created as blueprinted (stdlib-only; exact-argv `claude-hook` match, else `cli.main()`).
+- `pyproject.toml`: `wikitoolkit = "parrot.knowledge.wiki.entry:main"`.
+- `test_hook_startup.py`: `_run_hook` launches the entry (`-c` shim equivalent) with a `via_cli` switch for the
+  legacy path; new tests `test_entry_module_imports_no_cli` (AC1), `test_entry_hook_argv_matches_installed_subcommand`,
+  `test_prefilter_path_imports` (AC2), `test_config_path_matches_cli` (AC3, byte-equal, two fixture repos),
+  `test_entry_falls_through_to_cli` (AC6); `test_warm_process_startup` reworked into a two-path benchmark (AC4).
+
+Benchmark (this runner, linux / CPython 3.12, 1 cold + 20 warm fresh processes, `artifacts/logs/hook_startup_benchmark.json`):
+
+| Path | cold | warm p50 | warm p95 |
+|---|---|---|---|
+| prefilter (Bash `git status`, built repo) | 42 ms | **42 ms** | 43 ms |
+| config (Grep, built repo) | 194 ms | **193 ms** | 199 ms |
+| legacy `python -m parrot.knowledge.wiki.cli claude-hook` (reference, `/usr/bin/time`) | — | ~285 ms | — |
+
+Prefilter p50 < 300 ms is a hard assertion; config path is warn-only and also under target here.
+
+**Rollout**: the console shim is generated at install time — the main-checkout operator must re-run
+`uv pip install -e packages/ai-parrot` for `.venv/bin/wikitoolkit` to use `entry:main`. Until then the old shim keeps
+working (it still imports `cli`, but benefits from TASK-3672's light hook runtime). Installed hook command spelling
+is unchanged, so no installer/settings changes are needed.
+
+Validation: `test_hook_startup.py` + `test_hook_prefilter.py` 52 passed; `test_installation.py` 24 passed;
+`test_cli.py` 3 failed / 16 passed and `test_installer_mcp.py` 2 failed / 22 passed — all 5 failures pre-existing and
+identical on unchanged base e46249734 (`TestIngestModelResolutionDetectionFallback::*` lightweight-model detection;
+`TestMCPJsonInstall::*` `shutil.which` absolute path). `ruff check` clean.

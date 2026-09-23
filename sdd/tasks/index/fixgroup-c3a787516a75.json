@@ -35,7 +35,7 @@
       "feature_id": "FEAT-595",
       "feature": "fixgroup-c3a787516a75",
       "spec": "sdd/specs/fixgroup-c3a787516a75.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,9 +45,9 @@
       "parallelism_notes": "Depends on TASK-3672: its import-trace and p50<300ms assertions require the lazy hook.py / claude_code/__init__.py and _prefilter_rejects that TASK-3672 creates. Exclusive because it edits packages/ai-parrot/pyproject.toml (dependency manifest / console-script table).",
       "discovered_from": "issue:f0a40d0853f2",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3673-wikitoolkit-light-entry.md"
+      "started_at": "2026-09-23T00:00:00+00:00",
+      "completed_at": "2026-09-23T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3673-wikitoolkit-light-entry.md"
     }
   ]
 }
