@@ -24,7 +24,7 @@ dance a worker performs to close a task with one verifiable call:
 
 This module never runs `git add .`, `git reset`, `git commit`, `git push`
 or closes any task other than the one named by the evidence. It returns
-staged paths and a suggested commit message; the worker performs the
+staged paths, the removed `active/` path and a suggested commit message; the worker performs the
 commit and any semantic review decisions.
 """
 
@@ -372,7 +372,7 @@ def _ls_tree_entry(repo_root: Path, tree: str, path: str) -> tuple[str, str]:
     return mode, blob_sha
 
 
-def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> list[str]:
+def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> tuple[list[str], list[str]]:
     """Run `close_task.sh` under a throwaway index and transfer only this task's entries.
 
     `close_task.sh` internally runs `git add -u sdd/tasks/active`, which
@@ -382,6 +382,14 @@ def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> li
     owns (its own active/completed `.md` and its per-spec index) are then
     replayed onto the real index via targeted `git update-index` calls,
     guarded by a compare-and-swap check against a concurrent change.
+
+    Returns:
+        ``(staged, removed)``: paths added/updated in the real index, and
+        paths deleted from it (the task's old ``active/`` copy). Both are
+        already applied to the real index; ``removed`` is reported separately
+        because ``git add`` on a path gone from disk and index fails, yet a
+        pathspec-limited ``git commit -- <staged>`` would silently leave the
+        deletion out and the ``active/`` copy alive in HEAD.
     """
     close_script = repo_root / "scripts" / "sdd" / "close_task.sh"
     if not close_script.is_file():
@@ -440,9 +448,11 @@ def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> li
         raise ConcurrentChangeError("the real git index changed concurrently for this task's own paths")
 
     staged: list[str] = []
+    removed: list[str] = []
     for status, path in own_changed:
         if status == "D":
             _run_git(["update-index", "--force-remove", "--", path], cwd=repo_root, env=real_env)
+            removed.append(path)
         else:
             mode, blob_sha = _ls_tree_entry(repo_root, new_tree, path)
             _run_git(
@@ -451,7 +461,7 @@ def _close_task_isolated(repo_root: Path, task_id: str, feature_slug: str) -> li
                 env=real_env,
             )
             staged.append(path)
-    return sorted(staged)
+    return sorted(staged), sorted(removed)
 
 
 def _verify_postconditions(repo_root: Path, task_id: str, feature_slug: str, note: str) -> None:
@@ -557,7 +567,7 @@ def finalize_task(*, evidence: TaskCompletionEvidence, worktree: Path, expected_
         assert source_path is not None
         _ensure_note_applied(source_path, note)
 
-        staged_paths = _close_task_isolated(repo_root, evidence.task_id, evidence.feature_slug)
+        staged_paths, removed_paths = _close_task_isolated(repo_root, evidence.task_id, evidence.feature_slug)
         _verify_postconditions(repo_root, evidence.task_id, evidence.feature_slug, note)
 
         result: dict[str, object] = {
@@ -565,6 +575,7 @@ def finalize_task(*, evidence: TaskCompletionEvidence, worktree: Path, expected_
             "feature_slug": evidence.feature_slug,
             "implementation_sha": evidence.implementation_sha,
             "staged_paths": staged_paths,
+            "removed_paths": removed_paths,
             "note": note,
             "message": f"sdd: complete {evidence.task_id} for {evidence.feature_slug}",
             "replayed": False,
