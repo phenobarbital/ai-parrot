@@ -14,16 +14,17 @@ import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Literal, Optional, Any, Set, Tuple, Union, TYPE_CHECKING
+from typing import Awaitable, Callable, Dict, List, Literal, Optional, Any, Sequence, Set, Tuple, Union, TYPE_CHECKING
 from parrot._imports import lazy_import
 import redis.asyncio as aioredis
 from os import PathLike
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 import numpy as np
 import pandas as pd
 from navconfig.logging import logging
 from ..toolkit import AbstractToolkit
 from ...conf import REDIS_DATASET_URL
+from .config import DatasetManagerConfig, DatasourceSpec, FileDatasource
 from .sources.base import DataSource
 
 # Runtime import (not TYPE_CHECKING): these contracts are referenced as string
@@ -519,7 +520,10 @@ class DatasetManager(AbstractToolkit):
     """
 
     tool_prefix: str = "dataset"
-    exclude_tools = ("setup", "add_dataset", "list_available")
+    #: FEAT-593 — JSON Schema source for Agent Studio; datasources are replayed in memory.
+    config_model = DatasetManagerConfig
+    secret_params = frozenset({"dsn", "credentials", "api_key", "access_token"})
+    exclude_tools = ("setup", "add_dataset", "list_available", "replay_datasources")
 
     #: Universal decision rules for any agent driving a DatasetManager. Injected
     #: into the system prompt via ``get_usage_rules()`` so the LLM commits to one
@@ -2099,6 +2103,113 @@ class DatasetManager(AbstractToolkit):
             catalog_params=catalog_params,
             description=description,
         )
+
+    async def replay_datasources(self, datasources: Sequence[Any]) -> list[str]:
+        """Register agent-level datasource descriptors (FEAT-593). Returns registered names.
+
+        Each item is a ``DatasourceSpec`` model or dict. A failing entry is logged at WARNING
+        (never with secret values) and skipped.
+
+        Args:
+            datasources: Validated datasource models or their dictionary representations.
+
+        Returns:
+            Names of datasource descriptors registered successfully.
+        """
+        adapter = TypeAdapter(DatasourceSpec)
+        registered: list[str] = []
+        for raw in datasources:
+            try:
+                ds = raw if isinstance(raw, BaseModel) else adapter.validate_python(raw)
+                common = {"description": ds.description, "metadata": ds.metadata}
+                if ds.kind == "query_slug":
+                    await self.add_dataset(
+                        ds.name,
+                        query_slug=ds.slug,
+                        permanent_filter=ds.permanent_filter,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "sql":
+                    await self.add_dataset(
+                        ds.name,
+                        sql=ds.sql,
+                        driver=ds.driver,
+                        dsn=ds.dsn,
+                        credentials=ds.credentials,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "table":
+                    await self.add_table_source(
+                        ds.name,
+                        ds.table,
+                        ds.driver,
+                        dsn=ds.dsn,
+                        credentials=ds.credentials,
+                        strict_schema=ds.strict_schema,
+                        permanent_filter=ds.permanent_filter,
+                        allowed_columns=ds.allowed_columns,
+                        **common,
+                    )
+                elif isinstance(ds, FileDatasource) and ds.is_parquet:
+                    await self.create_deltatable_from_parquet(
+                        ds.name,
+                        ds.path,
+                        ds.effective_delta_path,
+                        mode="overwrite",
+                        description=ds.description,
+                    )
+                elif ds.kind == "file":
+                    await self.load_file(ds.name, ds.path, metadata=ds.metadata)
+                elif ds.kind == "airtable":
+                    await self.add_airtable_source(
+                        ds.name,
+                        ds.base_id,
+                        ds.table,
+                        api_key=ds.api_key,
+                        view=ds.view,
+                        **common,
+                    )
+                elif ds.kind == "smartsheet":
+                    await self.add_smartsheet_source(ds.name, ds.sheet_id, access_token=ds.access_token, **common)
+                elif ds.kind == "iceberg":
+                    await self.add_iceberg_source(
+                        ds.name,
+                        ds.table_id,
+                        ds.catalog_params,
+                        factory=ds.factory,
+                        credentials=ds.credentials,
+                        dsn=ds.dsn,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "mongo":
+                    await self.add_mongo_source(
+                        ds.name,
+                        ds.collection,
+                        ds.database,
+                        credentials=ds.credentials,
+                        dsn=ds.dsn,
+                        required_filter=ds.required_filter,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "deltatable":
+                    await self.add_deltatable_source(
+                        ds.name,
+                        ds.path,
+                        table_name=ds.table_name,
+                        mode=ds.mode,
+                        credentials=ds.credentials,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                registered.append(ds.name)
+            except Exception as exc:  # noqa: BLE001 — one bad descriptor must not abort the rest
+                name = raw.get("name") if isinstance(raw, dict) else getattr(raw, "name", "?")
+                self.logger.warning("replay_datasources: skipped %r (%s)", name, type(exc).__name__)
+        return registered
 
     async def create_deltatable_from_parquet(
         self,
