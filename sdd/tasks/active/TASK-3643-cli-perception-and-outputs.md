@@ -50,6 +50,26 @@ validated against the decoded image because `from_strip_norm` trusts
 
 ## Codebase Contract (Anti-Hallucination)
 
+> **CORRECTION-1 (post-TASK-3640/3641 review, applied by the orchestrator):**
+> `from examples.planogram.aws.<module> import ...` **never resolves** — a
+> third-party `examples` distribution is installed in the shared `.venv`
+> (`.venv/lib/python3.12/site-packages/examples/`, with its own
+> `__init__.py`), and a regular package found anywhere on `sys.path` always
+> wins over a same-named repo-local namespace directory, regardless of
+> `sys.path` order. Confirmed by running TASK-3640/3641's own declared
+> `pytest` validation commands, which failed with
+> `ModuleNotFoundError: No module named 'examples.planogram'`. The fix
+> (already applied and merged): `examples/planogram/tests/conftest.py` now
+> also inserts `examples/planogram/aws/` onto `sys.path`, and every
+> cross-module reference inside `examples/planogram/aws/` — including this
+> task's `nova2.py` and its test — uses a **bare sibling import**
+> (`from identify import ...`, `from nova_vision import ...`, `from prompt
+> import ...`, `from nova2 import ...`) instead of the dotted
+> `examples.planogram.aws.` path shown anywhere below. This also matches how
+> `python examples/planogram/aws/nova2.py` resolves its own sibling imports
+> when run directly (Python auto-adds the script's own directory to
+> `sys.path[0]`).
+
 ### Verified Imports
 ```python
 from parrot.models.detections import DetectionBox                                  # verified: identify.py:14
@@ -66,11 +86,11 @@ from parrot_pipelines.planogram.perception.rows import group_rows               
 from parrot_pipelines.planogram.perception.slots import (                           # verified: slots.py:27,34,115
     AnchorRule, build_slots, candidate_shape_id,
 )
-from examples.planogram.aws.identify import (                                       # TASK-3642
+from identify import (                                       # TASK-3642 — bare sibling import (CORRECTION-1)
     FlatDetection, RunStats, flatten, identify_strips_closed_set,
 )
-from examples.planogram.aws.nova_vision import NovaVisionClient                     # TASK-3640
-from examples.planogram.aws.prompt import load_planogram_vocabulary                 # TASK-3641
+from nova_vision import NovaVisionClient                     # TASK-3640 — bare sibling import
+from prompt import load_planogram_vocabulary                 # TASK-3641 — bare sibling import
 ```
 
 ### Existing Signatures to Use
@@ -220,9 +240,9 @@ from parrot_pipelines.planogram.perception.slots import (  # verified: slots.py:
     AnchorRule, build_slots, candidate_shape_id,
 )
 
-from examples.planogram.aws.identify import RunStats, flatten, identify_strips_closed_set
-from examples.planogram.aws.nova_vision import NovaVisionClient
-from examples.planogram.aws.prompt import load_planogram_vocabulary
+from identify import RunStats, flatten, identify_strips_closed_set  # bare sibling import — see CORRECTION-1
+from nova_vision import NovaVisionClient  # bare sibling import — see CORRECTION-1
+from prompt import load_planogram_vocabulary  # bare sibling import — see CORRECTION-1
 
 logger = logging.getLogger("nova2")
 
@@ -340,7 +360,7 @@ import pytest
 from parrot.models.detections import DetectionBox
 from parrot_pipelines.planogram.contracts import PerceptionResult, Slot
 
-from examples.planogram.aws.nova2 import load_perception
+from nova2 import load_perception  # bare sibling import — see CORRECTION-1
 
 
 def _image(width: int = 100, height: int = 80) -> np.ndarray:

@@ -55,6 +55,26 @@ CLI, perception or output writing (TASK-3643).
 
 ## Codebase Contract (Anti-Hallucination)
 
+> **CORRECTION-1 (post-TASK-3640/3641 review, applied by the orchestrator):**
+> `from examples.planogram.aws.<module> import ...` **never resolves** — a
+> third-party `examples` distribution is installed in the shared `.venv`
+> (`.venv/lib/python3.12/site-packages/examples/`, with its own
+> `__init__.py`), and a regular package found anywhere on `sys.path` always
+> wins over a same-named repo-local namespace directory, regardless of
+> `sys.path` order. Confirmed by running TASK-3640/3641's own declared
+> `pytest` validation commands, which failed with
+> `ModuleNotFoundError: No module named 'examples.planogram'`. The fix
+> (already applied and merged): `examples/planogram/tests/conftest.py` now
+> also inserts `examples/planogram/aws/` onto `sys.path`, and every
+> cross-module reference inside `examples/planogram/aws/` — including this
+> task's `identify.py` and its test — uses a **bare sibling import**
+> (`from prompt import ...`, `from nova_vision import ...`, `from
+> identify import ...`) instead of the dotted `examples.planogram.aws.` path
+> shown anywhere below. This also matches how
+> `python examples/planogram/aws/nova2.py` resolves its own sibling imports
+> when run directly (Python auto-adds the script's own directory to
+> `sys.path[0]`).
+
 ### Verified Imports
 ```python
 from parrot.models.detections import DetectionBox                              # verified: identify.py:14
@@ -70,7 +90,7 @@ from parrot_pipelines.planogram.identification.vision import (                 #
 )
 from parrot_pipelines.planogram.perception.executor import CpuExecutor         # verified: perception/executor.py:17
 from parrot_pipelines.planogram.perception.slots import strip_box, to_strip_norm  # verified: slots.py:214,242
-from examples.planogram.aws.prompt import (                                    # created by TASK-3641
+from prompt import (                                    # created by TASK-3641 — bare sibling import (see CORRECTION-1)
     NOVA_PROMPT_VERSION, NOVA_STAGE, PlanogramVocabulary, build_nova_identify_prompt,
 )
 ```
@@ -221,7 +241,7 @@ from parrot_pipelines.planogram.identification.vision import VisionAdapter, Visi
 from parrot_pipelines.planogram.perception.executor import CpuExecutor  # verified: executor.py:17
 from parrot_pipelines.planogram.perception.slots import strip_box, to_strip_norm  # verified: slots.py:214,242
 
-from examples.planogram.aws.prompt import (  # TASK-3641
+from prompt import (  # TASK-3641 — bare sibling import, NOT `examples.planogram.aws.prompt` (see CORRECTION-1 above)
     NOVA_PROMPT_VERSION, NOVA_STAGE, PlanogramVocabulary, build_nova_identify_prompt,
 )
 
@@ -371,7 +391,7 @@ from parrot_pipelines.planogram.contracts import (
     Identification, IdentificationResult, ObservationSource, PerceptionResult, Shape, Slot,
 )
 
-from examples.planogram.aws.identify import FlatDetection, flatten
+from identify import FlatDetection, flatten  # bare sibling import — see CORRECTION-1 above
 
 
 def _box(x1: int, y1: int, x2: int, y2: int) -> DetectionBox:
