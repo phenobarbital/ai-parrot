@@ -194,7 +194,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -205,8 +205,8 @@
       "parallelism_notes": "Imports ToolkitSpec/AgentMCPServerSpec/hydrate_params/hydrate_mcp/tooling_revision from TASK-3645 (parrot/tools/spec.py) and calls DatasetManager.replay_datasources from TASK-3649 (dataset_manager/tool.py). Only task touching interfaces/tools.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3654-tool-interface-apply-specs.md"
+      "completed_at": "2026-09-23T15:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3654-tool-interface-apply-specs.md"
     },
     {
       "id": "TASK-3655",
@@ -255,7 +255,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -265,8 +265,8 @@
       "parallelism_notes": "Same file as TASK-3656 (registry/registry.py) and serializes specs with the widened BotConfig.toolkits it introduces.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3657-registry-update-agent-tooling.md"
+      "completed_at": "2026-09-23T15:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3657-registry-update-agent-tooling.md"
     },
     {
       "id": "TASK-3658",

@@ -248,10 +248,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (execution `a3f5c9e2-7b41-4d8a-9c3e-591fd0d7a5b2`), native coder seat
+`sonnet` (`claude-sonnet-5`, backend `native`), dispatched via `Agent(subagent_type="sdd-coder")` (agentId `a4439318c51b09a9d`), prepared via `coder_prepare_native`, attempt `f444abb1d69744e3a157bb8d4f875552`.
+**Date**: 2026-09-23
+**Feature branch**: `feat-FEAT-593-tool-configuration-agentstudio`
+**Implementation SHA**: `f638ba6fade02d0e80f3c2244f17c271112f6c1b` (`feat(tool-configuration-agentstudio): TASK-3657 — AgentRegistry.update_agent_tooling() in-place atomic YAML rewrite`)
+**Merge commit**: `1f4a04b6b`
+**Review**: `coder_record_review` recorded — `feedback_id: coder-review:af9cfcebec8300bff631a1b5`, `fix_commits: []`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: `coder_merge(TASK-3657)` returned `outcome: "merged"`. Diff verified (`git show --stat f638ba6fa`):
+`packages/ai-parrot/src/parrot/registry/registry.py` (MODIFY, `AgentRegistry.update_agent_tooling` added
+right after `create_agent_definition` — `KeyError` for unknown agent; `PermissionError` for missing
+`bot_config`/`file_path`, non-YAML suffix, path outside `AGENTS_DIR`, or stem/name mismatch; atomic rewrite
+via `tempfile.mkstemp` + `os.replace`; `yaml.safe_load`/`yaml.safe_dump(sort_keys=False, allow_unicode=True)`;
+mutates only `toolkits`/`mcp_servers`, preserves every other key; refreshes `metadata.bot_config` via
+`model_copy(update={...})`) and `tests/registry/test_update_agent_tooling.py` (CREATE, 2 tests) — 72 + 39
+insertions, exactly the 2 declared files, nothing under `sdd/` touched. Coder's own test run: `pytest
+packages/ai-parrot/tests/registry/test_update_agent_tooling.py -q` → 2 passed. Coder reported copying gitignored
+compiled `.so` build artifacts from the main checkout into its OWN sub-worktree only to run pytest locally,
+then deleting them before commit (confirmed clean `git status`) — no shared-environment or main-checkout
+mutation occurred, consistent with the shared-environment read-only policy.
 
-**Deviations from spec**: none | describe if any
+The merge-time lint residual for this file (`F841` at line 111, `F811` redefinition of `get_metadata` at
+line 651 vs 526) was verified via `git show f638ba6fa --stat` and `grep -n "def get_metadata"` to PRE-EXIST
+this task's diff (the duplicate `get_metadata` and the unused `tools_list` predate TASK-3657's insertion point,
+confirmed against `registry.py`'s git history) — pre-existing repo debt, correctly left to `/sdd-done`, not
+introduced by this delivery.
+
+**Deviations from spec**: none.

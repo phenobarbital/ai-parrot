@@ -314,10 +314,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (execution `a3f5c9e2-7b41-4d8a-9c3e-591fd0d7a5b2`), coder seat `gpt-5.6-terra` (MCP backend `codex`), delivered via `coder_run_chunk` job `job-5fd7ba134efc`, attempt `f8259906f6cd4e1d8fe9963f9da5cf39`.
+**Date**: 2026-09-23
+**Feature branch**: `feat-FEAT-593-tool-configuration-agentstudio`
+**Implementation SHA**: `5f7f3059693db32127b888980fe65a43bfe699ce` (`feat(tool-configuration-agentstudio): TASK-3654 — engine-committed coder deliverable`)
+**Lint autofix SHA**: `5ddd27898` (`style(tool-configuration-agentstudio): TASK-3654 — engine lint autofix`)
+**Merge commit**: `5ad3dce90`
+**Review**: `coder_record_review` recorded — `feedback_id: coder-review:d42d292cf3131c926c43699b`, `fix_commits: []`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: `coder_wait`/`coder_merge` returned `outcome: "merged"`, attempt `terminal: "completed"`, 1 attempt,
+0 retries, 0 failures (272s). Diff verified against the task's file table: `parrot/interfaces/tools.py`
+(MODIFY, 100 insertions) and `tests/interfaces/test_apply_tooling_specs.py` (CREATE, 138 insertions) — exactly
+the 2 declared files, no unlisted files, nothing under `sdd/` touched. Lint autofix committed by the engine
+(`5ddd27898`); the merge-time residual report showed 1 `F841` finding, pre-existing/unrelated style debt per
+project policy — not fixed here, deferred to `/sdd-done`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
