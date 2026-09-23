@@ -1,4 +1,5 @@
 """DatasetManager configuration (FEAT-593): persisted datasource descriptors."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,9 +54,7 @@ class FileDatasource(_DatasourceBase):
     def _validate_suffix(cls, value: str) -> str:
         suffix = Path(value).suffix.lower()
         if suffix not in FILE_SUFFIXES:
-            raise ValueError(
-                f"Unsupported file suffix {suffix!r}; must be one of {FILE_SUFFIXES}"
-            )
+            raise ValueError(f"Unsupported file suffix {suffix!r}; must be one of {FILE_SUFFIXES}")
         return value
 
     @model_validator(mode="after")
@@ -114,8 +113,17 @@ class DeltaTableDatasource(_DatasourceBase):
 
 
 DatasourceSpec = Annotated[
-    Union[QuerySlugDatasource, SqlDatasource, TableDatasource, FileDatasource, AirtableDatasource,
-          SmartsheetDatasource, IcebergDatasource, MongoDatasource, DeltaTableDatasource],
+    Union[
+        QuerySlugDatasource,
+        SqlDatasource,
+        TableDatasource,
+        FileDatasource,
+        AirtableDatasource,
+        SmartsheetDatasource,
+        IcebergDatasource,
+        MongoDatasource,
+        DeltaTableDatasource,
+    ],
     Field(discriminator="kind"),
 ]
 

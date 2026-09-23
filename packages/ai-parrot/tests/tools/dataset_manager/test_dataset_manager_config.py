@@ -24,8 +24,12 @@ def test_file_validation(kw):
 
 def test_duplicate_names_rejected():
     with pytest.raises(ValidationError):
-        DatasetManagerConfig(datasources=[{"kind": "query_slug", "name": "a", "slug": "s"},
-                                          {"kind": "query_slug", "name": "a", "slug": "t"}])
+        DatasetManagerConfig(
+            datasources=[
+                {"kind": "query_slug", "name": "a", "slug": "s"},
+                {"kind": "query_slug", "name": "a", "slug": "t"},
+            ]
+        )
 
 
 def test_secret_markers():
