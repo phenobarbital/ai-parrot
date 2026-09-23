@@ -734,6 +734,12 @@ security = [
     "huggingface_hub>=0.24,<1.0",
 ]
 
+# FEAT-590: Needle 3 on-device tool-call delegate backend (NeedleDelegate).
+# Optional and NOT part of `all`; pinned to the version the FEAT-590 spike measured.
+needle = [
+    "cactus-needle==3.0.4",
+]
+
 # FEAT-523 (TASK-2854): kept for backward compatibility with the
 # pre-existing `pip install ai-parrot[xai]` name — same satellite as the
 # `grok` extra defined earlier (packages/ai-parrot-client-grok).
