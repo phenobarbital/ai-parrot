@@ -2135,6 +2135,10 @@ class DatasetManager(AbstractToolkit):
                         allowed_columns=ds.allowed_columns,
                         **common,
                     )
+                    # add_table_source() has no is_active parameter (code review finding);
+                    # apply it directly to the stored entry instead of dropping it silently.
+                    if ds.name in self._datasets:
+                        self._datasets[ds.name].is_active = ds.is_active
                 elif isinstance(ds, FileDatasource) and ds.is_parquet:
                     await self.create_deltatable_from_parquet(
                         ds.name,
