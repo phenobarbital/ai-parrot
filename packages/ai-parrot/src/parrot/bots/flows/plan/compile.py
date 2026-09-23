@@ -16,6 +16,7 @@ Note:
     ``AgentsFlow.from_definition`` will accept these definitions; see
     :func:`ensure_tool_node_registered`.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -75,9 +76,7 @@ def to_flow_definition(plan: ExecutionPlan) -> Any:
         tools = sorted(plan_node.tool_names())
         is_delegate = getattr(plan_node, "type", "tool") == DELEGATE_NODE_TYPE
         node_type = DELEGATE_NODE_TYPE if is_delegate else PLAN_NODE_TYPE
-        label = plan_node.description or (
-            ("delegate:" + "|".join(tools)) if is_delegate else plan_node.tool
-        )
+        label = plan_node.description or (("delegate:" + "|".join(tools)) if is_delegate else plan_node.tool)
         metadata = {"plan": plan.name, "tools": tools} if is_delegate else {"plan": plan.name, "tool": plan_node.tool}
         nodes.append(
             NodeDefinition(
@@ -90,18 +89,12 @@ def to_flow_definition(plan: ExecutionPlan) -> Any:
             )
         )
         for dep in plan_node.depends_on:
-            edges.append(
-                EdgeDefinition(**{"from": dep, "to": plan_node.id, "condition": "always"})
-            )
+            edges.append(EdgeDefinition(**{"from": dep, "to": plan_node.id, "condition": "always"}))
 
     for root in roots:
-        edges.append(
-            EdgeDefinition(**{"from": START_NODE_ID, "to": root, "condition": "always"})
-        )
+        edges.append(EdgeDefinition(**{"from": START_NODE_ID, "to": root, "condition": "always"}))
     for leaf in leaves:
-        edges.append(
-            EdgeDefinition(**{"from": leaf, "to": END_NODE_ID, "condition": "always"})
-        )
+        edges.append(EdgeDefinition(**{"from": leaf, "to": END_NODE_ID, "condition": "always"}))
 
     return FlowDefinition(
         flow=plan.name,

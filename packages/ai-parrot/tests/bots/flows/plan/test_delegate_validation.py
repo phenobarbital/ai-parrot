@@ -1,4 +1,5 @@
 """FEAT-590 M4: delegate validator rules and compiler."""
+
 from __future__ import annotations
 
 import pytest

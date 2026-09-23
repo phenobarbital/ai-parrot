@@ -17,6 +17,7 @@ That last check matters more than it looks: ``CELPredicateEvaluator`` is
 fail-safe, so a typo in a facet name evaluates to ``False`` and silently
 skips the node. Catching it here turns a silent no-op into a loud error.
 """
+
 from __future__ import annotations
 
 import re
@@ -37,11 +38,9 @@ _GUARD_STATUS_RE = re.compile(r"\bctx\.status\.([A-Za-z0-9_\-]+)")
 class ToolManagerLike(Protocol):
     """The slice of ``ToolManager`` this validator needs."""
 
-    def get_tool(self, tool_name: str) -> Optional[Any]:
-        ...
+    def get_tool(self, tool_name: str) -> Optional[Any]: ...
 
-    def list_tools(self) -> List[str]:
-        ...
+    def list_tools(self) -> List[str]: ...
 
 
 @dataclass(frozen=True)
@@ -103,10 +102,7 @@ class PlanValidationError(ValueError):
 
     def __init__(self, issues: Sequence[ValidationIssue]) -> None:
         self.issues = list(issues)
-        super().__init__(
-            "ExecutionPlan validation failed:\n"
-            + "\n".join(f"  - {issue}" for issue in self.issues)
-        )
+        super().__init__("ExecutionPlan validation failed:\n" + "\n".join(f"  - {issue}" for issue in self.issues))
 
 
 def validate_plan(
@@ -144,8 +140,7 @@ def validate_plan(
             ValidationIssue(
                 None,
                 "no_tool_manager",
-                "No ToolManager supplied — tool names and argument schemas "
-                "were not verified.",
+                "No ToolManager supplied — tool names and argument schemas " "were not verified.",
                 severity="warning",
             )
         )
@@ -208,16 +203,11 @@ def _check_tool(
             ValidationIssue(
                 node.id,
                 "unknown_args",
-                f"Tool {node.tool!r} has no parameter(s) {sorted(unknown)}. "
-                f"Accepted: {sorted(fields)}.",
+                f"Tool {node.tool!r} has no parameter(s) {sorted(unknown)}. " f"Accepted: {sorted(fields)}.",
             )
         )
 
-    missing = [
-        name
-        for name, info in fields.items()
-        if info.is_required() and name not in node.args
-    ]
+    missing = [name for name, info in fields.items() if info.is_required() and name not in node.args]
     if missing:
         report.issues.append(
             ValidationIssue(
@@ -316,9 +306,7 @@ def _check_paths(node: PlanNode, report: ValidationReport) -> None:
         try:
             compile_path(path)
         except PathError as exc:
-            report.issues.append(
-                ValidationIssue(node.id, "bad_path", f"{where}: {exc}")
-            )
+            report.issues.append(ValidationIssue(node.id, "bad_path", f"{where}: {exc}"))
 
     for name, path in node.facets.counts.items():
         if "[]" not in path:
@@ -336,8 +324,7 @@ def _check_paths(node: PlanNode, report: ValidationReport) -> None:
                 ValidationIssue(
                     node.id,
                     "group_count_not_a_list",
-                    f"facets.group_counts.{name} = {path!r} does not contain "
-                    "'[]', so there is nothing to group.",
+                    f"facets.group_counts.{name} = {path!r} does not contain " "'[]', so there is nothing to group.",
                 )
             )
 
@@ -367,8 +354,7 @@ def _check_guard(
                 ValidationIssue(
                     node.id,
                     "guard_unknown_node",
-                    f"'when' references ctx.artifacts.{ref_node} but no such "
-                    "node exists.",
+                    f"'when' references ctx.artifacts.{ref_node} but no such " "node exists.",
                 )
             )
             continue
@@ -401,15 +387,12 @@ def _check_guard(
                 ValidationIssue(
                     node.id,
                     "guard_unknown_node",
-                    f"'when' references ctx.status.{ref_node} but no such node "
-                    "exists.",
+                    f"'when' references ctx.status.{ref_node} but no such node " "exists.",
                 )
             )
 
 
-def _check_for_each(
-    node: PlanNode, plan: ExecutionPlan, report: ValidationReport
-) -> None:
+def _check_for_each(node: PlanNode, plan: ExecutionPlan, report: ValidationReport) -> None:
     """Verify the fan-out source is a declared dependency."""
     if node.for_each is None:
         return
@@ -439,10 +422,7 @@ def _check_for_each(
 def _published_facets(plan: ExecutionPlan) -> dict[str, set[str]]:
     """Return ``{node_id: {facet names it publishes}}``."""
     return {
-        node.id: set(node.facets.paths)
-        | set(node.facets.counts)
-        | set(node.facets.group_counts)
-        for node in plan.nodes
+        node.id: set(node.facets.paths) | set(node.facets.counts) | set(node.facets.group_counts) for node in plan.nodes
     }
 
 
