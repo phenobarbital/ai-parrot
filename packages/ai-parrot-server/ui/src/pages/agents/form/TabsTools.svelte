@@ -11,12 +11,14 @@
   import AgentMcpPanel from "./AgentMcpPanel.svelte";
   import ToolkitDrawer from "./ToolkitDrawer.svelte";
 
-  let { state, tools, agentName }: { state: AgentFormState; tools: Record<string, ToolInfo>; agentName?: string } = $props();
+  // Local binding is `formState`, not `state` — a local named `state` is ambiguous with the
+  // `$state` rune (see AgentForm.svelte's own documented convention for this exact gotcha).
+  let { formState, tools, agentName }: { formState: AgentFormState; tools: Record<string, ToolInfo>; agentName?: string } = $props();
 
   let configured = $state<AgentToolkitsResponse | null>(null);
   let drawerSlug = $state<string | null>(null);
   let toolkitStatus = $state<Record<string, boolean>>({});
-  const selected = $derived(state.values.tools ?? []);
+  const selected = $derived(formState.values.tools ?? []);
   const unknownTools = $derived(selected.filter((tool) => !(tool in tools)));
   const toolNames = $derived(Object.keys(tools).sort());
   const readOnly = $derived(configured?.editable === false);
@@ -62,7 +64,7 @@
   });
 
   function toggleTool(name: string, on: boolean): void {
-    state.values.tools = on ? [...selected, name] : selected.filter((tool) => tool !== name);
+    formState.values.tools = on ? [...selected, name] : selected.filter((tool) => tool !== name);
   }
 </script>
 

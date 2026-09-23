@@ -30,7 +30,7 @@ describe("TabsTools", () => {
 
   it("toggling a plain tool updates state.values.tools", async () => {
     const formState = state();
-    const { getByTestId } = render(TabsTools, { state: formState, tools });
+    const { getByTestId } = render(TabsTools, { formState, tools });
 
     await waitFor(() => expect(getByTestId("tool-switch-search_web")).toBeTruthy());
     await fireEvent.click(getByTestId("tool-switch-search_web"));
@@ -39,7 +39,7 @@ describe("TabsTools", () => {
   });
 
   it("surfaces selected tools absent from the catalog", () => {
-    const { getByTestId } = render(TabsTools, { state: state(["retired_tool"]), tools });
+    const { getByTestId } = render(TabsTools, { formState: state(["retired_tool"]), tools });
 
     expect(getByTestId("tool-unknown-retired_tool").textContent).toContain("retired_tool");
   });
@@ -54,7 +54,7 @@ describe("TabsTools", () => {
       unavailable: [],
     });
 
-    const { findByTestId } = render(TabsTools, { state: state(), tools, agentName: "registry-agent" });
+    const { findByTestId } = render(TabsTools, { formState: state(), tools, agentName: "registry-agent" });
 
     expect((await findByTestId("tools-readonly-banner")).textContent).toContain("Registry definition is read-only");
   });

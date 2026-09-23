@@ -17,7 +17,10 @@ export async function getToolkitSchema(slug: string): Promise<ToolkitSchemaEnvel
 }
 
 export async function getAgentToolkits(name: string): Promise<AgentToolkitsResponse> {
-  const { data } = await apiClient.get<AgentToolkitsResponse>(`${BASE}/agents/${enc(name)}/toolkits`);
+  // Not `/agents/{name}/toolkits` — that path is the legacy (FEAT-467) StudioToolkitsHandler,
+  // which requires a {slug} segment and 400s `missing_slug` without one. The FEAT-593 masked
+  // listing lives at `/toolkit-config` (see handlers/studio/__init__.py's routing comment).
+  const { data } = await apiClient.get<AgentToolkitsResponse>(`${BASE}/agents/${enc(name)}/toolkit-config`);
   return data;
 }
 

@@ -202,7 +202,7 @@
       <TabsCapabilities state={formState} {catalog} />
     </TabsContent>
     <TabsContent value="tools">
-      <TabsTools state={formState} {tools} {agentName} />
+      <TabsTools {formState} {tools} {agentName} />
     </TabsContent>
     <TabsContent value="data_memory"><TabsDataMemory state={formState} {catalog} /></TabsContent>
     <TabsContent value="advanced"><TabsAdvanced state={formState} /></TabsContent>

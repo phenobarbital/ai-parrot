@@ -2111,9 +2111,12 @@ class DatasetManager(AbstractToolkit):
                         **common,
                     )
                 elif ds.kind == "sql":
+                    # add_dataset()'s "exactly one of query_slug/query/table/dataframe" selector
+                    # is `query=`, not `sql=` (`sql=` is only a `table`-mode refinement there) —
+                    # confirmed by code review.
                     await self.add_dataset(
                         ds.name,
-                        sql=ds.sql,
+                        query=ds.sql,
                         driver=ds.driver,
                         dsn=ds.dsn,
                         credentials=ds.credentials,
