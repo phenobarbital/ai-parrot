@@ -235,7 +235,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -248,8 +248,8 @@
       "parallelism_notes": "calls ensure_delegate_node_registered (TASK-3628), validate_with_allowlist/validate_delta delegate kwargs (TASK-3629), make_delegate_node_factory (TASK-3631), PlanPlanner(delegate_safe_tools=) (TASK-3634)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3635-toolkit-and-flow-delegate-wiring.md"
+      "completed_at": "2026-09-23T00:28:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3635-toolkit-and-flow-delegate-wiring.md"
     },
     {
       "id": "TASK-3636",
