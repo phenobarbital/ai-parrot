@@ -400,6 +400,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         # FEAT-264: Declarative per-agent credential provider configs.
         # Consumed by configure() to build and attach a CredentialBroker to the ToolManager.
         self._credentials: list = list(kwargs.pop("credentials", []) or [])
+        # FEAT-593: agent-level MCP servers (AgentMCPServerSpec) — applied in configure().
+        self._pending_mcp_specs: list = list(kwargs.pop("agent_mcp_servers", []) or [])
         # Initialize tools if provided
         if tools:
             self._initialize_tools(tools)
@@ -1516,6 +1518,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         try:
             # Configure conversation memory FIRST
             self.configure_conversation_memory()
+
+            # FEAT-593: configured toolkits + agent-level MCP (async: vault, datasource replay)
+            try:
+                await self.apply_tooling_specs()
+            except Exception as e:  # noqa: BLE001
+                self.logger.error("Error applying tooling specs: %s", type(e).__name__)
 
             # Configure Knowledge Base
             try:
