@@ -1,4 +1,5 @@
 """Per-user toolkit override endpoints (FEAT-593): /agents/{name}/toolkits/{slug}/me."""
+
 from __future__ import annotations
 
 import copy
@@ -103,7 +104,11 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
             return self._error("Requested toolkit was not found.", status=404, code="not_found")
         user = await self._get_user()
         override = next(
-            (item for item in await ToolkitConfigService().load(user.user_id, name) if item.slug.lower() == slug.lower()),
+            (
+                item
+                for item in await ToolkitConfigService().load(user.user_id, name)
+                if item.slug.lower() == slug.lower()
+            ),
             None,
         )
         params = copy.deepcopy(override.params) if override is not None else {}
@@ -173,7 +178,7 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
                 await store_vault_credential(user.user_id, vault_name, current)
             except RuntimeError:
                 return self._error("Vault service unavailable.", status=503, code="vault_unavailable")
-            refs.update({path: vault_name for path in secrets})
+            refs.update(dict.fromkeys(secrets, vault_name))
         await service.save(
             UserToolkitOverride(user_id=user.user_id, agent_id=name, slug=slug, params=clean, secret_refs=refs)
         )

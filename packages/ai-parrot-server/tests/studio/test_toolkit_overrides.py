@@ -1,4 +1,5 @@
 """Tests for per-user Agent Studio toolkit overrides."""
+
 from __future__ import annotations
 
 import json
@@ -119,7 +120,10 @@ async def test_get_masks_override_and_delete_removes_vault(monkeypatch):
     """GET masks stored secrets and DELETE removes both persistent resources."""
     _store(monkeypatch, ToolkitSpec(slug="jira", user_overridable=["token"]), {"properties": {}})
     stored = UserToolkitOverride(
-        user_id="user-1", agent_id="agent", slug="jira", params={"server_url": "https://example.test"},
+        user_id="user-1",
+        agent_id="agent",
+        slug="jira",
+        params={"server_url": "https://example.test"},
         secret_refs={"token": "toolkit_jira_agent_user"},
     )
     monkeypatch.setattr(overrides.ToolkitConfigService, "load", AsyncMock(return_value=[stored]))

@@ -1,4 +1,5 @@
 """Per-user toolkit overrides (FEAT-593) — DocumentDB ``user_toolkit_configs``."""
+
 from __future__ import annotations
 
 import logging
@@ -44,7 +45,9 @@ class ToolkitConfigService:
             try:
                 overrides.append(UserToolkitOverride.model_validate(doc))
             except ValidationError as exc:
-                logger.warning("Skipping malformed toolkit override for user='%s' agent='%s': %s", user_id, agent_id, exc)
+                logger.warning(
+                    "Skipping malformed toolkit override for user='%s' agent='%s': %s", user_id, agent_id, exc
+                )
         return overrides
 
     async def remove(self, user_id: str, agent_id: str, slug: str) -> bool:
