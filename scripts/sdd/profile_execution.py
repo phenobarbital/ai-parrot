@@ -12,19 +12,15 @@ Two independent JSON Lines sources, each line one JSON object:
 ``--events`` (required)
     One object per line, structurally shaped like
     ``parrot.flows.dev_loop.sdd_coder.optimization_models.WorkflowEvent``
-    (this module deliberately does not import that class -- see the task's
-    Codebase Contract -- so it is duck-typed here, not framework-coupled):
-    ``kind``, ``execution_id``, ``task_id``, ``attempt_uid``, ``job_id``,
-    ``timestamp`` (UTC ISO-8601), ``source``, ``payload`` (may carry an
-    already-settled ``started_at``/``ended_at`` window, ``category``,
-    ``process_id``/``monotonic_s`` clock provenance, or
-    ``baseline_excluded``/``defect_id`` for a defect already fixed before
-    the pilot baseline).
+    (this module deliberately does not import that class so it stays
+    framework-decoupled). The expected fields are pinned by the
+    ``ProfileEventRecord`` TypedDict below; parity with the authoritative
+    Pydantic model is machine-verified by
+    ``test_event_schema_parity_with_workflow_event`` (FEAT-596).
 
 ``--transcript`` (optional)
-    One row per line from a host transcript: ``role``, ``request_id``
-    (falls back to ``message_id``), ``timestamp``, ``tool_name``,
-    ``tool_input``, ``usage``.
+    One row per line from a host transcript. The expected fields are
+    pinned by the ``ProfileTranscriptRow`` TypedDict below.
 
 Historical bug this module structurally cannot reproduce: the previous
 profiler summed per-category interval unions and then subtracted an
@@ -56,7 +52,51 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
+
+
+# ---------------------------------------------------------------------------
+# Schema contracts: the fields this module reads from each JSON Lines source.
+# These TypedDicts pin the duck-typed schema so a parity test can detect drift
+# against the authoritative WorkflowEvent Pydantic model (FEAT-596).
+# ---------------------------------------------------------------------------
+
+
+class ProfileEventRecord(TypedDict, total=False):
+    """Fields this module reads from ``--events`` JSON Lines records.
+
+    Structurally compatible with ``optimization_models.WorkflowEvent``; the
+    parity is machine-verified by ``test_event_schema_parity_with_workflow_event``.
+    """
+
+    kind: str
+    execution_id: str
+    task_id: Optional[str]
+    attempt_uid: Optional[str]
+    job_id: Optional[str]
+    timestamp: str
+    source: str
+    payload: dict[str, Any]
+
+
+class ProfileTranscriptRow(TypedDict, total=False):
+    """Fields this module reads from ``--transcript`` JSON Lines records.
+
+    Transcript rows are host-specific (not an sdd_coder contract), so there
+    is no upstream Pydantic model to validate against. This TypedDict exists
+    to document the expected shape and prevent silent field-name typos.
+    """
+
+    role: str
+    request_id: Optional[str]
+    message_id: Optional[str]
+    timestamp: str
+    tool_name: Optional[str]
+    tool_input: Optional[dict[str, Any]]
+    usage: Optional[dict[str, Any]]
+    process_id: Optional[str]
+    is_tool_result: Optional[bool]
+
 
 # ---------------------------------------------------------------------------
 # Pairing rules: end-kind -> (start-kind, identity fields that must all be
