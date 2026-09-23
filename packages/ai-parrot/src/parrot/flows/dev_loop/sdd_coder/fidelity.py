@@ -15,6 +15,14 @@ _NEXT_HEADING = re.compile(r"^## ", re.M)
 _BACKTICK_PATH = re.compile(r"`([^`\s]+)`")
 _SEPARATOR_ROW = re.compile(r"^\|?[\s|:-]+\|?$")
 
+PROTECTED_SDD_PREFIXES: tuple[str, ...] = ("sdd/tasks/", "sdd/ledger/")
+"""Orchestrator-owned SDD state a coder branch may never change, declared or not (FEAT-597 AC5)."""
+
+
+def is_protected_sdd_path(path: str) -> bool:
+    """True when `path` lives under a `PROTECTED_SDD_PREFIXES` prefix (task files, per-spec index, id ledger, issue snapshots)."""
+    return path.startswith(PROTECTED_SDD_PREFIXES)
+
 
 class FidelityReport(BaseModel):
     """Result of comparing a task's declared files against what a coder branch actually changed."""
@@ -39,7 +47,7 @@ def parse_task_files(task_md: str) -> List[str]:
     seen: set[str] = set()
     for raw_line in body.splitlines():
         line = raw_line.strip()
-        if not line or not (line.startswith("|") or line.startswith("-")):
+        if not line or not line.startswith(("|", "-")):
             continue
         if _SEPARATOR_ROW.match(line):
             continue
@@ -54,10 +62,16 @@ def parse_task_files(task_md: str) -> List[str]:
 
 
 def check_fidelity(expected: List[str], changed: List[str]) -> FidelityReport:
-    """ok ⇔ changed ⊆ expected and no changed path starts with 'sdd/'."""
+    """ok ⇔ changed ⊆ expected, and no changed `sdd/` path is undeclared or protected.
+
+    A path under `sdd/` that the task itself declares (e.g. `sdd/WORKFLOW.md`,
+    `sdd/templates/*.md`) is a normal deliverable (FEAT-597 AC4). Paths under
+    `PROTECTED_SDD_PREFIXES` are orchestrator-owned state and fail even when
+    declared (AC5).
+    """
     exp = set(expected)
     unexpected = [p for p in changed if p not in exp]
-    sdd_touched = [p for p in changed if p.startswith("sdd/")]
+    sdd_touched = [p for p in changed if p.startswith("sdd/") and (p not in exp or is_protected_sdd_path(p))]
     return FidelityReport(
         ok=not unexpected and not sdd_touched,
         expected=list(expected),
@@ -109,7 +123,7 @@ async def check_banned_imports(cwd: str, changed: List[str], *, ruff_bin: str = 
         return ["ruff: unparseable output"]
     results: List[str] = []
     for item in findings:
-        filename = os.path.relpath(item["filename"], cwd)
+        filename = os.path.relpath(item["filename"], cwd)  # noqa: ASYNC240 -- pure path arithmetic, no I/O
         row = item["location"]["row"]
         message = item["message"]
         results.append(f"{filename}:{row}: {message}")

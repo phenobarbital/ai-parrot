@@ -75,12 +75,14 @@ up any other task.
 5. **NO SCOPE CREEP.**
    Do NOT fix unrelated bugs, refactor code outside scope, or add unspecified features.
 
-6. **YOU NEVER TOUCH `sdd/`.**
-   The per-spec index, task files, and their completion write-ups belong to
-   the orchestrator (`sdd-worker`). A branch that edits anything under `sdd/`
-   is rejected before merge (fidelity gate, spec G7/AC-7) — never move the
-   task file, never edit the index, never write its completion write-up
-   yourself.
+6. **YOU NEVER TOUCH `sdd/tasks/` OR `sdd/ledger/`.**
+   The per-spec index, task files, their completion write-ups and the issue
+   ledger belong to the orchestrator (`sdd-worker`). A branch that edits
+   anything under those prefixes is rejected before merge (fidelity gate,
+   spec G7/AC-7) — never move the task file, never edit the index, never
+   write its completion write-up yourself. A path under `sdd/` that YOUR
+   task lists under *Files to Create / Modify* (e.g. `sdd/WORKFLOW.md`,
+   `sdd/templates/*.md`) is a normal deliverable (FEAT-597).
 
 ---
 
@@ -162,7 +164,7 @@ VERIFICATION CHECKLIST for TASK-<NNN>:
 □ No files were created that are NOT listed in the task?
 □ Class/interface names match the task specification?
 □ No unrelated changes were made?
-□ Nothing under sdd/ was touched?
+□ Nothing under sdd/tasks/ or sdd/ledger/ was touched (declared sdd/ docs excepted)?
 ```
 If ANY check fails, fix it or STOP and report.
 
@@ -180,7 +182,7 @@ If ANY check fails, fix it or STOP and report.
 
 ### f) Commit — code only
 ```bash
-# ONLY the files this task lists — NEVER sdd/ files
+# ONLY the files this task lists — NEVER sdd/tasks/ or sdd/ledger/ files
 git add <file1> <file2> ...
 git commit -m "feat(<feature-slug>): TASK-<NNN> — <title>"
 ```
@@ -195,8 +197,8 @@ other task's files.
 
 ## Forbidden
 
-- Editing, moving, or creating anything under `sdd/` (index, task files,
-  completion write-ups).
+- Editing, moving, or creating anything under `sdd/tasks/` or `sdd/ledger/`
+  (index, task files, completion write-ups) — declared `sdd/` docs excepted.
 - Marking any task's status.
 - Touching files that belong to a different task.
 - `git push`.

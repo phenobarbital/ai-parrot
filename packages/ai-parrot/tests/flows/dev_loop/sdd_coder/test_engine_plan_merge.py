@@ -908,3 +908,95 @@ async def test_engine_commits_gitignored_declared_work(git_sandbox_feature, noop
     assert (worktree / "artifacts" / "demo" / "t2.py").read_text() == "# ignored dir, declared file\n"
     _rc, tracked, _err = await _git("ls-files", "artifacts", cwd=worktree)
     assert tracked.split() == ["artifacts/demo/t2.py"]
+
+
+async def test_engine_merge_refuses_empty_delivery(git_sandbox_feature, noop_probe):
+    """`merge()` on an attempt branch with no work is `failed`/`empty_delivery:` -- never `merged` (FEAT-597 AC1)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    _rc, before, _err = await _git("rev-parse", feature_branch, cwd=worktree)
+
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001")
+    result = await engine.merge("demo", str(worktree), "TASK-0001")
+
+    assert result.outcome == "failed", (result.outcome, result.diagnostics, result.unexpected_files)
+    assert result.diagnostics.startswith("empty_delivery:")
+    assert "pkg/t1.py" in result.diagnostics  # the declared file the seat never produced
+    # Nothing was merged: the feature branch is exactly where it was, and the attempt branch
+    # still points at that same commit (a zero-commit branch is trivially an ancestor, which is
+    # why the engine cannot use `merge-base --is-ancestor` to tell this case apart).
+    _rc, after, _err = await _git("rev-parse", feature_branch, cwd=worktree)
+    assert before == after
+    _rc, tip, _err = await _git("rev-parse", prep.branch, cwd=worktree)
+    assert tip == before
+    _rc, log, _err = await _git("log", "--oneline", prep.branch, cwd=worktree)
+    assert "engine-committed coder deliverable" not in log
+
+
+async def _declare_for_task_0002(worktree, *rows: str) -> None:
+    """Rewrite TASK-0002's declared-files table to `rows` and commit it (pattern: gitignored-declared test)."""
+    task_md = worktree / "sdd/tasks/active/TASK-0002-demo.md"
+    old = "| `pkg/t2.py` | CREATE | demo file for TASK-0002 |"
+    text = task_md.read_text()
+    assert old in text
+    task_md.write_text(text.replace(old, "\n".join(rows)))
+    rc, _out, err = await _git("commit", "-am", "TASK-0002 retargeted", cwd=worktree)
+    assert rc == 0, err
+
+
+async def test_engine_commits_declared_sdd_doc_targets(git_sandbox_feature, noop_probe):
+    """FEAT-576 TASK-3460/3468 shape: declared `sdd/WORKFLOW.md` + a tracked `sdd/templates/task.md` under an
+    ignored `templates/` pattern are staged and merged (FEAT-597 AC4)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    await _write_and_commit(worktree, "sdd/WORKFLOW.md", "# workflow\n", "add workflow doc")
+    await _write_and_commit(worktree, "sdd/templates/task.md", "# template\n", "add tracked template")
+    (worktree / ".gitignore").write_text("artifacts/\ntemplates/\n")
+    await _declare_for_task_0002(
+        worktree, "| `sdd/WORKFLOW.md` | MODIFY | doc |", "| `sdd/templates/task.md` | MODIFY | template |"
+    )
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0002", 1)
+    path = Path(await manager.create("TASK-0002.a1"))
+    (path / "sdd" / "WORKFLOW.md").write_text("# workflow\n\n## New section\n")
+    (path / "sdd" / "templates" / "task.md").write_text("# template\ntaxonomy: []\n")
+
+    result = await engine.merge("demo", str(worktree), "TASK-0002")
+    assert result.outcome == "merged", (result.diagnostics, result.unexpected_files)
+
+    assert (worktree / "sdd" / "WORKFLOW.md").read_text() == "# workflow\n\n## New section\n"
+    assert (worktree / "sdd" / "templates" / "task.md").read_text() == "# template\ntaxonomy: []\n"
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert "engine-committed coder deliverable" in log
+    _rc, status, _err = await _git("status", "--porcelain", cwd=worktree)
+    assert status.strip() == ""
+
+
+async def test_engine_never_stages_protected_sdd_state_even_if_declared(git_sandbox_feature, noop_probe):
+    """A declared `sdd/tasks/**` target is still orchestrator-owned state: never staged, always a violation (AC5)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    await _declare_for_task_0002(worktree, "| `sdd/tasks/index/demo.json` | MODIFY | index |")
+    engine = SddCoderEngine(
+        roster=RosterConfig(seats=[RosterSeat(label="h", kind="native")]),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    ctx = await engine._resolve_feature("demo", str(worktree))
+    manager = engine._manager_for(ctx, "TASK-0002", 1)
+    path = Path(await manager.create("TASK-0002.a1"))
+    index = path / "sdd" / "tasks" / "index" / "demo.json"
+    index.write_text(index.read_text() + "\n")
+
+    result = await engine.merge("demo", str(worktree), "TASK-0002")
+    assert result.outcome == "fidelity_violation"
+    assert result.unexpected_files == ["sdd/tasks/index/demo.json"]
+    assert "undeclared_files_left_uncommitted" in result.diagnostics
+    _rc, log, _err = await _git("log", "--oneline", "TASK-0002.a1", cwd=path)
+    assert "engine-committed coder deliverable" not in log
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=worktree)
+    assert "engine-committed coder deliverable" not in log
