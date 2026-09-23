@@ -73,9 +73,11 @@ class JiraToolEnvelope(TypedDict, total=False):
 
 
 from parrot.tools.manager import ToolManager
+from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
+from .jira_config import JiraToolkitConfig
 
 
 class JiraAuthenticationError(RuntimeError):
@@ -658,6 +660,37 @@ class JiraToolkit(AbstractToolkit):
     )
 
     """  # noqa
+
+    #: FEAT-593 — Agent Studio configuration surface.
+    config_model = JiraToolkitConfig
+    options_params = frozenset({"default_project"})
+    default_user_overridable = frozenset({"username", "password", "token"})
+    secret_params = frozenset(
+        {"password", "token", "oauth_access_token", "oauth_access_token_secret", "oauth_key_cert"}
+    )
+
+    async def config_options(self, param: str) -> list[ConfigOption]:
+        """Dynamic choices for Agent Studio (FEAT-593): project keys for ``default_project``."""
+        if param != "default_project":
+            return await super().config_options(param)
+        # Mirror the readiness step ToolkitTool._execute() performs before a
+        # real tool call (see jira_get_projects, ~:2267): config_options() is
+        # invoked directly by Agent Studio, bypassing that wrapper, so the
+        # toolkit's own auth/readiness hook must be called here instead.
+        await self._pre_execute("config_options")
+        projects = await self._read_interface.list_projects()
+        options: list[ConfigOption] = []
+        for item in projects:
+            if isinstance(item, dict):
+                key = item.get("key")
+                name = item.get("name") or key
+            else:
+                key = getattr(item, "key", None)
+                name = getattr(item, "name", None) or key
+            if not key:
+                continue
+            options.append(ConfigOption(value=key, label=f"{key} — {name}"))
+        return options
 
     # Expose the default input schema as metadata (optional)
     input_class = JiraInput
