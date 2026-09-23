@@ -4,6 +4,8 @@
 # - type: hotfix              → base_branch MUST be: main
 type: feature
 base_branch: dev
+projects: [ai-parrot, ai-parrot-tools, ai-parrot-server, admin-ui, docs]
+tags: [a2ui, querysource, linked-surfaces, ui-surfaces, transform-dsl, widgets]
 ---
 
 # Brainstorm: A2UI Linked Surfaces (data-source descriptors instead of baked data)
@@ -12,13 +14,18 @@ base_branch: dev
 **Author**: Jesus Lara (discovery with Claude, same session as the QuerySource `describe-queryslug` brainstorm)
 **Status**: exploration
 **Recommended Option**: A
+**Revised**: 2026-09-24 — re-verified against FEAT-558 `QuerysourceToolkit`
+(landed 2026-09-17, replaces the never-created "FEAT-567") and QuerySource
+5.0.0 (in production: FEAT-148 `describe`, `/api/v3/queries/{slug}`, tenant
+slug URLs). Two extra discovery rounds; decisions under "Resolved on
+2026-09-24".
 
 ---
 
 ## Problem Statement
 
 Every A2UI surface ai-parrot emits today is **baked**: the agent runs the
-data (pandas, `QSourceTool`, a recipe transformer), copies the resulting rows
+data (pandas, `qs_execute_slug`, a recipe transformer), copies the resulting rows
 into `createSurface.dataModel`, and the renderer only *binds* to them. The
 surface is a photograph. Refreshing it means either re-running an LLM turn or,
 for recipe-backed surfaces, replaying the recipe server-side
@@ -59,11 +66,12 @@ Who is affected:
 - **The ui_surfaces plane** (FEAT-492): persisted surfaces become
   refreshable by descriptor, not only by recipe.
 
-Why now: the QuerySource side of the contract (`describe`, `columns`,
-`vocabulary`, keyword fix) is being specified today as
-`describe-queryslug` in `../querysource` (target 4.6.0), and the new Svelte
-renderer is about to be designed. This document fixes the wire contract
-before either ships.
+Why now (revised 2026-09-24): the QuerySource side has shipped —
+`describe`/`columns`/`vocabulary` (FEAT-148), the `/api/v3/queries/{slug}`
+lane and the tenant-scoped slug URLs are in production with QuerySource
+5.0.0 — and ai-parrot's `QuerysourceToolkit` (FEAT-558) landed on
+2026-09-17. The new Svelte renderer is about to be designed. This document
+fixes the wire contract before it does.
 
 ## Constraints & Requirements
 
@@ -82,11 +90,17 @@ Decisions taken during discovery (all with the author, 2026-09-15):
   component prop (spec G4: presentation semantics live in
   `metadata.extensions`, keys `parrot_*`, `a2ui_` reserved —
   `models.py:338-361`).
-- **Fetch path: the renderer calls QuerySource directly**
-  (`POST /api/v2/services/queries/{slug}`) with the **viewer's JWT**;
-  QuerySource PBAC (`slug:execute`, `datasource:use`, `driver:use`) is the
-  authorization. ai-parrot-server does not proxy the fetch. The QuerySource
-  base URL is renderer configuration, never part of the descriptor.
+- **Fetch path: the renderer calls QuerySource directly** with the
+  **viewer's JWT** on `POST /api/v3/queries/{slug}` (`QueryHandler`,
+  `services.py:245-248`, serves single-query **and** MultiQuery slugs) or,
+  on a multi-tenant deployment, `POST /api/v1/{tenant}/queries/{slug}`
+  (`TenantQueryHandler`, `services.py:387`, delegates to the same
+  `QueryHandler`, `handlers/tenant.py:246-248`). The legacy
+  `POST /api/v2/services/queries/{slug}` still answers single-query slugs
+  but is not the target of this contract. QuerySource PBAC
+  (`slug:execute`, `datasource:use`, `driver:use`) is the authorization.
+  ai-parrot-server does not proxy the fetch. Base URL and endpoint
+  selection are renderer configuration, never part of the descriptor.
 - **Server-side execution is the alternative lane, not the default:** a
   Python executor runs the same descriptor in-process
   (`QuerySlugSource` → `QS(slug, conditions)`) for `POST .../refresh`
@@ -129,26 +143,58 @@ Decisions taken during discovery (all with the author, 2026-09-15):
   new code, mirroring D10b (`ACTION_NOT_ALLOWED_FOR_LLM`,
   `catalog/__init__.py:617-632`) and the FEAT-473 inline-data guard
   (`INLINE_DATA_NOT_ALLOWED_FOR_LLM`, `catalog/__init__.py:646-661`). The
-  descriptor is assembled by a deterministic builder from the metadata of
-  the tool call that actually ran (`QSourceTool` `ToolResult.metadata`:
-  `query_slug`, `conditions`, `columns`, `dtypes` — `qsource.py:289-303`;
-  or a `DatasetManager` entry with its `permanent_filter`). The LLM chooses
-  slug, component and axes; it never types the descriptor.
+  descriptor is assembled by a deterministic builder that **always
+  executes the slug once** through the Python executor
+  (`QuerySlugSource.fetch`): that run supplies the real columns and dtypes
+  the axes are validated against, and `locked` comes from the toolkit's
+  `forced_conditions`. (`QSourceTool` and its `ToolResult.metadata` were
+  hard-cut by FEAT-558 TASK-3255 and are no longer an input.) The LLM
+  chooses slug, component, axes and the request; it never types the
+  descriptor.
 - **Parameters come from the slug's contract, not from the LLM.**
-  `params` are derived from QuerySource `GET /api/v1/queries/{slug}/describe`
-  (`derived.variables`: name, canonical `type`, `default`, `required`,
-  `accepts_keywords`) via the FEAT-567 `qs_describe` tool. Relative dates
+  `params` are derived from FEAT-558 `QuerysourceToolkit.describe_slug`
+  (`qs_describe_slug`, `toolkit.py:160`), whose `PlaceholderInfo`
+  (`models.py:24-29`: `name`, `type`, `default`) this feature **extends
+  with `required` and `accepts_keywords`** by calling QuerySource's own
+  `querysource.queries.describe.build_variables(query_raw, conditions,
+  cond_definition)` in-process (`queries/describe.py:108`;
+  `accepts_keywords = type ∈ KEYWORD_TYPES {date, datetime, timestamp}`,
+  L29/L163) — the same logic behind `GET /api/v1/queries/{slug}/describe`,
+  without an HTTP client. Requires `querysource>=5.0.0` (floor bump in
+  `packages/ai-parrot-tools/pyproject.toml:77`, today `>=4.5.11`). Relative dates
   use QuerySource's keyword vocabulary as condition **values** (`TODAY`,
   `YESTERDAY`, `FDOM`, `LDOM`, `CURRENT_YEAR`, `CURRENT_MONTH`, `LAST_YEAR`;
   `GET /api/v1/queries/vocabulary`), so a "last week" widget stays "last
-  week". There is **no** `{today}` placeholder grammar in QuerySource.
+  week". There is **no** `{today}` placeholder grammar in QuerySource. The
+  FEAT-558 dialect's deployment-defined `@variables` (`@today`,
+  `dialect.py:207` `load_variables`) are **not** part of the wire: the
+  builder rejects any `@`-prefixed condition value, because they are not
+  portable across deployments.
 - **`locked` conditions are a UX hint only.** A descriptor built from a
   dataset with `permanent_filter` carries those conditions as `locked`
   so the filter bar does not expose them; they are **not** a security
   barrier (a viewer could drop them). Security is QuerySource PBAC plus
   slug design. This must be documented in the wire doc.
-- **Snapshot is optional in chat, mandatory once persisted.** In a turn
-  response the agent decides; when present it is the initial `dataModel`
+- **`conditions` is carried both raw and structured.** `conditions` is
+  the exact QuerySource payload the renderer POSTs (the output of the
+  toolkit's `build_conditions`, `dialect.py`, minus the toolkit-only
+  `querylimit` cap), so an executor needs no knowledge of the dialect. A
+  sibling `request` block keeps the toolkit's structured form
+  (`placeholders`, `filter`, `fields`, `ordering`, `grouping`, `limit`) so
+  a `FilterBar` can edit `filter` entries as well as `params`. The builder
+  derives `conditions` from `request` and refuses a descriptor where they
+  disagree; an executor that re-fetches after an edit rebuilds
+  `conditions` from `request` with the same deterministic rules, which are
+  part of the golden fixtures.
+- **MultiQuery slugs are ordinary sources.** `is_multiquery` slugs are
+  served by the same `POST /api/v3/queries/{slug}`; the descriptor does
+  not distinguish them (`build_variables` reports
+  `variables_supported=False` for JSON-dialect slugs, so their `params`
+  are usually empty). `union` remains the way to express a DatasetManager
+  `MultiQuerySlugSource` (N slugs).
+- **The builder always executes once; `snapshot` only decides whether
+  the rows are embedded.** Chat: optional, mandatory once persisted. In a
+  turn response the agent decides (`snapshot: bool`); when present it is the initial `dataModel`
   (with `snapshot_at`), capped at **500 rows per source** by the builder
   (`max_snapshot_rows`, `snapshot_truncated: true` when cut), and the
   renderer paints it before applying the refresh policy; without it the
@@ -182,14 +228,16 @@ Decisions taken during discovery (all with the author, 2026-09-15):
 - **Additive.** No change to existing envelopes, builders' outputs, the
   A2UI models, renderers or the ui_surfaces DDL beyond what is listed in
   Impact. Baked surfaces keep working exactly as today.
-- **Dependencies and sequencing:** QuerySource `describe-queryslug`
-  (FEAT-147 in `../querysource`, 4.6.0: `describe`, `columns`, `vocabulary`,
-  UDF keyword fix for `date`-typed conditions) and ai-parrot **FEAT-567
-  `QuerySourceToolkit`** (`qs_describe`, `qs_columns`, `qs_vocabulary`,
-  `qs_run`; no artifact exists yet). Order agreed: QuerySource spec
-  approved → FEAT-567 brainstorm/spec (copies the JSON contracts) → this
-  feature's `/sdd-spec` citing FEAT-567 as a closed contract → `/sdd-task`
-  only after 4.6.0 is released and FEAT-567 is merged to `dev`.
+- **Dependencies and sequencing (closed on 2026-09-24):** QuerySource
+  **5.0.0** (tag `aebc55c`, 2026-09-16, in production) ships FEAT-148
+  `describe`/`columns`/`vocabulary` (`services.py:204-210`, tenant variants
+  `:215-219`), the `/api/v3/queries/{slug}` lane and the tenant-scoped
+  slug URLs. ai-parrot **FEAT-558 `QuerysourceToolkit`**
+  (`querysource-toolkit-refactor`, 11/11 tasks done 2026-09-17) replaced
+  the never-created "FEAT-567". Both gates are closed: `/sdd-spec`
+  proceeds now. The only sequencing left is the `querysource>=5.0.0`
+  floor bump in `packages/ai-parrot-tools/pyproject.toml` (today
+  `>=4.5.11`, L77), which is a task of this feature.
 - Conventions: Pydantic v2 models, async I/O, `self.logger`, Google
   docstrings, `pytest` + `pytest-asyncio`, golden-file tests
   (`tests/outputs/a2ui/golden/`), conformance registration in
@@ -205,6 +253,7 @@ Four pieces, all additive:
 
 1. **Descriptor models** (`parrot/outputs/a2ui/linked/models.py`): Pydantic
    `LinkedDataSource` (`kind: "query_slug"`, `slug`, `conditions`,
+   `request: {placeholders, filter, fields, ordering, grouping, limit}`,
    `params: {name: {type, default, required, editable, accepts_keywords}}`,
    `locked: [names]`, `transform: TransformSpec | None`, `target` pointer,
    `snapshot_at`, `refresh: {"policy": "on_mount|manual|interval",
@@ -220,10 +269,15 @@ Four pieces, all additive:
    the component descriptor(s), one or more `LinkedDataSource`, and an
    optional snapshot; validates axes/columns against the source's declared
    columns; emits `CreateSurface` with `origin=ProducerOrigin.TOOL` (the
-   `build_html_document` precedent, `builders.py:311`). An agent-facing
-   toolkit in `parrot_tools` (`LinkedSurfaceToolkit`) wraps it, taking a
-   `dataset_name` (DatasetManager) or the metadata of the last
-   `QSourceTool` call, and calling FEAT-567 `qs_describe` for `params`.
+   `build_html_document` precedent, `builders.py:311`). The agent-facing
+   tool is **`qs_build_linked_surface`, a new tool on FEAT-558
+   `QuerysourceToolkit`** (`parrot_tools/querysource/toolkit.py`): it
+   reuses the toolkit's `SlugCatalog`/`TenantGuard` (allowlist check
+   first), `forced_conditions` (→ `locked`), `build_conditions`
+   (→ `conditions`) and the extended `describe_slug` (→ `params`), always
+   executes the slug once through the Python executor, and hands the
+   frame to the pure builder. No separate `LinkedSurfaceToolkit`; a
+   DatasetManager wrapper is a follow-up, not v1.
 3. **Python executor** (`parrot/outputs/a2ui/linked/executor.py` +
    `dsl.py`): fetch through `QuerySlugSource.fetch(**conditions)`
    (`sources/query_slug.py:122`), apply the DSL over a `pandas.DataFrame`,
@@ -240,7 +294,8 @@ Four pieces, all additive:
    The bundled `ai-parrot-server/ui` implements **its own** executor as one
    more renderer (not a reference for anyone): `a2ui-types.ts` gains
    `CreateSurface.metadata`; a `linked/` module (fetch via
-   `POST /api/v2/services/queries/{slug}` with the viewer's bearer, DSL
+   `POST /api/v3/queries/{slug}` — or `/api/v1/{tenant}/queries/{slug}`
+   from the session tenant — with the viewer's bearer, DSL
    executor, refresh scheduler, `ref` loader with SRI check) and an
    insertion point in `A2UISurface.svelte` (today a stateless renderer
    with no fetch, `A2UISurface.svelte:12-30`); `FilterBar` gets a branch
@@ -295,7 +350,7 @@ Four pieces, all additive:
 - `parrot/outputs/a2ui/baking.py:356` `bake_envelope`, `:187-191` `parrot_optional`, `:140` `BakeError`.
 - `parrot/outputs/a2ui/recipes/models.py:69` `DataSourceSpec`, `:90` `TransformStep`, `:51` `RecipeParam`; `recipes/params.py:30-39` `DATE_RESOLVERS`/`resolve_date` (the in-house relative-date precedent, to be superseded by QuerySource keywords for linked sources).
 - `parrot/tools/dataset_manager/sources/query_slug.py:36-162` `QuerySlugSource` (`fetch`, `cache_key`, `permanent_filter` wins); `tool.py:966` `add_dataset`; `:60` `DatasetInfo`; `:2766` `list_datasets`.
-- `parrot_tools/qsource.py:158-310` `QSourceTool._execute` and its `ToolResult.metadata`.
+- `parrot_tools/querysource/toolkit.py:59` `QuerysourceToolkit` (`describe_slug` L160, `execute_slug` L190, `_open`/`SlugCatalog` L113-117, `forced_conditions` L88); `models.py:24-45` `PlaceholderInfo`/`SlugDetail`, `:47-59` `ExecutionResult`; `dialect.py` `build_conditions`/`validate_placeholders`/`validate_filter`, `load_variables` L207; `catalog.py:39-55` `SlugRecord` (`conditions`, `cond_definition`, `query_raw`), `:97` `TenantGuard`, `:131` `SlugCatalog.get_allowed`.
 - `parrot/handlers/ui_surfaces.py:577-645` `_refresh` (owner ctx, `update_envelope`), `:64-95` request models; `handlers/models/ui_surfaces.py:62-86` `UISurfaceRecord.refreshable`.
 - `parrot_tools/ui_surfaces.py:60-150` `PublishSurfaceTool`; `bots/mixins/infographic_authoring.py:440` `publish_surface`.
 - `parrot/outputs/a2ui/catalog/parrot/filterbar.py:29-129` `FilterBar` (no client state today; `parrot_filter_column` extension).
@@ -436,20 +491,24 @@ implements its own; the bundled UI implements one as well, for itself.
 
 ### User-Facing Behavior
 
-**For the agent author / LLM.** Given an agent with a `DatasetManager`
-catalog (slugs registered with `add_dataset(query_slug=...)`) and the
-FEAT-567 `QuerySourceToolkit`, a request like "make me a weekly field
+**For the agent author / LLM.** Given an agent with the FEAT-558
+`QuerysourceToolkit` (a `programs` allowlist, optional
+`forced_conditions`), a request like "make me a weekly field
 activity widget" produces:
 
-1. The LLM picks the dataset/slug, runs it once (via the toolkit or
-   `dataset_fetch_dataset`) and chooses the component and axes from the
-   **real** columns returned.
-2. It calls the `build_linked_surface` tool with `dataset_name` (or the
-   slug metadata of the last query), the component descriptor and an
-   optional `snapshot: true`. The tool calls `qs_describe` for the slug's
-   parameter contract, validates axes against columns, marks
-   `permanent_filter` keys as `locked`, and emits the envelope with
-   `origin=TOOL`.
+1. The LLM explores with `qs_list_slugs` / `qs_describe_slug` /
+   `qs_execute_slug` and chooses the component and axes from the **real**
+   columns returned.
+2. It calls `qs_build_linked_surface` with the `slug`, the structured
+   `request` (`placeholders`, optional `filter`/`fields`/`ordering`/
+   `grouping`/`limit`), the component descriptor and `snapshot: true|false`.
+   The tool checks the tenant allowlist, calls the extended
+   `describe_slug` for the parameter contract, builds `conditions` from
+   `request` (+ `forced_conditions` → `locked`; `@`-values rejected),
+   **executes the slug once** through the Python executor to validate the
+   axes against real columns and dtypes, and emits the envelope with
+   `origin=TOOL` — embedding the (≤500-row) rows only when `snapshot` is
+   true.
 3. The turn's `a2ui_envelope` is a normal `createSurface`. Example
    (abridged):
 
@@ -470,6 +529,8 @@ activity widget" produces:
           "kind": "query_slug",
           "slug": "epson_field_activity",
           "conditions": {"firstdate": "YESTERDAY", "lastdate": "TODAY", "program": "epson"},
+          "request": {"placeholders": {"firstdate": "YESTERDAY", "lastdate": "TODAY", "program": "epson"},
+                      "filter": {}, "fields": [], "ordering": [], "grouping": [], "limit": null},
           "params": {
             "firstdate": {"type": "date", "default": "YESTERDAY", "editable": true, "accepts_keywords": true},
             "lastdate":  {"type": "date", "default": "TODAY", "editable": true, "accepts_keywords": true},
@@ -492,8 +553,10 @@ activity widget" produces:
 
 **For the viewer (Svelte renderer).** The surface renders from the snapshot
 immediately (or shows a loading state if none). On mount it re-fetches
-`POST /api/v2/services/queries/epson_field_activity` with the descriptor's
-`conditions` and the viewer's bearer token, runs the transform, writes the
+`POST /api/v3/queries/epson_field_activity` (or
+`/api/v1/{tenant}/queries/epson_field_activity` on a multi-tenant
+deployment) with the descriptor's `conditions` and the viewer's bearer
+token, runs the transform, writes the
 rows to `/activity/rows`, and re-renders. Editable params drive a filter
 bar (date pickers accept keywords such as `FDOM`); "Refresh" re-fetches
 with the current params; "Filter" stays local over the embedded rows;
@@ -546,19 +609,26 @@ integrity mismatch and falls back to the snapshot.
    Issues are reported all at once, like today.
 3. **Builder.** `build_surface(..., surface_metadata=SurfaceMetadata | None)`;
    `build_linked_surface(components, sources, *, snapshot, surface_id)`
-   validates `x`/`y`/`columns` props against each source's declared
-   columns (from `describe`/`columns` or the tool metadata), sets
+   validates `x`/`y`/`columns` props against the columns **and dtypes** of
+   the frame the executor just fetched (the builder is pure: it receives
+   `LinkedDataSource` objects plus their frames), sets
    `origin=ProducerOrigin.TOOL`, and returns `CreateSurface`.
-4. **Agent toolkit** (`parrot_tools/linked_surfaces.py`,
-   `LinkedSurfaceToolkit(AbstractToolkit)`): `build_linked_surface(...)`
-   (LLM-callable) resolves the source from `DatasetManager` (`entry.query_slug`,
-   `permanent_filter` → `locked`, `column_types`) or from the last
-   `QSourceTool` result; a `MultiQuerySlugSource` expands to N descriptors
-   plus a `union` step; calls FEAT-567 `qs_describe` for `params`; runs
-   the Python executor once when `snapshot=True` and caps the snapshot at
-   `max_snapshot_rows` (500); returns the envelope in the same shape
-   `structured_chart` responses use (`a2ui_envelope` + `artifacts[]`,
-   FEAT-473 dual emission).
+4. **Agent tool** (`QuerysourceToolkit.build_linked_surface` →
+   `qs_build_linked_surface`, `parrot_tools/querysource/toolkit.py`;
+   FEAT-558 modified): `await self._catalog.get_allowed(slug)` first
+   (tenant gate, as `execute_slug` does at L207); the extended
+   `describe_slug` (`PlaceholderInfo` + `required`/`accepts_keywords` via
+   `querysource.queries.describe.build_variables`) → `params`;
+   `validate_placeholders` + `build_conditions(..., forced=
+   self.forced_conditions)` → `conditions`, forced keys → `locked`,
+   `@`-values rejected; **always** runs the Python executor once
+   (`QuerySlugSource.fetch`, not capped by the toolkit's `max_rows`) to
+   validate the axes and, when `snapshot=True`, embeds ≤500 rows
+   (`max_snapshot_rows`, `snapshot_truncated`); returns the envelope in
+   the same shape `structured_chart` responses use (`a2ui_envelope` +
+   `artifacts[]`, FEAT-473 dual emission). Multi-slug surfaces
+   (`MultiQuerySlugSource`-style) take a list of sources plus a `union`
+   step.
 5. **Python executor** (`linked/executor.py`, `linked/dsl.py`): for each
    source, merge `conditions` with call-time param overrides (locked keys
    cannot be overridden), fetch through `QuerySlugSource(slug).fetch(**conds)`
@@ -581,8 +651,9 @@ integrity mismatch and falls back to the snapshot.
 8. **Bundled UI executor** (`ai-parrot-server/ui`, its own renderer lane):
    `a2ui-types.ts` adds `metadata?: {extensions?: Record<string, unknown>}`
    to `CreateSurface`; `linked/` module = descriptor parsing,
-   `fetchSource()` (QuerySource client with bearer from `auth-headers.ts`,
-   tenant base URL from session), `applyTransform()` (DSL executor),
+   `fetchSource()` (QuerySource client → `POST /api/v3/queries/{slug}` or
+   `/api/v1/{tenant}/queries/{slug}`, bearer from `auth-headers.ts`, tenant
+   from session), `applyTransform()` (DSL executor),
    `RefreshScheduler` (30 s clamp, `visibilitychange` pause/resume),
    `loadRef()` with SRI; `A2UISurface.svelte` becomes stateful over
    `dataModel` and mounts the lane when `parrot_data_sources` is present;
@@ -616,9 +687,12 @@ integrity mismatch and falls back to the snapshot.
   snapshot shown, error surfaced; never executes unverified code.
 - **Interval policy** → 30 s minimum enforced by both the model validator
   and the renderer; paused on `document.hidden`, immediate fetch on resume.
-- **Relative-date keywords in a typed `date` param** depend on the
-  QuerySource UDF fix shipping in 4.6.0; until then the builder emits
-  absolute dates and marks `accepts_keywords: false`.
+- **Relative-date keywords in a typed `date` param** are supported by
+  QuerySource ≥ 5.0.0 (FEAT-148 UDF fix); against an older QuerySource
+  (`check_version_compatibility`, `dialect.py`) the builder emits absolute
+  dates and marks `accepts_keywords: false`. A `@variable` value (FEAT-558
+  dialect) anywhere in `request` is rejected at build time with a clear
+  error.
 - **Large results** → the DSL executor works in memory; the builder caps
   a *snapshot* at 500 rows per source (`max_snapshot_rows`) with
   `snapshot_truncated: true` (the live fetch is not capped; QuerySource
@@ -639,12 +713,13 @@ integrity mismatch and falls back to the snapshot.
 ### New Capabilities
 - `a2ui-linked-data-sources`: the `parrot_data_sources` surface extension, its Pydantic/JSON-Schema models, surface-level validation and the TOOL-origin gate.
 - `a2ui-transform-dsl`: the ten-operation declarative DSL (incl. `join` and `union`) with the Python reference executor, the published JSON Schema and the golden fixtures every renderer executor must pass; `transform.ref` static module serving with SRI and a signed manifest.
-- `linked-surface-builder`: `build_linked_surface` + `surface_metadata` on `build_surface`; `LinkedSurfaceToolkit` for agents (DatasetManager / QSourceTool metadata → descriptor; `MultiQuerySlugSource` → N sources + `union`; `qs_describe` → params; 500-row snapshot cap).
+- `linked-surface-builder`: `build_linked_surface` + `surface_metadata` on `build_surface`; `qs_build_linked_surface` on `QuerysourceToolkit` (tenant gate, `request` → `conditions`, `forced_conditions` → `locked`, extended `describe_slug` → `params`, one mandatory execution, 500-row snapshot cap; N sources + `union` for multi-slug surfaces).
 - `linked-surface-python-executor`: server-side fetch + transform behind FEAT-492 refresh and the save path (snapshot on pin/publish).
 - `a2ui-linked-bundled-ui-lane`: the bundled UI's own executor (QuerySource client, DSL, refresh scheduler with 30 s clamp, `FilterBar` `parrot_param`, share-denied degradation).
 
 ### Modified Capabilities
 - `a2ui-surface-rehydration` (FEAT-492, `sdd/specs/a2ui-surface-rehydration.spec.md`): `refreshable` widened; `_refresh` gains the descriptor path; the save path produces the snapshot when missing; `GET` never executes.
+- `querysource-toolkit-refactor` (FEAT-558, `sdd/specs/querysource-toolkit-refactor.spec.md`): `PlaceholderInfo` gains `required`/`accepts_keywords` (via `build_variables`); new `build_linked_surface` tool; `querysource>=5.0.0` floor.
 - `a2ui-v1-dialect` (FEAT-470): new extension keys (`parrot_data_sources`, `parrot_param`) documented; `validate_envelope` gains a surface-level pass and a new error code.
 - `a2ui-v1-structured-outputs` (FEAT-473): linked envelopes emitted with the same dual-emission shape.
 - `html-renderer-design-system` (FEAT-493, `FilterBar`): filters may carry `parrot_param` (re-fetch) next to local filtering.
@@ -660,7 +735,8 @@ integrity mismatch and falls back to the snapshot.
 | `parrot/outputs/a2ui/catalog/__init__.py`, `catalog/base.py` | extends | surface-level validation pass; `DATA_SOURCES_NOT_ALLOWED_FOR_LLM` |
 | `parrot/outputs/a2ui/models.py` | none | `CreateSurface.metadata` already exists |
 | `parrot/outputs/a2ui/baking.py` | none | snapshot resolves bindings; no-snapshot handled by callers |
-| `packages/ai-parrot-tools/src/parrot_tools/linked_surfaces.py` | new | `LinkedSurfaceToolkit` (`build_linked_surface`) |
+| `packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py`, `models.py`, `dialect.py` | extends | `build_linked_surface` tool (`qs_build_linked_surface`); `PlaceholderInfo.required/accepts_keywords`; `@`-value rejection helper |
+| `packages/ai-parrot-tools/pyproject.toml` | modifies | `querysource>=5.0.0` floor (L77, today `>=4.5.11`) |
 | `packages/ai-parrot-tools/src/parrot_tools/ui_surfaces.py` | modifies | `refreshable` from record instead of `recipe_name is not None` |
 | `packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py` | modifies | `refreshable` property |
 | `packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py` | extends | descriptor refresh path; snapshot production on save when missing; `GET` untouched |
@@ -670,8 +746,8 @@ integrity mismatch and falls back to the snapshot.
 | `packages/ai-parrot-server/ui/src/lib/api/` | new | QuerySource client (`services/queries`) with bearer |
 | `tests/outputs/a2ui/golden/linked/`, `tests/outputs/a2ui/conformance/test_all_emitters.py` | new / extends | DSL fixtures (shared with TS tests); conformance registration of `build_linked_surface` |
 | `docs/outputs/a2ui-v1.md`, `docs/frontend/agentdashboard-a2ui-reference.md` | modifies | extension table; §6.5 linked surfaces; §7.4 Filter/Refresh/Reload |
-| FEAT-567 `QuerySourceToolkit.qs_describe` (ai-parrot, not yet written) | depends on | params contract; must be specified before `/sdd-task` here |
-| QuerySource `describe-queryslug` (FEAT-147, `../querysource`, 4.6.0) | depends on | `describe`, `columns`, `vocabulary`, UDF keyword fix |
+| FEAT-558 `QuerysourceToolkit` (done 2026-09-17) | depends on / modifies | host of the agent tool; `describe_slug` extension |
+| QuerySource 5.0.0 (FEAT-148 describe, `/api/v3/queries/{slug}`, `/api/v1/{tenant}/queries/{slug}`) | depends on | in production; in-process `querysource.queries.describe.build_variables` |
 | `navigator-frontend-next` (external) | consumer | production renderer; implements its own executor from the published JSON Schema + golden fixtures (no TS shipped from this repo) |
 
 No breaking changes. No new Python runtime dependency.
@@ -761,12 +837,29 @@ async def add_dataset(self, name: str, *, description=None, query_slug=None, que
                       dataframe=None, ..., permanent_filter: dict | None = None, ...) -> str   # L966
 async def list_datasets(self) -> List[Dict[str, Any]]                                          # L2766
 
-# From packages/ai-parrot-tools/src/parrot_tools/qsource.py
-class QSourceTool(AbstractTool):                                                 # L62
-    async def _execute(self, query_slug=None, query=None, conditions=None, additional_filters=None,
-                       driver=None, return_format="json", ..., limit=None, **kwargs) -> ToolResult  # L158-169
-    # ToolResult.metadata keys: query_slug, raw_query, driver, row_count, return_format, conditions,
-    #   + columns, shape, dtypes when return_format == "pandas"                     # L289-303
+# From packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py  (FEAT-558; verified 2026-09-24)
+class QuerysourceToolkit(AbstractToolkit):                                     # L59; tool_prefix "qs" L67
+    def __init__(self, programs=None, allow_write=False, allow_raw_sql=False, allow_external_sources=True,
+                 include_sql=True, max_rows=200, forced_conditions=None, dsn=None,
+                 multiquery_timeout=600.0, **kwargs)                            # L73-84
+    async def _open(self) -> None   # SlugCatalog(dsn or _qs.default_dsn(), TenantGuard)   # L113-117
+    async def describe_slug(self, slug: str, dry_run: bool = False) -> SlugDetail   # L160
+        # PlaceholderInfo(name=n, type=rec.cond_definition.get(n), default=rec.conditions.get(n))  L166-169
+    async def execute_slug(self, slug, placeholders=None, filter=None, fields=None, ordering=None,
+                           grouping=None, limit=None, offset=None, refresh=False) -> ExecutionResult  # L190-200
+        # get_allowed(slug) L207 → validate_placeholders L209 → validate_filter L210
+        # → build_conditions(..., max_rows=self.max_rows, forced=self.forced_conditions) L211-222
+        # → QS(slug=slug, conditions=conditions).query(output_format="pandas") L226-228 → frame_to_result L241
+# models.py: PlaceholderInfo(name, type: str | None, default: Any)  L24-29  — NO required / accepts_keywords
+#   SlugDetail(SlugSummary): placeholders_detail, filtering, fields, ordering, grouping, is_cached,
+#     cache_timeout, sql, pipeline, rendered_query  L32-45
+#   ExecutionResult(status, slug, rows, returned_rows, total_rows, truncated, columns,
+#     applied_conditions, rejected_inputs, duration_ms)  L47-59  — NO dtypes
+# dialect.py: build_conditions(...), validate_placeholders(...), validate_filter(...);
+#   load_variables() -> dict[str, str]  ('@name' → doc; QUERYSOURCE_VARIABLES / QS_VARIABLES)  L207
+# catalog.py: SlugRecord(slug, program_slug, description, provider, is_cached, cache_timeout, conditions,
+#   cond_definition, filtering, fields, ordering, grouping, query_raw, pipeline)  L39-55;
+#   TenantGuard L97; SlugCatalog L131 (get_allowed raises SlugNotFoundError / TenantDeniedError)
 
 # From packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py
 class UISurfaceRecord(BaseModel): surface_id, kind, title, envelope: dict, catalog_id, agent_id, user_id,
@@ -825,7 +918,10 @@ from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource     
 from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource                   # sources/authorizing.py:41
 from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, current_a2ui_surface_state   # tools/abstract.py
 from parrot.auth.permission import build_principal_context                                           # handlers/ui_surfaces.py:29
-from parrot_tools.qsource import QSourceTool                                                         # parrot_tools/qsource.py:62
+from parrot_tools.querysource.toolkit import QuerysourceToolkit                                      # parrot_tools/querysource/toolkit.py:59
+from parrot_tools.querysource.models import PlaceholderInfo, SlugDetail, ExecutionResult            # parrot_tools/querysource/models.py
+from parrot_tools.querysource.dialect import build_conditions, validate_placeholders, load_variables # parrot_tools/querysource/dialect.py
+from querysource.queries.describe import build_variables, KEYWORD_TYPES                              # ../querysource ≥ 5.0.0, queries/describe.py:29,108
 from parrot_tools.ui_surfaces import PublishSurfaceTool                                              # parrot_tools/ui_surfaces.py:60
 from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind                        # ai-parrot-server
 ```
@@ -836,9 +932,9 @@ from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind   
 - `_RESERVED_EXTENSION_PREFIX = "a2ui_"` (`models.py:338`); `parrot_*` keys documented at `docs/outputs/a2ui-v1.md:150-156` (`parrot_role`, `parrot_variant`, `parrot_component_id`, `parrot_optional`, `parrot_unit`, `parrot_trend`, `parrot_series_data`).
 - `RecipeRunner.run(name, *, params=None, pctx=None, recipe_owner=None, include_envelope=False) -> RenderedArtifact` (`tools/infographic_recipes/runner.py:243`); `include_envelope=True` ⇒ `artifact.metadata["source_envelope"]` (L271-274); falsy `pctx` ⇒ DatasetManager guards fail **open** (L262-264).
 - FEAT-492 refresh precedence: request params > stored `recipe_params` > recipe defaults (`handlers/ui_surfaces.py:604`).
-- QuerySource facts (verified in `../querysource`, 2026-09-15): slug endpoint `POST /api/v2/services/queries/{slug}` (`services.py:148-150`); `refresh` popped from conditions to bypass the result cache (`providers/abstract.py:78-82`); keyword vocabulary `UDF_LIST = [CURRENT_YEAR, CURRENT_MONTH, TODAY, YESTERDAY, LAST_YEAR, FDOM, LDOM]` resolved as condition **values** (`rust/src/validators.rs:20-35`, `types/validators.pyx:552-553`); `cond_definition` types (case-insensitive) `literal|int|integer|float|numeric|decimal|epoch|boolean|string|varchar|field|date|datetime|timestamp|uuid|array|json` (`rust/src/validators.rs:280-305`); planned `GET /api/v1/queries/{slug}/describe`, `/{slug}/columns`, `/vocabulary` (`../querysource/sdd/proposals/describe-queryslug.brainstorm.md`).
+- QuerySource facts (re-verified in `../querysource` at tag 5.0.0 = `aebc55c`, 2026-09-24): `POST /api/v3/queries/{slug}` (`services.py:245-248`, `QueryHandler` `handlers/multi.py:25`, `MultiQS` L335 — single and MultiQuery slugs); `POST /api/v1/{tenant}/queries/{slug}` (`services.py:387`, `TenantQueryHandler` `handlers/tenant.py:142`, delegates to `QueryHandler` L246-248); no `/api/v3/{tenant}/…` variant; legacy `POST /api/v2/services/queries/{slug}` (`services.py:183`); describe routes `GET /api/v1/queries/describe`, `/{slug}/describe`, `/{slug}/columns`, `/vocabulary` (`services.py:204-210`) + tenant variants (`:215-219`, `handlers/describe.py`); `DescribeVariable(name, type, raw_type, default, required, source, accepts_keywords)` (`queries/describe.py:41-51`); `build_variables(query_raw, conditions, cond_definition) -> {variables, variables_supported, structural_placeholders, warnings}` (L108-111; `variables_supported=False` for JSON-dialect slugs); `KEYWORD_TYPES = {date, datetime, timestamp}` (L29); `IMPLICIT_DEFAULTS` firstdate/lastdate/filterdate → `current_date` (L31-33); `refresh` popped from conditions to bypass the result cache (`providers/abstract.py:78-82`); keyword vocabulary `UDF_LIST = [CURRENT_YEAR, CURRENT_MONTH, TODAY, YESTERDAY, LAST_YEAR, FDOM, LDOM]` resolved as condition **values** (`rust/src/validators.rs:20-35`, `types/validators.pyx:552-553`); `cond_definition` types (case-insensitive) `literal|int|integer|float|numeric|decimal|epoch|boolean|string|varchar|field|date|datetime|timestamp|uuid|array|json` (`rust/src/validators.rs:280-305`); planned `GET /api/v1/queries/{slug}/describe`, `/{slug}/columns`, `/vocabulary` (`../querysource/sdd/proposals/describe-queryslug.brainstorm.md`).
 - Golden convention: `json.dumps(tree.model_dump(mode="json", exclude_none=True), sort_keys=True, indent=2)` byte-equal to `tests/outputs/a2ui/golden/*.json` (`test_components_filterbar.py:15-42`); conformance helper `_assert_conformant(envelope, *, origin=ProducerOrigin.TOOL)` (`conformance/test_all_emitters.py:115`).
-- Ledger: `sdd/tasks/.id_ledger.json` → `next_feature_id: 558`, `next_task_id: 3245`.
+- Ledger: `sdd/tasks/.id_ledger.json` → `next_feature_id: 597`, `next_task_id: 3675` (2026-09-24).
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot_data_sources`, `LinkedDataSource`, `DataSourceDescriptor`, `LinkedSurface`, `build_linked_surface`, `transform_dsl`~~ — zero hits repo-wide; all net-new (closest prior art: `recipes/models.py` `DataSourceSpec`/`TransformStep`).
@@ -850,7 +946,11 @@ from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind   
 - ~~A `FilterBar` branch in `A2UINode.svelte`~~ — absent; `FilterBar` has no `dataModel.filters` mapping in the catalog component either.
 - ~~Pie-pair conversion in `a2ui-chart-adapter.ts`~~ — it emits `labels` + `series` only (L46-84).
 - ~~Shared JSON fixtures between Python goldens and `ui/src/**/*.test.ts`~~ — none today.
-- ~~FEAT-567 / `QuerySourceToolkit` / `qs_describe`~~ — no brainstorm, spec, task index, branch or worktree in this repo (2026-09-15).
+- ~~FEAT-567 / `qs_describe` / `qs_columns` / `qs_vocabulary` / `qs_run`~~ — FEAT-567 was never created; the toolkit shipped as **FEAT-558 `QuerysourceToolkit`** with tools `qs_get_dialect_reference`, `qs_list_slugs`, `qs_describe_slug`, `qs_execute_slug`, `qs_list_components`, `qs_validate_pipeline`, `qs_run_multiquery`, `qs_save_multiquery` (2026-09-24).
+- ~~`QSourceTool`, `parrot_tools/qsource.py`, `ToolResult.metadata["dtypes"]`~~ — hard-cut by FEAT-558 TASK-3255; 0 hits in `packages/*/src` (2026-09-24).
+- ~~`PlaceholderInfo.required`, `PlaceholderInfo.accepts_keywords`, `ExecutionResult.dtypes`~~ — absent (`models.py:24-59`); the first two are added by this feature.
+- ~~`qs_build_linked_surface`, `LinkedSurfaceToolkit`, `parrot_tools/linked_surfaces.py`~~ — net-new (the second two are NOT built; superseded on 2026-09-24).
+- ~~`/api/v3/{tenant}/queries/{slug}`~~ — only `/api/v1/{tenant}/queries/{slug}` exists (`services.py:387`).
 - ~~`{today}` / `{fdom}` placeholder grammar in QuerySource~~ — keywords are condition values, not placeholders.
 - ~~`x-parrot-*` descriptors consumed by the A2UI renderer~~ — `x-parrot-rest` exists only in `packages/parrot-formdesigner` (shape precedent, not reusable code).
 - ~~`QS.get_definition()`~~ — only `BaseProvider.get_definition()` in QuerySource.
@@ -859,10 +959,10 @@ from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind   
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: high. Five strands are independent until integration: (1) descriptor + DSL models + JSON Schema + Python DSL executor with golden fixtures; (2) builder + `surface_metadata` + surface-level validation + conformance registration; (3) `LinkedSurfaceToolkit` in `parrot_tools` (blocked on FEAT-567 for `qs_describe`, can stub); (4) ui_surfaces refresh/save integration + static `ref` route and signed manifest (server package); (5) the bundled UI's own executor lane (validated against the same fixtures). Docs last.
-- **Cross-feature independence**: no in-flight ai-parrot spec touches `outputs/a2ui/linked/` or the builders' surface metadata. Shared files: `handlers/ui_surfaces.py` and `handlers/models/ui_surfaces.py` (FEAT-535 visibility landed; FEAT-492 complete), `catalog/__init__.py` (any concurrent catalog work), `a2ui-types.ts`/`A2UISurface.svelte` (FEAT-527 bundled-UI work, complete). External hard dependencies: QuerySource 4.6.0 (`describe`, `vocabulary`, keyword fix) and FEAT-567.
+- **Internal parallelism**: high. Five strands are independent until integration: (1) descriptor + DSL models + JSON Schema + Python DSL executor with golden fixtures; (2) builder + `surface_metadata` + surface-level validation + conformance registration; (3) FEAT-558 toolkit changes in `parrot_tools/querysource` (`PlaceholderInfo` extension, `build_linked_surface` tool, floor bump; unblocked); (4) ui_surfaces refresh/save integration + static `ref` route and signed manifest (server package); (5) the bundled UI's own executor lane (validated against the same fixtures). Docs last.
+- **Cross-feature independence**: no in-flight ai-parrot spec touches `outputs/a2ui/linked/` or the builders' surface metadata. Shared files: `handlers/ui_surfaces.py` and `handlers/models/ui_surfaces.py` (FEAT-535 visibility landed; FEAT-492 complete), `catalog/__init__.py` (any concurrent catalog work), `a2ui-types.ts`/`A2UISurface.svelte` (FEAT-527 bundled-UI work, complete). External dependencies: none open — QuerySource 5.0.0 is in production and FEAT-558 is merged; `parrot_tools/querysource/*` is shared with any concurrent FEAT-558 follow-up (FEAT-593 Agent Studio config also lives there).
 - **Recommended isolation**: `mixed`.
-- **Rationale**: strands 1, 2 and 5 are self-contained modules with their own tests and can run in separate worktrees; strand 4 touches the shared server handler and should be one sequential task; strand 3 must wait for FEAT-567's `qs_describe` contract. The whole feature's `/sdd-task` should not start before FEAT-567 is at least specified and QuerySource's spec is approved.
+- **Rationale**: strands 1, 2 and 5 are self-contained modules with their own tests and can run in separate worktrees; strand 4 touches the shared server handler and should be one sequential task; strand 3 modifies a shipped toolkit and should be one focused task with its own tests. No external gate remains before `/sdd-task`.
 
 ---
 
@@ -870,7 +970,7 @@ from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind   
 
 - [x] Flow type and base branch — *Owner: Jesus Lara*: `feature`, base `dev`.
 - [x] Where the descriptor lives — *Owner: Jesus Lara*: surface-level `metadata.extensions.parrot_data_sources`; components bind by `path`; any surface, not only widgets.
-- [x] Fetch path for the renderer — *Owner: Jesus Lara*: directly to QuerySource `POST /api/v2/services/queries/{slug}` with the viewer's JWT; no ai-parrot-server proxy. Python executor only for server-side lanes.
+- [x] Fetch path for the renderer — *Owner: Jesus Lara*: directly to QuerySource with the viewer's JWT (endpoint revised 2026-09-24: `POST /api/v3/queries/{slug}` / `/api/v1/{tenant}/queries/{slug}`, see below; v2 `services/queries` is legacy); no ai-parrot-server proxy. Python executor only for server-side lanes.
 - [x] Transform DSL scope — *Owner: Jesus Lara*: ten ops incl. `join` and `union` (added when resolving the `MultiQuerySlugSource` question) (`inner|left`, equality keys, nulls never match, prefix on collision); no LLM-generated code; library input shapes (pie pairs) belong to the renderer.
 - [x] `transform.ref` in v1 — *Owner: Jesus Lara*: yes, URL to a TypeScript module served by ai-parrot-server from a static, anonymously readable route, pinned by an `integrity` (SRI) hash; inline `ops` remains the rule.
 - [x] Who may emit a descriptor — *Owner: Jesus Lara*: TOOL-origin builders only; LLM-origin envelopes fail `validate_envelope` (`DATA_SOURCES_NOT_ALLOWED_FOR_LLM`).
@@ -887,4 +987,16 @@ from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind   
 - [x] `ref` transform catalogue governance — *Owner: Jesus Lara*: static directory published per ai-parrot-server release with a signed `manifest.json` (`name@version` → integrity); the builder only accepts refs present in the manifest; retirement = `deprecated` flag in the manifest, files are never deleted.
 - [x] `MultiQuerySlugSource` — *Owner: Jesus Lara*: N descriptors plus a tenth DSL operation `union` (concatenation by matching columns); no `multi_query_slug` kind.
 - [x] HTML lane without snapshot — *Owner: Jesus Lara*: never happens for persisted surfaces: the save path (`POST /api/v1/ui/surfaces`, `publish_surface`) executes the descriptor once with the owner's context when the snapshot is missing and persists it; `GET` (JSON/HTML) never executes. In chat responses the snapshot stays optional.
-- [x] FEAT-567 sequencing — *Owner: Jesus Lara*: brainstorm/spec `QuerySourceToolkit` (`qs_describe`, `qs_columns`, `qs_vocabulary`, `qs_run`) right after the QuerySource `describe-queryslug` spec is approved and before this feature's `/sdd-spec`, which will cite it as a closed contract.
+- [x] ~~FEAT-567 sequencing~~ — *superseded 2026-09-24*: the toolkit shipped as FEAT-558 `QuerysourceToolkit` (done 2026-09-17) and QuerySource 5.0.0 is in production; no gate remains.
+
+### Resolved on 2026-09-24 (re-verification rounds)
+
+- [x] Params contract source — *Owner: Jesus Lara*: extend FEAT-558 `qs_describe_slug` — `PlaceholderInfo` gains `required` and `accepts_keywords` by calling `querysource.queries.describe.build_variables` in-process; no HTTP client to `GET …/describe`.
+- [x] Relative-date grammar — *Owner: Jesus Lara*: QuerySource UDF keywords only (`TODAY`, `FDOM`, …); the dialect's deployment-defined `@variables` are rejected on the wire.
+- [x] Where the agent tool lives — *Owner: Jesus Lara*: a new `build_linked_surface` tool on `QuerysourceToolkit` (`qs_build_linked_surface`); no separate `LinkedSurfaceToolkit`; a DatasetManager wrapper is a follow-up.
+- [x] Snapshot / execution path — *Owner: Jesus Lara*: the Python executor over `QuerySlugSource.fetch` (no `max_rows` cap, 500-row snapshot cap) for chat, save and refresh; the builder **always** executes once, `snapshot` only decides whether rows are embedded.
+- [x] Column types for axis validation — *Owner: Jesus Lara*: from the dtypes of the frame that mandatory execution returns; no `qs_columns` tool.
+- [x] Fetch endpoint — *Owner: Jesus Lara*: `POST /api/v3/queries/{slug}` (single and MultiQuery slugs) and, on multi-tenant deployments, `POST /api/v1/{tenant}/queries/{slug}`; v2 `services/queries` is legacy, not targeted.
+- [x] MultiQuery slugs — *Owner: Jesus Lara*: ordinary `query_slug` sources; the descriptor does not distinguish them.
+- [x] `conditions` shape — *Owner: Jesus Lara*: raw QuerySource payload **plus** the structured `request` block; the builder derives one from the other and refuses disagreement.
+- [x] Sequencing — *Owner: Jesus Lara*: QuerySource 5.0.0 with FEAT-148 and tenant slug URLs is already in production; `/sdd-spec` proceeds now; the `querysource>=5.0.0` floor bump is a task of this feature.
