@@ -16,7 +16,7 @@ tags: [agent-studio, toolkits, tool-config, json-schema, admin-ui, mcp, datasets
 
 **Date**: 2026-09-23
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
