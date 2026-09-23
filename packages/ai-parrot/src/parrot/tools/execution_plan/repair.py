@@ -11,9 +11,9 @@ intersection — are checked on top, never patched into the frozen validator.
 
 from __future__ import annotations
 
-from typing import Any, Dict, FrozenSet, List, Sequence
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence
 
-from parrot.bots.flows.plan import ExecutionPlan, PlanNode
+from parrot.bots.flows.plan import DelegatePlanNode, ExecutionPlan, PlanNode
 from parrot.bots.flows.plan.validator import ValidationIssue, ValidationReport
 
 from .catalog import validate_with_allowlist
@@ -91,6 +91,8 @@ def validate_delta(
     run: PlanRun,
     tool_manager: Any,
     allowed_tools: Sequence[str],
+    delegates: Optional[Sequence[Any]] = None,
+    allow_delegate_side_effects: bool = False,
 ) -> ValidationReport:
     """Validate a repair delta's toolkit invariants, then the merged plan.
 
@@ -102,6 +104,9 @@ def validate_delta(
             ``run.metadata.allowed_tools`` — the effective allowlist is
             never widened relative to what the run was originally accepted
             with.
+        delegates: Delegate chain forwarded to ``validate_with_allowlist``.
+        allow_delegate_side_effects: Host delegate side-effect policy
+            forwarded to ``validate_with_allowlist``.
 
     Returns:
         A :class:`ValidationReport`. Toolkit-invariant errors short-circuit
@@ -128,6 +133,15 @@ def validate_delta(
                 )
             )
         original_node = original[node.id]
+        if isinstance(original_node, DelegatePlanNode):
+            issues.append(
+                ValidationIssue(
+                    node_id=node.id,
+                    code="delta_delegate_not_repairable",
+                    message="delegate nodes are not repairable in v1; the delta may only replace tool nodes",
+                )
+            )
+            continue
         if node.store_as != original_node.store_as:
             issues.append(
                 ValidationIssue(
@@ -177,7 +191,13 @@ def validate_delta(
     if issues:
         return ValidationReport(issues=issues)
     merged = merge_delta(plan, delta)
-    return validate_with_allowlist(merged, tool_manager, effective_allowlist)
+    return validate_with_allowlist(
+        merged,
+        tool_manager,
+        effective_allowlist,
+        delegates=delegates,
+        allow_delegate_side_effects=allow_delegate_side_effects,
+    )
 
 
 def _for_each_identity_changed(original_node: PlanNode, replacement: PlanNode) -> bool:

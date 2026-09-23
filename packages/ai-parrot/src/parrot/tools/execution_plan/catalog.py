@@ -130,15 +130,16 @@ def check_allowlist(
     allowed_set = set(allowed_tools)
     issues: List[ValidationIssue] = []
     for node in plan.nodes:
-        if node.tool not in allowed_set:
-            issues.append(
-                ValidationIssue(
-                    node.id,
-                    "tool_not_allowed",
-                    f"Tool {node.tool!r} is not in the allowed_tools list. "
-                    f"Allowed: {sorted(allowed_set)}.",
+        for tool_name in sorted(node.tool_names()):
+            if tool_name not in allowed_set:
+                issues.append(
+                    ValidationIssue(
+                        node.id,
+                        "tool_not_allowed",
+                        f"Tool {tool_name!r} is not in the allowed_tools list. "
+                        f"Allowed: {sorted(allowed_set)}.",
+                    )
                 )
-            )
     return issues
 
 
@@ -148,6 +149,8 @@ def validate_with_allowlist(
     allowed_tools: Optional[Sequence[str]] = None,
     *,
     check_guards: bool = True,
+    delegates: Optional[Sequence[Any]] = None,
+    allow_delegate_side_effects: bool = False,
 ) -> ValidationReport:
     """Run ``validate_plan`` and append allowlist issues into the same report.
 
@@ -156,12 +159,21 @@ def validate_with_allowlist(
         tool_manager: Live manager, forwarded to ``validate_plan``.
         allowed_tools: Explicit allowlist forwarded to :func:`check_allowlist`.
         check_guards: Forwarded to ``validate_plan``.
+        delegates: Delegate chain forwarded to ``validate_plan``.
+        allow_delegate_side_effects: Host delegate side-effect policy forwarded
+            to ``validate_plan``.
 
     Returns:
         The single, combined :class:`ValidationReport` — validator issues
         and allowlist issues in one pass, one list.
     """
-    report = validate_plan(plan, tool_manager, check_guards=check_guards)
+    report = validate_plan(
+        plan,
+        tool_manager,
+        check_guards=check_guards,
+        delegates=delegates,
+        allow_delegate_side_effects=allow_delegate_side_effects,
+    )
     report.issues.extend(check_allowlist(plan, allowed_tools))
     return report
 
