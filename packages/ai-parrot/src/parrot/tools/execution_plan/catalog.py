@@ -9,6 +9,7 @@ planner only ever sees allowlisted tools). The frozen
 the ``tool_not_allowed`` check is layered on top here, never patched into
 it.
 """
+
 from __future__ import annotations
 
 from typing import Any, List, Optional, Sequence, Type
@@ -63,9 +64,7 @@ class ToolCatalogEntry(BaseModel):
     args_summary: List[ArgSummary] = Field(default_factory=list)
 
 
-def build_catalog(
-    tool_manager: Any, allowed_tools: Optional[Sequence[str]] = None
-) -> List[ToolCatalogEntry]:
+def build_catalog(tool_manager: Any, allowed_tools: Optional[Sequence[str]] = None) -> List[ToolCatalogEntry]:
     """Build the catalog = ``allowed_tools`` ∩ ``tool_manager.list_tools()``.
 
     Args:
@@ -90,9 +89,7 @@ def build_catalog(
         allowed_set = set(allowed_tools)
         unregistered = sorted(allowed_set - set(available))
         if unregistered:
-            raise ValueError(
-                f"allowed_tools names not registered on tool_manager: {unregistered}"
-            )
+            raise ValueError(f"allowed_tools names not registered on tool_manager: {unregistered}")
         names = [name for name in available if name in allowed_set]
 
     entries: List[ToolCatalogEntry] = []
@@ -110,9 +107,7 @@ def build_catalog(
     return entries
 
 
-def check_allowlist(
-    plan: ExecutionPlan, allowed_tools: Optional[Sequence[str]]
-) -> List[ValidationIssue]:
+def check_allowlist(plan: ExecutionPlan, allowed_tools: Optional[Sequence[str]]) -> List[ValidationIssue]:
     """Return one ``tool_not_allowed`` issue per node outside ``allowed_tools``.
 
     Args:
@@ -136,8 +131,7 @@ def check_allowlist(
                     ValidationIssue(
                         node.id,
                         "tool_not_allowed",
-                        f"Tool {tool_name!r} is not in the allowed_tools list. "
-                        f"Allowed: {sorted(allowed_set)}.",
+                        f"Tool {tool_name!r} is not in the allowed_tools list. " f"Allowed: {sorted(allowed_set)}.",
                     )
                 )
     return issues
