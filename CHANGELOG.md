@@ -9,6 +9,79 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.0.6] — 2026-09-24 — Plan-then-execute hardening, tool-call delegates and Agent Studio tooling
+
+Twelve core-line distributions move to `1.0.6`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.6` and are
+re-pinned to `ai-parrot>=1.0.6`.
+
+Code changed in eight distributions: `ai-parrot` (220 files),
+`ai-parrot-pipelines` (74), `ai-parrot-server` (61),
+`ai-parrot-integrations`, `ai-parrot-tools`, `ai-parrot-client-google`,
+`ai-parrot-client-anthropic`, `navrules`. The rest are version-only bumps.
+
+### Added
+
+- **FEAT-585: plan-then-execute hardening.** Checkpoint run resolver,
+  `PlanPlanner.replan` / `repair_delta`, delta eligibility/merge/validation
+  (`repair.py`) and a bounded `plan_repair(run_id)` runtime tool, covered by
+  crash-matrix, contention and budget integration tests.
+- **FEAT-590: tool-call delegates.** Plan-language discriminated union,
+  `PlanToolNode` invoke-hook refactor, `DelegateToolNode` + factory, and
+  `LlamaCppDelegate` / `NeedleDelegate` backends (new `needle` extra on
+  `ai-parrot`).
+- **FEAT-593: tool configuration in Agent Studio.** JSON Schema envelope for
+  toolkit config (`GET /toolkits/{slug}/schema`), `DatasourceSpec`
+  discriminated union, `AgentRegistry.update_agent_tooling()` atomic YAML
+  rewrite, per-session tooling persistence, schema-driven `SchemaForm` in the
+  Admin UI and a Chat "My tool settings" tab.
+- **FEAT-574: new planogram pipeline.** Provider-neutral `VisionAdapter` and
+  call sites, perceive/identify/compare cycle template, deterministic
+  registration, slot geometry, scoring and multi-photo merge, plus an
+  optional lazy `OcrReader` (`planogram` extra). `roi_client` and the
+  Google-only client are removed from `AbstractPipeline`.
+- **FEAT-592: Nova image planogram** example on AWS.
+- **FEAT-591: speech-report models** — multiple TTS backends for
+  `speech_report()`, documented.
+- **FEAT-578: ADR decision plane in the wiki.** Decision models, parser,
+  `DecisionService` (sync/generate/review/why), `compare_and_swap_page` on
+  every wiki store, `adr` CLI group and MCP decision tools.
+- **FEAT-589: Laya adoption** — async `LayaWorker`, token-budget preflight
+  and a paired primary/routed evaluation harness.
+- **FEAT-584: SDD execution optimization.** Durable execution evidence,
+  background validation supervisor, `coder_bg_status`, compact coder
+  responses and bounded concurrent read-only inspection.
+- **FEAT-572: `/sdd-fix` ledger lane** completed; **FEAT-586** install guide.
+
+### Changed
+
+- **FEAT-595:** a dedicated light `wikitoolkit` console entry for the Claude
+  hook, with stdlib prefilter and lazy imports.
+- **Import-time cuts:** `clients/base.py` no longer imports pandas or
+  `PythonREPLTool` eagerly; wiki/graphindex imports are lazy and excluded
+  directories are pruned during the walk.
+
+### Fixed
+
+- **FEAT-597 / FEAT-594 sdd-coder engine:** an attempt that changed nothing is
+  never merged; declared `sdd/` targets pass fidelity; retry-ladder hygiene;
+  outstanding MCP jobs count only still-running jobs; the engine extracts and
+  force-stages gitignored declared files.
+- **SDD tasks** no longer stall in `sdd/tasks/active`; worktree agents can
+  file ledger issues.
+- **Sandbox:** Claude's scratchpad root is bound through the private `/tmp`;
+  the command timeout is a backstop rather than the first kill.
+- **Scheduler:** the required checkpoint barrier fires in definition-driven
+  mode.
+- **Telegram:** `/add_mcp` DocumentDB persistence is gated behind
+  `USE_DOCUMENTDB` with a 10 s connect timeout.
+- **Google GenAI client** ensures its client before model calls.
+- **`speech_report()`** uses exactly `num_speakers` speakers.
+- **`DetectionBox`** `class_id` / `class_name` / `area` are optional.
+- **codex seats** receive a strict output schema and surface stdout errors.
+
+---
+
 ## [1.0.5] — 2026-09-20 — SDD tooling, CLI agent UI and client reliability
 
 Twelve core-line distributions move to `1.0.5`. The sixteen satellites
