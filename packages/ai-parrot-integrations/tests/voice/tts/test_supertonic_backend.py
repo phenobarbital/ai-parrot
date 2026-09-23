@@ -10,8 +10,10 @@ Tests cover:
 - empty text raises ValueError.
 - a missing/unconfigured model raises ValueError (no silent degradation).
 """
-import wave
+import asyncio
 import io
+import time
+import wave
 
 import pytest
 
@@ -148,3 +150,25 @@ async def test_missing_deps_or_model_raises(monkeypatch):
         # _ensure_session imports onnxruntime (ImportError if missing) then
         # resolves the model path (ValueError if unconfigured).
         backend._ensure_session()
+
+
+async def test_ensure_session_once_under_threads(monkeypatch):
+    """Concurrent synthesis loads the ONNX session only once."""
+    calls = 0
+    backend = SupertonicTTSBackend(
+        voice="default",
+        inference_fn=lambda *args, **kwargs: b"\x00\x00" * 50,
+    )
+
+    def ensure_session() -> None:
+        nonlocal calls
+        if backend._session is None:
+            calls += 1
+            time.sleep(0.01)
+            backend._session = object()
+
+    monkeypatch.setattr(backend, "_ensure_session", ensure_session)
+
+    await asyncio.gather(backend.synthesize("first"), backend.synthesize("second"))
+
+    assert calls == 1

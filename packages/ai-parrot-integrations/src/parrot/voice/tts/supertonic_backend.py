@@ -26,6 +26,7 @@ import asyncio
 import io
 import logging
 import os
+import threading
 import wave
 from typing import Optional
 
@@ -109,6 +110,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
         self.logger = logging.getLogger(__name__)
         # Lazily-created ONNX inference session (see ``_ensure_session``).
         self._session = None
+        self._session_lock = threading.Lock()
 
     def _resolve_model_path(self) -> str:
         """
@@ -254,7 +256,8 @@ class SupertonicTTSBackend(AbstractTTSBackend):
             ValueError: If the Supertonic weights are not configured/found.
             RuntimeError: If no inference function is wired (see ``inference_fn``).
         """
-        self._ensure_session()
+        with self._session_lock:
+            self._ensure_session()
         # The concrete Supertonic ONNX graph I/O (tokenisation, speaker
         # embedding, output tensor names) is build-specific and intentionally
         # not hardcoded — it is provided by the deployment via ``inference_fn``
