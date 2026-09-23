@@ -621,14 +621,18 @@ class BasicAgent(Chatbot, NotificationMixin):
             script_output_directory = STATIC_DIR.joinpath(self.agent_id, "generated_scripts")
         script_output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix="script", extension="txt")
-        # creation of speakers:
-        speakers = []
-        for _, speaker in self.speakers.items():
-            speaker["gender"] = speaker.get("gender", "neutral").lower()
-            speakers.append(FictionalSpeaker(**speaker))
-            if len(speakers) > num_speakers:
-                self.logger.warning(f"Too many speakers defined, limiting to {num_speakers}.")
-                break
+        # creation of speakers: exactly the first `num_speakers` of the agent's
+        # speakers. Copy each definition — `self.speakers` is a class-level dict
+        # shared by every instance, so it must never be mutated here.
+        if num_speakers < 1:
+            raise ValueError(f"num_speakers must be >= 1 (got {num_speakers}).")
+        definitions = list(self.speakers.values())
+        if len(definitions) > num_speakers:
+            self.logger.warning(f"Too many speakers defined, limiting to {num_speakers}.")
+        speakers = [
+            FictionalSpeaker(**{**speaker, "gender": speaker.get("gender", "neutral").lower()})
+            for speaker in definitions[:num_speakers]
+        ]
 
         # 1. Define the script configuration
         # Check if podcast_instructions is content or filename
