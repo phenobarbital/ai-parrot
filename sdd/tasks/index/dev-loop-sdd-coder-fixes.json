@@ -16,17 +16,19 @@
       "feature_id": "FEAT-597",
       "feature": "dev-loop-sdd-coder-fixes",
       "spec": "sdd/specs/dev-loop-sdd-coder-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: adds SddCoderEngine._delivered_paths and the two empty-delivery gates in sdd_coder/engine.py; owns the new FakeDispatcher 'empty' behaviour in test_engine_dispatch.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "discovered_from": ["issue:ee4d4879fc89"],
-      "file": "sdd/tasks/active/TASK-3675-empty-delivery-gate.md"
+      "started_at": "2026-09-23T22:27:58+00:00",
+      "completed_at": "2026-09-23T22:27:58+00:00",
+      "discovered_from": [
+        "issue:ee4d4879fc89"
+      ],
+      "file": "sdd/tasks/completed/TASK-3675-empty-delivery-gate.md"
     },
     {
       "id": "TASK-3676",
@@ -38,13 +40,17 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-3675"],
+      "depends_on": [
+        "TASK-3675"
+      ],
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3675: both modify sdd_coder/engine.py, test_engine_plan_merge.py, docs/dev_loop/sdd-coder-orchestrator.md and .claude/agents/sdd-worker.md (same-file serialization), and this task narrows the sdd/ filter inside _delivered_paths that TASK-3675 creates.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
-      "discovered_from": ["issue:c748e42f2777"],
+      "discovered_from": [
+        "issue:c748e42f2777"
+      ],
       "file": "sdd/tasks/active/TASK-3676-declared-sdd-targets.md"
     }
   ]

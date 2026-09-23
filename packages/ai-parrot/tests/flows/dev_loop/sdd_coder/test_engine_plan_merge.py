@@ -908,3 +908,27 @@ async def test_engine_commits_gitignored_declared_work(git_sandbox_feature, noop
     assert (worktree / "artifacts" / "demo" / "t2.py").read_text() == "# ignored dir, declared file\n"
     _rc, tracked, _err = await _git("ls-files", "artifacts", cwd=worktree)
     assert tracked.split() == ["artifacts/demo/t2.py"]
+
+
+async def test_engine_merge_refuses_empty_delivery(git_sandbox_feature, noop_probe):
+    """`merge()` on an attempt branch with no work is `failed`/`empty_delivery:` -- never `merged` (FEAT-597 AC1)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    roster = RosterConfig(seats=[RosterSeat(label="h", kind="native")])
+    engine = SddCoderEngine(roster=roster, probe=noop_probe, worktree_base_path=str(base_path))
+    _rc, before, _err = await _git("rev-parse", feature_branch, cwd=worktree)
+
+    prep = await engine.prepare_native("demo", str(worktree), "TASK-0001")
+    result = await engine.merge("demo", str(worktree), "TASK-0001")
+
+    assert result.outcome == "failed", (result.outcome, result.diagnostics, result.unexpected_files)
+    assert result.diagnostics.startswith("empty_delivery:")
+    assert "pkg/t1.py" in result.diagnostics  # the declared file the seat never produced
+    # Nothing was merged: the feature branch is exactly where it was, and the attempt branch
+    # still points at that same commit (a zero-commit branch is trivially an ancestor, which is
+    # why the engine cannot use `merge-base --is-ancestor` to tell this case apart).
+    _rc, after, _err = await _git("rev-parse", feature_branch, cwd=worktree)
+    assert before == after
+    _rc, tip, _err = await _git("rev-parse", prep.branch, cwd=worktree)
+    assert tip == before
+    _rc, log, _err = await _git("log", "--oneline", prep.branch, cwd=worktree)
+    assert "engine-committed coder deliverable" not in log

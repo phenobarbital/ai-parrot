@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-597 — dev-loop sdd-coder fixes (empty-delivery gate + declared `sdd/` targets)
 **Spec**: `sdd/specs/dev-loop-sdd-coder-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -342,8 +342,17 @@ See the Blueprint's test blocks: `test_engine_merge_refuses_empty_delivery`,
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Fable 5.1 (via `/sdd-fix`, single-agent)
+**Date**: 2026-09-24
+**Notes**: Added `SddCoderEngine._delivered_paths`, `_check_delivery` (attempt-level gate, applied after BOTH
+attempt 1 and attempt 2 so a second empty attempt is also a failed attempt) and `_merged_by_hand`; `_consolidate`
+now returns `failed`/`empty_delivery:` for an empty, not-manually-merged branch; `_classify_failure_reason`
+returns `None` for `empty_delivery:`. Tests: `test_engine_merge_refuses_empty_delivery`,
+`test_run_task_empty_delivery_retries_on_another_seat`, `test_run_task_empty_delivery_twice_is_failed`,
+`test_classify_failure_reason_empty_delivery_not_suspendable` (81 passed across the three validation files).
 
-**Deviations from spec**: none
+**Deviations from spec**: the spec's ancestor guard (`git merge-base --is-ancestor`) cannot distinguish an empty
+attempt branch from a manually merged one — a zero-commit branch still points at the feature tip and is trivially an
+ancestor (the first test run proved it: both new tests came back `merged`). Replaced by `_merged_by_hand`: the branch
+tip must appear as a NON-first parent of a merge commit on the feature branch. A fast-forward manual merge therefore
+reads as an empty delivery; the only documented manual path (conflict resolution) cannot fast-forward.

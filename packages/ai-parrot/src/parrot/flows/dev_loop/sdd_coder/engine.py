@@ -2170,6 +2170,80 @@ class SddCoderEngine:
                 i += 1
         return paths
 
+    async def _delivered_paths(self, ctx: _FeatureCtx, task: PlannedTask, *, branch: str, path: str) -> List[str]:
+        """Every path one attempt delivered, or ``[]`` when the seat produced nothing.
+
+        Union of: files committed on ``branch`` past its fork from ``ctx.feature_branch``
+        (``git merge-base``), paths dirty in the sub-worktree ``path`` (same status call
+        as ``_commit_declared_changes``), and declared files hidden by ``.gitignore``.
+        An empty result is an empty delivery (FEAT-597 AC2): nothing to extract, nothing
+        that could pass fidelity except vacuously -- FEAT-581's TASK-3534 was reported
+        ``merged`` with zero commits and zero changed files exactly this way.
+
+        Args:
+            ctx: Resolved feature context (feature branch + worktree).
+            task: The planned task; its markdown supplies the declared files.
+            branch: The attempt branch.
+            path: The attempt sub-worktree.
+
+        Returns:
+            Repo-relative paths in first-seen order, de-duplicated.
+        """
+        _rc, fork, _err = await _git("merge-base", ctx.feature_branch, branch, cwd=ctx.worktree)
+        _rc, diff, _err = await _git("diff", "--name-only", f"{fork.strip()}..{branch}", cwd=ctx.worktree)
+        committed = [p for p in diff.splitlines() if p.strip()]
+        _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
+        dirty = self._dirty_paths(status)
+        task_md = await asyncio.to_thread(Path(ctx.worktree, task.task_file).read_text, "utf-8")
+        declared = sorted(p for p in parse_task_files(task_md) if not p.startswith("sdd/"))
+        ignored: List[str] = []
+        if declared:
+            _rc, out, _err = await _git(
+                "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", *declared, cwd=path
+            )
+            ignored = [p for p in out.split("\0") if p]
+        return list(dict.fromkeys(committed + dirty + ignored))
+
+    async def _merged_by_hand(self, ctx: _FeatureCtx, branch: str) -> bool:
+        """True when `branch`'s tip was already brought into `ctx.feature_branch` by a merge commit.
+
+        A zero-commit attempt branch still points at the feature tip it forked from, so
+        `git merge-base --is-ancestor` cannot separate "nothing delivered" from "merged
+        manually after a conflict" (the FEAT-553 re-merge case) -- both are ancestors. A
+        manual merge, however, records the branch tip as a NON-first parent of a merge
+        commit on the feature branch; an empty attempt branch never is (it is, at most, a
+        first parent of a sibling's merge). A fast-forward manual merge leaves no such
+        commit and is reported as an empty delivery -- a conflicted merge (the only
+        documented manual path) can never fast-forward.
+        """
+        _rc, tip, _err = await _git("rev-parse", branch, cwd=ctx.worktree)
+        tip = tip.strip()
+        _rc, merges, _err = await _git("log", "--merges", "--format=%P", ctx.feature_branch, cwd=ctx.worktree)
+        return any(tip in line.split()[1:] for line in merges.splitlines())
+
+    async def _check_delivery(
+        self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, rec: AttemptRecord, *, branch: str, path: str
+    ) -> Tuple[AttemptRecord, str]:
+        """Turn a successful-looking attempt that changed nothing into a failed one (FEAT-597 AC2).
+
+        Called by `_run_task` after every `_run_attempt` that returned no error. A seat
+        that produced no commit, no dirty file and no declared-but-ignored file has not
+        delivered; marking the attempt failed here lets the existing retry ladder try
+        another eligible seat instead of `_consolidate` merging an empty branch.
+
+        Returns:
+            `(rec, "")` when something was delivered, otherwise the record updated with
+            `error`/`terminal`/`error_class` and that same `error` string.
+        """
+        if await self._delivered_paths(ctx, task, branch=branch, path=path):
+            return rec, ""
+        err = (
+            f"empty_delivery: seat {seat.label} ({seat.backend}/{rec.resolved_model or rec.model or seat.model}) "
+            f"delivered no file change for {task.task_id}"
+        )
+        self.logger.warning("%s: %s", task.task_id, err)
+        return rec.model_copy(update={"error": err, "terminal": "failed", "error_class": "EmptyDelivery"}), err
+
     async def _commit_declared_changes(
         self, task: PlannedTask, expected: List[str], *, branch: str, path: str, feature: str
     ) -> Optional[TaskResult]:
@@ -2325,6 +2399,22 @@ class SddCoderEngine:
         diff_base = await _consolidate_diff_base(ctx.feature_branch, branch, cwd=ctx.worktree)
         _rc, diff, _err = await _git("diff", "--name-only", f"{diff_base}..{branch}", cwd=ctx.worktree)
         changed = [p for p in diff.splitlines() if p.strip()]
+        if not changed and not await self._merged_by_hand(ctx, branch):
+            # `[] ⊆ expected` would pass fidelity vacuously and the no-op merge would be
+            # reported `merged` with zero commits (FEAT-597 AC1). The one legitimate empty
+            # diff is a branch the orchestrator already merged by hand after a conflict
+            # (`_consolidate_diff_base`'s fallback) -- `_merged_by_hand` tells them apart.
+            shown = ", ".join(expected[:8]) + (" …" if len(expected) > 8 else "")
+            return TaskResult(
+                task_id=task.task_id,
+                outcome="failed",
+                branch=branch,
+                worktree_path=path,
+                diagnostics=(
+                    f"empty_delivery: {branch} changes no file relative to {diff_base[:12]} "
+                    f"(declared {len(expected)} file(s): {shown}); nothing was merged"
+                ),
+            )
         report = check_fidelity(expected, changed)
         if not report.ok:
             return TaskResult(
@@ -3035,6 +3125,9 @@ class SddCoderEngine:
         Returns:
             Suspension reason string or None if not suspendable.
         """
+        if error.startswith("empty_delivery:"):
+            return None  # FEAT-597 AC3: an empty delivery never suspends a model
+
         # Check for fidelity violation from consolidation
         if outcome == "fidelity_violation":
             return "fidelity_violation"
@@ -3363,6 +3456,12 @@ class SddCoderEngine:
         attempts.append(rec)
 
         if not err:
+            # FEAT-597 AC2: a seat that changed nothing has not delivered -- fail the attempt
+            # here so the ladder below retries on another eligible seat.
+            rec, err = await self._check_delivery(ctx, task, seat, rec, branch=branch, path=path)
+            attempts[-1] = rec
+
+        if not err:
             # A consolidation result is always terminal (merged, fidelity_violation,
             # merge_conflict or failed) and belongs to the orchestrator -- never a
             # reason to burn the second attempt on another seat. FEAT-587 retired the
@@ -3471,6 +3570,9 @@ class SddCoderEngine:
                     ctx, task, retry, attempt=2, job_id=job_id, execution_id=execution_id, pool=pool
                 )
                 attempts.append(rec)
+                if not err:
+                    rec, err = await self._check_delivery(ctx, task, retry, rec, branch=branch, path=path)
+                    attempts[-1] = rec
 
         if err:
             # FEAT-559: Classify failure for attempt 2 if it also failed. `retry`

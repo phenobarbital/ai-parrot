@@ -25,6 +25,7 @@ class FakeDispatcher:
       - "block": awaits an injected asyncio.Event before returning ok.
       - "extra": also writes an unlisted file (for fidelity-violation coverage elsewhere).
       - "banned": writes a banned import (`import httpx`) into the task's listed file (FEAT-553).
+      - "empty": returns a DevelopmentOutput claiming the file but writes/commits nothing (FEAT-597).
     """
 
     def __init__(self, behaviour: str = "ok", *, gate: asyncio.Event | None = None) -> None:
@@ -47,6 +48,10 @@ class FakeDispatcher:
             await self.gate.wait()
         if self.behaviour == "fail":
             raise RuntimeError("boom")
+        if self.behaviour == "empty":
+            # Claims the file in its output but writes and commits nothing (FEAT-597 / issue:ee4d4879fc89).
+            n_empty = brief.task_id.rsplit("-", 1)[-1].lstrip("0") or "0"
+            return DevelopmentOutput(files_changed=[f"pkg/t{int(n_empty)}.py"], commit_shas=[], summary=brief.task_id)
 
         task_id = brief.task_id
         n = task_id.rsplit("-", 1)[-1].lstrip("0") or "0"
@@ -1243,3 +1248,65 @@ class TestDirtyTaskWorktreeContractRetired:
             )
             == "fidelity_violation"
         )
+
+
+async def test_run_task_empty_delivery_retries_on_another_seat(git_sandbox_feature, noop_probe):
+    """An attempt that changes nothing is a failed attempt, retried on a fresh seat (FEAT-597 AC2)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({"nova": "empty"})  # attempt 1 lands on nova (same setup as the "fail" retry test)
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+    task = result.tasks[0]
+    assert task.outcome == "merged", task.diagnostics
+    assert len(task.attempts) == 2
+    assert task.attempts[0].error.startswith("empty_delivery:")
+    assert task.attempts[0].terminal == "failed"
+    assert task.attempts[0].error_class == "EmptyDelivery"
+    assert not task.attempts[1].error
+    assert task.attempts[1].seat_label != task.attempts[0].seat_label
+    _rc, log, _err = await _git("log", "--oneline", feature_branch, cwd=str(worktree))
+    assert "impl TASK-0001" in log
+    # The empty attempt-1 branch was never extracted or merged.
+    assert "engine-committed coder deliverable" not in log
+
+
+async def test_run_task_empty_delivery_twice_is_failed(git_sandbox_feature, noop_probe):
+    """Two empty attempts end as `failed`, never `merged`, and leave the feature branch untouched (FEAT-597 AC1/AC2)."""
+    worktree, feature_branch, base_path, _index_path = git_sandbox_feature
+    builder = fake_builder_factory({"nova": "empty", "codex": "empty", "google-compat": "empty"})
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova"), ("b", "codex"), ("c", "google-compat")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+        dispatcher_builder=builder,
+    )
+    _rc, before, _err = await _git("rev-parse", feature_branch, cwd=str(worktree))
+    job = await engine.run_chunk("demo", str(worktree), ["TASK-0001"])
+    result = await engine.wait(job.job_id, 5)
+    task = result.tasks[0]
+    assert task.outcome == "failed"
+    assert len(task.attempts) == 2
+    assert all(a.error.startswith("empty_delivery:") for a in task.attempts)
+    assert "empty_delivery:" in task.diagnostics
+    _rc, after, _err = await _git("rev-parse", feature_branch, cwd=str(worktree))
+    assert before == after
+
+
+async def test_classify_failure_reason_empty_delivery_not_suspendable(git_sandbox_feature, noop_probe):
+    """An empty delivery is not a suspension reason (FEAT-597 AC3)."""
+    _worktree, _feature_branch, base_path, _index_path = git_sandbox_feature
+    engine = SddCoderEngine(
+        roster=_roster(("a", "nova")),
+        probe=noop_probe,
+        worktree_base_path=str(base_path),
+    )
+    reason = engine._classify_failure_reason(
+        "empty_delivery: seat a (nova/model-a) delivered no file change for TASK-0001", "EmptyDelivery"
+    )
+    assert reason is None
