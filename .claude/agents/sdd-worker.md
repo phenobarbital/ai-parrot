@@ -119,9 +119,9 @@ parallel), you are operating in **task-scoped mode**:
 - Implement **ONLY** the single task identified by `task_id`. Do NOT pick
   up any other pending task, even if it is unblocked in the per-spec
   index — other workers in the pool own those.
-- Skip the normal "Resolve the Feature" / "Mark All Tasks as In-Progress"
-  steps for the whole feature (§1–2 below) — the dispatching pool already
-  handles feature-level bookkeeping.
+- Skip the normal "Resolve the Feature" / "Mark Tasks as In-Progress"
+  steps for the whole feature (§1 and §4.5 below) — the dispatching pool
+  already handles feature-level bookkeeping.
 - Read ONLY that task's file (`sdd/tasks/active/TASK-<NNN>-<slug>.md`),
   verify its Codebase Contract, implement it exactly as specified (every
   Cardinal Rule above still applies in full), run its acceptance criteria,
@@ -211,25 +211,15 @@ Extract from the per-spec index header: `feature_id`, `feature` slug,
 `spec` path. Task list in dependency order is the `tasks[]` array filtered
 to status `"pending"` and topologically sorted on `depends_on`.
 
-### 2. Mark All Tasks as In-Progress (in place)
+### 2. Never Write Task State on `BASE_BRANCH`
 
-Update the per-spec index file in place. With `IN_WORKTREE=0` you are on
-`BASE_BRANCH` from §0; with `IN_WORKTREE=1` do it in the current worktree, on
-its feature branch — never switch to the primary checkout for this. For each
-task being worked on, set `status` → `"in-progress"`
-and `started_at` → now via `jq`:
-
-```bash
-INDEX="sdd/tasks/index/<feature-slug>.json"
-NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
-
-jq --arg now "$NOW" '(.tasks[] | select(.status == "pending") | .status) = "in-progress" |
-                     (.tasks[] | select(.status == "in-progress" and .started_at == null) | .started_at) = $now' \
-   "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
-
-git add "$INDEX"
-git commit -m "sdd: start FEAT-<ID> — <feature-slug> (<N> tasks)"
-```
+Do NOT mark tasks `in-progress` (or commit anything under `sdd/`) on
+`BASE_BRANCH`. The start bookkeeping happens in §4.5, inside the worktree, on
+the feature branch — so it travels with the code. Committing it on the base
+branch is what stranded whole features `in-progress` in `sdd/tasks/active/`:
+when a run is abandoned, crashes, or its branch never merges, nothing ever
+reverts that base-branch commit, while the real closure only ever lands on
+the feature branch.
 
 ### 3. Ensure the Worktree
 
@@ -264,6 +254,24 @@ yet — fetch and re-run §3 rather than working around it. With `IN_WORKTREE=1`
 §3 reuses the current worktree and will not refresh it: bring the artifacts in
 with `git merge origin/$BASE_BRANCH` *inside this worktree* (stop and report on
 a conflict), never by pulling in the primary checkout.
+
+### 4.5. Mark Tasks as In-Progress (on the feature branch)
+
+Now inside the worktree (never the primary checkout, never `BASE_BRANCH`), set
+`status` → `"in-progress"` and `started_at` → now for the pending tasks this run
+will implement, and commit on the feature branch:
+
+```bash
+INDEX="sdd/tasks/index/<feature-slug>.json"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
+
+jq --arg now "$NOW" '(.tasks[] | select(.status == "pending") | .status) = "in-progress" |
+                     (.tasks[] | select(.status == "in-progress" and .started_at == null) | .started_at) = $now' \
+   "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+
+git add "$INDEX"
+git commit -m "sdd: start FEAT-<ID> — <feature-slug> (<N> tasks)"
+```
 
 ### 5. Read the Spec
 Read the spec file referenced by the tasks.
@@ -355,8 +363,10 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `Seat: <seat_label> · Backend: <backend> · Model: <model> · Attempts: <n> · Duration: <sum duration_s> ·
      Tokens: <usage>` taken from `attempts[*]`) and run
      `python -m scripts.sdd.finalize_task --evidence <path> --worktree <this worktree> --expected-head <post-merge HEAD>`.
-     It renders the Completion Note deterministically and returns `staged_paths` and a suggested `message` — `git add`
-     exactly those paths and commit with that message; never hand-edit the note it wrote. On red, treat as `failed`.
+     It renders the Completion Note deterministically and returns `staged_paths`, `removed_paths` and a suggested
+     `message` — `git add` exactly the `staged_paths` and commit with that message WITHOUT a pathspec: the deletion of
+     the old `active/` copy (`removed_paths`) is already staged, and `git commit -- <paths>` would leave it out and
+     strand the task in `active/`. Never hand-edit the note it wrote. On red, treat as `failed`.
      The engine already ran `ruff check --fix` + the repo formatter and committed it (`lint.commit`). Fix ONLY
      `lint.errors` (syntax errors / undefined names) in this worktree; ignore `lint.residual` — style debt is
      fixed once, feature-wide, by `/sdd-done`. Never run `ruff`/`black` per task yourself.
@@ -364,7 +374,9 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    - `failed` with `diagnostics` starting `branch_not_merged:` → the engine merged nothing (it never answers
      `merged` unless the branch is an ancestor of the feature branch). Run
      `git merge --no-ff <branch>` in this worktree yourself, then continue as `merged`.
-   - `fidelity_violation` → treat as `failed` (a coder touched `sdd/` or unlisted files, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
+   - `failed` with `diagnostics` starting `empty_delivery:` → the seat delivered no file change (the engine never
+     answers `merged` for an empty branch). On `coder_run_chunk` the retry ladder already ran; treat as `failed` below.
+   - `fidelity_violation` → treat as `failed` (a coder touched `sdd/tasks/`/`sdd/ledger/` or unlisted files — a declared `sdd/` doc such as `sdd/WORKFLOW.md` is fine —, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
    - `failed` → attempt 3 is yours, but **only for a `standard` classification with confirmed evidence**: implement the
      task in THIS worktree with steps c)–f) of the Fallback loop, then (g). **DO NOT automatically implement a task
      yourself** when it is blocked with `complex_model_unavailable` or its complexity assessment is unavailable — wait
@@ -536,21 +548,17 @@ the code commit.
 INDEX="sdd/tasks/index/<feature-slug>.json"
 NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 
-# Move task file from active to completed (in-place)
-mkdir -p sdd/tasks/completed/
-mv sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/
-
-# Update per-spec index: status → "done", completed_at → now, file path
-jq --arg id "TASK-<NNN>" --arg now "$NOW" '
-  (.tasks[] | select(.id == $id) | .status) = "done" |
-  (.tasks[] | select(.id == $id) | .completed_at) = $now |
-  (.tasks[] | select(.id == $id) | .file) = ("sdd/tasks/completed/TASK-<NNN>-<slug>.md")
-' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+# Move active → completed with `git mv`, stamp the index (status/completed_at/
+# verification/file), stage both, and HARD-VERIFY no active/ copy survives.
+# Never hand-roll this with mv/cp + jq: a copy leaves the active/ file behind
+# and it lands on the base branch as a stalled orphan.
+scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
 
 # Fill in Completion Note in the moved task file (in completed/).
 
 # Stage and commit on the feature branch (NOT the main repo's BASE_BRANCH)
-git add "$INDEX" sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
+git add sdd/tasks/completed/TASK-<NNN>-<slug>.md
+git diff --cached --name-only        # sanity-check: only the index + this task's files
 git commit -m "sdd: complete TASK-<NNN> — <title>"
 ```
 

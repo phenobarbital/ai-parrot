@@ -77,11 +77,22 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - `--dry-run`: stop after the report
    - `--force`: allow forced closeout with partial/no evidence noted
    - otherwise ask before closing if any task is not verified
-8. Stamp verification in the worktree branch:
-   - update only `sdd/tasks/index/<feature>.json` inside the worktree
-   - set each task `verification` to `verified`, `partial`, or `forced`
+8. Stamp verification in the worktree branch (closing any task the lane left open):
+   - clear staging first (the close step below stages its own moves)
+   - verified is not closed: for each task being closed whose file is still in
+     `sdd/tasks/active/` or whose index status is not `done`/`done-with-issues`
+     (lanes such as `/sdd-fix` commit code without closing), run
+     `scripts/sdd/close_task.sh <TASK-ID> <feature-slug> <verification>` inside
+     the worktree — never on `base_branch` (FEAT-414), then set its status to
+     `done-with-issues` when verification is `partial`/`forced`; leave tasks
+     the lane already closed untouched, and skip (with a warning) any id not in
+     the index
+   - set each task `verification` to `verified`, `partial`, or `forced` in
+     `sdd/tasks/index/<feature>.json` inside the worktree
    - set feature `completed_at` only when all tasks are done
-   - clear staging, stage only the index, verify cached names
+   - run `scripts/sdd/heal_orphans.sh <feature-slug>` inside the worktree
+     (PR flow and `--merge` alike)
+   - stage only the index and this feature's task files, verify cached names
    - commit `sdd: close tasks for FEAT-NNN - <feature-slug>`
 9. Push feature branch:
    - `git -C <worktree> push origin <branch>`
