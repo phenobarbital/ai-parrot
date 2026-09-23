@@ -18,7 +18,6 @@ from parrot.tools.working_memory.tool import WorkingMemoryToolkit
 from ...bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
 from ._recovery_fakes import ScriptedPlannerClient
 
-
 _FROZEN_TOOL_ONLY_FINGERPRINT = "8f249908b2dd285c6da1aad02293048c25b15081045c630513a4e53d8d710ca1"
 
 
@@ -161,6 +160,7 @@ async def test_checkpointed_tool_plan_resumes_after_upgrade() -> None:
 @pytest.mark.asyncio
 async def test_mixed_plan_repair_targets_tool_node() -> None:
     """A failed tool is repaired in a mixed plan, but a delegate is never a delta target."""
+
     def fail(_: dict[str, Any]) -> None:
         raise RuntimeError("broken")
 
