@@ -143,3 +143,73 @@ def test_status_reports_approval_and_seeded_yaml(tmp_root_with_config):
     _install_mcp_approval(tmp_root_with_config)
     status = integration_status(tmp_root_with_config)
     assert status["mcp_servers_authorized"] is True
+
+
+# ---------------------------------------------------------------------------
+# Server-level tool allow rules: approving a server only makes its tools
+# visible; without `mcp__<server>` every call still prompts and an unattended
+# agent (sdd-worker filing ledger issues) stalls.
+# ---------------------------------------------------------------------------
+
+
+def _allow(root):
+    return _local(root).get("permissions", {}).get("allow", [])
+
+
+def test_approval_allows_every_managed_server_tool(tmp_root_with_config):
+    _install_mcp_json(tmp_root_with_config)
+    _install_mcp_approval(tmp_root_with_config)
+    allow = _allow(tmp_root_with_config)
+    assert "mcp__wikitoolkit" in allow
+    assert "mcp__parrot-stub" in allow
+
+
+def test_approval_backfills_allow_rules_for_already_authorized_servers(tmp_root_with_config):
+    """An install predating the allow rules gets them on the next run, even with every server approved."""
+    _install_mcp_json(tmp_root_with_config)
+    local_dir = tmp_root_with_config / ".claude"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    managed = _managed_server_names(tmp_root_with_config)
+    (local_dir / "settings.local.json").write_text(
+        json.dumps({"enabledMcpjsonServers": managed, "permissions": {"allow": ["Bash(ls:*)"]}})
+    )
+    action = _install_mcp_approval(tmp_root_with_config)
+    assert "allow rule" in action
+    allow = _allow(tmp_root_with_config)
+    assert allow[0] == "Bash(ls:*)"
+    assert {f"mcp__{name}" for name in managed} <= set(allow)
+
+
+def test_uninstall_removes_only_managed_allow_rules(tmp_root_with_config):
+    _install_mcp_json(tmp_root_with_config)
+    _install_mcp_approval(tmp_root_with_config)
+    local = _local(tmp_root_with_config)
+    local["permissions"]["allow"] += ["mcp__some-other-server", "mcp__parrot-foreign"]
+    (tmp_root_with_config / ".claude" / "settings.local.json").write_text(json.dumps(local))
+    _uninstall_mcp_approval(tmp_root_with_config, ["parrot-stub"])
+    allow = _allow(tmp_root_with_config)
+    assert "mcp__wikitoolkit" not in allow
+    assert "mcp__parrot-stub" not in allow
+    assert {"mcp__some-other-server", "mcp__parrot-foreign"} <= set(allow)
+
+
+def test_toolkit_approvals_never_touch_wikitoolkit_allow_rule(tmp_root_with_config):
+    """`parrot toolkits` must neither grant nor revoke the wiki server (FEAT-570 AC5)."""
+    from parrot.knowledge.wiki.claude_code.installer import (
+        install_toolkit_approvals,
+        uninstall_toolkit_approvals,
+    )
+
+    _install_mcp_json(tmp_root_with_config)
+    install_toolkit_approvals(tmp_root_with_config)
+    allow = _allow(tmp_root_with_config)
+    assert "mcp__parrot-stub" in allow
+    assert "mcp__wikitoolkit" not in allow
+
+    local = _local(tmp_root_with_config)
+    local["permissions"]["allow"].append("mcp__wikitoolkit")
+    (tmp_root_with_config / ".claude" / "settings.local.json").write_text(json.dumps(local))
+    uninstall_toolkit_approvals(tmp_root_with_config, ["parrot-stub"])
+    allow = _allow(tmp_root_with_config)
+    assert "mcp__parrot-stub" not in allow
+    assert "mcp__wikitoolkit" in allow

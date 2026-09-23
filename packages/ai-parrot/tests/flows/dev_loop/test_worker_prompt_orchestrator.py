@@ -214,3 +214,13 @@ def test_worker_prompt_uses_finalize_task_not_manual_jq_close_in_orchestrator_lo
     assert "python -m scripts.sdd.finalize_task" in loop
     assert "manual Edit/Write/jq/mv dance" in loop
     assert "step (g) of the Fallback loop for this task" not in loop
+
+
+def test_worker_prompt_frontmatter_lists_ledger_filing_tools():
+    """Deferred findings are filed through the unsandboxed `wikitoolkit` MCP server when present,
+    so the ledger tools the prompt names must be allow-listed in the installed repo copy."""
+    text = (_repo_agents_dir() / "sdd-worker.md").read_text(encoding="utf-8")
+    tools_line = next(line for line in text.splitlines() if line.startswith("tools:"))
+    assert "mcp__wikitoolkit__ledger_open" in tools_line
+    assert "mcp__wikitoolkit__ledger_context" in tools_line
+    assert "mcp__wikitoolkit__ledger_open" in load_subagent_definition("sdd-worker")

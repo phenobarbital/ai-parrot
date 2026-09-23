@@ -101,7 +101,7 @@ class TestLedgerTools:
         tool = LedgerOpenTool(mock_ledger_service)
         mock_ledger_service.open_issue.return_value = "issue:def456"
 
-        result = await tool._execute(title="Test Issue", body="Test description")
+        result = await tool._execute(title="Test Issue", body="Test description", discovered_from="spec:FEAT-1")
 
         assert result.success is True
         assert result.result == {"issue_id": "issue:def456"}
@@ -110,7 +110,7 @@ class TestLedgerTools:
             body="Test description",
             kind="bug",
             severity="minor",
-            discovered_from="",
+            discovered_from="spec:FEAT-1",
             about=None,
             actor="agent:mcp",
         )
@@ -126,6 +126,49 @@ class TestLedgerTools:
         assert result.success is True
         assert result.result == {"issues": [{"issue_id": "issue:def456"}]}
         mock_ledger_service.ready_work.assert_called_once_with(None)
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [{"kind": "task"}, {"severity": "important"}, {"discovered_from": ""}, {"discovered_from": None}],
+    )
+    def test_ledger_open_schema_matches_cli_choices(self, overrides):
+        """The MCP schema rejects exactly what `wikitoolkit ledger open` rejects."""
+        from pydantic import ValidationError
+
+        from parrot.knowledge.wiki.tools import LedgerOpenInput
+
+        args = {"title": "t", "body": "b", "discovered_from": "spec:FEAT-1", **overrides}
+        if args["discovered_from"] is None:
+            del args["discovered_from"]
+        with pytest.raises(ValidationError):
+            LedgerOpenInput(**args)
+
+    def test_ledger_open_schema_exposes_enums(self):
+        from parrot.knowledge.wiki.tools import LedgerOpenInput
+
+        props = LedgerOpenInput.model_json_schema()["properties"]
+        assert props["kind"]["enum"] == ["bug", "tech_debt", "feature_gap", "vulnerability"]
+        assert props["severity"]["enum"] == ["critical", "major", "minor", "low"]
+
+    @pytest.mark.asyncio
+    async def test_ledger_ready_tool_passes_kind_filter(self, mock_ledger_service):
+        """A kind filter must reach ready_work (IssueKind is a Literal and cannot be called)."""
+        tool = LedgerReadyTool(mock_ledger_service)
+        mock_ledger_service.ready_work.return_value = []
+
+        result = await tool._execute(kind="tech_debt")
+
+        assert result.success is True
+        mock_ledger_service.ready_work.assert_called_once_with("tech_debt")
+
+    @pytest.mark.asyncio
+    async def test_ledger_claim_tool_forwards_actor(self, mock_ledger_service):
+        tool = LedgerClaimTool(mock_ledger_service)
+        mock_ledger_service.claim.return_value = True
+
+        await tool._execute(issue_id="issue:abc", actor="agent:sdd-fix")
+
+        mock_ledger_service.claim.assert_called_once_with("issue:abc", "agent:sdd-fix")
 
     @pytest.mark.asyncio
     async def test_ledger_claim_tool(self, mock_ledger_service):

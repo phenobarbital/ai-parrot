@@ -136,6 +136,10 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
 
 
 WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
+# The shared SDD work ledger (``WikiProjectConfig.ledger_path``). It always
+# resolves to the primary checkout, so a worktree agent filing a finding with
+# ``wikitoolkit ledger open`` writes there, never into its own checkout.
+SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
 # Claude Code keeps every session's scratchpad under this root
 # (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
 # seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
@@ -174,6 +178,35 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     return (admin_dir,)
 
 
+def shared_ledger_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the primary checkout's ledger directory when ``root`` is a linked worktree.
+
+    ``wikitoolkit ledger open/claim/close/unclaim`` resolve the ledger through
+    ``find_shared_root`` to ``<primary>/.parrot/ledger``. Only that directory
+    is returned — SQLite needs its ``-wal``/``-shm`` siblings next to
+    ``ledger.db`` — so the wiki plane and the rest of ``.parrot`` stay
+    read-only.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The existing ledger directory to bind writable, or an empty tuple for
+        the primary checkout (already writable) and for primaries without a
+        ledger.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    ledger_dir = (primary / SHARED_LEDGER_DIR).resolve()
+    if not ledger_dir.is_dir() or ledger_dir.is_relative_to(root):
+        return ()
+    return (ledger_dir,)
+
+
 def claude_scratch_root() -> Path:
     """Return Claude Code's per-user scratchpad root, creating it when absent.
 
@@ -196,7 +229,9 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
 
     Only the checkout, Git administration directory, the primary checkout's
     worktree directory (``.claude/worktrees``, so a worktree agent can run
-    ``git worktree add/remove`` for ``/sdd-done``), private temporary storage,
+    ``git worktree add/remove`` for ``/sdd-done``), the primary checkout's
+    shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
+    claim ledger issues), private temporary storage,
     and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
     private ``/tmp`` so a seat's scratchpad survives between commands) are
     writable. The rest of the primary checkout and existing shared
@@ -239,6 +274,8 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         command.extend(["--bind", str(root), str(root)])
     if git_dir is not None and not git_dir.is_relative_to(root):
         command.extend(["--bind", str(git_dir), str(git_dir)])
+    for ledger_dir in shared_ledger_dirs(root, git_dir):
+        command.extend(["--bind", str(ledger_dir), str(ledger_dir)])
     for environment in shared_environments(cwd):
         command.extend(["--ro-bind", str(environment), str(environment)])
     # Caches are disposable and must not write into the shared host cache.
