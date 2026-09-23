@@ -244,5 +244,49 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24 by native seat sonnet, attempt_uid
+`020ef497681145578946a5902c6c39f8`. Delivered cleanly first attempt.
+
+Created `.claude/agents/e2e-api-tester.md` / `.claude/agents/e2e-ui-tester.md`
+(plan-driven API/UI exploration agent instructions), the `.claude/skills/e2e/`
+and `.agents/skills/e2e/` portable manual-skill twins, `.claude/hooks/e2e-teardown.sh`
+(owner/worktree-scoped immediate `down`, never a global stale kill), and
+`tests/sdd_scripts/test_e2e_teardown_hook.py`.
+
+Design decisions (disclosed, reasoned, none out of scope):
+- Both exploration subagents use a fixed per-role owner identity
+  (`explore-e2e-api-tester` / `explore-e2e-ui-tester`), independently
+  re-derived by the teardown hook from the hook payload's `agent_type`
+  alone — no dependency on an undocumented `session_id` field, matching
+  spec §2's "portable correctness never depends on a host-specific hook
+  ... or a promise that a shell process survives a sub-agent's return."
+- `e2e-exploration.json` is written to
+  `sdd/state/<FEAT-ID>/e2e/exploration/<run-id>/e2e-exploration.json` — a
+  sibling of, never inside, the deterministic gate's own evidence tree;
+  schema has no `passed`/`status`/`gate_satisfied` field anywhere (spec
+  §3 M8), and candidates live under `.../candidates/`, outside pytest
+  discovery, human-promotion only.
+- `.claude/agents/*.md`/`.claude/skills/e2e/*`/`.claude/hooks/*` are
+  covered by this checkout's local `.git/info/exclude` (not `.gitignore`);
+  used `git add -f` for those 4 paths.
+
+Tests:
+- `pytest tests/sdd_scripts/test_e2e_teardown_hook.py -q` → 15 passed
+  (success + exact scoped argv/cwd for both agent types, never-`--stale`,
+  two-worktree isolation, exit-0 even on inner `down` failure, malformed/
+  empty stdin, missing fields, non-git cwd, unrelated agent_type no-op,
+  `PARROT_SKIP_E2E_TEARDOWN=1` skip, missing-`parrot`-on-PATH prerequisite
+  failure with/without a leaked `CLAUDE_PROJECT_DIR`).
+- `ruff check` clean; `black --check` clean; `bash -n` syntax OK.
+
+Only the 6 declared files touched (1114 insertions); nothing under `sdd/`
+touched.
+
+Note for future M9/docs work (not a defect): `chrome-devtools-mcp` is
+declared in the repo root `package.json` but not yet registered in
+`.mcp.json`, so `e2e-ui-tester`'s host-capability precondition reports
+`unavailable` in this environment — exactly the spec-required behavior
+("unavailable exploration is reported as unavailable and cannot
+invalidate valid deterministic evidence").
+
+No unresolved limitations. AC12/AC13 demonstrated by the new test suite.
