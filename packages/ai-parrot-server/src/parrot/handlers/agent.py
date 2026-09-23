@@ -2213,8 +2213,8 @@ class AgentTalk(BaseView):
                     self.logger.error("Error processing excel upload: %s", e)
                     return self.error(f"Failed to process file: {str(e)}", status=500)
                 finally:
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
+                    if await asyncio.to_thread(os.path.exists, tmp_path):
+                        await asyncio.to_thread(os.unlink, tmp_path)
 
             else:
                 # JSON/Form data for Query Slug

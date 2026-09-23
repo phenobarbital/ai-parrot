@@ -5239,7 +5239,7 @@ class DatasetManager(AbstractToolkit):
 
         # ── 4. Build per-dataset SpatialResult (FEAT-221 G4) ─────────────────
         layer_results: Dict[str, SpatialLayerResult] = {}
-        for name, (raw_features, true_count, geodesic) in zip(resolved_names, results):
+        for name, (raw_features, true_count, geodesic) in zip(resolved_names, results, strict=False):
             profile = profiles[name]
             # Per-dataset cap: cap the returned features, keep the true count
             this_capped = true_count > cap_per_dataset

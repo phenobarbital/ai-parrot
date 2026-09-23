@@ -137,7 +137,6 @@ class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
         authorized = await self._authorize(self.request.match_info.get("name"), "astudio:toolkits:options")
         if self._is_error_response(authorized):
             return authorized
-        name = self.request.match_info.get("name")
         slug = self.request.match_info.get("slug")
         param = self.request.match_info.get("param")
         store, state = authorized

@@ -49,6 +49,12 @@ try:
 except ImportError as e:  # pragma: no cover - optional
     raise ImportError("Please install the 'jira' package: pip install jira") from e
 
+from parrot.tools.manager import ToolManager
+from parrot.tools.config_schema import ConfigOption
+from parrot.auth.exceptions import AuthorizationRequired
+from .toolkit import AbstractToolkit
+from .decorators import tool_schema, requires_permission
+from .jira_config import JiraToolkitConfig
 
 # ---------------------------------------------------------------------------
 # Envelope type for read-method returns (FEAT-138, Module 5)
@@ -70,14 +76,6 @@ class JiraToolEnvelope(TypedDict, total=False):
     data: Any
     message: str
     query: Optional[str]
-
-
-from parrot.tools.manager import ToolManager
-from parrot.tools.config_schema import ConfigOption
-from parrot.auth.exceptions import AuthorizationRequired
-from .toolkit import AbstractToolkit
-from .decorators import tool_schema, requires_permission
-from .jira_config import JiraToolkitConfig
 
 
 class JiraAuthenticationError(RuntimeError):
@@ -2054,7 +2052,7 @@ class JiraToolkit(AbstractToolkit):
         if attachments:
             uploaded: List[Dict[str, Any]] = []
             for file_path in attachments:
-                if not os.path.isfile(file_path):
+                if not await asyncio.to_thread(os.path.isfile, file_path):
                     uploaded.append({"file": file_path, "error": "File not found"})
                     self.logger.warning(f"Attachment file not found: {file_path}")
                     continue
@@ -3113,7 +3111,7 @@ class JiraToolkit(AbstractToolkit):
                 f"DataFrame '{dataframe_name}' not found. "
                 f"Available DataFrames: {available}. "
                 f"First fetch data with jira_search_issues(fetch_all=True, dataframe_name='...')"
-            )
+            ) from None
 
         if df.empty:
             raise ValueError(f"DataFrame '{dataframe_name}' is empty (0 rows).")

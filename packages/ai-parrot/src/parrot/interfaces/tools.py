@@ -144,9 +144,7 @@ class ToolInterface:
         """Whether this bot has GraphIndex tools incorporated."""
         if getattr(self, "_graphindex_toolkit", None) is not None:
             return True
-        return any(
-            name.startswith("graphindex") or name.startswith("graph_") for name in self.tool_manager.list_tools()
-        )
+        return any(name.startswith(("graphindex", "graph_")) for name in self.tool_manager.list_tools())
 
     @property
     def llmwiki_toolkit(self) -> Any:

@@ -120,7 +120,10 @@ async def test_table_kwargs(dm: DatasetManager) -> None:
             {"kind": "sql", "name": "sql", "sql": "select 1", "driver": "pg", "dsn": "dsn"},
             "add_dataset",
             ("sql",),
-            {"sql": "select 1", "driver": "pg", "dsn": "dsn"},
+            # add_dataset()'s "exactly one of query_slug/query/table/dataframe" selector is
+            # `query=`, not `sql=` (`sql=` is only a `table`-mode refinement there) — see
+            # replay_datasources()'s "sql" branch (fixed post-review, commit 841da0c44).
+            {"query": "select 1", "driver": "pg", "dsn": "dsn"},
         ),
         (
             {"kind": "file", "name": "csv", "path": "/d/a.csv", "metadata": {"source": "test"}},

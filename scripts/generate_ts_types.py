@@ -140,7 +140,7 @@ def main() -> int:
         Process exit code (always ``0`` on success).
     """
     written = export_schemas()
-    for name, path in sorted(written.items()):
+    for _name, path in sorted(written.items()):
         print(f"wrote {path.relative_to(REPO_ROOT)}")
     return 0
 

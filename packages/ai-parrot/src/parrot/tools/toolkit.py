@@ -200,7 +200,7 @@ class ToolkitTool(AbstractTool):
         return result
 
 
-class AbstractToolkit(ABC):
+class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstract methods; see below.
     """
     Abstract base class for creating toolkits - collections of related tools.
 
@@ -375,19 +375,19 @@ class AbstractToolkit(ABC):
         # a running loop (3.10+).
         self._open_lock: asyncio.Lock = asyncio.Lock()
 
-    async def start(self) -> None:
+    async def start(self) -> None:  # noqa: B027 -- deliberately optional, see class docstring.
         """
         Optional startup logic for the toolkit.
         Override in subclasses if needed.
         """
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # noqa: B027 -- deliberately optional, see class docstring.
         """
         Optional shutdown logic for the toolkit.
         Override in subclasses if needed.
         """
 
-    async def cleanup(self) -> None:
+    async def cleanup(self) -> None:  # noqa: B027 -- deliberately optional, see class docstring.
         """
         Optional cleanup logic for the toolkit.
         Override in subclasses if needed.
@@ -395,7 +395,7 @@ class AbstractToolkit(ABC):
 
     # ── FEAT-391: per-tool connection lifecycle ─────────────────────────────
 
-    async def _open(self) -> None:
+    async def _open(self) -> None:  # noqa: B027 -- deliberately optional, see docstring below.
         """
         Acquire external resources (connections, sessions, pools).
 
