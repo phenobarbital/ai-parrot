@@ -17,7 +17,7 @@ tags: [agent-studio, toolkits, tool-config, json-schema, admin-ui, mcp, datasets
 **Feature ID**: FEAT-593
 **Date**: 2026-09-23
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0 (tentative)
 **Brainstorm**: `sdd/proposals/tool-configuration-agentstudio.brainstorm.md` (Option A, accepted)
 
@@ -94,8 +94,6 @@ developers hand-editing YAML to wire toolkit params.
   live-table migration (brainstorm Option B, rejected — see brainstorm).
 - Persisting datasets beyond the spec: agent-level datasets are **in-memory
   only**, replayed on build/reload.
-- Parquet in the `file` datasource kind (`DatasetManager.load_file` handles CSV/
-  Excel only) — see §8.
 - Rewriting the existing per-user MCP (`MCPPersistenceService`) and per-user
   dataset (`/api/v1/agents/datasets/*`) flows.
 - Editing `.py` (code) registry agents or YAML outside `AGENTS_DIR` — read-only.
@@ -335,7 +333,8 @@ class SqlDatasource(_DatasourceBase):        kind: Literal["sql"]; sql: str; dri
 class TableDatasource(_DatasourceBase):      kind: Literal["table"]; table: str; driver: str; dsn: str | None = None;
                                              credentials: dict | None = None; strict_schema: bool = True;
                                              permanent_filter: dict | None = None; allowed_columns: list[str] | None = None
-class FileDatasource(_DatasourceBase):       kind: Literal["file"]; path: str   # .csv/.xls/.xlsx/.xlsm/.xlsb only
+class FileDatasource(_DatasourceBase):       kind: Literal["file"]; path: str   # .csv/.xls/.xlsx/.xlsm/.xlsb/.parquet
+                                             delta_path: str | None = None  # parquet only; default Path(path).with_suffix('.delta')
 class AirtableDatasource(_DatasourceBase):   kind: Literal["airtable"]; base_id: str; table: str; view: str | None = None; api_key: str | None = None
 class SmartsheetDatasource(_DatasourceBase): kind: Literal["smartsheet"]; sheet_id: str; access_token: str | None = None
 class IcebergDatasource(_DatasourceBase):    kind: Literal["iceberg"]; table_id: str; catalog_params: dict; factory: str = "pandas";
@@ -524,7 +523,9 @@ PBAC actions: `astudio:toolkits:persist`, `astudio:toolkits:options`,
           query_slug/sql → add_dataset(name, query_slug=|sql=, driver, dsn, credentials, permanent_filter)  # :966
           table          → add_table_source(name, table, driver, dsn=, credentials=, strict_schema=,
                                             permanent_filter=, allowed_columns=)                           # :1459
-          file           → load_file(name, path, metadata=)                                                  # :1222
+          file (csv/excel) → load_file(name, path, metadata=)                                                # :1222
+          file (.parquet)  → create_deltatable_from_parquet(name, path, delta_path or Path(path).with_suffix('.delta'),
+                                                            mode="overwrite", description=)                 # :2103
           airtable       → add_airtable_source(name, base_id, table, api_key=, view=)                        # :1608
           smartsheet     → add_smartsheet_source(name, sheet_id, access_token=)                              # :1652
           iceberg        → add_iceberg_source(name, table_id, catalog_params, factory=, credentials=, dsn=)  # :1696
@@ -1176,7 +1177,7 @@ class BotWritePayload(BaseModel): model_config = ConfigDict(populate_by_name=Tru
 - ~~Any `/astudio` consumer in the SPA~~, ~~`ui/src/lib/api/studio.ts`~~, ~~`TabsTools.svelte`~~, ~~`SchemaForm.svelte`~~ — do not exist.
 - ~~`GET /astudio/agents/{name}/toolkits`~~, ~~`PUT …/toolkits/{slug}`~~, ~~`…/options/{param}`~~, ~~`…/mcp-servers`~~, ~~`…/me`~~ — only schema GET + assignment POST exist.
 - ~~`parrot.handlers.vault_utils` as the implementation~~ — thin re-export; implementation is `parrot.security.vault_utils`. ~~Fernet~~ — AES-GCM `KeyRing`.
-- ~~Parquet support in `DatasetManager.load_file`~~ — CSV/Excel only.
+- ~~Parquet support in `DatasetManager.load_file`~~ — CSV/Excel only; parquet goes through `create_deltatable_from_parquet(name, parquet_path, delta_path, *, table_name=None, mode="overwrite", description=None)` (tool.py:2103).
 - ~~A `migrations/` dir for `ai_bots`~~ — additive DDL goes into `handlers/creation.sql` (FEAT-133 precedent).
 
 ### Edit Sites (Blueprint Anchors)
@@ -1312,8 +1313,8 @@ No new Python dependencies.
 - [x] Schema source for complex toolkits — *Resolved in brainstorm*: declarative JSON Schema (Pydantic model → `model_json_schema()`, `oneOf` for choice-shaped config) published per toolkit; introspection only as fallback.
 - [x] Stale overrides after the operator revokes overridability — *Resolved 2026-09-23 (user, /sdd-spec)*: keep but ignore; only currently-overridable params merge at build.
 - [x] Toolkit-override restore flag — *Resolved 2026-09-23 (user, /sdd-spec)*: always on; the operator's `user_overridable` marking is the opt-in.
-- [ ] Coordination with FEAT-540 (`graphindex-core-seams`, all tasks pending): TASK-3263 repoints `handlers/studio/toolkits.py:27` to `parrot_tools.wiki`. Proposed: keep the current import here; whichever lands second resolves a one-line conflict. Confirm before `/sdd-task`. — *Owner: Jesus*
-- [ ] Parquet in the `file` datasource kind: `load_file` supports CSV/Excel only. Out of scope for v1, or map `.parquet` to `create_deltatable_from_parquet`? — *Owner: Jesus*
+- [x] Coordination with FEAT-540 — *Resolved 2026-09-23 (user, /sdd-task)*: keep the current `parrot.knowledge.wiki` import in `handlers/studio/toolkits.py`; whichever feature lands second resolves the one-line conflict. No dependency on TASK-3263.
+- [x] Parquet in the `file` datasource kind — *Resolved 2026-09-23 (user, /sdd-task)*: map `.parquet` to `create_deltatable_from_parquet`, `delta_path` defaulting to `Path(path).with_suffix('.delta')`, `mode="overwrite"` so replay on reload is idempotent.
 
 ---
 
@@ -1346,3 +1347,4 @@ Summary: **10** confirmed · **1** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-23 | Jesus Lara (with Claude) | Initial draft from accepted brainstorm (Option A) + codex design research |
+| 0.2 | 2026-09-23 | Jesus Lara (with Claude) | Approved; §8 FEAT-540 + parquet resolved (parquet → deltatable) |
