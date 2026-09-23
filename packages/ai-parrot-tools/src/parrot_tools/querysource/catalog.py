@@ -191,6 +191,17 @@ class SlugCatalog:
             records = [r for r in records if needle in r.slug.lower() or needle in (r.description or "").lower()]
         return sorted(records, key=lambda r: r.slug)[:limit]
 
+    async def list_programs(self) -> list[str]:
+        """Distinct ``program_slug`` values across the catalog, sorted (FEAT-593).
+
+        Not filtered by ``TenantGuard``: the operator is choosing the scope itself.
+        """
+        await self.open()
+        model = _qs.get_query_model()
+        async with await self._db.connection() as conn:
+            rows = await model.all(_connection=conn)
+        return sorted({row.program_slug for row in rows})
+
     async def upsert(
         self, *, slug: str, description: str, pipeline: dict[str, Any], program_slug: str, overwrite: bool
     ) -> SavedSlug:
