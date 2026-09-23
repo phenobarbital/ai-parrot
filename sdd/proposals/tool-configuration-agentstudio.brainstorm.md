@@ -9,7 +9,7 @@ base_branch: dev
 #   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
 projects: [ai-parrot-server, admin-ui, ai-parrot, ai-parrot-tools]
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
-tags: [agent-studio, toolkits, tool-config, admin-ui, mcp, datasets, secrets]
+tags: [agent-studio, toolkits, tool-config, json-schema, admin-ui, mcp, datasets, secrets]
 ---
 
 # Brainstorm: Tool Configuration for Agent Studio
@@ -104,6 +104,16 @@ Decisions taken in discovery (Rounds 0–2):
 - **Agent-level datasets/MCP semantics**: Studio edits `mcp_servers` (already
   in `BotConfig`; **absent** from `BotModel`) and a new list of pre-registered
   datasources for the agent's `DatasetManager`. Per-user paths stay as today.
+- **Declarative schema for complex toolkits**: constructor introspection is
+  not enough for toolkits whose configuration is a *choice* (DatasetManager:
+  a `query_slug`, **or** `table`+`schema`+`driver`(+`dsn`), **or** a CSV/Excel/
+  Parquet path, **or** an Airtable base, **or** a Smartsheet sheet…). Such
+  toolkits publish a JSON Schema (Draft 2020-12, generated from a Pydantic
+  config model — precedent: `WikiConfig.model_json_schema()` already embedded
+  by `_wiki_schema()` in `studio/toolkits.py:265`) with `oneOf` discriminated
+  unions; the UI renders forms from the schema alone, never from
+  toolkit-specific frontend code. Introspection stays as the fallback for
+  simple toolkits.
 - **Dynamic options**: toolkits may implement an optional
   `config_options(param, current_params)` hook; the schema advertises an
   `options_endpoint` and the UI renders a multi-select. `QuerysourceToolkit`
@@ -161,9 +171,16 @@ family.
   `GET|PUT /agents/{name}/mcp-servers` (agent-level `mcp_servers`) and
   `GET|PUT /agents/{name}/datasets` (agent-level datasource list). Per-user:
   `GET|PUT|DELETE /agents/{name}/toolkits/{slug}/me`.
-- **Schema enrichment**: `_introspect_params` output gains `secret`,
-  `user_overridable_default`, `options_endpoint`, `ui_help`, `enum` (from
-  `Literal`) — still constructor-driven, no per-toolkit schema files.
+- **Schema, two tiers**: (a) `AbstractToolkit.config_schema()` classmethod
+  (optional) returns a JSON Schema built from a Pydantic `*Config` model —
+  `oneOf` discriminated unions for choice-shaped config (DatasetManager
+  datasources), `enum` from `Literal`, defaults, descriptions; vendor
+  extensions `x-secret`, `x-user-overridable`, `x-options-endpoint`,
+  `x-ui-help`, `x-server-managed`. (b) toolkits without one keep the current
+  `_introspect_params` path, which the handler lifts into the same JSON Schema
+  shape (`properties`/`required`) so the SPA has a single renderer. First-class
+  config models: `dataset_manager` (datasource union), `jira`, `querysource`;
+  `wiki` already has `WikiConfig`.
 - **UI**: new `TabsTools.svelte` replaces `TabsCapabilities`' checkbox list:
   left column = active tools/toolkits (from the existing `listTools()` +
   `/astudio/catalog/tools`), right column = per-toolkit drawer with a
@@ -338,9 +355,11 @@ secret detection that is heuristic outside the curated toolkits.
    required" with a **Reload agent** action. **Test** (optional) calls the
    existing live assignment (`POST /agents/{name}/toolkits`) on a session
    instance and reports registered tool names or the 422 details.
-5. **Datasets** sub-panel: pre-registered datasources for the agent's
-   `DatasetManager` (query slug, SQL, table, smartsheet…) — same form pieces
-   the chat uses today, persisted at agent level.
+5. **Datasets** sub-panel: the `dataset_manager` toolkit's own schema form —
+   a **kind** selector (query slug · SQL · table+schema+driver · CSV/Excel/
+   Parquet file · Airtable · Smartsheet · Iceberg · Mongo · Delta) whose
+   sub-form comes from the `oneOf` branch; the list is saved as the toolkit's
+   params and loaded into memory on (re)build.
 6. **MCP servers** sub-panel: the agent-level `mcp_servers` list (name,
    transport, url/command, allowed/blocked tools, headers) — same fields as
    the vendored `MCPServerTab`, persisted at agent level.
@@ -359,18 +378,31 @@ secret detection that is heuristic outside the curated toolkits.
 
 1. **Shape**: `ToolkitSpec {slug, params: dict, user_overridable: list[str],
    secret_refs: dict[param, vault_name]}` (core Pydantic). `BotModel` gains
-   `toolkit_config: dict[slug, ToolkitSpec-like]`, `mcp_servers: list[dict]`
-   and `datasets: list[dict]` JSONB columns (nullable, default empty).
-   `BotConfig.toolkits` accepts `str | ToolkitSpec`; `BotConfig.datasets` is
-   new; `create_agent_definition` writes all three.
-2. **Schema**: `_introspect_params` is extended (not replaced) to emit
-   `secret`, `enum`, `options_endpoint`, `ui_help`; a per-toolkit curated
-   overlay (`jira`, `querysource`, `dataset_manager`, `wiki`, `infographic`)
-   supplies what introspection cannot (`server_url` is not secret; `token`
-   is; `programs` has options).
+   `toolkit_config: dict[slug, ToolkitSpec-like]` and `mcp_servers: list[dict]`
+   JSONB columns (nullable, default empty). No `datasets` column: agent-level
+   datasources are the `params.datasources` list of the `dataset_manager`
+   `ToolkitSpec`. `BotConfig.toolkits` accepts `str | ToolkitSpec`;
+   `create_agent_definition` writes both.
+2. **Schema**: `GET /astudio/toolkits/{slug}/schema` returns one JSON Schema
+   document per toolkit. If the class defines `config_schema()` (Pydantic
+   `*Config` model → `model_json_schema()`), that is the document; otherwise
+   `_introspect_params` output is lifted into `properties`/`required`. Both
+   carry `x-secret` / `x-user-overridable` / `x-options-endpoint` /
+   `x-ui-help` / `x-server-managed`. The DatasetManager model is the reference
+   case — `DatasetManagerConfig{datasources: list[DatasourceSpec], max_rows,
+   …}` with `DatasourceSpec = Annotated[Union[...], Field(discriminator="kind")]`
+   over the constructors that exist today:
+   `query_slug{slug, permanent_filter?}`, `sql{sql, driver, dsn?|credentials?}`,
+   `table{table, schema?, driver, dsn?|credentials?, allowed_columns?}`,
+   `file{path (csv|xlsx|parquet), read_kwargs?}`, `airtable{base_id, table,
+   view?, api_key*}`, `smartsheet{sheet_id, access_token*}`, plus
+   `iceberg`/`mongo`/`deltatable` mirroring their `add_*_source` signatures
+   (`*` = `x-secret`). The SPA renders `oneOf` as a kind selector + sub-form.
 3. **Persist (agent level)**: `PUT /astudio/agents/{name}/toolkits/{slug}`
-   validates params against the schema, splits secrets → vault under the
-   *agent owner's* user id with name `toolkit_{slug}_{agent}`, writes the
+   validates params against the JSON Schema (server-side, `jsonschema` or
+   the Pydantic model itself), splits `x-secret` values → the per-user
+   navigator-session vault (`KeyRing` from the operator's user session) under
+   the *agent owner's* user id with name `toolkit_{slug}_{agent}`, writes the
    spec to `BotModel.toolkit_config` (DB agents) or rewrites the YAML
    (`AGENTS_DIR` registry agents), and returns `reload_required: true`.
    Ownership + PBAC (`astudio:toolkits:persist`) as in the other Studio
@@ -379,9 +411,12 @@ secret detection that is heuristic outside the curated toolkits.
    factory both pass `ToolkitSpec` entries in `tools`; `_initialize_tools`
    resolves secrets (`retrieve_vault_credential`), then
    `tool_manager.register_toolkit(slug, **params)`. Missing vault → toolkit
-   skipped with a WARNING (not a boot failure). Agent-level `datasets` seed
-   the agent's `_dataset_manager` at build (the chat's `_clone_agent_dm`
-   already copies it into the user's manager); agent-level `mcp_servers`
+   skipped with a WARNING (not a boot failure). Agent-level datasources are
+   **in-memory only**: at build the `dataset_manager` spec is replayed into
+   the agent's `_dataset_manager` (`add_dataset` / `add_table_source` /
+   `load_file` / `add_airtable_source` / `add_smartsheet_source` …), nothing
+   is persisted beyond the spec, and a reload rebuilds it (the chat's
+   `_clone_agent_dm` already copies it into the user's manager); agent-level `mcp_servers`
    reuse the registry's existing `add_mcp_server` loop (the DB path gains the
    same loop).
 5. **Override (user level)**: `ToolkitConfigService.save/load/remove` on
@@ -430,8 +465,8 @@ secret detection that is heuristic outside the curated toolkits.
 ## Capabilities
 
 ### New Capabilities
-- `toolkit-config-persistence`: `ToolkitSpec` model; `BotModel.toolkit_config`/`mcp_servers`/`datasets`; widened `BotConfig.toolkits`; YAML round-trip; build-time hydration in `_initialize_tools`.
-- `toolkit-config-schema-enrichment`: `secret`/`enum`/`options_endpoint`/`ui_help` in the schema; curated overlays for first-class toolkits; `config_options` hook on `AbstractToolkit` (+ Jira, Querysource implementations).
+- `toolkit-config-persistence`: `ToolkitSpec` model; `BotModel.toolkit_config`/`mcp_servers`; widened `BotConfig.toolkits`; YAML round-trip; build-time hydration in `_initialize_tools` (incl. in-memory datasource replay for `dataset_manager`).
+- `toolkit-config-json-schema`: `AbstractToolkit.config_schema()` classmethod + Pydantic config models (`DatasetManagerConfig` with the `DatasourceSpec` discriminated union, `JiraToolkitConfig`, `QuerysourceToolkitConfig`); introspection fallback lifted to the same JSON Schema shape; `x-secret`/`x-user-overridable`/`x-options-endpoint`/`x-ui-help`/`x-server-managed` extensions; `config_options` hook on `AbstractToolkit` (+ Jira, Querysource implementations).
 - `toolkit-config-studio-api`: `GET/PUT/DELETE /astudio/agents/{name}/toolkits[/{slug}]`, `GET /astudio/toolkits/{slug}/options/{param}`, agent-level `mcp-servers` and `datasets` endpoints.
 - `toolkit-user-overrides`: `ToolkitConfigService` (DocumentDB) + `/…/toolkits/{slug}/me` endpoints + session-`ToolManager` application in `AgentTalk`.
 - `admin-ui-tools-tab`: `TabsTools.svelte` with schema-driven `SchemaForm`, Datasets and MCP sub-panels; codegen of new payload types; nav/route unchanged.
@@ -456,14 +491,15 @@ secret detection that is heuristic outside the curated toolkits.
 | `parrot/server/ui/models.py` (`BotWritePayload`, `BotAgentItem`) + `scripts/generate_ts_types.py` | extends | new fields → `pnpm generate` |
 | `parrot/registry/registry.py` (`BotConfig`, factory, `create_agent_definition`) | modifies | widened `toolkits`, new `datasets`, delete dead loop |
 | `parrot/interfaces/tools.py` (`_initialize_tools`) | modifies | accept `ToolkitSpec`, hydrate secrets, pass kwargs |
-| `parrot/tools/toolkit.py` (`AbstractToolkit`) | extends | optional `config_options` hook (+ class attr for default overridables) |
+| `parrot/tools/toolkit.py` (`AbstractToolkit`) | extends | optional `config_schema()` classmethod + `config_options` hook (+ class attr for default overridables) |
+| `parrot/tools/dataset_manager/tool.py` (`DatasetManager`) | extends | `DatasetManagerConfig` / `DatasourceSpec` Pydantic union + `config_schema()`; build-time replay of datasources |
 | `parrot_tools/jiratoolkit.py`, `parrot_tools/querysource/toolkit.py` | extends | implement `config_options` |
 | `handlers/agent.py` (`AgentTalk._configure_tool_manager`) | extends | apply user overrides on the session `ToolManager` |
 | new `handlers/toolkit_persistence.py` (`ToolkitConfigService`) | new | DocumentDB per-user overrides (pattern: `mcp_persistence.py`) |
 | `parrot/security/vault_utils.py` | depends on | store/retrieve/delete secrets |
 | Admin UI: `pages/agents/AgentForm.svelte`, `form/TabsCapabilities.svelte` → `form/TabsTools.svelte`, `lib/agents/fields.ts`, `lib/stores/agent-form.svelte.ts`, `lib/api/agents.ts`, new `lib/api/studio.ts` | modifies / new | Tools tab, schema form, sub-panels |
 | Admin UI chat: `components/agents/AgentChat.svelte`, `DatasetTab.svelte`, `MCPServerTab.svelte` | modifies | mount a "My settings" modal instead |
-| DB | schema change | 3 nullable JSONB columns on the bots table (additive) |
+| DB | schema change | 2 nullable JSONB columns on the bots table (`toolkit_config`, `mcp_servers`; additive) |
 | Docs: `docs/agent_studio_api.md`, `docs/admin-ui.md`, `docs/agent_config_creation.md` | extends | new endpoints / tab / YAML shape |
 
 No new Python dependencies. Breaking change limited to the Capabilities tab
@@ -624,7 +660,38 @@ class QuerysourceToolkit(AbstractToolkit):                   # :56
                  multiquery_timeout: float = 600.0, **kwargs: Any) -> None: ...   # :64-76
 
 # packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py
+class DatasetInfo(BaseModel):                                # :60   (LLM-facing OUTPUT model, not a config model)
+    source_type: Literal["dataframe", "query_slug", "sql", "table", "airtable", "smartsheet",
+                         "iceberg", "mongo", "deltatable", "composite"]   # :70-73
 class DatasetManager(AbstractToolkit):                       # :501
+    async def load_file(self, name: str, path: Union[str, Path], metadata=None,
+                        max_rows_per_table: int = 200, output_format: str = "markdown") -> str: ...   # :1222  CSV/Excel
+    async def add_table_source(...)      # :1459
+    async def add_airtable_source(...)   # :1608
+    async def add_smartsheet_source(...) # :1652
+    async def add_iceberg_source(...)    # :1696
+    async def add_mongo_source(...)      # :1780
+    async def add_deltatable_source(...) # :1860
+    async def create_deltatable_from_parquet(self, ..., parquet_path: str, ...)   # :2103
+
+# packages/ai-parrot/src/parrot/tools/dataset_manager/sources/  (each is the natural `oneOf` branch)
+class QuerySlugSource: __init__(self, slug: str, prefetch_schema_enabled: bool = True, permanent_filter=None)   # query_slug.py:51-56
+class TableSource:     __init__(self, table: str, driver: str, dsn: Optional[str] = None, credentials: Optional[Dict] = None,
+                                strict_schema: bool = True, permanent_filter=None, allowed_columns: Optional[List[str]] = None)   # table.py:181-190
+class AirtableSource(DataSource):   __init__(self, base_id: str, table: str, api_key: Optional[str] = None, view: Optional[str] = None)   # airtable.py:15-24  (api_key → x-secret)
+class SmartsheetSource(DataSource): __init__(self, sheet_id: str, access_token: Optional[str] = None)   # smartsheet.py:14-17  (access_token → x-secret)
+# also: sql.py, iceberg.py, mongo.py, deltatable.py, composite.py, memory.py
+
+# packages/ai-parrot-server/src/parrot/handlers/studio/toolkits.py — JSON-Schema precedent + stub to replace
+    @staticmethod
+    def _wiki_schema() -> dict:                              # :262
+        params = _introspect_params(LLMWikiToolkit, server_managed=frozenset({...}))
+        if "config" in params:
+            params["config"]["schema"] = WikiConfig.model_json_schema()   # :265  ← Pydantic → JSON Schema already used here
+    @staticmethod
+    def _dataset_manager_schema() -> dict:                   # :269  today: bare _introspect_params(DatasetManager)
+# packages/ai-parrot/src/parrot/knowledge/wiki/models.py
+class WikiConfig(BaseModel): ...                             # :52
     async def add_dataset(self, name: str, *, description=None, query_slug=None, query=None, table=None,
                           dataframe=None, driver=None, dsn=None, credentials=None, conditions=None,
                           sql=None, filter=None, metadata=None, is_active=True, permanent_filter=None,
@@ -741,6 +808,7 @@ from parrot.manager.manager import BotManager                               # te
 - ~~`BotModel.mcp_servers`~~, ~~`BotModel.toolkits`~~, ~~`BotModel.toolkit_config`~~, ~~`BotModel.datasets`~~ — `BotModel` only has `tools: List[str]` (models/bots.py:165). `mcp_servers` exists on the YAML `BotConfig` (registry.py:237) only.
 - ~~`BotConfig.datasets`~~ — no dataset field on YAML definitions.
 - ~~A working YAML `toolkits:` loader~~ — `registry.py:943-950` is a `pass` stub; the `toolkits` kwarg forwarded at :120-121 is not read by `AbstractBot.__init__` or any `bots/*.py`.
+- ~~`AbstractToolkit.config_schema`~~, ~~`DatasetManagerConfig`~~, ~~`DatasourceSpec`~~ — no Pydantic *config* model exists for `DatasetManager` (only the output model `DatasetInfo`); the datasource kinds are implied by `add_*_source` methods and `sources/*.py` constructors.
 - ~~`AbstractToolkit.config_options`~~, ~~`AbstractToolkit.user_overridable`~~, ~~`AbstractToolkit.secret_params`~~ — no config-metadata hooks on the base class; only `credential_provider`, `auto_open`, `exclude_tools`, `tool_prefix`.
 - ~~`ToolkitConfigService`~~, ~~`user_toolkit_configs` collection~~ — greenfield; only `MCPPersistenceService`/`user_mcp_configs` exist.
 - ~~Any `/astudio` consumer in the Admin UI~~ — `grep astudio ui/src` returns nothing; no `lib/api/studio.ts`.
@@ -795,9 +863,10 @@ from parrot.manager.manager import BotManager                               # te
 - [x] Registry (YAML/code) agents — *Owner: Jesus*: editable when the YAML lives under `AGENTS_DIR` (rewrite `toolkits:` + reload); `.py` agents stay read-only.
 - [x] Agent-level meaning of datasets/MCP and location of user overrides — *Owner: Jesus*: agent = persisted defaults (`mcp_servers`, pre-registered datasources); user = chat, on the existing per-user endpoints.
 - [x] Dynamic options for Querysource programs / Jira projects — *Owner: Jesus*: yes, via an optional `config_options(param, current_params)` toolkit hook advertised as `options_endpoint` in the schema; Jira and Querysource implement it.
-- [ ] Vault ownership for agent-level secrets: store under the agent **owner's** user id (proposed) or under a synthetic service principal per agent, so ownership transfer does not orphan credentials? — *Owner: Jesus*
+- [x] Vault ownership for agent-level secrets — *Owner: Jesus*: the vault is **per-user** and it is the navigator-session vault (the `KeyRing` living in the user session, reached via `parrot.security.vault_utils`); agent-level secrets are stored under the agent owner's user id. No synthetic service principal.
 - [ ] Secret classification for generic toolkits: name heuristics (`token`, `password`, `api_key`, `secret`, `dsn`) plus curated overlays — acceptable, or should every toolkit declare `secret_params` explicitly before it is configurable? — *Owner: Jesus*
-- [ ] Storage for agent-level `datasets`: a `datasets` JSONB on `BotModel` (proposed, mirrors `mcp_servers`) vs. treating `dataset_manager` as just another toolkit whose params include the datasource list — *Owner: Jesus*
+- [x] Storage for agent-level datasets — *Owner: Jesus*: **in memory**. `dataset_manager` is configured like any other toolkit (its `DatasourceSpec` list is the toolkit's params, described by its JSON Schema); the datasets themselves live only in the agent's in-memory `DatasetManager`, replayed on build/reload. No `datasets` JSONB column.
+- [x] Schema source for complex toolkits — *Owner: Jesus*: declarative JSON Schema (Pydantic model → `model_json_schema()`, `oneOf` for choice-shaped config) published per toolkit so the UI builds the form from it; introspection only as fallback.
 - [ ] Should saving agent-level defaults auto-invalidate per-user overrides whose params are no longer `user_overridable` (drop silently, keep but ignore, or 409 on the operator's save)? — *Owner: Jesus*
 - [ ] `enable_mcp_restore` is opt-in per agent today; should toolkit-override restore be always-on, or reuse the same flag? — *Owner: Jesus*
-- [ ] Coordination with FEAT-540 TASK-3263 on `handlers/studio/toolkits.py` — which lands first? — *Owner: Jesus*
+- [ ] Coordination with FEAT-540 (`graphindex-core-seams`, approved 2026-09-09, TASK-3256..3268 all **pending**, no worktree): TASK-3263 relocates `LLMWikiToolkit`/`CodeStructuralToolkit` to `parrot_tools.wiki` and repoints the import at `handlers/studio/toolkits.py:27`; this feature rewrites the same handler. Proposed: this feature imports `WikiConfig`/`LLMWikiToolkit` via `parrot_tools.wiki` if 3263 has landed, else keeps the current import and 3263 repoints one line — either order is a one-line conflict, but decide before `/sdd-task`. — *Owner: Jesus*
