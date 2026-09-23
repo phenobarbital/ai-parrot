@@ -119,7 +119,7 @@
       "feature_id": "FEAT-592",
       "feature": "nova-image-planogram",
       "spec": "sdd/specs/nova-image-planogram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -129,8 +129,9 @@
       "parallelism_notes": "Needs the .gitignore negation block from TASK-3639 (.gitignore) - the README is un-ignored by the !examples/planogram/aws/README.md line specifically. Documents flags fixed by the spec, so it needs no code task first. Confirmed NOT a use: the only mention of examples/planogram/aws/nova2.py is the README's usage example and flag table, both fixed by spec §3 Module 5, so the README can be written before TASK-3643 creates that file - no edge added.",
       "assigned_to": null,
       "started_at": "2026-09-22T23:24:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3644-aws-example-readme.md"
+      "completed_at": "2026-09-23T00:00:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3644-aws-example-readme.md",
+      "verification": "verified"
     }
   ]
 }
