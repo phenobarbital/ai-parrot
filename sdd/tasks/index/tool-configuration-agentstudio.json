@@ -295,7 +295,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -308,8 +308,8 @@
       "parallelism_notes": "Uses ToolkitSpec/mask helpers/vault names from TASK-3645 (tools/spec.py), secret_paths from TASK-3646 (tools/config_schema.py), BotModel.toolkit_config/mcp_servers from TASK-3652 (models/bots.py) and AgentRegistry.update_agent_tooling from TASK-3657 (registry.py). Only task touching handlers/studio/models.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3659-studio-tooling-store.md"
+      "completed_at": "2026-09-23T15:57:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3659-studio-tooling-store.md"
     },
     {
       "id": "TASK-3660",
