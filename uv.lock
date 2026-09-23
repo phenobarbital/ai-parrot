@@ -654,6 +654,9 @@ meta = [
 moonshot = [
     { name = "ai-parrot-client-moonshot" },
 ]
+needle = [
+    { name = "cactus-needle" },
+]
 notify-all = [
     { name = "async-notify", extra = ["all"] },
 ]
@@ -841,6 +844,7 @@ requires-dist = [
     { name = "branca", marker = "extra == 'agents-lite'", specifier = "==0.8.2" },
     { name = "branca", marker = "extra == 'mcp'", specifier = "==0.8.2" },
     { name = "brotli", specifier = "==1.2.0" },
+    { name = "cactus-needle", marker = "extra == 'needle'", specifier = "==3.0.4" },
     { name = "cel-python", specifier = ">=0.4" },
     { name = "click", specifier = ">=8.1.7" },
     { name = "click", marker = "extra == 'filesystem-transport-full'", specifier = ">=8.0" },
@@ -1053,7 +1057,7 @@ requires-dist = [
     { name = "zeep", extras = ["async"], marker = "extra == 'agents-lite'", specifier = "==4.3.3" },
     { name = "zeep", extras = ["async"], marker = "extra == 'mcp'", specifier = "==4.3.3" },
 ]
-provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "scheduler", "server", "reddit", "jira", "retrieval", "tokenizer", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
+provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "scheduler", "server", "reddit", "jira", "retrieval", "tokenizer", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
 
 [[package]]
 name = "ai-parrot-advisors"
@@ -1429,6 +1433,7 @@ agentd-scheduler = [
     { name = "ai-parrot-server", extra = ["scheduler"] },
 ]
 all = [
+    { name = "aioboto3" },
     { name = "aiogram" },
     { name = "azure-teambots" },
     { name = "faster-whisper" },
@@ -1489,6 +1494,7 @@ telegram = [
     { name = "aiogram" },
 ]
 voice = [
+    { name = "aioboto3" },
     { name = "faster-whisper" },
     { name = "onnxruntime" },
     { name = "openai" },
@@ -1503,6 +1509,9 @@ voice-moonshine = [
 ]
 voice-openai = [
     { name = "openai" },
+]
+voice-polly = [
+    { name = "aioboto3" },
 ]
 voice-supertonic = [
     { name = "onnxruntime" },
@@ -1527,11 +1536,13 @@ requires-dist = [
     { name = "ai-parrot-integrations", extras = ["voice-local"], marker = "extra == 'voice'", editable = "packages/ai-parrot-integrations" },
     { name = "ai-parrot-integrations", extras = ["voice-moonshine"], marker = "extra == 'voice'", editable = "packages/ai-parrot-integrations" },
     { name = "ai-parrot-integrations", extras = ["voice-openai"], marker = "extra == 'voice'", editable = "packages/ai-parrot-integrations" },
+    { name = "ai-parrot-integrations", extras = ["voice-polly"], marker = "extra == 'voice'", editable = "packages/ai-parrot-integrations" },
     { name = "ai-parrot-integrations", extras = ["voice-supertonic"], marker = "extra == 'voice'", editable = "packages/ai-parrot-integrations" },
     { name = "ai-parrot-integrations", extras = ["voice-tts"], marker = "extra == 'voice'", editable = "packages/ai-parrot-integrations" },
     { name = "ai-parrot-integrations", extras = ["whatsapp"], marker = "extra == 'messaging'", editable = "packages/ai-parrot-integrations" },
     { name = "ai-parrot-server", extras = ["scheduler"], marker = "extra == 'agentd-scheduler'", editable = "packages/ai-parrot-server" },
     { name = "ai-parrot-tools", marker = "extra == 'business-automation'", editable = "packages/ai-parrot-tools" },
+    { name = "aioboto3", marker = "extra == 'voice-polly'", specifier = ">=13.2.0" },
     { name = "aiogram", marker = "extra == 'telegram'", specifier = ">=3.12" },
     { name = "azure-teambots", marker = "extra == 'msteams'", specifier = ">=0.1.1" },
     { name = "faster-whisper", marker = "extra == 'voice-local'" },
@@ -1553,7 +1564,7 @@ requires-dist = [
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = ">=3.27" },
     { name = "useful-moonshine-onnx", marker = "extra == 'voice-moonshine'" },
 ]
-provides-extras = ["agentd", "agentd-scheduler", "devloop", "slack", "telegram", "msteams", "whatsapp", "matrix", "voice-local", "voice-openai", "voice-tts", "voice-supertonic", "voice-moonshine", "msagentsdk", "liveavatar", "broadcast", "voice", "messaging", "business-automation", "all"]
+provides-extras = ["agentd", "agentd-scheduler", "devloop", "slack", "telegram", "msteams", "whatsapp", "matrix", "voice-local", "voice-openai", "voice-tts", "voice-supertonic", "voice-polly", "voice-moonshine", "msagentsdk", "liveavatar", "broadcast", "voice", "messaging", "business-automation", "all"]
 
 [[package]]
 name = "ai-parrot-loaders"
@@ -1762,16 +1773,31 @@ name = "ai-parrot-pipelines"
 source = { editable = "packages/ai-parrot-pipelines" }
 dependencies = [
     { name = "ai-parrot" },
+    { name = "numpy" },
     { name = "opencv-python-headless" },
+    { name = "pillow" },
     { name = "pytesseract" },
+    { name = "rapidfuzz" },
+]
+
+[package.optional-dependencies]
+planogram = [
+    { name = "onnxruntime" },
+    { name = "rapidocr" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
+    { name = "numpy" },
+    { name = "onnxruntime", marker = "extra == 'planogram'", specifier = ">=1.20" },
     { name = "opencv-python-headless", specifier = ">=4.8" },
+    { name = "pillow" },
     { name = "pytesseract", specifier = ">=0.3.13" },
+    { name = "rapidfuzz", specifier = ">=3.0" },
+    { name = "rapidocr", marker = "extra == 'planogram'", specifier = ">=3.9" },
 ]
+provides-extras = ["planogram"]
 
 [[package]]
 name = "ai-parrot-server"
@@ -3957,6 +3983,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/29/2c/3f18755527b03ca9ff6be724bd5370cb777c76a87f17301377cf04a4729b/cachetools-7.2.0.tar.gz", hash = "sha256:bcac1a1b8da6909994a2957238a57b8140dab7c5c5c69a43669654fe87a33c1d", size = 41129, upload-time = "2026-09-16T20:48:27.209Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/bb/1c6e7a89b11da19f137e4ef5a5c5fe47a5bb686449ba343944ccf8fb34b2/cachetools-7.2.0-py3-none-any.whl", hash = "sha256:3045213f186b89fdd95d94441354c4bd87c570b7a38d8c3fd1d9dd37f6dc90d8", size = 16918, upload-time = "2026-09-16T20:48:25.575Z" },
+]
+
+[[package]]
+name = "cactus-needle"
+version = "3.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ce/5e/98bd83d492af3fe76a5bcf9837ef1e0743bfcc099cef618f2ac65ca7d0b9/cactus_needle-3.0.4.tar.gz", hash = "sha256:56b1666979dfad93f3a975d20feb103de643e84000a9b08975b1eb052cb28310", size = 113461, upload-time = "2026-09-21T02:01:58.25Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/64/6ab0092ca2db6329bbc918992de2bbe8a1f0582e57ac0939c8353166152b/cactus_needle-3.0.4-py3-none-any.whl", hash = "sha256:0825b85dc7ebd7dfff98caaacc2baa6e805c3560d0646470b46bd93743056b26", size = 97936, upload-time = "2026-09-21T02:01:56.854Z" },
 ]
 
 [[package]]
