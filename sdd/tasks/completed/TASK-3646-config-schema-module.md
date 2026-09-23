@@ -329,10 +329,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3646
+- Feature: tool-configuration-agentstudio
+- Implementation SHA: 5f1679fc4f0f8ef4a320a80ab38a9bbcd0439dd4
+- Closed at (UTC): 2026-09-23T14:07:01+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| notes | Clean delivery (commits 897ad625f, e1c407d29-lint-autofix, merged as 24bcaff2b): config_schema.py + test_config_schema.py, ruff clean, 4 tests passing. coder_merge reported fidelity_ok: true. No closer-side fixes needed. Merge-tier sweep of packages/ai-parrot/tests/tools showed 53 pre-existing failures unrelated to these files. |
+| review_id | coder-review:3bb303c00b9614922c7a114e |
+| seat_summary | Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
