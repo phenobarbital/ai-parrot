@@ -766,6 +766,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 message: Message,
                 _method=method,
                 _parse_mode=parse_mode,
+                _cmd_name=cmd_name,
             ) -> None:
                 chat_id = message.chat.id
                 if not self._is_authorized(chat_id):
@@ -793,7 +794,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         await self._send_parsed_response(message, parsed)
                 except Exception as e:
                     typing_task.cancel()
-                    self.logger.error(f"Error in agent command /{cmd_name}: {e}", exc_info=True)
+                    self.logger.error(f"Error in agent command /{_cmd_name}: {e}", exc_info=True)
                     await message.answer(f"❌ Error: {str(e)[:200]}")
                 finally:
                     typing_task.cancel()
@@ -3818,7 +3819,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         files = response.files or []
         for file_path in files:
             path = Path(file_path)
-            if not path.exists():
+            if not await asyncio.to_thread(path.exists):
                 continue
 
             # Determine file type and send appropriately
