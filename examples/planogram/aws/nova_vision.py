@@ -38,6 +38,13 @@ class NovaVisionClient:
         self._nova = nova
         self._model_id = model_id
         self.logger = logger
+        #: Real Bedrock call/usage accounting — incremented only when ``ask_to_image``
+        #: actually reaches Converse. ``VisionAdapter.ask()`` discards ``NovaAnswer``
+        #: (it returns only the parsed schema) and its cache short-circuits BEFORE
+        #: calling this client, so these are the only place a cache hit is visible.
+        self.calls_made: int = 0
+        self.total_input_tokens: int = 0
+        self.total_output_tokens: int = 0
 
     @classmethod
     async def create(
@@ -65,6 +72,17 @@ class NovaVisionClient:
     def resolved_model_id(self) -> str:
         """The exact id sent to Bedrock, e.g. ``us.amazon.nova-2-lite-v1:0``."""
         return self._model_id
+
+    @property
+    def resolved_region(self) -> str:
+        """The AWS region ``NovaClient`` actually resolved, not the raw ``--region`` flag.
+
+        Mirrors ``resolved_model_id``: ``bedrock.py``'s credential chain resolves
+        ``self._region`` through ``kwarg -> profile.region_name -> BEDROCK_AWS_REGION
+        -> AWS_REGION_NAME -> "us-east-1"``, so an unset ``--region`` must read this
+        property rather than echo ``None`` into ``run.json``.
+        """
+        return self._nova._region
 
     @staticmethod
     def _assert_has_image(blocks: Sequence[Dict[str, Any]]) -> int:
@@ -113,6 +131,7 @@ class NovaVisionClient:
             messages=[{"role": "user", "content": blocks}],
             inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
         )
+        self.calls_made += 1  # reached Bedrock — the only place a VisionAdapter cache hit is visible
         content = response.get("output", {}).get("message", {}).get("content", [])
         text = next((block["text"] for block in content if "text" in block), None)
         if text is None:
@@ -122,6 +141,8 @@ class NovaVisionClient:
             "input_tokens": int(raw_usage.get("inputTokens", 0)),
             "output_tokens": int(raw_usage.get("outputTokens", 0)),
         }
+        self.total_input_tokens += usage["input_tokens"]
+        self.total_output_tokens += usage["output_tokens"]
         return NovaAnswer(output=text, usage=usage, image_bytes=image_bytes)
 
     async def aclose(self) -> None:

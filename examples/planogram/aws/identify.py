@@ -264,6 +264,20 @@ async def identify_strips_closed_set(
         added.extend(chunk_added)
         errors.extend(chunk_errors)
 
+    # Reconcile against the transport client's own accounting: VisionAdapter.ask()
+    # discards NovaAnswer (it returns only the parsed schema) and its response
+    # cache short-circuits BEFORE ever calling ask_to_image, so `stats.calls`
+    # collected above during the strip loop only counts *attempted* asks, not
+    # calls that actually reached Bedrock. `vision.client` (verified public
+    # attribute: VisionAdapter.__init__ sets `self.client = client`) is the
+    # NovaVisionClient instance itself and is the only place a cache hit is
+    # visible (see nova_vision.py NovaVisionClient.calls_made).
+    attempted_asks = stats.calls
+    stats.calls = getattr(vision.client, "calls_made", attempted_asks)
+    stats.cache_hits = max(0, attempted_asks - stats.calls)
+    stats.input_tokens = getattr(vision.client, "total_input_tokens", 0)
+    stats.output_tokens = getattr(vision.client, "total_output_tokens", 0)
+
     target_order = {_target_id(target): index for index, target in enumerate(_targets(perception))}
     added_order = {shape.shape_id: index for index, shape in enumerate(added)}
     identifications.sort(

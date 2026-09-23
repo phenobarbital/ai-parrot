@@ -240,7 +240,7 @@ async def main(argv: Optional[Sequence[str]] = None) -> int:
             await executor.run(cv2.imwrite, str(args.output / "annotated.jpg"), annotated)
             run_payload = {
                 "model": client.resolved_model_id,
-                "region": args.region,
+                "region": client.resolved_region,
                 "prompt_version": NOVA_PROMPT_VERSION,
                 "target_count": len(perception.slots) or len(perception.shapes),
                 **stats.model_dump(),
