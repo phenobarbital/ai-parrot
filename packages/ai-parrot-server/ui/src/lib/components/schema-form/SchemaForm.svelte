@@ -7,7 +7,7 @@
   import { Checkbox } from "$lib/ui/internal/shadcn/ui/checkbox/index.ts";
   import { Slider } from "$lib/ui/internal/shadcn/ui/slider/index.ts";
   import { Label } from "$lib/ui/internal/shadcn/ui/label/index.ts";
-  import { AppTooltip } from "$lib/ui/components/AppTooltip.svelte";
+  import { AppTooltip } from "$lib/ui/components";
   import JsonEditor from "$lib/components/JsonEditor.svelte";
   import StringListEditor from "$lib/components/StringListEditor.svelte";
   import SchemaForm from "./SchemaForm.svelte";
@@ -129,6 +129,8 @@
 </script>
 
 {#each props as [key, propSchema]}
+  {@const widget = renderWidget(key, propSchema, value[key])}
+  {@const isOverridable = "x-user-overridable" in resolve(propSchema)}
   <div class="flex flex-col gap-2 rounded-md border border-input bg-background p-3">
     <div class="flex items-center justify-between gap-2">
       <Label for={key} class="text-sm font-medium">
@@ -156,7 +158,6 @@
     {#if readonly}
       <div class="text-sm text-muted-foreground">Read-only (wired by the server)</div>
     {:else}
-      {#const widget = renderWidget(key, propSchema, value[key])}
         {#if widget.widget === "server-managed"}
           <div class="text-sm text-muted-foreground">Read-only (wired by the server)</div>
         {:else if widget.widget === "password"}
@@ -202,20 +203,13 @@
             data-testid={`schema-form-multi-select-${key}`}
           />
         {:else if widget.widget === "string-list"}
-          <StringListEditor
-            id={key}
-            bind:items={value[key]}
-            disabled={readonly}
-            data-testid={`schema-form-string-list-${key}`}
-          />
+          <div data-testid={`schema-form-string-list-${key}`}>
+            <StringListEditor id={key} bind:items={value[key]} />
+          </div>
         {:else if widget.widget === "json"}
-          <JsonEditor
-            id={key}
-            bind:value={value[key]}
-            mode="object"
-            disabled={readonly}
-            data-testid={`schema-form-json-${key}`}
-          />
+          <div data-testid={`schema-form-json-${key}`}>
+            <JsonEditor id={key} bind:value={value[key]} mode="object" disabled={readonly} />
+          </div>
         {:else if widget.widget === "oneof"}
           <div class="flex flex-col gap-2">
             <select
@@ -285,7 +279,6 @@
             {/if}
           </div>
         {/if}
-      {/const}
     {/if}
   </div>
 {/each}

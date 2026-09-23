@@ -75,12 +75,30 @@ tools:
 
 ### Toolkits
 
-List of toolkit names to register.
+List of toolkit configurations. Can be simple strings for basic toolkits
+or detailed dictionaries for parameterized toolkits.
 
 ```yaml
 toolkits:
   - "data_analysis_toolkit"
+  - slug: "jira"
+    params:
+      server_url: "https://example.atlassian.net"
+      default_project: "TROC"
+    user_overridable:
+      - "token"
+      - "default_project"
 ```
+
+**Attributes:**
+- `slug`: Identifier for the toolkit.
+- `params`: Dictionary of toolkit parameters.
+- `user_overridable`: List of parameter names that users can override.
+
+**Security Note:** Secrets should never be stored directly in YAML files.
+Use the Agent Studio UI to configure secrets, which are stored securely
+in the vault. YAML configurations should only contain non-sensitive
+parameters.
 
 ### MCP Servers (Model Context Protocol)
 
@@ -105,6 +123,10 @@ mcp_servers:
 - `args`: List of arguments for the command.
 - `url`: URL endpoint (for `sse`).
 - `env`: Dictionary of environment variables.
+
+**Security Note:** Authentication credentials and headers should never
+be stored directly in YAML files. Use the Agent Studio UI to configure
+secrets, which are stored securely in the vault.
 
 ### Vector Store (Memory)
 

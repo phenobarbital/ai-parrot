@@ -9,6 +9,8 @@ configuration, reference catalogs, and the AgentStudio meta-agent. Also
 documents the related scheduler run-now action, which lives under the
 existing `/api/v1/parrot/scheduler/` prefix.
 
+**Feature**: FEAT-593 — Tool Configuration for Agent Studio
+
 **Base URL:** `/api/v1/astudio`
 
 **Authentication:** Every endpoint requires a valid session
@@ -78,6 +80,16 @@ another installed service on this deployment already occupies
 | `POST` | `/agents/{name}/tools` | Assign tools/toolkits onto a live agent |
 | `GET` | `/toolkits/{slug}/schema` | Get a toolkit's configuration schema |
 | `POST` | `/agents/{name}/toolkits` | Assign a configured toolkit onto a live agent |
+| `GET` | `/agents/{name}/toolkit-config` | List agent's toolkit configurations |
+| `GET` | `/agents/{name}/toolkits/{slug}` | Get one toolkit configuration |
+| `PUT` | `/agents/{name}/toolkits/{slug}` | Persist toolkit configuration for an agent |
+| `DELETE` | `/agents/{name}/toolkits/{slug}` | Remove toolkit configuration from an agent |
+| `GET` | `/agents/{name}/toolkits/{slug}/options/{param}` | Get dynamic options for a toolkit parameter |
+| `GET` | `/agents/{name}/mcp-servers` | List agent's MCP server configurations |
+| `PUT` | `/agents/{name}/mcp-servers` | Persist MCP server configurations for an agent |
+| `GET` | `/agents/{name}/toolkits/{slug}/me` | Get user's override for a toolkit |
+| `PUT` | `/agents/{name}/toolkits/{slug}/me` | Persist user's override for a toolkit |
+| `DELETE` | `/agents/{name}/toolkits/{slug}/me` | Remove user's override for a toolkit |
 | `GET` | `/catalog/{kind}` | Reference catalog (`base-classes`\|`llm-clients`\|`tools`\|`vector-stores`) |
 | `POST` | `/assistant` | Converse with the AgentStudio meta-agent |
 | `DELETE` | `/assistant` | End the assistant's session instance |
@@ -108,7 +120,9 @@ Common `code` values across endpoints: `invalid_json`, `invalid_request`,
 `missing_name`/`missing_id`, `invalid_name`, `not_found`, `duplicate`,
 `not_owner`, `unavailable` (503, dependency not configured),
 `server_managed` (422, missing app-context dependency),
-`invalid_params`, `validation_failed`.
+`invalid_params`, `validation_failed`, `read_only_definition`,
+`not_overridable`, `not_configured`, `options_failed`, `vault_unavailable`,
+`use_studio_endpoint`.
 
 ---
 
@@ -467,6 +481,190 @@ constructor-signature introspection.
 
 **Response `200`:** `{ "agent": "...", "slug": "...", "registered_tools": ["..."], "reload_required": false, "persisted": false }`
 (+ toolkit-specific extras like `pageindex_source` for `wiki`).
+
+---
+
+## Agent-Level Toolkit Persistence (FEAT-593)
+
+Agent-level toolkit configurations and MCP server configurations can be
+persisted to the agent definition (DB JSONB column or YAML `toolkits:`
+entries) through dedicated endpoints.
+
+### `GET /agents/{name}/toolkit-config`
+
+List all toolkit configurations persisted for an agent.
+
+**Response `200`:**
+```json
+{
+  "agent": "my-agent",
+  "editable": true,
+  "reason": null,
+  "toolkits": [
+    {
+      "slug": "jira",
+      "params": { "server_url": "https://example.atlassian.net" },
+      "user_overridable": ["token"],
+      "secret_refs": { "token": "toolkit_jira_my-agent" },
+      "vault_owner": "42"
+    }
+  ],
+  "unavailable": []
+}
+```
+
+- `editable: false` with `reason: "read_only_definition"` for registry
+  (YAML/code) agents outside `AGENTS_DIR`.
+- `unavailable` lists toolkit slugs that were configured but cannot be
+  resolved (unknown slug, missing package, etc.).
+
+**Errors:** `404 not_found`.
+
+### `GET /agents/{name}/toolkits/{slug}`
+
+Get one toolkit configuration for an agent.
+
+**Response `200`:** Same shape as one entry in the list response above.
+
+**Errors:** `404 not_found` (agent or toolkit).
+
+### `PUT /agents/{name}/toolkits/{slug}`
+
+```json
+{
+  "params": { "server_url": "https://example.atlassian.net", "default_project": "TROC" },
+  "user_overridable": ["token", "default_project"]
+}
+```
+
+Persists toolkit configuration to the agent definition. Secrets in
+`params` are extracted and stored in the vault under the agent owner's
+user id; the response and all future GETs show only `secret_refs`.
+
+**Response `200`:**
+```json
+{
+  "agent": "my-agent",
+  "slug": "jira",
+  "reload_required": true,
+  "persisted": true
+}
+```
+
+- `reload_required: true` indicates the agent must be reloaded for the
+  changes to take effect.
+- `persisted: true` confirms the configuration was stored.
+
+**Errors:** `403 read_only_definition` (registry agent outside
+`AGENTS_DIR`), `400 invalid_params` (malformed request), `422
+validation_failed` (params fail schema validation), `503
+vault_unavailable` (vault service error).
+
+### `DELETE /agents/{name}/toolkits/{slug}`
+
+Remove a toolkit configuration from an agent.
+
+**Response `200`:** `{ "agent": "...", "slug": "...", "reload_required": true, "persisted": true }`
+
+**Errors:** `403 read_only_definition`, `404 not_found`.
+
+### `GET /agents/{name}/toolkits/{slug}/options/{param}`
+
+Get dynamic options for a toolkit parameter (e.g. Jira projects,
+Querysource programs). Uses only the persisted toolkit configuration —
+request-supplied parameters are ignored to prevent SSRF.
+
+**Response `200`:**
+```json
+{
+  "options": [
+    { "value": "TROC", "label": "TROC - Troc Platform" },
+    { "value": "OPS", "label": "OPS - Operations" }
+  ]
+}
+```
+
+**Errors:** `404 not_configured` (toolkit not configured for this agent),
+`403 not_owner` (not the agent owner), `502 options_failed` (lookup
+failed).
+
+### `GET /agents/{name}/mcp-servers`
+
+List all MCP server configurations persisted for an agent.
+
+**Response `200`:**
+```json
+[
+  {
+    "name": "filesystem",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/allowed_dir"],
+    "secret_refs": { "headers": "mcp_agent_filesystem_my-agent" },
+    "vault_owner": "42"
+  }
+]
+```
+
+### `PUT /agents/{name}/mcp-servers`
+
+```json
+[
+  {
+    "name": "filesystem",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/allowed_dir"],
+    "allowed_tools": null,
+    "blocked_tools": null,
+    "description": "Filesystem access",
+    "auth_type": null,
+    "params": {},
+    "secret_refs": {},
+    "vault_owner": null
+  }
+]
+```
+
+Persists MCP server configurations to the agent definition. Secrets in
+`headers` or `auth_config` are extracted and stored in the vault.
+
+**Response `200`:** `{ "agent": "...", "reload_required": true, "persisted": true }`
+
+**Errors:** `403 read_only_definition`, `400 invalid_json`.
+
+### Per-User Toolkit Overrides
+
+Users can override toolkit parameters marked as `user_overridable` by
+the agent operator.
+
+### `GET /agents/{name}/toolkits/{slug}/me`
+
+Get the current user's override for a toolkit.
+
+**Response `200`:** `{ "server_url": "https://example.atlassian.net", "token": "********" }`
+
+Masked secrets are returned as `"********"`; non-secrets are returned as-is.
+
+### `PUT /agents/{name}/toolkits/{slug}/me`
+
+```json
+{ "token": "my-personal-token", "default_project": "PERSONAL" }
+```
+
+Persist the current user's override for a toolkit. Only parameters
+marked `user_overridable` in the agent's toolkit configuration are
+accepted.
+
+**Response `200`:** `{}`
+
+**Errors:** `422 not_overridable` (attempting to override a non-overridable parameter).
+
+### `DELETE /agents/{name}/toolkits/{slug}/me`
+
+Remove the current user's override for a toolkit.
+
+**Response `200`:** `{}`
 
 ---
 
