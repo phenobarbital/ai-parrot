@@ -294,6 +294,179 @@ async def test_speech_report_omits_model_kwargs_by_default(mock_agent_deps):
 
 
 @pytest.mark.asyncio
+async def test_speech_report_verbatim_supertonic_zero_llm_calls(mock_agent_deps, tmp_path):
+    """Non-Gemini verbatim synthesis bypasses all LLM calls."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    result = MagicMock(audio=b"wav", mime_format="audio/wav")
+    synthesizer = MagicMock()
+    synthesizer.synthesize = AsyncMock(return_value=result)
+
+    with patch(
+        "parrot.voice.tts.synthesizer.get_shared_synthesizer",
+        AsyncMock(return_value=synthesizer),
+    ):
+        response = await agent.speech_report(
+            report="# Heading\n\n**Plain** report",
+            tts_backend="supertonic",
+            speech_mode="verbatim",
+            directory=tmp_path,
+            output_directory=tmp_path,
+        )
+
+    mock_agent_deps.create_conversation_script.assert_not_awaited()
+    mock_agent_deps.generate_speech.assert_not_awaited()
+    synthesizer.synthesize.assert_awaited_once_with("Heading\n\nPlain report", language=None)
+    assert response["script_path"].read_text() == "Heading\n\nPlain report"
+    assert response["podcast_path"].suffix == ".wav"
+
+
+@pytest.mark.asyncio
+async def test_speech_report_script_mode_single_narrator(mock_agent_deps, tmp_path):
+    """Non-Gemini script mode requests one speaker and removes labels."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    mock_agent_deps.__aenter__.return_value = mock_agent_deps
+    script_response = MagicMock()
+    script_response.output.prompt = "Lydia: **First line**\nBrian: Second line"
+    mock_agent_deps.create_conversation_script.return_value = script_response
+    agent._synthesize_with_backend = AsyncMock(return_value=tmp_path / "podcast.wav")
+
+    response = await agent.speech_report(
+        report="Analysis",
+        tts_backend="supertonic",
+        directory=tmp_path,
+        output_directory=tmp_path,
+    )
+
+    script_config = mock_agent_deps.create_conversation_script.call_args.kwargs["report_data"]
+    assert len(script_config.speakers) == 1
+    assert agent._synthesize_with_backend.await_args.args[:2] == ("First line\nSecond line", "supertonic")
+    assert response["script_path"].read_text() == "First line\nSecond line"
+
+
+@pytest.mark.asyncio
+async def test_speech_report_gemini_verbatim_single_voice(mock_agent_deps, tmp_path):
+    """Gemini verbatim mode builds a single narrator prompt without a script call."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    mock_agent_deps.__aenter__.return_value = mock_agent_deps
+    speech_result = MagicMock(files=[tmp_path / "podcast.wav"])
+    mock_agent_deps.generate_speech.return_value = speech_result
+
+    await agent.speech_report(
+        report="**Verbatim** report",
+        speech_mode="verbatim",
+        directory=tmp_path,
+        output_directory=tmp_path,
+    )
+
+    mock_agent_deps.create_conversation_script.assert_not_awaited()
+    prompt = mock_agent_deps.generate_speech.call_args.kwargs["prompt_data"]
+    assert prompt.prompt == "Verbatim report"
+    assert len(prompt.speakers) == 1
+    assert prompt.speakers[0].voice == "Charon"
+
+
+@pytest.mark.asyncio
+async def test_speech_report_kwarg_overrides_attribute(mock_agent_deps, tmp_path):
+    """Per-call backend selection wins over the agent attribute."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    agent.speech_backend = "aws_polly"
+    agent._synthesize_with_backend = AsyncMock(return_value=tmp_path / "podcast.wav")
+
+    await agent.speech_report(
+        report="Report",
+        tts_backend="supertonic",
+        speech_mode="verbatim",
+        directory=tmp_path,
+        output_directory=tmp_path,
+    )
+
+    assert agent._synthesize_with_backend.await_args.args[1] == "supertonic"
+
+
+@pytest.mark.asyncio
+async def test_speech_report_invalid_backend_raises(mock_agent_deps):
+    """Unsupported speech backends explain the accepted selectors."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    with pytest.raises(ValueError, match="gemini, google_tts, supertonic, aws_polly"):
+        await agent.speech_report(report="Report", tts_backend="unknown")
+
+
+@pytest.mark.asyncio
+async def test_speech_report_backend_failure_no_fallback(mock_agent_deps, tmp_path):
+    """Backend errors propagate instead of falling back to Gemini."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    agent._synthesize_with_backend = AsyncMock(side_effect=RuntimeError("backend failed"))
+
+    with pytest.raises(RuntimeError, match="backend failed"):
+        await agent.speech_report(
+            report="Report",
+            tts_backend="supertonic",
+            speech_mode="verbatim",
+            directory=tmp_path,
+            output_directory=tmp_path,
+        )
+
+    mock_agent_deps.generate_speech.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_speech_report_missing_integrations_importerror(mock_agent_deps, tmp_path):
+    """Missing optional backend imports name the installable extra."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    with patch.dict(
+        sys.modules,
+        {"parrot.voice.tts.models": None, "parrot.voice.tts.synthesizer": None},
+    ):
+        with pytest.raises(ImportError, match="ai-parrot-integrations\\[voice-supertonic\\]"):
+            await agent.speech_report(
+                report="Report",
+                tts_backend="supertonic",
+                speech_mode="verbatim",
+                directory=tmp_path,
+                output_directory=tmp_path,
+            )
+
+
+@pytest.mark.asyncio
+async def test_speech_report_extension_follows_mime(mock_agent_deps, tmp_path):
+    """The persisted backend-native extension follows the returned MIME type."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    result = MagicMock(audio=b"mp3", mime_format="audio/mpeg")
+    synthesizer = MagicMock()
+    synthesizer.synthesize = AsyncMock(return_value=result)
+
+    with patch(
+        "parrot.voice.tts.synthesizer.get_shared_synthesizer",
+        AsyncMock(return_value=synthesizer),
+    ):
+        response = await agent.speech_report(
+            report="Report",
+            tts_backend="aws_polly",
+            speech_mode="verbatim",
+            directory=tmp_path,
+            output_directory=tmp_path,
+        )
+
+    assert response["podcast_path"].suffix == ".mp3"
+
+
+@pytest.mark.asyncio
 async def test_report_workflow(mock_agent_deps):
     """Test high-level report() method which orchestrates everything."""
     from parrot.bots.agent import BasicAgent
