@@ -406,7 +406,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -417,8 +417,9 @@
       "parallelism_notes": "TASK-3534 owns its declared files for M3. TASK-3533 supplies execute bounded plans and publish final evidence; TASK-3531 supplies add isolated ui and owned obscura browser targets. Exclusive prerequisite/shared-orchestration edit; do not co-schedule.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3534-e2e-cli.md"
+      "completed_at": "2026-09-23T22:11:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3534-e2e-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3535",

@@ -194,5 +194,44 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24. Attempt 1 (seat gpt-5.6-terra/codex) first reported
+`outcome=merged` with zero commits/changed files — a confirmed sdd-coder
+engine defect (filed `issue:ee4d4879fc89`, matches the known "empty-diff-
+passes-fidelity" gap) — then, on redispatch, failed immediately with
+`SubWorktreeMergeError` before producing any code; the engine auto-escalated
+to a native sonnet retry (attempt 2), which delivered the task.
+
+Implemented `packages/ai-parrot-server/src/parrot/e2e/cli.py` (Click group:
+`run`/`verify`/`up`/`status`/`logs`/`down` per spec §2) built on the frozen
+M2/M3/M4 collaborators from TASK-3533/3531 (`run_plan`, target registry,
+`verify_evidence`, `E2ESupervisor`, `parrot.e2e.state`, `parrot.e2e.watchdog`
+— all consumed, none modified). Registered `e2e` lazily in
+`packages/ai-parrot/src/parrot/cli/__init__.py`'s `LazyGroup`
+(`_lazy_commands`/`_lazy_extras`), preserving every other lazy command.
+
+Two disclosed, reasoned deviations from a literal spec reading (structural
+collisions with already-frozen dependency signatures, not ambiguity):
+- `up`'s `--run-id`: `E2ESupervisor.start()` mints its own `run_id` internally
+  and accepts none from the caller. Reinterpreted as an invocation-ticket ID
+  for a JSON handoff file under `artifacts/logs/e2e/_up_tickets/` (kept out of
+  `parrot.e2e.state`'s own run-state directory so `status`/`down` never
+  mistake it for a persisted `RunState`); `up` spawns a detached daemon that
+  calls the real `E2ESupervisor.start()` and echoes back the real `run_id`.
+- `--feature-id` (not in the spec's literal `up` flag list): recorded as
+  bookkeeping metadata on the started target's `RunState.feature_id`; never
+  consulted by `E2ESupervisor.stop()`, no behavioral effect.
+
+Tests:
+- `pytest packages/ai-parrot-server/tests/unit/e2e/test_cli.py -q` → 40 passed.
+- Full `packages/ai-parrot-server/tests/unit/e2e/` sweep → 418 passed, 4 skipped
+  (pre-existing skips), no regressions.
+- Confirmed via `git stash`/`stash pop` that the worktree-wide
+  `ModuleNotFoundError: No module named 'parrot.utils.types'` collection
+  failure (uncompiled Cython `.so` gap, see TASK-3533's note) reproduces
+  identically with this task's changes stashed out — pre-existing, unrelated.
+- Engine lint autofix (black, commit `d9d71560c`); 1 residual ruff finding
+  (`ASYNC230` blocking `open()` in an async function in `cli.py:519`) left
+  for `/sdd-done`'s feature-wide style pass per policy.
+
+Only the 3 declared files were created/modified; no `sdd/` or unrelated files
+touched. AC2/AC5/AC9 demonstrated by the CLI's own test suite.
