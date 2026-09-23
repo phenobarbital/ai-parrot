@@ -428,7 +428,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -438,8 +438,9 @@
       "parallelism_notes": "TASK-3535 owns its declared files for M5. TASK-3534 supplies expose lazy e2e run verify and lifecycle commands. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3535-e2e-mcp-scenarios.md"
+      "completed_at": "2026-09-23T23:00:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3535-e2e-mcp-scenarios.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3536",
