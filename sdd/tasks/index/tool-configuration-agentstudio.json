@@ -381,7 +381,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -394,8 +394,8 @@
       "parallelism_notes": "EXCLUSIVE: regenerates the shared ui/schemas/*.json and ui/src/lib/types/generated/* trees. Exports ToolkitSpec/AgentMCPServerSpec (TASK-3645), ConfigOption/ToolkitSchemaEnvelope (TASK-3646), Studio models (TASK-3659) and UserToolkitOverride (TASK-3661).",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3663-codegen-studio-tooling.md"
+      "completed_at": "2026-09-23T16:13:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3663-codegen-studio-tooling.md"
     },
     {
       "id": "TASK-3664",
