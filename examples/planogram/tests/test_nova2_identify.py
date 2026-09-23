@@ -125,7 +125,11 @@ def test_flatten_never_emits_normalised_coordinates() -> None:
 
     rows = flatten(result, _perception())
 
-    assert all(0 <= coordinate <= bound for row in rows for coordinate, bound in zip(row.bbox, (1000, 800, 1000, 800)))
+    assert all(
+        0 <= coordinate <= bound
+        for row in rows
+        for coordinate, bound in zip(row.bbox, (1000, 800, 1000, 800), strict=True)
+    )
 
 
 # ---------------------------------------------------------------------------
