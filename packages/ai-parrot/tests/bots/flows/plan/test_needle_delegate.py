@@ -1,4 +1,5 @@
 """FEAT-590 M7: NeedleDelegate (engine stubbed — needle is not installed in CI)."""
+
 from __future__ import annotations
 
 import os
@@ -40,25 +41,29 @@ def test_worker_is_picklable() -> None:
 def test_needle_pool_keyed_by_toolset(monkeypatch) -> None:
     """The worker cache is keyed by (weights, frozenset(tool names))."""
     # Create a fake needle module
-    fake_needle = type("FakeNeedle", (), {
-        "__init__": lambda self, tools, system, weights: None,
-        "reset": lambda self: None,
-        "complete": lambda self, text, max_new_tokens: {
-            "type": "complete",
-            "success": True,
-            "error": None,
-            "error_code": None,
-            "reason": None,
-            "function_calls": [],
-            "suppressed_calls": [],
-            "reasoning": None,
-            "confidence": 0.5,
-            "prefill_tps": 0.0,
-            "decode_tps": 0.0,
-            "peak_ram_mb": 0.0,
-            "validation": None,
+    fake_needle = type(
+        "FakeNeedle",
+        (),
+        {
+            "__init__": lambda self, tools, system, weights: None,
+            "reset": lambda self: None,
+            "complete": lambda self, text, max_new_tokens: {
+                "type": "complete",
+                "success": True,
+                "error": None,
+                "error_code": None,
+                "reason": None,
+                "function_calls": [],
+                "suppressed_calls": [],
+                "reasoning": None,
+                "confidence": 0.5,
+                "prefill_tps": 0.0,
+                "decode_tps": 0.0,
+                "peak_ram_mb": 0.0,
+                "validation": None,
+            },
         },
-    })()
+    )()
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 
@@ -90,25 +95,29 @@ def test_needle_pool_keyed_by_toolset(monkeypatch) -> None:
 async def test_facts_mapping(monkeypatch) -> None:
     """Facts are mapped to Needle's system keys; other facts are folded into the instruction."""
     # Create a fake needle module
-    fake_needle = type("FakeNeedle", (), {
-        "__init__": lambda self, tools, system, weights: None,
-        "reset": lambda self: None,
-        "complete": lambda self, text, max_new_tokens: {
-            "type": "complete",
-            "success": True,
-            "error": None,
-            "error_code": None,
-            "reason": None,
-            "function_calls": [],
-            "suppressed_calls": [],
-            "reasoning": None,
-            "confidence": 0.5,
-            "prefill_tps": 0.0,
-            "decode_tps": 0.0,
-            "peak_ram_mb": 0.0,
-            "validation": None,
+    fake_needle = type(
+        "FakeNeedle",
+        (),
+        {
+            "__init__": lambda self, tools, system, weights: None,
+            "reset": lambda self: None,
+            "complete": lambda self, text, max_new_tokens: {
+                "type": "complete",
+                "success": True,
+                "error": None,
+                "error_code": None,
+                "reason": None,
+                "function_calls": [],
+                "suppressed_calls": [],
+                "reasoning": None,
+                "confidence": 0.5,
+                "prefill_tps": 0.0,
+                "decode_tps": 0.0,
+                "peak_ram_mb": 0.0,
+                "validation": None,
+            },
         },
-    })()
+    )()
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 
@@ -147,25 +156,29 @@ async def test_facts_mapping(monkeypatch) -> None:
 async def test_confidence_none_passthrough(monkeypatch) -> None:
     """A fine-tuned model reports confidence=None; it is passed through."""
     # Create a fake needle module that returns confidence=None
-    fake_needle = type("FakeNeedle", (), {
-        "__init__": lambda self, tools, system, weights: None,
-        "reset": lambda self: None,
-        "complete": lambda self, text, max_new_tokens: {
-            "type": "complete",
-            "success": True,
-            "error": None,
-            "error_code": None,
-            "reason": None,
-            "function_calls": [],
-            "suppressed_calls": [],
-            "reasoning": None,
-            "confidence": None,  # Fine-tuned model
-            "prefill_tps": 0.0,
-            "decode_tps": 0.0,
-            "peak_ram_mb": 0.0,
-            "validation": None,
+    fake_needle = type(
+        "FakeNeedle",
+        (),
+        {
+            "__init__": lambda self, tools, system, weights: None,
+            "reset": lambda self: None,
+            "complete": lambda self, text, max_new_tokens: {
+                "type": "complete",
+                "success": True,
+                "error": None,
+                "error_code": None,
+                "reason": None,
+                "function_calls": [],
+                "suppressed_calls": [],
+                "reasoning": None,
+                "confidence": None,  # Fine-tuned model
+                "prefill_tps": 0.0,
+                "decode_tps": 0.0,
+                "peak_ram_mb": 0.0,
+                "validation": None,
+            },
         },
-    })()
+    )()
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 
@@ -187,25 +200,29 @@ async def test_confidence_none_passthrough(monkeypatch) -> None:
 async def test_aclose_idempotent(monkeypatch) -> None:
     """aclose() is idempotent."""
     # Create a fake needle module
-    fake_needle = type("FakeNeedle", (), {
-        "__init__": lambda self, tools, system, weights: None,
-        "reset": lambda self: None,
-        "complete": lambda self, text, max_new_tokens: {
-            "type": "complete",
-            "success": True,
-            "error": None,
-            "error_code": None,
-            "reason": None,
-            "function_calls": [],
-            "suppressed_calls": [],
-            "reasoning": None,
-            "confidence": 0.5,
-            "prefill_tps": 0.0,
-            "decode_tps": 0.0,
-            "peak_ram_mb": 0.0,
-            "validation": None,
+    fake_needle = type(
+        "FakeNeedle",
+        (),
+        {
+            "__init__": lambda self, tools, system, weights: None,
+            "reset": lambda self: None,
+            "complete": lambda self, text, max_new_tokens: {
+                "type": "complete",
+                "success": True,
+                "error": None,
+                "error_code": None,
+                "reason": None,
+                "function_calls": [],
+                "suppressed_calls": [],
+                "reasoning": None,
+                "confidence": 0.5,
+                "prefill_tps": 0.0,
+                "decode_tps": 0.0,
+                "peak_ram_mb": 0.0,
+                "validation": None,
+            },
         },
-    })()
+    )()
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 

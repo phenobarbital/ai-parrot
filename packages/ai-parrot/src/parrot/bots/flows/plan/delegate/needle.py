@@ -14,11 +14,11 @@ into the instruction text as ``key: value`` lines.
 Only ``complete()`` is used, never ``agent.run()``. ``needle`` is imported lazily.
 A missing package raises ``ImportError("NeedleDelegate requires the 'ai-parrot[needle]' extra (pip install ai-parrot[needle])")``.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from concurrent.futures import Executor
 from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Sequence, Tuple, Type, Union
 
@@ -121,9 +121,7 @@ class NeedleDelegate:
 
         return folded_instruction, system
 
-    async def _run(
-        self, tools: Sequence[ToolSpec], system: Dict[str, str], text: str
-    ) -> Dict[str, Any]:
+    async def _run(self, tools: Sequence[ToolSpec], system: Dict[str, str], text: str) -> Dict[str, Any]:
         """Run the worker on the configured executor; engine errors → DelegateBackendError."""
         if self._closed:
             raise DelegateBackendError("NeedleDelegate is closed")
