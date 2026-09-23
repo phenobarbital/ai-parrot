@@ -1,4 +1,5 @@
 """Unit tests for the --boxes override validation (FEAT-592, TASK-3643)."""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -3,6 +3,7 @@
 Feeds real Stage-1 OpenCV boxes to Nova through the existing planogram VisionAdapter
 and writes flat {bbox, brand, product, occupancy} JSON plus an annotated image.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -58,9 +59,7 @@ async def perceive(image_bgr: np.ndarray, image_id: str, executor: CpuExecutor) 
         untagged_bottom_row=True,
     )
     position = {
-        slot.anchor_shape_id: (slot.row_index, slot.slot_index)
-        for slot in slots
-        if slot.anchor_shape_id is not None
+        slot.anchor_shape_id: (slot.row_index, slot.slot_index) for slot in slots if slot.anchor_shape_id is not None
     }
     shapes: List[Shape] = []
     for candidate in candidates:
@@ -90,9 +89,7 @@ async def perceive(image_bgr: np.ndarray, image_id: str, executor: CpuExecutor) 
         crops = [image_bgr[shape.box.y1 : shape.box.y2, shape.box.x1 : shape.box.x2] for shape in shapes]
         ocr_results = await asyncio.gather(*(executor.run(read_crop, crop) for crop in crops))
         shapes = [
-            shape.model_copy(
-                update={"ocr_text": text or None, "ocr_confidence": confidence if text else None}
-            )
+            shape.model_copy(update={"ocr_text": text or None, "ocr_confidence": confidence if text else None})
             for shape, (text, confidence) in zip(shapes, ocr_results, strict=True)
         ]
 
@@ -127,7 +124,9 @@ def load_perception(path: Path, image_bgr: np.ndarray) -> PerceptionResult:
 
     def validate_box(owner: str, box: DetectionBox) -> None:
         if not (0 <= box.x1 < box.x2 <= width and 0 <= box.y1 < box.y2 <= height):
-            raise ValueError(f"{path}: {owner} box ({box.x1}, {box.y1}, {box.x2}, {box.y2}) is outside ({width}, {height})")
+            raise ValueError(
+                f"{path}: {owner} box ({box.x1}, {box.y1}, {box.x2}, {box.y2}) is outside ({width}, {height})"
+            )
 
     shape_ids = {shape.shape_id for shape in perception.shapes}
     for shape in [*perception.shapes, *perception.zones]:
@@ -202,7 +201,9 @@ async def main(argv: Optional[Sequence[str]] = None) -> int:
                 logger.error("Unable to decode image: %s", args.image)
                 return 1
             try:
-                perception = load_perception(args.boxes, image) if args.boxes else await perceive(image, "img0", executor)
+                perception = (
+                    load_perception(args.boxes, image) if args.boxes else await perceive(image, "img0", executor)
+                )
                 vocabulary = load_planogram_vocabulary(args.planogram)
             except (OSError, ValueError) as exc:
                 logger.error("Invalid input: %s", exc)
