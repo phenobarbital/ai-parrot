@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-23T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-23T13:28:03+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Documentation describes the finalized public routing attributes and behavior from TASK-3622; it exclusively creates the new guide.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3623-speech-report-tts-documentation.md"
+      "completed_at": "2026-09-23T13:28:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3623-speech-report-tts-documentation.md"
     }
   ]
 }
