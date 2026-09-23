@@ -27,7 +27,6 @@ from ..conf import STATIC_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
 from ..memory import AnswerMemory
 
-
 SpeechBackend = Literal["gemini", "google_tts", "supertonic", "aws_polly"]
 SpeechMode = Literal["script", "verbatim"]
 
@@ -677,7 +676,11 @@ class BasicAgent(Chatbot, NotificationMixin):
             from parrot.voice.tts.models import TTSConfig
             from parrot.voice.tts.synthesizer import get_shared_synthesizer
         except ImportError as exc:
-            extra = "voice-supertonic" if backend == "supertonic" else "voice-polly" if backend == "aws_polly" else "voice-tts"
+            extra = (
+                "voice-supertonic"
+                if backend == "supertonic"
+                else "voice-polly" if backend == "aws_polly" else "voice-tts"
+            )
             raise ImportError(f"Install ai-parrot-integrations[{extra}] to use speech backend '{backend}'.") from exc
 
         config_values = dict(self.speech_tts_options)
@@ -722,7 +725,9 @@ class BasicAgent(Chatbot, NotificationMixin):
             else:
                 script_output_directory = STATIC_DIR.joinpath(self.agent_id, "generated_scripts")
             script_output_directory.mkdir(parents=True, exist_ok=True)
-            script_output_path = script_output_directory.joinpath(self._create_filename(prefix="script", extension="txt"))
+            script_output_path = script_output_directory.joinpath(
+                self._create_filename(prefix="script", extension="txt")
+            )
 
             if mode == "verbatim":
                 speakable_text = self._to_speakable(report)
