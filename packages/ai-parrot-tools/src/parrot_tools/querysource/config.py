@@ -1,4 +1,5 @@
 """QuerysourceToolkit configuration model (FEAT-593)."""
+
 from __future__ import annotations
 
 from typing import Any
