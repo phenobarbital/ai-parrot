@@ -1,0 +1,51 @@
+{
+  "feature": "dev-loop-sdd-coder-fixes",
+  "feature_id": "FEAT-597",
+  "spec": "sdd/specs/dev-loop-sdd-coder-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-24T14:40:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3675",
+      "slug": "empty-delivery-gate",
+      "title": "Empty-delivery gate — never report `merged` for an attempt that changed nothing",
+      "feature_id": "FEAT-597",
+      "feature": "dev-loop-sdd-coder-fixes",
+      "spec": "sdd/specs/dev-loop-sdd-coder-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Root task: adds SddCoderEngine._delivered_paths and the two empty-delivery gates in sdd_coder/engine.py; owns the new FakeDispatcher 'empty' behaviour in test_engine_dispatch.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": ["issue:ee4d4879fc89"],
+      "file": "sdd/tasks/active/TASK-3675-empty-delivery-gate.md"
+    },
+    {
+      "id": "TASK-3676",
+      "slug": "declared-sdd-targets",
+      "title": "Declared `sdd/` targets pass fidelity; `sdd/tasks/` and `sdd/ledger/` stay protected",
+      "feature_id": "FEAT-597",
+      "feature": "dev-loop-sdd-coder-fixes",
+      "spec": "sdd/specs/dev-loop-sdd-coder-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": ["TASK-3675"],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3675: both modify sdd_coder/engine.py, test_engine_plan_merge.py, docs/dev_loop/sdd-coder-orchestrator.md and .claude/agents/sdd-worker.md (same-file serialization), and this task narrows the sdd/ filter inside _delivered_paths that TASK-3675 creates.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": ["issue:c748e42f2777"],
+      "file": "sdd/tasks/active/TASK-3676-declared-sdd-targets.md"
+    }
+  ]
+}
