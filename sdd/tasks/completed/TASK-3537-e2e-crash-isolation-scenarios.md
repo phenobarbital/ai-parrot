@@ -175,5 +175,45 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24 by native seat sonnet, attempt_uid
+`87a263c16be0405587bf2b9fa8004ab9`. Delivered cleanly first attempt.
+
+Created `packages/ai-parrot-server/tests/e2e/test_supervisor.py` (frozen
+node IDs `test_controller_and_supervisor_death`,
+`test_timeout_and_grandchild_teardown`, `test_two_worktrees_independent`,
+`test_wrong_checkout_cannot_pass` — gated `PARROT_TEST_E2E=1`, real
+subprocesses: killing controller at a deterministic registration barrier
+and again after readiness, a hung target+grandchild process-group tree
+forced to SIGKILL, a foreign/non-owned identity never signaled with
+failure retained across repeat `stop()`, two independent
+`E2ESupervisor`s over two worktrees proving one owner's `stop()` never
+touches the sibling, and two synthetic worktrees with same-named modules
+of different content proving PYTHONPATH-based module-origin isolation)
+and `packages/ai-parrot-server/tests/unit/e2e/test_crash_probe_contract.py`
+(always-run fast contract complement, same four scope bullets against
+synthetic `tmp_path` worktrees — this is the file named in Validation
+Commands).
+
+Tests:
+- `pytest packages/ai-parrot-server/tests/unit/e2e/test_crash_probe_contract.py -q`
+  → 5 passed.
+- `PARROT_TEST_E2E=1 pytest packages/ai-parrot-server/tests/e2e/test_supervisor.py -q`
+  → 4 passed (all frozen node IDs).
+- `pytest packages/ai-parrot-server/tests/unit/e2e/test_supervisor.py -q`
+  (pre-existing file, untouched by this task) → 19 passed standalone.
+- Full-sweep regression check on `tests/unit/e2e/` showed ~18 intermittent
+  failures, but confirmed as pre-existing resource-contention flakiness
+  when many real-subprocess tests run together in this sandbox, NOT a
+  regression from this task: the failure set differs between consecutive
+  runs, and `test_supervisor.py` (untouched by TASK-3537) passes 19/19
+  alone but fails intermittently only under full-sweep load. Filed
+  `issue:e21ec87c6aba` (test isolation/resource contention) and
+  `issue:64ea6d91b811` (`sdd/state/e2e/` missing from `.gitignore`, also
+  flagged by the implementing agent) — both out of this task's scope.
+- `ruff check` / `black --check` clean on both new files.
+
+Only the 2 declared files touched (880 insertions); nothing under `sdd/`
+committed (test-run byproducts under `sdd/state/e2e/` were cleaned before
+commit). No production/source files touched.
+
+No unresolved limitations. AC5/AC6 demonstrated by the new test suites.

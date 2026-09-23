@@ -472,7 +472,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -484,8 +484,9 @@
       "parallelism_notes": "TASK-3537 owns its declared files for M5. TASK-3535 supplies add shared e2e fixtures and real mcp scenarios; TASK-3528 supplies enforce leases and recovery after controller/supervisor death; TASK-3531 supplies add isolated ui and owned obscura browser targets. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3537-e2e-crash-isolation-scenarios.md"
+      "completed_at": "2026-09-23T23:28:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3537-e2e-crash-isolation-scenarios.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3538",
