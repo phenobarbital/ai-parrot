@@ -359,7 +359,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -371,8 +371,8 @@
       "parallelism_notes": "Uses hydrate_params/ToolkitSpec from TASK-3645 (tools/spec.py), bot._tooling_revision set by TASK-3654 (interfaces/tools.py) and ToolkitConfigService from TASK-3661 (handlers/toolkit_persistence.py). Only task touching handlers/agent.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3662-agenttalk-session-overrides.md"
+      "completed_at": "2026-09-23T16:21:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3662-agenttalk-session-overrides.md"
     },
     {
       "id": "TASK-3663",
@@ -404,7 +404,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -414,8 +414,8 @@
       "parallelism_notes": "Imports the generated TS types produced by TASK-3663 (ui/src/lib/types/generated/*.d.ts). Creates the shared tests/ui/_vitest.py helper reused by TASK-3665/3666.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3664-ui-studio-api-schemaform.md"
+      "completed_at": "2026-09-23T16:21:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3664-ui-studio-api-schemaform.md"
     },
     {
       "id": "TASK-3665",
