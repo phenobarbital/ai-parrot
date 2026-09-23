@@ -305,8 +305,8 @@ mcp_servers: []
                 tool_manager=MagicMock(),
                 llm_client=MagicMock(),
             )
-            tool_interface._pending_toolkit_specs = kwargs.get("toolkits", [])
-            tool_interface._pending_mcp_specs = kwargs.get("agent_mcp_servers", [])
+            tool_interface._pending_toolkit_specs = _CapturedBot.kwargs.get("toolkits", [])
+            tool_interface._pending_mcp_specs = _CapturedBot.kwargs.get("agent_mcp_servers", [])
             tool_interface._resolve_spec_class = lambda slug: _EchoKit
 
             await tool_interface.apply_tooling_specs()
@@ -366,12 +366,14 @@ async def test_dataset_manager_datasources_in_memory():
     # 2. Replay two datasources (query slug + SQL)
     datasources = [
         QuerySlugDatasource(
+            kind="query_slug",
             name="query1",
             slug="test-slug",
             description="Test query",
             metadata={"key": "value"},
         ),
         SqlDatasource(
+            kind="sql",
             name="sql1",
             sql="SELECT * FROM test",
             driver="sqlite",
