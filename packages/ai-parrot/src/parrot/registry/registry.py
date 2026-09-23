@@ -35,6 +35,7 @@ from ..models.basic import ModelConfig, ToolConfig
 from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
+from ..tools.spec import ToolkitSpec, normalize_tooling
 
 
 class AgentFactory(Protocol):
@@ -234,7 +235,7 @@ class BotConfig(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
     # New attributes
     tools: Optional[ToolConfig] = Field(default=None)
-    toolkits: List[str] = Field(default_factory=list)
+    toolkits: List[Union[str, ToolkitSpec]] = Field(default_factory=list)  # FEAT-593: str | spec
     mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
     model: Optional[ModelConfig] = Field(default=None)
     system_prompt: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
@@ -904,7 +905,13 @@ class AgentRegistry:
                             tools_list.append(tool_def["name"])
                             # TODO: Handle detailed tool config if needed
 
-            merged_args["tools"] = tools_list
+            tooling = normalize_tooling(
+                tools_list,
+                list(config.toolkits) + list(config.tools.toolkits if config.tools else []),
+                list(config.mcp_servers) + list(config.tools.mcp_servers if config.tools else []),
+            )
+            merged_args["tools"] = tooling.tools + tooling.toolkits
+            merged_args["agent_mcp_servers"] = tooling.mcp_servers
 
             # 4. Handle Vector Store
             if config.vector_store:
@@ -928,27 +935,6 @@ class AgentRegistry:
             # Post-init: apply prompt layer mutations (remove, add, customize)
             if config.prompt and bot._prompt_builder:
                 self._apply_prompt_config(bot, config.prompt)
-
-            # Handle MCP Servers from ToolConfig
-            if config.tools and config.tools.mcp_servers:
-                for mcp_conf in config.tools.mcp_servers:
-                    try:
-                        # Convert dict to MCPServerConfig
-                        mcp_obj = MCPServerConfig(**mcp_conf)
-                        await bot.add_mcp_server(mcp_obj)
-                    except Exception as e:
-                        self.logger.error(f"Failed to add MCP server to {config.name}: {e}")
-
-            # Handle Toolkits
-            if config.tools and config.tools.toolkits:
-                # If the bot has a tool_manager, we can use it to load toolkits
-                if hasattr(bot, "tool_manager"):
-                    for toolkit_name in config.tools.toolkits:
-                        try:
-                            # This assumes tool_manager has a way to load toolkits or we need to resolve them here
-                            pass
-                        except Exception as e:
-                            self.logger.error(f"Failed to load toolkit {toolkit_name} for {config.name}: {e}")
 
             return bot
 
@@ -1122,7 +1108,7 @@ class AgentRegistry:
             "origin": config.origin,
             "version": "1.0.0",
             "config": config.config,
-            "toolkits": list(config.toolkits),
+            "toolkits": [t if isinstance(t, str) else t.model_dump(exclude_defaults=True) for t in config.toolkits],
             "mcp_servers": config.mcp_servers,
             "tags": sorted(config.tags) if config.tags else [],
             "singleton": config.singleton,
