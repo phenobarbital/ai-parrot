@@ -166,6 +166,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True, type=Path, help="Directory for generated outputs")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Nova model alias")
     parser.add_argument("--region", help="AWS region")
+    parser.add_argument(
+        "--region-prefix",
+        default=DEFAULT_REGION_PREFIX,
+        help="Cross-region inference-profile prefix Nova 2 Lite requires (us/eu/jp/global)",
+    )
     parser.add_argument("--aws-id", help="AWS credential profile id")
     parser.add_argument("--concurrency", type=int, default=4, help="Maximum concurrent Nova calls")
     parser.add_argument("--no-marks", action="store_true", help="Do not draw Set-of-Marks labels on strips")
@@ -188,7 +193,7 @@ async def main(argv: Optional[Sequence[str]] = None) -> int:
             aws_id=args.aws_id,
             region=args.region,
             model=args.model,
-            region_prefix=DEFAULT_REGION_PREFIX,
+            region_prefix=args.region_prefix,
         )
     except Exception as exc:  # Credential resolution must precede image decoding.
         logger.error("Unable to initialize Nova credentials: %s", exc)

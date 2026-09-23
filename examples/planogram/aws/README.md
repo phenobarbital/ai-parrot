@@ -70,6 +70,7 @@ python examples/planogram/aws/nova2.py \
 | `--output` | Yes | — | Output directory for `detections.json`, `annotated.jpg` and `run.json`. |
 | `--model` | No | `nova-2-lite` | Model alias (resolves to `us.amazon.nova-2-lite-v1:0`). |
 | `--region` | No | `us-east-1` | AWS region for the Bedrock call. |
+| `--region-prefix` | No | `us` | Cross-region inference-profile prefix Nova 2 Lite requires (`us`/`eu`/`jp`/`global`). |
 | `--aws-id` | No | `default` | `AWS_CREDENTIALS` profile name in `parrot.conf`. |
 | `--concurrency` | No | `4` | Concurrent strip calls (1–16). |
 | `--no-marks` | No | (off) | Disable Set-of-Marks outlines on strips. |
@@ -125,5 +126,6 @@ includes the prompt version, model id and image content hash.
    fake-`aioboto3` test.
 
 4. **Nova 2 Lite has no in-region access**: A geo-prefix is mandatory. The
-   default `region_prefix="us"` is correct for `us-east-1`; other regions need
-   the matching prefix (`eu.`, `jp.`, `global.`).
+   default `--region-prefix us` is correct for `us-east-1`; pass
+   `--region-prefix eu|jp|global` together with a matching `--region` for
+   other geographies.

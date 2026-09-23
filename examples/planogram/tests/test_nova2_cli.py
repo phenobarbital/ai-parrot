@@ -10,7 +10,7 @@ import pytest
 from parrot.models.detections import DetectionBox
 from parrot_pipelines.planogram.contracts import PerceptionResult, Slot
 
-from nova2 import load_perception
+from nova2 import _build_parser, load_perception
 
 
 def _image(width: int = 100, height: int = 80) -> np.ndarray:
@@ -85,3 +85,27 @@ def test_load_perception_rejects_malformed_json(tmp_path: Path) -> None:
     path.write_text('{"nope": 1}', encoding="utf-8")
     with pytest.raises(ValueError):
         load_perception(path, _image())
+
+
+def test_region_prefix_flag_defaults_to_us() -> None:
+    """--region-prefix exists, is settable, and defaults to 'us' (ledger issue:bb68bae84e5d)."""
+    parser = _build_parser()
+
+    args = parser.parse_args(["--image", "img.jpg", "--planogram", "p.json", "--output", "out"])
+    assert args.region_prefix == "us"
+
+    args = parser.parse_args(
+        [
+            "--image",
+            "img.jpg",
+            "--planogram",
+            "p.json",
+            "--output",
+            "out",
+            "--region",
+            "eu-west-1",
+            "--region-prefix",
+            "eu",
+        ]
+    )
+    assert args.region_prefix == "eu"
