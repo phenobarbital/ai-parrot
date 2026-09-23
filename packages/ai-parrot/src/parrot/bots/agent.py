@@ -697,7 +697,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         extension = _MIME_EXT.get(result.mime_format)
         if extension is None:
             raise ValueError(f"Unsupported TTS MIME format: {result.mime_format}")
-        output_directory.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(output_directory.mkdir, parents=True, exist_ok=True)
         podcast_path = output_directory.joinpath(self._create_filename(prefix="podcast", extension=extension))
         async with aiofiles.open(podcast_path, "wb") as podcast_file:
             await podcast_file.write(result.audio)
@@ -724,7 +724,7 @@ class BasicAgent(Chatbot, NotificationMixin):
                 script_output_directory = directory
             else:
                 script_output_directory = STATIC_DIR.joinpath(self.agent_id, "generated_scripts")
-            script_output_directory.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(script_output_directory.mkdir, parents=True, exist_ok=True)
             script_output_path = script_output_directory.joinpath(
                 self._create_filename(prefix="script", extension="txt")
             )
@@ -774,7 +774,7 @@ class BasicAgent(Chatbot, NotificationMixin):
                 if self.speech_language is not None:
                     prompt_kwargs["language"] = self.speech_language
                 voice_prompt = SpeechGenerationPrompt(**prompt_kwargs)
-                output_directory.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(output_directory.mkdir, parents=True, exist_ok=True)
                 async with self.client as client:
                     speech_kwargs = {"prompt_data": voice_prompt, "output_directory": output_directory}
                     if tts_model is not None:
