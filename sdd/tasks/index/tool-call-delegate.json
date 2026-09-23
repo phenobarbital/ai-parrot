@@ -112,7 +112,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "uses node.tool_names()/DelegatePlanNode from TASK-3626; forwards validate_plan(delegates=...) kwargs added by TASK-3628",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3629-allowlist-and-repair-delegate-aware.md"
+      "completed_at": "2026-09-23T00:20:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3629-allowlist-and-repair-delegate-aware.md"
     },
     {
       "id": "TASK-3630",
