@@ -424,7 +424,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -434,8 +434,8 @@
       "parallelism_notes": "Uses studio.ts + SchemaForm + tests/ui/_vitest.py from TASK-3664. Only task touching AgentForm.svelte, fields.ts and TabsCapabilities.svelte.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3665-ui-tools-tab.md"
+      "completed_at": "2026-09-23T16:58:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3665-ui-tools-tab.md"
     },
     {
       "id": "TASK-3666",
@@ -464,7 +464,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -478,8 +478,8 @@
       "parallelism_notes": "Exercises the full chain: DB build path (TASK-3653), configure wiring (TASK-3655), YAML rewrite (TASK-3657), Studio PUT (TASK-3660) and session overrides (TASK-3662). Test-only files.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3667-tooling-integration-tests.md"
+      "completed_at": "2026-09-23T16:58:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3667-tooling-integration-tests.md"
     },
     {
       "id": "TASK-3668",
