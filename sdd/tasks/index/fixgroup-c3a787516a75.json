@@ -1,0 +1,51 @@
+{
+  "feature": "fixgroup-c3a787516a75",
+  "feature_id": "FEAT-595",
+  "spec": "sdd/specs/fixgroup-c3a787516a75.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-23T00:00:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3672",
+      "slug": "hook-stdlib-prefilter",
+      "title": "Stdlib prefilter and lazy imports for the wiki hook runtime",
+      "feature_id": "FEAT-595",
+      "feature": "fixgroup-c3a787516a75",
+      "spec": "sdd/specs/fixgroup-c3a787516a75.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: creates file_suffixes.py and edits hook.py, claude_code/__init__.py, repo_scan.py only; no shared state outside its declared files.",
+      "discovered_from": "issue:f0a40d0853f2",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3672-hook-stdlib-prefilter.md"
+    },
+    {
+      "id": "TASK-3673",
+      "slug": "wikitoolkit-light-entry",
+      "title": "Dedicated light wikitoolkit console entry and startup benchmark",
+      "feature_id": "FEAT-595",
+      "feature": "fixgroup-c3a787516a75",
+      "spec": "sdd/specs/fixgroup-c3a787516a75.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": ["TASK-3672"],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-3672: its import-trace and p50<300ms assertions require the lazy hook.py / claude_code/__init__.py and _prefilter_rejects that TASK-3672 creates. Exclusive because it edits packages/ai-parrot/pyproject.toml (dependency manifest / console-script table).",
+      "discovered_from": "issue:f0a40d0853f2",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3673-wikitoolkit-light-entry.md"
+    }
+  ]
+}
