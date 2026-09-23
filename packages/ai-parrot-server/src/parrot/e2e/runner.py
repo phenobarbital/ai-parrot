@@ -13,7 +13,6 @@ import hashlib
 import json
 import logging
 import os
-import signal
 import sys
 import tempfile
 import uuid
@@ -116,12 +115,14 @@ async def run_plan(plan_path: Path, *, worktree: Path, owner_id: str) -> E2EVerd
             try:
                 state = await supervisor.stop(target_run_id)
                 cleanup_results[target_run_id] = state.cleanup_complete
-            except Exception as exc:  # Persist unresolved teardown in final evidence.
+            except Exception:  # Persist unresolved teardown in final evidence.
                 logger.exception("E2E cleanup failed for %s", target_run_id)
                 cleanup_results[target_run_id] = False
 
     source_after = await capture_identity(plan, worktree=resolved_worktree)
-    status, exit_code, gate_satisfied = _verdict_status(plan, results, cleanup_results, source_before == source_after, interrupted_exit)
+    status, exit_code, gate_satisfied = _verdict_status(
+        plan, results, cleanup_results, source_before == source_after, interrupted_exit
+    )
     completed_at = datetime.now(timezone.utc)
     verdict = E2EVerdict(
         feature_id=plan.feature_id,
@@ -207,7 +208,11 @@ async def _run_scenario(
         hashes = {bridge_path.name: _sha256(bridge_path)}
         return _bridge_results(scenario, bridge, target_run_ids), list(bridge.get("collected_node_ids", [])), hashes
     except E2EPrerequisiteError as exc:
-        return _results_for_nodes(scenario, "blocked", exc.reason_code or "prerequisite_missing", target_run_ids), [], {}
+        return (
+            _results_for_nodes(scenario, "blocked", exc.reason_code or "prerequisite_missing", target_run_ids),
+            [],
+            {},
+        )
     except E2EError as exc:
         return _results_for_nodes(scenario, "failed", exc.reason_code or "target_failure", target_run_ids), [], {}
     except Exception as exc:
@@ -257,7 +262,9 @@ def _load_bridge(path: Path) -> dict[str, Any]:
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise E2EPrerequisiteError("pytest bridge output was not produced", reason_code="pytest_bridge_missing") from exc
+        raise E2EPrerequisiteError(
+            "pytest bridge output was not produced", reason_code="pytest_bridge_missing"
+        ) from exc
     if not isinstance(loaded, dict) or not isinstance(loaded.get("results"), list):
         raise E2EPrerequisiteError("pytest bridge output is malformed", reason_code="pytest_bridge_malformed")
     return loaded
@@ -271,7 +278,11 @@ def _bridge_results(scenario: ScenarioSpec, bridge: dict[str, Any], target_run_i
     for node_id in scenario.node_ids:
         item = observed.get(node_id)
         if item is None:
-            results.extend(_results_for_nodes(scenario.model_copy(update={"node_ids": [node_id]}), "missing", "node_not_collected", target_run_ids))
+            results.extend(
+                _results_for_nodes(
+                    scenario.model_copy(update={"node_ids": [node_id]}), "missing", "node_not_collected", target_run_ids
+                )
+            )
             continue
         outcome = str(item.get("outcome", "failed"))
         if outcome not in {"passed", "failed", "skipped", "xfailed", "xpassed"}:
@@ -293,9 +304,16 @@ def _bridge_results(scenario: ScenarioSpec, bridge: dict[str, Any], target_run_i
     return results
 
 
-def _blocked_results(scenarios: list[ScenarioSpec], reason: str, cleanup_results: dict[str, bool]) -> list[ScenarioResult]:
+def _blocked_results(
+    scenarios: list[ScenarioSpec], reason: str, cleanup_results: dict[str, bool]
+) -> list[ScenarioResult]:
     """Record remaining codified coverage after a run-level timeout."""
-    return [result for scenario in scenarios if scenario.tier != "exploratory" for result in _results_for_nodes(scenario, "blocked", reason)]
+    return [
+        result
+        for scenario in scenarios
+        if scenario.tier != "exploratory"
+        for result in _results_for_nodes(scenario, "blocked", reason)
+    ]
 
 
 def _verdict_status(
