@@ -1,4 +1,5 @@
 """Run a vitest file from pytest (FEAT-593 validation contract accepts pytest commands only)."""
+
 from __future__ import annotations
 
 import shutil
