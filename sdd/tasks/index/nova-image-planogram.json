@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-22T23:19:27.026594+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-23T00:20:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -98,7 +98,7 @@
       "feature_id": "FEAT-592",
       "feature": "nova-image-planogram",
       "spec": "sdd/specs/nova-image-planogram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -110,8 +110,9 @@
       "parallelism_notes": "Imports NovaVisionClient from TASK-3640 (examples/planogram/aws/nova_vision.py), load_planogram_vocabulary from TASK-3641 (examples/planogram/aws/prompt.py), and identify_strips_closed_set/flatten/RunStats from TASK-3642 (examples/planogram/aws/identify.py).",
       "assigned_to": null,
       "started_at": "2026-09-22T23:24:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3643-cli-perception-and-outputs.md"
+      "completed_at": "2026-09-23T00:20:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3643-cli-perception-and-outputs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3644",

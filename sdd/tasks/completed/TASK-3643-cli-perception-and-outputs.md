@@ -488,10 +488,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3643
+- Feature: nova-image-planogram
+- Implementation SHA: 850539844787a72a1e7e6b1f8796c97d1be8e790
+- Closed at (UTC): 2026-09-23T00:20:13+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| ac_verified | AC1 (--help exits 0), AC6 (no packages/ touched), AC13 (no banned imports) verified manually |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 194.05s · Tokens: n/a |
+| test_command | pytest examples/planogram/tests/test_nova2_cli.py -v |
+| test_result | 5 passed (after fix commit 850539844 working around a pre-existing DetectionBox round-trip defect, ledger issue:6d481170075a) |
+| tests_passed | True |
