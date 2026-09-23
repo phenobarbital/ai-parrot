@@ -181,5 +181,29 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24 by seat gpt-5.6-terra (backend codex), attempt 1,
+attempt_uid `4b2ce4c00c6b4a40a9a5c1f2e45fa3fd` (494s). Delivery merged cleanly
+first attempt.
+
+Modified `packages/ai-parrot-client-google/src/parrot/clients/google/client.py`
+(168 insertions / 19 deletions) to accept an optional `generation_budget`,
+guard every initial/continuation/repair/retry send before network, disable
+SDK retries/AFC and MAX_TOKENS-growth in budget mode, and compute request
+bytes over the full rendered payload. Created
+`packages/ai-parrot-client-google/tests/unit/test_budgeted_ask.py`.
+
+Tests:
+- `pytest packages/ai-parrot-client-google/tests/unit/test_budgeted_ask.py -q`
+  → 4 passed.
+- Regression spot-check across 5 adjacent google-client unit test files
+  (`test_generation_budget.py`, `test_gemini_multiround_usage.py`,
+  `test_google_format_history.py`, `test_openai_compat_client.py`,
+  `test_entry_points.py`) → 39 passed, no regressions from the `client.py`
+  modification.
+
+Only the 2 declared files touched (verified via `git diff --stat`); no `sdd/`
+files touched. Engine lint autofix (black, commit `12ac76bd0`); residual ruff
+findings on this already-large file are pre-existing style debt, left for
+`/sdd-done`'s feature-wide pass per policy.
+
+No unresolved limitations. AC11/AC17 demonstrated by the new test suite.
