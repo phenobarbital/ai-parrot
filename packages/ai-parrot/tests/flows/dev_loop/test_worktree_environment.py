@@ -438,6 +438,68 @@ def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout
     assert not feature.exists()
 
 
+def test_feature_worktree_binds_primary_shared_ledger_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worktree agent files ledger issues in the primary's ``.parrot/ledger``; the rest of ``.parrot`` stays read-only."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (main / ".parrot" / "ledger").mkdir(parents=True)
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / ".parrot" / "ledger").resolve() in binds
+    assert (main / ".parrot").resolve() not in binds
+    assert main.resolve() not in binds
+
+
+def test_primary_checkout_has_no_extra_ledger_bind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    (main / ".parrot" / "ledger").mkdir(parents=True)
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
+
+
+def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_path: Path) -> None:
+    """SQLite writes (with ``-wal``/``-shm`` siblings) reach the primary ledger; the wiki plane stays read-only."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    ledger_dir = main / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True)
+    feature = main / ".claude" / "worktrees" / "feat-x"
+    feature.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    script = (
+        "import sqlite3, sys\n"
+        "con = sqlite3.connect(sys.argv[1])\n"
+        "con.execute('PRAGMA journal_mode=WAL')\n"
+        "con.execute('CREATE TABLE IF NOT EXISTS t (v TEXT)')\n"
+        "con.execute(\"INSERT INTO t VALUES ('filed')\")\n"
+        "con.commit()\n"
+    )
+    ledger_db = ledger_dir / "ledger.db"
+    result = subprocess.run(
+        policy.protected_argv(feature, [sys.executable, "-c", script, str(ledger_db)]),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    import sqlite3
+
+    with sqlite3.connect(ledger_db) as con:
+        assert con.execute("SELECT v FROM t").fetchall() == [("filed",)]
+
+    subprocess.run(
+        policy.protected_argv(feature, ["touch", str(main / ".parrot" / "wiki.db")]), capture_output=True, timeout=20
+    )
+    assert not (main / ".parrot" / "wiki.db").exists()
+
+
 # ---------------------------------------------------------------------------
 # Hung-command guard: a sandboxed process that never exits must not keep bwrap
 # (and the host's Bash tool) "running" forever.

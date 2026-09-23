@@ -23,7 +23,7 @@ description: |
 model: sonnet
 color: blue
 permissionMode: bypassPermissions
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report, mcp__parrot-sdd-coder__coder_record_native_observation, mcp__parrot-sdd-coder__coder_task_context, mcp__parrot-sdd-coder__coder_delivery_report, mcp__parrot-sdd-coder__coder_read_artifact, mcp__parrot-sdd-coder__coder_bg_status, mcp__parrot-sdd-coder__coder_run_validation, mcp__parrot-bounded-source__source_inspect_batch
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report, mcp__parrot-sdd-coder__coder_record_native_observation, mcp__parrot-sdd-coder__coder_task_context, mcp__parrot-sdd-coder__coder_delivery_report, mcp__parrot-sdd-coder__coder_read_artifact, mcp__parrot-sdd-coder__coder_bg_status, mcp__parrot-sdd-coder__coder_run_validation, mcp__parrot-bounded-source__source_inspect_batch, mcp__wikitoolkit__ledger_open, mcp__wikitoolkit__ledger_context
 hooks:
   PreToolUse:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
@@ -62,10 +62,12 @@ directory switching, no shared mutable state across features.
 - Native Claude Bash calls are wrapped by the environment hook; in-process coder commands
   use the same Bubblewrap runner. CLI hosts must enforce equivalent filesystem protection;
   prompt instructions and executable allowlists alone are not an isolation boundary.
-- The primary checkout's `.claude/worktrees/` is the one writable exception outside your
-  worktree: it exists so `/sdd-done` can run from here (ledger-snapshot worktree, removal
-  of this worktree). Everything else in the primary checkout — `sdd/ledger/`, `sdd/tasks/`,
-  the `.venv` — stays read-only. Never `cd` to the primary checkout to work around that.
+- The primary checkout's `.claude/worktrees/` and `.parrot/ledger/` are the only writable
+  exceptions outside your worktree: the first exists so `/sdd-done` can run from here
+  (ledger-snapshot worktree, removal of this worktree), the second so you can file deferred
+  findings in the shared SDD ledger. Everything else in the primary checkout — `sdd/ledger/`,
+  `sdd/tasks/`, the `.venv` — stays read-only. Never `cd` to the primary checkout to work
+  around that.
 
 ## ⛔ CARDINAL RULES — NEVER VIOLATE THESE
 
@@ -621,10 +623,13 @@ After all tasks are done, at the development-to-review boundary:
    feature's file scope — MUST be attempted with `wikitoolkit ledger open` before you
    push, so it survives the PR and shows up in `ledger ready` / `ledger context`
    for future work. Rejected (false-positive) findings are not filed. The ledger
-   intentionally resolves to the main checkout. When a sandbox mounts that root
-   read-only, do not retry without protection and do not create a worktree-local
-   ledger. Record the complete finding in the final summary as
-   `(NOT filed: shared ledger is read-only)` so a privileged follow-up can file it.
+   intentionally resolves to the main checkout's `.parrot/ledger/`, which the sandbox
+   keeps writable. Prefer the `mcp__wikitoolkit__ledger_open` tool (same fields as the
+   CLI: `title`, `body`, `kind`, `severity`, `discovered_from`, `about[]`); use the CLI
+   below when the tool is not available. If both report the ledger read-only, do not
+   retry without protection and do not create a worktree-local ledger. Record the
+   complete finding in the final summary as `(NOT filed: shared ledger is read-only)`
+   so a privileged follow-up can file it.
 
    ```bash
    wikitoolkit ledger open \
