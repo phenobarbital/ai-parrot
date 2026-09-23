@@ -87,3 +87,23 @@ __init__.py: `__all__ = [` (occurrences: 1): export both cache functions.
 
 - `pytest packages/ai-parrot-integrations/tests/voice/tts/test_shared_synthesizer.py -v`
 - `pytest packages/ai-parrot-integrations/tests/voice/tts/test_supertonic_backend.py -v`
+
+### Completion Note
+
+Implemented via `parrot-sdd-coder` (execution `4bfb2cf6-9bb3-4ebf-87f0-09ee5cb10a02`,
+seat `gpt-5.6-terra`/codex, attempt_uid `85c75f5d41bf41218c846f82f0311286`, 1 attempt,
+no retries), merged at commit `d5bfe4037` (+lint autofix `ecdf6994f`).
+
+Verified before closing:
+- File fidelity: merge commit touches exactly the 5 contract files (synthesizer.py,
+  supertonic_backend.py, __init__.py, test_shared_synthesizer.py, test_supertonic_backend.py),
+  no unlisted files.
+- Task's own Validation Commands (`PYTHONPATH=packages/ai-parrot-integrations/src`):
+  12/12 tests pass clean.
+- `coder_run_validation(tier="merge")` could not settle: the full
+  `packages/ai-parrot-integrations/tests` sweep hung deterministically at the exact
+  same point as TASK-3619/TASK-3621's attempts (1200s budget, byte-identical frozen
+  tail), confirming the pre-existing, unrelated environment issue filed as
+  `issue:312c1988479b` [critical] — not a regression from this task's diff.
+
+No confirmed defect found in the delivered code; no feedback recorded.

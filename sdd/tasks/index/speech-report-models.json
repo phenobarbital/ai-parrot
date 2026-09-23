@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-23T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-23T16:52:50+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Root task owns the Polly backend, config, package export, and synthesizer selection branch. TASK-3620 depends on it because both modify synthesizer.py.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3619-polly-backend-and-config.md"
+      "completed_at": "2026-09-22T23:45:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3619-polly-backend-and-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3620",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +45,9 @@
       "parallelism_notes": "Serialized after TASK-3619 because both modify synthesizer.py; otherwise owns cache and Supertonic lock files and tests.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3620-shared-synthesizer-cache.md"
+      "completed_at": "2026-09-23T00:56:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3620-shared-synthesizer-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3621",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -62,8 +64,9 @@
       "parallelism_notes": "Independent of Polly/cache work: owns Google backend, Telegram wrapper, and their dedicated tests with no overlapping feature files.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3621-google-wav-and-telegram-converter.md"
+      "completed_at": "2026-09-22T23:45:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3621-google-wav-and-telegram-converter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3622",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -84,8 +87,9 @@
       "parallelism_notes": "Consumes Polly selector/cache helpers and truthful WAV behavior through its lazy TTS integration; owns agent.py and test_basic_agent_new.py.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3622-speech-report-routing.md"
+      "completed_at": "2026-09-23T13:14:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3622-speech-report-routing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3623",
@@ -94,7 +98,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -104,8 +108,9 @@
       "parallelism_notes": "Documentation describes the finalized public routing attributes and behavior from TASK-3622; it exclusively creates the new guide.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3623-speech-report-tts-documentation.md"
+      "completed_at": "2026-09-23T13:28:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3623-speech-report-tts-documentation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3669",
@@ -114,17 +119,18 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: creates packages/ai-parrot-integrations/tests/conftest.py, an autouse fixture every other task's integrations tests load",
       "discovered_from": "issue:312c1988479b",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3669-bounded-documentdb-connect-timeout.md"
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-23T16:50:42+00:00",
+      "completed_at": "2026-09-23T16:50:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3669-bounded-documentdb-connect-timeout.md",
+      "verification": "verified"
     }
   ]
 }

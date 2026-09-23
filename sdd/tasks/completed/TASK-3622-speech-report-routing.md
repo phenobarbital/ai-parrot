@@ -87,3 +87,28 @@ test_basic_agent_new.py: append after `test_speech_report_omits_model_kwargs_by_
 ## Validation Commands
 
 - `pytest packages/ai-parrot/tests/test_basic_agent_new.py -v`
+
+### Completion Note
+
+Implemented via `parrot-sdd-coder` (execution `4bfb2cf6-9bb3-4ebf-87f0-09ee5cb10a02`,
+seat `gpt-5.6-terra`/codex, attempt_uid `555c40e870df4887b15486799e2d8181`, 1 attempt,
+no retries), merged at commit `06ede6304` (+lint autofix `8b84f7417`).
+
+Verified before closing:
+- File fidelity: merge commit touches exactly the 2 contract files (agent.py,
+  test_basic_agent_new.py), no unlisted files.
+- Task's own Validation Commands
+  (`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-integrations/src` — both
+  changed distributions on path, since this task's lazy TTS integration depends on
+  TASK-3620's `get_shared_synthesizer`): 17/19 tests pass, including every new
+  speech_report routing/backend/MIME test this task added.
+  The 2 remaining failures (`test_setup_mcp_servers`, `test_agent_real_integration`)
+  are pre-existing and unrelated — confirmed present, byte-identical, in this test
+  file at the commit immediately before this task ran (`3951d6df9`); filed as
+  `issue:7c3f2e6ed5be` [major].
+- `coder_run_validation(tier="merge")` was launched; the full `packages/
+  ai-parrot-integrations/tests` sweep it escalates to is expected to hit the same
+  pre-existing environment hang already documented on TASK-3619/3620/3621
+  (`issue:312c1988479b` [critical]).
+
+No confirmed defect found in the delivered code; no feedback recorded.

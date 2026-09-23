@@ -101,3 +101,33 @@ pyproject.toml: `voice-supertonic = [` (occurrences: 1): add voice-polly and inc
 - `pytest packages/ai-parrot-integrations/tests/voice/tts/test_polly_backend.py -v`
 - `pytest packages/ai-parrot-integrations/tests/voice/tts/test_synthesizer.py -v`
 - `pytest packages/ai-parrot-integrations/tests/voice/tts/test_tts_integration.py -v`
+
+### Completion Note
+
+Implemented by a prior interrupted sdd-worker/parrot-sdd-coder session and merged into
+the feature branch at commit `89fa09239` (+lint autofix `11494f85f`, merge commit
+`cb0bd9ebb`); this session resumed the feature, found the code already merged with the
+per-spec index stuck at `in-progress`, and finalized SDD bookkeeping only — no
+implementation changes were made here.
+
+Verified before closing:
+- File fidelity: `git show --stat 89fa09239` matches the task's file contract exactly
+  (8 files, all listed CREATE/MODIFY targets, no unlisted files).
+- Task's own Validation Commands (`PYTHONPATH=packages/ai-parrot-integrations/src`,
+  matching this distribution only — no ai-parrot core override):
+  `test_polly_backend.py` (7 tests) and `test_synthesizer.py` pass clean;
+  `test_tts_integration.py` passes except one pre-existing, unrelated failure
+  (`test_voice_in_voice_out_flow` — confirmed to already fail identically at
+  this feature's base commit `f5c2350b0`, before any FEAT-591 task ran, via a
+  throwaway baseline worktree; filed as `issue:1a48d2080118` [minor]).
+- The `coder_run_validation(tier="merge")` gate could not settle: the full
+  `packages/ai-parrot-integrations/tests` sweep it escalates to hangs
+  deterministically at a fixed point regardless of retry (two attempts,
+  1200s and 2400s budgets, byte-identical frozen tail both times) — a
+  pre-existing environment issue unrelated to this task's diff, filed as
+  `issue:312c1988479b` [critical].
+
+Feedback/review recording: none — this execution did not dispatch or observe
+this attempt (it ran under a prior, now-lost execution id), so no
+`attempt_uid` is available to attribute `coder_record_feedback`/
+`coder_record_review` to. No confirmed defect was found in the delivered code.
