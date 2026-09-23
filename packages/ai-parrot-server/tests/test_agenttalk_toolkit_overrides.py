@@ -41,9 +41,7 @@ def agent():
         name="a1",
         tool_manager=tool_manager,
         _tooling_revision="r1",
-        _pending_toolkit_specs=[
-            ToolkitSpec(slug="kit", params={"prefix": "agent"}, user_overridable=["prefix"])
-        ],
+        _pending_toolkit_specs=[ToolkitSpec(slug="kit", params={"prefix": "agent"}, user_overridable=["prefix"])],
         _resolve_spec_class=lambda slug: _Kit,
     )
 
