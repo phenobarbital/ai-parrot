@@ -65,7 +65,9 @@ class FakeComplexityDispatcher:
                 "git", *args, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             await proc.communicate()
-        return DevelopmentOutput(files_changed=[filename], commit_shas=["abcdef1234567890"], summary="fake implementation")
+        return DevelopmentOutput(
+            files_changed=[filename], commit_shas=["abcdef1234567890"], summary="fake implementation"
+        )
 
 
 def fake_complexity_builder_factory(behavior_by_backend: dict):
