@@ -213,10 +213,43 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (execution `a3f5c9e2-7b41-4d8a-9c3e-591fd0d7a5b2`), native coder seat
+`sonnet` (`claude-sonnet-5`, backend `native`), dispatched via `Agent(subagent_type="sdd-coder")` (agentId `aa988b2f438051d09`).
+**Date**: 2026-09-23
+**Feature branch**: `feat-FEAT-593-tool-configuration-agentstudio`
+**Implementation SHA**: `ddc9ea32693362760355f595b895afc233abbc8e` (`feat(tool-configuration-agentstudio): TASK-3653 — BotManager._build_database_bot: pass normalized tools= and agent_mcp_servers=`)
+**Merge commit**: `4733d89ff` (`merge feat-FEAT-593-tool-configuration-agentstudio--TASK-3653-a1-a3f5c9e27b414d8a9c3e591fd0d7a5b2`)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: `coder_merge(TASK-3653)` returned `outcome: "merged"`. Diff verified directly (`git show --stat
+ddc9ea326`): exactly the two files the task lists — `packages/ai-parrot-server/src/parrot/manager/manager.py`
+(MODIFY, `available_tools=bot_model.tools` replaced by `tools=tooling.tools + tooling.toolkits,` +
+`agent_mcp_servers=tooling.mcp_servers,`, `normalize_tooling` imported per the Codebase Contract) and
+`packages/ai-parrot-server/tests/manager/test_build_database_bot_tools.py` (CREATE, 3 tests) — 147
+insertions/1 deletion total, matching the blueprint exactly. The coder's own report additionally confirmed:
+`available_tools` no longer appears anywhere in `manager.py` (`grep` exit 1); every other constructor kwarg
+left untouched; the `tools=`/`agent_mcp_servers=` pattern matches the existing YAML-agent path in
+`registry.py:908-914`; `normalize_tooling`'s real signature matches the blueprint's keyword call; own test
+run `pytest packages/ai-parrot-server/tests/manager/test_build_database_bot_tools.py -q` → 3 passed.
+`git status --porcelain --untracked-files=all` was empty post-commit (no stray files); nothing under `sdd/`
+touched. This is a deliberate, spec-called-out behaviour change: DB-loaded agents now actually receive their
+`tools` column (previously silently dropped via the dead `available_tools` kwarg).
 
-**Deviations from spec**: none | describe if any
+`coder_record_review` was attempted for this attempt after the SDD-index closure step was (incorrectly)
+deferred past a later `coder_plan` re-fetch — by the time this closure ran, the engine's live attempt
+registry no longer resolved this attempt (`invalid_arguments: review must match a known attempt's task,
+backend and actual model`), tried with several `attempt_uid`/`model` guesses (including the branch-suffix
+attempt id and the resolved model id `claude-sonnet-5`), all rejected identically.
+**Review NOT recorded via `coder_record_review`** — preserved here per protocol instead of claiming
+reinforcement was saved. Delivery itself was independently verified by direct diff inspection (above),
+the coder's own detailed self-report (including its own verification checklist and feedback-pattern
+cross-checks), and `coder_delivery_report` confirming `fidelity_ok: true` and branch head sha match.
+
+No merge-tier validation was separately launched for TASK-3653 given the confirmed-unrelated, reliably-hanging
+`ai-parrot-client-google` core-escalation sweep observed on every prior validation run on this worktree (see
+TASK-3649/3650/3651 Completion Notes); closure relies on the diff/scope verification above plus the coder's
+own reported test run.
+
+**Deviations from spec**: none — coder flagged a minor test-scaffold rewrite (the provided `_Captured` fixture
+required extra `store`/`llm_client` mocks and a fuller `bot_model` `SimpleNamespace` to reach the assertion
+point; this is scaffold completion via `# FILL IN:` markers as instructed, not a deviation from the fixed
+class/signature contract).

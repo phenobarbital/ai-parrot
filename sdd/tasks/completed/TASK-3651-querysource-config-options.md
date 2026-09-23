@@ -262,10 +262,35 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (execution `a3f5c9e2-7b41-4d8a-9c3e-591fd0d7a5b2`), coder seat `codex-spark`/`gpt-5.6-terra` (MCP backend `codex`), delivered via `coder_run_chunk` job `job-5c165aac23d8`.
+**Date**: 2026-09-23
+**Feature branch**: `feat-FEAT-593-tool-configuration-agentstudio`
+**Implementation SHA**: `c192c4615bdae43e3e2044e8a7974bc9b0aa6ffb` (`feat(tool-configuration-agentstudio): TASK-3651 — engine-committed coder deliverable`)
+**Lint autofix SHA**: `b6d526d05` (`style(tool-configuration-agentstudio): TASK-3651 — engine lint autofix`, 0 residual, 0 errors)
+**Merge commit**: `544badc19` (`merge feat-FEAT-593-tool-configuration-agentstudio--TASK-3651-a1-a3f5c9e27b414d8a9c3e591fd0d7a5b2`)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**: `coder_merge(TASK-3651)` returned `outcome: "merged"` with a clean fidelity check. Diff verified
+against the task's Files-to-Create/Modify table: `querysource/config.py` (CREATE, `QuerysourceToolkitConfig`),
+`querysource/catalog.py` (MODIFY, `SlugCatalog.list_programs`), `querysource/toolkit.py` (MODIFY,
+`config_model`/`options_params`/`secret_params`/`config_options`), and
+`tests/querysource/test_querysource_config.py` (CREATE) — 4 files, 96 insertions, matching the blueprint's
+scope exactly (`git show --stat c192c4615`). No unlisted files touched, no `sdd/` paths touched.
 
-**Deviations from spec**: none | describe if any
+`coder_record_review` was attempted for this attempt after the SDD-index closure step was (incorrectly)
+deferred past a later `coder_plan` re-fetch — by the time this closure ran, the engine's live attempt
+registry no longer resolved this attempt (`invalid_arguments: review must match a known attempt's task,
+backend and actual model`), tried with several `attempt_uid`/`model` guesses, all rejected identically.
+**Review NOT recorded via `coder_record_review`** — preserved here per protocol instead of claiming
+reinforcement was saved. Delivery itself was independently verified by direct diff inspection (above) and
+via `coder_feedback_report`, which showed no defects for this task/model pairing.
+
+The merge-tier validation for this task's chunk (`chunk1:merge`, `a3f5c9e2-7b41-4d8a-9c3e-591fd0d7a5b2:chunk1:merge`,
+covering TASK-3649+TASK-3650, launched separately) ultimately returned `outcome: "timed_out"` (`exit_code: -15`,
+settled at 2026-09-23T15:37:14Z) — full-workspace "core escalation" sweep hanging in the pre-existing,
+unrelated `ai-parrot-client-google/tests/unit/reel/` suite (`sssssFFFFFFF` — media/ffmpeg dependent tests),
+confirmed unrelated to TASK-3651's file scope (querysource only). No merge-tier validation was separately
+launched for TASK-3651 alone given the confirmed-unrelated, reliably-hanging nature of the core-escalation
+sweep on this worktree; closure relies on the diff/scope verification above plus the coder's own reported
+test run (`pytest packages/ai-parrot-tools/tests/querysource/test_querysource_config.py -q`).
+
+**Deviations from spec**: none.

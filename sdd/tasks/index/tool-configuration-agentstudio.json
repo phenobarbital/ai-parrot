@@ -133,7 +133,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Uses config_model/options_params ClassVars + config_options hook from TASK-3647 (parrot/tools/toolkit.py). Only task touching querysource/toolkit.py and catalog.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3651-querysource-config-options.md"
+      "completed_at": "2026-09-23T15:40:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3651-querysource-config-options.md"
     },
     {
       "id": "TASK-3652",
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Calls normalize_tooling from TASK-3645 (parrot/tools/spec.py) over bot_model.toolkit_config/mcp_servers, the columns added by TASK-3652 (handlers/models/bots.py). Only task touching manager/manager.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3653-db-build-path-tools.md"
+      "completed_at": "2026-09-23T15:40:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3653-db-build-path-tools.md"
     },
     {
       "id": "TASK-3654",
