@@ -1,4 +1,5 @@
 """Agent-level tooling persistence for Agent Studio (FEAT-593). Single writer."""
+
 from __future__ import annotations
 
 import copy
@@ -239,7 +240,9 @@ class AgentToolingStore:
                     current = {}
                 current.update(merged)
                 await store_vault_credential(state.owner, vault_name, current)
-            specs.append(candidate.model_copy(update={"params": clean, "secret_refs": refs, "vault_owner": state.owner}))
+            specs.append(
+                candidate.model_copy(update={"params": clean, "secret_refs": refs, "vault_owner": state.owner})
+            )
         state.tooling.mcp_servers = specs
         await self._persist(name, state)
         return specs

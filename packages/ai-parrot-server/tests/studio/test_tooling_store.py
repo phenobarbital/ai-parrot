@@ -1,4 +1,5 @@
 """Unit tests for owner-scoped Agent Studio tooling persistence."""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -44,8 +45,12 @@ def vault(monkeypatch):
 @pytest.fixture
 def db_store(monkeypatch):
     """Store backed by a fake database-origin agent."""
-    row = SimpleNamespace(name="a1", created_by=42, toolkit_config={}, mcp_servers=[], set=MagicMock(), update=AsyncMock())
-    handler = SimpleNamespace(_get_db_agent=AsyncMock(return_value=row), _registry=lambda: None, request=SimpleNamespace(app={}))
+    row = SimpleNamespace(
+        name="a1", created_by=42, toolkit_config={}, mcp_servers=[], set=MagicMock(), update=AsyncMock()
+    )
+    handler = SimpleNamespace(
+        _get_db_agent=AsyncMock(return_value=row), _registry=lambda: None, request=SimpleNamespace(app={})
+    )
     store = AgentToolingStore(handler)
     schema = {
         "type": "object",
@@ -110,10 +115,14 @@ async def test_mcp_secrets_never_remain_in_params(vault, db_store):
 @pytest.mark.asyncio
 async def test_registry_python_agent_is_read_only(tmp_path, monkeypatch):
     """A registry agent from Python is never editable by the tooling store."""
-    meta = SimpleNamespace(bot_config=SimpleNamespace(toolkits=[], mcp_servers=[], config={"created_by": "7"}), file_path=tmp_path / "a1.py")
+    meta = SimpleNamespace(
+        bot_config=SimpleNamespace(toolkits=[], mcp_servers=[], config={"created_by": "7"}),
+        file_path=tmp_path / "a1.py",
+    )
     registry = SimpleNamespace(get_metadata=lambda _name: meta)
-    handler = SimpleNamespace(_get_db_agent=AsyncMock(return_value=None), _registry=lambda: registry,
-                              _registry_agent_owner=lambda _meta: "7")
+    handler = SimpleNamespace(
+        _get_db_agent=AsyncMock(return_value=None), _registry=lambda: registry, _registry_agent_owner=lambda _meta: "7"
+    )
     store = AgentToolingStore(handler)
 
     state = await store.load("a1")
