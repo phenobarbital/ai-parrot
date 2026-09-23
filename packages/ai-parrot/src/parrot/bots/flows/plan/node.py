@@ -66,6 +66,8 @@ from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Seq
 
 from pydantic import Field, PrivateAttr
 
+from parrot.bots.flows.core.node import Node as _BaseNode
+
 from .facets import estimate_bytes, extract_facets, merge_facets
 from .guards import PlanGuard, compile_guard
 from .models import ARTIFACT_REF_RE, NODE_REF_RE, ArtifactRef, PlanNode, _iter_strings
@@ -83,8 +85,6 @@ __all__ = (
 # are the classic way a "small" manifest stops being small.
 MAX_RECORDED_ERRORS = 20
 _MAX_ERROR_CHARS = 300
-
-from parrot.bots.flows.core.node import Node as _BaseNode
 
 
 class ToolExecutionError(RuntimeError):

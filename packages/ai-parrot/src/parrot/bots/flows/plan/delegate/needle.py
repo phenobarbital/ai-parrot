@@ -4,8 +4,13 @@ The engine is blocking and non-reentrant. It runs through an executor with an in
 keyed by tool subset (``Needle(tools=...)`` binds the toolset at construction).
 
 The executor defaults to ``"thread"`` (per decision.md, ProcessPoolExecutor hangs in this
-sandboxed environment). Thread mode uses an ``asyncio.Queue`` checkout pool per toolset:
-acquire → ``reset()`` → ``complete()`` → release.
+sandboxed environment). Thread mode bounds concurrent blocking calls to ``pool_size`` OS
+threads with an ``asyncio.Semaphore`` (there is no work-item queue to manage: each call is
+independent, so a semaphore-gated ``asyncio.to_thread`` is the whole pool). Because the
+engine is non-reentrant, a per-cache-key ``threading.Lock`` (module-level, alongside
+``_WORKER_CACHE``) additionally serializes ``reset()``/``complete()`` for calls that land on
+the *same* cached engine instance, across whichever OS threads happen to run them
+concurrently — different toolsets (different cache keys) still run in parallel.
 
 Facts map onto Needle's fixed ``system`` keys (``date``, ``locale``, ``device``,
 ``battery``, ``network``, ``location``, ``user``, ``assistant``). Other facts are folded
@@ -19,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from concurrent.futures import Executor, ProcessPoolExecutor
 from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Sequence, Tuple, Type, Union
 
@@ -33,6 +39,12 @@ _EXTRA_HINT = "NeedleDelegate requires the 'ai-parrot[needle]' extra (pip instal
 
 # Per-process cache: {(weights, frozenset(tool names)): Needle instance}. Lives in the worker process.
 _WORKER_CACHE: Dict[Tuple[Optional[str], FrozenSet[str]], Any] = {}
+# One threading.Lock per cache key, serializing reset()/complete() on that (non-reentrant)
+# engine instance across concurrent worker threads. Guarded by _WORKER_CACHE_LOCK below --
+# creating the cache entry and its lock must be atomic, or two threads racing on a brand-new
+# cache key could each create and use a *different* lock for the *same* engine instance.
+_WORKER_LOCKS: Dict[Tuple[Optional[str], FrozenSet[str]], threading.Lock] = {}
+_WORKER_CACHE_LOCK = threading.Lock()
 
 
 def _import_needle() -> Any:
@@ -64,19 +76,25 @@ def _complete_in_worker(
     tool_names = frozenset(t["name"] for t in tools)
     cache_key = (weights, tool_names)
 
-    # Get or create the cached Needle instance
-    if cache_key not in _WORKER_CACHE:
-        # Needle(tools=tools, system=system, weights=weights)
-        # Note: system is a dict of str->str, which is picklable
-        _WORKER_CACHE[cache_key] = needle.Needle(tools=tool_list, system=system, weights=weights)
+    # Get or create the cached Needle instance and its per-key lock atomically -- two
+    # threads racing on the same brand-new cache key must land on the same engine AND
+    # the same lock, or the lock below serializes nothing.
+    with _WORKER_CACHE_LOCK:
+        if cache_key not in _WORKER_CACHE:
+            # Needle(tools=tools, system=system, weights=weights)
+            # Note: system is a dict of str->str, which is picklable
+            _WORKER_CACHE[cache_key] = needle.Needle(tools=tool_list, system=system, weights=weights)
+            _WORKER_LOCKS[cache_key] = threading.Lock()
+        engine = _WORKER_CACHE[cache_key]
+        engine_lock = _WORKER_LOCKS[cache_key]
 
-    engine = _WORKER_CACHE[cache_key]
-
-    # Reset the engine (idempotent, non-reentrant)
-    engine.reset()
-
-    # Run complete() and return the raw response dict
-    response = engine.complete(text, max_new_tokens=512)
+    # The engine is stateful (reset()) and documented as blocking/non-reentrant, so
+    # concurrent calls sharing this cache key (same toolset+weights) must never
+    # interleave reset()/complete() on it -- serialize with the per-key lock. Calls
+    # against a *different* cache key still run concurrently (different lock).
+    with engine_lock:
+        engine.reset()
+        response = engine.complete(text, max_new_tokens=512)
 
     return response
 
@@ -214,12 +232,17 @@ class NeedleDelegate:
         )
 
     async def extract(self, text: str, schema: Union[Type[BaseModel], Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """``needle.extract`` in the executor; ``None`` when nothing fits.
+        """Not implemented for this backend; always declines with ``None``.
 
-        The spec says to use ``needle.extract`` but the decision.md only documents
-        ``Needle.complete()``. For now, we return None to indicate no extraction.
+        The spec's ``extract`` hook expects a ``needle.extract``-style call, but
+        ``sdd/state/FEAT-590/spike/decision.md`` (TASK-3624) verified only
+        ``Needle.complete()`` -- the extraction API was never exercised by the spike
+        and is not safe to guess at here (this backend's whole design principle is
+        "never invent a tool name or argument key"; guessing a schema-extraction
+        call shape is the same mistake). Declining is the deliberate, documented
+        behavior until a follow-up task verifies the real API against a live
+        engine, not a placeholder awaiting implementation.
         """
-        # TODO: Implement extract() once the verified API is documented
         return None
 
     async def aclose(self) -> None:
@@ -233,53 +256,33 @@ class NeedleDelegate:
 
 
 class _ThreadExecutor:
-    """Thread-based executor using asyncio.Queue checkout pool per toolset.
+    """Bounds concurrent blocking Needle calls to ``max_workers`` OS threads.
 
-    This is a simple pool that reuses a fixed number of threads for running
-    blocking Needle calls.
+    There is no work-item queue here by design: each ``submit()`` call is an
+    independent unit of work (``asyncio.to_thread`` already hands it its own OS
+    thread from the interpreter's default thread pool), so all this needs to do is
+    cap how many can run at once. A semaphore is the correct, minimal primitive for
+    that -- it does not "dispatch" anything, it just gates entry.
+
+    Cross-thread safety for the *same* cached Needle engine (same toolset+weights)
+    is NOT this class's job: the engine is non-reentrant, so serializing access to
+    one cache entry is handled by the per-cache-key ``threading.Lock`` in
+    ``_complete_in_worker`` itself. This pool only bounds total concurrency.
     """
 
     def __init__(self, max_workers: int) -> None:
-        self._max_workers = max_workers
-        self._queue: asyncio.Queue[asyncio.Task] = asyncio.Queue(max_workers)
-        self._threads: List[asyncio.Task] = []
-
-    async def _worker(self) -> None:
-        """Worker task that runs blocking calls in a thread."""
-        while True:
-            task = await self._queue.get()
-            try:
-                await task
-            finally:
-                self._queue.task_done()
+        self._semaphore = asyncio.Semaphore(max_workers)
 
     async def submit(self, func: Any, *args: Any, **kwargs: Any) -> Any:
-        """Submit a blocking function to be run in a thread."""
-        # Create a task that runs the function in a thread
-        task = asyncio.to_thread(func, *args, **kwargs)
-
-        # Wait for a worker to be available
-        if len(self._threads) < self._max_workers:
-            # Start a new worker if we haven't reached max_workers
-            worker = asyncio.create_task(self._worker())
-            self._threads.append(worker)
-
-        # Wait for the task to complete
-        return await task
+        """Run ``func(*args, **kwargs)`` in a thread, gated by the semaphore."""
+        async with self._semaphore:
+            return await asyncio.to_thread(func, *args, **kwargs)
 
     def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
-        """Shutdown the executor."""
-        if cancel_futures:
-            # Cancel all pending tasks
-            while not self._queue.empty():
-                task = self._queue.get_nowait()
-                task.cancel()
-                try:
-                    asyncio.create_task(task)
-                except asyncio.CancelledError:
-                    pass
+        """No-op: there are no persistent worker tasks or threads to release.
 
-        if wait:
-            # Wait for all tasks to complete
-            asyncio.gather(*self._threads, return_exceptions=True)
-            self._threads.clear()
+        Each ``submit()`` call's ``asyncio.to_thread`` future is already awaited
+        to completion (or cancellation propagates naturally) by the caller in
+        ``NeedleDelegate._run``; nothing outlives it for this pool to clean up.
+        """
+        return

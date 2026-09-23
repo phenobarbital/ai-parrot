@@ -188,7 +188,6 @@ class LlamaCppDelegate:
 
     async def extract(self, text: str, schema: Union[Type[BaseModel], Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Constrained extraction of a short text into ``schema``; ``None`` if nothing fits."""
-        started = time.monotonic()
         if isinstance(schema, type) and issubclass(schema, BaseModel):
             target_schema = schema.model_json_schema()
         else:
@@ -235,11 +234,17 @@ class LlamaCppDelegate:
             choice = body["choices"][0]
             content = choice["message"]["content"]
             parsed = json_loads_or_raise(content)
-            if parsed.get("failed") is True:
-                return None
-            return parsed
-        except Exception:
+        except Exception as exc:
+            # A backend failure (HTTP error, malformed response) is indistinguishable
+            # from "nothing fits" to the caller by design (both return None), but it
+            # must not be indistinguishable in the logs -- log it as a warning so a
+            # llama-server outage is diagnosable instead of silently read as a decline.
+            self.logger.warning("extract() found nothing or the backend failed: %s", exc)
             return None
+
+        if parsed.get("failed") is True:
+            return None
+        return parsed
 
     async def aclose(self) -> None:
         """Close the HTTP session. Idempotent."""

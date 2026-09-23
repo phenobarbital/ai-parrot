@@ -91,10 +91,21 @@ class DelegateToolNode(PlanToolNode):
             candidates = self.delegates[:1]
 
         if not candidates:
-            return (
-                ToolCallProposal(name=None, arguments={}, confidence=None, backend="none", latency_ms=0.0),
-                "declined",
+            # AC10 requires a DelegateTrace for every hop, including this one -- an
+            # empty candidate chain (e.g. every delegate's max_tools below
+            # len(tools) under on_reject="retry_backend") is still a real proposal
+            # attempt that a trace sink needs to see, not a silent early exit.
+            empty_proposal = ToolCallProposal(name=None, arguments={}, confidence=None, backend="none", latency_ms=0.0)
+            await self._trace(
+                item_index=index,
+                instruction=instruction,
+                facts=facts,
+                tools=list(tools),
+                proposal=empty_proposal,
+                verdict="declined",
+                final_call=None,
             )
+            return empty_proposal, "declined"
 
         facts_rendered = json.dumps(facts, sort_keys=True)
         proposal: Optional[ToolCallProposal] = None
