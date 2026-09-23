@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-591 — speech_report pluggable TTS backends (fast-path)
 **Spec**: `sdd/specs/speech-report-models.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: agent:sdd-fix
 **discovered_from**: issue:312c1988479b
 
 ---
@@ -270,10 +270,26 @@ async def test_documentdb_connect_fails_fast():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Opus 5.5)
+**Date**: 2026-09-23
+**Notes**: Implemented per blueprint in bf3362f8e.
+- `DocumentDb._get_connection` passes `timeout=config.getint('DOCUMENTDB_TIMEOUT', fallback=30)` to `AsyncDB`.
+- `packages/ai-parrot-integrations/tests/conftest.py`: autouse `_no_real_documentdb` patches the
+  `DocumentDb.documentdb_connect` class attribute to raise `ConnectionError`; `live_vendor` exempt.
+- Validation (worktree code via PYTHONPATH, each distribution in its own pytest process):
+  `test_documentdb_timeout.py` 2 passed; `test_documentdb_isolation.py` 1 passed;
+  `test_mcp_commands.py` 32 passed (AC3); `test_oauth2_integration.py` 8 passed in ~2s (AC4 —
+  previously killed at 600s); ruff clean on the new files (documentdb.py keeps its 1 pre-existing finding).
+- AC5: `pytest packages/ai-parrot-integrations/tests` now completes in 142s:
+  2293 passed, 24 failed, 7 skipped. The 24 failures reproduce identically with the guard
+  disabled (`--noconftest`, `DOCUMENTDB_TIMEOUT=2`), so they are unrelated to this task:
+  agentd/test_config (yaml roundtrip), agentd/test_e2e (aiohttp without server pkg),
+  telegram multi-auth config validation, telegram voice/audio handling (MagicMock `>` int),
+  jira oauth callback routing, telegram photo attachments (4), telegram wrapper send retry (2),
+  matrix hook (6), slack block builder, telegram enrich-question (3).
+- Merge-tier note: the new `tests/conftest.py` imports as `tests.conftest` like the 20 other
+  distributions' conftests; the validation runner issues one pytest invocation per distribution,
+  so they never share a session. Running two distributions in ONE pytest process collides
+  (pre-existing convention, not new).
 
 **Deviations from spec**: none
