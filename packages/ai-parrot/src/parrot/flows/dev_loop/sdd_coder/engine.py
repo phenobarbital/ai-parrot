@@ -784,6 +784,39 @@ class SddCoderEngine:
         self._execution_owners[canonical_worktree] = execution_id
         return pool.view()
 
+    def _outstanding_job_ids(self, execution_id: str, worktree: str) -> List[str]:
+        """Return the job ids of *execution_id* whose JobTable state is still ``running``.
+
+        A job belongs to the execution when its ``execution_id`` matches; a
+        legacy job with an empty ``execution_id`` belongs to it when its
+        ``_job_worktrees`` entry is the execution's canonical *worktree*.
+        ``_job_worktrees`` is never pruned (``wait()`` re-journals from it),
+        so a job's presence there is NOT evidence it is outstanding -- only
+        its live state is (issue:93abecaf1152).
+
+        Args:
+            execution_id: The execution being closed or persisted.
+            worktree: The execution's canonical worktree path.
+
+        Returns:
+            Job ids in dispatch order; empty when every job has settled.
+        """
+        outstanding: List[str] = []
+        for job_id, job_wt in list(self._job_worktrees.items()):
+            try:
+                job = self._jobs.get(job_id)
+            except KeyError:
+                continue
+            if job.state != "running":
+                continue
+            if job.execution_id:
+                if job.execution_id != execution_id:
+                    continue
+            elif job_wt != worktree:
+                continue
+            outstanding.append(job_id)
+        return outstanding
+
     async def end_execution(self, execution_id: str) -> "ExecutionPoolView":
         """End an execution, releasing worktree ownership.
 
@@ -835,11 +868,12 @@ class SddCoderEngine:
                     "execution_busy",
                     f"execution {execution_id} has {len(snapshot.native_reservations)} native reservations still in flight",
                 )
-            # Check outstanding jobs
-            if snapshot.outstanding_job_ids:
+            # Check outstanding jobs -- from the JobTable, since the pool never tracks MCP jobs
+            running_jobs = self._outstanding_job_ids(execution_id, pool.worktree_path)
+            if running_jobs:
                 raise CoderFailure(
                     "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.outstanding_job_ids)} outstanding jobs",
+                    f"execution {execution_id} has {len(running_jobs)} outstanding jobs",
                 )
 
         # Mark as closed and write durable snapshot before releasing ownership
@@ -856,9 +890,9 @@ class SddCoderEngine:
                 if manager_key in self._manager_execution and self._manager_execution[manager_key] == execution_id:
                     snapshot.native_reservations[task_id] = manager_key
 
-        # Collect outstanding job IDs belonging to this execution (track via _job_worktrees)
-        for job_id, job_wt in list(self._job_worktrees.items()):
-            if job_wt == canonical_worktree:
+        # Outstanding = still-running jobs only (empty once the busy gate above passed)
+        for job_id in self._outstanding_job_ids(execution_id, canonical_worktree):
+            if job_id not in snapshot.outstanding_job_ids:
                 snapshot.outstanding_job_ids.append(job_id)
 
         # Write durable snapshot atomically
@@ -1507,13 +1541,11 @@ class SddCoderEngine:
                     )
 
             except CoderFailure as exc:
-                if exc.code == "complexity_plan_stale":
-                    # Stale assessment - need to replan
-                    raise
-                # Any other complexity-routing failure blocks only this task;
-                # `exc.code` is already the specific code `_assessment_for`
-                # raised (`complexity_contract_invalid` or
-                # `complexity_audit_failed`) -- never relabel it.
+                # A complexity-routing failure blocks only this task; `exc.code`
+                # is already the specific code `_compute_assessment` raised
+                # (`complexity_contract_invalid` or `complexity_audit_failed`
+                # -- it never raises `complexity_plan_stale`, which only
+                # `_assessment_for` does) -- never relabel it.
                 blocked_task_ids.add(task_ref.id)
                 routing_blocks.append(
                     ComplexityBlock(
@@ -2637,8 +2669,8 @@ class SddCoderEngine:
                         ):
                             snapshot.native_reservations[task_id] = manager_key
 
-                for job_id_iter, job_wt in list(self._job_worktrees.items()):
-                    if job_wt == pool.worktree_path and job_id_iter not in snapshot.outstanding_job_ids:
+                for job_id_iter in self._outstanding_job_ids(execution_id, pool.worktree_path):
+                    if job_id_iter not in snapshot.outstanding_job_ids:
                         snapshot.outstanding_job_ids.append(job_id_iter)
 
                 persisted = await self._write_execution_snapshot(pool.worktree_path, execution_id, snapshot)
@@ -3162,7 +3194,23 @@ class SddCoderEngine:
         *,
         eligible_labels: Optional[Set[str]] = None,
     ) -> Optional[RosterSeat]:
-        """Return an untried, healthy eligible native seat, or ``None`` (FEAT-588)."""
+        """Return an untried, healthy eligible native seat, or ``None`` (FEAT-588).
+
+        Unlike `_select_retry_seat`, this never waits on a busy seat: a native
+        seat is released only by the orchestrator's `merge()` of its
+        reservation, which may itself be sequenced after this job's
+        `coder_wait`, so waiting here could park the job until the wait
+        timeout. A busy native seat is treated as unavailable and the caller
+        emits the explicit `complex_model_unavailable` block instead.
+
+        Args:
+            pool: The execution pool; None (legacy path) always yields None.
+            tried_seats: Seat labels already attempted for this task.
+            eligible_labels: Optional restriction to the task's eligible label set.
+
+        Returns:
+            A free, healthy native RosterSeat, or None when none qualifies.
+        """
         if pool is None:
             return None
         async with pool._condition:
@@ -3391,11 +3439,12 @@ class SddCoderEngine:
                 # complex_model_unavailable diagnostic, preserving previous
                 # attempts").
                 remaining = eligible_labels - tried_seats
-                if (
-                    pool is not None
-                    and remaining
-                    and all(candidate.kind == "native" for candidate in pool._seats if candidate.label in remaining)
-                ):
+                # Materialized first: `all()` over an empty candidate set is
+                # vacuously True and would mislabel the diagnostic as MCP-only.
+                remaining_seats = (
+                    [candidate for candidate in pool._seats if candidate.label in remaining] if pool is not None else []
+                )
+                if remaining_seats and all(candidate.kind == "native" for candidate in remaining_seats):
                     no_retry_error = (
                         f"complex_model_unavailable: MCP-only retry ladder has no eligible seat for {task.task_id}"
                     )

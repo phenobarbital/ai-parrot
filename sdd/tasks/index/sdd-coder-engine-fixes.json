@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-23T20:10:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-23T20:20:42+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,17 +16,22 @@
       "feature_id": "FEAT-594",
       "feature": "sdd-coder-engine-fixes",
       "spec": "sdd/specs/sdd-coder-engine-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: adds SddCoderEngine._outstanding_job_ids in sdd_coder/engine.py and edits end_execution/status; owns the new test_outstanding_jobs.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "discovered_from": ["issue:93abecaf1152", "issue:00e1ae81e08d", "issue:cc372f700a47"],
-      "file": "sdd/tasks/active/TASK-3670-outstanding-jobs-running-only.md"
+      "started_at": "2026-09-23T20:10:41+00:00",
+      "completed_at": "2026-09-23T20:10:41+00:00",
+      "discovered_from": [
+        "issue:93abecaf1152",
+        "issue:00e1ae81e08d",
+        "issue:cc372f700a47"
+      ],
+      "file": "sdd/tasks/completed/TASK-3670-outstanding-jobs-running-only.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3671",
@@ -35,17 +40,25 @@
       "feature_id": "FEAT-594",
       "feature": "sdd-coder-engine-fixes",
       "spec": "sdd/specs/sdd-coder-engine-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-3670"],
+      "depends_on": [
+        "TASK-3670"
+      ],
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3670 only because both modify sdd_coder/engine.py (same-file serialization); no symbol from TASK-3670 is used.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "discovered_from": ["issue:466c3bcd0c9a", "issue:8cfe91c4adf5", "issue:0e6daa941b57", "issue:fffc637dfc99"],
-      "file": "sdd/tasks/active/TASK-3671-retry-ladder-hygiene.md"
+      "started_at": "2026-09-23T20:12:15+00:00",
+      "completed_at": "2026-09-23T20:12:15+00:00",
+      "discovered_from": [
+        "issue:466c3bcd0c9a",
+        "issue:8cfe91c4adf5",
+        "issue:0e6daa941b57",
+        "issue:fffc637dfc99"
+      ],
+      "file": "sdd/tasks/completed/TASK-3671-retry-ladder-hygiene.md",
+      "verification": "verified"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-594 — sdd-coder engine fixes (settlement outstanding jobs + retry-ladder hygiene)
 **Spec**: `sdd/specs/sdd-coder-engine-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -256,4 +256,8 @@ async def test_end_execution_busy_while_job_running() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-opus-5-5 via /sdd-fix
+**Date**: 2026-09-23
+**Notes**: Added `SddCoderEngine._outstanding_job_ids()` (running JobTable jobs, scoped by execution_id, legacy fallback by worktree) and used it in the end_execution busy gate, the end_execution snapshot enrichment and status()'s persistence retry. Removed both `_job_worktrees.pop` workarounds; `test_mixed_delivery_checkpoint_fresh_review` now reaches `prepare_review_checkpoint` unaided. New `test_outstanding_jobs.py` (3 tests). Validation: 26 passed across the four listed files; ruff clean.
+
+**Deviations from spec**: none (checkpoint.py intentionally unchanged)
