@@ -136,6 +136,12 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
 
 
 WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
+# Claude Code keeps every session's scratchpad under this root
+# (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
+# seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
+# private tmpfs, so the root is bound back in — writable — for all sessions of
+# this user at once; every session on the host belongs to the same user.
+CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid()}"
 
 
 def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
@@ -168,13 +174,32 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     return (admin_dir,)
 
 
+def claude_scratch_root() -> Path:
+    """Return Claude Code's per-user scratchpad root, creating it when absent.
+
+    Claude Code creates a session's scratchpad lazily, so the root may not
+    exist yet when the first sandboxed command runs. Creating it on the host
+    lets a ``mkdir -p`` of the scratchpad from inside the sandbox land on the
+    host instead of in the private tmpfs, where it would vanish with the
+    command.
+
+    Returns:
+        The resolved root directory, private to the current user.
+    """
+    root = CLAUDE_SCRATCH_ROOT
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return root.resolve()
+
+
 def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     """Build a fail-closed Linux filesystem sandbox for a command and its children.
 
     Only the checkout, Git administration directory, the primary checkout's
     worktree directory (``.claude/worktrees``, so a worktree agent can run
-    ``git worktree add/remove`` for ``/sdd-done``), and private temporary
-    storage are writable. The rest of the primary checkout and existing shared
+    ``git worktree add/remove`` for ``/sdd-done``), private temporary storage,
+    and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
+    private ``/tmp`` so a seat's scratchpad survives between commands) are
+    writable. The rest of the primary checkout and existing shared
     environments remain read-only even when the checkout is the primary
     repository. No host chmod or mount changes are performed. Network
     isolation is outside this policy's scope.
@@ -200,6 +225,10 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         "--tmpfs",
         "/tmp",
     ]
+    # Mounts apply in order: binding after the tmpfs punches the scratchpad
+    # root through it while the rest of /tmp stays private.
+    scratch_root = claude_scratch_root()
+    command.extend(["--bind", str(scratch_root), str(scratch_root)])
     admin_dirs = worktree_admin_dirs(root, git_dir)
     for admin_dir in admin_dirs:
         command.extend(["--bind", str(admin_dir), str(admin_dir)])

@@ -293,6 +293,68 @@ async def test_speech_report_omits_model_kwargs_by_default(mock_agent_deps):
     assert "model" not in mock_agent_deps.generate_speech.call_args.kwargs
 
 
+def _podcast_client(mock_agent_deps):
+    """Wire the mocked Google client for a speech_report() call."""
+    mock_agent_deps.__aenter__.return_value = mock_agent_deps
+    mock_script_response = MagicMock()
+    mock_script_response.output.prompt = "Script Content"
+    mock_agent_deps.create_conversation_script.return_value = mock_script_response
+    mock_speech_result = MagicMock()
+    mock_speech_result.files = ["/tmp/podcast.wav"]
+    mock_agent_deps.generate_speech.return_value = mock_speech_result
+    mock_ctx_manager = MagicMock()
+    mock_ctx_manager.__aenter__.return_value = AsyncMock()
+    mock_ctx_manager.__aexit__.return_value = None
+    return mock_ctx_manager
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("num_speakers", [1, 2])
+async def test_speech_report_uses_exactly_num_speakers(mock_agent_deps, num_speakers):
+    """Regression: the limit was checked after appending, so num_speakers=1 produced two speakers."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    agent.open_prompt = AsyncMock(return_value="Podcast Instructions")
+    ctx = _podcast_client(mock_agent_deps)
+
+    with patch("parrot.bots.agent.aiofiles.open", return_value=ctx):
+        await agent.speech_report(report="Analysis Text", num_speakers=num_speakers)
+
+    config = mock_agent_deps.create_conversation_script.call_args.kwargs["report_data"]
+    assert [s.name for s in config.speakers] == ["Lydia", "Brian"][:num_speakers]
+
+
+@pytest.mark.asyncio
+async def test_speech_report_does_not_mutate_class_speakers(mock_agent_deps):
+    """speech_report() must not write into the class-level `speakers` dict shared by all instances."""
+    from parrot.bots.agent import BasicAgent
+
+    class Shouty(BasicAgent):
+        speakers = {"host": {"name": "Ana", "role": "interviewer", "characteristic": "Bright", "gender": "FEMALE"}}
+
+    agent = Shouty(name="Podcaster")
+    agent.open_prompt = AsyncMock(return_value="Podcast Instructions")
+    ctx = _podcast_client(mock_agent_deps)
+
+    with patch("parrot.bots.agent.aiofiles.open", return_value=ctx):
+        await agent.speech_report(report="Analysis Text", num_speakers=1)
+
+    config = mock_agent_deps.create_conversation_script.call_args.kwargs["report_data"]
+    assert config.speakers[0].gender == "female"
+    assert Shouty.speakers["host"]["gender"] == "FEMALE"
+
+
+@pytest.mark.asyncio
+async def test_speech_report_rejects_zero_speakers(mock_agent_deps):
+    """num_speakers < 1 is a caller error, not a silent empty podcast."""
+    from parrot.bots.agent import BasicAgent
+
+    agent = BasicAgent(name="Podcaster")
+    with pytest.raises(ValueError, match="num_speakers"):
+        await agent.speech_report(report="Analysis Text", num_speakers=0)
+
+
 @pytest.mark.asyncio
 async def test_speech_report_verbatim_supertonic_zero_llm_calls(mock_agent_deps, tmp_path):
     """Non-Gemini verbatim synthesis bypasses all LLM calls."""

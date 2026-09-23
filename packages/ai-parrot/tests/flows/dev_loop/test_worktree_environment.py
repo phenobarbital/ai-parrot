@@ -20,6 +20,14 @@ from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, LLMCodeDispatchProfile
 
 
+@pytest.fixture(autouse=True)
+def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the sandbox's Claude scratchpad root at a private directory instead of the real ``/tmp/claude-<uid>``."""
+    root = tmp_path / "claude-scratch"
+    monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", root)
+    return root
+
+
 @pytest.fixture
 def checkout(tmp_path: Path) -> tuple[Path, Path]:
     """Model a pool checkout and the primary repository's shared environment."""
@@ -334,21 +342,65 @@ def test_feature_worktree_binds_primary_worktree_admin_dir(tmp_path: Path, monke
     assert main.resolve() not in binds
 
 
-def test_primary_checkout_has_no_extra_worktree_admin_bind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_primary_checkout_has_no_extra_worktree_admin_bind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main = tmp_path / "main"
     (main / ".git").mkdir(parents=True)
     (main / ".claude" / "worktrees").mkdir(parents=True)
-    assert _writable_binds(policy.protected_argv(main, ["true"])) == [main.resolve()]
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
+
+
+def test_sandbox_binds_claude_scratch_root_after_private_tmp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """Claude Code's per-session scratchpads live under ``/tmp/claude-<uid>``; the private tmpfs must not hide them."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    scratch = scratch_root
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    argv = policy.protected_argv(main, ["true"])
+    assert scratch.is_dir(), "the hook creates the root so a lazily-created scratchpad has somewhere to land"
+    tmpfs_index = argv.index("--tmpfs")
+    assert argv[tmpfs_index + 1] == "/tmp"
+    bind_index = argv.index(str(scratch.resolve()))
+    assert argv[bind_index - 1] == "--bind" and argv[bind_index + 1] == str(scratch.resolve())
+    assert bind_index > tmpfs_index, "the bind must come after the tmpfs mount or the tmpfs shadows it"
+
+
+def test_real_scratchpad_survives_between_sandboxed_commands(tmp_path: Path, scratch_root: Path) -> None:
+    """A file a seat writes to its scratchpad in one Bash call must still be there in the next one."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    scratchpad = scratch_root / "-project" / "session-1" / "scratchpad"
+
+    def sandboxed(command: str) -> subprocess.CompletedProcess[str]:
+        argv = policy.protected_argv(main, ["/bin/bash", "-c", command])
+        return subprocess.run(argv, capture_output=True, text=True, timeout=20)
+
+    result = sandboxed(
+        f"mkdir -p {shlex.quote(str(scratchpad))} && echo collected > {shlex.quote(str(scratchpad / 'collected.txt'))}"
+    )
+    assert result.returncode == 0, result.stderr
+    result = sandboxed(f"cat {shlex.quote(str(scratchpad / 'collected.txt'))}")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "collected"
+    assert (scratchpad / "collected.txt").read_text().strip() == "collected"
+    # The rest of /tmp stays private: a stray write next to the scratch root never reaches the host.
+    sandboxed(f"touch {shlex.quote(str(tmp_path / 'stray-tmp-file'))}")
+    assert not (tmp_path / "stray-tmp-file").exists()
 
 
 def test_linked_checkout_without_admin_dir_binds_nothing_extra(
-    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
 ) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     worktree, env = checkout
     binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
-    assert binds == [worktree.resolve(), (env.parent / ".git").resolve()]
+    assert binds == [scratch_root.resolve(), worktree.resolve(), (env.parent / ".git").resolve()]
 
 
 def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout(tmp_path: Path) -> None:
@@ -476,7 +528,9 @@ def test_real_hung_sandboxed_process_is_killed_at_tool_timeout(tmp_path: Path) -
 # ---------------------------------------------------------------------------
 
 
-def test_removed_worktree_still_yields_a_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_removed_worktree_still_yields_a_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
     """A deleted working directory anchors on its nearest surviving ancestor, never on a denial."""
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main, worktree = _registered_feature_worktree(tmp_path)
@@ -488,18 +542,18 @@ def test_removed_worktree_still_yields_a_sandbox(tmp_path: Path, monkeypatch: py
     assert "permissionDecision" not in output, output
     argv = _sandboxed_argv(response)
     assert Path(argv[argv.index("--chdir") + 1]).is_dir()
-    assert _writable_binds(argv) == [main.resolve()]
+    assert _writable_binds(argv) == [scratch_root.resolve(), main.resolve()]
 
 
 def test_pruned_administration_directory_keeps_the_checkout_writable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
 ) -> None:
     """`git worktree prune` must not strand a live session without a writable checkout."""
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main, worktree = _registered_feature_worktree(tmp_path)
     shutil.rmtree(main / ".git" / "worktrees" / "feat-x")
     assert policy.repository_paths(worktree) == (worktree, None)
-    assert _writable_binds(policy.protected_argv(worktree, ["true"])) == [worktree.resolve()]
+    assert _writable_binds(policy.protected_argv(worktree, ["true"])) == [scratch_root.resolve(), worktree.resolve()]
 
 
 def test_real_self_removal_leaves_a_usable_shell(tmp_path: Path) -> None:
