@@ -1,6 +1,7 @@
 """
 Database model for Managing Chatbots and Agents.
 """
+
 from typing import List, Optional
 import uuid
 import time
@@ -9,6 +10,7 @@ from enum import Enum
 from datamodel import Field
 from asyncdb.models import Model
 from parrot.conf import PARROT_BOTS_TABLE, PARROT_SCHEMA
+
 # from ..bots.basic import BasicBot
 
 
@@ -94,10 +96,7 @@ class BotModel(Model):
 
     # Primary key
     chatbot_id: uuid.UUID = Field(
-        primary_key=True,
-        required=False,
-        default_factory=uuid.uuid4,
-        ui_help="The bot’s unique identifier."
+        primary_key=True, required=False, default_factory=uuid.uuid4, ui_help="The bot’s unique identifier."
     )
 
     # Basic bot information
@@ -109,45 +108,38 @@ class BotModel(Model):
 
     # Bot personality and behavior
     role: str = Field(
-        default="AI Assistant",
-        ui_help="The bot’s function or identity from the user’s perspective.",
-        required=False
+        default="AI Assistant", ui_help="The bot’s function or identity from the user’s perspective.", required=False
     )
     goal: str = Field(
         default="Help users accomplish their tasks effectively.",
         required=True,
-        ui_help="primary outcome the bot is designed to achieve. Keep it clear and specific. "
+        ui_help="primary outcome the bot is designed to achieve. Keep it clear and specific. ",
     )
     backstory: str = Field(
         default="I am an AI assistant created to help users with various tasks.",
         required=True,
-        ui_help="Outlines the bot’s knowledge base, data sources, restrictions, and configuration rules (both technical and non-technical). Also, what is prohibited or undesirable behavior for the bot. "
+        ui_help="Outlines the bot’s knowledge base, data sources, restrictions, and configuration rules (both technical and non-technical). Also, what is prohibited or undesirable behavior for the bot. ",
     )
     rationale: str = Field(
         default="I maintain a professional tone and provide accurate, helpful information.",
         required=True,
-        ui_help="Defines how the bot behaves in conversation — its tone, style, error handling, and hot it deals with off-topic inputs."
+        ui_help="Defines how the bot behaves in conversation — its tone, style, error handling, and hot it deals with off-topic inputs.",
     )
     capabilities: str = Field(
         default="I can engage in conversation, answer questions, and use tools when needed.",
         required=False,
-        ui_help="The bot’s capabilities and features."
+        ui_help="The bot’s capabilities and features.",
     )
 
     # Prompt configuration
     system_prompt_template: Optional[str] = Field(
-        default=None,
-        required=False,
-        ui_help="The bot’s system prompt template, which defines its role and behavior."
+        default=None, required=False, ui_help="The bot’s system prompt template, which defines its role and behavior."
     )
-    human_prompt_template: Optional[str] = Field(
-        default=None,
-        required=False
-    )
+    human_prompt_template: Optional[str] = Field(default=None, required=False)
     pre_instructions: List[str] = Field(
         default_factory=list,
         required=False,
-        ui_help="Guidelines for consistent behavior and proper use of context. These ensure the bot uses only the predefined context to generate responses."
+        ui_help="Guidelines for consistent behavior and proper use of context. These ensure the bot uses only the predefined context to generate responses.",
     )
     prompt_config: dict = Field(
         default_factory=dict,
@@ -162,7 +154,7 @@ class BotModel(Model):
     )
 
     # LLM configuration
-    llm: str = Field(default='google', required=False, ui_help="Large Language Model powering the bot. ")
+    llm: str = Field(default="google", required=False, ui_help="Large Language Model powering the bot. ")
     model_config: dict = Field(
         default_factory=dict,
         required=False,
@@ -175,12 +167,10 @@ class BotModel(Model):
 
     # Tool and agent configuration
     tools_enabled: bool = Field(default=True, required=False, ui_help="Whether the bot’s tools are enabled or not.")
-    auto_tool_detection: bool = Field(default=True, required=False, ui_help="Whether the bot’s auto tool detection is enabled or not.")
-    tool_threshold: float = Field(
-        default=0.7,
-        required=False,
-        ui_help="The bot’s tool threshold."
+    auto_tool_detection: bool = Field(
+        default=True, required=False, ui_help="Whether the bot’s auto tool detection is enabled or not."
     )
+    tool_threshold: float = Field(default=0.7, required=False, ui_help="The bot’s tool threshold.")
     tools: List[str] = Field(default_factory=list, required=False, ui_help="The bot’s tools.")
     toolkit_config: dict = Field(
         required=False,
@@ -192,30 +182,18 @@ class BotModel(Model):
         default_factory=list,
         ui_help="FEAT-593 — agent-level MCP servers [AgentMCPServerSpec]; auth/headers/env live in the vault.",
     )
-    operation_mode: str = Field(default='adaptive', required=False, ui_help="The bot’s operation mode.")  # 'conversational', 'agentic', 'adaptive'
+    operation_mode: str = Field(
+        default="adaptive", required=False, ui_help="The bot’s operation mode."
+    )  # 'conversational', 'agentic', 'adaptive'
 
     # Knowledge Base
-    use_kb: bool = Field(
-        default=False,
-        required=False,
-        ui_help="Whether the bot’s knowledge base is enabled or not."
-    )
-    kb: List[dict] = Field(
-        default_factory=list,
-        required=False,
-        ui_help="The bot’s knowledge base facts."
-    )
+    use_kb: bool = Field(default=False, required=False, ui_help="Whether the bot’s knowledge base is enabled or not.")
+    kb: List[dict] = Field(default_factory=list, required=False, ui_help="The bot’s knowledge base facts.")
     custom_kbs: List[str] = Field(nullable=True, default=None)
     # Vector store and retrieval configuration
-    use_vector: bool = Field(
-        default=False,
-        required=False,
-        ui_help="Whether the bot’s vector store is enabled or not."
-    )
+    use_vector: bool = Field(default=False, required=False, ui_help="Whether the bot’s vector store is enabled or not.")
     vector_store_config: dict = Field(
-        default_factory=dict,
-        required=False,
-        ui_help="The bot’s vector store configuration."
+        default_factory=dict, required=False, ui_help="The bot’s vector store configuration."
     )
     reranker_config: dict = Field(
         default_factory=dict,
@@ -227,41 +205,21 @@ class BotModel(Model):
         required=False,
         ui_help="The bot’s parent-searcher config (FEAT-128).",
     )
-    context_search_limit: int = Field(
-        default=10,
-        required=False,
-        ui_help="The bot’s context search limit."
-    )
-    context_score_threshold: float = Field(
-        default=0.7,
-        required=False,
-        ui_help="The bot’s context score threshold."
-    )
+    context_search_limit: int = Field(default=10, required=False, ui_help="The bot’s context search limit.")
+    context_score_threshold: float = Field(default=0.7, required=False, ui_help="The bot’s context score threshold.")
 
     # Memory and conversation configuration
     memory_type: str = Field(
-        default='memory',
-        required=False,
-        ui_help="The bot’s memory type."
+        default="memory", required=False, ui_help="The bot’s memory type."
     )  # 'memory', 'file', 'redis'
-    memory_config: dict = Field(
-        default_factory=dict,
-        required=False,
-        ui_help="The bot’s memory configuration."
-    )
-    max_context_turns: int = Field(
-        default=5, required=False, ui_help="The bot’s maximum context turns."
-    )
+    memory_config: dict = Field(default_factory=dict, required=False, ui_help="The bot’s memory configuration.")
+    max_context_turns: int = Field(default=5, required=False, ui_help="The bot’s maximum context turns.")
     use_conversation_history: bool = Field(
-        default=True,
-        required=False,
-        ui_help="Whether the bot’s conversation history is enabled or not."
+        default=True, required=False, ui_help="Whether the bot’s conversation history is enabled or not."
     )
     # advanced: Bot Class
     bot_class: Optional[str] = Field(
-        required=False,
-        default='BasicBot',
-        ui_help="The bot’s class path, e.g., 'parrot.bots.unified.UnifiedBot'."
+        required=False, default="BasicBot", ui_help="The bot’s class path, e.g., 'parrot.bots.unified.UnifiedBot'."
     )
 
     # Security and permissions
@@ -284,29 +242,14 @@ class BotModel(Model):
     )
 
     # Metadata
-    language: str = Field(
-        default='en',
-        required=False,
-        ui_help="The bot’s language."
-    )
+    language: str = Field(default="en", required=False, ui_help="The bot’s language.")
     disclaimer: Optional[str] = Field(
         required=False,
-        ui_help="Message shown to users before interacting with the bot. Use it for usage tips, limitations, or important notices."
+        ui_help="Message shown to users before interacting with the bot. Use it for usage tips, limitations, or important notices.",
     )
-    created_at: datetime = Field(
-        required=False,
-        default=datetime.now,
-        ui_help="The bot’s creation timestamp."
-    )
-    created_by: Optional[int] = Field(
-        required=False,
-        ui_help="The bot’s creator."
-    )
-    updated_at: datetime = Field(
-        required=False,
-        default=datetime.now,
-        ui_help="The bot’s last update timestamp."
-    )
+    created_at: datetime = Field(required=False, default=datetime.now, ui_help="The bot’s creation timestamp.")
+    created_by: Optional[int] = Field(required=False, ui_help="The bot’s creator.")
+    updated_at: datetime = Field(required=False, default=datetime.now, ui_help="The bot’s last update timestamp.")
 
     def __post_init__(self) -> None:
         super(BotModel, self).__post_init__()
@@ -315,12 +258,12 @@ class BotModel(Model):
             self.model_config = {}
 
         # Validate operation_mode
-        valid_modes = ['conversational', 'agentic', 'adaptive']
+        valid_modes = ["conversational", "agentic", "adaptive"]
         if self.operation_mode not in valid_modes:
             raise ValueError(f"operation_mode must be one of {valid_modes}")
 
         # Validate memory_type
-        valid_memory_types = ['memory', 'file', 'redis']
+        valid_memory_types = ["memory", "file", "redis"]
         if self.memory_type not in valid_memory_types:
             raise ValueError(f"memory_type must be one of {valid_memory_types}")
 
@@ -332,38 +275,38 @@ class BotModel(Model):
         """Convert model instance to bot configuration dictionary."""
         tooling = self._normalized_tooling()
         return {
-            'name': self.name,
-            'description': self.description,
-            'role': self.role,
-            'goal': self.goal,
-            'backstory': self.backstory,
-            'rationale': self.rationale,
-            'capabilities': self.capabilities,
-            'system_prompt': self.system_prompt_template,
-            'human_prompt': self.human_prompt_template,
-            'pre_instructions': self.pre_instructions,
-            'prompt_config': self.prompt_config,
-            'llm': self.llm,
-            'model_config': self.model_config,
-            'tools_enabled': self.tools_enabled,
-            'auto_tool_detection': self.auto_tool_detection,
-            'tool_threshold': self.tool_threshold,
-            'tools': tooling.tools + tooling.toolkits,
-            'agent_mcp_servers': tooling.mcp_servers,
-            'operation_mode': self.operation_mode,
-            'use_vector': self.use_vector,
-            'vector_store_config': self.vector_store_config,
-            'reranker_config': self.reranker_config,
-            'parent_searcher_config': self.parent_searcher_config,
-            'context_search_limit': self.context_search_limit,
-            'context_score_threshold': self.context_score_threshold,
-            'memory_type': self.memory_type,
-            'memory_config': self.memory_config,
-            'max_context_turns': self.max_context_turns,
-            'use_conversation_history': self.use_conversation_history,
-            'permissions': self.permissions,
-            'language': self.language,
-            'disclaimer': self.disclaimer,
+            "name": self.name,
+            "description": self.description,
+            "role": self.role,
+            "goal": self.goal,
+            "backstory": self.backstory,
+            "rationale": self.rationale,
+            "capabilities": self.capabilities,
+            "system_prompt": self.system_prompt_template,
+            "human_prompt": self.human_prompt_template,
+            "pre_instructions": self.pre_instructions,
+            "prompt_config": self.prompt_config,
+            "llm": self.llm,
+            "model_config": self.model_config,
+            "tools_enabled": self.tools_enabled,
+            "auto_tool_detection": self.auto_tool_detection,
+            "tool_threshold": self.tool_threshold,
+            "tools": tooling.tools + tooling.toolkits,
+            "agent_mcp_servers": tooling.mcp_servers,
+            "operation_mode": self.operation_mode,
+            "use_vector": self.use_vector,
+            "vector_store_config": self.vector_store_config,
+            "reranker_config": self.reranker_config,
+            "parent_searcher_config": self.parent_searcher_config,
+            "context_search_limit": self.context_search_limit,
+            "context_score_threshold": self.context_score_threshold,
+            "memory_type": self.memory_type,
+            "memory_config": self.memory_config,
+            "max_context_turns": self.max_context_turns,
+            "use_conversation_history": self.use_conversation_history,
+            "permissions": self.permissions,
+            "language": self.language,
+            "disclaimer": self.disclaimer,
         }
 
     def _normalized_tooling(self):
@@ -412,7 +355,8 @@ class BotModel(Model):
 
     class Meta:
         """Meta Bot Model."""
-        driver = 'pg'
+
+        driver = "pg"
         name = PARROT_BOTS_TABLE
         schema = PARROT_SCHEMA
         strict = True
@@ -442,11 +386,12 @@ class ChatbotUsage(Model):
     AND default_time_to_live = 10368000;
 
     """
+
     chatbot_id: uuid.UUID = Field(primary_key=True, required=False)
     user_id: int = Field(primary_key=True, required=False)
     sid: uuid.UUID = Field(primary_key=True, required=False, default=uuid.uuid4)
-    source_path: str = Field(required=False, default='web')
-    platform: str = Field(required=False, default='web')
+    source_path: str = Field(required=False, default="web")
+    platform: str = Field(required=False, default="web")
     origin: str = Field(required=False)
     user_agent: str = Field(required=False)
     question: str = Field(required=False)
@@ -457,7 +402,8 @@ class ChatbotUsage(Model):
 
     class Meta:
         """Meta Chatbot."""
-        driver = 'bigquery'
+
+        driver = "bigquery"
         name = "chatbots_usage"
         schema = "navigator"
         ttl = 10368000  # 120 days in seconds
@@ -467,12 +413,13 @@ class ChatbotUsage(Model):
     def __post_init__(self) -> None:
         if not self._at:
             # Generate a unique session id
-            self._at = f'{self.sid}:{self.used_at}'
+            self._at = f"{self.sid}:{self.used_at}"
         super(ChatbotUsage, self).__post_init__()
 
 
 class FeedbackType(Enum):
     """FeedbackType."""
+
     # Good Feedback
     GOOD_COMPLETE = "Completeness"
     GOOD_CORRECT = "Correct"
@@ -494,6 +441,7 @@ class FeedbackType(Enum):
         """Return a list of feedback types based on the given category (Good or Bad)."""
         prefix = feedback_category.upper() + "_"
         return [feedback for feedback in cls if feedback.name.startswith(prefix)]
+
 
 class ChatbotFeedback(Model):
     """ChatbotFeedback.
@@ -519,6 +467,7 @@ class ChatbotFeedback(Model):
       expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)
     );
     """
+
     chatbot_id: str = Field(primary_key=True, required=False)
     session_id: str = Field(required=False)
     turn_id: str = Field(primary_key=True, required=False)
@@ -535,7 +484,8 @@ class ChatbotFeedback(Model):
 
     class Meta:
         """Meta Chatbot."""
-        driver = 'bigquery'
+
+        driver = "bigquery"
         name = "chatbots_feedback"
         schema = "navigator"
         ttl = 7776000  # 3 months in seconds
@@ -545,11 +495,12 @@ class ChatbotFeedback(Model):
     def __post_init__(self) -> None:
         if not self._at:
             # Generate a unique session id
-            self._at = f'{self.turn_id}:{self.created_at}'
+            self._at = f"{self.turn_id}:{self.created_at}"
         super(ChatbotFeedback, self).__post_init__()
 
 
 ## Prompt Library:
+
 
 class PromptCategory(Enum):
     """
@@ -558,6 +509,7 @@ class PromptCategory(Enum):
     Categorization of Prompts, as "tech",
     "tech-or-explain", "idea", "explain", "action", "command", "other".
     """
+
     TECH = "tech"
     TECH_OR_EXPLAIN = "tech-or-explain"
     IDEA = "idea"
@@ -565,6 +517,7 @@ class PromptCategory(Enum):
     ACTION = "action"
     COMMAND = "command"
     OTHER = "other"
+
 
 class PromptLibrary(Model):
     """PromptLibrary.
@@ -606,6 +559,7 @@ class PromptLibrary(Model):
     CREATE INDEX IF NOT EXISTS idx_prompt_library_agent_id
         ON navigator.prompt_library(agent_id);
     """
+
     prompt_id: uuid.UUID = Field(primary_key=True, required=False, default_factory=uuid.uuid4)
     chatbot_id: Optional[uuid.UUID] = Field(required=False, default=None)
     agent_id: Optional[str] = Field(required=False, default=None)
@@ -620,12 +574,12 @@ class PromptLibrary(Model):
 
     class Meta:
         """Meta Prompt Library."""
-        driver = 'pg'
+
+        driver = "pg"
         name = "prompt_library"
         schema = "navigator"
         strict = True
         frozen = False
-
 
     def __post_init__(self) -> None:
         super(PromptLibrary, self).__post_init__()
@@ -645,6 +599,7 @@ def create_bot(bot_model: BotModel, bot_class=None):
     """
     if bot_class is None:
         from ..bots.basic import BasicBot
+
         bot_class = BasicBot
 
     # Convert model to configuration

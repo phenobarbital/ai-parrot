@@ -4,10 +4,13 @@ import uuid as _uuid
 from datetime import datetime
 from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from asyncdb.exceptions import NoDataFound
+
 # PBAC (Policy-Based Access Control) — optional, fail-open if absent
 from navigator_auth.decorators import user_session
+
 try:
     from navigator_auth.abac.policies.resources import ResourceType as _ResourceType
+
     _PBAC_AVAILABLE = True
 except ImportError:
     _ResourceType = None
@@ -15,27 +18,17 @@ except ImportError:
 # Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
 from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
 
-from navigator.views import (
-    ModelView,
-    BaseView,
-    FormModel
-)
+from navigator.views import ModelView, BaseView, FormModel
 from navigator.views.abstract import AbstractModel
 from parrot.conf import (
     BIGQUERY_CREDENTIALS,
     BIGQUERY_PROJECT_ID,
 )
 from parrot.utils.naming import slugify_name, deduplicate_name
-from .models import (
-    BotModel,
-    ChatbotUsage,
-    PromptLibrary,
-    UserPrompts,
-    ChatbotFeedback,
-    FeedbackType
-)
+from .models import BotModel, ChatbotUsage, PromptLibrary, UserPrompts, ChatbotFeedback, FeedbackType
 from ..tools.discovery import discover_all
 from ..registry.registry import BotConfig
+
 # FEAT-133: reranker + parent-searcher factories (used in _register_bot_into_manager)
 from ..exceptions import ConfigError
 from ..rerankers.factory import create_reranker
@@ -62,8 +55,8 @@ class _PBACHandlerMixin:
         """
         if not _PBAC_AVAILABLE:
             return None
-        pdp = self.request.app.get('abac')
-        return getattr(pdp, '_evaluator', None) if pdp is not None else None
+        pdp = self.request.app.get("abac")
+        return getattr(pdp, "_evaluator", None) if pdp is not None else None
 
     async def _build_eval_context(self):
         """Build an ``EvalContext`` from the current request session.
@@ -95,8 +88,8 @@ class PromptLibraryManagement(ModelView):
 
     model = PromptLibrary
     name: str = "Prompt Library Management"
-    path: str = '/api/v1/prompt_library'
-    pk: str = 'prompt_id'
+    path: str = "/api/v1/prompt_library"
+    pk: str = "prompt_id"
 
     async def _set_created_by(self, value, column, data):
         if not value:
@@ -118,9 +111,7 @@ class PromptLibraryManagement(ModelView):
         if chatbot_id and agent_id:
             return self.error(
                 response={
-                    "message": (
-                        "Provide exactly one of chatbot_id or agent_id, not both."
-                    ),
+                    "message": ("Provide exactly one of chatbot_id or agent_id, not both."),
                 },
                 status=400,
             )
@@ -139,10 +130,7 @@ class PromptLibraryManagement(ModelView):
             if not _AGENT_SLUG_RE.match(agent_id):
                 return self.error(
                     response={
-                        "message": (
-                            "agent_id must match [a-z0-9_-]+ "
-                            "(registry slug format)."
-                        ),
+                        "message": ("agent_id must match [a-z0-9_-]+ " "(registry slug format)."),
                     },
                     status=400,
                 )
@@ -161,8 +149,8 @@ class UserPromptsManagement(ModelView):
 
     model = UserPrompts
     name: str = "User Prompts Management"
-    path: str = '/api/v1/agents/user_prompts'
-    pk: str = 'prompt_id'
+    path: str = "/api/v1/agents/user_prompts"
+    pk: str = "prompt_id"
 
     async def _set_user_id(self, value, column, data):
         # ALWAYS overwrite — the request must not carry a client-supplied user_id.
@@ -194,26 +182,22 @@ class ChatbotUsageHandler(ModelView):
     """
 
     model = ChatbotUsage
-    driver: str = 'bigquery'
+    driver: str = "bigquery"
     name: str = "Chatbot Usage"
-    path: str = '/api/v1/chatbots_usage'
-    pk: str = 'sid'
+    path: str = "/api/v1/chatbots_usage"
+    pk: str = "sid"
 
     def get_connection(self):
         params = {
             "credentials": BIGQUERY_CREDENTIALS,
             "project_id": BIGQUERY_PROJECT_ID,
         }
-        return AsyncDB(
-            'bigquery',
-            params=params,
-            force_closing=False
-        )
+        return AsyncDB("bigquery", params=params, force_closing=False)
 
     async def post(self):
         # Try to use validator when available (as in FormModel); otherwise parse JSON.
         usage = None
-        if hasattr(self, 'validate_payload'):
+        if hasattr(self, "validate_payload"):
             usage = await self.validate_payload()
         if usage is None:
             try:
@@ -221,68 +205,52 @@ class ChatbotUsageHandler(ModelView):
             except Exception:
                 payload = None
             if not payload:
-                return self.error(
-                    response={
-                        "message": "Error on Chatbot Usage payload"
-                    },
-                    status=400
-                )
+                return self.error(response={"message": "Error on Chatbot Usage payload"}, status=400)
             try:
                 usage = ChatbotUsage(**payload)
             except Exception as exc:
-                return self.error(
-                    response={
-                        "message": f"Invalid Chatbot Usage payload: {exc}"
-                    },
-                    status=400
-                )
+                return self.error(response={"message": f"Invalid Chatbot Usage payload: {exc}"}, status=400)
 
         db = self.get_connection()
         try:
             async with await db.connection() as conn:  # pylint: disable=E1101
                 data = usage.to_dict()
                 # Normalize types for BigQuery
-                if 'sid' in data:
-                    data['sid'] = str(data['sid'])
-                if 'chatbot_id' in data:
-                    data['chatbot_id'] = str(data['chatbot_id'])
-                if 'event_timestamp' in data:
-                    data['event_timestamp'] = str(data['event_timestamp'])
+                if "sid" in data:
+                    data["sid"] = str(data["sid"])
+                if "chatbot_id" in data:
+                    data["chatbot_id"] = str(data["chatbot_id"])
+                if "event_timestamp" in data:
+                    data["event_timestamp"] = str(data["event_timestamp"])
 
                 # Enrich from request context if missing
-                if not data.get('origin'):
-                    data['origin'] = getattr(self.request, 'remote', None)
-                if not data.get('user_agent'):
-                    data['user_agent'] = self.request.headers.get('User-Agent', '')
-                if not data.get('user_id'):
+                if not data.get("origin"):
+                    data["origin"] = getattr(self.request, "remote", None)
+                if not data.get("user_agent"):
+                    data["user_agent"] = self.request.headers.get("User-Agent", "")
+                if not data.get("user_id"):
                     try:
-                        data['user_id'] = await self.get_userid(session=self._session)
+                        data["user_id"] = await self.get_userid(session=self._session)
                     except Exception:
                         pass
 
                 # Ensure _at exists (sid:used_at)
-                if not data.get('_at') and data.get('sid') and data.get('used_at'):
-                    data['_at'] = f"{data['sid']}:{data['used_at']}"
+                if not data.get("_at") and data.get("sid") and data.get("used_at"):
+                    data["_at"] = f"{data['sid']}:{data['used_at']}"
 
                 await conn.write(
                     [data],
                     table_id=ChatbotUsage.Meta.name,
                     dataset_id=ChatbotUsage.Meta.schema,
                     use_streams=False,
-                    use_pandas=False
+                    use_pandas=False,
                 )
-                return self.json_response({
-                    "message": "Chatbot Usage recorded.",
-                    "question": data.get('question'),
-                    "sid": data.get('sid')
-                }, status=201)
+                return self.json_response(
+                    {"message": "Chatbot Usage recorded.", "question": data.get("question"), "sid": data.get("sid")},
+                    status=201,
+                )
         except Exception as e:
-            return self.error(
-                response={
-                    "message": f"Error on Chatbot Usage: {e}"
-                },
-                status=400
-            )
+            return self.error(response={"message": f"Error on Chatbot Usage: {e}"}, status=400)
 
 
 class ChatbotSharingQuestion(BaseView):
@@ -296,21 +264,13 @@ class ChatbotSharingQuestion(BaseView):
             "credentials": BIGQUERY_CREDENTIALS,
             "project_id": BIGQUERY_PROJECT_ID,
         }
-        return AsyncDB(
-            'bigquery',
-            params=params
-        )
+        return AsyncDB("bigquery", params=params)
 
     async def get(self):
         qs = self.get_arguments(self.request)
-        sid = qs.get('sid', None)
+        sid = qs.get("sid", None)
         if not sid:
-            return self.error(
-                response={
-                    "message": "You need to Provided a ID of Question"
-                },
-                status=400
-            )
+            return self.error(response={"message": "You need to Provided a ID of Question"}, status=400)
         db = self.get_connection()
         try:
             async with await db.connection() as conn:  # pylint: disable=E1101
@@ -318,27 +278,17 @@ class ChatbotSharingQuestion(BaseView):
                 # Getting a SID from sid
                 question = await ChatbotUsage.get(sid=sid)
                 if not question:
-                    return self.error(
-                        response={
-                            "message": "Question not found"
-                        },
-                        status=404
-                    )
+                    return self.error(response={"message": "Question not found"}, status=404)
                 return self.json_response(
                     {
                         "chatbot": question.chatbot_id,
                         "question": question.question,
                         "answer": question.response,
-                        "at": question.used_at
+                        "at": question.used_at,
                     }
                 )
         except Exception as e:
-            return self.error(
-                response={
-                    "message": f"Error on Chatbot Sharing Question: {e}"
-                },
-                status=400
-            )
+            return self.error(response={"message": f"Error on Chatbot Sharing Question: {e}"}, status=400)
 
 
 class FeedbackTypeHandler(BaseView):
@@ -349,11 +299,10 @@ class FeedbackTypeHandler(BaseView):
 
     async def get(self):
         qs = self.get_arguments(self.request)
-        category = qs.get('feedback_type', 'good').capitalize()
+        category = qs.get("feedback_type", "good").capitalize()
         feedback_list = FeedbackType.list_feedback(category)
-        return self.json_response({
-            "feedback": feedback_list
-        })
+        return self.json_response({"feedback": feedback_list})
+
 
 # Manage Feedback:
 class ChatbotFeedbackHandler(FormModel):
@@ -361,47 +310,39 @@ class ChatbotFeedbackHandler(FormModel):
     ChatbotFeedbackHandler.
     description: ChatbotFeedbackHandler for Parrot Application.
     """
+
     model = ChatbotFeedback
-    path: str = '/api/v1/bot_feedback'
+    path: str = "/api/v1/bot_feedback"
 
     def get_connection(self):
         params = {
             "credentials": BIGQUERY_CREDENTIALS,
             "project_id": BIGQUERY_PROJECT_ID,
         }
-        return AsyncDB(
-            'bigquery',
-            params=params,
-            force_closing=False
-        )
+        return AsyncDB("bigquery", params=params, force_closing=False)
 
     async def post(self):
         feedback = await self.validate_payload()
         if not feedback:
-            return self.error(
-                response={
-                    "message": "Error on Bot Feedback"
-                },
-                status=400
-            )
+            return self.error(response={"message": "Error on Bot Feedback"}, status=400)
         db = self.get_connection()
         try:
             async with await db.connection() as conn:  # pylint: disable=E1101
                 data = feedback.to_dict()
                 # convert to string (bigquery uses json.dumps to convert to string)
-                data['turn_id'] = str(data['turn_id'])
-                data['chatbot_id'] = str(data['chatbot_id'])
-                data['expiration_timestamp'] = str(data['expiration_timestamp'])
-                if 'feedback_type' in data:
-                    data['feedback_type'] = feedback.feedback_type.value
+                data["turn_id"] = str(data["turn_id"])
+                data["chatbot_id"] = str(data["chatbot_id"])
+                data["expiration_timestamp"] = str(data["expiration_timestamp"])
+                if "feedback_type" in data:
+                    data["feedback_type"] = feedback.feedback_type.value
                 else:
-                    data['feedback_type'] = None
+                    data["feedback_type"] = None
 
                 # feedback data:
-                data['session_id'] = str(data['session_id'])
-                data['rating'] = data['rating']
-                data['like'] = data['like']
-                data['dislike'] = data['dislike']
+                data["session_id"] = str(data["session_id"])
+                data["rating"] = data["rating"]
+                data["like"] = data["like"]
+                data["dislike"] = data["dislike"]
 
                 # writing directly to bigquery
                 await conn.write(
@@ -409,19 +350,17 @@ class ChatbotFeedbackHandler(FormModel):
                     table_id=ChatbotFeedback.Meta.name,
                     dataset_id=ChatbotFeedback.Meta.schema,
                     use_streams=False,
-                    use_pandas=False
+                    use_pandas=False,
                 )
-                return self.json_response({
-                    "message": "Bot Feedback Submitted, Thank you for your feedback!.",
-                    "question": f"Question of ID: {feedback.turn_id} for bot {feedback.chatbot_id}"
-                }, status=201)
+                return self.json_response(
+                    {
+                        "message": "Bot Feedback Submitted, Thank you for your feedback!.",
+                        "question": f"Question of ID: {feedback.turn_id} for bot {feedback.chatbot_id}",
+                    },
+                    status=201,
+                )
         except Exception as e:
-            return self.error(
-                response={
-                    "message": f"Error on Bot Feedback: {e}"
-                },
-                status=400
-            )
+            return self.error(response={"message": f"Error on Bot Feedback: {e}"}, status=400)
 
 
 class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
@@ -440,14 +379,14 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
     model = BotModel
     name: str = "Chatbot Management"
-    pk: str = 'chatbot_id'
+    pk: str = "chatbot_id"
 
     # -- helpers ---------------------------------------------------------------
 
     @property
     def _manager(self):
         """Get BotManager from app context."""
-        return self.request.app.get('bot_manager')
+        return self.request.app.get("bot_manager")
 
     @property
     def _registry(self):
@@ -457,10 +396,10 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
     def _agent_name_from_request(self) -> str | None:
         """Extract agent name from URL path or query string."""
-        name = self.request.match_info.get('id')
+        name = self.request.match_info.get("id")
         if not name:
             qs = self.query_parameters(self.request)
-            name = qs.get('name')
+            name = qs.get("name")
         return name or None
 
     async def _get_db_agents(self, include_disabled: bool = False) -> list[BotModel]:
@@ -507,16 +446,14 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         # Check database
         db_agent = await self._get_db_agent(name)
         if db_agent:
-            return 'database'
+            return "database"
         # Check registry
         registry = self._registry
         if registry and registry.has(name):
-            return 'registry'
+            return "registry"
         return None
 
-    async def _register_bot_into_manager(
-        self, bot_data: dict, app
-    ):
+    async def _register_bot_into_manager(self, bot_data: dict, app):
         """Create bot instance, configure it, and add to BotManager.
 
         Applies the FEAT-133 factory sequence so that ``reranker_config`` and
@@ -531,44 +468,34 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             self.logger.error("No BotManager found on App")
             return None
 
-        clsname = bot_data.pop('bot_class', 'BasicBot')
+        clsname = bot_data.pop("bot_class", "BasicBot")
         botclass = manager.get_bot_class(clsname)
-        name = bot_data.pop('name', 'NoName')
+        name = bot_data.pop("name", "NoName")
 
         # FEAT-133 Step 1: Build reranker BEFORE bot construction.
         # Extract the configs before passing **bot_data to create_bot so the
         # constructor does not receive unknown kwargs.
-        reranker_config = bot_data.pop('reranker_config', {}) or {}
-        parent_searcher_config = bot_data.pop('parent_searcher_config', {}) or {}
+        reranker_config = bot_data.pop("reranker_config", {}) or {}
+        parent_searcher_config = bot_data.pop("parent_searcher_config", {}) or {}
 
         expand_to_parent = bool(parent_searcher_config.get("expand_to_parent", False))
 
         try:
             reranker = create_reranker(reranker_config, bot_llm_client=None)
         except ConfigError as exc:
-            self.logger.error(
-                "Bot '%s': invalid reranker_config: %s", name, exc
-            )
+            self.logger.error("Bot '%s': invalid reranker_config: %s", name, exc)
             return None
 
         try:
             bot = manager.create_bot(
-                class_name=botclass,
-                name=name,
-                reranker=reranker,
-                expand_to_parent=expand_to_parent,
-                **bot_data
+                class_name=botclass, name=name, reranker=reranker, expand_to_parent=expand_to_parent, **bot_data
             )
         except Exception as exc:
-            self.logger.error(
-                f"Error creating bot instance of class {clsname}: {exc}"
-            )
+            self.logger.error(f"Error creating bot instance of class {clsname}: {exc}")
             return None
 
         if not bot:
-            self.logger.error(
-                f"Error creating bot instance of class {clsname}"
-            )
+            self.logger.error(f"Error creating bot instance of class {clsname}")
             return None
 
         try:
@@ -579,19 +506,18 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
         # FEAT-133 Step 2: Patch LLM reranker client post-configure.
         from ..rerankers.llm import LLMReranker  # noqa: PLC0415
+
         if isinstance(reranker, LLMReranker) and reranker.client is None:
-            reranker.client = getattr(bot, 'llm_client', None)
+            reranker.client = getattr(bot, "llm_client", None)
 
         # FEAT-133 Step 3: Build parent_searcher AFTER configure() (needs bot.store).
         try:
             parent_searcher = create_parent_searcher(
                 parent_searcher_config,
-                store=getattr(bot, 'store', None),
+                store=getattr(bot, "store", None),
             )
         except ConfigError as exc:
-            self.logger.error(
-                "Bot '%s': invalid parent_searcher_config: %s", name, exc
-            )
+            self.logger.error("Bot '%s': invalid parent_searcher_config: %s", name, exc)
             return None
 
         if parent_searcher is not None:
@@ -608,8 +534,8 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         # PBAC: register class-declared policy_rules for dynamically created bots.
         # Bots created at runtime via PUT /api/v1/bots bypass AgentRegistry.register(),
         # so their policies must be explicitly registered here.
-        registry = getattr(manager, 'registry', None)
-        if registry is not None and hasattr(registry, '_collect_and_register_policies'):
+        registry = getattr(manager, "registry", None)
+        if registry is not None and hasattr(registry, "_collect_and_register_policies"):
             registry._collect_and_register_policies(name, type(bot), None)  # noqa: SLF001
 
         return bot
@@ -618,13 +544,13 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         """Serialize a BotModel instance for JSON response."""
         data = agent.to_dict()
         # Convert UUID to string for JSON serialization
-        if 'chatbot_id' in data and data['chatbot_id'] is not None:
-            data['chatbot_id'] = str(data['chatbot_id'])
+        if "chatbot_id" in data and data["chatbot_id"] is not None:
+            data["chatbot_id"] = str(data["chatbot_id"])
         # Convert datetimes
-        for key in ('created_at', 'updated_at'):
+        for key in ("created_at", "updated_at"):
             if key in data and data[key] is not None:
                 data[key] = str(data[key])
-        data['source'] = 'database'
+        data["source"] = "database"
         return data
 
     def _registry_agent_to_dict(self, name: str, meta) -> dict:
@@ -644,7 +570,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 "priority": meta.priority,
                 "tags": sorted(meta.tags) if meta.tags else [],
             }
-        data['source'] = 'registry'
+        data["source"] = "registry"
         return data
 
     # -- HTTP Methods ----------------------------------------------------------
@@ -674,13 +600,12 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             ctx = await self._build_eval_context()
             if ctx is not None:
                 try:
-                    result = evaluator.check_access(
-                        ctx, _ResourceType.AGENT, name, "agent:list"
-                    )
+                    result = evaluator.check_access(ctx, _ResourceType.AGENT, name, "agent:list")
                     if not result.allowed:
                         self.logger.info(
                             "PBAC: agent:list denied for user=%s agent=%s",
-                            ctx.username if hasattr(ctx, 'username') else 'unknown', name,
+                            ctx.username if hasattr(ctx, "username") else "unknown",
+                            name,
                         )
                         return self.error(
                             response={"message": "Access denied"},
@@ -689,7 +614,8 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 except Exception as exc:  # pylint: disable=broad-except
                     self.logger.warning(
                         "PBAC: evaluator error for agent=%s, failing open: %s",
-                        name, exc,
+                        name,
+                        exc,
                     )
 
         # 1. Check database
@@ -702,14 +628,9 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         if registry:
             meta = registry.get_metadata(name)
             if meta:
-                return self.json_response(
-                    self._registry_agent_to_dict(name, meta)
-                )
+                return self.json_response(self._registry_agent_to_dict(name, meta))
 
-        return self.error(
-            response={"message": f"Agent '{name}' not found"},
-            status=404
-        )
+        return self.error(response={"message": f"Agent '{name}' not found"}, status=404)
 
     async def _get_all(self):
         """Return merged list of all agents from DB and registry.
@@ -722,9 +643,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
         # 1. Database agents (higher priority)
         qs = self.query_parameters(self.request)
-        include_disabled = str(qs.get('include_disabled', '')).lower() in (
-            '1', 'true', 'yes'
-        )
+        include_disabled = str(qs.get("include_disabled", "")).lower() in ("1", "true", "yes")
         db_agents = await self._get_db_agents(include_disabled=include_disabled)
         for agent in db_agents:
             data = self._bot_model_to_dict(agent)
@@ -746,28 +665,26 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             if ctx is not None:
                 try:
                     agent_names = [a["name"] for a in agents]
-                    result = evaluator.filter_resources(
-                        ctx, _ResourceType.AGENT, agent_names, "agent:list"
-                    )
+                    result = evaluator.filter_resources(ctx, _ResourceType.AGENT, agent_names, "agent:list")
                     # Use a sentinel to distinguish "attribute absent" (→ fail-open)
                     # from "empty list" (→ deny all).  The `or` short-circuit must
                     # NOT be used here: result.allowed=[] means deny-all, not fail-open.
                     _sentinel = object()
-                    _raw = getattr(result, 'allowed', _sentinel)
+                    _raw = getattr(result, "allowed", _sentinel)
                     if _raw is _sentinel:
                         allowed_names: set[str] = set(agent_names)  # unknown shape → fail-open
                     else:
                         allowed_names = set(_raw) if _raw is not None else set()
                     agents = [a for a in agents if a["name"] in allowed_names]
                 except Exception as exc:  # pylint: disable=broad-except
-                    self.logger.warning(
-                        "PBAC: filter_resources error, failing open: %s", exc
-                    )
+                    self.logger.warning("PBAC: filter_resources error, failing open: %s", exc)
 
-        return self.json_response({
-            "agents": agents,
-            "total": len(agents),
-        })
+        return self.json_response(
+            {
+                "agents": agents,
+                "total": len(agents),
+            }
+        )
 
     async def put(self):
         """Create a new agent.
@@ -781,27 +698,18 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         try:
             payload = await self.json_data()
         except Exception:
-            return self.error(
-                response={"message": "Invalid JSON body"},
-                status=400
-            )
+            return self.error(response={"message": "Invalid JSON body"}, status=400)
 
         if not payload:
-            return self.error(
-                response={"message": "Request body is required"},
-                status=400
-            )
+            return self.error(response={"message": "Request body is required"}, status=400)
 
-        storage = payload.pop('storage', 'database')
-        name = payload.get('name')
+        storage = payload.pop("storage", "database")
+        name = payload.get("name")
 
         if not name:
-            return self.error(
-                response={"message": "'name' is required"},
-                status=400
-            )
+            return self.error(response={"message": "'name' is required"}, status=400)
 
-        if storage == 'database':
+        if storage == "database":
             # Slugify and deduplicate name for database agents
             original_name = name.strip()
             try:
@@ -815,59 +723,39 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                             "alphanumeric characters."
                         )
                     },
-                    status=400
+                    status=400,
                 )
             try:
-                final_name = await deduplicate_name(
-                    slug, self._check_duplicate
-                )
+                final_name = await deduplicate_name(slug, self._check_duplicate)
             except ValueError:
                 return self.error(
-                    response={
-                        "message": (
-                            f"All name variants for '{slug}' are taken. "
-                            "Choose a different name."
-                        )
-                    },
-                    status=409
+                    response={"message": (f"All name variants for '{slug}' are taken. " "Choose a different name.")},
+                    status=409,
                 )
-            payload['name'] = final_name
+            payload["name"] = final_name
             # Preserve original name in description if it changed
             if original_name != final_name:
-                desc = payload.get('description', '') or ''
-                payload['description'] = (
-                    f"Display name: {original_name}. {desc}".strip()
-                )
+                desc = payload.get("description", "") or ""
+                payload["description"] = f"Display name: {original_name}. {desc}".strip()
             return await self._put_database(payload)
 
-        elif storage == 'registry':
+        elif storage == "registry":
             # Registry path: simple duplicate check, no slugification
             existing = await self._check_duplicate(name)
             if existing:
                 return self.error(
-                    response={
-                        "message": (
-                            f"Agent '{name}' already exists in {existing}. "
-                            "Use POST to update."
-                        )
-                    },
-                    status=409
+                    response={"message": (f"Agent '{name}' already exists in {existing}. " "Use POST to update.")},
+                    status=409,
                 )
             return await self._put_registry(payload)
         else:
             return self.error(
-                response={
-                    "message": (
-                        f"Invalid storage '{storage}'. "
-                        "Must be 'database' or 'registry'."
-                    )
-                },
-                status=400
+                response={"message": (f"Invalid storage '{storage}'. " "Must be 'database' or 'registry'.")}, status=400
             )
 
     async def _put_database(self, payload: dict):
         """Create agent in database and register into BotManager."""
-        if (blocked := STUDIO_ONLY_FIELDS.intersection(payload or {})):
+        if blocked := STUDIO_ONLY_FIELDS.intersection(payload or {}):
             return self.error(
                 response={
                     "message": f"{sorted(blocked)} can only be written via /api/v1/astudio/agents/{{name}}/toolkits "
@@ -887,9 +775,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
         # Set created_by from session
         try:
-            payload['created_by'] = await self.get_userid(
-                session=self._session
-            )
+            payload["created_by"] = await self.get_userid(session=self._session)
         except Exception:
             pass
 
@@ -902,15 +788,13 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
                 # Register into BotManager
                 bot_data = bot_model.to_bot_config()
-                bot_data['name'] = bot_model.name
-                bot_data['bot_class'] = payload.get('bot_class', 'BasicBot')
-                bot_instance = await self._register_bot_into_manager(
-                    bot_data, self.request.app
-                )
+                bot_data["name"] = bot_model.name
+                bot_data["bot_class"] = payload.get("bot_class", "BasicBot")
+                bot_instance = await self._register_bot_into_manager(bot_data, self.request.app)
 
                 # Provision vector store if configured. The embedding
                 # model is carried inside vector_store_config itself.
-                vs_config = payload.get('vector_store_config') or {}
+                vs_config = payload.get("vector_store_config") or {}
                 vs_result = await self._provision_vector_store(
                     bot_instance,
                     vs_config,
@@ -928,10 +812,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
                 return self.json_response(response_data, status=201)
         except Exception as exc:
-            return self.error(
-                response={"message": f"Failed to create agent: {exc}"},
-                status=400
-            )
+            return self.error(response={"message": f"Failed to create agent: {exc}"}, status=400)
 
     async def _provision_vector_store(
         self,
@@ -954,14 +835,14 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         if not bot or not vector_store_config:
             return {"status": "none"}
 
-        table = vector_store_config.get('table')
-        schema = vector_store_config.get('schema')
+        table = vector_store_config.get("table")
+        schema = vector_store_config.get("schema")
         if not table or not schema:
             return {"status": "none"}
 
-        store_type = vector_store_config.get('name', 'postgres')
-        dimension = vector_store_config.get('dimension', 384)
-        embedding_model = vector_store_config.get('embedding_model')
+        store_type = vector_store_config.get("name", "postgres")
+        dimension = vector_store_config.get("dimension", 384)
+        embedding_model = vector_store_config.get("embedding_model")
 
         # FEAT-150: validate Matryoshka config at provision time so mismatches
         # are caught with a clear ConfigError before the pgvector table is
@@ -975,12 +856,12 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                     validate_against_catalog,
                 )
                 from parrot.exceptions import ConfigError
+
                 try:
                     cfg = MatryoshkaConfig(**matryoshka_dict)
                 except Exception as exc:
                     raise ConfigError(
-                        f"Invalid matryoshka config in "
-                        f"vector_store_config.embedding_model: {exc}"
+                        f"Invalid matryoshka config in " f"vector_store_config.embedding_model: {exc}"
                     ) from exc
                 # Validate against the catalog (model in catalog + dim allowed).
                 validate_against_catalog(cfg, embedding_model.get("model_name", ""))
@@ -995,64 +876,48 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                     )
 
         store_kwargs = {
-            'table': table,
-            'schema': schema,
-            'dimension': dimension,
+            "table": table,
+            "schema": schema,
+            "dimension": dimension,
         }
         if embedding_model:
-            store_kwargs['embedding_model'] = embedding_model
+            store_kwargs["embedding_model"] = embedding_model
 
         try:
             bot.define_store(vector_store=store_type, **store_kwargs)
             bot.configure_store()
             await bot.store.connection()
-            await bot.store.create_collection(
-                table=table, schema=schema, dimension=dimension
-            )
-            self.logger.info(
-                f"Vector store table '{schema}.{table}' created for bot '{bot.name}'"
-            )
+            await bot.store.create_collection(table=table, schema=schema, dimension=dimension)
+            self.logger.info(f"Vector store table '{schema}.{table}' created for bot '{bot.name}'")
             return {"status": "ready"}
         except Exception as exc:
-            self.logger.error(
-                f"Vector store provisioning failed for '{bot.name}': {exc}"
-            )
+            self.logger.error(f"Vector store provisioning failed for '{bot.name}': {exc}")
             return {"status": "pending", "error": str(exc)}
 
     async def _put_registry(self, payload: dict):
         """Create agent in AgentRegistry (YAML) and register into BotManager."""
         registry = self._registry
         if not registry:
-            return self.error(
-                response={"message": "AgentRegistry not available"},
-                status=500
-            )
+            return self.error(response={"message": "AgentRegistry not available"}, status=500)
 
         try:
             config = BotConfig(**payload)
         except Exception as exc:
-            return self.error(
-                response={"message": f"Invalid BotConfig: {exc}"},
-                status=400
-            )
+            return self.error(response={"message": f"Invalid BotConfig: {exc}"}, status=400)
 
-        category = payload.pop('category', 'general')
+        category = payload.pop("category", "general")
 
         # Write YAML definition
         try:
-            file_path = registry.create_agent_definition(
-                config, category=category
-            )
+            file_path = registry.create_agent_definition(config, category=category)
         except Exception as exc:
-            return self.error(
-                response={"message": f"Failed to write YAML: {exc}"},
-                status=500
-            )
+            return self.error(response={"message": f"Failed to write YAML: {exc}"}, status=500)
 
         # Register into AgentRegistry runtime
         try:
             factory = registry.create_agent_factory(config)
             from ..registry.registry import BotMetadata
+
             # TODO: replace with registry.register() once signature confirmed
             registry._registered_agents[config.name] = BotMetadata(
                 name=config.name,
@@ -1066,9 +931,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 priority=config.priority,
             )
         except Exception as exc:
-            self.logger.warning(
-                f"YAML written but runtime registration failed: {exc}"
-            )
+            self.logger.warning(f"YAML written but runtime registration failed: {exc}")
 
         # Register into BotManager
         manager = self._manager
@@ -1076,14 +939,11 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             try:
                 bot_instance = await registry.get_instance(config.name)
                 if bot_instance:
-                    if not getattr(bot_instance, 'is_configured', False):
+                    if not getattr(bot_instance, "is_configured", False):
                         await bot_instance.configure(self.request.app)
                     manager.add_bot(bot_instance)
             except Exception as exc:
-                self.logger.warning(
-                    f"Registry agent created but BotManager registration "
-                    f"failed: {exc}"
-                )
+                self.logger.warning(f"Registry agent created but BotManager registration " f"failed: {exc}")
 
         return self.json_response(
             {
@@ -1092,7 +952,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 "file_path": str(file_path),
                 "source": "registry",
             },
-            status=201
+            status=201,
         )
 
     async def post(self):
@@ -1105,24 +965,15 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
         agent_name = self._agent_name_from_request()
         if not agent_name:
-            return self.error(
-                response={"message": "Agent name is required in URL"},
-                status=400
-            )
+            return self.error(response={"message": "Agent name is required in URL"}, status=400)
 
         try:
             payload = await self.json_data()
         except Exception:
-            return self.error(
-                response={"message": "Invalid JSON body"},
-                status=400
-            )
+            return self.error(response={"message": "Invalid JSON body"}, status=400)
 
         if not payload:
-            return self.error(
-                response={"message": "Request body is required"},
-                status=400
-            )
+            return self.error(response={"message": "Request body is required"}, status=400)
 
         # Check database first (DB has priority)
         db_agent = await self._get_db_agent(agent_name)
@@ -1134,14 +985,11 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         if registry and registry.has(agent_name):
             return await self._post_registry(agent_name, payload)
 
-        return self.error(
-            response={"message": f"Agent '{agent_name}' not found"},
-            status=404
-        )
+        return self.error(response={"message": f"Agent '{agent_name}' not found"}, status=404)
 
     async def _post_database(self, agent: BotModel, payload: dict):
         """Update a database-backed agent."""
-        if (blocked := STUDIO_ONLY_FIELDS.intersection(payload or {})):
+        if blocked := STUDIO_ONLY_FIELDS.intersection(payload or {}):
             return self.error(
                 response={
                     "message": f"{sorted(blocked)} can only be written via /api/v1/astudio/agents/{{name}}/toolkits "
@@ -1164,10 +1012,10 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             async with await db(self.request) as conn:
                 BotModel.Meta.connection = conn
                 for key, val in payload.items():
-                    if key in ('chatbot_id', 'created_at', 'created_by'):
+                    if key in ("chatbot_id", "created_at", "created_by"):
                         continue  # immutable fields
                     agent.set(key, val)
-                agent.set('updated_at', datetime.now())
+                agent.set("updated_at", datetime.now())
                 await agent.update()
 
                 # Re-register into BotManager with updated config
@@ -1179,24 +1027,19 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                     except (KeyError, Exception):
                         pass
                     bot_data = agent.to_bot_config()
-                    bot_data['name'] = agent.name
-                    bot_data['bot_class'] = getattr(
-                        agent, 'bot_class', 'BasicBot'
-                    ) or 'BasicBot'
-                    await self._register_bot_into_manager(
-                        bot_data, self.request.app
-                    )
+                    bot_data["name"] = agent.name
+                    bot_data["bot_class"] = getattr(agent, "bot_class", "BasicBot") or "BasicBot"
+                    await self._register_bot_into_manager(bot_data, self.request.app)
 
-                return self.json_response({
-                    "message": f"Agent '{agent.name}' updated in database",
-                    "name": agent.name,
-                    "source": "database",
-                })
+                return self.json_response(
+                    {
+                        "message": f"Agent '{agent.name}' updated in database",
+                        "name": agent.name,
+                        "source": "database",
+                    }
+                )
         except Exception as exc:
-            return self.error(
-                response={"message": f"Failed to update agent: {exc}"},
-                status=400
-            )
+            return self.error(response={"message": f"Failed to update agent: {exc}"}, status=400)
 
     async def _post_registry(self, name: str, payload: dict):
         """Update a registry-backed agent via YAML overwrite."""
@@ -1207,36 +1050,29 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         if meta and meta.bot_config:
             existing = meta.bot_config.model_dump(mode="json")
             existing.update(payload)
-            existing['name'] = name  # name is immutable
+            existing["name"] = name  # name is immutable
         else:
             existing = payload
-            existing['name'] = name
+            existing["name"] = name
 
         try:
             config = BotConfig(**existing)
         except Exception as exc:
-            return self.error(
-                response={"message": f"Invalid BotConfig: {exc}"},
-                status=400
-            )
+            return self.error(response={"message": f"Invalid BotConfig: {exc}"}, status=400)
 
-        category = payload.pop('category', 'general')
+        category = payload.pop("category", "general")
 
         # Overwrite YAML definition
         try:
-            file_path = registry.create_agent_definition(
-                config, category=category
-            )
+            file_path = registry.create_agent_definition(config, category=category)
         except Exception as exc:
-            return self.error(
-                response={"message": f"Failed to update YAML: {exc}"},
-                status=500
-            )
+            return self.error(response={"message": f"Failed to update YAML: {exc}"}, status=500)
 
         # Update runtime registry
         try:
             factory = registry.create_agent_factory(config)
             from ..registry.registry import BotMetadata
+
             # TODO: replace with registry.register() once signature confirmed
             registry._registered_agents[name] = BotMetadata(
                 name=config.name,
@@ -1250,9 +1086,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 priority=config.priority,
             )
         except Exception as exc:
-            self.logger.warning(
-                f"YAML updated but runtime re-registration failed: {exc}"
-            )
+            self.logger.warning(f"YAML updated but runtime re-registration failed: {exc}")
 
         # Re-register into BotManager
         manager = self._manager
@@ -1264,21 +1098,20 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             try:
                 bot_instance = await registry.get_instance(name)
                 if bot_instance:
-                    if not getattr(bot_instance, 'is_configured', False):
+                    if not getattr(bot_instance, "is_configured", False):
                         await bot_instance.configure(self.request.app)
                     manager.add_bot(bot_instance)
             except Exception as exc:
-                self.logger.warning(
-                    f"Registry agent updated but BotManager re-registration "
-                    f"failed: {exc}"
-                )
+                self.logger.warning(f"Registry agent updated but BotManager re-registration " f"failed: {exc}")
 
-        return self.json_response({
-            "message": f"Agent '{name}' updated in registry",
-            "name": name,
-            "file_path": str(file_path),
-            "source": "registry",
-        })
+        return self.json_response(
+            {
+                "message": f"Agent '{name}' updated in registry",
+                "name": name,
+                "file_path": str(file_path),
+                "source": "registry",
+            }
+        )
 
     async def delete(self):
         """Delete a database-backed agent.
@@ -1289,10 +1122,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
         agent_name = self._agent_name_from_request()
         if not agent_name:
-            return self.error(
-                response={"message": "Agent name is required"},
-                status=400
-            )
+            return self.error(response={"message": "Agent name is required"}, status=400)
 
         # Registry-based agents: only factory-created ones can be deleted.
         # Repo-committed YAMLs are protected (the file would just be re-loaded
@@ -1317,11 +1147,13 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                             manager.remove_bot(agent_name)
                         except (KeyError, Exception):
                             pass
-                    return self.json_response({
-                        "message": f"Factory agent '{agent_name}' deleted",
-                        "name": agent_name,
-                        "source": "factory",
-                    })
+                    return self.json_response(
+                        {
+                            "message": f"Factory agent '{agent_name}' deleted",
+                            "name": agent_name,
+                            "source": "factory",
+                        }
+                    )
                 return self.error(
                     response={
                         "message": (
@@ -1329,16 +1161,13 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                             "and cannot be deleted via this endpoint."
                         )
                     },
-                    status=403
+                    status=403,
                 )
 
         # Delete from database
         db_agent = await self._get_db_agent(agent_name)
         if not db_agent:
-            return self.error(
-                response={"message": f"Agent '{agent_name}' not found in database"},
-                status=404
-            )
+            return self.error(response={"message": f"Agent '{agent_name}' not found in database"}, status=404)
 
         db = self.handler
         try:
@@ -1354,15 +1183,15 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                     except (KeyError, Exception):
                         pass
 
-                return self.json_response({
-                    "message": f"Agent '{agent_name}' deleted",
-                    "name": agent_name,
-                })
+                return self.json_response(
+                    {
+                        "message": f"Agent '{agent_name}' deleted",
+                        "name": agent_name,
+                    }
+                )
         except Exception as exc:
-            return self.error(
-                response={"message": f"Failed to delete agent: {exc}"},
-                status=400
-            )
+            return self.error(response={"message": f"Failed to delete agent: {exc}"}, status=400)
+
 
 @user_session()
 class ToolList(_PBACHandlerMixin, BaseView):
@@ -1391,10 +1220,7 @@ class ToolList(_PBACHandlerMixin, BaseView):
                     tools[name] = {
                         "tool_name": getattr(value, "name", name),
                         "module_path": f"{value.__module__}.{value.__qualname__}",
-                        "description": getattr(
-                            value, "description",
-                            value.__doc__ or ""
-                        ),
+                        "description": getattr(value, "description", value.__doc__ or ""),
                     }
 
             # PBAC: filter tools by tool:list permission
@@ -1404,28 +1230,19 @@ class ToolList(_PBACHandlerMixin, BaseView):
                 if ctx is not None:
                     try:
                         tool_names = list(tools.keys())
-                        result = evaluator.filter_resources(
-                            ctx, _ResourceType.TOOL, tool_names, "tool:list"
-                        )
+                        result = evaluator.filter_resources(ctx, _ResourceType.TOOL, tool_names, "tool:list")
                         # Sentinel distinguishes "attribute absent" (fail-open) from
                         # "empty list" (deny all).  Do NOT use `or tool_names` here.
                         _sentinel = object()
-                        _raw = getattr(result, 'allowed', _sentinel)
+                        _raw = getattr(result, "allowed", _sentinel)
                         if _raw is _sentinel:
                             allowed_names: set[str] = set(tool_names)  # unknown shape → fail-open
                         else:
                             allowed_names = set(_raw) if _raw is not None else set()
                         tools = {k: v for k, v in tools.items() if k in allowed_names}
                     except Exception as exc:  # pylint: disable=broad-except
-                        self.logger.warning(
-                            "PBAC: ToolList filter error, failing open: %s", exc
-                        )
+                        self.logger.warning("PBAC: ToolList filter error, failing open: %s", exc)
 
             return self.json_response({"tools": tools})
         except Exception as e:
-            return self.error(
-                response={
-                    "message": f"Error on Tool List: {e}"
-                },
-                status=400
-            )
+            return self.error(response={"message": f"Error on Tool List: {e}"}, status=400)
