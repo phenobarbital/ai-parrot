@@ -396,6 +396,7 @@ def test_preserve_foreign_staging(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert (repo_root / completed_relpath).is_file()
     index_relpath = f"sdd/tasks/index/{feature_slug}.json"
     assert set(result["staged_paths"]) <= {completed_relpath, index_relpath}
+    assert result["removed_paths"] == [f"sdd/tasks/active/{task_md_path.name}"]
 
     after = _porcelain_status(repo_root)
 

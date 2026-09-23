@@ -65,9 +65,11 @@ Feature mode:
    - hotfix bases on main
 4. Sync the base branch with git pull --ff-only. Refuse dirty worktrees. Do not
    stash.
-5. Mark pending tasks in progress in the per-spec index and commit only that
-   index change.
-6. Create or reuse the feature worktree under .claude/worktrees/.
+5. Create or reuse the feature worktree under .claude/worktrees/.
+6. Inside the worktree, on the feature branch, mark pending tasks in progress
+   in the per-spec index and commit only that index change. Never write task
+   state on the base branch: an abandoned run would strand the tasks
+   in-progress in sdd/tasks/active/ there forever.
 7. Work through pending tasks in dependency order.
 
 Task-scoped mode:
@@ -97,7 +99,9 @@ Per-task execution:
    review evidence, and any correction commits. Run
    `python -m scripts.sdd.finalize_task --evidence <path> --worktree <path>
    --expected-head <full HEAD SHA>`. On success, inspect its `staged_paths`,
-   stage exactly those paths, and use its suggested commit message. Do not
+   stage exactly those paths, and use its suggested commit message without a
+   pathspec (its `removed_paths` deletion of the old active/ copy is already
+   staged; `git commit -- <paths>` would leave it out). Do not
    hand-edit the Completion Note or use `close_task.sh` as a fallback.
 
 ## Deterministic task inspection and closure (FEAT-584)
