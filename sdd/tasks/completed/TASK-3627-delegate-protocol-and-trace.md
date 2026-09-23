@@ -444,4 +444,25 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `gpt-5.6-terra` (codex), dispatched via the `parrot-sdd-coder`
+MCP orchestrator, attempt_uid `21c8b62e6e6b4a799fb32f7549d786b8`. Merged clean; `black`
+lint reported 0 errors/residuals. Reviewed and recorded (`coder-review:25a251f0f0334343d4a30978`).
+
+**Review fix (disclosed):** post-merge orchestrator verification of the task's own
+declared validation command found 2/8 test failures — both test-authoring bugs, not
+implementation defects: comparing a list of `ToolSpec` model instances directly against
+plain dicts (`==` across a Pydantic type boundary), and asserting object identity (`is`)
+between a validated `Dict[str, Any]` field and its original input dict (Pydantic v2
+revalidates such fields into a fresh, content-equal dict). Fixed in commit `b240d913f`
+(`.model_dump()` comparison; `==` instead of `is`); `tool_specs()`'s production logic
+was already correct and untouched. Recorded as model feedback
+(`coder-feedback:fcaede791448eae98b437fc8`).
+
+**Validation**: `pytest packages/ai-parrot/tests/bots/flows/plan/test_delegate_protocol.py -q`
+→ 8 passed after the fix.
+
+**Merge-tier validation deviation (disclosed):** same as TASK-3625/3626/3634 — the
+feature-wide `coder_run_validation` (tier=merge) sweep could not reach a clean
+`completed` outcome due to the confirmed pre-existing, unrelated environment defect
+(`issue:c3c59277ef77`). This task is closed on its own directly-verified scoped test
+evidence (post-fix).
