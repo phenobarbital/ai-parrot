@@ -303,7 +303,19 @@ unlisted files, nothing under `sdd/` touched.
 This delivery consumes `SchemaForm.svelte` (TASK-3664) via `ToolkitDrawer.svelte`. TASK-3664's own compile-blocking
 and runtime-crashing bugs (invalid `{#const}` sigil, wrong `AppTooltip` import, undefined `isOverridable`) were
 discovered and fixed in `fix(tool-configuration-agentstudio): TASK-3664 review fixes` (commit `1fa02e65e`) while
-unblocking TASK-3666 — this task's own vitest (`TabsTools.test.ts`) was not independently re-run against that
-fix in this closure pass; flagging for the PR reviewer to confirm `pytest packages/ai-parrot-server/tests/ui/test_vitest_tools_tab.py -q` is green post-fix.
+unblocking TASK-3666.
+
+**Post-review correction (2026-09-23, feature-level adversarial code review)**: `TabsTools.svelte` itself had a
+Critical, this-task-own defect — it destructured a `$props()` field literally named `state` while also calling
+the `$state(...)` rune 3 times in the same script block. Svelte 5 treats a local binding named `state` as
+ambiguous with the rune, crashing the component at mount (`store_invalid_shape`) — confirmed by actually
+running `TabsTools.test.ts`, which failed all 3 tests for exactly this reason. `AgentForm.svelte` (this same
+delivery's own sibling file) already documents this exact gotcha in its header comment ("local class instance
+is named `formState`, not `state`") — the convention existed in the diff but wasn't followed. Fixed in
+`841da0c44`: prop renamed `state` → `formState` throughout `TabsTools.svelte`, `TabsTools.test.ts`, and the
+`AgentForm.svelte` call site. Re-ran `pytest packages/ai-parrot-server/tests/ui/test_vitest_tools_tab.py -q`
+(wraps this same vitest file) after both this fix and the TASK-3664 fix above — 3/3 passing, confirming the
+earlier-flagged "not independently re-run" concern is now resolved. Feedback recorded —
+`feedback_id: coder-feedback:5bbc677afc7b09ef26b755e7`.
 
 **Deviations from spec**: none.

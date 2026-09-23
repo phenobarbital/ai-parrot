@@ -334,4 +334,11 @@ insertions — JSON Schema renderer incl. `oneOf` kind selector, secrets, dynami
 `tests/ui/test_vitest_schema_form.py` (CREATE, pytest wrapper) — exactly the 6 declared files, no unlisted
 files, nothing under `sdd/` touched. 0 lint residual.
 
+**Post-review correction (2026-09-23, feature-level adversarial code review)**: a 4th confirmed defect beyond
+the 3 already fixed above — `studio.ts`'s `getAgentToolkits()` called the legacy `GET /agents/{name}/toolkits`
+route (requires a `{slug}` segment, 400s `missing_slug` without one) instead of the FEAT-593
+`/agents/{name}/toolkit-config` route this same delivery's own `docs/agent_studio_api.md` documents. Broke
+every consumer (`TabsTools.svelte`, `ToolkitDrawer.svelte`, `MyToolkitSettings.svelte`) silently. Fixed in
+`841da0c44`. Feedback recorded — `feedback_id: coder-feedback:24c9056a274223d58824f2eb`.
+
 **Deviations from spec**: none.

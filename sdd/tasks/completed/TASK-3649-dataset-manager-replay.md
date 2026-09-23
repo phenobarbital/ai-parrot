@@ -273,7 +273,25 @@ When you pick up this task:
 - Feature: tool-configuration-agentstudio
 - Implementation SHA: 8006473f4 (merged as 1aa52c2cd)
 - Closed at (UTC): 2026-09-23T15:31:00+00:00
-- Fix commits: none
+- Fix commits: `841da0c44`, `3965e4728` (post-merge, found by the feature-level adversarial code review — see below)
+
+**Post-review corrections (2026-09-23, code review of the full feature diff)**: 2 confirmed defects in
+`replay_datasources()`, both fixed:
+1. **AC8 violation (Critical)** — the `kind: "sql"` branch called `add_dataset(sql=ds.sql, ...)`, but
+   `add_dataset`'s "exactly one of query_slug/query/table/dataframe" selector does not include `sql` (that
+   kwarg is only a `table`-mode refinement there) — every `sql`-kind datasource unconditionally raised
+   `ValueError`, silently swallowed by the per-entry WARNING-and-continue, so the datasource never loaded
+   even though reload reported success. Fixed in `841da0c44` by passing `query=ds.sql` instead (that mode
+   already supports every field `SqlDatasource` carries).
+2. **Important** — the `kind: "table"` branch never applied `is_active` to the resulting `DatasetEntry`
+   (`add_table_source` has no such parameter). Fixed in `3965e4728` by setting
+   `self._datasets[ds.name].is_active = ds.is_active` directly after registration.
+
+`coder_record_feedback` was **NOT called** for this attempt: this Completion Note (written earlier in the
+session) never recorded an `attempt_uid`, and `coder_feedback_report` does not expose individual attempt ids
+— without a resolvable attempt identity the engine correctly rejects the call rather than guessing. Preserved
+here per protocol instead of claiming reinforcement was saved. Attribution (from this note's own original
+delivery record): backend `codex`, model `gpt-5.6-terra`, `review_id: coder-review:dc1dcb1fb7bcac8b89d46780`.
 
 | Metric | Value |
 |---|---|
