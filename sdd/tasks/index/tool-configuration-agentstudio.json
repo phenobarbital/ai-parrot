@@ -215,7 +215,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -225,8 +225,8 @@
       "parallelism_notes": "Calls ToolInterface.apply_tooling_specs added by TASK-3654 (interfaces/tools.py). Only task touching bots/abstract.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3655-abstractbot-configure-wiring.md"
+      "completed_at": "2026-09-23T15:51:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3655-abstractbot-configure-wiring.md"
     },
     {
       "id": "TASK-3656",
@@ -275,7 +275,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -285,8 +285,8 @@
       "parallelism_notes": "Calls AbstractToolkit.config_schema / build_schema_envelope added by TASK-3647 + TASK-3646. Only task touching handlers/studio/toolkits.py and tests/studio/test_toolkits.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3658-studio-schema-envelope.md"
+      "completed_at": "2026-09-23T15:51:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3658-studio-schema-envelope.md"
     },
     {
       "id": "TASK-3659",
