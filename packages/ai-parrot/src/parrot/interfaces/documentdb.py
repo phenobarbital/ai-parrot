@@ -207,6 +207,9 @@ class DocumentDb:
 
         auth_source = config.get('DOCUMENTDB_AUTH_SOURCE', fallback='admin')
         engine = config.get('DOCUMENTDB_ENGINE', fallback='mongo')
+        # Server-selection/connect timeout in seconds. asyncdb defaults to 600s,
+        # which blocks a caller for 10 minutes when DocumentDB is unreachable.
+        timeout = config.getint('DOCUMENTDB_TIMEOUT', fallback=30)
 
         params = {
             "host": host,
@@ -225,7 +228,7 @@ class DocumentDb:
         self.logger.debug(f"Configuring DocumentDB connection to {host}:{port}/{database}")
 
         # "mongo" is the driver name in asyncdb for mongodb/documentdb
-        return AsyncDB(engine, params=params)
+        return AsyncDB(engine, params=params, timeout=timeout)
 
     # =========================================================================
     # Connection Management
