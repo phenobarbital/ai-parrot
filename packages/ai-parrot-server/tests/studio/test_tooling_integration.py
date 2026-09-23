@@ -19,10 +19,10 @@ from parrot.registry.registry import AgentRegistry, BotConfig
 from parrot.tools.spec import ToolkitSpec, normalize_tooling, tooling_revision
 from parrot.tools.toolkit import AbstractToolkit
 
-
 # ============================================================================
 # FILL IN: fakes — vault dict (store/retrieve/delete patched in tooling_store + tools.spec modules)
 # ============================================================================
+
 
 class _EchoKit(AbstractToolkit):
     """Minimal fake toolkit for testing toolkit instantiation."""
@@ -73,15 +73,9 @@ def vault(monkeypatch):
         await fake_vault.delete(user_id, name)
 
     # Patch vault_utils
-    monkeypatch.setattr(
-        "parrot.security.vault_utils.store_vault_credential", _store
-    )
-    monkeypatch.setattr(
-        "parrot.security.vault_utils.retrieve_vault_credential", _retrieve
-    )
-    monkeypatch.setattr(
-        "parrot.security.vault_utils.delete_vault_credential", _delete
-    )
+    monkeypatch.setattr("parrot.security.vault_utils.store_vault_credential", _store)
+    monkeypatch.setattr("parrot.security.vault_utils.retrieve_vault_credential", _retrieve)
+    monkeypatch.setattr("parrot.security.vault_utils.delete_vault_credential", _delete)
 
     return fake_vault
 
@@ -167,9 +161,7 @@ def fake_bot_model():
 
 
 @pytest.mark.asyncio
-async def test_studio_toolkit_persist_reload_roundtrip(
-    vault, fake_toolkit_registry, fake_bot_model, monkeypatch
-):
+async def test_studio_toolkit_persist_reload_roundtrip(vault, fake_toolkit_registry, fake_bot_model, monkeypatch):
     """Studio PUT → agent rebuild → toolkit instantiated with persisted params.
 
     AC1: A Studio PUT followed by an agent rebuild yields a toolkit instantiated
@@ -213,12 +205,8 @@ async def test_studio_toolkit_persist_reload_roundtrip(
             await tool_interface.apply_tooling_specs()
 
     # 3. Build the bot
-    monkeypatch.setattr(
-        "parrot.manager.manager.create_reranker", MagicMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        "parrot.manager.manager.create_parent_searcher", MagicMock(return_value=None)
-    )
+    monkeypatch.setattr("parrot.manager.manager.create_reranker", MagicMock(return_value=None))
+    monkeypatch.setattr("parrot.manager.manager.create_parent_searcher", MagicMock(return_value=None))
 
     mgr = BotManager.__new__(BotManager)
     mgr.logger = MagicMock()
@@ -235,9 +223,7 @@ async def test_studio_toolkit_persist_reload_roundtrip(
     assert any(isinstance(t, ToolkitSpec) for t in _CapturedBot.kwargs["tools"])
 
     # 5. Verify the toolkit spec was hydrated and instantiated
-    toolkit_specs = [
-        t for t in _CapturedBot.kwargs["tools"] if isinstance(t, ToolkitSpec)
-    ]
+    toolkit_specs = [t for t in _CapturedBot.kwargs["tools"] if isinstance(t, ToolkitSpec)]
     assert len(toolkit_specs) == 1
     assert toolkit_specs[0].slug == "echo"
     assert toolkit_specs[0].params["prefix"] == "agent-"
@@ -263,8 +249,7 @@ async def test_yaml_agent_toolkit_persist_roundtrip(tmp_path, monkeypatch):
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
     agent_yaml = agents_dir / "test-agent.yaml"
-    agent_yaml.write_text(
-        """
+    agent_yaml.write_text("""
 name: test-agent
 description: Test agent
 toolkits:
@@ -277,8 +262,7 @@ toolkits:
       token: "toolkit_echo_test-agent"
     vault_owner: "42"
 mcp_servers: []
-"""
-    )
+""")
 
     # 2. Create a fake registry that returns the YAML metadata
     class _FakeMeta:
@@ -328,12 +312,8 @@ mcp_servers: []
             await tool_interface.apply_tooling_specs()
 
     # 4. Build the bot
-    monkeypatch.setattr(
-        "parrot.manager.manager.create_reranker", MagicMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        "parrot.manager.manager.create_parent_searcher", MagicMock(return_value=None)
-    )
+    monkeypatch.setattr("parrot.manager.manager.create_reranker", MagicMock(return_value=None))
+    monkeypatch.setattr("parrot.manager.manager.create_parent_searcher", MagicMock(return_value=None))
 
     mgr = BotManager.__new__(BotManager)
     mgr.logger = MagicMock()
@@ -351,9 +331,7 @@ mcp_servers: []
     assert any(isinstance(t, ToolkitSpec) for t in _CapturedBot.kwargs["tools"])
 
     # 7. Verify the toolkit spec was hydrated and instantiated
-    toolkit_specs = [
-        t for t in _CapturedBot.kwargs["tools"] if isinstance(t, ToolkitSpec)
-    ]
+    toolkit_specs = [t for t in _CapturedBot.kwargs["tools"] if isinstance(t, ToolkitSpec)]
     assert len(toolkit_specs) == 1
     assert toolkit_specs[0].slug == "echo"
     assert toolkit_specs[0].params["prefix"] == "yaml-"
@@ -458,11 +436,7 @@ async def test_user_override_session_isolation():
         name="a1",
         tool_manager=tool_manager,
         _tooling_revision="r1",
-        _pending_toolkit_specs=[
-            ToolkitSpec(
-                slug="kit", params={"prefix": "agent"}, user_overridable=["prefix"]
-            )
-        ],
+        _pending_toolkit_specs=[ToolkitSpec(slug="kit", params={"prefix": "agent"}, user_overridable=["prefix"])],
         _resolve_spec_class=lambda slug: _Kit,
     )
 
@@ -479,29 +453,17 @@ async def test_user_override_session_isolation():
 
         async def load(self, user_id, agent_id, slug):
             for override in self._overrides:
-                if (
-                    override.user_id == user_id
-                    and override.agent_id == agent_id
-                    and override.slug == slug
-                ):
+                if override.user_id == user_id and override.agent_id == agent_id and override.slug == slug:
                     return override
             return None
 
         async def revision(self, user_id, agent_id):
             return "t1"
 
-    service = _Service(
-        [
-            UserToolkitOverride(
-                user_id="7", agent_id="a1", slug="kit", params={"prefix": "user"}
-            )
-        ]
-    )
+    service = _Service([UserToolkitOverride(user_id="7", agent_id="a1", slug="kit", params={"prefix": "user"})])
 
     # 4. Apply the override
-    tool_manager = await handler._apply_user_toolkit_overrides(
-        agent, _Session(), None
-    )
+    tool_manager = await handler._apply_user_toolkit_overrides(agent, _Session(), None)
 
     # 5. Verify the override was applied to the session manager
     assert tool_manager is not agent.tool_manager
