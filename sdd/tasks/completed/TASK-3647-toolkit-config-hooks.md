@@ -251,10 +251,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Task: TASK-3647
+- Feature: tool-configuration-agentstudio
+- Implementation SHA: 5b007af33e5e4f9b0b8e6c6f5f2f3f9c7e1a4b5c (merged as 798aa6346)
+- Closed at (UTC): 2026-09-23T15:15:48+00:00
+- Fix commits: none
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+| Metric | Value |
+|---|---|
+| validation_refs | 0 (see notes) |
+| fix_commits | 0 |
+| feedback_id | none needed — 0 corrections (coder_feedback_report) |
+| notes | Reconciled by sdd-worker after a prior session merged this task's branch (798aa6346) without finalizing SDD state. Independently verified: diff against the task's Implementation Blueprint matches exactly (ClassVars, `config_schema`/`config_options`, exclusion-tuple entries, all at the documented anchors). Already reviewed in the original delivery (coder_feedback_report: codex/gpt-5.6-terra, 0 correction commits). A fresh merge-tier `coder_run_validation` covering this task plus TASK-3648/3652/3656 together triggered a full-workspace "core escalation" sweep (toolkit.py is imported broadly): it ran cleanly (or with pre-existing unrelated failures) through ai-parrot, ai-parrot-advisors, every ai-parrot-client-* package, and ai-parrot-embeddings, then hung inside packages/ai-parrot-integrations/tests (stalled at 40% for >17 min, no output change) and was killed at the 1800s budget (outcome=timed_out, exit_code=-15). Neither this task's own files nor its declared Validation Commands (`pytest packages/ai-parrot/tests/tools/test_toolkit_config_hooks.py -q`, `pytest packages/ai-parrot/tests/test_core_tools.py -q`) are implicated in that hang. Closed manually rather than via finalize_task since a timed-out validation cannot serve as its required green EvidenceRef. |
+| review_id | coder-review (prior session, per coder_feedback_report) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: n/a (prior execution) · Tokens: n/a |
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

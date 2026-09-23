@@ -54,7 +54,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -64,8 +64,8 @@
       "parallelism_notes": "Imports build_schema_envelope and ConfigOption from TASK-3646 (parrot/tools/config_schema.py). Only task that modifies parrot/tools/toolkit.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3647-toolkit-config-hooks.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3647-toolkit-config-hooks.md"
     },
     {
       "id": "TASK-3648",
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -82,8 +82,8 @@
       "parallelism_notes": "Root task: creates parrot/tools/dataset_manager/config.py (pure Pydantic models); no import from other FEAT-593 tasks.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3648-dataset-manager-config-models.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3648-dataset-manager-config-models.md"
     },
     {
       "id": "TASK-3649",
@@ -153,7 +153,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "to_bot_config calls normalize_tooling from TASK-3645 (parrot/tools/spec.py). Only task touching handlers/models/bots.py, handlers/creation.sql and handlers/bots.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3652-botmodel-tooling-columns-and-guard.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3652-botmodel-tooling-columns-and-guard.md"
     },
     {
       "id": "TASK-3653",
@@ -235,7 +235,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -245,8 +245,8 @@
       "parallelism_notes": "Imports ToolkitSpec/normalize_tooling from TASK-3645 (parrot/tools/spec.py). First of two tasks on registry/registry.py (TASK-3657 follows).",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3656-registry-normalize-factory.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3656-registry-normalize-factory.md"
     },
     {
       "id": "TASK-3657",

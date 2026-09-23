@@ -235,10 +235,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Task: TASK-3656
+- Feature: tool-configuration-agentstudio
+- Implementation SHA: 5a75a8fba (merged as 3f741a7ed, HEAD)
+- Closed at (UTC): 2026-09-23T15:15:48+00:00
+- Fix commits: none
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+| Metric | Value |
+|---|---|
+| validation_refs | 0 (see notes) |
+| fix_commits | 0 |
+| feedback_id | none needed — 0 corrections (coder_feedback_report) |
+| notes | Reconciled by sdd-worker after a prior session merged this task's branch (3f741a7ed) without finalizing SDD state. Independently verified via diff: `registry/registry.py` (BotConfig.toolkits widened to `List[Union[str, ToolkitSpec]]`, `normalize_tooling` call replacing the dead toolkit/MCP loops, `create_agent_definition` dump) and `tests/registry/test_registry_tooling_normalize.py` (120 lines) present, matching the task's file contract. Already reviewed in the original delivery (coder_feedback_report: sonnet native, 0 correction commits). A fresh merge-tier `coder_run_validation` covering this task plus TASK-3647/3648/3652 together triggered a full-workspace "core escalation" sweep: it ran cleanly (or with pre-existing unrelated failures) through ai-parrot, ai-parrot-advisors, every ai-parrot-client-* package, and ai-parrot-embeddings, then hung inside packages/ai-parrot-integrations/tests (stalled at 40% for >17 min) and was killed at the 1800s budget (outcome=timed_out, exit_code=-15). This task's own files are untouched by that hang. Closed manually rather than via finalize_task since a timed-out validation cannot serve as its required green EvidenceRef. |
+| review_id | coder-review (prior session, per coder_feedback_report) |
+| seat_summary | Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a (prior execution) · Tokens: n/a |
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
