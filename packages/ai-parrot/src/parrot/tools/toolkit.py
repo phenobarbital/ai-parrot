@@ -40,12 +40,7 @@ class ToolkitTool(AbstractTool):
     """
 
     def __init__(
-        self,
-        name: str,
-        bound_method: callable,
-        description: str = None,
-        args_schema: type[BaseModel] = None,
-        **kwargs
+        self, name: str, bound_method: callable, description: str = None, args_schema: type[BaseModel] = None, **kwargs
     ):
         """
         Initialize a toolkit tool.
