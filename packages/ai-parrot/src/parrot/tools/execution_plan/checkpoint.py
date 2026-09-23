@@ -7,7 +7,7 @@ import logging
 import os
 import socket
 import uuid
-from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from parrot.bots.flows.core.checkpoint import CheckpointPersistenceError, CheckpointStore, FlowCheckpoint
 from parrot.bots.flows.core.context import FlowContext
@@ -84,6 +84,9 @@ def build_plan_flow(
     step_mapping: Mapping[str, str],
     store: Optional[CheckpointStore],
     durable_store: Optional[CheckpointStore],
+    delegates: Sequence[Any] = (),
+    delegate_trace_sink: Optional[Any] = None,
+    allow_delegate_side_effects: bool = False,
 ) -> PlanFlow:
     """Compile a plan and bind its run identity and checkpoint policy."""
     ensure_tool_node_registered(PlanToolNode)
@@ -96,11 +99,27 @@ def build_plan_flow(
         plan_run_id=run.run_id,
         step_mapping=dict(step_mapping),
     )
+    node_factories: Dict[str, Any] = {"tool": factory}
+    if delegates:
+        from parrot.bots.flows.plan import ensure_delegate_node_registered  # noqa: PLC0415
+        from parrot.bots.flows.plan.delegate import DelegateToolNode, make_delegate_node_factory  # noqa: PLC0415
+
+        ensure_delegate_node_registered(DelegateToolNode)
+        node_factories["delegate"] = make_delegate_node_factory(
+            tool_manager,
+            working_memory,
+            delegates,
+            trace_sink=delegate_trace_sink,
+            allow_delegate_side_effects=allow_delegate_side_effects,
+            permission_context=permission_context,
+            plan_run_id=run.run_id,
+            step_mapping=dict(step_mapping),
+        )
     enabled = store is not None and plan.metadata.checkpoint
     flow = PlanFlow.from_definition(
         definition,
         agent_registry=agent_registry,
-        node_factories={"tool": factory},
+        node_factories=node_factories,
         checkpoint=enabled,
         durable=enabled and durable_store is not None,
         checkpoint_store=store,
