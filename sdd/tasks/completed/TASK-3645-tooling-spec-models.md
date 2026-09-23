@@ -383,10 +383,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3645
+- Feature: tool-configuration-agentstudio
+- Implementation SHA: a6153ab0e37a6d450968b29b2b50a5188e4a68d0
+- Closed at (UTC): 2026-09-23T14:03:23+00:00
+- Fix commits: a6153ab0e37a6d450968b29b2b50a5188e4a68d0
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| feedback_id | coder-feedback: recorded separately via coder_record_feedback |
+| notes | Merge-tier validation (packages/ai-parrot/tests/tools) initially failed at collection: 'from parrot.tools import spec as spec_module' triggered the package's PEP 562 __getattr__ via hasattr() in Python's fromlist import resolution before the submodule existed, raising ImportError uncaught by hasattr(). Fixed in-scope (test file only) by using a plain dotted absolute import, per the task's own Codebase Contract note. Re-run: 53 failed / 2053 passed / 105 skipped, none in test_tooling_spec.py or test_config_schema.py, and no existing file was modified by this task (confirmed via git diff --stat against origin/dev) -- the 53 failures are pre-existing and unrelated to FEAT-593. |
+| review_id | coder-review:e94e8becff1ecf1e40f37eba |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 160.97s · Tokens: n/a |
