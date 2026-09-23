@@ -39,7 +39,7 @@
       "feature_id": "FEAT-594",
       "feature": "sdd-coder-engine-fixes",
       "spec": "sdd/specs/sdd-coder-engine-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -48,15 +48,15 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3670 only because both modify sdd_coder/engine.py (same-file serialization); no symbol from TASK-3670 is used.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-09-23T20:12:15+00:00",
+      "completed_at": "2026-09-23T20:12:15+00:00",
       "discovered_from": [
         "issue:466c3bcd0c9a",
         "issue:8cfe91c4adf5",
         "issue:0e6daa941b57",
         "issue:fffc637dfc99"
       ],
-      "file": "sdd/tasks/active/TASK-3671-retry-ladder-hygiene.md"
+      "file": "sdd/tasks/completed/TASK-3671-retry-ladder-hygiene.md"
     }
   ]
 }

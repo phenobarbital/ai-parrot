@@ -1541,13 +1541,11 @@ class SddCoderEngine:
                     )
 
             except CoderFailure as exc:
-                if exc.code == "complexity_plan_stale":
-                    # Stale assessment - need to replan
-                    raise
-                # Any other complexity-routing failure blocks only this task;
-                # `exc.code` is already the specific code `_assessment_for`
-                # raised (`complexity_contract_invalid` or
-                # `complexity_audit_failed`) -- never relabel it.
+                # A complexity-routing failure blocks only this task; `exc.code`
+                # is already the specific code `_compute_assessment` raised
+                # (`complexity_contract_invalid` or `complexity_audit_failed`
+                # -- it never raises `complexity_plan_stale`, which only
+                # `_assessment_for` does) -- never relabel it.
                 blocked_task_ids.add(task_ref.id)
                 routing_blocks.append(
                     ComplexityBlock(
@@ -3196,7 +3194,23 @@ class SddCoderEngine:
         *,
         eligible_labels: Optional[Set[str]] = None,
     ) -> Optional[RosterSeat]:
-        """Return an untried, healthy eligible native seat, or ``None`` (FEAT-588)."""
+        """Return an untried, healthy eligible native seat, or ``None`` (FEAT-588).
+
+        Unlike `_select_retry_seat`, this never waits on a busy seat: a native
+        seat is released only by the orchestrator's `merge()` of its
+        reservation, which may itself be sequenced after this job's
+        `coder_wait`, so waiting here could park the job until the wait
+        timeout. A busy native seat is treated as unavailable and the caller
+        emits the explicit `complex_model_unavailable` block instead.
+
+        Args:
+            pool: The execution pool; None (legacy path) always yields None.
+            tried_seats: Seat labels already attempted for this task.
+            eligible_labels: Optional restriction to the task's eligible label set.
+
+        Returns:
+            A free, healthy native RosterSeat, or None when none qualifies.
+        """
         if pool is None:
             return None
         async with pool._condition:
@@ -3425,11 +3439,12 @@ class SddCoderEngine:
                 # complex_model_unavailable diagnostic, preserving previous
                 # attempts").
                 remaining = eligible_labels - tried_seats
-                if (
-                    pool is not None
-                    and remaining
-                    and all(candidate.kind == "native" for candidate in pool._seats if candidate.label in remaining)
-                ):
+                # Materialized first: `all()` over an empty candidate set is
+                # vacuously True and would mislabel the diagnostic as MCP-only.
+                remaining_seats = (
+                    [candidate for candidate in pool._seats if candidate.label in remaining] if pool is not None else []
+                )
+                if remaining_seats and all(candidate.kind == "native" for candidate in remaining_seats):
                     no_retry_error = (
                         f"complex_model_unavailable: MCP-only retry ladder has no eligible seat for {task.task_id}"
                     )

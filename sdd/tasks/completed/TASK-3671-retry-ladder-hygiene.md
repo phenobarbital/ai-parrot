@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-594 — sdd-coder engine fixes (settlement outstanding jobs + retry-ladder hygiene)
 **Spec**: `sdd/specs/sdd-coder-engine-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3670
@@ -145,4 +145,8 @@ async def _select_native_retry_seat(self, pool: Optional["ExecutionPool"], tried
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-opus-5-5 via /sdd-fix
+**Date**: 2026-09-23
+**Notes**: `_select_native_retry_seat` now has a Google-style docstring plus the no-busy-wait rationale (native seats are released only by `merge()`); the MCP-only retry diagnostic materializes its candidate seats and requires a non-empty list before `all()`; the unreachable `complexity_plan_stale` re-raise in `plan()` was removed and the comment corrected (it named `_assessment_for` instead of `_compute_assessment`). Validation: 80 passed across the three listed files; ruff + black clean.
+
+**Deviations from spec**: none
