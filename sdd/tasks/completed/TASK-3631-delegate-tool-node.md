@@ -375,4 +375,35 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by native seat `sonnet`, dispatched as an `sdd-coder` Agent, attempt_uid
+`15c26ebaa4fb46bfb42fcbd63b80f23c` (complex classification — the spec's own M5 flag).
+Merged clean; `black` lint reported 0 errors/residuals. Reviewed and recorded
+(`coder-review:735e3d54bbe809c1093746d7`, no corrections needed).
+
+Delivered `DelegateRejectedError`/`DelegateEscalation`, `DelegateToolNode(PlanToolNode)`
+overriding `_template_source`/`_action_label`/`_is_escalation`/`_invoke`, plus the two
+authored FILL-IN methods `_propose_with_chain` (candidate selection, per-hop
+`input_too_long`/`DelegateBackendError` handling, one `DelegateTrace` per hop) and
+`_gate` (verdict order: `declined → unknown_tool → invalid_args → side_effect_denied →
+confidence gate (unscored/low_confidence) → guard_false`, exactly per the spec's M5
+gate order). `make_delegate_node_factory` mirrors `make_tool_node_factory`.
+
+Explicitly verified (not assumed) the TASK-3630 design note carried forward: read
+`_call_with_retry`'s body directly and confirmed `DelegateEscalation` is raised
+BEFORE that method is ever reached on the gate-rejection path, so it is never wrapped
+in the generic `ToolExecutionError(...) from last` — `_is_escalation(exc) =
+isinstance(exc, DelegateEscalation)` is correct as specified, no `__cause__` check
+needed for this task's own code path.
+
+Delivery's own run: 19 passed (new `test_delegate_node.py`) + 100 passed (full
+`plan/` dir at delivery time), `ruff check` clean on both files.
+
+**Validation**: re-verified directly by the orchestrator post-merge —
+`pytest packages/ai-parrot/tests/bots/flows/plan/ -q` → **123 passed, 2 skipped**,
+zero regressions across the whole plan package (AC11 held through every prior task
+in this feature).
+
+**Merge-tier validation deviation (disclosed):** same as prior tasks — the
+feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
+blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
+scoped test evidence.
