@@ -98,6 +98,10 @@ class BasicAgent(Chatbot, NotificationMixin):
         # to work with dataframes:
         self.dataframes = dataframes or {}
         self._dataframe_info_cache = None
+        # Copy the class-level default so per-instance mutation (e.g. a caller
+        # doing `agent.speech_tts_options["polly_engine"] = ...`) never leaks
+        # across every BasicAgent instance sharing the class attribute.
+        self.speech_tts_options = dict(self.speech_tts_options)
         self.agent_id = self.agent_id or agent_id
         self.agent_name = self.agent_name or name
         tools = self._get_default_tools(tools, use_tools=use_tools)
