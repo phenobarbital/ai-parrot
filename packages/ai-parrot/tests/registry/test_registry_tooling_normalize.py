@@ -12,6 +12,7 @@ Verifies that:
 3. ``create_agent_definition`` -> ``load_agent_definition_file`` round-trips
    a dict toolkit entry losslessly.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -100,7 +101,10 @@ def test_create_agent_definition_roundtrip(tmp_path, monkeypatch):
         name="roundtrip-agent",
         class_name="BasicAgent",
         module="parrot.bots.agent",
-        toolkits=["weather", {"slug": "jira", "params": {"default_project": "T"}, "user_overridable": ["default_project"]}],
+        toolkits=[
+            "weather",
+            {"slug": "jira", "params": {"default_project": "T"}, "user_overridable": ["default_project"]},
+        ],
         mcp_servers=[{"name": "srv1", "transport": "http", "url": "http://localhost:1234"}],
     )
 
