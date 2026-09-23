@@ -16,7 +16,7 @@ from parrot.tools.execution_plan.runs import plan_fingerprint
 from parrot.tools.working_memory.tool import WorkingMemoryToolkit
 
 from ...bots.flows.plan._delegate_fakes import FakeDelegate, FakeTool, FakeToolManager
-from ._recovery_fakes import ScriptedPlannerClient
+from ._recovery_fakes import ScriptedPlannerClient, SerializingFakeCheckpointStore
 
 _FROZEN_TOOL_ONLY_FINGERPRINT = "8f249908b2dd285c6da1aad02293048c25b15081045c630513a4e53d8d710ca1"
 
@@ -192,12 +192,21 @@ async def test_mixed_plan_repair_targets_tool_node() -> None:
         working_memory=WorkingMemoryToolkit(),
         delegates=[FakeDelegate([_proposal("retry_with_proxy", {"url": "https://fixed.example"})])],
         planner_llm=ScriptedPlannerClient([delta.model_dump_json()]),
+        # plan_repair() refuses any run without a checkpoint (spec §8 D2,
+        # toolkit.py's checkpoint_unavailable gate) -- without this the repair
+        # call below always errors before ever reaching the delta/replan logic.
+        checkpoint_store=SerializingFakeCheckpointStore(),
     )
 
     original = await toolkit._run_plan(plan, source="plan_name")
     repaired = await toolkit.plan_repair(original.result["run_id"])
 
-    assert original.result["status"] == "partial"
+    # "load" fails outright and "triage" depends on it, so nothing in the original
+    # run reaches "ok"/"skipped" -- the toolkit's own status rule (toolkit.py:~563)
+    # makes that "failed", not "partial" ("partial" is reserved for a run with at
+    # least one ok/skipped node, e.g. escalation under fan-out, and per spec is
+    # NOT repair-eligible -- only a "failed" run is expected to reach plan_repair()).
+    assert original.result["status"] == "failed"
     assert repaired.status == "success"
     assert repaired.result["status"] == "completed"
     assert manager.calls == [

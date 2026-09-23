@@ -142,7 +142,7 @@ def test_compile_emits_delegate_type() -> None:
     assert node.metadata == {"plan": "delegate-validation", "tools": ["fetch_url", "source"]}
 
 
-def test_ensure_delegate_node_registered_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_delegate_node_registered_idempotent() -> None:
     """Delegate registration is idempotent and rejects a foreign owner."""
 
     class DelegateNode(Node):
@@ -151,9 +151,22 @@ def test_ensure_delegate_node_registered_idempotent(monkeypatch: pytest.MonkeyPa
     class ForeignDelegateNode(Node):
         """Distinct node class used to prove registry ownership checks."""
 
-    monkeypatch.delitem(NODE_REGISTRY, DELEGATE_NODE_TYPE, raising=False)
-    ensure_delegate_node_registered(DelegateNode)
-    ensure_delegate_node_registered(DelegateNode)
-    assert NODE_REGISTRY[DELEGATE_NODE_TYPE] is DelegateNode
-    with pytest.raises(ValueError, match="already"):
-        ensure_delegate_node_registered(ForeignDelegateNode)
+    # NODE_REGISTRY is a process-wide singleton shared with every other test module
+    # (e.g. tools/execution_plan/test_delegate_wiring.py, which expects the REAL
+    # DelegateToolNode registered under "delegate"). `monkeypatch.delitem(...,
+    # raising=False)` is a no-op — and queues NO teardown restoration — when the key
+    # is absent, which is exactly the case whenever this test runs before anything
+    # else has registered the real class: this test's own fake classes then leak
+    # into NODE_REGISTRY for the rest of the process. Save/restore explicitly instead.
+    original = NODE_REGISTRY.pop(DELEGATE_NODE_TYPE, None)
+    try:
+        ensure_delegate_node_registered(DelegateNode)
+        ensure_delegate_node_registered(DelegateNode)
+        assert NODE_REGISTRY[DELEGATE_NODE_TYPE] is DelegateNode
+        with pytest.raises(ValueError, match="already"):
+            ensure_delegate_node_registered(ForeignDelegateNode)
+    finally:
+        if original is not None:
+            NODE_REGISTRY[DELEGATE_NODE_TYPE] = original
+        else:
+            NODE_REGISTRY.pop(DELEGATE_NODE_TYPE, None)
