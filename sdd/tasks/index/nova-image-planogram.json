@@ -77,7 +77,7 @@
       "feature_id": "FEAT-592",
       "feature": "nova-image-planogram",
       "spec": "sdd/specs/nova-image-planogram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -87,8 +87,9 @@
       "parallelism_notes": "Imports build_nova_identify_prompt, PlanogramVocabulary, NOVA_PROMPT_VERSION and NOVA_STAGE from TASK-3641 (examples/planogram/aws/prompt.py). Inherits the TASK-3639 .gitignore edge transitively.",
       "assigned_to": null,
       "started_at": "2026-09-22T23:24:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3642-strip-orchestration-and-flatten.md"
+      "completed_at": "2026-09-23T00:10:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3642-strip-orchestration-and-flatten.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3643",

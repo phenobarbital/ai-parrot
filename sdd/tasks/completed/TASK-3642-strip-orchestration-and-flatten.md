@@ -521,10 +521,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3642
+- Feature: nova-image-planogram
+- Implementation SHA: 5be016bb77b2bf22ed5d31b6bb9efa762389b694
+- Closed at (UTC): 2026-09-23T00:10:56+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 272.00s · Tokens: n/a |
+| test_command | pytest examples/planogram/tests/test_nova2_identify.py -v |
+| test_result | 5 passed; full 138-test planogram suite passes |
+| tests_passed | True |
