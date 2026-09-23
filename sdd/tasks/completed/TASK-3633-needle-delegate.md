@@ -274,4 +274,40 @@ Standard. Read `sdd/state/FEAT-590/spike/decision.md` first.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Attempt 1 (`codex-spark`, `gpt-5.3-codex-spark`) failed immediately with an
+infra/config error (model unsupported under a ChatGPT-account Codex CLI), not a
+quality issue — the engine auto-retried on attempt 2 (`glm`, nova backend,
+`zai.glm-4.7-flash`, attempt_uid `e8b0aa716a454df5b3f3fec8863fc568`). Attempt 2
+merged, but `black` lint reported 2 real errors (F821 undefined names) and the
+orchestrator's post-merge re-run of this task's own declared validation command
+found 5/7 test failures, all fixed directly in commit `caed8d5774965ace6cf36ec28ce0cbe8ab68cc71`:
+
+- Missing `ProcessPoolExecutor` import (used but never imported).
+- Missing `ToolCallProposal` in a local test import block.
+- **Real bug**: `NeedleDelegate._run()` invoked `self._executor` via
+  `loop.run_in_executor()`, but `_ThreadExecutor.submit()` is a coroutine function,
+  not the sync `Executor.submit() -> Future` protocol that API requires — every
+  thread-mode `propose_call()` crashed. Fixed by awaiting `_ThreadExecutor.submit()`
+  directly for thread mode; `ProcessPoolExecutor` still goes through
+  `run_in_executor()` since it IS a standard executor.
+- 4 tests built their "fake needle module" by instantiating the fake `Needle` class
+  directly and monkeypatching that instance into `sys.modules["needle"]`, but
+  production code does `import needle; needle.Needle(...)` — needed a module-shaped
+  object exposing a `.Needle` attribute instead. Extracted a shared
+  `_fake_needle_module()` helper.
+- One test asserted an unfolded-fact string that was never present in its own input
+  facts dict (test bug); one test asserted `NeedleDelegate()` alone raises
+  `ImportError`, contradicting the class's own documented lazy-import design (AC14) —
+  redirected to exercise `_import_needle()` directly.
+
+Recorded as model feedback (`coder-feedback:1f345d3f370e91e31685fb51`) and review
+(`coder-review:b07852020ab4cfd1a53997fb`).
+
+**Validation**: `pytest packages/ai-parrot/tests/bots/flows/plan/test_needle_delegate.py -q`
+→ 7 passed, 1 skipped (live-backend integration test, gated on `NEEDLE_WEIGHTS`) after
+the fix.
+
+**Merge-tier validation deviation (disclosed):** same as prior tasks — the
+feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
+blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
+scoped test evidence (post-fix).

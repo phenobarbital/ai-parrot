@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-22T22:43:24+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-23T01:18:57+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "exclusive: downloads models and runs a local llama-server; writes sdd/state/FEAT-590/spike/ (orchestrator/human, not a coder seat); gates TASK-3632/3633/3637",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3624-delegate-backend-spike.md"
+      "completed_at": "2026-09-22T23:26:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3624-delegate-backend-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3625",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "no deps: two class attributes on AbstractTool (tools/abstract.py:333)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3625-abstracttool-delegate-flags.md"
+      "completed_at": "2026-09-22T23:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3625-abstracttool-delegate-flags.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3626",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +62,9 @@
       "parallelism_notes": "no deps: rewrites plan/models.py (_PlanNodeBase, DelegatePlanNode, AnyPlanNode, ArtifactRef.escalated) + first edit of plan/__init__.py",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3626-plan-language-union.md"
+      "completed_at": "2026-09-22T23:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3626-plan-language-union.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3627",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "tool_specs reads AbstractTool.delegate_description added by TASK-3625; creates delegate/__init__.py (lazy) + tests/_delegate_fakes.py",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3627-delegate-protocol-and-trace.md"
+      "completed_at": "2026-09-23T00:00:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3627-delegate-protocol-and-trace.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3628",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "reads delegate_safe (TASK-3625); imports DelegatePlanNode + shares plan/__init__.py with TASK-3626; tests import FakeDelegate from TASK-3627's _delegate_fakes.py",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3628-delegate-validator-and-compiler.md"
+      "completed_at": "2026-09-23T00:12:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3628-delegate-validator-and-compiler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3629",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "uses node.tool_names()/DelegatePlanNode from TASK-3626; forwards validate_plan(delegates=...) kwargs added by TASK-3628",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3629-allowlist-and-repair-delegate-aware.md"
+      "completed_at": "2026-09-23T00:20:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3629-allowlist-and-repair-delegate-aware.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3630",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +149,9 @@
       "parallelism_notes": "builds ArtifactRef(escalated=...) — field added by TASK-3626 (plan/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3630-plantoolnode-invoke-hook-refactor.md"
+      "completed_at": "2026-09-23T00:00:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3630-plantoolnode-invoke-hook-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3631",
@@ -153,7 +160,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -165,8 +172,9 @@
       "parallelism_notes": "subclasses PlanToolNode hooks from TASK-3630 (_invoke/_template_source/_is_escalation, PlanGuard extra=); validates DelegatePlanNode (TASK-3626); uses tool_specs/DelegateTrace (TASK-3627)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3631-delegate-tool-node.md"
+      "completed_at": "2026-09-23T00:13:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3631-delegate-tool-node.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3632",
@@ -175,7 +183,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -186,8 +194,9 @@
       "parallelism_notes": "endpoint + logprob mode come from TASK-3624 decision.md; implements ToolCallProposal/DelegateBackendError from TASK-3627 (delegate/protocol.py)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3632-llamacpp-delegate.md"
+      "completed_at": "2026-09-23T00:12:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3632-llamacpp-delegate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3633",
@@ -196,7 +205,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -207,8 +216,9 @@
       "parallelism_notes": "Needle API/executor choice from TASK-3624 decision.md; implements the TASK-3627 protocol; registered by TASK-3627's lazy delegate/__init__.py",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3633-needle-delegate.md"
+      "completed_at": "2026-09-23T00:12:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3633-needle-delegate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3634",
@@ -217,7 +227,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -225,8 +235,9 @@
       "parallelism_notes": "no deps: planner.py only; plain-data kwargs (tool names, max_tools), no delegate import",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3634-planner-delegate-rules.md"
+      "completed_at": "2026-09-22T23:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3634-planner-delegate-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3635",
@@ -235,7 +246,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -248,8 +259,9 @@
       "parallelism_notes": "calls ensure_delegate_node_registered (TASK-3628), validate_with_allowlist/validate_delta delegate kwargs (TASK-3629), make_delegate_node_factory (TASK-3631), PlanPlanner(delegate_safe_tools=) (TASK-3634)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3635-toolkit-and-flow-delegate-wiring.md"
+      "completed_at": "2026-09-23T00:28:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3635-toolkit-and-flow-delegate-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3636",
@@ -258,7 +270,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -268,8 +280,9 @@
       "parallelism_notes": "drives ExecutionPlanToolkit(delegates=...) added by TASK-3635 end-to-end",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3636-delegate-end-to-end-integration.md"
+      "completed_at": "2026-09-23T00:45:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3636-delegate-end-to-end-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3637",
@@ -278,7 +291,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -289,8 +302,9 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml (dependency manifest/lockfile); pin comes from TASK-3624 decision.md; extra named by TASK-3633's ImportError",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3637-needle-optional-extra.md"
+      "completed_at": "2026-09-23T00:15:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3637-needle-optional-extra.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3638",
@@ -299,7 +313,7 @@
       "feature_id": "FEAT-590",
       "feature": "tool-call-delegate",
       "spec": "sdd/specs/tool-call-delegate.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -311,8 +325,9 @@
       "parallelism_notes": "documents backend constructors (TASK-3632/3633) and ExecutionPlanToolkit delegate kwargs (TASK-3635)",
       "assigned_to": null,
       "started_at": "2026-09-22T22:46:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3638-tool-call-delegate-docs.md"
+      "completed_at": "2026-09-23T00:45:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3638-tool-call-delegate-docs.md",
+      "verification": "verified"
     }
   ]
 }

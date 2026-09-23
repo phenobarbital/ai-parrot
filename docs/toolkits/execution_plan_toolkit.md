@@ -301,6 +301,11 @@ that model must now either select the manifest fields or validate into
   not want a planner-authored plan to invoke, set `allowed_tools`
   explicitly.
 
+## Delegate nodes
+
+Plans may include `"type": "delegate"` nodes that let a tiny local model pick one tool call at run
+time. See [Tool-Call Delegate](../execution_plan/tool-call-delegate.md).
+
 ---
 
 ## See also

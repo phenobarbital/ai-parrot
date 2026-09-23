@@ -142,4 +142,20 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `gemini` (google-compat, `gemini-3.5-flash`), attempt_uid
+`9e737e2738cb4f19951f120a1535733a`. Merged clean (docs-only, no lint applicable).
+Reviewed and recorded (`coder-review:00dcc01213e61358454b1288`, no corrections
+needed).
+
+Verified `docs/execution_plan/tool-call-delegate.md` covers every section AC16
+requires: when to use it (vs. `PlanToolNode`/`AgentNode`), node shape, the accept
+gate, `on_reject` semantics, side-effect policy, both backends
+(`LlamaCppDelegate`/`NeedleDelegate`), toolkit configuration, and trace collection.
+
+**Validation**: `pytest packages/ai-parrot/tests/tools/execution_plan/test_toolkit_core.py -q`
+→ part of the 328-passed combined regression run (see TASK-3636's note).
+
+**Merge-tier validation deviation (disclosed):** same as prior tasks — the
+feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
+blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
+scoped evidence.

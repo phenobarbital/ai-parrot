@@ -300,4 +300,35 @@ Standard. Run `test_node.py` BEFORE editing to record the baseline.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by native seat `sonnet`, dispatched as an `sdd-coder` Agent, attempt_uid
+`a6c9871b9bee4aa8897f91382216785b`. Merged clean; `black` lint autofixed 3 files with 1
+residual (`node.py:87: E402`, verified pre-existing via `git show HEAD` by the delivering
+agent, not introduced by this diff — deferred to `/sdd-done` per style-debt policy).
+Reviewed and recorded (`coder-review:3fa1db918d35f1765dbeeb5c`).
+
+Delivery's own run: 4 (new `test_node_hooks.py`) + 25 (`test_node.py`, unmodified, AC11)
++ 37 (`test_plan.py`, unmodified, AC11) + 9 (execution_plan integration/checkpoint) + 47
+(working_memory task_memory regression sweep, not in the task's own Validation Commands
+but exercises `_call_with_retry`/`_begin_attempt`/`_refuse_unknown_retry` directly) = 122
+tests, all green.
+
+Design note flagged by the delivering agent for TASK-3631 (`DelegateToolNode`, the direct
+consumer of these hooks): `_call_with_retry` still wraps an exhausted-retries failure in a
+**new** `ToolExecutionError(...) from last`, so an escalation exception only reaches
+`_is_escalation` as `exc.__cause__`, not `exc` itself, when routed through the default
+`_invoke`/`_call_with_retry` path — carried forward for TASK-3631's implementer.
+
+**Validation**: re-verified directly by the orchestrator post-merge —
+`pytest packages/ai-parrot/tests/bots/flows/plan/test_delegate_protocol.py
+packages/ai-parrot/tests/bots/flows/plan/test_node_hooks.py
+packages/ai-parrot/tests/bots/flows/plan/test_node.py
+packages/ai-parrot/tests/bots/flows/plan/test_plan.py
+packages/ai-parrot/tests/tools/execution_plan/test_integration.py
+packages/ai-parrot/tests/tools/execution_plan/test_checkpointed_execution.py -q`
+→ 83 passed.
+
+**Merge-tier validation deviation (disclosed):** same as TASK-3625/3626/3627/3634 — the
+feature-wide `coder_run_validation` (tier=merge) sweep could not reach a clean
+`completed` outcome due to the confirmed pre-existing, unrelated environment defect
+(`issue:c3c59277ef77`). This task is closed on its own directly-verified scoped test
+evidence.

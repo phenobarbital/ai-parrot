@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, FrozenSet, List, Sequence, Type, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Sequence, Type, Union
 
 from pydantic import ValidationError
 
@@ -53,6 +53,21 @@ You are authoring an ExecutionPlan: a tool-only, deterministic DAG. Rules:
   an `{item...}` reference); a non-`for_each` node's `store_as` MUST NOT.
 - Never invent a tool not in the catalog. Never add an `agent` node — plans
   are tool-only by construction."""
+
+
+_DELEGATE_RULES = """\
+Delegate nodes (`"type": "delegate"`) — a tiny local model picks ONE tool call at run time:
+- Use one ONLY when the arguments cannot be written as templates at plan time (choose among
+  a few tools from an upstream result, derive args from a short text, per-item triage).
+  If args are known now, use a normal tool node — it is cheaper and cannot fail.
+- Fields: `instruction` (short text; same placeholders as `args`), optional `facts`
+  (string-to-string map), `tools` (1..{max_tools} names from the list below), optional `min_confidence`
+  (0..1; when set, proposals without a confidence score are REJECTED), optional `accept_when`
+  (CEL over `ctx.proposal.name` / `ctx.proposal.arguments`), `on_reject`
+  (`fail` | `retry_backend` | `escalate`), optional `allow_side_effects`, and `store_as` /
+  `depends_on` / `for_each` as usual.
+- Delegate-safe tools: {safe_tools}. Any other tool needs `allow_side_effects: true` AND host permission.
+- Never put a delegate node's `tools` above {max_tools}; split the step instead."""
 
 
 _DELTA_RULES = """\
@@ -149,6 +164,9 @@ class PlanPlanner:
         self,
         planner_llm: Union[str, Dict[str, Any], Type[AbstractClient], AbstractClient],
         catalog: Sequence[ToolCatalogEntry],
+        *,
+        delegate_safe_tools: Optional[Sequence[str]] = None,
+        delegate_max_tools: int = 5,
     ) -> None:
         """Resolve the planner client and bind the tool catalog.
 
@@ -156,9 +174,14 @@ class PlanPlanner:
             planner_llm: See :func:`resolve_planner_client`.
             catalog: The allowlist-scoped catalog (TASK-2182's
                 ``build_catalog``) embedded in every prompt.
+            delegate_safe_tools: Tool names safe for delegate nodes. ``None``
+                disables delegate rules and leaves prompts unchanged.
+            delegate_max_tools: Maximum tools a delegate node may choose from.
         """
         self.client = resolve_planner_client(planner_llm)
         self.catalog: List[ToolCatalogEntry] = list(catalog)
+        self._delegate_safe_tools = delegate_safe_tools
+        self._delegate_max_tools = delegate_max_tools
         self.logger = logging.getLogger(f"{__name__}.PlanPlanner")
 
     async def author(self, objective: str) -> ExecutionPlan:
@@ -321,9 +344,20 @@ class PlanPlanner:
 
     # ── Prompt construction ──────────────────────────────────────────────
 
+    def _rules(self) -> str:
+        """Planning rules, plus delegate rules when delegates are enabled."""
+        if self._delegate_safe_tools is None:
+            return _PLANNING_RULES
+        safe_tools = ", ".join(sorted(self._delegate_safe_tools)) or "(none)"
+        delegate_rules = _DELEGATE_RULES.format(
+            max_tools=self._delegate_max_tools,
+            safe_tools=safe_tools,
+        )
+        return f"{_PLANNING_RULES}\n\n{delegate_rules}"
+
     def _authoring_prompt(self, objective: str) -> str:
         return (
-            f"{_PLANNING_RULES}\n\n"
+            f"{self._rules()}\n\n"
             f"Tool catalog:\n{self._render_catalog()}\n\n"
             f"ExecutionPlan JSON Schema:\n{json.dumps(ExecutionPlan.model_json_schema())}\n\n"
             f"Objective: {objective}\n\n"
@@ -333,7 +367,7 @@ class PlanPlanner:
 
     def _repair_prompt(self, plan_json: Dict[str, Any], report: ValidationReport) -> str:
         return (
-            f"{_PLANNING_RULES}\n\n"
+            f"{self._rules()}\n\n"
             f"Tool catalog:\n{self._render_catalog()}\n\n"
             f"ExecutionPlan JSON Schema:\n{json.dumps(ExecutionPlan.model_json_schema())}\n\n"
             f"The following plan failed validation:\n{json.dumps(plan_json)}\n\n"

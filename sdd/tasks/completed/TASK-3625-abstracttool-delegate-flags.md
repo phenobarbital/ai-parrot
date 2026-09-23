@@ -180,4 +180,22 @@ Standard: verify the contract, implement the blueprint, run the validation comma
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `gpt-5.6-terra` (codex), dispatched via the `parrot-sdd-coder`
+MCP orchestrator, attempt_uid `695ae549eb474aa99dde392272d00d71`. Merged clean on the
+first attempt; `black` lint reported 0 errors/residuals. Reviewed and recorded
+(`coder-review:f561405d49065963b035ff31`, no corrections needed).
+
+**Validation**: `pytest packages/ai-parrot/tests/tools/test_abstract_delegate_flags.py -q`
+→ 2 passed (re-verified directly by the orchestrator after merge).
+
+**Merge-tier validation deviation (disclosed):** the feature-wide `coder_run_validation`
+(tier=merge) sweep for this task's import-impact — which runs the FULL monorepo test
+suite because `tools/abstract.py` has wide reach — could not reach a clean `completed`
+outcome: run 1 timed out at 300s already showing 25 PRE-EXISTING collection errors in
+`packages/ai-parrot/tests/` (none touching `abstract.py`'s delegate flags), and run 2
+(1800s budget) progressed through client-*/embeddings/integrations but stalled for 3+
+minutes with no log growth at 40% through `ai-parrot-integrations/tests` (confirmed via
+log-file mtime vs wall clock — a genuine hang, not slow progress). Neither failure mode
+is related to this task's two-attribute addition. Filed as `issue:c3c59277ef77`
+(critical) so the broader validation-environment defect is tracked and fixed
+independently. This task is closed on its own directly-verified scoped test evidence.

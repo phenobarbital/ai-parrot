@@ -161,4 +161,31 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `gpt-5.6-terra` (codex), attempt_uid
+`d64876dcc8154179a3b3fa255613510d`. Merged clean; `black` lint reported 0
+errors/residuals. Reviewed and recorded (`coder-review:35ff19acb9940828d1d74f3d`).
+
+**Review fix (disclosed):** post-merge orchestrator verification found
+`test_mixed_plan_repair_targets_tool_node` failing — the test's own toolkit never
+passed a `checkpoint_store`, so `plan_repair()` always refused with
+`checkpoint_unavailable` before ever reaching the delta/replan logic it claims to
+exercise; the test also asserted the wrong status literal (`"partial"` instead of
+the architecturally correct `"failed"` for a linear dependency chain where nothing
+reaches ok/skipped). Fixed in commit `9e155cce8707d0be1fb36cdbe45846c14a80b8f4`
+(combined with a TASK-3628 finding — see that task's retroactive note). Recorded as
+model feedback (`coder-feedback:69d8db4f40f7eae4e67d98fc`).
+
+**Validation**: `pytest packages/ai-parrot/tests/tools/execution_plan/test_delegate_integration.py -q`
+→ 3 passed after the fix. Broader regression: `pytest
+packages/ai-parrot/tests/bots/flows/plan/ packages/ai-parrot/tests/tools/execution_plan/ -q`
+→ **328 passed, 3 skipped**, with exactly one remaining failure —
+`test_integration_recovery.py::test_fresh_process_recovery_chain` — in a file
+completely untouched by any FEAT-590 task (confirmed via `git diff origin/dev`),
+pre-existing and unrelated (same category as `issue:c3c59277ef77`; likely the same
+subprocess/fork sandboxing artifact this session already documented for
+`ProcessPoolExecutor` in the TASK-3624 spike).
+
+**Merge-tier validation deviation (disclosed):** same as prior tasks — the
+feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
+blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
+scoped test evidence (post-fix) plus the broader regression sweep above.

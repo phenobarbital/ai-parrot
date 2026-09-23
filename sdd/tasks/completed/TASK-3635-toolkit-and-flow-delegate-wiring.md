@@ -265,4 +265,28 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `gpt-5.6-terra` (codex), attempt_uid
+`0819fd4727d54ab888afe567ce412d00`. Merged clean; `black` lint reported 0
+errors/residuals. Reviewed and recorded (`coder-review:7fa2e4f0b6b534acf3bb32b4`).
+
+**Review fix (disclosed):** post-merge orchestrator verification found 2/30 test
+failures, both test-authoring bugs, not implementation defects: two fixture
+builders omitted the required `store_as` field when constructing
+`PlanNode`/`DelegatePlanNode`, and one test asserted
+`pytest.raises(PlanRunError, match="policy_mismatch")` against `str(exc)`, but
+`PlanRunError.__str__` is the free-text message only — the `"policy_mismatch"`
+identifier lives on the separate `.code` attribute. `_assert_policy()` and the
+toolkit wiring were already correct. Fixed in commit
+`ceaff2b1385fb3f2907c4388aef66f69ee813604`. Recorded as model feedback
+(`coder-feedback:6cad4f8f07f98a90e6261688`).
+
+**Validation**: `pytest packages/ai-parrot/tests/tools/execution_plan/test_delegate_wiring.py
+packages/ai-parrot/tests/tools/execution_plan/test_toolkit_core.py
+packages/ai-parrot/tests/tools/execution_plan/test_runtime_repair.py
+packages/ai-parrot/tests/tools/execution_plan/test_checkpoint_resume.py -q`
+→ 30 passed after the fix.
+
+**Merge-tier validation deviation (disclosed):** same as prior tasks — the
+feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
+blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
+scoped test evidence (post-fix).
