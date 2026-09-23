@@ -58,7 +58,9 @@ def bot(monkeypatch):
     monkeypatch.setattr(
         _Bot,
         "_resolve_spec_class",
-        staticmethod(lambda slug: _EchoKit if slug == "echo" else _DatasetManager if slug == "dataset_manager" else None),
+        staticmethod(
+            lambda slug: _EchoKit if slug == "echo" else _DatasetManager if slug == "dataset_manager" else None
+        ),
     )
     return _Bot()
 
