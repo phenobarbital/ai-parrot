@@ -107,8 +107,8 @@ class BotMetadata:
 
             # --- Logic for handling new BotConfig attributes ---
             # 1. Tools handling
-            # Extract lists
-            tools_list = merged_kwargs.get("tools", [])
+            # Extract lists ('tools' itself is passed through unchanged via **merged_kwargs
+            # below — only 'toolkits' needs separate handling here)
             toolkits_list = merged_kwargs.get("toolkits", [])
             mcp_servers_config = merged_kwargs.pop("mcp_servers", [])
 
@@ -522,9 +522,6 @@ class AgentRegistry:
         if metadata is None:
             return None
         return metadata._instance
-
-    def get_metadata(self, name: str) -> Optional[BotMetadata]:
-        return self._registered_agents.get(name)
 
     def register(
         self,
