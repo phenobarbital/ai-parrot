@@ -2,7 +2,7 @@
 
 import pytest
 
-from parrot.tools import spec as spec_module
+import parrot.tools.spec as spec_module
 from parrot.tools.spec import (
     AgentMCPServerSpec,
     SECRET_MASK,
