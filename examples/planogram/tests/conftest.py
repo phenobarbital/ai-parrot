@@ -11,7 +11,9 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # → ``import plancheck``
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "aws"))  # FEAT-592: → ``import nova_vision``/``prompt``/``identify``
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[1] / "aws")
+)  # FEAT-592: → ``import nova_vision``/``prompt``/``identify``
 
 from plancheck.models import Catalog, CatalogItem, PlanogramFacing, PlanogramRef  # noqa: E402
 
