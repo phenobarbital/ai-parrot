@@ -10,8 +10,15 @@ class _Resolver: ...
 class _Plain:
     secret_params = frozenset({"weird"})
 
-    def __init__(self, server_url: str, token: Optional[str] = None, weird: str = "", max_rows: int = 5,
-                 credential_resolver: _Resolver = None, **kwargs): ...
+    def __init__(
+        self,
+        server_url: str,
+        token: Optional[str] = None,
+        weird: str = "",
+        max_rows: int = 5,
+        credential_resolver: _Resolver = None,
+        **kwargs,
+    ): ...
 
 
 class _A(BaseModel):

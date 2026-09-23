@@ -1,4 +1,5 @@
 """Toolkit configuration JSON Schema (FEAT-593): one Draft 2020-12 envelope per toolkit."""
+
 from __future__ import annotations
 
 import inspect
@@ -142,12 +143,18 @@ def model_config_schema(cls: type) -> dict[str, Any]:
     return schema
 
 
-def build_schema_envelope(slug: str, cls: type, *, server_managed: frozenset[str] = frozenset()) -> ToolkitSchemaEnvelope:
+def build_schema_envelope(
+    slug: str, cls: type, *, server_managed: frozenset[str] = frozenset()
+) -> ToolkitSchemaEnvelope:
     """``source='model'`` when ``cls.config_model`` is set, else ``'introspection'``."""
     if getattr(cls, "config_model", None) is not None:
-        return ToolkitSchemaEnvelope(slug=slug, class_name=cls.__name__, source="model", schema=model_config_schema(cls))
+        return ToolkitSchemaEnvelope(
+            slug=slug, class_name=cls.__name__, source="model", schema=model_config_schema(cls)
+        )
     return ToolkitSchemaEnvelope(
-        slug=slug, class_name=cls.__name__, source="introspection",
+        slug=slug,
+        class_name=cls.__name__,
+        source="introspection",
         schema=introspect_config_schema(cls, server_managed=server_managed),
     )
 
