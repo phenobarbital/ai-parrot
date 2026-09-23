@@ -45,6 +45,7 @@ class NovaVisionClient:
         self.calls_made: int = 0
         self.total_input_tokens: int = 0
         self.total_output_tokens: int = 0
+        self.total_image_bytes_sent: int = 0
 
     @classmethod
     async def create(
@@ -132,6 +133,7 @@ class NovaVisionClient:
             inferenceConfig={"maxTokens": max_tokens, "temperature": temperature},
         )
         self.calls_made += 1  # reached Bedrock — the only place a VisionAdapter cache hit is visible
+        self.total_image_bytes_sent += image_bytes
         content = response.get("output", {}).get("message", {}).get("content", [])
         text = next((block["text"] for block in content if "text" in block), None)
         if text is None:

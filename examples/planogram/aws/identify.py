@@ -271,12 +271,17 @@ async def identify_strips_closed_set(
     # calls that actually reached Bedrock. `vision.client` (verified public
     # attribute: VisionAdapter.__init__ sets `self.client = client`) is the
     # NovaVisionClient instance itself and is the only place a cache hit is
-    # visible (see nova_vision.py NovaVisionClient.calls_made).
+    # visible (see nova_vision.py NovaVisionClient.calls_made). The same is
+    # true of `stats.image_bytes_sent`, accumulated in _run_strip from the
+    # rendered PNG before it is known whether ask() will short-circuit on a
+    # cache hit — replace it with the transport's own total, incremented only
+    # when ask_to_image actually reached Bedrock.
     attempted_asks = stats.calls
     stats.calls = getattr(vision.client, "calls_made", attempted_asks)
     stats.cache_hits = max(0, attempted_asks - stats.calls)
     stats.input_tokens = getattr(vision.client, "total_input_tokens", 0)
     stats.output_tokens = getattr(vision.client, "total_output_tokens", 0)
+    stats.image_bytes_sent = getattr(vision.client, "total_image_bytes_sent", stats.image_bytes_sent)
 
     target_order = {_target_id(target): index for index, target in enumerate(_targets(perception))}
     added_order = {shape.shape_id: index for index, shape in enumerate(added)}

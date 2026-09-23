@@ -155,6 +155,7 @@ class FakeNovaClient:
         self.calls_made = 0
         self.total_input_tokens = 0
         self.total_output_tokens = 0
+        self.total_image_bytes_sent = 0
 
 
 class CacheHit:
@@ -177,12 +178,13 @@ class StubVisionAdapter:
     ``self.client = client`` attribute this stub mirrors.
     """
 
-    def __init__(self, *answers, input_tokens: int = 10, output_tokens: int = 5) -> None:
+    def __init__(self, *answers, input_tokens: int = 10, output_tokens: int = 5, image_bytes: int = 100) -> None:
         self.answers: List[object] = list(answers)
         self.calls: List[str] = []
         self.client = FakeNovaClient()
         self._input_tokens = input_tokens
         self._output_tokens = output_tokens
+        self._image_bytes = image_bytes
 
     async def ask(self, prompt, images, schema, *, stage, prompt_version, system_prompt=None):
         self.calls.append(prompt)
@@ -194,6 +196,7 @@ class StubVisionAdapter:
         self.client.calls_made += 1
         self.client.total_input_tokens += self._input_tokens
         self.client.total_output_tokens += self._output_tokens
+        self.client.total_image_bytes_sent += self._image_bytes
         return item
 
 
@@ -231,7 +234,9 @@ def _orchestration_image(perception: PerceptionResult) -> np.ndarray:
 async def test_identify_strips_counts_only_real_bedrock_calls() -> None:
     """A single successful call is reflected as one real call with its own token usage."""
     perception = _orchestration_perception()
-    adapter = StubVisionAdapter(_identification_answer(["img0:r0:s1"]), input_tokens=42, output_tokens=7)
+    adapter = StubVisionAdapter(
+        _identification_answer(["img0:r0:s1"]), input_tokens=42, output_tokens=7, image_bytes=999
+    )
 
     result, stats = await identify_strips_closed_set(
         _orchestration_image(perception),
@@ -249,6 +254,7 @@ async def test_identify_strips_counts_only_real_bedrock_calls() -> None:
     assert stats.failed_strips == 0
     assert stats.input_tokens == 42
     assert stats.output_tokens == 7
+    assert stats.image_bytes_sent == 999  # reconciled against the transport's real total, not the render count
     assert result.identifications[0].product == "9C228AN"
 
 
@@ -294,6 +300,7 @@ async def test_identify_strips_cache_hit_reduces_calls_not_attempts() -> None:
     assert stats.calls == 0
     assert stats.cache_hits == 1
     assert stats.input_tokens == 0 and stats.output_tokens == 0
+    assert stats.image_bytes_sent == 0  # nothing reached Bedrock -> zero real bytes transmitted
     assert result.identifications[0].product == "9C228AN"
 
 

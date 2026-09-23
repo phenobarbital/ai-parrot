@@ -66,7 +66,7 @@ python examples/planogram/aws/nova2.py \
 |------|----------|---------|-------------|
 | `--image` | Yes | — | Path to the store photo (JPEG/PNG). |
 | `--boxes` | No | — | JSON file with pre-computed perception results (bypasses Stage-1). |
-| `--planogram` | No | — | Planogram JSON with product/brand vocabulary for closed-set prompting. |
+| `--planogram` | Yes | — | Planogram JSON with product/brand vocabulary for closed-set prompting. |
 | `--output` | Yes | — | Output directory for `detections.json`, `annotated.jpg` and `run.json`. |
 | `--model` | No | `nova-2-lite` | Model alias (resolves to `us.amazon.nova-2-lite-v1:0`). |
 | `--region` | No | `us-east-1` | AWS region for the Bedrock call. |
