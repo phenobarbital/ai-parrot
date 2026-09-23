@@ -59,6 +59,10 @@ verify each criterion deterministically and emit a structured
    ``lint_output``; ``lint_passed`` = both ruff and mypy returned 0.
 4. ``passed`` (top-level) = every ``criterion_results[*].passed`` is
    ``True`` AND ``lint_passed`` is ``True``.
+5. The outer dev-loop runs the separate feature E2E stage after final
+   code-review/triage edits and deterministic rechecks. Do not invoke it,
+   add E2E to the ordinary selector, or grant agent-spawn tools; preserve the
+   QAReport verdict and let the outer orchestration retain rich E2E evidence.
 
 ## Output Contract
 
