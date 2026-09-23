@@ -124,4 +124,20 @@ Standard.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat `glm` (nova, `zai.glm-4.7-flash`), attempt_uid
+`57f3c488c07b4aaf80e8aa38ea6961a1`. Merged clean (manifest-only, no lint applicable).
+Reviewed and recorded (`coder-review:feec84b0b71faf53ff6d0f2a`, no corrections needed).
+
+Verified directly by the orchestrator via `tomllib` parse: the `needle` extra is
+pinned to `cactus-needle==3.0.4` — the exact version this feature's spike
+(TASK-3624, `decision.md`) measured — and is correctly excluded from the `all`
+meta-extra.
+
+**Validation**: `pytest packages/ai-parrot/tests/bots/flows/plan/test_plan.py -q`
+→ 37 passed (smoke check per the task's own note: the real check is the `tomllib`
+parse).
+
+**Merge-tier validation deviation (disclosed):** same as prior tasks — the
+feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
+blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
+scoped evidence.
