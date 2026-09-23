@@ -3,6 +3,7 @@
 The delegate proposes; code disposes. Everything from dispatch onward is the
 inherited ``PlanToolNode`` path (retries, receipts, execute_tool, storage).
 """
+
 from __future__ import annotations
 
 import json

@@ -1,4 +1,5 @@
 """FEAT-590 M5: DelegateToolNode gate, on_reject, traces."""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -374,9 +375,7 @@ def test_factory_binds_chain_and_host_flag() -> None:
 
     class _Def:
         id = "n"
-        config = DelegatePlanNode(id="n", store_as="k", instruction="hi", tools=["fetch_url"]).model_dump(
-            mode="json"
-        )
+        config = DelegatePlanNode(id="n", store_as="k", instruction="hi", tools=["fetch_url"]).model_dump(mode="json")
 
     node = factory(_Def(), {"listing"}, {"next"})
 
