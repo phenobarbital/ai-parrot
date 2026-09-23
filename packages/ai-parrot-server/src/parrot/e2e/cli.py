@@ -567,7 +567,11 @@ async def _spawn_detached_target(
 @click.option("--owner-id", "owner_id", default=None, help="Owner identity; defaults to the invoking runner identity.")
 @click.option("--timeout", "timeout_s", type=float, default=None, help="Startup readiness timeout override, seconds.")
 def up_command(
-    target: str, config_path: Optional[Path], invocation_id: Optional[str], owner_id: Optional[str], timeout_s: Optional[float]
+    target: str,
+    config_path: Optional[Path],
+    invocation_id: Optional[str],
+    owner_id: Optional[str],
+    timeout_s: Optional[float],
 ) -> None:
     """Start a supervised, detached target; one RunState JSON line when ready."""
     worktree = _resolve_worktree()
@@ -833,7 +837,11 @@ async def _down_stale(*, worktree: Path, owner_id: str) -> list[dict[str, Any]]:
 @click.argument("run_id", required=False)
 @click.option("--all", "all_owned", is_flag=True, default=False, help="Stop every run owned by --owner-id.")
 @click.option(
-    "--stale", "stale_only", is_flag=True, default=False, help="Reconcile every stale owned run (spec §2's recovery path)."
+    "--stale",
+    "stale_only",
+    is_flag=True,
+    default=False,
+    help="Reconcile every stale owned run (spec §2's recovery path).",
 )
 @click.option("--owner-id", "owner_id", default=None, help="Owner identity; defaults to the invoking runner identity.")
 def down_command(run_id: Optional[str], all_owned: bool, stale_only: bool, owner_id: Optional[str]) -> None:

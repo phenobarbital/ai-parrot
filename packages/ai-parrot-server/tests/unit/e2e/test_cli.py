@@ -90,7 +90,9 @@ class _FakeSupervisor:
 
     async def stop(self, run_id: str) -> RunState:
         self.stop_calls.append(run_id)
-        return _sample_run_state(run_id=run_id, status="stopped", cleanup_complete=True, owner_id=self.kwargs["owner_id"])
+        return _sample_run_state(
+            run_id=run_id, status="stopped", cleanup_complete=True, owner_id=self.kwargs["owner_id"]
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +127,9 @@ def test_e2e_group_lists_public_subcommands_and_hides_daemon() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_run_success_prints_verdict_json_and_uses_verdict_exit_code(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_run_success_prints_verdict_json_and_uses_verdict_exit_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """A clean run echoes the verdict JSON and exits with its own exit_code."""
     captured: dict[str, Any] = {}
 
@@ -412,7 +416,9 @@ async def test_spawn_detached_target_raises_on_daemon_exit_before_ticket(
 
 
 @pytest.mark.asyncio
-async def test_spawn_detached_target_times_out_without_a_ticket(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_spawn_detached_target_times_out_without_a_ticket(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """A daemon that never writes a ticket within the bounded deadline fails, not hangs forever."""
 
     class _FakeAliveProcess:
@@ -467,7 +473,9 @@ async def test_run_daemon_writes_error_ticket_on_start_failure(tmp_path: Path) -
 
 
 @pytest.mark.asyncio
-async def test_run_daemon_self_exits_once_externally_cleaned_up(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_run_daemon_self_exits_once_externally_cleaned_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """A run stopped by a *separate* `down` invocation makes the daemon observe cleanup and exit."""
     started_state = _sample_run_state(status="ready", worktree=tmp_path)
     stopped_state = _sample_run_state(status="stopped", cleanup_complete=True, worktree=tmp_path)
