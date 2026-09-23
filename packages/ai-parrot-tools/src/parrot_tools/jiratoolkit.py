@@ -500,13 +500,9 @@ class SearchUsersInput(BaseModel):
 class GetProjectsInput(BaseModel):
     """Input for listing projects."""
 
-    pass
-
 
 class VerifyAuthInput(BaseModel):
     """Input for verifying Jira authentication."""
-
-    pass
 
 
 class GetComponentsInput(BaseModel):

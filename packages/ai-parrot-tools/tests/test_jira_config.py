@@ -1,4 +1,5 @@
 """Tests for JiraToolkitConfig + JiraToolkit.config_options (FEAT-593 TASK-3650)."""
+
 from unittest.mock import AsyncMock, PropertyMock, patch
 
 import pytest
