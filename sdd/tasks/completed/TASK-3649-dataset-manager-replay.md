@@ -269,10 +269,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Task: TASK-3649
+- Feature: tool-configuration-agentstudio
+- Implementation SHA: 8006473f4 (merged as 1aa52c2cd)
+- Closed at (UTC): 2026-09-23T15:31:00+00:00
+- Fix commits: none
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+| Metric | Value |
+|---|---|
+| validation_refs | 0 (see notes) |
+| fix_commits | 0 |
+| feedback_id | coder-review:dc1dcb1fb7bcac8b89d46780 |
+| notes | Delivered via coder_run_chunk (codex/gpt-5.6-terra), merged cleanly (fidelity_ok: true, lint autofix commit 287dcc36a, 0 errors). sdd-worker diff review confirmed only the 2 declared files touched (tool.py MODIFY, test_replay_datasources.py CREATE) and replay_datasources() implements the kind-to-method dispatch map exactly per blueprint. A merge-tier `coder_run_validation` scoped to TASK-3649+TASK-3650 triggered the same full-workspace "core escalation" sweep seen when closing TASK-3647/3648/3652/3656 (ai-parrot's own tests ran clean modulo the same 25 pre-existing unrelated collection errors); it was still in flight past the ai-parrot-client-amazon/anthropic stage when this note was written and is expected to hang/time out on the same pre-existing ai-parrot-integrations issue. Closed manually rather than via finalize_task since that validation cannot serve as a settled green EvidenceRef within a reasonable budget. |
+| review_id | coder-review:dc1dcb1fb7bcac8b89d46780 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 341.47s · Tokens: n/a |
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

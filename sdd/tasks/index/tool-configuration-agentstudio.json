@@ -92,7 +92,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Needs the config_model/secret_params ClassVars from TASK-3647 (parrot/tools/toolkit.py) and imports DatasetManagerConfig/DatasourceSpec from TASK-3648 (dataset_manager/config.py). Only task modifying dataset_manager/tool.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3649-dataset-manager-replay.md"
+      "completed_at": "2026-09-23T15:31:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3649-dataset-manager-replay.md"
     },
     {
       "id": "TASK-3650",
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Uses the config_model/options_params ClassVars and config_options hook added by TASK-3647 (parrot/tools/toolkit.py) and ConfigOption from TASK-3646 (transitively available). Only task touching jiratoolkit.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3650-jira-config-options.md"
+      "completed_at": "2026-09-23T15:31:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3650-jira-config-options.md"
     },
     {
       "id": "TASK-3651",
