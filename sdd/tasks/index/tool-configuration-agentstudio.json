@@ -65,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:15:48+00:00",
-      "file": "sdd/tasks/completed/TASK-3647-toolkit-config-hooks.md"
+      "file": "sdd/tasks/completed/TASK-3647-toolkit-config-hooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3648",
@@ -83,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:15:48+00:00",
-      "file": "sdd/tasks/completed/TASK-3648-dataset-manager-config-models.md"
+      "file": "sdd/tasks/completed/TASK-3648-dataset-manager-config-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3649",
@@ -104,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:31:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3649-dataset-manager-replay.md"
+      "file": "sdd/tasks/completed/TASK-3649-dataset-manager-replay.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3650",
@@ -124,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:31:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3650-jira-config-options.md"
+      "file": "sdd/tasks/completed/TASK-3650-jira-config-options.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3651",
@@ -144,7 +148,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:40:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3651-querysource-config-options.md"
+      "file": "sdd/tasks/completed/TASK-3651-querysource-config-options.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3652",
@@ -164,7 +169,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:15:48+00:00",
-      "file": "sdd/tasks/completed/TASK-3652-botmodel-tooling-columns-and-guard.md"
+      "file": "sdd/tasks/completed/TASK-3652-botmodel-tooling-columns-and-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3653",
@@ -185,7 +191,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:40:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3653-db-build-path-tools.md"
+      "file": "sdd/tasks/completed/TASK-3653-db-build-path-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3654",
@@ -206,7 +213,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:46:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3654-tool-interface-apply-specs.md"
+      "file": "sdd/tasks/completed/TASK-3654-tool-interface-apply-specs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3655",
@@ -226,7 +234,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:51:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3655-abstractbot-configure-wiring.md"
+      "file": "sdd/tasks/completed/TASK-3655-abstractbot-configure-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3656",
@@ -246,7 +255,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:15:48+00:00",
-      "file": "sdd/tasks/completed/TASK-3656-registry-normalize-factory.md"
+      "file": "sdd/tasks/completed/TASK-3656-registry-normalize-factory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3657",
@@ -266,7 +276,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:46:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3657-registry-update-agent-tooling.md"
+      "file": "sdd/tasks/completed/TASK-3657-registry-update-agent-tooling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3658",
@@ -286,7 +297,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:51:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3658-studio-schema-envelope.md"
+      "file": "sdd/tasks/completed/TASK-3658-studio-schema-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3659",
@@ -309,7 +321,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T15:57:15+00:00",
-      "file": "sdd/tasks/completed/TASK-3659-studio-tooling-store.md"
+      "file": "sdd/tasks/completed/TASK-3659-studio-tooling-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3660",
@@ -329,7 +342,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T16:02:53+00:00",
-      "file": "sdd/tasks/completed/TASK-3660-studio-toolkit-config-handlers.md"
+      "file": "sdd/tasks/completed/TASK-3660-studio-toolkit-config-handlers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3661",
@@ -350,7 +364,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T16:08:08+00:00",
-      "file": "sdd/tasks/completed/TASK-3661-user-toolkit-overrides.md"
+      "file": "sdd/tasks/completed/TASK-3661-user-toolkit-overrides.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3662",
@@ -372,7 +387,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T16:21:28+00:00",
-      "file": "sdd/tasks/completed/TASK-3662-agenttalk-session-overrides.md"
+      "file": "sdd/tasks/completed/TASK-3662-agenttalk-session-overrides.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3663",
@@ -395,7 +411,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T16:13:05+00:00",
-      "file": "sdd/tasks/completed/TASK-3663-codegen-studio-tooling.md"
+      "file": "sdd/tasks/completed/TASK-3663-codegen-studio-tooling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3664",
@@ -415,7 +432,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T16:21:28+00:00",
-      "file": "sdd/tasks/completed/TASK-3664-ui-studio-api-schemaform.md"
+      "file": "sdd/tasks/completed/TASK-3664-ui-studio-api-schemaform.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3665",
@@ -435,7 +453,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T16:58:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3665-ui-tools-tab.md"
+      "file": "sdd/tasks/completed/TASK-3665-ui-tools-tab.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3666",
@@ -455,12 +474,13 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T17:02:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3666-ui-chat-my-tool-settings.md"
+      "file": "sdd/tasks/completed/TASK-3666-ui-chat-my-tool-settings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3667",
       "slug": "tooling-integration-tests",
-      "title": "Integration tests: persist → reload → built toolkit; datasources in memory; override isolation",
+      "title": "Integration tests: persist \u2192 reload \u2192 built toolkit; datasources in memory; override isolation",
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
@@ -479,7 +499,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T16:58:11+00:00",
-      "file": "sdd/tasks/completed/TASK-3667-tooling-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-3667-tooling-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3668",
@@ -501,7 +522,8 @@
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
       "completed_at": "2026-09-23T17:02:44+00:00",
-      "file": "sdd/tasks/completed/TASK-3668-tooling-docs.md"
+      "file": "sdd/tasks/completed/TASK-3668-tooling-docs.md",
+      "verification": "verified"
     }
   ]
 }
