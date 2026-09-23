@@ -287,3 +287,18 @@ gated on live backends).
 the feature-wide `coder_run_validation` (tier=merge) sweep remains environmentally
 blocked (`issue:c3c59277ef77`). This task is closed on its own directly-verified
 scoped test evidence.
+
+**Retroactive fix (disclosed, found during TASK-3636's broader regression sweep):**
+`test_ensure_delegate_node_registered_idempotent` in this task's own
+`test_delegate_validation.py` used `monkeypatch.delitem(NODE_REGISTRY, ...,
+raising=False)` for cleanup, which is a no-op with **no** queued teardown restore
+when the key is absent — exactly the case whenever this test happened to run before
+anything else registered the real `DelegateToolNode`. Its own fake test classes then
+leaked permanently into the process-wide `NODE_REGISTRY` singleton, breaking
+`tools/execution_plan/test_delegate_wiring.py` whenever both files ran in the same
+pytest session (bisected and confirmed). This was invisible to this task's own
+declared validation command (which only runs this file's own tests) — only a
+broader combined-suite sweep during TASK-3636 surfaced it. Fixed in commit
+`9e155cce8707d0be1fb36cdbe45846c14a80b8f4` by explicitly saving/restoring the
+original registry entry in a `try`/`finally`. Recorded as model feedback
+(`coder-feedback:3f96052a34278fd875734a75`).
