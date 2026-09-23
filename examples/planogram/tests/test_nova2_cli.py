@@ -37,9 +37,18 @@ def _perception(width: int = 100, height: int = 80, box: tuple = (10, 10, 40, 40
 
 
 def _write(tmp_path: Path, perception: PerceptionResult) -> Path:
-    """Write a perception override and return its path."""
+    """Write a perception override and return its path.
+
+    ``exclude_none=True`` works around a pre-existing quirk in
+    ``parrot.models.detections.DetectionBox`` (outside this feature's scope,
+    G3/AC6): ``class_id``/``class_name``/``area`` are typed non-Optional but
+    default to ``None``, so a round-trip through a plain ``model_dump_json()``
+    writes an explicit ``null`` that then fails re-validation on load.
+    Omitting ``None``-valued fields lets ``model_validate_json`` fall back to
+    the (unvalidated) declared defaults instead.
+    """
     path = tmp_path / "boxes.json"
-    path.write_text(perception.model_dump_json(), encoding="utf-8")
+    path.write_text(perception.model_dump_json(exclude_none=True), encoding="utf-8")
     return path
 
 
