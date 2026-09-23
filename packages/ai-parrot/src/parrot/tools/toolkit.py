@@ -10,6 +10,7 @@ from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Optional,
     Union,
     get_args,
@@ -30,6 +31,7 @@ from .abstract import AbstractTool, AbstractToolArgsSchema
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
     from ..auth.resolver import AbstractPermissionResolver
+    from .config_schema import ConfigOption
 
 
 class ToolkitTool(AbstractTool):
@@ -38,12 +40,7 @@ class ToolkitTool(AbstractTool):
     """
 
     def __init__(
-        self,
-        name: str,
-        bound_method: callable,
-        description: str = None,
-        args_schema: type[BaseModel] = None,
-        **kwargs
+        self, name: str, bound_method: callable, description: str = None, args_schema: type[BaseModel] = None, **kwargs
     ):
         """
         Initialize a toolkit tool.
@@ -318,6 +315,17 @@ class AbstractToolkit(ABC):
     #: fully backward compatible, no automatic I/O.
     auto_open: bool = False
 
+    #: FEAT-593 — optional Pydantic model describing this toolkit's configuration. When set,
+    #: ``config_schema()`` publishes its ``model_json_schema()``; otherwise the constructor is
+    #: introspected.
+    config_model: ClassVar[type[BaseModel] | None] = None
+    #: FEAT-593 — curated constructor params that are secrets (stored in the vault, masked on GET).
+    secret_params: ClassVar[frozenset[str]] = frozenset()
+    #: FEAT-593 — params whose "users may override" toggle defaults to on in Agent Studio.
+    default_user_overridable: ClassVar[frozenset[str]] = frozenset()
+    #: FEAT-593 — params for which ``config_options()`` returns dynamic choices.
+    options_params: ClassVar[frozenset[str]] = frozenset()
+
     def __init__(self, **kwargs):
         """
         Initialize the toolkit.
@@ -557,6 +565,8 @@ class AbstractToolkit(ABC):
                 "start",
                 "stop",
                 "cleanup",
+                "config_schema",
+                "config_options",
                 *self.exclude_tools,
             ):
                 continue
@@ -689,6 +699,21 @@ class AbstractToolkit(ABC):
             tool.routing_meta["requires_confirmation"] = True
 
         return tool
+
+    @classmethod
+    def config_schema(cls, slug: str) -> dict[str, Any]:
+        """Return the FEAT-593 JSON Schema envelope ``{slug, class_name, source, schema}``."""
+        from .config_schema import build_schema_envelope  # pylint: disable=import-outside-toplevel
+
+        return build_schema_envelope(slug, cls).model_dump(by_alias=True)
+
+    async def config_options(self, param: str) -> list["ConfigOption"]:
+        """Dynamic choices for ``param`` (FEAT-593). Never exposed as an LLM tool.
+
+        Raises:
+            NotImplementedError: the toolkit offers no dynamic options for ``param``.
+        """
+        raise NotImplementedError(f"{type(self).__name__} has no dynamic options for {param!r}")
 
     def get_toolkit_info(self) -> dict[str, Any]:
         """
