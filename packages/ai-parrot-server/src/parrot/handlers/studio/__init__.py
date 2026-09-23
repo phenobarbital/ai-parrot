@@ -129,6 +129,10 @@ def setup_studio_routes(app: web.Application) -> None:
     )
     app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/mcp-servers", StudioAgentMcpServersHandler)
 
+    from .toolkit_overrides import StudioUserToolkitOverrideHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/toolkits/{{slug}}/me", StudioUserToolkitOverrideHandler)
+
     # Reference catalogs (FEAT-467 TASK-2519): base classes, LLM clients,
     # tools, vector stores — all reuse existing sources of truth.
     from .catalog import StudioCatalogHandler
