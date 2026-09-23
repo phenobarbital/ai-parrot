@@ -178,5 +178,31 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-23. Code was delivered and merged into the feature branch by
+a prior interrupted session (commit `9104adc11`, merge `1d49b9fa0`) but SDD
+state was never finalized before that session ended; this pass verified the
+delivery and closed the task properly.
+
+`packages/ai-parrot-client-google/src/parrot/clients/google/budget.py` and
+`packages/ai-parrot-client-google/tests/unit/test_generation_budget.py` exist
+exactly as declared (`GenerationBudget`/`GenerationBudgetExceeded`, async
+lock-guarded `reserve()`), no out-of-scope files touched.
+
+Tests:
+- `pytest packages/ai-parrot-client-google/tests/unit/test_generation_budget.py -q`
+  → 23 passed.
+
+Regression spot-check: a broader merge-tier sweep flagged pre-existing failures
+in `packages/ai-parrot-client-google/tests/unit/reel/` (unrelated video-reel
+suite from FEAT-564) and a subprocess-based lazy-tokenizer test, all traced to
+a repo-wide worktree/build gap — `parrot/utils/types.pyx` is a Cython module
+whose compiled `.so` lives only in the shared main-checkout venv, not this bare
+worktree, so any subprocess that re-imports the worktree's own source tree
+fails on `parrot.utils.types`. `grep` confirms none of the reel tests or the
+lazy-tokenizer test reference `GenerationBudget`/`budget.py` (the one "budget"
+hit in the reel suite is an unrelated "time budget" variable name). Not filed
+to the ledger since it is a known, repo-wide limitation, not a FEAT-581 defect.
+
+No unresolved limitations for this task's own scope. AC11/AC17 demonstrated by
+the primitive's own test suite (success, boundary/invalid input, exhaustion,
+concurrency — no credentials/network used).

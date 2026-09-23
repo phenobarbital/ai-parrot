@@ -181,5 +181,32 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-23. Code was delivered and merged into the feature branch by
+a prior interrupted session (commits `2ff47500f`, `7600e294c`, merge `50fde5b1c`)
+but SDD state was never finalized before that session ended; this pass verified
+the delivery and closed the task properly.
+
+`packages/ai-parrot-server/src/parrot/e2e/runner.py` and
+`packages/ai-parrot-server/tests/unit/e2e/test_runner.py` exist exactly as
+declared, no out-of-scope files touched.
+
+Tests:
+- `pytest packages/ai-parrot-server/tests/unit/e2e/test_runner.py -q` → 6 passed.
+
+Regression spot-check: a broader merge-tier sweep (mirror ∪ import-impact) also
+surfaced pre-existing failures in `packages/ai-parrot-client-google/tests/unit/reel/`
+and a subprocess-based lazy-tokenizer test. Root cause: `parrot/utils/types.pyx`
+is a Cython module compiled to a `.so` in the shared main-checkout venv; this
+bare git worktree does not carry that build artifact, so any subprocess/
+multiprocessing child that explicitly re-imports from the worktree's own source
+tree (rather than the installed package) fails with
+`ModuleNotFoundError: No module named 'parrot.utils.types'`. Confirmed via
+`git log --follow` that this file has never existed as a `.py` in this branch's
+history, and that `origin/dev` itself has no `types.py` either (Cython-only).
+This is a pre-existing worktree-environment limitation, unrelated to this task's
+own files (`grep` confirms neither runner.py nor these reel tests reference each
+other). Not filed to the ledger since it is a known, repo-wide worktree/build
+gap rather than a defect in FEAT-581 code.
+
+No unresolved limitations for this task's own scope. AC2/AC5/AC7/AC8 demonstrated
+by the runner's own test suite.
