@@ -180,7 +180,11 @@ async def _run_strip(
     except VisionError as exc:
         stats.failed_strips += 1
         message = f"identify_failed: {exc}"
-        return [_uncertain(target, perception, message) for target in targets], [], [f"{perception.image_id}: {message}"]
+        return (
+            [_uncertain(target, perception, message) for target in targets],
+            [],
+            [f"{perception.image_id}: {message}"],
+        )
 
     requested_ids = {_target_id(target) for target in targets}
     missing_ids = sorted(requested_ids - {item.shape_id for item in answer.existing_identifications})
