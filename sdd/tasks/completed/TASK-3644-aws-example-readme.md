@@ -298,10 +298,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3644
+- Feature: nova-image-planogram
+- Implementation SHA: 3c496a740d1899a1f6feb034a764fcdbde74e64f
+- Closed at (UTC): 2026-09-23T00:00:18+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: kimi · Backend: nova · Model: moonshotai.kimi-k2.5 · Attempts: 1 · Duration: 87.12s · Tokens: 610797/2714 |
+| test_result | No code; README reviewed in full against spec S3 M5, no corrections needed. |
+| tests_passed | True |

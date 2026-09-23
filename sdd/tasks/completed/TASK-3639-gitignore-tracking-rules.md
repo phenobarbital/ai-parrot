@@ -230,10 +230,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3639
+- Feature: nova-image-planogram
+- Implementation SHA: 18a05c351545a63311567d04d07ee7be106e842c
+- Closed at (UTC): 2026-09-22T23:31:36+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 105.35s · Tokens: n/a |
+| test_command | pytest examples/planogram/tests/test_plancheck_gitignore.py -v |
+| test_result | 9 passed |
+| tests_passed | True |
