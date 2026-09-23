@@ -11,6 +11,7 @@ Run with a Python that has ``aiohttp``, ``pydantic`` and (optionally)
 ``cactus-needle`` installed — see the task's Codebase Contract for why this
 must NOT be the shared repo ``.venv`` and NOT ``uv add``.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -123,7 +124,7 @@ def _build_llamacpp_schema(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _system_prompt(tools: List[Dict[str, Any]]) -> str:
     lines = [
         "You are a tool-call proposer. Given an instruction, propose exactly "
-        "one call from the tools below, or decline with {\"name\": null} if "
+        'one call from the tools below, or decline with {"name": null} if '
         "none of them fit. Never invent a tool name or argument key.",
         "Tools:",
     ]
@@ -152,13 +153,21 @@ async def probe_llamacpp(session: aiohttp.ClientSession, url: str, case: Dict[st
     }
     start = time.monotonic()
     try:
-        async with session.post(f"{url}/v1/chat/completions", json=payload, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+        async with session.post(
+            f"{url}/v1/chat/completions", json=payload, timeout=aiohttp.ClientTimeout(total=60)
+        ) as resp:
             body = await resp.json()
     except Exception as exc:  # noqa: BLE001 - backend failure is scored, not raised
         latency_ms = (time.monotonic() - start) * 1000.0
         return CaseResult(
-            case_id=case["id"], backend="llamacpp", exact_match=False, abstained=False,
-            expected_abstain=case["expected"] is None, confidence=None, latency_ms=latency_ms, error=str(exc),
+            case_id=case["id"],
+            backend="llamacpp",
+            exact_match=False,
+            abstained=False,
+            expected_abstain=case["expected"] is None,
+            confidence=None,
+            latency_ms=latency_ms,
+            error=str(exc),
         )
     latency_ms = (time.monotonic() - start) * 1000.0
 
@@ -178,8 +187,14 @@ async def probe_llamacpp(session: aiohttp.ClientSession, url: str, case: Dict[st
     except Exception as exc:  # noqa: BLE001
         latency_ms = (time.monotonic() - start) * 1000.0
         return CaseResult(
-            case_id=case["id"], backend="llamacpp", exact_match=False, abstained=False,
-            expected_abstain=case["expected"] is None, confidence=None, latency_ms=latency_ms, error=f"unparseable response: {exc}",
+            case_id=case["id"],
+            backend="llamacpp",
+            exact_match=False,
+            abstained=False,
+            expected_abstain=case["expected"] is None,
+            confidence=None,
+            latency_ms=latency_ms,
+            error=f"unparseable response: {exc}",
         )
 
     proposed_name = parsed.get("name")
@@ -188,11 +203,18 @@ async def probe_llamacpp(session: aiohttp.ClientSession, url: str, case: Dict[st
     if expected is None:
         exact_match = abstained
     else:
-        exact_match = (not abstained) and proposed_name == expected["name"] and parsed.get("arguments") == expected["arguments"]
+        exact_match = (
+            (not abstained) and proposed_name == expected["name"] and parsed.get("arguments") == expected["arguments"]
+        )
 
     return CaseResult(
-        case_id=case["id"], backend="llamacpp", exact_match=exact_match, abstained=abstained,
-        expected_abstain=expected is None, confidence=confidence, latency_ms=latency_ms,
+        case_id=case["id"],
+        backend="llamacpp",
+        exact_match=exact_match,
+        abstained=abstained,
+        expected_abstain=expected is None,
+        confidence=confidence,
+        latency_ms=latency_ms,
     )
 
 
@@ -233,8 +255,13 @@ def _score_needle_response(case: Dict[str, Any], response: Dict[str, Any], laten
             and calls[0].get("arguments") == expected["arguments"]
         )
     return CaseResult(
-        case_id=case["id"], backend="needle", exact_match=exact_match, abstained=abstained,
-        expected_abstain=expected is None, confidence=confidence, latency_ms=latency_ms,
+        case_id=case["id"],
+        backend="needle",
+        exact_match=exact_match,
+        abstained=abstained,
+        expected_abstain=expected is None,
+        confidence=confidence,
+        latency_ms=latency_ms,
     )
 
 
@@ -250,8 +277,14 @@ def _run_needle_case_blocking(case: Dict[str, Any], weights: Optional[str]) -> C
     except Exception as exc:  # noqa: BLE001
         latency_ms = (time.monotonic() - start) * 1000.0
         return CaseResult(
-            case_id=case["id"], backend="needle", exact_match=False, abstained=False,
-            expected_abstain=case["expected"] is None, confidence=None, latency_ms=latency_ms, error=str(exc),
+            case_id=case["id"],
+            backend="needle",
+            exact_match=False,
+            abstained=False,
+            expected_abstain=case["expected"] is None,
+            confidence=None,
+            latency_ms=latency_ms,
+            error=str(exc),
         )
     latency_ms = (time.monotonic() - start) * 1000.0
     return _score_needle_response(case, response, latency_ms)
@@ -288,8 +321,13 @@ def summarize(results: List[CaseResult], backend: str) -> SpikeReport:
     """Aggregate CaseResults for one backend."""
     if not results:
         return SpikeReport(
-            backend=backend, cases=0, exact_match=0.0, abstention_precision=0.0,
-            abstention_recall=0.0, latency_p50_ms=0.0, latency_p95_ms=0.0,
+            backend=backend,
+            cases=0,
+            exact_match=0.0,
+            abstention_precision=0.0,
+            abstention_recall=0.0,
+            latency_p50_ms=0.0,
+            latency_p95_ms=0.0,
         )
     n = len(results)
     exact = sum(1 for r in results if r.exact_match) / n
@@ -306,8 +344,13 @@ def summarize(results: List[CaseResult], backend: str) -> SpikeReport:
     p95 = latencies[p95_idx]
 
     return SpikeReport(
-        backend=backend, cases=n, exact_match=exact, abstention_precision=abstention_precision,
-        abstention_recall=abstention_recall, latency_p50_ms=p50, latency_p95_ms=p95,
+        backend=backend,
+        cases=n,
+        exact_match=exact,
+        abstention_precision=abstention_precision,
+        abstention_recall=abstention_recall,
+        latency_p50_ms=p50,
+        latency_p95_ms=p95,
     )
 
 
@@ -343,7 +386,9 @@ async def run_spike(
         reports.append(summarize(thread_results, "needle_to_thread"))
         errors = [r for r in thread_results if r.error]
         if errors:
-            logger.warning("needle_to_thread: %d/%d cases errored, e.g. %s", len(errors), len(thread_results), errors[0].error)
+            logger.warning(
+                "needle_to_thread: %d/%d cases errored, e.g. %s", len(errors), len(thread_results), errors[0].error
+            )
 
         # (b) ProcessPoolExecutor — persistent worker pool; each worker pays the
         #     native-library + base-weight load cost once, then reuses it.
@@ -367,7 +412,10 @@ async def run_spike(
                 errors = [r for r in pool_results if r.error]
                 if errors:
                     logger.warning(
-                        "needle_process_pool: %d/%d cases errored, e.g. %s", len(errors), len(pool_results), errors[0].error
+                        "needle_process_pool: %d/%d cases errored, e.g. %s",
+                        len(errors),
+                        len(pool_results),
+                        errors[0].error,
                     )
             except asyncio.TimeoutError:
                 logger.warning(
