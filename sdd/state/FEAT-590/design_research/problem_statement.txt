@@ -1,0 +1,22 @@
+The Tool-Call Delegate is a well-scoped extension to the existing execution-plan
+architecture at `packages/ai-parrot/src/parrot/bots/flows/plan/`. The plan
+module already provides `PlanToolNode`, `make_tool_node_factory`,
+`ExecutionPlan`, `ArtifactRef`, CEL guards, a static validator, and the
+`NODE_REGISTRY` registration mechanism — all landed and working (FEAT-419,
+TASK-2179). The delegate adds a `DelegateToolNode` that interposes a
+local-model proposal step before the same `ToolManager.execute_tool` dispatch.
+The interface location proposed as `parrot/interfaces/delegate.py` is incorrect
+— `parrot.interfaces.*` is a bot-capability mixins package, not a contracts
+home — and should co-locate in the `plan/` module. Two claims are low
+confidence: Needle 3's accuracy on non-mobile toolkits and the
+ProcessPoolExecutor latency profile — both gated on the spike (§10).
+
+Origin:
+The original design document, authored as a follow-up to the plan-then-execute
+architecture (FEAT-419). The full source is at `sdd/state/FEAT-590/source.md`.
+
+> Add a third kind of executable step to the plan language, between PlanToolNode
+> (templates, 0 tokens) and AgentNode (full LLM). A tiny local model (Needle 3,
+> 121M parameters) proposes tool calls from a short instruction plus runtime
+> facts, validated by schema and dispatched through ToolManager — identical to
+> PlanToolNode from the dispatch point onward.

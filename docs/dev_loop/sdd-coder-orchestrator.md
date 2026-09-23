@@ -642,7 +642,10 @@ aliases, are rejected. Codex workers must retain their host's workspace sandbox
 and must not grant writable access to the shared environment.
 
 The runner exposes the host filesystem read-only, with writable mounts for the
-checkout and common Git directory and private `/tmp`. Shared environments remain
+checkout and common Git directory and private `/tmp`. Claude Code's scratchpad
+root (`/tmp/claude-<uid>`) is bound back over the private `/tmp`, so a seat's
+session scratchpad survives from one Bash call to the next instead of vanishing
+with each command. Shared environments remain
 read-only even when inside a writable checkout. Child scripts inherit these
 mounts; package-manager allowlists are only early feedback. Task package source
 directories are prepended to `PYTHONPATH` so tests exercise the task checkout.

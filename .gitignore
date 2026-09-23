@@ -439,3 +439,9 @@ examples/planogram/perception_spike/*
 examples/planogram/pipelines/*
 !examples/planogram/pipelines/*.py
 !examples/planogram/pipelines/README.md
+# FEAT-592: Nova 2 Lite planogram identification example (code only — photos,
+# results and the vision cache are retailer-derived and stay ignored)
+!examples/planogram/aws/
+examples/planogram/aws/*
+!examples/planogram/aws/*.py
+!examples/planogram/aws/README.md

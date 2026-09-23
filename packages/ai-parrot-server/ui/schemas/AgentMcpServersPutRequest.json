@@ -1,0 +1,15 @@
+{
+  "description": "``PUT /astudio/agents/{name}/mcp-servers`` payload (replaces the list).",
+  "properties": {
+    "servers": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Servers",
+      "type": "array"
+    }
+  },
+  "title": "AgentMcpServersPutRequest",
+  "type": "object"
+}

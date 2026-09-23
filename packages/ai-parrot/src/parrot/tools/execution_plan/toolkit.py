@@ -134,6 +134,9 @@ class ExecutionPlanToolkit(AbstractToolkit):
         checkpoint_store: Union["CheckpointStore", str, None] = None,
         durable_store: Union["CheckpointStore", str, None] = None,
         task_memory_runtime: Optional["TaskMemoryRuntime"] = None,
+        delegates: Optional[Sequence[Any]] = None,
+        delegate_trace_sink: Optional[Any] = None,
+        allow_delegate_side_effects: bool = False,
         scope: Optional[TaskScope] = None,
         **kwargs: Any,
     ) -> None:
@@ -165,6 +168,12 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 mapping (FEAT-538). ``None`` — the default — leaves every
                 plan call task-level with ``plan`` provenance, which is the
                 honest answer when nobody has said which step a node is.
+            delegates: Ordered ``ToolCallDelegate`` chain; ``[0]`` is primary.
+                Owned and closed by :meth:`cleanup`.
+            delegate_trace_sink: Opt-in ``DelegateTraceSink`` never persisted
+                in checkpoints.
+            allow_delegate_side_effects: Host policy; plan text alone can
+                never grant delegate side effects.
             **kwargs: Forwarded to :class:`AbstractToolkit`.
         """
         super().__init__(**kwargs)
@@ -178,6 +187,9 @@ class ExecutionPlanToolkit(AbstractToolkit):
         self._on_node_event = on_node_event
         self.max_completed_runs = max_completed_runs
         self.plan_step_mapping: Dict[str, str] = dict(plan_step_mapping or {})
+        self._delegates: tuple = tuple(delegates or ())
+        self._delegate_trace_sink = delegate_trace_sink
+        self._allow_delegate_side_effects = allow_delegate_side_effects
 
         # Run registry (bounded) — toolkit-internal state, never travels
         # through NodeDefinition.config.
@@ -250,8 +262,37 @@ class ExecutionPlanToolkit(AbstractToolkit):
 
     async def cleanup(self) -> None:
         """Close owned plan-memory resources without closing borrowed stores."""
+        for delegate in self._delegates:
+            try:
+                await delegate.aclose()
+            except Exception as exc:  # noqa: BLE001 - close remaining delegates
+                self.logger.warning("delegate cleanup failed: %s", exc)
         await self._memory_binding.close()
         await super().cleanup()
+
+    def _validation_kwargs(self) -> Dict[str, Any]:
+        """Delegate kwargs for ``validate_with_allowlist`` and ``validate_delta``."""
+        return {
+            "delegates": self._delegates,
+            "allow_delegate_side_effects": self._allow_delegate_side_effects,
+        }
+
+    def _flow_delegate_kwargs(self) -> Dict[str, Any]:
+        """Delegate kwargs for ``build_plan_flow``."""
+        return {**self._validation_kwargs(), "delegate_trace_sink": self._delegate_trace_sink}
+
+    def _planner(self, catalog: Any) -> PlanPlanner:
+        """Build the planner, enabling delegate rules only when delegates exist."""
+        if not self._delegates:
+            return PlanPlanner(self.planner_llm, catalog)
+        allowed = self.allowed_tools if self.allowed_tools is not None else self._tool_manager.list_tools()
+        safe_tools = [name for name in allowed if getattr(self._tool_manager.get_tool(name), "delegate_safe", False)]
+        return PlanPlanner(
+            self.planner_llm,
+            catalog,
+            delegate_safe_tools=safe_tools,
+            delegate_max_tools=self._delegates[0].max_tools,
+        )
 
     def _get_agent_registry(self) -> AgentRegistry:
         """Return the cached empty ``AgentRegistry``, creating it once."""
@@ -344,6 +385,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
             step_mapping=self.plan_step_mapping,
             store=self._checkpoint_store if checkpointed else None,
             durable_store=self._durable_store if checkpointed else None,
+            **self._flow_delegate_kwargs(),
         )
 
         plan_node_ids: Set[str] = {node.id for node in plan.nodes}
@@ -578,7 +620,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
     def _assert_policy(self, run: PlanRun) -> None:
         """Require current policy to retain every tool in the recorded plan."""
         current = set(self.allowed_tools) if self.allowed_tools is not None else set(self._tool_manager.list_tools())
-        needed = {node.tool for node in run.metadata.plan.nodes}
+        needed = {name for node in run.metadata.plan.nodes for name in node.tool_names()}
         if not needed <= (set(run.metadata.allowed_tools) & current):
             raise PlanRunError("policy_mismatch", "current tool policy no longer permits every tool this run uses")
         if plan_fingerprint(run.metadata.plan) != run.metadata.plan_fingerprint:
@@ -600,6 +642,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 step_mapping=self.plan_step_mapping,
                 store=store,
                 durable_store=self._durable_store,
+                **self._flow_delegate_kwargs(),
             )
 
         return _factory
@@ -724,12 +767,14 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 is exactly "one replan call plus at most one repair_delta
                 correction" (§2, AC8).
         """
-        planner = PlanPlanner(self.planner_llm, build_catalog(self._tool_manager, self.allowed_tools))
+        planner = self._planner(build_catalog(self._tool_manager, self.allowed_tools))
         manifest = build_manifest(run.metadata.plan, run.refs)
         allowed = self.allowed_tools if self.allowed_tools is not None else self._tool_manager.list_tools()
         try:
             delta = await planner.replan(run.metadata.plan, manifest, eligible_node_ids=eligible)
-            report = validate_delta(delta, run=run, tool_manager=self._tool_manager, allowed_tools=allowed)
+            report = validate_delta(
+                delta, run=run, tool_manager=self._tool_manager, allowed_tools=allowed, **self._validation_kwargs()
+            )
             if report.ok:
                 return delta
             delta_json = delta.model_dump(mode="json")
@@ -739,7 +784,9 @@ class ExecutionPlanToolkit(AbstractToolkit):
             delta = await planner.repair_delta(delta_json, report, plan=run.metadata.plan, eligible_node_ids=eligible)
         except PlanAuthoringError as exc:
             raise PlanRunError("delta_invalid", f"corrected delta unparseable: {exc}") from exc
-        report = validate_delta(delta, run=run, tool_manager=self._tool_manager, allowed_tools=allowed)
+        report = validate_delta(
+            delta, run=run, tool_manager=self._tool_manager, allowed_tools=allowed, **self._validation_kwargs()
+        )
         if not report.ok:
             raise PlanRunError("delta_invalid", f"corrected delta still invalid:\n{report}")
         return delta
@@ -1079,6 +1126,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
                 step_mapping=self.plan_step_mapping,
                 store=continuation.flow_store(child_id),
                 durable_store=self._durable_store,
+                **self._flow_delegate_kwargs(),
             )
             child_flow._resume_seed_context = self._seed_child_context(run, child_meta)
 
@@ -1238,7 +1286,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
             raise _StructuralError(str(exc)) from exc
 
         plan_json = plan.model_dump(mode="json")
-        report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools)
+        report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools, **self._validation_kwargs())
         return plan, plan_json, report, "plan_name"
 
     async def _acquire_from_objective(self, objective: str) -> "tuple[ExecutionPlan, Dict[str, Any], Any, str]":
@@ -1246,7 +1294,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
         if self.planner_llm is None:
             raise _StructuralError("objective mode requires the toolkit to be constructed with " "planner_llm=<...>.")
         catalog = build_catalog(self._tool_manager, self.allowed_tools)
-        planner = PlanPlanner(self.planner_llm, catalog)
+        planner = self._planner(catalog)
 
         try:
             plan = await planner.author(objective)
@@ -1254,7 +1302,7 @@ class ExecutionPlanToolkit(AbstractToolkit):
             raise _StructuralError(f"Planner failed to author a plan: {exc}") from exc
 
         plan_json = plan.model_dump(mode="json")
-        report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools)
+        report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools, **self._validation_kwargs())
 
         if not report.ok:
             try:
@@ -1265,6 +1313,6 @@ class ExecutionPlanToolkit(AbstractToolkit):
                     f"{exc}\nOriginal validation report:\n{report}"
                 ) from exc
             plan_json = plan.model_dump(mode="json")
-            report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools)
+            report = validate_with_allowlist(plan, self._tool_manager, self.allowed_tools, **self._validation_kwargs())
 
         return plan, plan_json, report, "objective"

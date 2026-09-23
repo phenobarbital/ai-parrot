@@ -1,0 +1,46 @@
+{
+  "description": "``GET /astudio/agents/{name}/toolkits`` \u2014 specs are masked dumps.",
+  "properties": {
+    "agent": {
+      "title": "Agent",
+      "type": "string"
+    },
+    "editable": {
+      "title": "Editable",
+      "type": "boolean"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "toolkits": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Toolkits",
+      "type": "array"
+    },
+    "unavailable": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unavailable",
+      "type": "array"
+    }
+  },
+  "required": [
+    "agent",
+    "editable"
+  ],
+  "title": "AgentToolkitsResponse",
+  "type": "object"
+}

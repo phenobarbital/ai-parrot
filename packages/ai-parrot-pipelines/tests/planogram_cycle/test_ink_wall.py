@@ -135,7 +135,15 @@ def _answer_strip(prompt, image, kwargs):
         match = re.search(r":r(\d+):s(\d+)$", area["id"])
         row, slot = int(match.group(1)), int(match.group(2))
         if row >= 3:
-            continue  # untagged bottom row: nothing legible
+            entries.append(
+                Identification(
+                    shape_id=area["id"],
+                    occupancy="unknown",
+                    raw_confidence=0.8,
+                    evidence=["nothing legible"],
+                )
+            )
+            continue
         code = f"A{row + 1}{slot}"
         entries.append(
             Identification(

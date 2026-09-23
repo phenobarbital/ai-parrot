@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
 from parrot.tools.abstract import AbstractTool, ToolResult
@@ -643,26 +644,39 @@ if TYPE_CHECKING:
     from parrot.knowledge.wiki.ledger.service import LedgerService
 
 
+# The ledger tool schemas mirror the `wikitoolkit ledger` CLI options one for
+# one — same choices, same required fields — so an agent filing through MCP
+# cannot persist a kind or severity the CLI would have rejected.
+
+
 class LedgerOpenInput(BaseModel):
-    title: str = Field(..., description="Issue title")
-    body: str = Field(..., description="Issue description")
-    kind: str = Field(default="bug", description="Issue kind: bug|task|insight|spec")
-    severity: str = Field(default="minor", description="Issue severity: minor|major|critical")
-    discovered_from: str = Field(default="", description="Source of discovery")
-    about: list[str] | None = Field(default=None, description="List of related page IDs")
+    title: str = Field(..., description="One-line issue title")
+    body: str = Field(..., description="What is wrong, where (file + symbol), why it matters, suggested fix")
+    kind: IssueKind = Field(default="bug", description="Issue kind: bug|tech_debt|feature_gap|vulnerability")
+    severity: IssueSeverity = Field(default="minor", description="Issue severity: critical|major|minor|low")
+    discovered_from: str = Field(
+        ..., min_length=1, description="Source: spec:<FEAT-ID>, task:<TASK-ID> or review:<TASK-ID>"
+    )
+    about: list[str] | None = Field(
+        default=None, description="Affected symbols/files, repo-relative, e.g. sym:pkg/mod.py#Func"
+    )
 
 
 class LedgerReadyInput(BaseModel):
-    kind: str | None = Field(default=None, description="Filter by issue kind: bug|task|insight|spec")
+    kind: IssueKind | None = Field(
+        default=None, description="Filter by issue kind: bug|tech_debt|feature_gap|vulnerability"
+    )
 
 
 class LedgerClaimInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to claim")
+    actor: str = Field(default="agent:mcp", description="Actor claiming the issue, e.g. agent:sdd-fix")
 
 
 class LedgerCloseInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to close")
     reason: str = Field(..., description="Reason for closing")
+    actor: str = Field(default="agent:mcp", description="Actor closing the issue, e.g. agent:sdd-fix")
     resolved_by: str | None = Field(
         default=None, description="Evidence that resolved the issue, e.g. commit:<sha> or task:TASK-<NNN> (FEAT-572 S4)"
     )
@@ -688,17 +702,17 @@ class LedgerOpenTool(AbstractTool):
         self,
         title: str,
         body: str,
-        kind: str = "bug",
-        severity: str = "minor",
-        discovered_from: str = "",
+        discovered_from: str,
+        kind: IssueKind = "bug",
+        severity: IssueSeverity = "minor",
         about: list[str] | None = None,
     ) -> ToolResult:
         try:
             issue_id = await self._ledger_service.open_issue(
                 title=title,
                 body=body,
-                kind=kind,  # type: ignore
-                severity=severity,  # type: ignore
+                kind=kind,
+                severity=severity,
                 discovered_from=discovered_from,
                 about=about,
                 actor="agent:mcp",
@@ -719,13 +733,11 @@ class LedgerReadyTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, kind: str | None = None) -> ToolResult:
+    async def _execute(self, kind: IssueKind | None = None) -> ToolResult:
         try:
-            # Convert string kind to IssueKind enum if provided
-            from parrot.knowledge.wiki.ledger.events import IssueKind
-
-            kind_enum = IssueKind(kind) if kind else None  # type: ignore
-            issues = await self._ledger_service.ready_work(kind_enum)
+            # IssueKind is a typing.Literal: the schema already validated the
+            # value, and calling the Literal would raise TypeError.
+            issues = await self._ledger_service.ready_work(kind)
             return ToolResult(result={"issues": issues})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -742,9 +754,9 @@ class LedgerClaimTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, issue_id: str) -> ToolResult:
+    async def _execute(self, issue_id: str, actor: str = "agent:mcp") -> ToolResult:
         try:
-            success = await self._ledger_service.claim(issue_id, "agent:mcp")
+            success = await self._ledger_service.claim(issue_id, actor)
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -761,11 +773,13 @@ class LedgerCloseTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, issue_id: str, reason: str, resolved_by: str | None = None) -> ToolResult:
-        """Close a ledger issue, carrying the evidence reference through (actor stays ``agent:mcp``)."""
+    async def _execute(
+        self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str = "agent:mcp"
+    ) -> ToolResult:
+        """Close a ledger issue, carrying the evidence reference and actor through."""
         try:
             kwargs = {"resolved_by": resolved_by} if resolved_by is not None else {}
-            success = await self._ledger_service.close_issue(issue_id, reason, "agent:mcp", **kwargs)
+            success = await self._ledger_service.close_issue(issue_id, reason, actor, **kwargs)
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))

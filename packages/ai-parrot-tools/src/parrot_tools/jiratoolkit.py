@@ -49,6 +49,12 @@ try:
 except ImportError as e:  # pragma: no cover - optional
     raise ImportError("Please install the 'jira' package: pip install jira") from e
 
+from parrot.tools.manager import ToolManager
+from parrot.tools.config_schema import ConfigOption
+from parrot.auth.exceptions import AuthorizationRequired
+from .toolkit import AbstractToolkit
+from .decorators import tool_schema, requires_permission
+from .jira_config import JiraToolkitConfig
 
 # ---------------------------------------------------------------------------
 # Envelope type for read-method returns (FEAT-138, Module 5)
@@ -70,12 +76,6 @@ class JiraToolEnvelope(TypedDict, total=False):
     data: Any
     message: str
     query: Optional[str]
-
-
-from parrot.tools.manager import ToolManager
-from parrot.auth.exceptions import AuthorizationRequired
-from .toolkit import AbstractToolkit
-from .decorators import tool_schema, requires_permission
 
 
 class JiraAuthenticationError(RuntimeError):
@@ -498,13 +498,9 @@ class SearchUsersInput(BaseModel):
 class GetProjectsInput(BaseModel):
     """Input for listing projects."""
 
-    pass
-
 
 class VerifyAuthInput(BaseModel):
     """Input for verifying Jira authentication."""
-
-    pass
 
 
 class GetComponentsInput(BaseModel):
@@ -658,6 +654,37 @@ class JiraToolkit(AbstractToolkit):
     )
 
     """  # noqa
+
+    #: FEAT-593 — Agent Studio configuration surface.
+    config_model = JiraToolkitConfig
+    options_params = frozenset({"default_project"})
+    default_user_overridable = frozenset({"username", "password", "token"})
+    secret_params = frozenset(
+        {"password", "token", "oauth_access_token", "oauth_access_token_secret", "oauth_key_cert"}
+    )
+
+    async def config_options(self, param: str) -> list[ConfigOption]:
+        """Dynamic choices for Agent Studio (FEAT-593): project keys for ``default_project``."""
+        if param != "default_project":
+            return await super().config_options(param)
+        # Mirror the readiness step ToolkitTool._execute() performs before a
+        # real tool call (see jira_get_projects, ~:2267): config_options() is
+        # invoked directly by Agent Studio, bypassing that wrapper, so the
+        # toolkit's own auth/readiness hook must be called here instead.
+        await self._pre_execute("config_options")
+        projects = await self._read_interface.list_projects()
+        options: list[ConfigOption] = []
+        for item in projects:
+            if isinstance(item, dict):
+                key = item.get("key")
+                name = item.get("name") or key
+            else:
+                key = getattr(item, "key", None)
+                name = getattr(item, "name", None) or key
+            if not key:
+                continue
+            options.append(ConfigOption(value=key, label=f"{key} — {name}"))
+        return options
 
     # Expose the default input schema as metadata (optional)
     input_class = JiraInput
@@ -2025,7 +2052,7 @@ class JiraToolkit(AbstractToolkit):
         if attachments:
             uploaded: List[Dict[str, Any]] = []
             for file_path in attachments:
-                if not os.path.isfile(file_path):
+                if not await asyncio.to_thread(os.path.isfile, file_path):
                     uploaded.append({"file": file_path, "error": "File not found"})
                     self.logger.warning(f"Attachment file not found: {file_path}")
                     continue
@@ -3084,7 +3111,7 @@ class JiraToolkit(AbstractToolkit):
                 f"DataFrame '{dataframe_name}' not found. "
                 f"Available DataFrames: {available}. "
                 f"First fetch data with jira_search_issues(fetch_all=True, dataframe_name='...')"
-            )
+            ) from None
 
         if df.empty:
             raise ValueError(f"DataFrame '{dataframe_name}' is empty (0 rows).")

@@ -8,6 +8,13 @@ resolved. This module exercises the real subprocess (never an
 already-imported in-process callback) so the measurement reflects the
 process's actual import cost, plus the ADR command surface's preserved
 compatibility through the lazy proxy.
+
+FEAT-595: every hook launch now goes through the real ``wikitoolkit``
+console entry (``parrot.knowledge.wiki.entry:main``), which dispatches
+``claude-hook`` without importing the click CLI; the hook runtime itself
+rejects non-search payloads before loading the pydantic config. The warm
+benchmark therefore measures two paths — the common prefilter path (hard
+p50 < 300 ms) and the config path (reported, warn-only).
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ import os
 import statistics
 import subprocess
 import sys
+import time
 import warnings
 from pathlib import Path
 
@@ -74,12 +82,41 @@ def _subprocess_env() -> dict:
     return env
 
 
-def _run_hook(payload: dict, *, importtime: bool = False) -> subprocess.CompletedProcess:
-    """Launch a real ``python -m parrot.knowledge.wiki.cli claude-hook`` subprocess."""
+#: What the generated ``wikitoolkit`` console shim does, spelled out so the
+#: test exercises this checkout's ``entry`` module regardless of which
+#: checkout the shared venv's shim was generated from.
+_ENTRY_CODE = (
+    "import sys; sys.argv = ['wikitoolkit', *sys.argv[1:]]; " "from parrot.knowledge.wiki.entry import main; main()"
+)
+
+#: Modules the dedicated hook entry must never load (FEAT-595, AC2/AC3).
+_HOOK_PATH_BANNED = (
+    "parrot.knowledge.wiki.cli",
+    "parrot.knowledge.wiki.claude_code.installer",
+    "parrot.knowledge.wiki.repo_scan",
+    "click",
+)
+
+#: Additionally banned when the stdlib prefilter rejects the payload (AC2).
+_PREFILTER_PATH_BANNED = (*_HOOK_PATH_BANNED, "parrot.knowledge.wiki.project", "pydantic")
+
+
+def _run_hook(payload: dict, *, importtime: bool = False, via_cli: bool = False) -> subprocess.CompletedProcess:
+    """Launch a real ``wikitoolkit claude-hook`` subprocess.
+
+    Args:
+        payload: Hook payload written to stdin.
+        importtime: Add ``-X importtime`` so stderr carries the import trace.
+        via_cli: Launch the legacy ``python -m parrot.knowledge.wiki.cli claude-hook``
+            path instead of the console entry (reference output for AC3).
+    """
     args = [sys.executable]
     if importtime:
         args += ["-X", "importtime"]
-    args += ["-m", "parrot.knowledge.wiki.cli", "claude-hook"]
+    if via_cli:
+        args += ["-m", "parrot.knowledge.wiki.cli", "claude-hook"]
+    else:
+        args += ["-c", _ENTRY_CODE, "claude-hook"]
     return subprocess.run(
         args,
         input=json.dumps(payload).encode(),
@@ -101,6 +138,11 @@ def _parse_importtime_modules(stderr: bytes) -> set[str]:
             continue
         modules.add(parts[2].strip())
     return modules
+
+
+def _offenders(modules: set[str], banned: tuple[str, ...]) -> set[str]:
+    """Modules from ``modules`` that are (or live under) a ``banned`` prefix."""
+    return {mod for mod in modules if any(mod == prefix or mod.startswith(f"{prefix}.") for prefix in banned)}
 
 
 def _percentile(sorted_values: list[float], pct: float) -> float:
@@ -218,44 +260,124 @@ def test_adr_help_options_and_completion(tmp_path: Path) -> None:
         assert lazy_body == direct_body
 
 
-def test_warm_process_startup(tmp_path: Path) -> None:
-    """Twenty warm filesystem process launches report median below 300ms, p95 and a separate cold observation."""
-    # An isolated, wiki-less cwd keeps every launch's payload handling
-    # identical (no filesystem writes outside tmp_path, no dependency on
-    # this worktree's own `.parrot` state) so only process/interpreter/
-    # import cost is measured.
-    project_root = tmp_path / "no-wiki-here"
-    project_root.mkdir()
-    payload = {"hook_event_name": "PreToolUse", "tool_name": "", "cwd": str(project_root)}
+def _fresh_modules(code: str) -> set[str]:
+    """``sys.modules`` keys of a fresh interpreter after running ``code`` against this checkout."""
+    script = f"{code}\nimport json, sys\nprint(json.dumps(sorted(sys.modules)))"
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=_subprocess_env(), capture_output=True, timeout=30, check=True
+    )
+    return set(json.loads(result.stdout.decode().strip().splitlines()[-1]))
 
-    # First launch is the separate "cold" observation (R9): disk cache is
-    # not yet warmed for this process tree.
-    cold_start = _run_hook(payload)
-    assert cold_start.returncode == 0, cold_start.stderr.decode(errors="replace")
 
-    import time as _time
+def _bash_payload(cwd: Path, command: str = "git status") -> dict:
+    return {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(cwd)}
+
+
+def _grep_payload(cwd: Path) -> dict:
+    return {"hook_event_name": "PreToolUse", "tool_name": "Grep", "tool_input": {"pattern": "foo"}, "cwd": str(cwd)}
+
+
+def test_entry_module_imports_no_cli() -> None:
+    """AC1: importing the console entry loads neither click, pydantic nor the wiki CLI."""
+    modules = _fresh_modules("import parrot.knowledge.wiki.entry")
+    assert not _offenders(modules, ("click", "pydantic", "parrot.knowledge.wiki.cli")), sorted(modules)
+
+
+def test_entry_hook_argv_matches_installed_subcommand() -> None:
+    """The literal the entry dispatches on is the subcommand the installers write."""
+    from parrot.knowledge.wiki import entry
+    from parrot.knowledge.wiki.claude_code import assets
+
+    assert entry.HOOK_ARGV == [assets.HOOK_SUBCOMMAND]
+
+
+def test_prefilter_path_imports(tmp_path: Path) -> None:
+    """AC2: a non-search Bash payload exits 0 silently without loading the config or the CLI."""
+    project_root = tmp_path / "repo"
+    _build_project(project_root)
+    result = _run_hook(_bash_payload(project_root), importtime=True)
+
+    assert result.returncode == 0, result.stderr.decode(errors="replace")
+    assert result.stdout == b""
+    offenders = _offenders(_parse_importtime_modules(result.stderr), _PREFILTER_PATH_BANNED)
+    assert not offenders, f"prefilter path pulled in: {sorted(offenders)}"
+
+
+def test_config_path_matches_cli(tmp_path: Path) -> None:
+    """AC3: a Grep nudge through the entry is byte-equal to the legacy CLI path and skips CLI/installer/scanner."""
+    # Two separate fixture repos: each run claims its own fresh throttle window.
+    entry_repo, cli_repo = tmp_path / "entry", tmp_path / "cli"
+    _build_project(entry_repo)
+    _build_project(cli_repo)
+
+    via_entry = _run_hook(_grep_payload(entry_repo), importtime=True)
+    via_cli = _run_hook(_grep_payload(cli_repo), via_cli=True)
+
+    assert via_entry.returncode == via_cli.returncode == 0, via_entry.stderr.decode(errors="replace")
+    assert via_entry.stdout.strip(), "expected a nudge for Grep on a built wiki project"
+    assert via_entry.stdout == via_cli.stdout
+    offenders = _offenders(_parse_importtime_modules(via_entry.stderr), _HOOK_PATH_BANNED)
+    assert not offenders, f"config path pulled in: {sorted(offenders)}"
+
+
+def test_entry_falls_through_to_cli() -> None:
+    """AC6: any non-hook argv is handed to the click CLI unchanged (same --help output)."""
+    via_entry = subprocess.run(
+        [sys.executable, "-c", _ENTRY_CODE, "--help"], env=_subprocess_env(), capture_output=True, timeout=60
+    )
+    via_cli = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.argv = ['wikitoolkit', '--help']; " "from parrot.knowledge.wiki.cli import main; main()",
+        ],
+        env=_subprocess_env(),
+        capture_output=True,
+        timeout=60,
+    )
+    assert via_entry.returncode == via_cli.returncode == 0, via_entry.stderr.decode(errors="replace")
+    assert via_entry.stdout == via_cli.stdout
+    assert b"claude-hook" not in via_entry.stdout  # still hidden
+
+
+def _benchmark(payload: dict) -> dict:
+    """One cold launch plus ``_WARM_RUNS`` warm fresh-process launches of ``payload``."""
 
     def _measure() -> float:
-        t0 = _time.perf_counter()
+        t0 = time.perf_counter()
         result = _run_hook(payload)
-        elapsed_ms = (_time.perf_counter() - t0) * 1000
+        elapsed_ms = (time.perf_counter() - t0) * 1000
         assert result.returncode == 0, result.stderr.decode(errors="replace")
         return elapsed_ms
 
     cold_ms = _measure()
-    warm_samples = sorted(_measure() for _ in range(_WARM_RUNS))
+    warm = sorted(_measure() for _ in range(_WARM_RUNS))
+    p50 = statistics.median(warm)
+    return {
+        "cold_ms": cold_ms,
+        "warm_p50_ms": p50,
+        "warm_p95_ms": _percentile(warm, 95),
+        "warm_samples_ms": warm,
+        "target_met": p50 < _TARGET_P50_MS,
+    }
 
-    p50 = statistics.median(warm_samples)
-    p95 = _percentile(warm_samples, 95)
+
+def test_warm_process_startup(tmp_path: Path) -> None:
+    """Twenty warm launches of the real entry: prefilter p50 < 300ms (hard); config path reported."""
+    project_root = tmp_path / "repo"
+    _build_project(project_root)
+
+    prefilter = _benchmark(_bash_payload(project_root))
+    # Grep on a built repo loads the config every time; after the first launch the
+    # throttle window is claimed, so launches measure config load without output.
+    config_path = _benchmark(_grep_payload(project_root))
 
     evidence = {
         "runner": {"platform": sys.platform, "python": sys.version},
-        "cold_ms": cold_ms,
-        "warm_p50_ms": p50,
-        "warm_p95_ms": p95,
-        "warm_samples_ms": warm_samples,
+        "entry": "parrot.knowledge.wiki.entry:main",
         "target_p50_ms": _TARGET_P50_MS,
-        "target_met": p50 < _TARGET_P50_MS,
+        "prefilter_path": prefilter,
+        "config_path": config_path,
     }
     try:
         logs_dir = Path(__file__).resolve().parents[5] / "artifacts" / "logs"
@@ -264,19 +386,15 @@ def test_warm_process_startup(tmp_path: Path) -> None:
     except OSError:  # pragma: no cover - evidence capture is best-effort
         logger.warning("could not persist hook startup benchmark evidence", exc_info=True)
 
-    # R9's target is measured on "a documented runner with warmed disk
-    # cache" — a value this sandboxed suite cannot control or guarantee.
-    # Report honestly instead of asserting a flaky, environment-sensitive
-    # number: a miss is a warning plus recorded evidence, not a failure.
-    # A generous ceiling still guards against an actual regression (e.g. a
-    # banned import creeping back in, or a hang).
-    if not evidence["target_met"]:
+    # AC4: the common path is stdlib-only and far below target, so it is a hard gate.
+    assert prefilter["target_met"], evidence
+    # The config path still pays pydantic + the project config; report it honestly.
+    if not config_path["target_met"]:
         warnings.warn(
-            f"R9 target missed in this environment: warm p50={p50:.1f}ms >= {_TARGET_P50_MS:.0f}ms "
-            f"(p95={p95:.1f}ms, cold={cold_ms:.1f}ms). The residual cost is CLI/interpreter startup, "
-            "not ADR registration (see docs/dev_loop/sdd-execution-optimizations.md §8.5) — reaching "
-            "<300ms would need a separate lightweight entry point, out of this task's scope.",
+            f"config-path warm p50={config_path['warm_p50_ms']:.1f}ms >= {_TARGET_P50_MS:.0f}ms "
+            f"(p95={config_path['warm_p95_ms']:.1f}ms); cost is pydantic + WikiProjectConfig load.",
             stacklevel=1,
         )
-    assert p50 < _REGRESSION_CEILING_MS, evidence
-    assert p95 < _REGRESSION_CEILING_MS, evidence
+    for path in (prefilter, config_path):
+        assert path["warm_p50_ms"] < _REGRESSION_CEILING_MS, evidence
+        assert path["warm_p95_ms"] < _REGRESSION_CEILING_MS, evidence

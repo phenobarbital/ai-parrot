@@ -84,6 +84,41 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         conversations: Per-chat conversation memories
     """
 
+    @staticmethod
+    def _tts_audio_to_ogg(audio: bytes, mime_format: str) -> bytes:
+        """Decode TTS audio by MIME type and export it as OGG/Opus.
+
+        Args:
+            audio: Source audio bytes.
+            mime_format: MIME type describing ``audio``. Unknown types retain
+                the legacy Gemini raw PCM interpretation.
+
+        Returns:
+            OGG/Opus encoded audio bytes suitable for Telegram voice notes.
+        """
+        import io
+
+        from pydub import AudioSegment
+
+        source_formats = {
+            "audio/wav": "wav",
+            "audio/mpeg": "mp3",
+            "audio/ogg": "ogg",
+        }
+        if mime_format in source_formats:
+            segment = AudioSegment.from_file(io.BytesIO(audio), format=source_formats[mime_format])
+        else:
+            segment = AudioSegment(
+                data=audio,
+                sample_width=2,
+                frame_rate=24000,
+                channels=1,
+            )
+
+        buffer = io.BytesIO()
+        segment.export(buffer, format="ogg", codec="libopus")
+        return buffer.getvalue()
+
     def __init__(
         self,
         agent: "AbstractBot",
@@ -453,10 +488,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         Per-user MCP servers live on the user's isolated ``ToolManager``
         clone built by ``_initialize_user_context``. The handler module
-        only needs (a) a resolver to fetch that per-user ToolManager on
-        demand and (b) the Redis client for persistence across restarts.
-        When Redis is absent the commands degrade gracefully — servers
-        still work for the current session but are not saved.
+        only needs a resolver to fetch that per-user ToolManager on demand.
+        Persistence across restarts (DocumentDB + Vault) is opt-in via
+        ``USE_DOCUMENTDB``; when disabled the commands degrade gracefully —
+        servers still work for the current session but are not saved.
         """
         from .mcp_commands import register_mcp_commands
 
@@ -731,6 +766,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 message: Message,
                 _method=method,
                 _parse_mode=parse_mode,
+                _cmd_name=cmd_name,
             ) -> None:
                 chat_id = message.chat.id
                 if not self._is_authorized(chat_id):
@@ -758,7 +794,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         await self._send_parsed_response(message, parsed)
                 except Exception as e:
                     typing_task.cancel()
-                    self.logger.error(f"Error in agent command /{cmd_name}: {e}", exc_info=True)
+                    self.logger.error(f"Error in agent command /{_cmd_name}: {e}", exc_info=True)
                     await message.answer(f"❌ Error: {str(e)[:200]}")
                 finally:
                     typing_task.cancel()
@@ -2035,7 +2071,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 if skill_def is not None:
                     # Activate the file skill so its body is injected as a
                     # transient prompt layer for this single ask().
-                    setattr(self.agent, "_active_skill", skill_def)
+                    self.agent._active_skill = skill_def
                     response = await self.agent.ask(
                         question,
                         output_mode=OutputMode.TELEGRAM,
@@ -2210,9 +2246,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if len(methods) > 1:
             prompt_text = "🔐 *Sign In*\n\n" "Tap the button below and choose how you'd like to authenticate."
         elif "google" in methods:
-            prompt_text = (
-                "🔐 *Google Sign-In*\n\n" "Tap the button below to sign in with your Google account."
-            )
+            prompt_text = "🔐 *Google Sign-In*\n\n" "Tap the button below to sign in with your Google account."
         elif "azure" in methods:
             prompt_text = (
                 "\U0001f510 *Azure SSO*\n\n" "Tap the button below to sign in with your organization's Azure account."
@@ -3427,9 +3461,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             # when the input was a voice message and TTS is enabled.
             if self.config.tts_enabled and self.config.reply_in_kind and parsed.text and parsed.text.strip():
                 try:
-                    import io
                     from aiogram.types import BufferedInputFile
-                    from pydub import AudioSegment
 
                     # FIX-3: Strip Markdown before feeding text to TTS so
                     # the engine does not speak formatting tokens aloud
@@ -3452,21 +3484,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                             language=tts_language,
                         )
 
-                        # FIX-1: Google backend returns raw PCM (24 kHz mono
-                        # 16-bit); convert to OGG/Opus before send_voice so
-                        # Telegram accepts and plays the audio correctly.
-                        def _convert_pcm_to_ogg(raw_pcm: bytes) -> bytes:
-                            seg = AudioSegment(
-                                data=raw_pcm,
-                                sample_width=2,
-                                frame_rate=24000,
-                                channels=1,
-                            )
-                            buf = io.BytesIO()
-                            seg.export(buf, format="ogg", codec="libopus")
-                            return buf.getvalue()
-
-                        ogg_bytes = await asyncio.to_thread(_convert_pcm_to_ogg, tts_result.audio)
+                        ogg_bytes = await asyncio.to_thread(
+                            self._tts_audio_to_ogg,
+                            tts_result.audio,
+                            tts_result.mime_format,
+                        )
 
                         await self.bot.send_voice(
                             chat_id,
@@ -3797,7 +3819,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         files = response.files or []
         for file_path in files:
             path = Path(file_path)
-            if not path.exists():
+            if not await asyncio.to_thread(path.exists):
                 continue
 
             # Determine file type and send appropriately

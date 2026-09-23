@@ -8,22 +8,24 @@ Provides:
 - Data quality checks (NaN detection, completeness)
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
+
 from __future__ import annotations
 import io
 import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Literal, Optional, Any, Set, Tuple, Union, TYPE_CHECKING
+from typing import Awaitable, Callable, Dict, List, Literal, Optional, Any, Sequence, Set, Tuple, Union, TYPE_CHECKING
 from parrot._imports import lazy_import
 import redis.asyncio as aioredis
 from os import PathLike
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 import numpy as np
 import pandas as pd
 from navconfig.logging import logging
 from ..toolkit import AbstractToolkit
 from ...conf import REDIS_DATASET_URL
+from .config import DatasetManagerConfig, DatasourceSpec, FileDatasource
 from .sources.base import DataSource
 
 # Runtime import (not TYPE_CHECKING): these contracts are referenced as string
@@ -68,22 +70,25 @@ class DatasetInfo(BaseModel):
     alias: Optional[str] = Field(default=None, description="Standardized alias (df1, df2, etc.)")
     description: str = Field(default="", description="Dataset description")
     source_type: Literal[
-        "dataframe", "query_slug", "sql", "table", "airtable", "smartsheet",
-        "iceberg", "mongo", "deltatable", "composite",
-    ] = Field(
-        default="dataframe",
-        description="Type of data source backing this dataset"
-    )
+        "dataframe",
+        "query_slug",
+        "sql",
+        "table",
+        "airtable",
+        "smartsheet",
+        "iceberg",
+        "mongo",
+        "deltatable",
+        "composite",
+    ] = Field(default="dataframe", description="Type of data source backing this dataset")
     source_description: str = Field(
-        default="",
-        description="Human-readable description from the DataSource (from source.describe())"
+        default="", description="Human-readable description from the DataSource (from source.describe())"
     )
 
     # Schema — available even when loaded=False (e.g. TableSource after prefetch)
     columns: List[str] = Field(default_factory=list, description="List of column names")
     column_types: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Detected column type (integer, float, datetime, categorical_text, text, etc.)"
+        default=None, description="Detected column type (integer, float, datetime, categorical_text, text, etc.)"
     )
 
     # Shape/memory only meaningful when loaded=True
@@ -175,9 +180,11 @@ class DatasetEntry:
             self.source = source
         elif df is not None:
             from .sources.memory import InMemorySource
+
             self.source = InMemorySource(df=df, name=name)
         elif query_slug is not None:
             from .sources.query_slug import QuerySlugSource
+
             self.source = QuerySlugSource(slug=query_slug)
         else:
             raise ValueError("DatasetEntry requires 'source', 'df', or 'query_slug'")
@@ -300,7 +307,7 @@ class DatasetEntry:
         if self._df is not None:
             return self._df.columns.tolist()
         # Schema from prefetch (available for TableSource before materialization)
-        schema = getattr(self.source, '_schema', {})
+        schema = getattr(self.source, "_schema", {})
         base_cols = list(schema.keys())
         # Append computed column names that are not already in the schema
         computed_names = [c.name for c in self._computed_columns if c.name not in base_cols]
@@ -343,6 +350,7 @@ class DatasetEntry:
     def query_slug(self) -> Optional[str]:
         """Backward-compat: return slug if source is a QuerySlugSource."""
         from .sources.query_slug import QuerySlugSource
+
         if isinstance(self.source, QuerySlugSource):
             return self.source.slug
         return None
@@ -357,47 +365,37 @@ class DatasetEntry:
         When not loaded, derives from source schema (TableSource prefetch).
         """
         # Build a mapping from computed column name → description for fast lookup
-        computed_desc: Dict[str, str] = {
-            c.name: c.description
-            for c in self._computed_columns
-            if c.description
-        }
+        computed_desc: Dict[str, str] = {c.name: c.description for c in self._computed_columns if c.description}
 
         if self._df is not None:
             # Extract user-provided column hints from metadata dict
             column_meta: Dict[str, Any] = {}
-            if isinstance(self.metadata.get('columns'), dict):
-                column_meta = self.metadata['columns']
+            if isinstance(self.metadata.get("columns"), dict):
+                column_meta = self.metadata["columns"]
             else:
                 # Column keys may be top-level in metadata
-                column_meta = {
-                    k: v for k, v in self.metadata.items()
-                    if k in self._df.columns
-                }
+                column_meta = {k: v for k, v in self.metadata.items() if k in self._df.columns}
 
             result: Dict[str, Dict[str, Any]] = {}
             for col in self._df.columns:
                 user_meta = column_meta.get(col)
                 if isinstance(user_meta, str):
-                    col_info: Dict[str, Any] = {'description': user_meta}
+                    col_info: Dict[str, Any] = {"description": user_meta}
                 elif isinstance(user_meta, dict):
                     col_info = user_meta.copy()
                 else:
                     col_info = {}
                 # Inject computed description (overrides default title-case fallback)
                 if col in computed_desc:
-                    col_info.setdefault('description', computed_desc[col])
-                col_info.setdefault('description', col.replace('_', ' ').title())
-                col_info.setdefault('dtype', str(self._df[col].dtype))
+                    col_info.setdefault("description", computed_desc[col])
+                col_info.setdefault("description", col.replace("_", " ").title())
+                col_info.setdefault("dtype", str(self._df[col].dtype))
                 result[col] = col_info
             return result
 
         # Not loaded — derive from source schema (TableSource prefetch)
-        schema = getattr(self.source, '_schema', {})
-        return {
-            col: {'description': col.replace('_', ' ').title(), 'dtype': dtype}
-            for col, dtype in schema.items()
-        }
+        schema = getattr(self.source, "_schema", {})
+        return {col: {"description": col.replace("_", " ").title(), "dtype": dtype} for col, dtype in schema.items()}
 
     # ─────────────────────────────────────────────────────────────
     # DatasetInfo serialization
@@ -444,11 +442,11 @@ class DatasetEntry:
         # column_types: use post-fetch types if loaded, else source _schema for TableSource
         col_types = self._column_types
         if col_types is None:
-            raw_schema = getattr(self.source, '_schema', {})
+            raw_schema = getattr(self.source, "_schema", {})
             col_types = raw_schema if raw_schema else None
 
         # Row count estimate and size warning (TableSource, IcebergSource, DeltaTableSource)
-        row_count = getattr(self.source, '_row_count_estimate', None)
+        row_count = getattr(self.source, "_row_count_estimate", None)
         size_warning = ""
         if isinstance(self.source, TableSource) and row_count is not None:
             size_warning = TableSource._size_warning(row_count)
@@ -519,7 +517,10 @@ class DatasetManager(AbstractToolkit):
     """
 
     tool_prefix: str = "dataset"
-    exclude_tools = ("setup", "add_dataset", "list_available")
+    #: FEAT-593 — JSON Schema source for Agent Studio; datasources are replayed in memory.
+    config_model = DatasetManagerConfig
+    secret_params = frozenset({"dsn", "credentials", "api_key", "access_token"})
+    exclude_tools = ("setup", "add_dataset", "list_available", "replay_datasources")
 
     #: Universal decision rules for any agent driving a DatasetManager. Injected
     #: into the system prompt via ``get_usage_rules()`` so the LLM commits to one
@@ -555,7 +556,7 @@ class DatasetManager(AbstractToolkit):
         policy_guard: Optional["DatasetPolicyGuard"] = None,
         dataplane_guard: Optional["DataPlanePolicyGuard"] = None,
         usage_rules: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         # None → fall back to DEFAULT_USAGE_RULES; "" disables the block entirely.
@@ -618,9 +619,11 @@ class DatasetManager(AbstractToolkit):
         if self._dataplane_guard is None:
             return source
         from .sources.memory import InMemorySource
+
         if isinstance(source, InMemorySource):
             return source
         from .sources.authorizing import AuthorizingDataSource
+
         return AuthorizingDataSource(
             inner=source,
             guard=self._dataplane_guard,
@@ -666,7 +669,8 @@ class DatasetManager(AbstractToolkit):
             except Exception as exc:
                 self.logger.error(
                     "on_change callback failed (DataFrames may not sync to REPL): %s",
-                    exc, exc_info=True,
+                    exc,
+                    exc_info=True,
                 )
 
     async def setup(self) -> None:
@@ -677,10 +681,7 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     def _get_alias_map(self) -> Dict[str, str]:
         """Return mapping of dataset names to standardized aliases."""
-        return {
-            name: f"{self.df_prefix}{i + 1}"
-            for i, name in enumerate(self._datasets.keys())
-        }
+        return {name: f"{self.df_prefix}{i + 1}" for i, name in enumerate(self._datasets.keys())}
 
     def _resolve_name(self, identifier: str) -> str:
         """Resolve alias or name to actual dataset name."""
@@ -695,11 +696,7 @@ class DatasetManager(AbstractToolkit):
         # Case-insensitive match
         identifier_lower = identifier.lower()
         return next(
-            (
-                name
-                for name, _ in self._datasets.items()
-                if name.lower() == identifier_lower
-            ),
+            (name for name, _ in self._datasets.items() if name.lower() == identifier_lower),
             identifier,
         )
 
@@ -771,17 +768,17 @@ class DatasetManager(AbstractToolkit):
             null counts, row/column counts, and optional column types.
         """
         info = {
-            'shape': df.shape,
-            'columns': df.columns.tolist(),
-            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
-            'memory_usage_bytes': df.memory_usage(deep=True).sum(),
-            'null_counts': df.isnull().sum().to_dict(),
-            'row_count': len(df),
-            'column_count': len(df.columns),
+            "shape": df.shape,
+            "columns": df.columns.tolist(),
+            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+            "memory_usage_bytes": df.memory_usage(deep=True).sum(),
+            "null_counts": df.isnull().sum().to_dict(),
+            "row_count": len(df),
+            "column_count": len(df.columns),
         }
 
         if self.auto_detect_types:
-            info['column_types'] = self.categorize_columns(df)
+            info["column_types"] = self.categorize_columns(df)
 
         return info
 
@@ -818,10 +815,10 @@ class DatasetManager(AbstractToolkit):
 
             # Additional info based on data type
             extra_info = []
-            if category in ('integer', 'float'):
+            if category in ("integer", "float"):
                 min_val, max_val = df[col].min(), df[col].max()
                 extra_info.append(f"Range: {min_val} - {max_val}")
-            elif category in ('text', 'categorical_text'):
+            elif category in ("text", "categorical_text"):
                 if unique_count is not None:
                     extra_info.append(f"Unique values: {unique_count}")
                     if unique_count <= 10:
@@ -860,15 +857,10 @@ class DatasetManager(AbstractToolkit):
         warning_messages = []
 
         if names:
-            datasets_to_check = {
-                self._resolve_name(n): self._datasets.get(self._resolve_name(n))
-                for n in names
-            }
+            datasets_to_check = {self._resolve_name(n): self._datasets.get(self._resolve_name(n)) for n in names}
         else:
             datasets_to_check = {
-                name: entry
-                for name, entry in self._datasets.items()
-                if entry.is_active and entry.loaded
+                name: entry for name, entry in self._datasets.items() if entry.is_active and entry.loaded
             }
 
         for name, entry in datasets_to_check.items():
@@ -947,10 +939,7 @@ class DatasetManager(AbstractToolkit):
 
         for col, value in filter_dict.items():
             if col not in df.columns:
-                raise ValueError(
-                    f"Filter column '{col}' not found in DataFrame. "
-                    f"Available: {list(df.columns)}"
-                )
+                raise ValueError(f"Filter column '{col}' not found in DataFrame. " f"Available: {list(df.columns)}")
             if isinstance(value, _FC):
                 # FEAT-225: delegate to FilterCompiler for structured conditions.
                 mask &= compiler.compile_pandas(df, col, value)
@@ -1029,13 +1018,9 @@ class DatasetManager(AbstractToolkit):
             ValueError: If the source arguments are ambiguous or incomplete,
                 or if a filter column is not found in the DataFrame.
         """
-        sources_given = sum(
-            x is not None for x in (query_slug, query, table, dataframe)
-        )
+        sources_given = sum(x is not None for x in (query_slug, query, table, dataframe))
         if sources_given != 1:
-            raise ValueError(
-                "Provide exactly one of: query_slug, query, table, or dataframe."
-            )
+            raise ValueError("Provide exactly one of: query_slug, query, table, or dataframe.")
 
         df: pd.DataFrame
 
@@ -1046,9 +1031,13 @@ class DatasetManager(AbstractToolkit):
 
         elif query_slug is not None:
             from .sources.query_slug import QuerySlugSource
-            source = self._make_source(QuerySlugSource(
-                slug=query_slug, permanent_filter=permanent_filter,
-            ))
+
+            source = self._make_source(
+                QuerySlugSource(
+                    slug=query_slug,
+                    permanent_filter=permanent_filter,
+                )
+            )
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
@@ -1056,12 +1045,15 @@ class DatasetManager(AbstractToolkit):
             if not driver:
                 raise ValueError("driver is required when using query=")
             from .sources.sql import SQLQuerySource
-            source = self._make_source(SQLQuerySource(
-                sql=query,
-                driver=driver,
-                dsn=dsn,
-                credentials=credentials,
-            ))
+
+            source = self._make_source(
+                SQLQuerySource(
+                    sql=query,
+                    driver=driver,
+                    dsn=dsn,
+                    credentials=credentials,
+                )
+            )
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
@@ -1069,14 +1061,17 @@ class DatasetManager(AbstractToolkit):
             if not driver:
                 raise ValueError("driver is required when using table=")
             from .sources.table import TableSource
-            source = self._make_source(TableSource(
-                table=table,
-                driver=driver,
-                dsn=dsn,
-                credentials=credentials,
-                strict_schema=False,
-                permanent_filter=permanent_filter,
-            ))
+
+            source = self._make_source(
+                TableSource(
+                    table=table,
+                    driver=driver,
+                    dsn=dsn,
+                    credentials=credentials,
+                    strict_schema=False,
+                    permanent_filter=permanent_filter,
+                )
+            )
             fetch_sql = sql or f"SELECT * FROM {table}"
             df = await source.fetch(sql=fetch_sql)
 
@@ -1084,8 +1079,12 @@ class DatasetManager(AbstractToolkit):
             df = self._apply_filter(df, filter)
 
         return self.add_dataframe(
-            name=name, df=df, description=description, metadata=metadata,
-            is_active=is_active, computed_columns=computed_columns,
+            name=name,
+            df=df,
+            description=description,
+            metadata=metadata,
+            is_active=is_active,
+            computed_columns=computed_columns,
             usage_guidance=usage_guidance,
         )
 
@@ -1130,8 +1129,7 @@ class DatasetManager(AbstractToolkit):
         # Prevent overwriting protected (core) datasets
         if self._is_protected(name):
             raise ValueError(
-                f"Cannot overwrite protected dataset '{name}'. "
-                f"Use a different name for this DataFrame."
+                f"Cannot overwrite protected dataset '{name}'. " f"Use a different name for this DataFrame."
             )
 
         from .sources.memory import InMemorySource
@@ -1209,9 +1207,7 @@ class DatasetManager(AbstractToolkit):
                 kwargs["engine"] = engine_map.get(extension)
             df = pd.read_excel(path_str, **kwargs)
         else:
-            raise ValueError(
-                f"Unsupported file extension '{extension}'. Expected CSV or Excel file."
-            )
+            raise ValueError(f"Unsupported file extension '{extension}'. Expected CSV or Excel file.")
 
         return self.add_dataframe(name=name, df=df, metadata=metadata, is_active=is_active)
 
@@ -1248,7 +1244,8 @@ class DatasetManager(AbstractToolkit):
         if file_size > 100 * 1024 * 1024:  # 100 MB
             self.logger.warning(
                 "File '%s' is %.1f MB — loading may be slow",
-                path.name, file_size / (1024 * 1024),
+                path.name,
+                file_size / (1024 * 1024),
             )
 
         extension = path.suffix.lower().lstrip(".")
@@ -1279,7 +1276,9 @@ class DatasetManager(AbstractToolkit):
             for sheet_name, sheet_analysis in analysis.items():
                 for table in sheet_analysis.tables:
                     df = analyzer.extract_table_as_dataframe(
-                        sheet_name, table, include_totals=False,
+                        sheet_name,
+                        table,
+                        include_totals=False,
                     )
                     if len(df) > max_rows_per_table:
                         df = df.head(max_rows_per_table)
@@ -1345,10 +1344,7 @@ class DatasetManager(AbstractToolkit):
         entry = self._file_entries[name]
         if table_id not in entry.markdown_content:
             available = ", ".join(entry.markdown_content.keys())
-            raise KeyError(
-                f"Table '{table_id}' not found in file '{name}'. "
-                f"Available tables: {available}"
-            )
+            raise KeyError(f"Table '{table_id}' not found in file '{name}'. " f"Available tables: {available}")
         return entry.markdown_content[table_id]
 
     def add_source(
@@ -1376,11 +1372,9 @@ class DatasetManager(AbstractToolkit):
         Raises:
             ValueError: If source does not have a ``cache_key`` property.
         """
-        if not hasattr(source, 'cache_key'):
-            raise ValueError(
-                f"DataSource {source!r} must implement 'cache_key' property."
-            )
-        name = getattr(source, 'name', None) or source.cache_key
+        if not hasattr(source, "cache_key"):
+            raise ValueError(f"DataSource {source!r} must implement 'cache_key' property.")
+        name = getattr(source, "name", None) or source.cache_key
         description = None
         try:
             description = source.describe()
@@ -1390,7 +1384,7 @@ class DatasetManager(AbstractToolkit):
             name=name,
             description=description,
             source=self._make_source(source),
-            metadata=getattr(source, 'routing_meta', {}) or {},
+            metadata=getattr(source, "routing_meta", {}) or {},
             auto_detect_types=self.auto_detect_types,
             protected=True,
         )
@@ -1542,18 +1536,16 @@ class DatasetManager(AbstractToolkit):
         n_cols = len(source._schema)
         row_est = source._row_count_estimate
         row_info = f", ~{row_est:,} rows" if row_est is not None else ""
-        col_info = (
-            f", restricted to {len(allowed_columns)} allowed columns"
-            if allowed_columns else ""
-        )
+        col_info = f", restricted to {len(allowed_columns)} allowed columns" if allowed_columns else ""
         self.logger.debug(
             "Table source '%s' registered (%d columns, %s%s%s)",
-            name, n_cols, driver, row_info, col_info,
+            name,
+            n_cols,
+            driver,
+            row_info,
+            col_info,
         )
-        return (
-            f"Table source '{name}' registered "
-            f"({n_cols} columns, {driver}{row_info}{col_info})."
-        )
+        return f"Table source '{name}' registered " f"({n_cols} columns, {driver}{row_info}{col_info})."
 
     def add_sql_source(
         self,
@@ -1603,7 +1595,6 @@ class DatasetManager(AbstractToolkit):
         self._datasets[name] = entry
         self.logger.debug("SQL source '%s' registered (%s)", name, driver)
         return f"SQL source '{name}' registered ({driver})."
-
 
     async def add_airtable_source(
         self,
@@ -1770,12 +1761,12 @@ class DatasetManager(AbstractToolkit):
         catalog_type = catalog_params.get("type") or catalog_params.get("catalog_type", "unknown")
         self.logger.debug(
             "Iceberg source '%s' registered (%d columns, catalog: %s%s)",
-            name, n_cols, catalog_type, row_info,
+            name,
+            n_cols,
+            catalog_type,
+            row_info,
         )
-        return (
-            f"Iceberg source '{name}' registered "
-            f"({n_cols} columns, catalog: {catalog_type}{row_info})."
-        )
+        return f"Iceberg source '{name}' registered " f"({n_cols} columns, catalog: {catalog_type}{row_info})."
 
     async def add_mongo_source(
         self,
@@ -1850,12 +1841,12 @@ class DatasetManager(AbstractToolkit):
         n_fields = len(source._schema)
         self.logger.debug(
             "Mongo source '%s' registered (%d fields, %s.%s)",
-            name, n_fields, database, collection,
+            name,
+            n_fields,
+            database,
+            collection,
         )
-        return (
-            f"Mongo source '{name}' registered "
-            f"({n_fields} fields, {database}.{collection})."
-        )
+        return f"Mongo source '{name}' registered " f"({n_fields} fields, {database}.{collection})."
 
     async def add_deltatable_source(
         self,
@@ -1934,12 +1925,12 @@ class DatasetManager(AbstractToolkit):
         row_info = f", ~{row_est:,} rows" if row_est is not None else ""
         self.logger.debug(
             "Delta table source '%s' registered (%d columns, path: %s%s)",
-            name, n_cols, path, row_info,
+            name,
+            n_cols,
+            path,
+            row_info,
         )
-        return (
-            f"Delta table source '{name}' registered "
-            f"({n_cols} columns, {path}{row_info})."
-        )
+        return f"Delta table source '{name}' registered " f"({n_cols} columns, {path}{row_info})."
 
     def add_composite_dataset(
         self,
@@ -2021,13 +2012,8 @@ class DatasetManager(AbstractToolkit):
 
         n_joins = len(join_specs)
         join_desc = source.describe()
-        self.logger.debug(
-            "Composite dataset '%s' registered (%d join(s))", name, n_joins
-        )
-        return (
-            f"Composite dataset '{name}' registered with {n_joins} join(s).\n"
-            f"{join_desc}"
-        )
+        self.logger.debug("Composite dataset '%s' registered (%d join(s))", name, n_joins)
+        return f"Composite dataset '{name}' registered with {n_joins} join(s).\n" f"{join_desc}"
 
     async def create_iceberg_from_dataframe(
         self,
@@ -2069,9 +2055,7 @@ class DatasetManager(AbstractToolkit):
         from .sources.iceberg import IcebergSource
 
         if not catalog_params:
-            raise ValueError(
-                "catalog_params is required for create_iceberg_from_dataframe"
-            )
+            raise ValueError("catalog_params is required for create_iceberg_from_dataframe")
 
         tmp_source = IcebergSource(
             table_id=table_id,
@@ -2099,6 +2083,120 @@ class DatasetManager(AbstractToolkit):
             catalog_params=catalog_params,
             description=description,
         )
+
+    async def replay_datasources(self, datasources: Sequence[Any]) -> list[str]:
+        """Register agent-level datasource descriptors (FEAT-593). Returns registered names.
+
+        Each item is a ``DatasourceSpec`` model or dict. A failing entry is logged at WARNING
+        (never with secret values) and skipped.
+
+        Args:
+            datasources: Validated datasource models or their dictionary representations.
+
+        Returns:
+            Names of datasource descriptors registered successfully.
+        """
+        adapter = TypeAdapter(DatasourceSpec)
+        registered: list[str] = []
+        for raw in datasources:
+            try:
+                ds = raw if isinstance(raw, BaseModel) else adapter.validate_python(raw)
+                common = {"description": ds.description, "metadata": ds.metadata}
+                if ds.kind == "query_slug":
+                    await self.add_dataset(
+                        ds.name,
+                        query_slug=ds.slug,
+                        permanent_filter=ds.permanent_filter,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "sql":
+                    # add_dataset()'s "exactly one of query_slug/query/table/dataframe" selector
+                    # is `query=`, not `sql=` (`sql=` is only a `table`-mode refinement there) —
+                    # confirmed by code review.
+                    await self.add_dataset(
+                        ds.name,
+                        query=ds.sql,
+                        driver=ds.driver,
+                        dsn=ds.dsn,
+                        credentials=ds.credentials,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "table":
+                    await self.add_table_source(
+                        ds.name,
+                        ds.table,
+                        ds.driver,
+                        dsn=ds.dsn,
+                        credentials=ds.credentials,
+                        strict_schema=ds.strict_schema,
+                        permanent_filter=ds.permanent_filter,
+                        allowed_columns=ds.allowed_columns,
+                        **common,
+                    )
+                    # add_table_source() has no is_active parameter (code review finding);
+                    # apply it directly to the stored entry instead of dropping it silently.
+                    if ds.name in self._datasets:
+                        self._datasets[ds.name].is_active = ds.is_active
+                elif isinstance(ds, FileDatasource) and ds.is_parquet:
+                    await self.create_deltatable_from_parquet(
+                        ds.name,
+                        ds.path,
+                        ds.effective_delta_path,
+                        mode="overwrite",
+                        description=ds.description,
+                    )
+                elif ds.kind == "file":
+                    await self.load_file(ds.name, ds.path, metadata=ds.metadata)
+                elif ds.kind == "airtable":
+                    await self.add_airtable_source(
+                        ds.name,
+                        ds.base_id,
+                        ds.table,
+                        api_key=ds.api_key,
+                        view=ds.view,
+                        **common,
+                    )
+                elif ds.kind == "smartsheet":
+                    await self.add_smartsheet_source(ds.name, ds.sheet_id, access_token=ds.access_token, **common)
+                elif ds.kind == "iceberg":
+                    await self.add_iceberg_source(
+                        ds.name,
+                        ds.table_id,
+                        ds.catalog_params,
+                        factory=ds.factory,
+                        credentials=ds.credentials,
+                        dsn=ds.dsn,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "mongo":
+                    await self.add_mongo_source(
+                        ds.name,
+                        ds.collection,
+                        ds.database,
+                        credentials=ds.credentials,
+                        dsn=ds.dsn,
+                        required_filter=ds.required_filter,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                elif ds.kind == "deltatable":
+                    await self.add_deltatable_source(
+                        ds.name,
+                        ds.path,
+                        table_name=ds.table_name,
+                        mode=ds.mode,
+                        credentials=ds.credentials,
+                        is_active=ds.is_active,
+                        **common,
+                    )
+                registered.append(ds.name)
+            except Exception as exc:  # noqa: BLE001 — one bad descriptor must not abort the rest
+                name = raw.get("name") if isinstance(raw, dict) else getattr(raw, "name", "?")
+                self.logger.warning("replay_datasources: skipped %r (%s)", name, type(exc).__name__)
+        return registered
 
     async def create_deltatable_from_parquet(
         self,
@@ -2233,11 +2331,7 @@ class DatasetManager(AbstractToolkit):
 
     def get_active_dataframes(self) -> Dict[str, pd.DataFrame]:
         """Get all active DataFrames (loaded only)."""
-        return {
-            name: entry.df
-            for name, entry in self._datasets.items()
-            if entry.is_active and entry.loaded
-        }
+        return {name: entry.df for name, entry in self._datasets.items() if entry.is_active and entry.loaded}
 
     async def get_active_dataframes_lazy(self) -> Dict[str, pd.DataFrame]:
         """Get active dataframes, loading from queries if needed."""
@@ -2270,13 +2364,13 @@ class DatasetManager(AbstractToolkit):
                 continue
             df = entry.df
             result[name] = {
-                'original_name': name,
-                'alias': alias_map.get(name),
-                'shape': df.shape,
-                'columns': df.columns.tolist(),
-                'memory_usage_mb': round(entry.memory_usage_mb, 2),
-                'null_count': entry.null_count,
-                'column_types': entry.column_types,
+                "original_name": name,
+                "alias": alias_map.get(name),
+                "shape": df.shape,
+                "columns": df.columns.tolist(),
+                "memory_usage_mb": round(entry.memory_usage_mb, 2),
+                "null_count": entry.null_count,
+                "column_types": entry.column_types,
             }
         return result
 
@@ -2331,12 +2425,12 @@ class DatasetManager(AbstractToolkit):
             List of row dicts with plain Python types.
         """
         records: List[Dict[str, Any]] = []
-        for record in df.to_dict(orient='records'):
+        for record in df.to_dict(orient="records"):
             clean: Dict[str, Any] = {}
             for k, v in record.items():
-                if hasattr(v, 'item'):  # numpy scalar
+                if hasattr(v, "item"):  # numpy scalar
                     v = v.item()
-                elif hasattr(v, 'isoformat'):  # Timestamp / datetime
+                elif hasattr(v, "isoformat"):  # Timestamp / datetime
                     v = v.isoformat()
                 elif v is None or (isinstance(v, float) and v != v):  # NaN
                     v = None
@@ -2350,8 +2444,8 @@ class DatasetManager(AbstractToolkit):
     def _generate_eda_summary(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Generate EDA summary for a DataFrame."""
         numeric_cols = df.select_dtypes(include=[np.number]).columns
-        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
-        datetime_cols = df.select_dtypes(include=['datetime64']).columns
+        categorical_cols = df.select_dtypes(include=["object", "category"]).columns
+        datetime_cols = df.select_dtypes(include=["datetime64"]).columns
 
         missing = df.isnull().sum()
         total_missing = int(missing.sum())
@@ -2362,11 +2456,10 @@ class DatasetManager(AbstractToolkit):
             {
                 "column": col,
                 "missing_count": int(missing[col]),
-                "missing_percentage": round(
-                    float(missing[col] / len(df) * 100), 2
-                ) if len(df) > 0 else 0.0
+                "missing_percentage": round(float(missing[col] / len(df) * 100), 2) if len(df) > 0 else 0.0,
             }
-            for col in df.columns if missing[col] > 0
+            for col in df.columns
+            if missing[col] > 0
         ]
 
         return {
@@ -2381,18 +2474,18 @@ class DatasetManager(AbstractToolkit):
             "missing_data": {
                 "total_missing": total_missing,
                 "missing_percentage": round(missing_percentage, 2),
-                "columns_with_missing": columns_with_missing
+                "columns_with_missing": columns_with_missing,
             },
             "data_quality": {
                 "duplicate_rows": self._safe_duplicate_count(df),
-                "completeness_percentage": round((1 - missing_percentage / 100) * 100, 2)
-            }
+                "completeness_percentage": round((1 - missing_percentage / 100) * 100, 2),
+            },
         }
 
     def _generate_column_statistics(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Generate detailed statistics for all columns."""
         numeric_cols = df.select_dtypes(include=[np.number]).columns
-        categorical_cols = df.select_dtypes(include=['object', 'category']).columns
+        categorical_cols = df.select_dtypes(include=["object", "category"]).columns
 
         stats: Dict[str, Any] = {"numeric_columns": {}, "categorical_columns": {}}
 
@@ -2413,7 +2506,7 @@ class DatasetManager(AbstractToolkit):
             stats["categorical_columns"][col] = {
                 "unique_values": int(df[col].nunique()),
                 "most_common": value_counts.head(5).to_dict(),
-                "null_count": int(df[col].isnull().sum())
+                "null_count": int(df[col].isnull().sum()),
             }
 
         return stats
@@ -2423,24 +2516,26 @@ class DatasetManager(AbstractToolkit):
         stats: Dict[str, Any] = {
             "dtype": str(series.dtype),
             "null_count": int(series.isnull().sum()),
-            "null_percentage": round(
-                float(series.isnull().sum() / len(series) * 100), 2
-            ) if len(series) > 0 else 0.0
+            "null_percentage": round(float(series.isnull().sum() / len(series) * 100), 2) if len(series) > 0 else 0.0,
         }
 
         if pd.api.types.is_numeric_dtype(series):
-            stats.update({
-                "mean": None if series.empty else round(float(series.mean()), 4),
-                "median": None if series.empty else round(float(series.median()), 4),
-                "std": None if series.empty else round(float(series.std()), 4),
-                "min": None if series.empty else float(series.min()),
-                "max": None if series.empty else float(series.max()),
-            })
+            stats.update(
+                {
+                    "mean": None if series.empty else round(float(series.mean()), 4),
+                    "median": None if series.empty else round(float(series.median()), 4),
+                    "std": None if series.empty else round(float(series.std()), 4),
+                    "min": None if series.empty else float(series.min()),
+                    "max": None if series.empty else float(series.max()),
+                }
+            )
         else:
-            stats.update({
-                "unique_values": int(series.nunique()),
-                "most_common": None if series.mode().empty else str(series.mode().iloc[0]),
-            })
+            stats.update(
+                {
+                    "unique_values": int(series.nunique()),
+                    "most_common": None if series.mode().empty else str(series.mode().iloc[0]),
+                }
+            )
 
         return stats
 
@@ -2483,6 +2578,7 @@ class DatasetManager(AbstractToolkit):
         fn = get_computed_function(func)
         if fn is None:
             from .computed import list_computed_functions
+
             available = list_computed_functions()
             return (
                 f"Unknown function '{func}'. "
@@ -2494,10 +2590,7 @@ class DatasetManager(AbstractToolkit):
         resolved = self._resolve_name(dataset_name)
         entry = self._datasets.get(resolved)
         if entry is None:
-            return (
-                f"Dataset '{dataset_name}' not found. "
-                f"Available datasets: {list(self._datasets.keys())}."
-            )
+            return f"Dataset '{dataset_name}' not found. " f"Available datasets: {list(self._datasets.keys())}."
 
         # Validate source columns exist when dataset is loaded or has schema
         known_cols: List[str] = []
@@ -2533,14 +2626,13 @@ class DatasetManager(AbstractToolkit):
             except Exception as exc:
                 self.logger.error(
                     "Failed to apply computed column '%s' to '%s': %s",
-                    column_name, resolved, exc,
+                    column_name,
+                    resolved,
+                    exc,
                 )
                 # Remove the appended definition since application failed
                 entry._computed_columns.pop()
-                return (
-                    f"Error applying computed column '{column_name}' to dataset "
-                    f"'{resolved}': {exc}"
-                )
+                return f"Error applying computed column '{column_name}' to dataset " f"'{resolved}': {exc}"
 
         # Regenerate guide
         if self.generate_guide:
@@ -2561,6 +2653,7 @@ class DatasetManager(AbstractToolkit):
             Sorted list of registered function name strings.
         """
         from .computed import list_computed_functions
+
         return list_computed_functions()
 
     # ─────────────────────────────────────────────────────────────
@@ -2607,21 +2700,19 @@ class DatasetManager(AbstractToolkit):
         """
         if not self._policy_guard or not pctx:
             return info
-        allowed = await self._policy_guard.filter_columns(
-            pctx, info.name, info.columns
-        )
+        allowed = await self._policy_guard.filter_columns(pctx, info.name, info.columns)
         if allowed == info.columns:
             return info  # no change
         allowed_set: Set[str] = set(allowed)
         col_types = info.column_types
-        return info.model_copy(update={
-            "columns": allowed,
-            "column_types": (
-                {k: v for k, v in col_types.items() if k in allowed_set}
-                if col_types is not None
-                else None
-            ),
-        })
+        return info.model_copy(
+            update={
+                "columns": allowed,
+                "column_types": (
+                    {k: v for k, v in col_types.items() if k in allowed_set} if col_types is not None else None
+                ),
+            }
+        )
 
     async def get_tools_filtered(
         self,
@@ -2654,6 +2745,7 @@ class DatasetManager(AbstractToolkit):
         allowed_datasets: Set[str] = await self._policy_guard.filter_datasets(
             permission_context, list(self._datasets.keys())
         )
+
         # All current DatasetManager tools are generic (they take 'name' as a
         # runtime parameter, not bound to a specific dataset).  Return all
         # tools whose optional dataset association is either None (generic) or
@@ -2664,10 +2756,7 @@ class DatasetManager(AbstractToolkit):
             # attribute on the tool at generation time.
             return getattr(tool, "_dataset_name", None)
 
-        return [
-            t for t in tools
-            if _tool_dataset_name(t) is None or _tool_dataset_name(t) in allowed_datasets
-        ]
+        return [t for t in tools if _tool_dataset_name(t) is None or _tool_dataset_name(t) in allowed_datasets]
 
     async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:
         """PBAC Layer-2 per-call enforcement hook.
@@ -2721,11 +2810,8 @@ class DatasetManager(AbstractToolkit):
         allowed = await self._policy_guard.can_read_dataset(pctx, resolved)
         if not allowed:
             from ...auth.exceptions import AuthorizationRequired
-            _user_id = (
-                getattr(pctx.session, "user_id", "<unknown>")
-                if pctx.session is not None
-                else "<unknown>"
-            )
+
+            _user_id = getattr(pctx.session, "user_id", "<unknown>") if pctx.session is not None else "<unknown>"
             raise AuthorizationRequired(
                 tool_name=tool_name,
                 message=(
@@ -2811,8 +2897,8 @@ class DatasetManager(AbstractToolkit):
                 elif info.get("source_type") == "mongo":
                     info["action_required"] = (
                         f"Call fetch_dataset(name='{name}', "
-                        f"filter={{\"field\": \"value\"}}, "
-                        f"projection={{\"field\": 1, \"_id\": 0}}). "
+                        f'filter={{"field": "value"}}, '
+                        f'projection={{"field": 1, "_id": 0}}). '
                         f"Both filter and projection are required."
                     )
                 elif info.get("source_type") == "deltatable":
@@ -2824,7 +2910,7 @@ class DatasetManager(AbstractToolkit):
                 elif info.get("source_type") == "composite":
                     info["action_required"] = (
                         f"Call fetch_dataset(name='{name}') to JOIN all components, "
-                        f"or fetch_dataset(name='{name}', conditions={{\"column\": \"value\"}}) "
+                        f'or fetch_dataset(name=\'{name}\', conditions={{"column": "value"}}) '
                         f"to filter components before joining."
                     )
                 else:
@@ -2837,9 +2923,7 @@ class DatasetManager(AbstractToolkit):
         # PBAC: filter out denied datasets (drop-silent)
         pctx = self._get_current_pctx()
         if self._policy_guard and pctx and result:
-            allowed_names: Set[str] = await self._policy_guard.filter_datasets(
-                pctx, [r["name"] for r in result]
-            )
+            allowed_names: Set[str] = await self._policy_guard.filter_datasets(pctx, [r["name"] for r in result])
             result = [r for r in result if r["name"] in allowed_names]
         return result
 
@@ -2853,10 +2937,7 @@ class DatasetManager(AbstractToolkit):
 
         Active datasets are available for analysis in python_repl_pandas.
         """
-        names = [
-            name for name, entry in self._datasets.items()
-            if entry.is_active
-        ]
+        names = [name for name, entry in self._datasets.items() if entry.is_active]
         # PBAC: filter out denied datasets (drop-silent)
         pctx = self._get_current_pctx()
         if self._policy_guard and pctx and names:
@@ -2933,7 +3014,7 @@ class DatasetManager(AbstractToolkit):
 
             # Source-specific guidance telling the LLM how to call fetch_dataset.
             if source_type == "table":
-                table_name = getattr(entry.source, 'table', resolved_name)
+                table_name = getattr(entry.source, "table", resolved_name)
                 message = (
                     f"Dataset not loaded. Call fetch_dataset(name='{resolved_name}', "
                     f"sql='SELECT … FROM {table_name} WHERE …') with a SQL query "
@@ -2945,8 +3026,8 @@ class DatasetManager(AbstractToolkit):
                     f"Avoid SELECT * on large tables."
                 )
             elif source_type == "sql":
-                sql_template = getattr(entry.source, 'sql', '')
-                placeholders = re.findall(r'\{(\w+)\}', sql_template)
+                sql_template = getattr(entry.source, "sql", "")
+                placeholders = re.findall(r"\{(\w+)\}", sql_template)
                 if placeholders:
                     message = (
                         f"Dataset not loaded. Call fetch_dataset(name='{resolved_name}', "
@@ -2954,27 +3035,20 @@ class DatasetManager(AbstractToolkit):
                         f"providing values for: {', '.join(placeholders)}."
                     )
                 else:
-                    message = (
-                        f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
-                        f"to execute the query."
-                    )
+                    message = f"Dataset not loaded. Call fetch_dataset('{resolved_name}') " f"to execute the query."
             elif source_type == "query_slug":
                 message = (
-                    f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
-                    f"to load this dataset into memory."
+                    f"Dataset not loaded. Call fetch_dataset('{resolved_name}') " f"to load this dataset into memory."
                 )
             elif source_type == "composite":
                 message = (
                     f"Composite dataset not yet materialized. "
                     f"Call fetch_dataset('{resolved_name}') to JOIN all components, "
-                    f"or fetch_dataset('{resolved_name}', conditions={{\"column\": \"value\"}}) "
+                    f'or fetch_dataset(\'{resolved_name}\', conditions={{"column": "value"}}) '
                     f"to filter components before joining."
                 )
             else:
-                message = (
-                    f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
-                    f"to materialize."
-                )
+                message = f"Dataset not loaded. Call fetch_dataset('{resolved_name}') " f"to materialize."
 
             response: Dict[str, Any] = {
                 "name": resolved_name,
@@ -3012,7 +3086,7 @@ class DatasetManager(AbstractToolkit):
                 "alias": alias_map.get(resolved_name),
                 "column": column,
                 "metadata": col_meta,
-                "statistics": self._compute_single_column_stats(df[column])
+                "statistics": self._compute_single_column_stats(df[column]),
             }
 
         # Full dataset metadata
@@ -3030,7 +3104,7 @@ class DatasetManager(AbstractToolkit):
             result["eda_summary"] = self._generate_eda_summary(df)
 
         if include_samples:
-            result["sample_rows"] = df.head(3).to_dict(orient='records')
+            result["sample_rows"] = df.head(3).to_dict(orient="records")
 
         if include_column_stats:
             result["column_statistics"] = self._generate_column_statistics(df)
@@ -3047,21 +3121,14 @@ class DatasetManager(AbstractToolkit):
                 _allowed_set: Set[str] = set(_filtered_info.columns)
                 # Filter _column_metadata dict (col → {description, dtype, ...})
                 if isinstance(result.get("columns"), dict):
-                    result["columns"] = {
-                        k: v for k, v in result["columns"].items()
-                        if k in _allowed_set
-                    }
+                    result["columns"] = {k: v for k, v in result["columns"].items() if k in _allowed_set}
                 # Filter column_types dict in lockstep
                 if isinstance(result.get("column_types"), dict):
-                    result["column_types"] = {
-                        k: v for k, v in result["column_types"].items()
-                        if k in _allowed_set
-                    }
+                    result["column_types"] = {k: v for k, v in result["column_types"].items() if k in _allowed_set}
                 # Filter sample_rows records if present
                 if "sample_rows" in result:
                     result["sample_rows"] = [
-                        {k: v for k, v in row.items() if k in _allowed_set}
-                        for row in result["sample_rows"]
+                        {k: v for k, v in row.items() if k in _allowed_set} for row in result["sample_rows"]
                     ]
                 # Update shape column count to reflect filtering
                 if isinstance(result.get("shape"), dict):
@@ -3156,7 +3223,7 @@ class DatasetManager(AbstractToolkit):
             return {
                 "name": resolved_name,
                 "loaded": False,
-                "message": "Dataset not loaded. Use activate_datasets first."
+                "message": "Dataset not loaded. Use activate_datasets first.",
             }
 
         alias_map = self._get_alias_map()
@@ -3167,18 +3234,14 @@ class DatasetManager(AbstractToolkit):
         pctx_gdf = self._get_current_pctx()
         if self._policy_guard and pctx_gdf:
             _all_cols_gdf = df.columns.tolist()
-            _allowed_cols_gdf: list = await self._policy_guard.filter_columns(
-                pctx_gdf, resolved_name, _all_cols_gdf
-            )
+            _allowed_cols_gdf: list = await self._policy_guard.filter_columns(pctx_gdf, resolved_name, _all_cols_gdf)
             if set(_allowed_cols_gdf) != set(_all_cols_gdf):
                 df = df[_allowed_cols_gdf]
 
         # Filter column_types to only the visible columns (drop-silent).
         _visible_cols = set(df.columns)
         filtered_col_types = (
-            {col: ct for col, ct in entry.column_types.items() if col in _visible_cols}
-            if entry.column_types
-            else None
+            {col: ct for col, ct in entry.column_types.items() if col in _visible_cols} if entry.column_types else None
         )
 
         return {
@@ -3197,7 +3260,7 @@ class DatasetManager(AbstractToolkit):
             "is_active": entry.is_active,
             # Recompute from the visible-column df so the count is consistent.
             "null_count": int(df.isnull().sum().sum()),
-            "sample_rows": df.head(3).to_dict(orient='records'),
+            "sample_rows": df.head(3).to_dict(orient="records"),
         }
 
     async def store_dataframe(
@@ -3245,10 +3308,7 @@ class DatasetManager(AbstractToolkit):
         repl_locals = await self._repl_locals_getter()
         df = repl_locals.get(name)
         if df is None or not isinstance(df, pd.DataFrame):
-            available_dfs = [
-                k for k, v in repl_locals.items()
-                if isinstance(v, pd.DataFrame) and not k.startswith('_')
-            ]
+            available_dfs = [k for k, v in repl_locals.items() if isinstance(v, pd.DataFrame) and not k.startswith("_")]
             return (
                 f"Variable '{name}' not found or is not a DataFrame in "
                 f"python_repl_pandas. Available DataFrames: {available_dfs}"
@@ -3367,7 +3427,7 @@ class DatasetManager(AbstractToolkit):
             # Preserve the caller's force_refresh intent — components use their
             # own caches unless the caller explicitly requests a refresh.
             if conditions:
-                params['filters'] = conditions
+                params["filters"] = conditions
         elif isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
             # These sources do not accept sql or conditions — ignore them
             # to prevent the LLM from accidentally injecting invalid QS conditions.
@@ -3386,6 +3446,7 @@ class DatasetManager(AbstractToolkit):
                     if warning:
                         size_note += f" {warning}"
                 from .sources.table import dialect_hint
+
                 dhint = dialect_hint(entry.source.driver)
                 dhint_line = f"\n  - {dhint}" if dhint else ""
                 return {
@@ -3395,9 +3456,9 @@ class DatasetManager(AbstractToolkit):
                     ),
                     "hint": (
                         f"Write a targeted SQL query. Examples:\n"
-                        f"  - Aggregation: sql=\"SELECT category, COUNT(*) AS n "
-                        f"FROM {table_name} WHERE ... GROUP BY category\"\n"
-                        f"  - Filtered: sql=\"SELECT col1, col2 FROM {table_name} "
+                        f'  - Aggregation: sql="SELECT category, COUNT(*) AS n '
+                        f'FROM {table_name} WHERE ... GROUP BY category"\n'
+                        f'  - Filtered: sql="SELECT col1, col2 FROM {table_name} '
                         f"WHERE status = 'active' LIMIT 100\"\n"
                         f"  - Inspect schema first: call get_source_schema('{resolved}')"
                         f"{dhint_line}"
@@ -3418,9 +3479,9 @@ class DatasetManager(AbstractToolkit):
                     _names_to_check.add(name)
                 for _alias in _names_to_check:
                     _alias_pat = re.escape(_alias)
-                    if re.search(rf'\b{_alias_pat}\b', sql, re.IGNORECASE):
+                    if re.search(rf"\b{_alias_pat}\b", sql, re.IGNORECASE):
                         sql = re.sub(
-                            rf'\b{_alias_pat}\b',
+                            rf"\b{_alias_pat}\b",
                             real_table,
                             sql,
                             count=0,
@@ -3428,7 +3489,8 @@ class DatasetManager(AbstractToolkit):
                         )
                         self.logger.debug(
                             "fetch_dataset: rewrote dataset alias '%s' → '%s' in SQL",
-                            _alias, real_table,
+                            _alias,
+                            real_table,
                         )
                         break  # one rewrite is enough
 
@@ -3436,17 +3498,15 @@ class DatasetManager(AbstractToolkit):
             # overwhelms the model context.  Aggregate functions like
             # COUNT(*) are fine; only a bare star in the SELECT list is
             # rejected.
-            _select_star = re.search(
-                r'\bSELECT\b(.*?)\bFROM\b', sql, re.IGNORECASE | re.DOTALL
-            )
+            _select_star = re.search(r"\bSELECT\b(.*?)\bFROM\b", sql, re.IGNORECASE | re.DOTALL)
             if _select_star:
-                _cleaned_select = re.sub(r'\([^)]*\)', '', _select_star.group(1))
-                if '*' in _cleaned_select:
+                _cleaned_select = re.sub(r"\([^)]*\)", "", _select_star.group(1))
+                if "*" in _cleaned_select:
                     table_name = entry.source.table
                     schema = entry.source._schema
                     col_hint = ""
                     if schema:
-                        col_list = ', '.join(list(schema.keys())[:30])
+                        col_list = ", ".join(list(schema.keys())[:30])
                         col_hint = (
                             f" Available columns (first 30): {col_list}."
                             f" Call get_source_schema('{resolved}') for the full list."
@@ -3459,28 +3519,29 @@ class DatasetManager(AbstractToolkit):
                         ),
                         "hint": (
                             f"Rewrite your SQL to select only the required columns. "
-                            f"Example: sql=\"SELECT col1, col2 FROM {table_name} "
-                            f"WHERE ... LIMIT 100\"{col_hint}"
+                            f'Example: sql="SELECT col1, col2 FROM {table_name} '
+                            f'WHERE ... LIMIT 100"{col_hint}'
                         ),
                     }
             # ── Reject non-aggregated queries on large tables ──────
             # When a table has >10k estimated rows and the SQL lacks
             # GROUP BY / aggregate functions, the LLM is likely trying to
             # fetch all rows to aggregate in pandas — reject and hint.
-            _row_est = getattr(entry.source, '_row_count_estimate', None)
+            _row_est = getattr(entry.source, "_row_count_estimate", None)
             if _row_est is not None and _row_est > 10_000:
                 _sql_upper = sql.upper()
                 _has_aggregation = bool(
-                    re.search(r'\bGROUP\s+BY\b', _sql_upper)
+                    re.search(r"\bGROUP\s+BY\b", _sql_upper)
                     or re.search(
-                        r'\b(COUNT|SUM|AVG|MIN|MAX|STDDEV|VARIANCE)\s*\(',
+                        r"\b(COUNT|SUM|AVG|MIN|MAX|STDDEV|VARIANCE)\s*\(",
                         _sql_upper,
                     )
                 )
-                _has_limit = bool(re.search(r'\bLIMIT\s+\d+', _sql_upper))
+                _has_limit = bool(re.search(r"\bLIMIT\s+\d+", _sql_upper))
                 if not _has_aggregation and not _has_limit:
                     table_name = entry.source.table
                     from .sources.table import dialect_hint
+
                     dhint = dialect_hint(entry.source.driver)
                     dhint_text = f" {dhint}" if dhint else ""
                     return {
@@ -3499,15 +3560,17 @@ class DatasetManager(AbstractToolkit):
                         ),
                     }
 
-            params['sql'] = sql
+            params["sql"] = sql
             # Record the (possibly rewritten) SQL as an artifact so it can
             # be surfaced on the AIMessage for debugging / transparency.
-            self._artifacts.append({
-                "type": "query",
-                "content": sql,
-                "dataset": resolved,
-                "source": "TableSource",
-            })
+            self._artifacts.append(
+                {
+                    "type": "query",
+                    "content": sql,
+                    "dataset": resolved,
+                    "source": "TableSource",
+                }
+            )
             if conditions:
                 params.update(conditions)
             # Table sources ALWAYS re-fetch: the LLM generates a different
@@ -3517,7 +3580,7 @@ class DatasetManager(AbstractToolkit):
             force_refresh = True
         else:
             if sql is not None:
-                params['sql'] = sql
+                params["sql"] = sql
             if conditions:
                 params.update(conditions)
 
@@ -3532,16 +3595,15 @@ class DatasetManager(AbstractToolkit):
                 # Build column hint from schema so the LLM can fix its SQL.
                 schema = entry.source._schema
                 if schema:
-                    col_list = ', '.join(list(schema.keys())[:30])
+                    col_list = ", ".join(list(schema.keys())[:30])
                     col_hint = (
                         f" Available columns (first 30): {col_list}."
                         f" Call get_source_schema('{resolved}') for the full list."
                     )
                 else:
-                    col_hint = (
-                        f" Call get_source_schema('{resolved}') to see available columns."
-                    )
+                    col_hint = f" Call get_source_schema('{resolved}') to see available columns."
                 from .sources.table import dialect_hint
+
                 dhint = dialect_hint(entry.source.driver)
                 dhint_text = f" {dhint}" if dhint else ""
                 hint = (
@@ -3567,9 +3629,7 @@ class DatasetManager(AbstractToolkit):
         pctx_fetch = self._get_current_pctx()
         if self._policy_guard and pctx_fetch:
             _all_cols = df.columns.tolist()
-            _allowed_cols: list = await self._policy_guard.filter_columns(
-                pctx_fetch, resolved, _all_cols
-            )
+            _allowed_cols: list = await self._policy_guard.filter_columns(pctx_fetch, resolved, _all_cols)
             if set(_allowed_cols) != set(_all_cols):
                 _denied_cols = [c for c in _all_cols if c not in set(_allowed_cols)]
                 df = df.drop(columns=_denied_cols)
@@ -3642,9 +3702,7 @@ class DatasetManager(AbstractToolkit):
             ),
             "shape": {"rows": n_rows, "columns": n_cols},
             "columns": df.columns.tolist(),
-            "column_schema": {
-                str(col): str(dtype) for col, dtype in df.dtypes.items()
-            },
+            "column_schema": {str(col): str(dtype) for col, dtype in df.dtypes.items()},
         }
 
         if return_all:
@@ -3710,7 +3768,7 @@ class DatasetManager(AbstractToolkit):
         if entry._column_types:
             schema = entry._column_types
         else:
-            schema = getattr(entry.source, '_schema', {})
+            schema = getattr(entry.source, "_schema", {})
 
         if not schema:
             return (
@@ -3722,9 +3780,7 @@ class DatasetManager(AbstractToolkit):
         pctx_gss = self._get_current_pctx()
         if self._policy_guard and pctx_gss and schema:
             _all_schema_cols = list(schema.keys())
-            _allowed_schema_cols: list = await self._policy_guard.filter_columns(
-                pctx_gss, resolved, _all_schema_cols
-            )
+            _allowed_schema_cols: list = await self._policy_guard.filter_columns(pctx_gss, resolved, _all_schema_cols)
             if set(_allowed_schema_cols) != set(_all_schema_cols):
                 schema = {col: schema[col] for col in _allowed_schema_cols}
 
@@ -3734,7 +3790,8 @@ class DatasetManager(AbstractToolkit):
 
         # Add size warning for TableSource so the LLM knows to use aggregations
         from .sources.table import TableSource
-        row_count = getattr(entry.source, '_row_count_estimate', None)
+
+        row_count = getattr(entry.source, "_row_count_estimate", None)
         if isinstance(entry.source, TableSource) and row_count is not None:
             warning = TableSource._size_warning(row_count)
             if warning:
@@ -3765,10 +3822,7 @@ class DatasetManager(AbstractToolkit):
         if names:
             check_names = [self._resolve_name(n) for n in names]
         else:
-            check_names = [
-                name for name, entry in self._datasets.items()
-                if entry.is_active and entry.loaded
-            ]
+            check_names = [name for name, entry in self._datasets.items() if entry.is_active and entry.loaded]
 
         pctx_dq = self._get_current_pctx()
         nan_warnings: list = []
@@ -3785,9 +3839,7 @@ class DatasetManager(AbstractToolkit):
             # denied column names never appear in nan_warnings or counts.
             if self._policy_guard and pctx_dq:
                 _all_cols_dq = df.columns.tolist()
-                _allowed_cols_dq: list = await self._policy_guard.filter_columns(
-                    pctx_dq, ds_name, _all_cols_dq
-                )
+                _allowed_cols_dq: list = await self._policy_guard.filter_columns(pctx_dq, ds_name, _all_cols_dq)
                 if set(_allowed_cols_dq) != set(_all_cols_dq):
                     df = df[_allowed_cols_dq]
 
@@ -3831,9 +3883,7 @@ class DatasetManager(AbstractToolkit):
             return "No datasets registered."
 
         alias_map = self._get_alias_map()
-        active_entries = {
-            name: entry for name, entry in self._datasets.items() if entry.is_active
-        }
+        active_entries = {name: entry for name, entry in self._datasets.items() if entry.is_active}
         if not active_entries and not self._file_entries:
             return "No active datasets."
 
@@ -3848,14 +3898,16 @@ class DatasetManager(AbstractToolkit):
         # Prepend dataset summary section with descriptions
         summary = self._build_datasets_summary_sync()
         if summary:
-            guide_parts.extend([
-                "## Available Datasets",
-                "",
-                summary,
-                "",
-                "---",
-                "",
-            ])
+            guide_parts.extend(
+                [
+                    "## Available Datasets",
+                    "",
+                    summary,
+                    "",
+                    "---",
+                    "",
+                ]
+            )
 
         guide_parts.append("## Dataset Details:")
 
@@ -3869,12 +3921,14 @@ class DatasetManager(AbstractToolkit):
                 header = f"### `{ds_name}` [{source_label} — loaded]"
                 if alias:
                     header += f" (alias: `{alias}`)"
-                guide_parts.extend([
-                    header,
-                    f"- **Shape**: {df.shape[0]:,} rows × {df.shape[1]} columns",
-                    f"- **Columns**: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}",
-                    "",
-                ])
+                guide_parts.extend(
+                    [
+                        header,
+                        f"- **Shape**: {df.shape[0]:,} rows × {df.shape[1]} columns",
+                        f"- **Columns**: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}",
+                        "",
+                    ]
+                )
 
                 if self.include_summary_stats:
                     numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -3889,11 +3943,13 @@ class DatasetManager(AbstractToolkit):
                 null_counts = df.isnull().sum()
                 if null_counts.sum() > 0:
                     null_summary = [f"`{col}`: {count}" for col, count in null_counts.items() if count > 0]
-                    guide_parts.extend([
-                        "- **Missing Values**:",
-                        f"  {', '.join(null_summary)}",
-                        "",
-                    ])
+                    guide_parts.extend(
+                        [
+                            "- **Missing Values**:",
+                            f"  {', '.join(null_summary)}",
+                            "",
+                        ]
+                    )
             else:
                 # Not yet loaded — show schema if available (e.g. TableSource)
                 header = f"### `{ds_name}` [{source_label} — not loaded]"
@@ -3913,46 +3969,42 @@ class DatasetManager(AbstractToolkit):
 
                 if info.source_type == "table":
                     # Use the actual table name (fully-qualified) for the SQL example
-                    _table_name = getattr(entry.source, 'table', ds_name)
+                    _table_name = getattr(entry.source, "table", ds_name)
                     guide_parts.append(
                         f'\n- **To use**: `fetch_dataset("{ds_name}", '
                         f'sql="SELECT col1, col2 FROM {_table_name} WHERE ...")`'
                     )
                     guide_parts.append(
-                        f'- **⚠️ AGGREGATION REQUIRED**: For averages, totals, '
-                        f'counts, or time-period summaries, you MUST use GROUP BY '
-                        f'with AVG/SUM/COUNT in SQL. Example:\n'
-                        f'  `sql="SELECT id, DATE_TRUNC(\'month\', date_col) AS month, '
+                        f"- **⚠️ AGGREGATION REQUIRED**: For averages, totals, "
+                        f"counts, or time-period summaries, you MUST use GROUP BY "
+                        f"with AVG/SUM/COUNT in SQL. Example:\n"
+                        f"  `sql=\"SELECT id, DATE_TRUNC('month', date_col) AS month, "
                         f'AVG(metric) FROM {_table_name} GROUP BY id, month"`\n'
-                        f'  Do NOT fetch all rows and aggregate in pandas.'
+                        f"  Do NOT fetch all rows and aggregate in pandas."
                     )
-                    if getattr(entry.source, 'schema_name', None):
+                    if getattr(entry.source, "schema_name", None):
                         guide_parts.append(
-                            f'- **⚠️ IMPORTANT**: Always use the fully-qualified table name '
-                            f'`{_table_name}` in SQL — NOT just `{entry.source.short_table_name}`'
+                            f"- **⚠️ IMPORTANT**: Always use the fully-qualified table name "
+                            f"`{_table_name}` in SQL — NOT just `{entry.source.short_table_name}`"
                         )
                 elif info.source_type == "iceberg":
-                    table_id = getattr(entry.source, '_table_id', ds_name)
-                    guide_parts.append(
-                        f'\n- **To use** (full table): `fetch_dataset("{ds_name}")`'
-                    )
+                    table_id = getattr(entry.source, "_table_id", ds_name)
+                    guide_parts.append(f'\n- **To use** (full table): `fetch_dataset("{ds_name}")`')
                     guide_parts.append(
                         f'- **To use** (SQL): `fetch_dataset("{ds_name}", sql="SELECT ... FROM {table_id} WHERE ...")`'
                     )
                     if info.table_size_warning:
-                        guide_parts.append(f'- **⚠️ Size warning**: {info.table_size_warning}')
+                        guide_parts.append(f"- **⚠️ Size warning**: {info.table_size_warning}")
                 elif info.source_type == "mongo":
                     guide_parts.append(
                         f'\n- **To use**: `fetch_dataset("{ds_name}", filter={{"field": "value"}}, projection={{"field": 1, "_id": 0}})`'
                     )
                     guide_parts.append(
-                        '- **Required**: Both `filter` and `projection` must be provided. No full-collection scans.'
+                        "- **Required**: Both `filter` and `projection` must be provided. No full-collection scans."
                     )
                 elif info.source_type == "deltatable":
-                    table_alias = getattr(entry.source, '_table_name', ds_name.upper())
-                    guide_parts.append(
-                        f'\n- **To use** (full table): `fetch_dataset("{ds_name}")`'
-                    )
+                    table_alias = getattr(entry.source, "_table_name", ds_name.upper())
+                    guide_parts.append(f'\n- **To use** (full table): `fetch_dataset("{ds_name}")`')
                     guide_parts.append(
                         f'- **To use** (SQL): `fetch_dataset("{ds_name}", sql="SELECT ... FROM {table_alias} WHERE ...")`'
                     )
@@ -3960,22 +4012,21 @@ class DatasetManager(AbstractToolkit):
                         f'- **To use** (columns): `fetch_dataset("{ds_name}", columns=["col1", "col2"])`'
                     )
                     if info.table_size_warning:
-                        guide_parts.append(f'- **⚠️ Size warning**: {info.table_size_warning}')
+                        guide_parts.append(f"- **⚠️ Size warning**: {info.table_size_warning}")
                 elif info.source_type == "composite":
                     from .sources.composite import CompositeDataSource as _CDS
+
                     source = entry.source
                     if isinstance(source, _CDS):
                         components = ", ".join(sorted(source.component_names))
                         guide_parts.append(f"- **Components**: {components}")
                         for j in source.joins:
                             on_str = j.on if isinstance(j.on, str) else ", ".join(j.on)
-                            guide_parts.append(
-                                f"  - {j.left} {j.how.upper()} JOIN {j.right} ON {on_str}"
-                            )
+                            guide_parts.append(f"  - {j.left} {j.how.upper()} JOIN {j.right} ON {on_str}")
                     guide_parts.append(
                         f'\n- **To use**: `fetch_dataset("{ds_name}")` or '
                         f'`fetch_dataset("{ds_name}", conditions={{"column": "value"}})` '
-                        f'to filter components before joining.'
+                        f"to filter components before joining."
                     )
                 else:
                     guide_parts.append(f'\n- **To use**: `fetch_dataset("{ds_name}")`')
@@ -3998,54 +4049,53 @@ class DatasetManager(AbstractToolkit):
         # Usage section — only for loaded dataframes
         active_loaded = {n: e._df for n, e in active_entries.items() if e.loaded and e._df is not None}
         if active_loaded:
-            guide_parts.extend([
-                "---",
-                "## Usage Examples",
-                "",
-                "**IMPORTANT**: Always use the PRIMARY dataframe names in your code:",
-                "",
-                "```python",
-            ])
+            guide_parts.extend(
+                [
+                    "---",
+                    "## Usage Examples",
+                    "",
+                    "**IMPORTANT**: Always use the PRIMARY dataframe names in your code:",
+                    "",
+                    "```python",
+                ]
+            )
             first_name = list(active_loaded.keys())[0]
             first_alias = alias_map.get(first_name, f"{self.df_prefix}1")
-            guide_parts.extend([
-                "# ✅ CORRECT: Use original names",
-                f"print({first_name}.shape)",
-                f"result = {first_name}.groupby('column_name').size()",
-                f"filtered = {first_name}[{first_name}['column'] > 100]",
-                "",
-                "# ✅ ALSO WORKS: Use aliases if more convenient",
-                f"print({first_alias}.shape)  # Same DataFrame, different name",
-                "```",
-                "",
-                "## Key Points",
-                "",
-                f"1. **Primary Names**: Use the original dataset names (e.g., `{first_name}`)",
-                f"2. **Aliases Available**: You can also use `{self.df_prefix}1`, `{self.df_prefix}2`, etc.",
-                "3. **Both Work**: The DataFrames are accessible by BOTH names in the execution environment",
-                "4. **Recommendation**: Use original names for clarity, aliases for brevity",
-                "",
-            ])
+            guide_parts.extend(
+                [
+                    "# ✅ CORRECT: Use original names",
+                    f"print({first_name}.shape)",
+                    f"result = {first_name}.groupby('column_name').size()",
+                    f"filtered = {first_name}[{first_name}['column'] > 100]",
+                    "",
+                    "# ✅ ALSO WORKS: Use aliases if more convenient",
+                    f"print({first_alias}.shape)  # Same DataFrame, different name",
+                    "```",
+                    "",
+                    "## Key Points",
+                    "",
+                    f"1. **Primary Names**: Use the original dataset names (e.g., `{first_name}`)",
+                    f"2. **Aliases Available**: You can also use `{self.df_prefix}1`, `{self.df_prefix}2`, etc.",
+                    "3. **Both Work**: The DataFrames are accessible by BOTH names in the execution environment",
+                    "4. **Recommendation**: Use original names for clarity, aliases for brevity",
+                    "",
+                ]
+            )
 
         # ── File entries section ──────────────────────────────────
         if self._file_entries:
-            guide_parts.extend([
-                "---",
-                "## Loaded Files (structural / markdown)",
-                "",
-            ])
+            guide_parts.extend(
+                [
+                    "---",
+                    "## Loaded Files (structural / markdown)",
+                    "",
+                ]
+            )
             for fe_name, fe in self._file_entries.items():
                 table_count = len(fe.markdown_content)
-                guide_parts.append(
-                    f"### `{fe_name}` [{fe.file_type.upper()}]"
-                )
-                guide_parts.append(
-                    f"- **Path**: {fe.path.name}"
-                )
-                guide_parts.append(
-                    f"- **Tables**: {table_count} "
-                    f"({', '.join(fe.markdown_content.keys())})"
-                )
+                guide_parts.append(f"### `{fe_name}` [{fe.file_type.upper()}]")
+                guide_parts.append(f"- **Path**: {fe.path.name}")
+                guide_parts.append(f"- **Tables**: {table_count} " f"({', '.join(fe.markdown_content.keys())})")
                 guide_parts.append(
                     f'- **To inspect**: `get_file_context("{fe_name}")` '
                     f'or `get_file_table("{fe_name}", "<table_id>")`'
@@ -4083,9 +4133,7 @@ class DatasetManager(AbstractToolkit):
     async def _get_redis_connection(self) -> aioredis.Redis:
         """Get or create a pooled Redis connection (binary mode for Parquet)."""
         if self._redis is None:
-            self._redis = aioredis.Redis.from_url(
-                REDIS_DATASET_URL, decode_responses=False
-            )
+            self._redis = aioredis.Redis.from_url(REDIS_DATASET_URL, decode_responses=False)
         return self._redis
 
     # ── Per-source Parquet caching (new) ──────────────────────────
@@ -4095,7 +4143,7 @@ class DatasetManager(AbstractToolkit):
         try:
             redis_conn = await self._get_redis_connection()
             buf = io.BytesIO()
-            df.to_parquet(buf, index=False, compression='snappy')
+            df.to_parquet(buf, index=False, compression="snappy")
             key = f"dataset:{source.cache_key}"
             await redis_conn.setex(key, ttl, buf.getvalue())
         except Exception as exc:
@@ -4261,7 +4309,7 @@ class DatasetManager(AbstractToolkit):
         refresh: bool = False,
         cache_expiration: int = 48,
         no_cache: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, pd.DataFrame]:
         """Deprecated: bulk query-loading helper kept for PandasAgent backward compat.
 
@@ -4289,7 +4337,7 @@ class DatasetManager(AbstractToolkit):
             for slug in queries_list:
                 try:
                     qy = _QS(slug=slug)
-                    df, error = await qy.query(output_format='pandas')
+                    df, error = await qy.query(output_format="pandas")
                     if not error and isinstance(df, pd.DataFrame):
                         dfs[slug] = df
                 except Exception as exc:
@@ -4333,18 +4381,12 @@ class DatasetManager(AbstractToolkit):
 
         for defn in definitions:
             if defn.name in self._filter_defs:
-                self.logger.debug(
-                    "define_filters: replacing existing definition '%s'.", defn.name
-                )
+                self.logger.debug("define_filters: replacing existing definition '%s'.", defn.name)
 
             if defn.kind == "spatial":
                 # Spatial definitions require at least one registered dataset to
                 # have a spatial profile. Validate against all known datasets.
-                spatial_datasets = [
-                    name
-                    for name in self._datasets
-                    if self._try_get_spatial_profile(name) is not None
-                ]
+                spatial_datasets = [name for name in self._datasets if self._try_get_spatial_profile(name) is not None]
                 if not spatial_datasets:
                     raise ValueError(
                         f"define_filters: kind='spatial' for filter '{defn.name}' "
@@ -4462,8 +4504,7 @@ class DatasetManager(AbstractToolkit):
                         )
                 except Exception as exc:
                     self.logger.warning(
-                        "get_filter_values: query_slug '%s' failed (%s); "
-                        "falling back to inference.",
+                        "get_filter_values: query_slug '%s' failed (%s); " "falling back to inference.",
                         vs.query_slug,
                         exc,
                     )
@@ -4478,9 +4519,7 @@ class DatasetManager(AbstractToolkit):
         # Apply cardinality cap and cache.
         values = apply_cardinality_cap(values, cardinality_cap, name, self.logger)
         cache[name] = values
-        self.logger.debug(
-            "get_filter_values: filter '%s' → %d values.", name, len(values)
-        )
+        self.logger.debug("get_filter_values: filter '%s' → %d values.", name, len(values))
         return values
 
     def clear_filter_values_cache(self, name: Optional[str] = None) -> None:
@@ -4528,10 +4567,7 @@ class DatasetManager(AbstractToolkit):
         for defn in self._filter_defs.values():
             if defn.kind == "spatial":
                 # Spatial filter: applicable datasets are those with a spatial profile.
-                applicable = [
-                    name for name in self._datasets
-                    if self._try_get_spatial_profile(name) is not None
-                ]
+                applicable = [name for name in self._datasets if self._try_get_spatial_profile(name) is not None]
             else:
                 applicable = []
                 for ds_name, entry in self._datasets.items():
@@ -4543,16 +4579,18 @@ class DatasetManager(AbstractToolkit):
                         if all(c in entry._df.columns for c in defn.columns):
                             applicable.append(ds_name)
 
-            schema.append({
-                "name": defn.name,
-                "kind": defn.kind,
-                "ops": defn.ops,
-                "label": defn.label,
-                "description": defn.description,
-                "required": defn.required,
-                "datasets": applicable,
-                "columns": defn.columns,
-            })
+            schema.append(
+                {
+                    "name": defn.name,
+                    "kind": defn.kind,
+                    "ops": defn.ops,
+                    "label": defn.label,
+                    "description": defn.description,
+                    "required": defn.required,
+                    "datasets": applicable,
+                    "columns": defn.columns,
+                }
+            )
         return schema
 
     def suggest_filters(self, min_datasets: int = 1) -> List[FilterDefinition]:
@@ -4619,14 +4657,16 @@ class DatasetManager(AbstractToolkit):
             kind, ops = _KIND_MAP[sem_type]
             if col not in seen_names:
                 seen_names.add(col)
-                proposals.append(FilterDefinition(
-                    name=col,
-                    columns=[col],
-                    kind=kind,
-                    ops=ops,
-                    required=False,
-                    label=col.replace("_", " ").title(),
-                ))
+                proposals.append(
+                    FilterDefinition(
+                        name=col,
+                        columns=[col],
+                        kind=kind,
+                        ops=ops,
+                        required=False,
+                        label=col.replace("_", " ").title(),
+                    )
+                )
 
         # Spatial suggestions from registered profiles intersecting this manager.
         # Snapshot before iterating to prevent RuntimeError if the registry is
@@ -4647,18 +4687,19 @@ class DatasetManager(AbstractToolkit):
 
             if suggestion_name not in seen_names:
                 seen_names.add(suggestion_name)
-                proposals.append(FilterDefinition(
-                    name=suggestion_name,
-                    columns=cols,
-                    kind="spatial",
-                    ops=["radius"],
-                    required=False,
-                    label=f"{ds_name} Location",
-                ))
+                proposals.append(
+                    FilterDefinition(
+                        name=suggestion_name,
+                        columns=cols,
+                        kind="spatial",
+                        ops=["radius"],
+                        required=False,
+                        label=f"{ds_name} Location",
+                    )
+                )
 
         skip_count = sum(
-            1 for entry in self._datasets.values()
-            if not entry.loaded and not getattr(entry.source, '_schema', None)
+            1 for entry in self._datasets.values() if not entry.loaded and not getattr(entry.source, "_schema", None)
         )
         self.logger.debug(
             "suggest_filters: proposed %d filter(s) from column census of %d column(s) "
@@ -4783,8 +4824,7 @@ class DatasetManager(AbstractToolkit):
 
         # ── Spatial path ──────────────────────────────────────────────
         spatial_filter_names = [
-            k for k, v in self._filter_defs.items()
-            if v.kind == "spatial" and k in resolved_conditions
+            k for k, v in self._filter_defs.items() if v.kind == "spatial" and k in resolved_conditions
         ]
         for fname in spatial_filter_names:
             defn = self._filter_defs[fname]
@@ -4799,10 +4839,7 @@ class DatasetManager(AbstractToolkit):
                     f"with 'point', 'radius', and 'unit' keys; got {type(val).__name__}."
                 )
             # Find datasets that have this filter's spatial profile
-            spatial_datasets = [
-                name for name in self._datasets
-                if self._try_get_spatial_profile(name) is not None
-            ]
+            spatial_datasets = [name for name in self._datasets if self._try_get_spatial_profile(name) is not None]
             if not spatial_datasets:
                 if defn.required:
                     raise ValueError(
@@ -4813,6 +4850,7 @@ class DatasetManager(AbstractToolkit):
                 continue
 
             from .spatial.contracts import SpatialFilterSpec as _SFS
+
             spec = _SFS(
                 point=val.get("point", (0.0, 0.0)),
                 radius=val.get("radius", 0.0),
@@ -4830,8 +4868,7 @@ class DatasetManager(AbstractToolkit):
 
         # ── Non-spatial path ──────────────────────────────────────────
         non_spatial_conditions = {
-            k: v for k, v in resolved_conditions.items()
-            if self._filter_defs[k].kind != "spatial"
+            k: v for k, v in resolved_conditions.items() if self._filter_defs[k].kind != "spatial"
         }
 
         for ds_name, entry in self._datasets.items():
@@ -4936,20 +4973,25 @@ class DatasetManager(AbstractToolkit):
                 def _sanitize(v: Any, max_len: int = 32) -> str:
                     """Slugify a filter value for use as a name fragment."""
                     import re as _re
+
                     s = str(v).replace(" ", "_")
                     s = _re.sub(r"[^\w\-]", "", s)
                     return s[:max_len]
 
                 # Build a slug from the first applicable condition for this ds
-                applied_conditions = {
-                    k: v for k, v in resolved_conditions.items()
-                    if self._filter_defs[k].kind != "spatial"
-                    and all(
-                        c in (entry._column_types or {})
-                        or (entry._df is not None and c in entry._df.columns)
-                        for c in self._filter_defs[k].columns
-                    )
-                } if ds_name in self._datasets else {}
+                applied_conditions = (
+                    {
+                        k: v
+                        for k, v in resolved_conditions.items()
+                        if self._filter_defs[k].kind != "spatial"
+                        and all(
+                            c in (entry._column_types or {}) or (entry._df is not None and c in entry._df.columns)
+                            for c in self._filter_defs[k].columns
+                        )
+                    }
+                    if ds_name in self._datasets
+                    else {}
+                )
 
                 if applied_conditions:
                     fname, cond = next(iter(applied_conditions.items()))
@@ -5040,12 +5082,14 @@ class DatasetManager(AbstractToolkit):
                     dataset_name,
                 )
                 continue
-            manifest.append({
-                "dataset": dataset_name,
-                "layer": profile.layer,
-                "geodesic": profile.geodesic,
-                "property_cols": list(profile.property_cols),
-            })
+            manifest.append(
+                {
+                    "dataset": dataset_name,
+                    "layer": profile.layer,
+                    "geodesic": profile.geodesic,
+                    "property_cols": list(profile.property_cols),
+                }
+            )
         self.logger.debug("get_manifest: returning %d spatial dataset(s).", len(manifest))
         return manifest
 
@@ -5182,7 +5226,8 @@ class DatasetManager(AbstractToolkit):
                 # Partial failure policy: surface empty + error marker (logged)
                 self.logger.error(
                     "spatial_filter: dataset '%s' failed: %s",
-                    dataset_name, exc,
+                    dataset_name,
+                    exc,
                 )
                 return [], 0, True
 
@@ -5194,7 +5239,7 @@ class DatasetManager(AbstractToolkit):
 
         # ── 4. Build per-dataset SpatialResult (FEAT-221 G4) ─────────────────
         layer_results: Dict[str, SpatialLayerResult] = {}
-        for name, (raw_features, true_count, geodesic) in zip(resolved_names, results):
+        for name, (raw_features, true_count, geodesic) in zip(resolved_names, results, strict=False):
             profile = profiles[name]
             # Per-dataset cap: cap the returned features, keep the true count
             this_capped = true_count > cap_per_dataset

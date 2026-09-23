@@ -113,6 +113,26 @@ def setup_studio_routes(app: web.Application) -> None:
     app.router.add_view(f"{STUDIO_PREFIX}/toolkits/{{slug}}/schema", StudioToolkitsHandler)
     app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/toolkits", StudioToolkitsHandler)
 
+    # FEAT-593: agent-level tooling persistence (Agent Studio Tools tab).
+    from .toolkit_config import (
+        StudioAgentMcpServersHandler,
+        StudioAgentToolkitsHandler,
+        StudioToolkitOptionsHandler,
+    )
+
+    # The existing toolkit route has a wildcard POST view, so the GET list
+    # needs a distinct resource path rather than an unreachable second view.
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/toolkit-config", StudioAgentToolkitsHandler)
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/toolkits/{{slug}}", StudioAgentToolkitsHandler)
+    app.router.add_view(
+        f"{STUDIO_PREFIX}/agents/{{name}}/toolkits/{{slug}}/options/{{param}}", StudioToolkitOptionsHandler
+    )
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/mcp-servers", StudioAgentMcpServersHandler)
+
+    from .toolkit_overrides import StudioUserToolkitOverrideHandler
+
+    app.router.add_view(f"{STUDIO_PREFIX}/agents/{{name}}/toolkits/{{slug}}/me", StudioUserToolkitOverrideHandler)
+
     # Reference catalogs (FEAT-467 TASK-2519): base classes, LLM clients,
     # tools, vector stores — all reuse existing sources of truth.
     from .catalog import StudioCatalogHandler
