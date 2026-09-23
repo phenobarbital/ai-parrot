@@ -25,9 +25,11 @@ from parrot.knowledge.graphindex.factory import build_graph_memory_toolkit
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.wiki import LLMWikiToolkit, WikiConfig
+from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.discovery import discover_from_registry, resolve_class
 from parrot.tools.infographic_toolkit import InfographicToolkit
+from parrot.tools.toolkit import AbstractToolkit
 from pydantic import BaseModel, Field, ValidationError
 
 from ._base import StudioBaseView, resolve_safe_path
@@ -247,39 +249,32 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
             cls = _resolve_toolkit_class(slug)
             if cls is None:
                 return self._error(f"Unknown toolkit '{slug}'.", status=404, code="not_found")
-            schema = {
-                "slug": slug,
-                "class_name": cls.__name__,
-                "params": _introspect_params(cls),
-            }
+            if isinstance(cls, type) and issubclass(cls, AbstractToolkit):
+                schema = cls.config_schema(slug)
+            else:
+                schema = build_schema_envelope(slug, cls).model_dump(by_alias=True)
 
         return self.json_response(schema)
 
     @staticmethod
     def _wiki_schema() -> dict:
-        params = _introspect_params(
+        env = build_schema_envelope(
+            "wiki",
             LLMWikiToolkit,
             server_managed=frozenset({"pageindex_toolkit", "graphindex_toolkit", "okf_toolkit"}),
-        )
-        if "config" in params:
-            params["config"]["schema"] = WikiConfig.model_json_schema()
-        return {"slug": "wiki", "class_name": "LLMWikiToolkit", "params": params}
+        ).model_dump(by_alias=True)
+        env["schema"]["properties"]["config"] = WikiConfig.model_json_schema()
+        return env
 
     @staticmethod
     def _dataset_manager_schema() -> dict:
-        return {
-            "slug": "dataset_manager",
-            "class_name": "DatasetManager",
-            "params": _introspect_params(DatasetManager),
-        }
+        return DatasetManager.config_schema("dataset_manager")
 
     @staticmethod
     def _infographic_schema() -> dict:
-        return {
-            "slug": "infographic",
-            "class_name": "InfographicToolkit",
-            "params": _introspect_params(InfographicToolkit, server_managed=frozenset({"artifact_store"})),
-        }
+        return build_schema_envelope(
+            "infographic", InfographicToolkit, server_managed=frozenset({"artifact_store"})
+        ).model_dump(by_alias=True)
 
     # -- POST: assignment ----------------------------------------------
 

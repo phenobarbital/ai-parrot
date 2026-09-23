@@ -482,6 +482,17 @@ class BotManager:
         has_prompt_mutations = any(prompt_config_dict.get(key) for key in ("remove", "add", "customize"))
         prompt_preset_name = prompt_config_dict.get("preset") or ("default" if has_prompt_mutations else None)
 
+        # FEAT-593: DB agents get their tools (+ toolkit specs, agent-level MCP) through the
+        # same normalization boundary as YAML agents. The dead kwarg it replaces was never
+        # consumed by AbstractBot.
+        from ..tools.spec import normalize_tooling  # pylint: disable=import-outside-toplevel
+
+        tooling = normalize_tooling(
+            bot_model.tools,
+            mcp_servers=getattr(bot_model, "mcp_servers", None) or [],
+            toolkit_config=getattr(bot_model, "toolkit_config", None) or {},
+        )
+
         bot_instance = class_name(
             chatbot_id=bot_model.chatbot_id,
             name=bot_model.name,
@@ -512,7 +523,8 @@ class BotManager:
             tools_enabled=bot_model.tools_enabled,
             auto_tool_detection=bot_model.auto_tool_detection,
             tool_threshold=bot_model.tool_threshold,
-            available_tools=bot_model.tools,
+            tools=tooling.tools + tooling.toolkits,
+            agent_mcp_servers=tooling.mcp_servers,
             operation_mode=bot_model.operation_mode,
             # Memory configuration
             memory_type=bot_model.memory_type,

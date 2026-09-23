@@ -107,3 +107,50 @@ class ByokKeyRequest(BaseModel):
 
     provider: str
     api_key: SecretStr
+
+
+class ToolkitConfigPutRequest(BaseModel):
+    """``PUT /astudio/agents/{name}/toolkits/{slug}`` payload (FEAT-593)."""
+
+    params: dict[str, Any] = Field(default_factory=dict)
+    user_overridable: list[str] = Field(default_factory=list)
+
+
+class AgentToolkitsResponse(BaseModel):
+    """``GET /astudio/agents/{name}/toolkits`` — specs are masked dumps."""
+
+    agent: str
+    editable: bool
+    reason: str | None = None
+    toolkits: list[dict[str, Any]] = Field(default_factory=list)
+    unavailable: list[str] = Field(default_factory=list)
+
+
+class ToolkitPersistResponse(BaseModel):
+    """Response of every agent-level tooling write."""
+
+    agent: str
+    slug: str | None = None
+    reload_required: bool = True
+    persisted: bool = True
+
+
+class AgentMcpServersPutRequest(BaseModel):
+    """``PUT /astudio/agents/{name}/mcp-servers`` payload (replaces the list)."""
+
+    servers: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AgentMcpServersResponse(BaseModel):
+    """``GET /astudio/agents/{name}/mcp-servers`` — masked dumps."""
+
+    agent: str
+    editable: bool
+    reason: str | None = None
+    servers: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ToolkitOptionsResponse(BaseModel):
+    """``GET …/toolkits/{slug}/options/{param}``."""
+
+    options: list[dict[str, str]] = Field(default_factory=list)

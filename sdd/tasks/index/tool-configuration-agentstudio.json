@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-23T01:37:09+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-23T17:02:44+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Root task: creates parrot/tools/spec.py (ToolkitSpec, AgentMCPServerSpec, normalize_tooling, hydrate_params); only consumes existing parrot.security.vault_utils.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3645-tooling-spec-models.md"
+      "completed_at": "2026-09-23T14:03:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3645-tooling-spec-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3646",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "Root task: creates parrot/tools/config_schema.py (ConfigOption, ToolkitSchemaEnvelope, build_schema_envelope, secret_paths); pure functions over classes, no dependency on other FEAT-593 tasks.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3646-config-schema-module.md"
+      "completed_at": "2026-09-23T14:07:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3646-config-schema-module.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3647",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Imports build_schema_envelope and ConfigOption from TASK-3646 (parrot/tools/config_schema.py). Only task that modifies parrot/tools/toolkit.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3647-toolkit-config-hooks.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3647-toolkit-config-hooks.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3648",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +83,9 @@
       "parallelism_notes": "Root task: creates parrot/tools/dataset_manager/config.py (pure Pydantic models); no import from other FEAT-593 tasks.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3648-dataset-manager-config-models.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3648-dataset-manager-config-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3649",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -101,8 +105,9 @@
       "parallelism_notes": "Needs the config_model/secret_params ClassVars from TASK-3647 (parrot/tools/toolkit.py) and imports DatasetManagerConfig/DatasourceSpec from TASK-3648 (dataset_manager/config.py). Only task modifying dataset_manager/tool.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3649-dataset-manager-replay.md"
+      "completed_at": "2026-09-23T15:31:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3649-dataset-manager-replay.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3650",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,8 +126,9 @@
       "parallelism_notes": "Uses the config_model/options_params ClassVars and config_options hook added by TASK-3647 (parrot/tools/toolkit.py) and ConfigOption from TASK-3646 (transitively available). Only task touching jiratoolkit.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3650-jira-config-options.md"
+      "completed_at": "2026-09-23T15:31:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3650-jira-config-options.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3651",
@@ -131,7 +137,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -141,8 +147,9 @@
       "parallelism_notes": "Uses config_model/options_params ClassVars + config_options hook from TASK-3647 (parrot/tools/toolkit.py). Only task touching querysource/toolkit.py and catalog.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3651-querysource-config-options.md"
+      "completed_at": "2026-09-23T15:40:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3651-querysource-config-options.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3652",
@@ -151,7 +158,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -161,8 +168,9 @@
       "parallelism_notes": "to_bot_config calls normalize_tooling from TASK-3645 (parrot/tools/spec.py). Only task touching handlers/models/bots.py, handlers/creation.sql and handlers/bots.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3652-botmodel-tooling-columns-and-guard.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3652-botmodel-tooling-columns-and-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3653",
@@ -171,7 +179,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -182,8 +190,9 @@
       "parallelism_notes": "Calls normalize_tooling from TASK-3645 (parrot/tools/spec.py) over bot_model.toolkit_config/mcp_servers, the columns added by TASK-3652 (handlers/models/bots.py). Only task touching manager/manager.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3653-db-build-path-tools.md"
+      "completed_at": "2026-09-23T15:40:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3653-db-build-path-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3654",
@@ -192,7 +201,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -203,8 +212,9 @@
       "parallelism_notes": "Imports ToolkitSpec/AgentMCPServerSpec/hydrate_params/hydrate_mcp/tooling_revision from TASK-3645 (parrot/tools/spec.py) and calls DatasetManager.replay_datasources from TASK-3649 (dataset_manager/tool.py). Only task touching interfaces/tools.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3654-tool-interface-apply-specs.md"
+      "completed_at": "2026-09-23T15:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3654-tool-interface-apply-specs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3655",
@@ -213,7 +223,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -223,8 +233,9 @@
       "parallelism_notes": "Calls ToolInterface.apply_tooling_specs added by TASK-3654 (interfaces/tools.py). Only task touching bots/abstract.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3655-abstractbot-configure-wiring.md"
+      "completed_at": "2026-09-23T15:51:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3655-abstractbot-configure-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3656",
@@ -233,7 +244,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -243,8 +254,9 @@
       "parallelism_notes": "Imports ToolkitSpec/normalize_tooling from TASK-3645 (parrot/tools/spec.py). First of two tasks on registry/registry.py (TASK-3657 follows).",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3656-registry-normalize-factory.md"
+      "completed_at": "2026-09-23T15:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3656-registry-normalize-factory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3657",
@@ -253,7 +265,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -263,8 +275,9 @@
       "parallelism_notes": "Same file as TASK-3656 (registry/registry.py) and serializes specs with the widened BotConfig.toolkits it introduces.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3657-registry-update-agent-tooling.md"
+      "completed_at": "2026-09-23T15:46:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3657-registry-update-agent-tooling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3658",
@@ -273,7 +286,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -283,8 +296,9 @@
       "parallelism_notes": "Calls AbstractToolkit.config_schema / build_schema_envelope added by TASK-3647 + TASK-3646. Only task touching handlers/studio/toolkits.py and tests/studio/test_toolkits.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3658-studio-schema-envelope.md"
+      "completed_at": "2026-09-23T15:51:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3658-studio-schema-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3659",
@@ -293,7 +307,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -306,8 +320,9 @@
       "parallelism_notes": "Uses ToolkitSpec/mask helpers/vault names from TASK-3645 (tools/spec.py), secret_paths from TASK-3646 (tools/config_schema.py), BotModel.toolkit_config/mcp_servers from TASK-3652 (models/bots.py) and AgentRegistry.update_agent_tooling from TASK-3657 (registry.py). Only task touching handlers/studio/models.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3659-studio-tooling-store.md"
+      "completed_at": "2026-09-23T15:57:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3659-studio-tooling-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3660",
@@ -316,7 +331,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -326,8 +341,9 @@
       "parallelism_notes": "Wraps AgentToolingStore + models from TASK-3659 (handlers/studio/tooling_store.py, models.py). First of two tasks editing handlers/studio/__init__.py (TASK-3661 follows).",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3660-studio-toolkit-config-handlers.md"
+      "completed_at": "2026-09-23T16:02:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3660-studio-toolkit-config-handlers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3661",
@@ -336,7 +352,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -347,8 +363,9 @@
       "parallelism_notes": "Reads agent defaults through AgentToolingStore from TASK-3659 (tooling_store.py); edits handlers/studio/__init__.py after TASK-3660 (shared file, serialized).",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3661-user-toolkit-overrides.md"
+      "completed_at": "2026-09-23T16:08:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3661-user-toolkit-overrides.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3662",
@@ -357,7 +374,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -369,8 +386,9 @@
       "parallelism_notes": "Uses hydrate_params/ToolkitSpec from TASK-3645 (tools/spec.py), bot._tooling_revision set by TASK-3654 (interfaces/tools.py) and ToolkitConfigService from TASK-3661 (handlers/toolkit_persistence.py). Only task touching handlers/agent.py.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3662-agenttalk-session-overrides.md"
+      "completed_at": "2026-09-23T16:21:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3662-agenttalk-session-overrides.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3663",
@@ -379,7 +397,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -392,8 +410,9 @@
       "parallelism_notes": "EXCLUSIVE: regenerates the shared ui/schemas/*.json and ui/src/lib/types/generated/* trees. Exports ToolkitSpec/AgentMCPServerSpec (TASK-3645), ConfigOption/ToolkitSchemaEnvelope (TASK-3646), Studio models (TASK-3659) and UserToolkitOverride (TASK-3661).",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3663-codegen-studio-tooling.md"
+      "completed_at": "2026-09-23T16:13:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3663-codegen-studio-tooling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3664",
@@ -402,7 +421,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -412,8 +431,9 @@
       "parallelism_notes": "Imports the generated TS types produced by TASK-3663 (ui/src/lib/types/generated/*.d.ts). Creates the shared tests/ui/_vitest.py helper reused by TASK-3665/3666.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3664-ui-studio-api-schemaform.md"
+      "completed_at": "2026-09-23T16:21:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3664-ui-studio-api-schemaform.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3665",
@@ -422,7 +442,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -432,8 +452,9 @@
       "parallelism_notes": "Uses studio.ts + SchemaForm + tests/ui/_vitest.py from TASK-3664. Only task touching AgentForm.svelte, fields.ts and TabsCapabilities.svelte.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3665-ui-tools-tab.md"
+      "completed_at": "2026-09-23T16:58:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3665-ui-tools-tab.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3666",
@@ -442,7 +463,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -452,17 +473,18 @@
       "parallelism_notes": "Reuses SchemaForm + studio.ts + tests/ui/_vitest.py from TASK-3664. Only task touching DataManagementModal.svelte.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3666-ui-chat-my-tool-settings.md"
+      "completed_at": "2026-09-23T17:02:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3666-ui-chat-my-tool-settings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3667",
       "slug": "tooling-integration-tests",
-      "title": "Integration tests: persist → reload → built toolkit; datasources in memory; override isolation",
+      "title": "Integration tests: persist \u2192 reload \u2192 built toolkit; datasources in memory; override isolation",
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -476,8 +498,9 @@
       "parallelism_notes": "Exercises the full chain: DB build path (TASK-3653), configure wiring (TASK-3655), YAML rewrite (TASK-3657), Studio PUT (TASK-3660) and session overrides (TASK-3662). Test-only files.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3667-tooling-integration-tests.md"
+      "completed_at": "2026-09-23T16:58:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3667-tooling-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3668",
@@ -486,7 +509,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -498,8 +521,9 @@
       "parallelism_notes": "Documents the final routes from TASK-3660/TASK-3661 (handlers/studio/toolkit_config.py, toolkit_overrides.py) and the UI from TASK-3665 (TabsTools.svelte). Docs-only.",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3668-tooling-docs.md"
+      "completed_at": "2026-09-23T17:02:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3668-tooling-docs.md",
+      "verification": "verified"
     }
   ]
 }
