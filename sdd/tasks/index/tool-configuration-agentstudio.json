@@ -338,7 +338,7 @@
       "feature_id": "FEAT-593",
       "feature": "tool-configuration-agentstudio",
       "spec": "sdd/specs/tool-configuration-agentstudio.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -349,8 +349,8 @@
       "parallelism_notes": "Reads agent defaults through AgentToolingStore from TASK-3659 (tooling_store.py); edits handlers/studio/__init__.py after TASK-3660 (shared file, serialized).",
       "assigned_to": null,
       "started_at": "2026-09-23T13:50:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3661-user-toolkit-overrides.md"
+      "completed_at": "2026-09-23T16:08:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3661-user-toolkit-overrides.md"
     },
     {
       "id": "TASK-3662",
