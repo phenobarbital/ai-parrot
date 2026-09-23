@@ -83,8 +83,10 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      `sdd/tasks/active/` or whose index status is not `done`/`done-with-issues`
      (lanes such as `/sdd-fix` commit code without closing), run
      `scripts/sdd/close_task.sh <TASK-ID> <feature-slug> <verification>` inside
-     the worktree — never on `base_branch` (FEAT-414); leave tasks the lane
-     already closed untouched
+     the worktree — never on `base_branch` (FEAT-414), then set its status to
+     `done-with-issues` when verification is `partial`/`forced`; leave tasks
+     the lane already closed untouched, and skip (with a warning) any id not in
+     the index
    - set each task `verification` to `verified`, `partial`, or `forced` in
      `sdd/tasks/index/<feature>.json` inside the worktree
    - set feature `completed_at` only when all tasks are done

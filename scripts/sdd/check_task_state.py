@@ -139,13 +139,17 @@ def find_violations(*, index_dir: Path, active_dir: Path, completed_dir: Path) -
 
 
 def _load_baseline(path: Path | None) -> set[str]:
-    """Load a JSON list of pre-existing violation TASK-IDs to report but not fail on.
+    """Load a JSON list of pre-existing stalled ``active/`` basenames to report but not fail on.
+
+    Keyed on the file basename (e.g. ``TASK-2500-replace-sha1-with-sha256.md``),
+    not the bare ``TASK-<NNN>``: ids are reused across features, so an id key
+    would also silence an unrelated future violation sharing that number.
 
     Args:
-        path: JSON file holding a list of ``TASK-<NNN>`` strings, or ``None``.
+        path: JSON file holding a list of ``active/`` basenames, or ``None``.
 
     Returns:
-        The baselined ids; empty when ``path`` is ``None`` or unreadable.
+        The baselined basenames; empty when ``path`` is ``None`` or unreadable.
     """
     if path is None:
         return set()
@@ -173,18 +177,18 @@ def main(argv: list[str] | None = None) -> int:
         "--baseline",
         type=Path,
         default=None,
-        help="JSON list of pre-existing violation TASK-IDs to report but NOT fail on.",
+        help="JSON list of pre-existing stalled active/ basenames to report but NOT fail on.",
     )
     args = parser.parse_args(argv)
 
     violations = find_violations(index_dir=args.index_dir, active_dir=args.active_dir, completed_dir=args.completed_dir)
     baseline = _load_baseline(args.baseline)
-    new = [v for v in violations if v.task_id not in baseline]
+    new = [v for v in violations if Path(v.active_file).name not in baseline]
 
     if violations:
         print("Stalled task files in active/:")
         for v in violations:
-            note = " (baselined — non-fatal)" if v.task_id in baseline else ""
+            note = " (baselined — non-fatal)" if Path(v.active_file).name in baseline else ""
             print(f"  {v.task_id} [{v.kind}]{note}: {v.active_file} — {v.detail}")
     if new:
         print(

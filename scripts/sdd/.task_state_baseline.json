@@ -1,4 +1,4 @@
 [
-  "TASK-2500",
-  "TASK-2501"
+  "TASK-2500-replace-sha1-with-sha256.md",
+  "TASK-2501-regression-test-long-key-sha256.md"
 ]

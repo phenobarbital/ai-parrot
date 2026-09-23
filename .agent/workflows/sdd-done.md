@@ -231,10 +231,19 @@ NOW="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 # Use "verified" for ✅ VERIFIED tasks, "partial" for ⚠️ PARTIAL, "forced" for --force.
 for TASK_ID in "${TASK_IDS[@]}"; do
   STATUS=$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .status' "$WORKTREE_PATH/$INDEX")
+  if [[ -z "$STATUS" ]]; then
+    echo "⚠️  $TASK_ID is not in $INDEX — skipping (check TASK_IDS)." >&2
+    continue
+  fi
   if compgen -G "$WORKTREE_PATH/sdd/tasks/active/${TASK_ID}-*.md" >/dev/null \
      || [[ "$STATUS" != "done" && "$STATUS" != "done-with-issues" ]]; then
     # git mv active → completed, index status/completed_at/file, hard-verified.
     (cd "$WORKTREE_PATH" && scripts/sdd/close_task.sh "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION")
+    # close_task.sh always writes status "done"; keep Step 6's distinction.
+    if [[ "$VERIFICATION" != "verified" ]]; then
+      jq --arg id "$TASK_ID" '(.tasks[] | select(.id == $id) | .status) = "done-with-issues"' \
+        "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
+    fi
   fi
   jq --arg id "$TASK_ID" --arg ver "$VERIFICATION" '
     (.tasks[] | select(.id == $id) | .verification) = $ver

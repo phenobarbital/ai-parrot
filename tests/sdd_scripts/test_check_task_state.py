@@ -90,8 +90,23 @@ class TestMain:
         ]  # fmt: skip
         assert main(dirs) == 1
         baseline = tmp_path / "baseline.json"
-        baseline.write_text(json.dumps(["TASK-200"]))
+        baseline.write_text(json.dumps(["TASK-200-x.md"]))
         assert main([*dirs, "--baseline", str(baseline)]) == 0
+
+    def test_baseline_does_not_hide_same_id_in_another_file(self, tmp_path: Path) -> None:
+        """A baselined basename must not silence a new violation that reuses its TASK-ID."""
+        _, active_dir, completed_dir = _layout(tmp_path)
+        for name in ("TASK-300-old.md", "TASK-300-new.md"):
+            (active_dir / name).write_text("x")
+            (completed_dir / name).write_text("x")
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(json.dumps(["TASK-300-old.md"]))
+        dirs = [
+            "--index-dir", str(tmp_path / "index"),
+            "--active-dir", str(active_dir),
+            "--completed-dir", str(completed_dir),
+        ]  # fmt: skip
+        assert main([*dirs, "--baseline", str(baseline)]) == 1
 
     def test_clean_tree_passes(self, tmp_path: Path) -> None:
         _layout(tmp_path)
