@@ -53,7 +53,12 @@ from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manag
     SubWorktreeManager,
     SubWorktreeMergeError,
 )
-from parrot.flows.dev_loop.sdd_coder.fidelity import check_banned_imports, check_fidelity, parse_task_files
+from parrot.flows.dev_loop.sdd_coder.fidelity import (
+    check_banned_imports,
+    check_fidelity,
+    is_protected_sdd_path,
+    parse_task_files,
+)
 from parrot.flows.dev_loop.test_scope.context import write_attempt_context
 from parrot.flows.dev_loop.test_scope.datatypes import AttemptContext
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
@@ -2195,7 +2200,7 @@ class SddCoderEngine:
         _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
         dirty = self._dirty_paths(status)
         task_md = await asyncio.to_thread(Path(ctx.worktree, task.task_file).read_text, "utf-8")
-        declared = sorted(p for p in parse_task_files(task_md) if not p.startswith("sdd/"))
+        declared = sorted(p for p in parse_task_files(task_md) if not is_protected_sdd_path(p))
         ignored: List[str] = []
         if declared:
             _rc, out, _err = await _git(
@@ -2262,8 +2267,11 @@ class SddCoderEngine:
         Only `expected` — the task markdown's declared files, the same list
         `check_fidelity` gates on — is ever staged, never the coder-reported
         `DevelopmentOutput.files_changed`: a seat must not be able to widen its own
-        scope by naming extra files in its output. `sdd/` paths are never staged at
-        all, so a coder cannot reach SDD state through this path either.
+        scope by naming extra files in its output. Paths under `sdd/tasks/` and
+        `sdd/ledger/` (`fidelity.PROTECTED_SDD_PREFIXES`) are never staged even when
+        declared, so a coder cannot reach orchestrator-owned SDD state through this
+        path; any other declared `sdd/` path (`sdd/WORKFLOW.md`, `sdd/templates/*.md`)
+        is an ordinary deliverable (FEAT-597).
 
         Declared files that live under a git-ignored path (`artifacts/` in this repo,
         `.gitignore:279`) never show up in `git status`, so they are asked for by name
@@ -2289,7 +2297,7 @@ class SddCoderEngine:
         """
         _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
         dirty = self._dirty_paths(status)
-        declared = {p for p in expected if not p.startswith("sdd/")}
+        declared = {p for p in expected if not is_protected_sdd_path(p)}
         # Declared-but-ignored deliverables: a pathspec-limited `ls-files` names exactly
         # the declared paths git would otherwise hide. Missing or tracked declared paths
         # simply produce no entry (verified: rc 0, no stderr).
@@ -2422,7 +2430,7 @@ class SddCoderEngine:
                 outcome="fidelity_violation",
                 branch=branch,
                 worktree_path=path,
-                unexpected_files=report.unexpected + report.sdd_touched,
+                unexpected_files=list(dict.fromkeys(report.unexpected + report.sdd_touched)),
             )
         # Engine-owned lint pass: ruff --fix + formatter on the task's own files, committed on the
         # attempt branch so the merge carries it. Runs for every entry point (MCP seats, native

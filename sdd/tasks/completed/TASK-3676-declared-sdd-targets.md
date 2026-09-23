@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-597 — dev-loop sdd-coder fixes (empty-delivery gate + declared `sdd/` targets)
 **Spec**: `sdd/specs/dev-loop-sdd-coder-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3675
@@ -305,8 +305,20 @@ See the Blueprint's test blocks: `test_fidelity_allows_declared_sdd_docs_never_p
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Fable 5.1 (via `/sdd-fix`, single-agent)
+**Date**: 2026-09-24
+**Notes**: `fidelity.PROTECTED_SDD_PREFIXES` + `is_protected_sdd_path`; `check_fidelity` only flags undeclared or
+protected `sdd/` paths; `_commit_declared_changes` and `_delivered_paths` filter with the predicate; `_consolidate`
+de-duplicates `unexpected_files`. Tests: `test_fidelity_allows_declared_sdd_docs_never_protected_state`,
+`test_engine_commits_declared_sdd_doc_targets` (tracked `sdd/templates/task.md` under an ignored `templates/` rule
+plus `sdd/WORKFLOW.md` → merged), `test_engine_never_stages_protected_sdd_state_even_if_declared`. Full
+`tests/flows/dev_loop/sdd_coder/` + `test_subagent_parity.py`: 505 passed, 1 skipped.
 
-**Deviations from spec**: none
+**Deviations from spec**: (1) Two extra files: the packaged prompt twins
+`packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/{sdd-coder,sdd-worker}.md` must stay byte-identical to
+`.claude/agents/*` (`test_review_handoff_contract.py::test_coder_retains_delivery_scope`, `test_subagent_parity.py`);
+both were synced here (the worker twin also carries TASK-3675's `empty_delivery:` bullet, which that task had missed).
+(2) `test_complexity_routing.py::FakeComplexityDispatcher` returned an output claiming `test.py` while writing
+nothing — it was asserting the vacuous merge TASK-3675 now refuses; the fake now writes and commits the task's
+declared file like `test_engine_dispatch.FakeDispatcher`. (3) Two pre-existing ruff findings on untouched lines of
+`fidelity.py` (PIE810, ASYNC240 on pure `os.path.relpath`) were cleaned so the touched file lints clean.
