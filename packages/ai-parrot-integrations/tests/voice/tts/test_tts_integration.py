@@ -48,6 +48,8 @@ def test_voice_tts_all_list():
 
     expected = {
         "VoiceSynthesizer",
+        "get_shared_synthesizer",
+        "close_shared_synthesizers",
         "AbstractTTSBackend",
         "GoogleTTSBackend",
         "AmazonPollyTTSBackend",
