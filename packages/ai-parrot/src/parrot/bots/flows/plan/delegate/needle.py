@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from concurrent.futures import Executor
+from concurrent.futures import Executor, ProcessPoolExecutor
 from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Sequence, Tuple, Type, Union
 
 from pydantic import BaseModel
@@ -138,17 +138,32 @@ class NeedleDelegate:
         # Convert tools to the format expected by the worker
         tools_list = [t.model_dump() for t in tools]
 
-        # Run the worker in the executor
-        loop = asyncio.get_running_loop()
+        # Run the worker in the executor. _ThreadExecutor.submit() is a coroutine
+        # function (it awaits asyncio.to_thread internally), NOT the standard
+        # concurrent.futures.Executor.submit() -> Future protocol that
+        # loop.run_in_executor() requires -- calling it through run_in_executor
+        # hands back a coroutine object where a Future is expected and crashes.
+        # ProcessPoolExecutor IS a standard Executor, so it still goes through
+        # run_in_executor.
         try:
-            response = await loop.run_in_executor(
-                self._executor,
-                _complete_in_worker,
-                self.weights,
-                tools_list,
-                system,
-                text,
-            )
+            if isinstance(self._executor, _ThreadExecutor):
+                response = await self._executor.submit(
+                    _complete_in_worker,
+                    self.weights,
+                    tools_list,
+                    system,
+                    text,
+                )
+            else:
+                loop = asyncio.get_running_loop()
+                response = await loop.run_in_executor(
+                    self._executor,
+                    _complete_in_worker,
+                    self.weights,
+                    tools_list,
+                    system,
+                    text,
+                )
         except Exception as exc:
             # Wrap any engine error in DelegateBackendError
             raise DelegateBackendError(f"Needle backend error: {exc}") from exc

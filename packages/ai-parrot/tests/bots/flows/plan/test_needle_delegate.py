@@ -10,7 +10,27 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 import pytest
 
 from parrot.bots.flows.plan.delegate import ToolCallDelegate
-from parrot.bots.flows.plan.delegate.needle import NeedleDelegate, _complete_in_worker
+from parrot.bots.flows.plan.delegate.needle import NeedleDelegate, _complete_in_worker, _import_needle
+
+
+def _fake_needle_module(complete_result: Dict[str, Any]) -> Any:
+    """Build a fake ``needle`` MODULE (an object with a ``.Needle`` attribute bound to a
+    class), matching how production code uses it: ``import needle; needle.Needle(...)``.
+    A bare ``type(...)()`` instance (the pre-fix shape of this helper) is NOT a stand-in
+    for the module -- ``needle.Needle`` would look for a ``.Needle`` attribute on the
+    instance, which does not exist, and instantiating the class immediately here also
+    skipped past the constructor args entirely.
+    """
+    fake_needle_cls = type(
+        "FakeNeedle",
+        (),
+        {
+            "__init__": lambda self, tools=None, system=None, weights=None: None,
+            "reset": lambda self: None,
+            "complete": lambda self, text, max_new_tokens=512: dict(complete_result),
+        },
+    )
+    return type("FakeNeedleModule", (), {"Needle": fake_needle_cls})()
 
 
 def test_satisfies_protocol_without_needle_installed() -> None:
@@ -21,11 +41,12 @@ def test_satisfies_protocol_without_needle_installed() -> None:
 
 def test_needle_lazy_import_error_message(monkeypatch) -> None:
     """When needle is not installed, the import error message mentions ai-parrot[needle]."""
-    # Monkeypatch needle to None to trigger the ImportError
+    # Monkeypatch needle to None to trigger the ImportError. NeedleDelegate() itself never
+    # imports needle (AC14: backends are lazy) -- exercise the lazy import point directly.
     monkeypatch.setitem(sys.modules, "needle", None)
 
     with pytest.raises(ImportError, match="ai-parrot\\[needle\\]"):
-        NeedleDelegate()
+        _import_needle()
 
 
 def test_worker_is_picklable() -> None:
@@ -40,30 +61,23 @@ def test_worker_is_picklable() -> None:
 
 def test_needle_pool_keyed_by_toolset(monkeypatch) -> None:
     """The worker cache is keyed by (weights, frozenset(tool names))."""
-    # Create a fake needle module
-    fake_needle = type(
-        "FakeNeedle",
-        (),
+    fake_needle = _fake_needle_module(
         {
-            "__init__": lambda self, tools, system, weights: None,
-            "reset": lambda self: None,
-            "complete": lambda self, text, max_new_tokens: {
-                "type": "complete",
-                "success": True,
-                "error": None,
-                "error_code": None,
-                "reason": None,
-                "function_calls": [],
-                "suppressed_calls": [],
-                "reasoning": None,
-                "confidence": 0.5,
-                "prefill_tps": 0.0,
-                "decode_tps": 0.0,
-                "peak_ram_mb": 0.0,
-                "validation": None,
-            },
-        },
-    )()
+            "type": "complete",
+            "success": True,
+            "error": None,
+            "error_code": None,
+            "reason": None,
+            "function_calls": [],
+            "suppressed_calls": [],
+            "reasoning": None,
+            "confidence": 0.5,
+            "prefill_tps": 0.0,
+            "decode_tps": 0.0,
+            "peak_ram_mb": 0.0,
+            "validation": None,
+        }
+    )
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 
@@ -94,37 +108,30 @@ def test_needle_pool_keyed_by_toolset(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_facts_mapping(monkeypatch) -> None:
     """Facts are mapped to Needle's system keys; other facts are folded into the instruction."""
-    # Create a fake needle module
-    fake_needle = type(
-        "FakeNeedle",
-        (),
+    fake_needle = _fake_needle_module(
         {
-            "__init__": lambda self, tools, system, weights: None,
-            "reset": lambda self: None,
-            "complete": lambda self, text, max_new_tokens: {
-                "type": "complete",
-                "success": True,
-                "error": None,
-                "error_code": None,
-                "reason": None,
-                "function_calls": [],
-                "suppressed_calls": [],
-                "reasoning": None,
-                "confidence": 0.5,
-                "prefill_tps": 0.0,
-                "decode_tps": 0.0,
-                "peak_ram_mb": 0.0,
-                "validation": None,
-            },
-        },
-    )()
+            "type": "complete",
+            "success": True,
+            "error": None,
+            "error_code": None,
+            "reason": None,
+            "function_calls": [],
+            "suppressed_calls": [],
+            "reasoning": None,
+            "confidence": 0.5,
+            "prefill_tps": 0.0,
+            "decode_tps": 0.0,
+            "peak_ram_mb": 0.0,
+            "validation": None,
+        }
+    )
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 
     # Create a delegate with thread executor (so the fake module is visible)
     delegate = NeedleDelegate(executor="thread")
 
-    # Test with system keys
+    # Test with system keys, plus one key NOT in _SYSTEM_KEYS to prove folding.
     facts: Dict[str, str] = {
         "date": "2024-01-01",
         "locale": "en-US",
@@ -133,6 +140,7 @@ async def test_facts_mapping(monkeypatch) -> None:
         "network": "wifi",
         "location": "New York",
         "user": "test-user",
+        "unknown_key": "unknown_value",
     }
 
     # Test with mixed facts
@@ -155,30 +163,23 @@ async def test_facts_mapping(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_confidence_none_passthrough(monkeypatch) -> None:
     """A fine-tuned model reports confidence=None; it is passed through."""
-    # Create a fake needle module that returns confidence=None
-    fake_needle = type(
-        "FakeNeedle",
-        (),
+    fake_needle = _fake_needle_module(
         {
-            "__init__": lambda self, tools, system, weights: None,
-            "reset": lambda self: None,
-            "complete": lambda self, text, max_new_tokens: {
-                "type": "complete",
-                "success": True,
-                "error": None,
-                "error_code": None,
-                "reason": None,
-                "function_calls": [],
-                "suppressed_calls": [],
-                "reasoning": None,
-                "confidence": None,  # Fine-tuned model
-                "prefill_tps": 0.0,
-                "decode_tps": 0.0,
-                "peak_ram_mb": 0.0,
-                "validation": None,
-            },
-        },
-    )()
+            "type": "complete",
+            "success": True,
+            "error": None,
+            "error_code": None,
+            "reason": None,
+            "function_calls": [],
+            "suppressed_calls": [],
+            "reasoning": None,
+            "confidence": None,  # Fine-tuned model
+            "prefill_tps": 0.0,
+            "decode_tps": 0.0,
+            "peak_ram_mb": 0.0,
+            "validation": None,
+        }
+    )
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 
@@ -199,30 +200,23 @@ async def test_confidence_none_passthrough(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_aclose_idempotent(monkeypatch) -> None:
     """aclose() is idempotent."""
-    # Create a fake needle module
-    fake_needle = type(
-        "FakeNeedle",
-        (),
+    fake_needle = _fake_needle_module(
         {
-            "__init__": lambda self, tools, system, weights: None,
-            "reset": lambda self: None,
-            "complete": lambda self, text, max_new_tokens: {
-                "type": "complete",
-                "success": True,
-                "error": None,
-                "error_code": None,
-                "reason": None,
-                "function_calls": [],
-                "suppressed_calls": [],
-                "reasoning": None,
-                "confidence": 0.5,
-                "prefill_tps": 0.0,
-                "decode_tps": 0.0,
-                "peak_ram_mb": 0.0,
-                "validation": None,
-            },
-        },
-    )()
+            "type": "complete",
+            "success": True,
+            "error": None,
+            "error_code": None,
+            "reason": None,
+            "function_calls": [],
+            "suppressed_calls": [],
+            "reasoning": None,
+            "confidence": 0.5,
+            "prefill_tps": 0.0,
+            "decode_tps": 0.0,
+            "peak_ram_mb": 0.0,
+            "validation": None,
+        }
+    )
 
     monkeypatch.setitem(sys.modules, "needle", fake_needle)
 
@@ -245,7 +239,7 @@ async def test_live_needle_delegate() -> None:
     # This test is gated on NEEDLE_WEIGHTS being set
     # It requires cactus-needle to be installed with weights
     from parrot.bots.flows.plan.delegate.needle import NeedleDelegate
-    from parrot.bots.flows.plan.delegate.protocol import ToolSpec
+    from parrot.bots.flows.plan.delegate.protocol import ToolCallProposal, ToolSpec
 
     delegate = NeedleDelegate(executor="thread", weights=os.environ["NEEDLE_WEIGHTS"])
 
