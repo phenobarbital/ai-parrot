@@ -1,4 +1,5 @@
 """``LlamaCppDelegate`` — grammar-constrained tool proposals from ``llama-server`` (FEAT-590)."""
+
 from __future__ import annotations
 
 import logging
@@ -97,9 +98,7 @@ class LlamaCppDelegate:
             self._session = aiohttp.ClientSession()
         url = f"{self.base_url}/v1/chat/completions"
         try:
-            async with self._session.post(
-                url, json=payload, timeout=aiohttp.ClientTimeout(total=self.timeout)
-            ) as resp:
+            async with self._session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
                 if resp.status >= 400:
                     text = await resp.text()
                     raise DelegateBackendError(f"llama-server returned status {resp.status}: {text}")
@@ -119,7 +118,7 @@ class LlamaCppDelegate:
         # Build system prompt
         lines = [
             "You are a tool-call proposer. Given an instruction, propose exactly "
-            "one call from the tools below, or decline with {\"name\": null} if "
+            'one call from the tools below, or decline with {"name": null} if '
             "none of them fit. Never invent a tool name or argument key.",
             "Tools:",
         ]
@@ -217,7 +216,7 @@ class LlamaCppDelegate:
             "messages": [
                 {
                     "role": "system",
-                    "content": "Extract structured data from the text. If the text does not fit the schema, return {\"failed\": true}.",
+                    "content": 'Extract structured data from the text. If the text does not fit the schema, return {"failed": true}.',
                 },
                 {"role": "user", "content": text},
             ],
@@ -251,4 +250,5 @@ class LlamaCppDelegate:
 
 def json_loads_or_raise(text: str) -> Any:
     import json
+
     return json.loads(text)
