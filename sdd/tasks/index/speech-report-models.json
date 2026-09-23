@@ -106,6 +106,25 @@
       "started_at": "2026-09-22T22:35:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3623-speech-report-tts-documentation.md"
+    },
+    {
+      "id": "TASK-3669",
+      "slug": "bounded-documentdb-connect-timeout",
+      "title": "Bound DocumentDb connect timeout and isolate integrations tests from real DocumentDB",
+      "feature_id": "FEAT-591",
+      "feature": "speech-report-models",
+      "spec": "sdd/specs/speech-report-models.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: creates packages/ai-parrot-integrations/tests/conftest.py, an autouse fixture every other task's integrations tests load",
+      "discovered_from": "issue:312c1988479b",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3669-bounded-documentdb-connect-timeout.md"
     }
   ]
 }
