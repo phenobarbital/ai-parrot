@@ -245,5 +245,39 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24 by seat gpt-5.6-terra (backend codex), attempt 1,
+attempt_uid `076427f4a3b94bddb372d73db5278757` (276.6s). Delivery merged
+cleanly first attempt (0 lint errors).
+
+Created `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/e2e.py`
+(`run_e2e_stage(*, worktree, spec_path, feature_id) -> dict[str, Any]`),
+invoking the server E2E CLI lazily via bounded argv subprocess after
+code-review/triage edits, before final `passed` aggregation. Modified
+`nodes/qa.py` to call it and AND its required-gate result into the existing
+`passed` conjunction while keeping optional failures advisory-only. Kept
+`.claude/agents/qa-runner.md`, `.claude/agents/sdd-qa.md`, and their packaged
+twin `_subagent_data/sdd-qa.md` aligned (each +4 lines documenting the
+separate E2E stage) without granting agent-spawn tools.
+
+Tests:
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_qa_e2e_stage.py -q`
+  → 5 passed.
+- Regression: `pytest packages/ai-parrot/tests/flows/dev_loop/ -k qa -q`
+  → 118 passed, 1 pre-existing skip.
+- Prompt-twin parity: `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_defs.py -q`
+  → 14 passed (sdd-qa.md ↔ packaged `_subagent_data/sdd-qa.md` still aligned).
+
+Only the 6 declared files touched (334 insertions/1 deletion); no `sdd/`
+files touched. Core stays usable without server installation for
+none/optional-no-plan; required-but-missing capability blocks per spec.
+
+Environment note (not a task defect): this bare worktree lacked the
+compiled `.so` for two Cython modules (`parrot.utils.types`,
+`parrot.utils.parsers.toml`) needed to even collect `dev_loop`'s heavy
+conftest import chain; copied the matching `cpython-312` `.so` files from
+the main checkout (gitignored, not committed) to verify locally — same
+pre-existing worktree/build gap documented on TASK-3533/3534/3539's notes,
+now additionally confirmed to affect collection, not just subprocess
+re-imports.
+
+No unresolved limitations. AC9/AC10 demonstrated by the new test suite.
