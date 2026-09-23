@@ -34,7 +34,7 @@
       "feature_id": "FEAT-591",
       "feature": "speech-report-models",
       "spec": "sdd/specs/speech-report-models.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,8 +44,8 @@
       "parallelism_notes": "Serialized after TASK-3619 because both modify synthesizer.py; otherwise owns cache and Supertonic lock files and tests.",
       "assigned_to": null,
       "started_at": "2026-09-22T22:35:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3620-shared-synthesizer-cache.md"
+      "completed_at": "2026-09-23T00:56:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3620-shared-synthesizer-cache.md"
     },
     {
       "id": "TASK-3621",
