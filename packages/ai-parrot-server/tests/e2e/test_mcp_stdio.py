@@ -12,9 +12,7 @@ from parrot.e2e.targets.mcp import build_mcp_stdio_adapter
 
 
 @pytest.mark.e2e
-async def test_stdio_tool_roundtrip_and_eof(
-    e2e_supervisor_factory, mcp_stdio_config: TargetConfig
-) -> None:
+async def test_stdio_tool_roundtrip_and_eof(e2e_supervisor_factory, mcp_stdio_config: TargetConfig) -> None:
     """Validate persistent JSON-RPC purity, a tool effect, and clean stdin EOF."""
     adapter = build_mcp_stdio_adapter()
     supervisor: E2ESupervisor = e2e_supervisor_factory(lambda _kind: adapter)

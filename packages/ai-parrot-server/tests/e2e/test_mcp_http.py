@@ -36,9 +36,7 @@ async def _request(
 
 
 @pytest.mark.e2e
-async def test_http_cli_stays_alive_and_stops(
-    e2e_supervisor_factory, mcp_toolkit_config: TargetConfig
-) -> None:
+async def test_http_cli_stays_alive_and_stops(e2e_supervisor_factory, mcp_toolkit_config: TargetConfig) -> None:
     """Exercise initialize/list/store/get/drop against one owned HTTP MCP child."""
     adapter = build_mcp_toolkit_adapter()
     supervisor: E2ESupervisor = e2e_supervisor_factory(lambda _kind: adapter)
