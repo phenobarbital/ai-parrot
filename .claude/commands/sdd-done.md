@@ -37,6 +37,11 @@ verify work, but modifies state only on `base_branch`.
 - Do NOT modify the spec — only task statuses and task files.
 - If a task has no evidence of implementation, flag it explicitly.
 - Always show a verification report before making changes.
+- **Required E2E evidence (FEAT-581) is checked in Step 4.6, before any
+  stamp/push/PR/merge/cleanup.** Missing, stale, tampered, blocked or failed
+  required evidence aborts the whole command. `--force` bypasses per-task
+  partial/missing evidence (Step 6) and ledger merge blockers (Step 9) —
+  it never bypasses a required E2E gate (spec AC9).
 
 > **CRITICAL — `/sdd-done` NEVER pushes to `main` and NEVER opens a PR against `main` (FEAT-145).**
 > Hotfixes go to `main` ONLY via a manually-opened PR. This rule is non-negotiable
@@ -162,6 +167,90 @@ violations in a touched file included — that is deliberate code improvement):
   Residual syntax errors / undefined names (`E9`, `F63`, `F7`, `F82`) are merge
   blockers: they turn Step 6 into the "issues" branch. Other residue does not.
 
+### 4.6. Verify E2E Evidence (FEAT-581)
+
+Before any closeout mutation — Step 5's report is descriptive, but Step 7's
+index stamp, Step 8's push, Step 9's merge-blocker check, Step 9.2's PR/merge
+and Step 11's cleanup are not — validate the feature's E2E evidence with the
+same **read-only** validator the Codex twin (`.agents/skills/sdd-done/SKILL.md`)
+consumes. This step never runs pytest, a target, or the ordinary task test
+suite itself; it only checks evidence a prior run already produced (the
+dev-loop QA E2E stage, TASK-3542, or a manual `parrot e2e run`). It also never
+reads an `e2e-exploration.json` report — exploratory-tier scenarios can never
+satisfy or count toward this gate (spec §2/M8: exploration cannot supply gate
+`passed`).
+
+**a) Read the feature's E2E policy** from the spec's frontmatter (`e2e.policy`,
+written by `/sdd-spec`; FEAT-581):
+
+```bash
+POLICY=$(python -c "
+import sys, yaml
+from pathlib import Path
+text = Path('<spec-path>').read_text(encoding='utf-8')
+front = yaml.safe_load(text.split('---', 2)[1]) or {}
+e2e = front.get('e2e')
+if e2e is None:
+    print('optional'); sys.exit(0)          # legacy spec, no e2e key at all
+if not isinstance(e2e, dict) or e2e.get('policy', 'optional') not in ('required', 'optional', 'none'):
+    print('invalid'); sys.exit(0)           # present but malformed: never coerced
+print(e2e.get('policy', 'optional'))
+")
+PLAN_PATH="$WORKTREE_PATH/sdd/state/${FEAT_ID}/e2e-plan.md"
+```
+
+A spec with no `e2e` key defaults to `optional`. A *present but malformed*
+`policy` value is never silently coerced to a safe default — it is treated
+exactly like `required` with missing evidence in step (c) below.
+
+**b) Validate evidence** (skipped entirely under `none`; skipped with an
+advisory note under `optional` when no plan file exists — spec §2: "no plan
+means no automatic run for optional specs"):
+
+```bash
+if [[ "$POLICY" != "none" && -f "$PLAN_PATH" ]]; then
+    E2E_JSON=$(cd "$WORKTREE_PATH" && parrot e2e verify --plan "sdd/state/${FEAT_ID}/e2e-plan.md" 2>/tmp/e2e-verify-${FEAT_ID}.stderr)
+    E2E_EXIT=$?
+    # `parrot e2e verify` never executes tests: it validates a previously
+    # persisted verdict's node coverage, artifact hashes and source identity
+    # (spec §2 exit codes: 0=PASS, 1=FAIL, 3=BLOCKED, 4=MISSING/stale/tampered).
+    E2E_STATUS=$(echo "$E2E_JSON" | jq -r '.status // "MISSING"')
+    E2E_GATE_SATISFIED=$(echo "$E2E_JSON" | jq -r '.gate_satisfied // false')
+    E2E_REASONS=$(echo "$E2E_JSON" | jq -r '(.reason_codes // ["cli_unavailable_or_non_json_output"]) | join(",")')
+fi
+```
+
+If the `e2e` CLI is unavailable (`ai-parrot-server` not installed) or its
+stdout is not valid JSON, treat that exactly like `E2E_STATUS=MISSING`.
+
+**c) Gate before any mutation:**
+- `POLICY=none` → record `E2E: none (exempt)` and continue; no execution is
+  expected or fabricated.
+- `POLICY=optional` and no plan file, or CLI unavailable, or any
+  `E2E_STATUS` — record the outcome as **advisory only** (`E2E: optional —
+  <status/no-plan>`) and continue. A failed/blocked/missing optional result
+  never blocks closeout, but it is reported honestly in Step 5 and Step 12 —
+  never silently upgraded to a pass.
+- `POLICY=required` (or `invalid`) and `E2E_STATUS=PASS` with
+  `E2E_GATE_SATISFIED=true` → record `E2E: required — PASS` and continue.
+- `POLICY=required` (or `invalid`) and anything else (`FAIL`/`BLOCKED`/
+  `MISSING`, missing plan, unavailable CLI, or malformed policy metadata) —
+  **abort the entire command now**, before Step 5's report is even built:
+  ```
+  ⚠️  Required E2E evidence is <E2E_STATUS> for FEAT-<ID> (reason: <E2E_REASONS>).
+     /sdd-done cannot stamp, push, open a PR, merge or clean up this feature
+     until `parrot e2e verify --plan sdd/state/<FEAT-ID>/e2e-plan.md` reports
+     PASS with gate_satisfied: true.
+     This is NOT bypassed by --force: --force only overrides per-task
+     partial/missing evidence (Step 6) and ledger merge blockers (Step 9),
+     never a required E2E gate (spec AC9).
+  ```
+  Exit nonzero. `--dry-run` still shows this refusal and stops the same way
+  it stops after Step 5 — it never proceeds to a mutating step.
+
+Carry the recorded `(POLICY, E2E_STATUS, E2E_GATE_SATISFIED, E2E_REASONS)`
+tuple into Step 5's report and Step 12's output as an `E2E:` line.
+
 ### 5. Build Verification Report
 Classify each task:
 
@@ -178,6 +267,7 @@ Branch: feat-<ID>-<slug>
 Commits found: <N>
 Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
 Lint: <autofixed files> auto-fixed, <fixed> hand-fixed, <residual> residual (<blocking> blocking)
+E2E: <policy> — <status> (gate_satisfied: <bool>)
 
   ✅ TASK-096 — Scene Editor Refactor
      Commits: feat(videoreel): TASK-096 — Scene Editor Refactor (abc1234)
@@ -709,6 +799,7 @@ Closed:
 Index updated and committed.
 Branch pushed: feat-<ID>-<slug>
 PR opened: feat-<ID>-<slug> → <BASE_BRANCH>  <PR-URL>
+E2E: <policy> — <status>
 Worktree removed: .claude/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
@@ -724,6 +815,7 @@ Closed:
 Index updated and committed.
 Branch pushed: feat-<ID>-<slug>
 Merged into <BASE_BRANCH>: feat-<ID>-<slug> ✅
+E2E: <policy> — <status>
 Worktree removed: .claude/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
 ```
@@ -750,3 +842,6 @@ Worktree cleaned up. Feature branch deleted.
 - Completed tasks: `sdd/tasks/completed/` (on `<base_branch>`)
 - Frontmatter parser: `scripts/sdd/sdd_meta.py`
 - SDD methodology: `sdd/WORKFLOW.md`
+- E2E plan (FEAT-581): `sdd/state/<FEAT-ID>/e2e-plan.md` (in the worktree);
+  validator: `parrot e2e verify --plan <path>` (`ai-parrot-server`, optional
+  install)
