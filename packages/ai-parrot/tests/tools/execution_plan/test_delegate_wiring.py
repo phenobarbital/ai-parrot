@@ -47,7 +47,11 @@ def _toolkit(*, delegates: list[Any] | None = None) -> ExecutionPlanToolkit:
 
 def _plan() -> ExecutionPlan:
     """Build a valid single-tool plan for factory wiring."""
-    return ExecutionPlan(name="wiring", objective="verify delegate wiring", nodes=[PlanNode(id="run", tool="safe")])
+    return ExecutionPlan(
+        name="wiring",
+        objective="verify delegate wiring",
+        nodes=[PlanNode(id="run", tool="safe", store_as="run_result")],
+    )
 
 
 def test_build_plan_flow_registers_delegate_factory_only_with_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -132,14 +136,19 @@ def test_assert_policy_covers_delegate_tools() -> None:
     plan = ExecutionPlan(
         name="delegate-policy",
         objective="policy",
-        nodes=[DelegatePlanNode(id="delegate", instruction="choose", tools=["safe", "unsafe"])],
+        nodes=[
+            DelegatePlanNode(id="delegate", instruction="choose", tools=["safe", "unsafe"], store_as="delegate_result")
+        ],
     )
     metadata = toolkit._new_run_metadata(plan, source="plan_name", run_id="run", checkpointed=False)
     metadata = metadata.model_copy(update={"allowed_tools": ["safe"], "plan_fingerprint": plan_fingerprint(plan)})
     run = PlanRun.model_construct(metadata=metadata)
 
-    with pytest.raises(PlanRunError, match="policy_mismatch"):
+    with pytest.raises(PlanRunError) as exc_info:
         toolkit._assert_policy(run)
+    # PlanRunError.__str__ is the message only (models.py:317); the "policy_mismatch"
+    # identifier lives on the structured .code attribute, not embedded in the text.
+    assert exc_info.value.code == "policy_mismatch"
 
 
 @pytest.mark.asyncio
