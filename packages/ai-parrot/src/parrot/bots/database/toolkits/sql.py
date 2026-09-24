@@ -278,7 +278,34 @@ class SQLToolkit(DatabaseToolkit):
             )
             skeleton_parts.append(f"{skeleton}\n{meta.to_yaml_context()}")
 
-        return "\n---\n".join(skeleton_parts)
+        context = "\n---\n".join(skeleton_parts)
+
+        # FEAT-600: when a schema plane is configured, its DDL-sourced foreign
+        # keys let us hand the LLM ready-made join paths for target_tables —
+        # the request path only reads FK dicts already on `resolved`, no
+        # extra plane round-trips (AC: text-to-SQL join-path assist).
+        if getattr(self.cache_partition, "plane", None) is not None:
+            join_path_lines: List[str] = []
+            for meta in resolved:
+                for fk in meta.foreign_keys:
+                    column = fk.get("column")
+                    ref_schema = fk.get("ref_schema")
+                    ref_table = fk.get("ref_table")
+                    ref_column = fk.get("ref_column")
+                    if not (column and ref_schema and ref_table and ref_column):
+                        continue
+                    join_path_lines.append(
+                        f"JOIN PATHS: {meta.schema}.{meta.tablename}.{column} -> "
+                        f"{ref_schema}.{ref_table}.{ref_column}"
+                    )
+                    if len(join_path_lines) >= 20:
+                        break
+                if len(join_path_lines) >= 20:
+                    break
+            if join_path_lines:
+                context = f"{context}\n---\n" + "\n".join(join_path_lines)
+
+        return context
 
     async def execute_query(
         self,
@@ -349,6 +376,7 @@ class SQLToolkit(DatabaseToolkit):
             handler = SQLRetryHandler(toolkit=self, config=retry_cfg)
             if not handler._is_retryable_error(err):
                 raise
+            await self._repair_from_error(query, err)  # FEAT-600: proven-stale read-repair, never raises
             # Retryable error — collect sample data and return RetryContext.
             table, column = handler._extract_table_column_from_error(query, err)
             sample_data = ""
@@ -531,7 +559,8 @@ class SQLToolkit(DatabaseToolkit):
             if self.cache_partition:
                 meta = await self.cache_partition.get_table_metadata(schema, table_part)
                 if meta is None:
-                    errors.append(f"Table '{schema}.{table_part}' not found in cache.")
+                    where = "schema plane or cache" if getattr(self.cache_partition, "plane", None) is not None else "cache"
+                    errors.append(f"Table '{schema}.{table_part}' not found in {where}.")
 
         return {
             "valid": len(errors) == 0,
@@ -539,6 +568,21 @@ class SQLToolkit(DatabaseToolkit):
             "referenced_tables": referenced,
             "sql": sql,
         }
+
+    async def _repair_from_error(self, query: str, err: Exception) -> None:
+        """On a retryable schema error, re-describe the tables the failing query references and write them through
+        to the schema plane (FEAT-600 AC9). No-op without a plane; never raises."""
+        part = self.cache_partition
+        if part is None or getattr(part, "plane", None) is None:
+            return
+        refs = re.findall(r'(?:FROM|JOIN)\s+(?:"?(\w+)"?\.)?"?(\w+)"?', query, re.IGNORECASE)  # same regex as validate_query :522
+        for schema_part, table in refs[:10]:
+            try:
+                meta = await self._introspect_table_full(schema_part or self.primary_schema, table)
+                if meta is not None:
+                    await part.store_table_metadata(meta)  # write-through happens inside (TASK-3691)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("schema read-repair failed for %s: %s", table, exc)
 
     # ------------------------------------------------------------------
     # Safety policy (called by execute_query before running)
@@ -599,6 +643,10 @@ class SQLToolkit(DatabaseToolkit):
                 )
                 continue
             schema, table = parsed
+            if self.cache_partition is not None:
+                cached = await self.cache_partition.get(schema, table, required=Completeness.FULL)  # plane tier included (TASK-3691)
+                if cached is not None:
+                    continue  # FEAT-600: warmed from the plane, no database round-trip
             try:
                 metadata = await self._build_table_metadata(
                     schema, table, "BASE TABLE", None
