@@ -3153,7 +3153,9 @@ def schema_add_source(alias: str | None, dialect: str, dsn_env: str, schemas: st
     config = load_project_config(root)
     alias = alias or dialect
     if alias in config.schema.sources:
-        raise click.ClickException(f"Schema source alias {alias!r} already exists; existing aliases: {', '.join(config.schema.sources)}")
+        raise click.ClickException(
+            f"Schema source alias {alias!r} already exists; existing aliases: {', '.join(config.schema.sources)}"
+        )
     config.schema.sources[alias] = SchemaSourceConfig(
         alias=alias,
         dialect=dialect,
