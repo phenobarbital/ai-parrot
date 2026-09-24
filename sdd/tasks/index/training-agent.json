@@ -54,7 +54,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -65,8 +65,9 @@
       "parallelism_notes": "imports Evidence/Extracted/FieldProvenance from TASK-3697 (knowledge/common/provenance.py); its tests live in tests/knowledge/manuals/ whose __init__/conftest TASK-3698 creates",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3699-manual-models-core.md"
+      "completed_at": "2026-09-24T23:42:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3699-manual-models-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3700",
@@ -383,7 +384,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -391,8 +392,9 @@
       "parallelism_notes": "no dependency — only task touching models/responses.py",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3715-aimessage-url-fields.md"
+      "completed_at": "2026-09-24T23:42:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3715-aimessage-url-fields.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3716",

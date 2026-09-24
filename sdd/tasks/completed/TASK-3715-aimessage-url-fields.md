@@ -301,10 +301,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3715
+- Feature: training-agent
+- Implementation SHA: 5fd2446d1fdf7d0e42140438b69ceaa372114219
+- Closed at (UTC): 2026-09-24T23:42:54+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| supplementary_test_evidence | 187 passed, 1 pre-existing unrelated failure (scoped direct pytest run over manuals+models) |

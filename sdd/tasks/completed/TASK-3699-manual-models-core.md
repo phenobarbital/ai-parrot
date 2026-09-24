@@ -522,10 +522,16 @@ def test_applicability_requires_evidence():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3699
+- Feature: training-agent
+- Implementation SHA: 5fd2446d1fdf7d0e42140438b69ceaa372114219
+- Closed at (UTC): 2026-09-24T23:42:51+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 260.2s · Tokens: n/a |
+| supplementary_test_evidence | 187 passed, 1 pre-existing unrelated failure (scoped direct pytest run over manuals+models) |
