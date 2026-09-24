@@ -145,7 +145,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -156,8 +156,9 @@
       "parallelism_notes": "modifies schema/service.py created by TASK-3684 (shared file → serialized); imports fold_ddl from TASK-3685 (producers/ddl.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3686-schema-ingest-ddl-and-diff.md"
+      "completed_at": "2026-09-24T22:39:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3686-schema-ingest-ddl-and-diff.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3687",
@@ -205,7 +206,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -215,8 +216,9 @@
       "parallelism_notes": "calls SchemaPlaneService.lookup/search/neighbors/sources from TASK-3684 (schema/service.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3689-schema-tools-and-toolkit.md"
+      "completed_at": "2026-09-24T22:39:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3689-schema-tools-and-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3690",
@@ -245,7 +247,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -255,8 +257,9 @@
       "parallelism_notes": "types against SchemaPlaneReader from TASK-3684 (schema/service.py) under TYPE_CHECKING only; tests use a fake reader. Modifies bots/database/cache.py and toolkits/base.py (only this task touches them).",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3691-cache-partition-plane-tier.md"
+      "completed_at": "2026-09-24T22:39:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3691-cache-partition-plane-tier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3692",

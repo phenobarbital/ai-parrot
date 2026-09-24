@@ -222,10 +222,9 @@ async def test_live_wins(svc, tmp_path, sales_metadata):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-terra, backend: codex, attempt_uid 048e5a81963c43be9a6ac98cf9215ead)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `93e58fd3a` + engine lint-autofix commit `a43d90377` (merge `27da31a06`). Extended `schema/service.py` with `ingest_ddl(paths, *, origin, dialect, changed_only=False) -> SyncReport` (live-wins merge rule) and `diff(origin, *, live=None) -> list[dict]`. Engine-side merge fidelity check passed (`unexpected_files: []`).
+**Merge validation**: merge-tier (root scope) 4 failed, 1132 passed, 7 skipped, 20 warnings in 68.37s — same 4 pre-existing/environmental failures as prior chunks (see `issue:33fe54e65d2d`), unrelated to this task's files. Reviewed via `coder-review:e35c96c04951f63681083076`, zero fix commits needed.
 
 **Deviations from spec**: none
