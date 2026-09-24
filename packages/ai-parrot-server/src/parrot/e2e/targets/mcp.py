@@ -22,9 +22,22 @@ validated :class:`~parrot.e2e.targets.base.LaunchSpec`; the
 :class:`~parrot.e2e.supervisor.E2ESupervisor` (M3) is the sole spawner.
 
 The third ``mcp-agent`` kind this module's factory registry key maps to
-(``parrot.e2e.targets._ADAPTER_REGISTRY["mcp-agent"]``) is a *later* M6
-deliverable (TASK-3540, which ``MODIFY``s this file to add
-``build_mcp_agent_adapter``) — deliberately not implemented here.
+(``parrot.e2e.targets._ADAPTER_REGISTRY["mcp-agent"]``) is the M6 deliverable
+added by this ``MODIFY`` (TASK-3540): :func:`build_mcp_agent_adapter` spawns
+the real, budgeted live-agent fixture server (``python -m parrot.e2e.live``,
+:mod:`parrot.e2e.live`) that mounts one fixture tool delegating to a real
+:class:`~parrot.bots.agent.Agent`'s ``ask()`` on its own per-agent HTTP path
+(:class:`~parrot.mcp.agent_mount.AgentMCPMount`). Exactly like the two
+adapters above, :meth:`_MCPAgentAdapter.prepare` never imports
+``parrot.e2e.live``'s heavier, function-scoped dependencies
+(``parrot.bots.agent``/``parrot.tools``/``parrot.mcp.agent_mount``) in this
+(the caller's own) process — only the child, spawned fresh by the
+supervisor, ever does. Live opt-in (``PARROT_TEST_E2E``/``PARROT_TEST_REAL_LLM``/
+``GOOGLE_API_KEY``) and any ``E2E_MODEL``/``E2E_MAX_LLM_CALLS`` override are
+gated inside the child, by the fixture tool itself, on first call only —
+this adapter's own ``prepare()``/``ready()`` never construct a provider
+client and never perform generation (spec: "handshake/readiness performs no
+generation").
 
 Neither adapter ever assumes :attr:`parrot.e2e.models.RunState.endpoint` is
 populated: per :mod:`parrot.e2e.supervisor`'s own module docstring, that
@@ -55,6 +68,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import secrets
 import socket
 import sys
 from dataclasses import dataclass
@@ -64,12 +79,13 @@ from typing import Optional
 import aiohttp
 import yaml
 
+from parrot.e2e import live as e2e_live
 from parrot.e2e import state as e2e_state
 from parrot.e2e.errors import E2EConfigError
 from parrot.e2e.models import RunState, TargetConfig
 from parrot.e2e.targets.base import LaunchSpec
 
-__all__ = ["build_mcp_toolkit_adapter", "build_mcp_stdio_adapter"]
+__all__ = ["build_mcp_toolkit_adapter", "build_mcp_stdio_adapter", "build_mcp_agent_adapter"]
 
 logger = logging.getLogger(__name__)
 
@@ -473,3 +489,244 @@ def build_mcp_toolkit_adapter() -> _MCPToolkitAdapter:
         A fresh :class:`_MCPToolkitAdapter` with an empty endpoint table.
     """
     return _MCPToolkitAdapter()
+
+
+# ---------------------------------------------------------------------------
+# mcp-agent
+# ---------------------------------------------------------------------------
+
+#: ``mcp-agent`` alone accepts an explicit `port` override, mirroring
+#: `mcp-toolkit` (deterministic port selection for a decoy/unrelated service
+#: test); it accepts no other option key.
+_AGENT_SUPPORTED_OPTIONS = frozenset({"port"})
+
+
+@dataclass(frozen=True)
+class _AgentEndpoint:
+    """This adapter's own record of one run's HTTP endpoint and credential.
+
+    Attributes:
+        host: The loopback host the child was told to bind.
+        port: The loopback port the child was told to bind.
+        expected_name: The MCP server name this run's child was configured
+            with -- the value :meth:`_MCPAgentAdapter.ready` requires
+            ``GET <base_url>/mcp/agents/<agent_name>/info`` to echo back
+            before trusting anything else on this port.
+        api_key: The fixed, run-private API key this adapter generated and
+            forwarded to the child (spec §2 identity/auth design) -- the
+            only credential the child's single mounted agent accepts.
+        agent_name: The one agent name the child mounted
+            (:data:`parrot.e2e.live.FIXTURE_AGENT_NAME`).
+    """
+
+    host: str
+    port: int
+    expected_name: str
+    api_key: str
+    agent_name: str
+
+
+class _MCPAgentAdapter:
+    """`mcp-agent` target: a real, budgeted live-agent fixture over its per-agent HTTP path.
+
+    Spawns ``python -m parrot.e2e.live`` (:mod:`parrot.e2e.live`), which
+    mounts exactly one fixture agent
+    (:data:`parrot.e2e.live.FIXTURE_AGENT_NAME`) via
+    :class:`~parrot.mcp.agent_mount.AgentMCPMount`, API-key authenticated
+    with a per-run credential this adapter itself generates and forwards
+    (never a real user secret). Tracks its own ``run_id -> _AgentEndpoint``
+    mapping since :attr:`parrot.e2e.models.RunState.endpoint` is never
+    populated by the supervisor (M3) for any target kind -- identical
+    rationale to :class:`_MCPToolkitAdapter`.
+
+    Live provider opt-in (``PARROT_TEST_E2E``/``PARROT_TEST_REAL_LLM``/
+    ``GOOGLE_API_KEY``) is gated inside the child, by the mounted fixture
+    tool itself, on its first ``tools/call`` only -- never by this class.
+    :meth:`prepare` and :meth:`ready` never construct a provider client and
+    never perform generation.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the adapter with an empty per-run endpoint table."""
+        self.logger = logging.getLogger(__name__)
+        self._endpoints: dict[str, _AgentEndpoint] = {}
+
+    async def prepare(self, config: TargetConfig, *, run_id: str, worktree: Path) -> LaunchSpec:
+        """Return the `python -m parrot.e2e.live` launch for the fixture live agent.
+
+        Args:
+            config: Must have ``kind == "mcp-agent"``. ``options["port"]``
+                (a positive ``int``) overrides the default free-port
+                allocation; every other option key is rejected.
+            run_id: The run's stable ID -- used as this run's own MCP server
+                name (the value :meth:`ready` cross-checks against ``/info``).
+            worktree: The owning worktree root.
+
+        Returns:
+            A ``stdio=False`` :class:`LaunchSpec` invoking
+            ``python -m parrot.e2e.live --host 127.0.0.1 --port <port>
+            --server-name <name>``, with :data:`parrot.e2e.live.LIVE_API_KEY_ENV`
+            and every :data:`parrot.e2e.live.FORWARDED_ENV_VARS` entry present
+            in this process's own environment carried into the child's
+            ``env`` (the supervisor strips ``GOOGLE_API_KEY`` as a credential
+            var from every spawned child by default; this adapter must
+            explicitly re-add it for its own live opt-in gate to see it).
+
+        Raises:
+            E2EConfigError: If ``config.kind`` disagrees, ``config.options``
+                carries an unsupported key, or ``options["port"]`` is not a
+                positive integer.
+        """
+        _require_kind(config, "mcp-agent")
+        _reject_unsupported_options(config, supported=_AGENT_SUPPORTED_OPTIONS, kind="mcp-agent")
+
+        port = self._resolve_port(config)
+        server_name = f"e2e-mcp-agent-{run_id}"
+        api_key = f"e2e-live-{secrets.token_urlsafe(24)}"
+
+        env: dict[str, str] = {e2e_live.LIVE_API_KEY_ENV: api_key}
+        for name in e2e_live.FORWARDED_ENV_VARS:
+            value = os.environ.get(name)
+            if value is not None:
+                env[name] = value
+
+        argv = [
+            sys.executable,
+            "-m",
+            "parrot.e2e.live",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--server-name",
+            server_name,
+        ]
+        self._endpoints[run_id] = _AgentEndpoint(
+            host="127.0.0.1",
+            port=port,
+            expected_name=server_name,
+            api_key=api_key,
+            agent_name=e2e_live.FIXTURE_AGENT_NAME,
+        )
+        self.logger.debug("mcp-agent prepare: run_id=%s port=%s name=%s", run_id, port, server_name)
+        return LaunchSpec(argv=argv, cwd=worktree, stdio=False, env=env)
+
+    @staticmethod
+    def _resolve_port(config: TargetConfig) -> int:
+        """Resolve this launch's loopback port from ``config.options`` or allocate one.
+
+        Args:
+            config: The target configuration (already option-validated).
+
+        Returns:
+            The port to bind: ``options["port"]`` if given, else a freshly
+            allocated free loopback port.
+
+        Raises:
+            E2EConfigError: If ``options["port"]`` is present but is not a
+                positive ``int``.
+        """
+        port_option = config.options.get("port")
+        if port_option is None:
+            return _free_loopback_port()
+        if isinstance(port_option, bool) or not isinstance(port_option, int) or port_option <= 0:
+            raise E2EConfigError(
+                f"options['port'] must be a positive integer, got {port_option!r}", reason_code="invalid_option"
+            )
+        return port_option
+
+    async def ready(self, state: RunState) -> bool:
+        """Poll ``<base_url>/mcp/agents/<agent>/info`` then ``initialize``/``tools/list``.
+
+        Never trusts a bare HTTP 200, identical rationale to
+        :meth:`_MCPToolkitAdapter.ready`: a pre-existing, unrelated service on
+        this run's loopback port is rejected unless ``/info`` echoes back
+        exactly the server name this adapter configured in :meth:`prepare`.
+        Never calls the mounted ``live_ask`` tool -- handshake/readiness
+        performs no generation.
+
+        Args:
+            state: The run's current state; only ``state.run_id`` is used.
+
+        Returns:
+            ``True`` once ``/info`` identifies this run's own server AND a
+            live, API-key-authenticated JSON-RPC ``initialize`` and
+            ``tools/list`` (listing ``live_ask``) both succeed; ``False``
+            while still starting, on any connection error/timeout, or
+            against an identity mismatch.
+        """
+        endpoint = self._endpoints.get(state.run_id)
+        if endpoint is None:
+            self.logger.debug("mcp-agent ready: no recorded endpoint for run_id=%s", state.run_id)
+            return False
+
+        base_url = f"http://{endpoint.host}:{endpoint.port}"
+        agent_path = f"{e2e_live.AGENT_MOUNT_BASE_PATH}/{endpoint.agent_name}"
+        headers = {"X-API-Key": endpoint.api_key}
+        timeout = aiohttp.ClientTimeout(total=_READY_HTTP_TIMEOUT_S)
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(f"{base_url}{agent_path}/info") as response:
+                    if response.status != 200:
+                        return False
+                    info = await response.json()
+                if not isinstance(info, dict) or info.get("name") != endpoint.expected_name:
+                    self.logger.debug("mcp-agent ready: /info identity mismatch for run_id=%s: %r", state.run_id, info)
+                    return False
+
+                init_result = await self._json_rpc(
+                    session, base_url, agent_path, "initialize", headers=headers, request_id=1
+                )
+                if init_result is None or "result" not in init_result:
+                    return False
+
+                list_result = await self._json_rpc(
+                    session, base_url, agent_path, "tools/list", headers=headers, request_id=2
+                )
+                if list_result is None:
+                    return False
+                tools = (list_result.get("result") or {}).get("tools")
+                if not isinstance(tools, list):
+                    return False
+                return any(isinstance(entry, dict) and entry.get("name") == "live_ask" for entry in tools)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+            self.logger.debug("mcp-agent ready: transient error for run_id=%s: %s", state.run_id, exc)
+            return False
+
+    @staticmethod
+    async def _json_rpc(
+        session: aiohttp.ClientSession,
+        base_url: str,
+        path: str,
+        method: str,
+        *,
+        headers: dict[str, str],
+        request_id: int,
+    ) -> Optional[dict]:
+        """Send one JSON-RPC 2.0 request to `path` and return its parsed body.
+
+        Args:
+            session: The open client session to send through.
+            base_url: This run's ``http://host:port`` base URL.
+            path: The route path this run's agent is mounted at.
+            method: The JSON-RPC method name.
+            headers: Request headers (the API key).
+            request_id: The JSON-RPC request ID.
+
+        Returns:
+            The parsed JSON-RPC response body, or ``None`` on a non-200 status.
+        """
+        payload = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": {}}
+        async with session.post(f"{base_url}{path}", json=payload, headers=headers) as response:
+            if response.status != 200:
+                return None
+            return await response.json()
+
+
+def build_mcp_agent_adapter() -> _MCPAgentAdapter:
+    """Build the `mcp-agent` target adapter.
+
+    Returns:
+        A fresh :class:`_MCPAgentAdapter` with an empty endpoint table.
+    """
+    return _MCPAgentAdapter()
