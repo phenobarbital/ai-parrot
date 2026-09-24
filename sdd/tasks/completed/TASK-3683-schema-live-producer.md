@@ -253,10 +253,9 @@ def test_toolkit_choice(cfg):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-terra, backend: codex, attempt_uid f4e4d29152f44da4bdf967999fb8914a)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `de37b3f1b` + engine lint-autofix commit `df68a3c76` (merge `10259aeeb`). Live producer: introspects a declared source through the SQLToolkit dialect hooks, folding a `TableMetadata` into `TableRecord`s. Engine-side merge fidelity check passed (`unexpected_files: []`).
+**Merge validation**: merge-tier (root scope) 4 failed, 1132 passed, 7 skipped, 20 warnings in 68.45s — same 4 pre-existing/environmental failures as prior chunks (see `issue:33fe54e65d2d`), unrelated to this task's files. Reviewed via `coder-review:0d753e6cb287eda6c90a8083`, zero fix commits needed.
 
 **Deviations from spec**: none

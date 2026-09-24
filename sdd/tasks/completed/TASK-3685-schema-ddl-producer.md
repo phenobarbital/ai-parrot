@@ -307,10 +307,9 @@ def test_corpus_counts():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-luna, backend: codex, attempt_uid 5e8d6fdc3a5f477498a02f3a7b718fcd)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `6f08ea151` + engine lint-autofix commit `635962183` (merge `32317b732`). DDL producer: statement splitting and sqlglot folding of `.sql` files into TableRecords. Engine-side merge fidelity check passed (`unexpected_files: []`).
+**Merge validation**: merge-tier (root scope) 4 failed, 1132 passed, 7 skipped, 20 warnings in 68.45s — same 4 pre-existing/environmental failures as prior chunks (see `issue:33fe54e65d2d`), unrelated to this task's files. Reviewed via `coder-review:e1f8d029a5016bdb6d45d288`, zero fix commits needed.
 
 **Deviations from spec**: none

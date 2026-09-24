@@ -77,7 +77,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -88,8 +88,9 @@
       "parallelism_notes": "needs SchemaSourceConfig/TableRecord from TASK-3680 (schema/models.py) and content_hash from TASK-3681 (schema/render.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3683-schema-live-producer.md"
+      "completed_at": "2026-09-24T22:17:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3683-schema-live-producer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3684",
@@ -121,7 +122,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -132,8 +133,9 @@
       "parallelism_notes": "needs TableRecord from TASK-3680 (schema/models.py) and content_hash from TASK-3681 (schema/render.py); uses repo_scan.file_concept_id (existing)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3685-schema-ddl-producer.md"
+      "completed_at": "2026-09-24T22:17:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3685-schema-ddl-producer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3686",
