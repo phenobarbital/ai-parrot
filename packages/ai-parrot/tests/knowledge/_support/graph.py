@@ -28,7 +28,9 @@ class FakeGraphStore:
         self.traversals: list[tuple[str, dict[str, Any], dict[str, str]]] = []
         self._traversal_rows: list[tuple[str, Callable[[dict[str, Any]], list[dict[str, Any]]]]] = []
 
-    async def upsert_nodes(self, ctx: Any, collection: str, nodes: list[dict[str, Any]], key_field: str) -> FakeUpsertResult:
+    async def upsert_nodes(
+        self, ctx: Any, collection: str, nodes: list[dict[str, Any]], key_field: str
+    ) -> FakeUpsertResult:
         """Upsert nodes by ``key_field`` and reactivate updated documents."""
         if collection in self.fail_on:
             raise RuntimeError(f"{collection} unavailable")
@@ -81,9 +83,7 @@ class FakeGraphStore:
             edge for edge in self.edges.get(collection, []) if node_id in (edge.get("source_id"), edge.get("target_id"))
         ]
 
-    async def remove_edge_by_triple(
-        self, ctx: Any, collection: str, source_id: str, target_id: str, kind: str
-    ) -> bool:
+    async def remove_edge_by_triple(self, ctx: Any, collection: str, source_id: str, target_id: str, kind: str) -> bool:
         """Remove an edge matching endpoints, preserving production double behaviour."""
         bucket = self.edges.get(collection, [])
         before = len(bucket)

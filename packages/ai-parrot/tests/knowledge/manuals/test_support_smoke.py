@@ -35,6 +35,7 @@ async def test_scripted_traversal(fake_graph_store):
 
 async def test_fake_adapter_replays_by_type_and_key(fake_adapter):
     """Keyed adapter scripts override type defaults."""
+
     class Draft:
         pass
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 STEPS_REV_A: tuple[str, ...] = (
     "1. Remove the four M6 bolts from the base plate.",
     "2. Lift the cover and set it aside.",
