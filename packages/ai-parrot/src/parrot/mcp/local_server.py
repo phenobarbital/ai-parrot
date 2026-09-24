@@ -27,6 +27,11 @@ from typing import Any
 
 from parrot.mcp.server_base import LocalServerConfig, MCPServerBase
 
+# How long handlers still in flight may keep running once the read loop has
+# ended (stdin EOF / stop()) before they are cancelled. A server instance can
+# override it through ``StdioMCPServer.drain_timeout_s``.
+_INFLIGHT_DRAIN_SECONDS = 5.0
+
 
 class LocalMCPServerBase(MCPServerBase):
     """Extension point for local (in-process) MCP transports.
@@ -51,8 +56,9 @@ class StdioMCPServer(LocalMCPServerBase):
 
     #: How long `start()` waits for in-flight tool calls once stdin hits EOF
     #: before cancelling them. The host is gone by then; this only lets a
-    #: call that is about to finish flush its last write.
-    drain_timeout_s: float = 5.0
+    #: call that is about to finish flush its last write. ``None`` falls back
+    #: to the module-level ``_INFLIGHT_DRAIN_SECONDS``.
+    drain_timeout_s: float | None = None
 
     def __init__(self, config: LocalServerConfig):
         super().__init__(config)
@@ -62,37 +68,45 @@ class StdioMCPServer(LocalMCPServerBase):
         self._by_request_id: dict[Any, "asyncio.Task[None]"] = {}
 
     async def start(self):
-        """Start the stdio MCP server."""
+        """Start the stdio MCP server.
+
+        Reads one JSON-RPC message per line from stdin and routes it through
+        :meth:`_admit`; ``tools/call`` handlers run as their own tasks and may
+        be answered out of order (JSON-RPC matches responses by ``id``). The
+        loop ends on stdin EOF or :meth:`stop`; handlers still in flight are
+        then drained by :meth:`_drain`.
+        """
         self.logger.info("Starting stdio MCP server with %s tools...", len(self.tools))
         self._running = True
         loop = asyncio.get_running_loop()
 
-        while self._running:
-            try:
-                # sys.stdin.readline() is blocking — run it off the event loop.
-                line = await loop.run_in_executor(None, sys.stdin.readline)
-                if not line:
-                    break
-
-                line = line.strip()
-                if not line:
-                    continue
-
+        try:
+            while self._running:
                 try:
-                    request = json.loads(line)
-                except json.JSONDecodeError as e:
-                    self.logger.warning("Invalid JSON received: %s", e)
+                    # sys.stdin.readline() is blocking — run it off the event loop.
+                    line = await loop.run_in_executor(None, sys.stdin.readline)
+                    if not line:
+                        break
+
+                    line = line.strip()
+                    if not line:
+                        continue
+
+                    try:
+                        request = json.loads(line)
+                    except json.JSONDecodeError as e:
+                        self.logger.warning("Invalid JSON received: %s", e)
+                        continue
+
+                    await self._admit(request)
+
+                except KeyboardInterrupt:
+                    break
+                except Exception as e:  # noqa: BLE001
+                    self.logger.error("Error in main loop: %s", e)
                     continue
-
-                await self._admit(request)
-
-            except KeyboardInterrupt:
-                break
-            except Exception as e:  # noqa: BLE001
-                self.logger.error("Error in main loop: %s", e)
-                continue
-
-        await self._drain()
+        finally:
+            await self._drain()
         self.logger.info("Stdio MCP server stopped")
 
     async def stop(self):
@@ -162,10 +176,12 @@ class StdioMCPServer(LocalMCPServerBase):
         pending = {t for t in self._inflight if not t.done()}
         if not pending:
             return
-        _, still_pending = await asyncio.wait(pending, timeout=self.drain_timeout_s)
+        timeout = self.drain_timeout_s if self.drain_timeout_s is not None else _INFLIGHT_DRAIN_SECONDS
+        _, still_pending = await asyncio.wait(pending, timeout=timeout)
         for t in still_pending:
             t.cancel()
         if still_pending:
+            self.logger.warning("Cancelled %s request handler(s) still running at shutdown", len(still_pending))
             await asyncio.gather(*still_pending, return_exceptions=True)
 
     def _send(self, response: dict[str, Any]) -> None:

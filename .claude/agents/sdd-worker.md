@@ -324,6 +324,9 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    that known chain, after wiki-first discovery, and never to re-read a file whose content hash you already hold.
 2. **Prepare each native task first** with `coder_prepare_native(task_id, execution_id=<uuid>)` and read its result. Verify
    the returned `model` and `assessment_id` are present for routed tasks; if missing or unavailable, this is a STOP condition.
+   A native model serves ONE task at a time: `seat_busy` means the task named in `held_by_task_id` still holds that
+   model's reservation (it is released only by its `coder_merge`). Finish and `coder_merge` that task first, then call
+   `coder_prepare_native` again — never retry in a loop and never dispatch the native Agent without a prepared result.
    Then dispatch the FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>, execution_id=<uuid>)`
    AND, for each prepared task, `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in
    worktree <worktree_path> (branch <branch>). Work only there. Complexity assessment: <assessment_id>, classification:

@@ -53,6 +53,7 @@ ERROR_CODES: frozenset[str] = frozenset(
         "task_not_in_plan",
         "task_already_running",
         "seat_unavailable",
+        "seat_busy",
         "roster_empty",
         "job_not_found",
         "branch_not_found",

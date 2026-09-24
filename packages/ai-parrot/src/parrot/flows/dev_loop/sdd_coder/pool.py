@@ -33,6 +33,23 @@ from parrot.knowledge.wiki.ledger.coder_suspensions import (
 logger = logging.getLogger(__name__)
 
 
+class SeatBusyError(RuntimeError):
+    """`admit(wait=False)` found `key` reserved by another live attempt.
+
+    Deliberately NOT a `ValueError`: the engine maps `admit()`'s `ValueError`s
+    (excluded / closed / unknown seat) to "not dispatched"; a busy seat is a
+    transient scheduling condition the caller must surface as `seat_busy`.
+    """
+
+    def __init__(self, key: ModelKey, *, task_id: str, held_by_task_id: str) -> None:
+        super().__init__(
+            f"model {key.backend}/{key.model} is busy with {held_by_task_id}; cannot admit {task_id} without waiting"
+        )
+        self.key = key
+        self.task_id = task_id
+        self.held_by_task_id = held_by_task_id
+
+
 def _effective_key(seat: RosterSeat) -> Optional[ModelKey]:
     """Compute the exact `ModelKey` for a roster seat.
 
@@ -223,17 +240,25 @@ class ExecutionPool:
             generation=self._generation,
         )
 
-    async def admit(self, task_id: str, key: ModelKey) -> str:
+    async def admit(self, task_id: str, key: ModelKey, *, wait: bool = True) -> str:
         """Reserve `key` for one attempt of `task_id`, returning its reservation UID.
 
-        Blocks (releasing the condition) while `key` is busy with a healthy,
-        non-excluded seat. Every wake-up re-checks status/exclusion from
-        scratch -- a key suspended while something waits on it raises
-        `ValueError` instead of looping or hanging forever.
+        With `wait=True` (the default) this blocks (releasing the condition)
+        while `key` is busy with a healthy, non-excluded seat. Every wake-up
+        re-checks status/exclusion from scratch -- a key suspended while
+        something waits on it raises `ValueError` instead of looping or
+        hanging forever.
+
+        With `wait=False` a busy key raises `SeatBusyError` immediately. Use
+        this from request handlers that cannot afford an open-ended wait --
+        e.g. `coder_prepare_native`, whose reservation is only ever released by
+        a LATER `coder_merge` call: parking there would wait on a request that
+        has not been issued yet (the 2026-09-24 sdd-worker wedge).
 
         Raises:
             ValueError: the pool is closed/recovering, `key` is excluded
                 (initial or local), unknown to this pool, or probe-failed.
+            SeatBusyError: `wait=False` and `key` is currently reserved.
         """
         async with self._condition:
             while True:
@@ -248,6 +273,9 @@ class ExecutionPool:
                     raise ValueError(f"model {key.backend}/{key.model} failed its probe and is unavailable")
                 if key not in self._busy_seats:
                     break
+                if not wait:
+                    holder = next((tid for tid, held in self._admitted.values() if held == key), "<unknown>")
+                    raise SeatBusyError(key, task_id=task_id, held_by_task_id=holder)
                 await self._condition.wait()
 
             attempt_uid = uuid4().hex
