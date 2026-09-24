@@ -99,7 +99,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -112,8 +112,9 @@
       "parallelism_notes": "imports SchemaStore (TASK-3682 schema/store.py), render_page/render_source_page (TASK-3681), introspect (TASK-3683 producers/live.py), models/ids (TASK-3680)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3684-schema-plane-service-core.md"
+      "completed_at": "2026-09-24T22:28:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3684-schema-plane-service-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3685",
