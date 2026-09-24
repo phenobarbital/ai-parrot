@@ -37,12 +37,15 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import click
 from pydantic import ValidationError
 
 from parrot.bots.database.toolkits.sql import _SQLGLOT_DIALECT_MAP
+
+if TYPE_CHECKING:
+    from parrot.knowledge.wiki.schema.service import SchemaPlaneService
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
