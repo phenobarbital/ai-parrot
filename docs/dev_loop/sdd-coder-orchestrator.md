@@ -429,6 +429,13 @@ as the unbudgeted comparison baseline.
   `extra_content` carry-over. Guarded by the opt-in live test:
   `pytest -m live packages/ai-parrot/tests/flows/dev_loop/test_google_compat_live.py`
   (needs `GEMINI_API_KEY`/`GOOGLE_API_KEY`).
+- **`seat_busy`** (from `coder_prepare_native`) — the native model is still
+  reserved by the task in `held_by_task_id`; a native reservation is released
+  only by that task's `coder_merge`. Merge it first, then prepare the next task.
+  The engine reports this immediately instead of waiting (a wait here parked
+  the whole server on 2026-09-24: the releasing `coder_merge` could never be
+  read while the stdio loop was serving requests one at a time — the loop now
+  dispatches each request as its own task).
 - **`task_already_running`** — a job already owns that task id; check
   `coder_status(job_id)` rather than re-dispatching. If the server
   restarted mid-job, the branch/worktree persists and surfaces as an orphan

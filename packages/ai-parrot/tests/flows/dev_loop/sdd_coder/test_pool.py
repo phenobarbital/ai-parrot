@@ -9,7 +9,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     RosterConfig,
     RosterSeat,
 )
-from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool
+from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, SeatBusyError
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
     ModelKey,
@@ -234,3 +234,32 @@ async def test_suspension_does_not_release_reservation(
     await pool.release(attempt_uid)
     qwen_seat = next(s for s in pool.view().seats if s.label == "qwen")
     assert qwen_seat.busy is False
+
+
+async def test_admit_without_wait_fails_fast_on_a_busy_seat(
+    mock_suspension_store: Mock, sample_roster: RosterConfig, sample_seats: list
+) -> None:
+    """`wait=False` reports the busy seat (and who holds it) instead of parking forever.
+
+    Regression for the 2026-09-24 sdd-worker wedge: `coder_prepare_native` for a
+    second task on the same native model waited on the condition indefinitely
+    because the first task's reservation is only released by `coder_merge`.
+    """
+    pool = make_pool(EXEC_A, sample_roster, sample_seats, mock_suspension_store)
+    key = ModelKey(backend="native", model="haiku")
+    holder_uid = await pool.admit("TASK-1", key)
+
+    with pytest.raises(SeatBusyError) as excinfo:
+        await pool.admit("TASK-2", key, wait=False)
+    assert excinfo.value.key == key
+    assert excinfo.value.held_by_task_id == "TASK-1"
+
+    # The default (`wait=True`) contract is unchanged: a waiter parks, then wakes on release.
+    waiter = asyncio.create_task(pool.admit("TASK-2", key))
+    await asyncio.sleep(0.01)
+    assert not waiter.done()
+    await pool.release(holder_uid)
+    assert await asyncio.wait_for(waiter, timeout=1)
+    # Once free, the non-waiting form admits normally too.
+    await pool.release(await waiter)
+    assert await pool.admit("TASK-3", key, wait=False)

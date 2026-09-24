@@ -55,6 +55,7 @@ from parrot.flows.dev_loop.nodes.base import (
     condense_qa_failure,
     register_dev_loop_node,
 )
+from parrot.flows.dev_loop.nodes.e2e import run_e2e_stage
 from parrot.flows.dev_loop.session_state import QaAttemptRecorded
 from parrot.flows.dev_loop.test_scope import plan_tests
 from parrot.flows.dev_loop.test_scope import mirror as _scope_mirror
@@ -351,8 +352,16 @@ class QANode(DevLoopNode):
         if blocking_manual:
             report, blocking_passed = await self._resolve_blocking_manual_criteria(shared, blocking_manual, report)
 
+        e2e_result = await run_e2e_stage(
+            worktree=Path(research.worktree_path),
+            spec_path=Path(research.spec_path),
+            feature_id=research.feat_id,
+        )
+        shared["e2e_result"] = e2e_result
+        e2e_required_passed = not e2e_result["required"] or e2e_result["gate_satisfied"]
+
         update: Dict[str, Any] = {
-            "passed": deterministic_passed and cr_passed and blocking_passed,
+            "passed": deterministic_passed and cr_passed and blocking_passed and e2e_required_passed,
             "code_review_passed": cr_passed,
             "code_review_findings": cr_findings,
         }
@@ -376,6 +385,12 @@ class QANode(DevLoopNode):
         # FEAT-377 TASK-1915: ungrounded findings are demoted to notes, not
         # gate-failing (see the grounding block above).
         extra_notes.extend(ungrounded_notes)
+        extra_notes.append(
+            "E2E stage: "
+            f"policy={e2e_result['policy']} status={e2e_result['status']} "
+            f"gate_satisfied={e2e_result['gate_satisfied']}. "
+            f"{e2e_result.get('reason', '')}".strip()
+        )
         if extra_notes:
             existing_notes = report.notes or ""
             sep = "\n\n" if existing_notes else ""
