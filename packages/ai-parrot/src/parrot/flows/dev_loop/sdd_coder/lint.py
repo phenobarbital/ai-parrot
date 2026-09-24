@@ -18,21 +18,21 @@ import tomllib
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from parrot.flows.dev_loop.procs import run_bounded
 from parrot.flows.dev_loop.sdd_coder.models import LintConfig, LintReport
+
+#: Wall-clock cap for one ruff/black child over a task's changed files.
+LINT_TIMEOUT_S: float = 300.0
 
 _RESIDUAL_LIMIT = 50
 
 
 async def _run(argv: List[str], cwd: str) -> Tuple[int, str, str]:
-    """Run a subprocess and return ``(returncode, stdout, stderr)``; OS errors surface as rc 127."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *argv, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        out, err = await proc.communicate()
-    except (FileNotFoundError, OSError) as exc:
-        return 127, "", str(exc)
-    return proc.returncode or 0, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+    """Run a subprocess and return ``(returncode, stdout, stderr)``.
+
+    OS errors surface as rc 127 and a `LINT_TIMEOUT_S` expiry as rc 124 (`run_bounded`).
+    """
+    return await run_bounded(argv, cwd=cwd, timeout_s=LINT_TIMEOUT_S)
 
 
 def resolve_bin(name: str) -> Optional[str]:
