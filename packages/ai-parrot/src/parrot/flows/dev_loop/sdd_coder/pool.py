@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 import logging
 from asyncio import Condition
-from typing import Dict, List, Optional, Set, Tuple
+from datetime import datetime, timezone
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from uuid import UUID, uuid4
 
 from parrot.flows.dev_loop.sdd_coder.models import (
@@ -21,6 +22,7 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     PoolSeatView,
     RosterConfig,
     RosterSeat,
+    SeatKind,
 )
 from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityAssessment
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, eligible_seats
@@ -28,6 +30,7 @@ from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
     SuspensionReceipt,
     SuspensionRecord,
+    render_suspension_history,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +53,7 @@ class SeatBusyError(RuntimeError):
         self.held_by_task_id = held_by_task_id
 
 
-def _effective_key(seat: RosterSeat) -> Optional[ModelKey]:
+def effective_key(seat: RosterSeat) -> Optional[ModelKey]:
     """Compute the exact `ModelKey` for a roster seat.
 
     Mirrors `RosterProbe._is_excluded`'s native-default normalization
@@ -65,6 +68,10 @@ def _effective_key(seat: RosterSeat) -> Optional[ModelKey]:
     if not seat.model:
         return None
     return ModelKey(backend=seat.backend or "", model=seat.model)
+
+
+#: Backwards-compatible alias (FEAT-599 made the helper public; tests import the old name).
+_effective_key = effective_key
 
 
 def roster_fingerprint(roster: RosterConfig) -> str:
@@ -100,6 +107,7 @@ class ExecutionPool:
         seats: List[RosterSeat],
         suspension_store: CoderSuspensionStore,
         initial_exclusions: List[ModelKey],
+        inherited_records: Sequence[SuspensionRecord] = (),
     ) -> None:
         """Initialize one execution's private pool.
 
@@ -115,6 +123,10 @@ class ExecutionPool:
                 history) before this execution began; immutable for this
                 execution's lifetime -- only `suspend()` adds further,
                 execution-local exclusions on top of these.
+            inherited_records: The durable `SuspensionRecord`s behind
+                `initial_exclusions` (FEAT-599 / FEAT-559 AC-12). Display and
+                attribution only: a key listed here but absent from
+                `initial_exclusions` is NOT excluded.
         """
         UUID(execution_id)  # Raises ValueError if not a valid UUID string.
 
@@ -142,7 +154,7 @@ class ExecutionPool:
 
         self._seat_views: Dict[ModelKey, PoolSeatView] = {}
         for seat in self._seats:
-            key = _effective_key(seat)
+            key = effective_key(seat)
             if key is None:
                 logger.warning("Seat %r has no configured model; excluded from this pool's admission set", seat.label)
                 continue
@@ -157,6 +169,34 @@ class ExecutionPool:
                 suspended=suspended,
                 reason="inherited_suspension" if suspended else "",
             )
+
+        # FEAT-599: every suspension this pool knows about (inherited + own), for
+        # AC-12 attribution on seat views and the rendered `suspension_summary`.
+        self._suspension_records: List[SuspensionRecord] = list(inherited_records)
+        for record in self._suspension_records:
+            self._attribute_seats(record, inherited=True)
+
+    def _attribute_seats(self, record: SuspensionRecord, *, inherited: bool) -> None:
+        """Copy *record*'s attribution onto every seat view it blocks (FEAT-599 / FEAT-559 AC-12).
+
+        Args:
+            record: The suspension incident.
+            inherited: True for durable-history records seen at construction --
+                those seat views were built with `reason="inherited_suspension"`
+                and no incident id, so the id and expiry are filled in here;
+                `suspend()` already sets them for the pool's own records.
+        """
+        origin = record.task_id or record.probe_uid or ""
+        for key in record.blocked_keys:
+            seat_view = self._seat_views.get(key)
+            if seat_view is None:
+                continue
+            seat_view.suspension_source = record.source
+            seat_view.source_task_id = origin
+            seat_view.source_execution_id = record.execution_id
+            if inherited:
+                seat_view.suspension_id = record.suspension_id
+                seat_view.suspended_until = record.expires_at.isoformat()
 
     @property
     def execution_id(self) -> str:
@@ -183,6 +223,62 @@ class ExecutionPool:
         """Current generation counter; increments on every suspension, invalidating cached plans."""
         return self._generation
 
+    @property
+    def status(self) -> ExecutionStatus:
+        """Current lifecycle state (``active`` / ``exhausted`` / ``recovery_required`` / ``closed``)."""
+        return self._status
+
+    @property
+    def seats(self) -> List[RosterSeat]:
+        """A copy of this pool's effective seats (probed, before any exclusion)."""
+        return list(self._seats)
+
+    @property
+    def persistence_degraded(self) -> bool:
+        """True once a durable write (snapshot or suspension) failed and has not been retried successfully."""
+        return self._persistence_degraded
+
+    def resolve_admission(self, attempt_uid: str) -> Optional[Tuple[str, ModelKey]]:
+        """Return the ``(task_id, key)`` reservation behind *attempt_uid*, or ``None`` when not admitted here.
+
+        Args:
+            attempt_uid: The reservation id issued by `admit()`.
+
+        Returns:
+            The task and model key the reservation holds, or ``None``.
+        """
+        return self._admitted.get(attempt_uid)
+
+    def restore_local_exclusions(self, keys: Iterable[ModelKey]) -> None:
+        """Replay this execution's own exclusions from a durable snapshot (restart path).
+
+        Only the admission-time exclusion set is restored: seat views are not
+        re-marked because the probe that built this pool already ran with these
+        keys excluded (FEAT-559 spec: "replay own suspensions regardless of expiry").
+
+        Args:
+            keys: The snapshot's ``local_exclusions``.
+        """
+        self._local_exclusions = set(keys)
+
+    def require_fallback(self, reason: str) -> None:
+        """Flag that the worker must fall back (no eligible seat, or history unreadable).
+
+        Args:
+            reason: Short machine-readable reason exposed as ``fallback_reason``.
+        """
+        self._fallback_required = True
+        self._fallback_reason = reason
+
+    def set_persistence_degraded(self, degraded: bool) -> None:
+        """Record the outcome of the latest durable write attempt.
+
+        Args:
+            degraded: ``True`` after a failed snapshot/settlement write, ``False``
+                once a retry succeeded.
+        """
+        self._persistence_degraded = degraded
+
     def view(self) -> ExecutionPoolView:
         """Return a read-only snapshot of the current pool state."""
         return ExecutionPoolView(
@@ -197,6 +293,7 @@ class ExecutionPool:
             persisted=not self._persistence_degraded,
             persistence_degraded=self._persistence_degraded,
             roster_warnings=self._roster_warnings(),
+            suspension_summary=render_suspension_history(self._suspension_records, datetime.now(timezone.utc)),
         )
 
     def _roster_warnings(self) -> List[str]:
@@ -322,6 +419,8 @@ class ExecutionPool:
                     seat_view.reason = record.reason
                     seat_view.suspension_id = record.suspension_id
                     seat_view.suspended_until = record.expires_at.isoformat()
+            self._suspension_records.append(record)
+            self._attribute_seats(record, inherited=False)
             self._generation += 1
             self._cached_assigner = None
             # Spec §2: state is active|exhausted|recovery_required|closed --
@@ -367,7 +466,7 @@ class ExecutionPool:
         eligible = [
             seat
             for seat in self._seats
-            for key in (_effective_key(seat),)
+            for key in (effective_key(seat),)
             if key is not None
             and key not in self._busy_seats
             and (view := self._seat_views.get(key)) is not None
@@ -402,3 +501,70 @@ class ExecutionPool:
         async with self._condition:
             self._status = "recovery_required"
             self._condition.notify_all()
+
+    async def mark_exhausted(self) -> None:
+        """Mark the pool exhausted (no eligible seat can ever be selected); wakes waiters to fail fast."""
+        async with self._condition:
+            self._status = "exhausted"
+            self._condition.notify_all()
+
+    async def select_free_seat(
+        self,
+        *,
+        kind: SeatKind,
+        tried_seats: Set[str],
+        eligible_labels: Optional[Set[str]] = None,
+        wait: bool = False,
+    ) -> Optional[RosterSeat]:
+        """Pick a healthy, free, not-yet-tried seat of *kind* for a retry (FEAT-559 / FEAT-561).
+
+        A candidate must be of *kind*, not in *tried_seats*, inside
+        *eligible_labels* when given (complexity routing: "a failed strong-model
+        attempt cannot retry through a weak seat"), have a model identity, and a
+        seat view that is available, not suspended and not probe-failed, with its
+        key not excluded (initial or local).
+
+        A candidate that is merely *busy* is worth waiting for: with ``wait=True``
+        this parks on the pool condition until a `release()` or `suspend()` and
+        re-evaluates from scratch. With ``wait=False`` a busy-only situation
+        returns ``None`` immediately -- the native retry rule: a native seat is
+        released only by the orchestrator's `merge()`, which may be sequenced
+        after this job's `coder_wait`, so waiting inside the job could park it
+        until the wait timeout.
+
+        Args:
+            kind: ``"mcp"`` or ``"native"``.
+            tried_seats: Labels already attempted for this task.
+            eligible_labels: Optional restriction to the task's eligible label set.
+            wait: Whether to wait for a busy-but-healthy candidate.
+
+        Returns:
+            A free, healthy `RosterSeat`, or ``None`` when the pool is closed /
+            recovering, exhausted for this request, or (``wait=False``) only busy
+            candidates remain.
+        """
+        async with self._condition:
+            while True:
+                if self._status in ("closed", "recovery_required"):
+                    return None
+                busy_healthy = False
+                for seat in self._seats:
+                    if seat.kind != kind or seat.label in tried_seats:
+                        continue
+                    if eligible_labels is not None and seat.label not in eligible_labels:
+                        continue
+                    key = effective_key(seat)
+                    if key is None:
+                        continue
+                    view = self._seat_views.get(key)
+                    if view is None or not view.available or view.suspended or view.probe_unavailable:
+                        continue
+                    if key in self._initial_exclusions or key in self._local_exclusions:
+                        continue
+                    if key in self._busy_seats:
+                        busy_healthy = True
+                        continue
+                    return seat
+                if not wait or not busy_healthy:
+                    return None
+                await self._condition.wait()
