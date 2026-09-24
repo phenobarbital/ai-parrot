@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-599 — sdd-coder engine fixes 2 (suspension attribution + pool encapsulation + settlement hygiene)
 **Spec**: `sdd/specs/sdd-coder-engine-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: agent:sdd-fix
 **discovered_from**: issue:c1e28856ab0c, issue:5944887877e1, issue:971e11917b19
 
 ---
@@ -177,4 +177,9 @@ async def test_settlement_artifact_after_done_job_has_no_outstanding_ids(tmp_pat
 
 ## Completion Note
 
-(Agent fills this in when done)
+**Completed by**: Claude Fable 5.1 via `/sdd-fix`
+**Date**: 2026-09-24
+
+- Added `SddCoderEngine._latest_attempt_number()`; both `manager_key` sites use it — no `AttemptRecord(attempt=1)` literal remains in `engine.py`.
+- `test_outstanding_jobs.py`: +3 tests (re-close with native reservation, `status()` degraded retry, published settlement after a `done` job).
+- Validation: `test_outstanding_jobs.py` + `test_review_checkpoint.py` + `test_execution_pool_integration.py` → 23 passed; `ruff check` clean. `black --check` reports one pre-existing wrap at engine.py:1953 (also present on `origin/dev`), left untouched.

@@ -805,6 +805,26 @@ class SddCoderEngine:
         self._execution_owners[canonical_worktree] = execution_id
         return pool.view()
 
+    def _latest_attempt_number(self, task_id: str) -> int:
+        """Return the attempt number of *task_id*'s latest recorded attempt, or ``1``.
+
+        Native dispatch never records into ``_latest_attempt`` (that
+        bookkeeping lives in ``_run_task``), so a missing entry means "first
+        attempt" -- never a reason to build a placeholder ``AttemptRecord``
+        (issue:c1e28856ab0c: ``dict.get``'s default is evaluated eagerly and
+        ``AttemptRecord`` requires ``seat_label``/``started_at``, so the old
+        ``self._latest_attempt.get(task_id, AttemptRecord(...))`` raised
+        ``ValidationError`` on every call).
+
+        Args:
+            task_id: The task whose manager key is being derived.
+
+        Returns:
+            The recorded attempt number, or ``1`` when none exists.
+        """
+        record = self._latest_attempt.get(task_id)
+        return record.attempt if record is not None else 1
+
     def _outstanding_job_ids(self, execution_id: str, worktree: str) -> List[str]:
         """Return the job ids of *execution_id* whose JobTable state is still ``running``.
 
@@ -907,7 +927,7 @@ class SddCoderEngine:
         # Collect native reservations belonging to this execution
         for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
             if exec_id == execution_id:
-                manager_key = f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
+                manager_key = f"{task_id}.a{self._latest_attempt_number(task_id)}"
                 if manager_key in self._manager_execution and self._manager_execution[manager_key] == execution_id:
                     snapshot.native_reservations[task_id] = manager_key
 
@@ -2840,9 +2860,7 @@ class SddCoderEngine:
                 # Enrich with engine bookkeeping (native_reservations and outstanding_job_ids)
                 for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
                     if exec_id == execution_id:
-                        manager_key = (
-                            f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
-                        )
+                        manager_key = f"{task_id}.a{self._latest_attempt_number(task_id)}"
                         if (
                             manager_key in self._manager_execution
                             and self._manager_execution[manager_key] == execution_id

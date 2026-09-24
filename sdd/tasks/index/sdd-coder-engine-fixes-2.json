@@ -16,17 +16,21 @@
       "feature_id": "FEAT-599",
       "feature": "sdd-coder-engine-fixes-2",
       "spec": "sdd/specs/sdd-coder-engine-fixes-2.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "First writer of engine.py in this feature; no upstream symbol needed.",
-      "discovered_from": ["issue:c1e28856ab0c", "issue:5944887877e1", "issue:971e11917b19"],
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3677-lazy-attempt-number-and-settlement-regression.md"
+      "discovered_from": [
+        "issue:c1e28856ab0c",
+        "issue:5944887877e1",
+        "issue:971e11917b19"
+      ],
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-24T18:35:00+00:00",
+      "completed_at": "2026-09-24T18:50:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3677-lazy-attempt-number-and-settlement-regression.md"
     },
     {
       "id": "TASK-3678",
@@ -38,10 +42,14 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-3677"],
+      "depends_on": [
+        "TASK-3677"
+      ],
       "parallel": true,
       "parallelism_notes": "Modifies engine.py after TASK-3677 (same file, serialized); adds fields to models.py/pool.py that TASK-3679 builds on.",
-      "discovered_from": ["issue:bd1c792a5afc"],
+      "discovered_from": [
+        "issue:bd1c792a5afc"
+      ],
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -57,10 +65,14 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-3678"],
+      "depends_on": [
+        "TASK-3678"
+      ],
       "parallel": true,
       "parallelism_notes": "Modifies pool.py, engine.py and test_pool.py after TASK-3678 (same files, serialized); converts the ExecutionPool(...) call sites TASK-3678 touches.",
-      "discovered_from": ["issue:700660c7f663"],
+      "discovered_from": [
+        "issue:700660c7f663"
+      ],
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
