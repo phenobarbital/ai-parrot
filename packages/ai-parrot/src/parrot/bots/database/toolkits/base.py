@@ -53,6 +53,7 @@ class DatabaseToolkitConfig(BaseModel):
         ),
     )
     database_type: str = Field(default="postgresql")
+    origin: Optional[str] = Field(default=None, description="Schema-plane origin alias (FEAT-600); defaults to database_type")
     use_pool: bool = Field(
         default=False,
         description=(
@@ -110,6 +111,7 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         read_only: bool = True,
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
+        origin: Optional[str] = None,
         database_type: str = "postgresql",
         use_pool: bool = False,
         pool_params: Optional[Dict[str, Any]] = None,
@@ -134,6 +136,7 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         self.tables = tables
         self.read_only = read_only
         self.database_type = database_type
+        self.origin = origin or database_type  # FEAT-600: plane alias; tk_id (agent.py:206) is NOT derived from this
         self.use_pool = use_pool
         self.pool_params = pool_params or {}
 

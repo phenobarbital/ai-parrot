@@ -22,8 +22,9 @@ from navconfig.logging import logging
 from pydantic import BaseModel, Field
 from .models import Completeness, SchemaMetadata, TableMetadata
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # FEAT-600 — typing only; bots/database must not import the wiki at runtime (AC13)
     from ...stores.abstract import AbstractStore
+    from parrot.knowledge.wiki.schema.service import SchemaPlaneReader
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +73,10 @@ class CachePartition:
         redis_pool: Any = None,
         vector_store: Optional["AbstractStore"] = None,
         ttl_by_completeness: Optional[Dict[int, int]] = None,
+        plane: Optional["SchemaPlaneReader"] = None,
+        plane_write: bool = False,
+        origin: Optional[str] = None,
+        dialect: Optional[str] = None,
     ):
         self.namespace = namespace
         self.redis_ttl = redis_ttl
@@ -90,6 +95,12 @@ class CachePartition:
         # Tier 3: Vector store (optional, shared)
         self.vector_store = vector_store
         self.vector_enabled = vector_store is not None
+
+        # FEAT-600: optional durable schema-plane tier (after Redis, before the vector store). None ⇒ behaviour unchanged.
+        self.plane = plane
+        self.plane_write = plane_write and plane is not None
+        self.origin = origin
+        self.dialect = dialect
 
         # Schema-level caches
         self.schema_cache: Dict[str, SchemaMetadata] = {}
@@ -143,6 +154,16 @@ class CachePartition:
         # Tier 2: Redis
         if metadata is None:
             metadata = await self._get_from_redis(schema_name, table_name)
+            if metadata is not None:
+                self.hot_cache[cache_key] = metadata
+
+        # Tier 2b: schema plane (FEAT-600) — durable, never introspects
+        if metadata is None and self.plane is not None and self.origin:
+            try:
+                metadata = await self.plane.get_table(self.origin, schema_name, table_name)
+            except Exception as exc:  # noqa: BLE001 — the plane is a best-effort tier
+                self.logger.warning("schema plane lookup failed for %s.%s: %s", schema_name, table_name, exc)
+                metadata = None
             if metadata is not None:
                 self.hot_cache[cache_key] = metadata
 
@@ -211,6 +232,13 @@ class CachePartition:
         # Tier 3: Vector store
         if self.vector_enabled:
             await self._store_in_vector_store(metadata)
+
+        # Tier 2b: schema plane write-through (FEAT-600)
+        if self.plane_write and self.origin:
+            try:
+                await self.plane.put_table(self.origin, self.dialect or self.origin, metadata)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("schema plane write-through failed for %s: %s", metadata.full_name, exc)
 
     async def list(
         self,
