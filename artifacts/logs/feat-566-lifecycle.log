@@ -3,8 +3,8 @@ command: pytest tests/sdd/test_close_task_ledger.py tests/sdd/test_ledger_workfl
 exit_code: 0
 
 --- stdout (tail) ---
-.............................................                            [100%]
-45 passed in 2.13s
+...........................................................              [100%]
+59 passed in 2.74s
 
 --- stderr (tail) ---
 

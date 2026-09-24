@@ -71,7 +71,7 @@ def _namespace_refs(node: Any, prefix: str, hoisted_defs: Dict[str, Any]) -> Any
     they are resolved against the DOCUMENT root — not the nested subschema —
     so an un-rewritten ``#/$defs/X`` 404s once nested. Discovered empirically
     against llama-server b11115: ``cannot resolve $ref #/$defs/X, $defs not
-    found`` for every tool with a ``$ref``\ 'd field (e.g. ``entry_type``).
+    found`` for every tool with a ``$ref``'d field (e.g. ``entry_type``).
     """
     if isinstance(node, dict):
         out = {}
