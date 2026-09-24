@@ -5,6 +5,7 @@ the ``plane_write`` gate on ``store_table_metadata``, and the AC13
 import-isolation guarantee (``parrot.bots.database.cache`` never imports
 ``parrot.knowledge.wiki`` at runtime).
 """
+
 import sys
 import importlib
 
