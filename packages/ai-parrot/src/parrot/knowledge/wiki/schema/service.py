@@ -144,6 +144,115 @@ class SchemaPlaneService:
             await self._store.add_edges(edges)
         return report
 
+    async def ingest_ddl(
+        self,
+        paths: list[Path],
+        *,
+        origin: str,
+        dialect: str,
+        changed_only: bool = False,
+        root: Optional[Path] = None,
+    ) -> SyncReport:
+        """Fold SQL files into the plane, allowing DDL only to fill live-table gaps.
+
+        Args:
+            paths: SQL migration files to fold.
+            origin: Source alias for the resulting table records.
+            dialect: SQL dialect used to parse the files.
+            changed_only: Skip DDL records whose stored content hash is unchanged.
+            root: Base directory used to derive stable migration file identifiers.
+
+        Returns:
+            A report of created, updated, unchanged, and parse-error records.
+        """
+        from parrot.knowledge.wiki.schema.producers.ddl import fold_ddl
+
+        base = root or self.shared_root or Path.cwd()
+        records, parse_errors = fold_ddl(paths, origin=origin, dialect=dialect, root=base)
+        report = SyncReport(parse_errors=parse_errors)
+        for record in records:
+            table_id = table_concept_id(origin, record.metadata.schema, record.metadata.tablename)
+            page, columns, edges = render_page(record)
+            existing = await self._store.get_page(table_id, include_body=True)
+            if existing is not None and _page_source(existing) != "ddl":
+                await self._store.add_edges([(src, dst, rel) for src, dst, rel, _ in edges if rel == "defined_in"])
+                report.unchanged.append(table_id)
+                continue
+            if changed_only and existing is not None and existing.get("content_hash") == record.content_hash:
+                report.unchanged.append(table_id)
+                continue
+            await self._store.upsert_pages([page])
+            await self._store.upsert_columns(columns)
+            await self._store.add_edges([(src, dst, rel) for src, dst, rel, _ in edges])
+            (report.updated if existing else report.created).append(table_id)
+        return report
+
+    async def diff(self, origin: str, *, live: Optional[list[TableRecord]] = None) -> list[dict[str, Any]]:
+        """Report differences between live facts and configured DDL without resolving them.
+
+        Args:
+            origin: Source alias to compare.
+            live: Optional live records. When omitted, live records are rebuilt from stored pages.
+
+        Returns:
+            Difference rows containing ``table_id``, ``field``, ``live``, and ``ddl``.
+        """
+        from parrot.knowledge.wiki.schema.producers.ddl import fold_ddl
+
+        cfg = self.config.sources[origin]
+        base = self.shared_root or Path.cwd()
+        paths = [base / path for path in cfg.ddl_paths]
+        ddl_records, _parse_errors = fold_ddl(paths, origin=origin, dialect=cfg.dialect, root=base)
+        if live is None:
+            live = []
+            pages = await self._store.list_pages(category="table", limit=100_000)
+            for page in pages:
+                page_id = page["concept_id"]
+                page_origin, schema, table = parse_table_id(page_id)
+                if page_origin != origin:
+                    continue
+                stored_page = await self._store.get_page(page_id)
+                if stored_page is None or _page_source(stored_page) == "ddl":
+                    continue
+                metadata = await self.get_table(origin, schema, table)
+                if metadata is None:
+                    continue
+                frontmatter, _ = _page_content(stored_page["body"])
+                live.append(
+                    TableRecord(
+                        origin=origin,
+                        dialect=str(frontmatter["dialect"]),
+                        metadata=metadata,
+                        content_hash=str(stored_page.get("content_hash", "")),
+                        introspected_at=str(frontmatter["introspected_at"]),
+                    )
+                )
+
+        live_by_id = {
+            table_concept_id(origin, record.metadata.schema, record.metadata.tablename): record.metadata
+            for record in live
+        }
+        ddl_by_id = {
+            table_concept_id(origin, record.metadata.schema, record.metadata.tablename): record.metadata
+            for record in ddl_records
+        }
+        differences: list[dict[str, Any]] = []
+        for table_id in sorted(live_by_id.keys() | ddl_by_id.keys()):
+            live_metadata = live_by_id.get(table_id)
+            ddl_metadata = ddl_by_id.get(table_id)
+            if live_metadata is None or ddl_metadata is None:
+                differences.append(
+                    {
+                        "table_id": table_id,
+                        "field": "table",
+                        "live": _metadata_shape(live_metadata),
+                        "ddl": _metadata_shape(ddl_metadata),
+                    }
+                )
+                continue
+            differences.extend(_metadata_differences(table_id, live_metadata, ddl_metadata))
+        return differences
+
     async def lookup(self, ref: str) -> LookupResult | list[str]:
         """Look up a table using only stored schema-plane records."""
         table_id = normalize_ref(ref, sources=self.config.sources)
@@ -288,6 +397,85 @@ def _page_content(body: str) -> tuple[dict[str, Any], str]:
     frontmatter_text, _, remainder = body.partition("\n\n## DDL\n\n")
     ddl, _, _ = remainder.partition("\n\n## Columns\n")
     return json.loads(frontmatter_text), ddl
+
+
+def _page_source(page: dict[str, Any]) -> str:
+    """Read the ``source`` frontmatter key from a stored table page.
+
+    Args:
+        page: Stored table-page mapping including its rendered body.
+
+    Returns:
+        The source marker, or ``"unknown"`` if it is absent or malformed.
+    """
+    try:
+        frontmatter, _ = _page_content(str(page.get("body", "")))
+    except (json.JSONDecodeError, TypeError):
+        return "unknown"
+    return str(frontmatter.get("source", "unknown"))
+
+
+def _metadata_shape(metadata: Optional[TableMetadata]) -> Optional[dict[str, Any]]:
+    """Return the comparable portions of a table metadata record."""
+    if metadata is None:
+        return None
+    return {
+        "columns": {
+            column["name"]: {"type": str(column.get("type", "")), "nullable": bool(column.get("nullable", True))}
+            for column in metadata.columns
+        },
+        "primary_keys": sorted(metadata.primary_keys),
+        "foreign_keys": _foreign_key_set(metadata),
+    }
+
+
+def _foreign_key_set(metadata: TableMetadata) -> list[list[str]]:
+    """Normalize foreign keys into a deterministic comparable representation."""
+    return [
+        list(key)
+        for key in sorted(
+            (
+                str(foreign_key.get("column", "")),
+                str(foreign_key.get("ref_schema", "")),
+                str(foreign_key.get("ref_table", "")),
+                str(foreign_key.get("ref_column", "")),
+            )
+            for foreign_key in metadata.foreign_keys
+        )
+    ]
+
+
+def _metadata_differences(
+    table_id: str,
+    live: TableMetadata,
+    ddl: TableMetadata,
+) -> list[dict[str, Any]]:
+    """Compare table columns and key constraints for one live/DDL table pair."""
+    differences: list[dict[str, Any]] = []
+    live_columns = {column["name"]: column for column in live.columns}
+    ddl_columns = {column["name"]: column for column in ddl.columns}
+    for name in sorted(live_columns.keys() | ddl_columns.keys()):
+        live_column = live_columns.get(name)
+        ddl_column = ddl_columns.get(name)
+        if live_column is None or ddl_column is None:
+            differences.append(
+                {"table_id": table_id, "field": f"column:{name}", "live": live_column, "ddl": ddl_column}
+            )
+            continue
+        for field in ("type", "nullable"):
+            live_value = str(live_column.get(field, "")) if field == "type" else bool(live_column.get(field, True))
+            ddl_value = str(ddl_column.get(field, "")) if field == "type" else bool(ddl_column.get(field, True))
+            if live_value != ddl_value:
+                differences.append(
+                    {"table_id": table_id, "field": f"column:{name}.{field}", "live": live_value, "ddl": ddl_value}
+                )
+    for field, live_value, ddl_value in (
+        ("primary_keys", sorted(live.primary_keys), sorted(ddl.primary_keys)),
+        ("foreign_keys", _foreign_key_set(live), _foreign_key_set(ddl)),
+    ):
+        if live_value != ddl_value:
+            differences.append({"table_id": table_id, "field": field, "live": live_value, "ddl": ddl_value})
+    return differences
 
 
 def _env_dsn(name: str) -> str:
