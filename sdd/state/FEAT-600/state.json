@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-600",
+  "feature_slug": "sql-schema-plane",
+  "started_at": "2026-09-24T20:35:39+00:00",
+  "updated_at": "2026-09-24T20:45:25+00:00",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/schema-plane.brainstorm.md",
+    "raw_path": "sdd/state/FEAT-600/source.md",
+    "fetched_at": "2026-09-24T20:35:39+00:00",
+    "summary_oneline": "Schema Plane \u2014 SQL data-model knowledge (sources/schemas/tables) as a wikitoolkit overlay plane, ids origin:object"
+  },
+  "mode": "auto",
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-09-24T20:35:39+00:00",
+      "completed_at": "2026-09-24T20:35:39+00:00",
+      "duration_seconds": 5
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-09-24T20:35:39+00:00",
+      "completed_at": "2026-09-24T20:35:39+00:00",
+      "duration_seconds": 60,
+      "queries_total": 28,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-600/research_plan.json",
+      "note": "autonomous session: plan auto-approved (no interactive gate available)"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-09-24T20:35:39+00:00",
+      "completed_at": "2026-09-24T20:45:25+00:00",
+      "duration_seconds": 900,
+      "queries_executed": 28,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 16,
+      "grep_calls": 21,
+      "git_calls": 2,
+      "truncated": false,
+      "truncation_reason": null,
+      "note": "19 wiki queries + 6 wiki page reads (free); 3 recursive findings F022/F023/F025 incl. a read-only sqlglot DDL probe"
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-09-24T20:45:25+00:00",
+      "completed_at": "2026-09-24T20:45:25+00:00",
+      "duration_seconds": 300,
+      "synthesis_path": "sdd/state/FEAT-600/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 13,
+      "claims_high_conf": 9,
+      "claims_medium_conf": 3,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "skipped",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "questions_total": 5,
+      "questions_answered": 0,
+      "skipped_reason": "unattended session: review gate and Q&A auto-skipped; U1-U5 carried into proposal \u00a75 with recommended answers"
+    },
+    "output": {
+      "status": "running",
+      "started_at": "2026-09-24T20:45:25+00:00",
+      "completed_at": null,
+      "duration_seconds": null,
+      "proposal_path": "sdd/proposals/sql-schema-plane.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization high-confidence; Option B pre-selected; U1-U5 are owner decisions for the spec; sequence tools/mount lane after FEAT-569 M2d/M6a"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 16,
+    "grep_calls": 21,
+    "git_calls": 2,
+    "wall_seconds": 1500
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "commit proposal + state"
+  },
+  "detected_mode": "enrichment"
+}
