@@ -8,6 +8,7 @@ Tests cover:
 - Unknown and unimplemented backends raise ValueError
 - close() releases the backend
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -18,9 +19,7 @@ from parrot.voice.tts.synthesizer import VoiceSynthesizer
 def _make_mock_backend(audio: bytes = b"AUDIO") -> MagicMock:
     """Return a MagicMock acting as an AbstractTTSBackend."""
     backend = MagicMock()
-    backend.synthesize = AsyncMock(
-        return_value=SynthesisResult(audio=audio, mime_format="audio/ogg")
-    )
+    backend.synthesize = AsyncMock(return_value=SynthesisResult(audio=audio, mime_format="audio/ogg"))
     backend.close = AsyncMock()
     return backend
 
@@ -49,6 +48,17 @@ def test_synthesizer_default_config():
     s = VoiceSynthesizer()
     assert s.config.backend == "google"
     assert s.config.mime_format == "audio/ogg"
+
+
+def test_synthesizer_creates_polly_backend():
+    """_get_backend lazily creates the Amazon Polly backend."""
+    from parrot.voice.tts.polly_backend import AmazonPollyTTSBackend
+
+    synthesizer = VoiceSynthesizer(TTSConfig(backend="polly"))
+    backend = synthesizer._get_backend()
+
+    assert isinstance(backend, AmazonPollyTTSBackend)
+    assert backend._engine == "long-form"
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@
   import { toastStore } from "$lib/stores/toast.svelte";
   import { notificationStore } from "$lib/stores/notifications.svelte";
   import MCPServerTab from "./MCPServerTab.svelte";
+  import MyToolkitSettings from "./MyToolkitSettings.svelte";
 
   // Props
   let {
@@ -168,6 +169,7 @@
     { value: 'data', title: 'Data Management' },
     { value: 'explain', title: 'Explain This' },
     { value: 'mcp', title: 'MCP Servers' },
+    { value: 'mytools', title: 'My tool settings' },
     { value: 'appearance', title: 'Appearance' }
   ]} fillHeight>
     {#snippet children(tab)}
@@ -335,6 +337,9 @@
     {/if}
     {#if tab === 'mcp'}
       <MCPServerTab {agentId} />
+    {/if}
+    {#if tab === 'mytools'}
+      <MyToolkitSettings {agentId} />
     {/if}
     {#if tab === 'appearance'}
       <div class="py-4">

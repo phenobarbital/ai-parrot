@@ -837,6 +837,7 @@ class GoogleAnalysis:
         """
         self.logger.info(f"Starting Gemini identification for {len(detections)} detections.")
         model_name = model.value if isinstance(model, GoogleModel) else model
+        await self._ensure_client(model=model_name)
 
         # --- 1. Prepare Images and Metadata ---
         main_image_pil = self._get_image_from_input(image)
@@ -1261,7 +1262,7 @@ class GoogleAnalysis:
             )
 
             # 3. Call Model
-            client = self.client or await self.get_client(model=GoogleModel.GEMINI_3_FLASH_PREVIEW)
+            client = await self._ensure_client(model=GoogleModel.GEMINI_3_FLASH_PREVIEW.value)
 
             # Prepare contents
             contents = [prompt, im]

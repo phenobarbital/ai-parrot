@@ -192,8 +192,8 @@ class TestNoExtraIsNoop:
         assert non_symbol_edges_on == non_symbol_edges_off
 
 
-class TestMCPServerNineTools:
-    def test_mcp_server_registers_nine_tools_and_round_trips(self, tmp_path: Path):
+class TestMCPServerTools:
+    def test_mcp_server_registers_tools_and_round_trips(self, tmp_path: Path):
         # NOT an async def: `build`/`_run` calls `asyncio.run()` internally
         # (cli.py), which raises "cannot be called from a running event
         # loop" if this test itself already runs inside pytest-asyncio's
@@ -207,8 +207,19 @@ class TestMCPServerNineTools:
 
         server = create_wiki_mcp_server(root)
         names = set(server.tools.keys())
-        assert len(names) == 9
-        assert {"wiki_symbol_lookup", "wiki_code_outline", "wiki_blast_radius"} <= names
+        assert names == {
+            "wiki_query",
+            "wiki_page",
+            "wiki_related",
+            "wiki_remember",
+            "wiki_note",
+            "wiki_status",
+            "wiki_symbol_lookup",
+            "wiki_code_outline",
+            "wiki_blast_radius",
+            "wiki_decision_why",
+            "wiki_decisions_for_symbol",
+        }
 
         adapter = server.tools["wiki_symbol_lookup"]
         response = asyncio.run(adapter.execute({"query": "helper"}))

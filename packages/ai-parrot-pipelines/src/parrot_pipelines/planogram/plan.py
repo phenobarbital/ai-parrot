@@ -4,13 +4,34 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from ..abstract import AbstractPipeline
 from ..models import PlanogramConfig
+import asyncio
+from typing import Sequence, Tuple
+
+import numpy as np
+
+from .backend import UNSET, _Unset
+from .contracts import (
+    AssessmentStatus,
+    ComparisonResult,
+    CreditPolicy,
+    CycleContext,
+    EvidenceWeights,
+    IdentificationResult,
+    ObservationSource,
+    PerceptionResult,
+    RenderRecord,
+    ShapeKind,
+)
+from .perception.executor import CpuExecutor
+from .perception.membership import assign_membership, usable_shapes
+from .perception.ocr import OcrReader
+from .identification.detector import GENERIC_DETECTION_PROMPT, llm_detect_shapes
+from .identification.vision import VisionAdapter
+from .comparison.definition import load_slots_definition, validate_bindings
 from parrot.models.detections import (
     DetectionBox,
     ShelfRegion,
     IdentifiedProduct,
-)
-from parrot.models.compliance import (
-    ComplianceStatus,
 )
 from .types import (
     ProductOnShelves,
@@ -18,7 +39,10 @@ from .types import (
     ProductCounter,
     EndcapNoShelvesPromotional,
     EndcapBacklitMultitier,
+    InkWall,
 )
+
+ImageInput = Union[str, Path, Image.Image]
 
 
 class PlanogramCompliance(AbstractPipeline):
@@ -40,17 +64,56 @@ class PlanogramCompliance(AbstractPipeline):
         "product_counter": ProductCounter,
         "endcap_no_shelves_promotional": EndcapNoShelvesPromotional,
         "endcap_backlit_multitier": EndcapBacklitMultitier,
+        "ink_wall": InkWall,
     }
 
     def __init__(
         self,
         planogram_config: PlanogramConfig,
         llm: Any = None,
-        llm_provider: str = "google",
-        llm_model: Optional[str] = None,
+        llm_provider: Union[str, _Unset] = UNSET,
+        llm_model: Union[str, None, _Unset] = UNSET,
+        *,
+        cpu_workers: int = 2,
+        llm_concurrency: int = 4,
+        llm_timeout: float = 120.0,
+        vision_cache_dir: Optional[Path] = None,
+        enabled_ocr: bool = False,
         **kwargs: Any,
     ):
-        super().__init__(llm=llm, llm_provider=llm_provider, llm_model=llm_model, **kwargs)
+        """Build the pipeline and its planogram type composable.
+
+        Args:
+            planogram_config: The planogram configuration (``llm_backend`` feeds backend resolution).
+            llm: A client instance or a ``"provider:model"`` string.
+            llm_provider: Explicit provider (``UNSET`` when omitted).
+            llm_model: Explicit model (``UNSET`` when omitted).
+            cpu_workers: Worker processes of the per-run CPU executor.
+            llm_concurrency: Concurrent vision calls per run.
+            llm_timeout: Timeout of one vision call (seconds).
+            vision_cache_dir: Optional response cache directory for the vision adapter.
+            enabled_ocr: Enable optional local RapidOCR detection. Disabled by default; the LLM still
+                identifies products and occupancy when local OCR is disabled.
+            **kwargs: Forwarded to the client constructor.
+
+        Raises:
+            ValueError: Unknown planogram type, or a configuration the type rejects.
+            TypeError: The type implements neither contract.
+        """
+        super().__init__(
+            llm=llm,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            config_backend=getattr(planogram_config, "llm_backend", None),
+            **kwargs,
+        )
+        self.cpu_workers = cpu_workers
+        self.llm_concurrency = llm_concurrency
+        self.llm_timeout = llm_timeout
+        self.vision_cache_dir = vision_cache_dir
+        self.enabled_ocr = enabled_ocr
+        self._definition: Any = None
+        self._bindings: List[Any] = []
         self.planogram_config = planogram_config
 
         # Endcap geometry defaults
@@ -60,7 +123,7 @@ class PlanogramCompliance(AbstractPipeline):
 
         self.reference_images = planogram_config.reference_images or {}
 
-        # Resolve composable type handler
+        # Resolve composable type handler (validate_contract() runs in AbstractPlanogramType.__init__)
         ptype = getattr(planogram_config, "planogram_type", None) or "product_on_shelves"
         composable_cls = self._PLANOGRAM_TYPES.get(ptype)
         if composable_cls is None:
@@ -70,303 +133,260 @@ class PlanogramCompliance(AbstractPipeline):
 
     async def run(
         self,
-        image: Union[str, Path, Image.Image],
+        image: Union[ImageInput, Sequence[ImageInput]],
         output_dir: Optional[Union[str, Path]] = None,
-        image_id: Optional[str] = None,
-        **kwargs,
+        image_id: Optional[Union[str, Sequence[str]]] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
-        """Run the planogram compliance pipeline.
+        """Run the perceive -> identify -> compare cycle on one image or several photos of one fixture.
 
-        Delegates type-specific steps (ROI detection, product detection,
-        compliance checking) to self._type_handler while keeping shared
-        orchestration logic (image loading, debug rendering, result assembly).
+        Args:
+            image: One image (path or PIL image) or a sequence of photos of the same fixture.
+            output_dir: Optional directory for debug and render files.
+            image_id: One id, or a sequence matching ``image`` (default ``img0..imgN``).
+            **kwargs: Accepted and ignored (backwards compatibility).
+
+        Returns:
+            The 8 legacy keys plus the additive keys (detections, identifications, position_results,
+            shelf_scores, coverage, detected_products, definition_coverage, assessment_status,
+            strict_compliance_score, evidence_quality, detection_source, ocr_available, resolved_backend,
+            renders, errors).
+
+        Raises:
+            ValueError: ``image_id`` is a sequence whose length differs from ``image``.
         """
-        _sfx = f"_{image_id}" if image_id else ""
-        self.logger.info("Starting Pure-LLM Planogram Compliance Pipeline")
-
-        # Step 1: Find Poster/Endcap (type-specific ROI detection)
-        img = self.open_image(image)
-        planogram_description = self.planogram_config.get_planogram_description()
-
-        detections_step1 = {}
-        endcap = None
-        ad = None
-        brand = None
-        panel_text = None
-        raw_dets = []
-
+        inputs, single_sfx = self._normalize_inputs(image, image_id)
+        out_dir = Path(output_dir) if output_dir else None
+        self.logger.info("Planogram cycle: %d image(s), type=%s", len(inputs), type(self._type_handler).__name__)
+        ctx = await self._build_context(out_dir)
+        images: Dict[str, Image.Image] = {}
+        ids: List[str] = []
+        perceptions: List[PerceptionResult] = []
+        identifications: List[IdentificationResult] = []
         try:
-            endcap, ad, brand, panel_text, raw_dets = await self._type_handler.compute_roi(img)
-            detections_step1 = {"endcap": endcap, "dataset": raw_dets}
-        except Exception as e:
-            self.logger.error(f"Step 1 Failed: {e}")
-
-        if output_dir:
-            try:
-                debug_img = img.copy()
-                debug_draw = ImageDraw.Draw(debug_img)
-                w, h = debug_img.size
-
-                if detections_step1.get("dataset"):
-                    for d in detections_step1["dataset"]:
-                        if hasattr(d, "bbox"):
-                            b = d.bbox
-                            x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
-                            label = getattr(d, "label", None) or "unknown"
-                            color = "blue" if "poster" in label else "green"
-                            debug_draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
-                            debug_draw.text((x1, y1), label, fill=color)
-
-                if endcap:
-                    b = endcap.bbox
-                    x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
-                    debug_draw.rectangle([x1, y1, x2, y2], outline="red", width=5)
-                    debug_draw.text((x1, y1), "ENDCAP ROI", fill="red")
-
-                debug_path = Path(output_dir) / f"debug_step1_roi{_sfx}.png"
-                debug_img.save(debug_path)
-                self.logger.info(f"Saved Step 1 Debug Image to {debug_path}")
-            except Exception as e:
-                self.logger.warning(f"Failed to save Step 1 debug image: {e}")
-
-        # Step 2: Object Detection & Identification (type-specific)
-        identified_products, shelf_regions = await self._type_handler.detect_objects(
-            img,
-            roi=endcap,
-            macro_objects=None,
-        )
-
-        self.logger.info(
-            "Step 2 detected %d products, %d shelf regions",
-            len(identified_products),
-            len(shelf_regions),
-        )
-
-        # Build visual features lookup from planogram config (Pydantic objects)
-        _cfg_visuals_by_name: dict = {}
-        _cfg_visuals_fallback: set = set()
-        try:
-            if planogram_description.shelves:
-                for s in planogram_description.shelves:
-                    for p_cfg in s.products:
-                        if p_cfg.visual_features:
-                            _cfg_visuals_by_name[p_cfg.name] = list(p_cfg.visual_features)
-                            if p_cfg.product_type == "promotional_graphic" or "header" in s.level.lower():
-                                _cfg_visuals_fallback.update(p_cfg.visual_features)
-        except Exception as e:
-            self.logger.warning(f"Failed to extract visual_features: {e}")
-
-        # Build text requirements lookup from raw planogram config dict
-        # (text_requirements is not a declared field on ShelfProduct Pydantic model)
-        _cfg_text_reqs_by_name: dict = {}
-        try:
-            raw_config = getattr(self.planogram_config, "planogram_config", {}) or {}
-            for s_raw in raw_config.get("shelves", []):
-                for p_raw in (s_raw.get("products", []) if isinstance(s_raw, dict) else []):
-                    name = p_raw.get("name", "")
-                    text_reqs = p_raw.get("text_requirements")
-                    if name and text_reqs:
-                        _cfg_text_reqs_by_name[name] = list(text_reqs)
-        except Exception as e:
-            self.logger.warning(f"Failed to extract text_requirements: {e}")
-
-        # OCR Fallback & Visual Feature Verification for promotional items
-        for p in identified_products:
-            model_lower = (p.product_model or "").lower()
-            if "logo ad" in model_lower or "backlit" in model_lower or p.product_type == "promotional_graphic":
+            for img_id, source in inputs:
+                # A single legacy call without image_id keeps today's unsuffixed debug filename;
+                # migrated types (own perceive hook) always receive the normalised id.
+                legacy_unsuffixed = single_sfx == "" and not self._type_handler._implements("perceive")
+                hook_id = "" if legacy_unsuffixed else img_id
                 try:
-                    p_box = p.detection_box
-                    crop_box = (int(p_box.x1), int(p_box.y1), int(p_box.x2), int(p_box.y2))
+                    img, perception = await self._perceive_one(source, hook_id, ctx)
+                    identification = await self._type_handler.identify(img, perception, ctx)
+                except Exception as exc:  # noqa: BLE001 - isolate one failed photo
+                    self.logger.error("Image %s failed: %s", img_id, exc)
+                    ctx.errors.append(f"{img_id}: {exc}")
+                    continue
+                images[img_id] = img
+                ids.append(img_id)
+                perceptions.append(perception)
+                identifications.append(identification)
+            comparison = await self._compare(perceptions, identifications, ctx)
+            renders = await self._render_all(ids, images, perceptions, identifications, out_dir, single_sfx)
+        finally:
+            await ctx.executor.aclose()
+            closer = getattr(ctx.vision, "aclose", None)
+            if callable(closer):
+                await closer()
+        return self._assemble(perceptions, identifications, comparison, renders, ctx)
 
-                    if crop_box[0] < crop_box[2] and crop_box[1] < crop_box[3]:
-                        p_img = img.crop(crop_box)
-                        self.logger.info(f"Running OCR & Visual verification on promotional item: {p.product_model}")
+    def _normalize_inputs(self, image: Any, image_id: Any) -> Tuple[List[Tuple[str, ImageInput]], Optional[str]]:
+        """Return ([(image_id, source)], single_image_suffix). Suffix is None for multi-image calls.
 
-                        item_visuals = _cfg_visuals_by_name.get(p.product_model) or list(_cfg_visuals_fallback)
-                        item_text_reqs = _cfg_text_reqs_by_name.get(p.product_model, [])
+        Raises:
+            ValueError: Mismatching, duplicate or wrongly typed ids, or an empty image list.
+        """
+        if isinstance(image, (str, Path, Image.Image)):
+            if image_id is not None and not isinstance(image_id, str):
+                raise ValueError("image_id must be a string when a single image is given")
+            return [(image_id or "img0", image)], (f"_{image_id}" if image_id else "")
+        sources = list(image)
+        if not sources:
+            raise ValueError("run() needs at least one image")
+        if image_id is None:
+            ids = [f"img{n}" for n in range(len(sources))]
+        elif isinstance(image_id, str):
+            raise ValueError("image_id must be a sequence matching the image list")
+        else:
+            ids = list(image_id)
+        if len(ids) != len(sources):
+            raise ValueError(f"image_id has {len(ids)} entries for {len(sources)} images")
+        if len(set(ids)) != len(ids):
+            raise ValueError(f"image_id entries must be unique, got {ids}")
+        return list(zip(ids, sources, strict=True)), None
 
-                        visuals_prompt = ""
-                        if item_visuals:
-                            v_list = "\n".join([f"- {v}" for v in item_visuals])
-                            visuals_prompt = f"\nAlso check if these visual elements are present:\n{v_list}\nFor each, output 'CONFIRMED: <feature sequence>'"
-
-                        text_reqs_prompt = ""
-                        if item_text_reqs:
-                            req_texts = [
-                                (
-                                    r.get("required_text", r)
-                                    if isinstance(r, dict)
-                                    else getattr(r, "required_text", str(r))
-                                )
-                                for r in item_text_reqs
-                            ]
-                            r_list = "\n".join([f'- "{t}"' for t in req_texts if t])
-                            text_reqs_prompt = (
-                                f"\nAlso specifically look for these required texts (even if partially visible or at the edge):\n{r_list}"
-                                f"\nFor each found, output 'TEXT_FOUND: <exact required text>'"
-                            )
-
-                        ocr_prompt = f"Read all visible text in this image.{visuals_prompt}{text_reqs_prompt}\nReturn text content. If visual features confirmed, list them."
-                        async with self.roi_client as client:
-                            msg = await client.ask_to_image(
-                                image=p_img,
-                                prompt=ocr_prompt,
-                                model="gemini-3.5-flash",
-                                no_memory=True,
-                                max_tokens=1024,
-                            )
-                            found_content = msg.output if msg else ""
-                            if found_content:
-                                self.logger.info(f"Enrichment result: {found_content}")
-
-                                confirmed_features = []
-                                found_texts = []
-                                clean_text_parts = []
-                                for line in found_content.split("\n"):
-                                    if "CONFIRMED:" in line:
-                                        feat = line.split("CONFIRMED:", 1)[1].strip()
-                                        confirmed_features.append(feat)
-                                    elif "TEXT_FOUND:" in line:
-                                        txt = line.split("TEXT_FOUND:", 1)[1].strip()
-                                        found_texts.append(txt)
-                                    else:
-                                        clean_text_parts.append(line)
-
-                                clean_text = "\n".join(clean_text_parts).strip()
-
-                                if clean_text:
-                                    self.logger.info(f"OCR Fallback found text: {clean_text}")
-                                    p.ocr_text = clean_text
-                                    p.visual_features = (p.visual_features or []) + [f"ocr:{clean_text}", clean_text]
-
-                                if confirmed_features:
-                                    self.logger.info(f"Confirmed visual features: {confirmed_features}")
-                                    p.visual_features = (p.visual_features or []) + confirmed_features
-
-                                if found_texts:
-                                    self.logger.info(f"Confirmed required texts: {found_texts}")
-                                    p.visual_features = (p.visual_features or []) + found_texts
-
-                                p.product_type = "promotional_graphic"
-
-                                brand_lower = (planogram_description.brand or "").lower()
-                                brand_in_ocr = brand_lower and brand_lower in clean_text.lower()
-                                brand_in_model = brand_lower and brand_lower in (p.product_model or "").lower()
-                                brand_in_features = brand_lower and any(
-                                    brand_lower in (f or "").lower() for f in (confirmed_features or [])
-                                )
-                                if planogram_description.brand and (
-                                    brand_in_ocr or brand_in_model or brand_in_features
-                                ):
-                                    p.brand = planogram_description.brand
-                                    self.logger.info(f"Verified brand '{p.brand}' via OCR on {p.product_model}")
-                except Exception as e:
-                    self.logger.warning(f"Failed OCR fallback for {p.product_model}: {e}")
-
-        # Generate virtual shelves from Step 1 Endcap ROI (type-specific)
-        if endcap and endcap.bbox:
-            if hasattr(self._type_handler, "_generate_virtual_shelves"):
-                self.logger.info("Generating virtual shelves from Endcap ROI...")
-                virtual_shelves = self._type_handler._generate_virtual_shelves(
-                    endcap.bbox, img.size, planogram_description
-                )
-                shelf_regions = virtual_shelves
-            else:
-                self.logger.debug(
-                    "Type %s does not use _generate_virtual_shelves; skipping.",
-                    type(self._type_handler).__name__,
-                )
-
-        # Optionally refine shelf boundaries from detected fact-tag rows
-        _pg_cfg = getattr(self.planogram_config, "planogram_config", {}) or {}
-        if _pg_cfg.get("use_fact_tag_boundaries") and shelf_regions:
-            shelf_regions = self._type_handler._refine_shelves_from_fact_tags(shelf_regions, identified_products)
-
-        # Assign products to shelves (type-specific)
-        if hasattr(self._type_handler, "_assign_products_to_shelves"):
-            _use_y1 = _pg_cfg.get("use_fact_tag_boundaries", False)
-            self._type_handler._assign_products_to_shelves(
-                identified_products, shelf_regions, use_y1_assignment=_use_y1
-            )
-
-        # Fact-tag OCR corroboration (type-specific)
-        if _pg_cfg.get("use_fact_tag_boundaries"):
-            if hasattr(self._type_handler, "_ocr_fact_tags"):
-                _ft_shelf_map = await self._type_handler._ocr_fact_tags(
-                    identified_products,
-                    img,
-                    planogram_description,
-                    shelf_regions=shelf_regions,
-                )
-                if hasattr(self._type_handler, "_corroborate_products_with_fact_tags"):
-                    self._type_handler._corroborate_products_with_fact_tags(
-                        identified_products, _ft_shelf_map, planogram_description
-                    )
-
-        # Inject poster text as product if found
-        if panel_text and getattr(panel_text, "content", None):
-            self.logger.info(f"Injecting poster text: {panel_text.content}")
-            ocr_content = panel_text.content.strip()
-            text_product = IdentifiedProduct(
-                detection_box=DetectionBox(
-                    x1=int(panel_text.bbox.x1 * img.width),
-                    y1=int(panel_text.bbox.y1 * img.height),
-                    x2=int(panel_text.bbox.x2 * img.width),
-                    y2=int(panel_text.bbox.y2 * img.height),
-                    confidence=float(getattr(panel_text, "confidence", 1.0)),
-                    ocr_text=ocr_content,
-                ),
-                product_type="text_overlay",
-                product_model="poster_text",
-                confidence=float(getattr(panel_text, "confidence", 1.0)),
-                visual_features=[f"ocr:{ocr_content}"],
-                shelf_location="header",
-            )
-            identified_products.append(text_product)
-
-        # Inject brand logo if found
-        if brand:
-            brand_conf = float(getattr(brand, "confidence", 1.0))
-            bx1 = int(brand.bbox.x1 * img.width)
-            by1 = int(brand.bbox.y1 * img.height)
-            bx2 = int(brand.bbox.x2 * img.width)
-            by2 = int(brand.bbox.y2 * img.height)
-            brand_product = IdentifiedProduct(
-                detection_box=DetectionBox(x1=bx1, y1=by1, x2=bx2, y2=by2, confidence=brand_conf),
-                product_type="brand_logo",
-                product_model=brand.label or "brand_logo",
-                confidence=brand_conf,
-                brand=planogram_description.brand,
-                shelf_location="header",
-            )
-            identified_products.append(brand_product)
-            self.logger.info(f"Injecting brand logo: {brand_product.brand}")
-
-        # Step 3: Planogram Compliance Verification (type-specific)
-        compliance_results = self._type_handler.check_planogram_compliance(identified_products, planogram_description)
-        overall_score = 0.0
-        overall_compliant = True
-        if compliance_results:
-            overall_score = sum(r.compliance_score for r in compliance_results) / len(compliance_results)
-            overall_compliant = all(r.compliance_status == ComplianceStatus.COMPLIANT for r in compliance_results)
-
-        # Step 4: Render evaluated image (shared, with type-specific colors)
-        rendered_image = self.render_evaluated_image(
-            img,
-            shelf_regions=shelf_regions,
-            identified_products=identified_products,
-            save_to=str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None,
+    async def _build_context(self, output_dir: Optional[Path]) -> CycleContext:
+        """Create the per-run shared services."""
+        handler = self._type_handler
+        if handler.requires_slots_definition and self._definition is None:
+            source = self.planogram_config.slots_definition
+            self._definition = await asyncio.to_thread(load_slots_definition, source)
+            self._bindings = validate_bindings(self._definition, self.planogram_config.planogram_config)
+        vision = VisionAdapter(
+            self.llm,
+            self.resolved_backend,
+            semaphore=asyncio.Semaphore(self.llm_concurrency),
+            cache_dir=self.vision_cache_dir,
+            timeout=self.llm_timeout,
+        )
+        return CycleContext(
+            vision=vision,
+            executor=CpuExecutor(max_workers=self.cpu_workers),
+            ocr=OcrReader() if self.enabled_ocr else None,
+            definition=self._definition,
+            bindings=list(self._bindings),
+            credit_policy=CreditPolicy.default(),
+            evidence_weights=EvidenceWeights(),
+            output_dir=output_dir,
+            errors=[],
         )
 
+    async def _perceive_one(
+        self, source: ImageInput, image_id: str, ctx: CycleContext
+    ) -> Tuple[Image.Image, PerceptionResult]:
+        """Load one image (untouched unless the type wants enhancement), perceive, apply the fallback."""
+        handler = self._type_handler
+        img = await asyncio.to_thread(self.open_image, source, enhance=handler.uses_enhanced_image)
+        perception = await handler.perceive(img, image_id, ctx)
+        perception = await self._fallback_if_needed(img, perception, ctx)
+        return img, perception
+
+    async def _fallback_if_needed(
+        self, img: Image.Image, perception: PerceptionResult, ctx: CycleContext
+    ) -> PerceptionResult:
+        """LLM-detector fallback when usable on-fixture shapes are under the type threshold.
+
+        Off-fixture and uncertain shapes never count toward the threshold. Fallback perceptions carry no
+        slots: the type treats every on-fixture shape as its own slot. A failed fallback keeps the original
+        shapes and records an error — never a silent empty result.
+        """
+        handler = self._type_handler
+        threshold = handler.min_usable_shapes
+        if threshold <= 0 or perception.legacy is not None:
+            return perception
+        if len(usable_shapes(perception.shapes)) >= threshold:
+            return perception
+        self.logger.warning("Image %s: usable shapes under %d — LLM detector fallback", perception.image_id, threshold)
+        bgr = np.ascontiguousarray(np.asarray(img.convert("RGB"))[:, :, ::-1])
+        prompt = handler.fallback_detection_prompt() or GENERIC_DETECTION_PROMPT
+        shapes = await llm_detect_shapes(bgr, perception.image_id, ctx, prompt=prompt)
+        if not shapes:
+            message = f"{perception.image_id}: LLM detector fallback produced no shapes; perception kept as is"
+            ctx.errors.append(message)
+            return perception.model_copy(update={"errors": [*perception.errors, message]})
+        zones = [s for s in shapes if s.kind == ShapeKind.ZONE] or list(perception.zones)
+        others = [s for s in shapes if s.kind != ShapeKind.ZONE]
+        others = assign_membership(others, zones, perception.image_size)
+        return perception.model_copy(
+            update={"shapes": others, "zones": zones, "slots": [], "detection_source": ObservationSource.LLM.value}
+        )
+
+    async def _compare(
+        self, perceptions: List[PerceptionResult], identifications: List[IdentificationResult], ctx: CycleContext
+    ) -> ComparisonResult:
+        """Run the compare hook, or build the all-failed inconclusive result."""
+        if perceptions:
+            return await self._type_handler.compare(perceptions, identifications, ctx)
+        return ComparisonResult(
+            compliance_results=[],
+            overall_compliance_score=0.0,
+            strict_compliance_score=None,
+            overall_compliant=False,
+            coverage=None,
+            definition_coverage=None,
+            evidence_quality=None,
+            assessment_status=AssessmentStatus.INCONCLUSIVE,
+            errors=["no image could be processed"],
+        )
+
+    async def _render_all(
+        self,
+        ids: List[str],
+        images: Dict[str, Image.Image],
+        perceptions: List[PerceptionResult],
+        identifications: List[IdentificationResult],
+        output_dir: Optional[Path],
+        single_sfx: Optional[str],
+    ) -> List[RenderRecord]:
+        """Render every successfully processed image with ITS OWN boxes only."""
+        records: List[RenderRecord] = []
+        for img_id, perception, identification in zip(ids, perceptions, identifications, strict=True):
+            sfx = single_sfx if single_sfx is not None else f"_{img_id}"
+            save_to = str(output_dir / f"compliance_render{sfx}.png") if output_dir else None
+            products, shelves = self._render_inputs(perception, identification)
+            rendered = await asyncio.to_thread(
+                self.render_evaluated_image,
+                images[img_id],
+                shelf_regions=shelves,
+                identified_products=products,
+                save_to=save_to,
+            )
+            records.append(RenderRecord(image_id=img_id, rendered_image=rendered, overlay_path=save_to))
+        return records
+
+    def _render_inputs(
+        self, perception: PerceptionResult, identification: IdentificationResult
+    ) -> Tuple[List[IdentifiedProduct], List[ShelfRegion]]:
+        """(identified_products, shelf_regions) of ONE image for rendering and the legacy result keys."""
+        if perception.legacy is not None:
+            return list(perception.legacy.identified_products), list(perception.legacy.shelf_regions)
+        boxes: Dict[str, DetectionBox] = {s.shape_id: s.box for s in perception.shapes}
+        boxes.update({s.slot_id: s.box for s in perception.slots})
+        boxes.update({s.shape_id: s.box for s in identification.added})
+        products: List[IdentifiedProduct] = []
+        for ident in identification.identifications:
+            box = boxes.get(ident.shape_id)
+            if box is None:
+                continue
+            products.append(
+                IdentifiedProduct(
+                    product_type="product",
+                    product_model=ident.product,
+                    brand=ident.brand,
+                    confidence=ident.raw_confidence,
+                    detection_box=box,
+                    ocr_text=ident.text,
+                )
+            )
+        return products, []
+
+    def _assemble(
+        self,
+        perceptions: List[PerceptionResult],
+        identifications: List[IdentificationResult],
+        comparison: ComparisonResult,
+        renders: List[RenderRecord],
+        ctx: CycleContext,
+    ) -> Dict[str, Any]:
+        """Eight legacy keys + additive keys."""
+        first = renders[0] if renders else None
+        products, shelves = self._render_inputs(perceptions[0], identifications[0]) if perceptions else ([], [])
+        sources = {str(p.detection_source) for p in perceptions}
+        results = comparison.compliance_results
         return {
-            "step3_compliance_results": compliance_results,
-            "compliance_results": compliance_results,
-            "overall_compliance_score": overall_score,
-            "overall_compliant": overall_compliant,
-            "identified_products": identified_products,
-            "shelf_regions": shelf_regions,
-            "rendered_image": rendered_image,
-            "overlay_path": str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None,
+            "step3_compliance_results": results,
+            "compliance_results": results,
+            "overall_compliance_score": comparison.overall_compliance_score,
+            "overall_compliant": bool(comparison.overall_compliant and results),
+            "identified_products": products,
+            "shelf_regions": shelves,
+            "rendered_image": first.rendered_image if first else None,
+            "overlay_path": first.overlay_path if first else None,
+            # additive
+            "detections": [p.model_dump() for p in perceptions],
+            "identifications": [i.model_dump() for i in identifications],
+            "position_results": comparison.position_results,
+            "shelf_scores": comparison.shelf_scores,
+            "coverage": comparison.coverage,
+            "detected_products": comparison.detected_products,
+            "definition_coverage": comparison.definition_coverage,
+            "assessment_status": AssessmentStatus(comparison.assessment_status).value,
+            "strict_compliance_score": comparison.strict_compliance_score,
+            "evidence_quality": comparison.evidence_quality,
+            "detection_source": (sources.pop() if len(sources) == 1 else ("mixed" if sources else None)),
+            "ocr_available": bool(getattr(ctx.ocr, "available", False)),
+            "resolved_backend": self.resolved_backend.as_string(),
+            "renders": renders,
+            "errors": list(ctx.errors) + list(comparison.errors),
         }
 
     # =========================================================================

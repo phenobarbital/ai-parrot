@@ -1,0 +1,46 @@
+{
+  "additionalProperties": false,
+  "description": "Agent-level (or per-user override) configuration of one toolkit.",
+  "properties": {
+    "params": {
+      "additionalProperties": true,
+      "title": "Params",
+      "type": "object"
+    },
+    "secret_refs": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Secret Refs",
+      "type": "object"
+    },
+    "slug": {
+      "title": "Slug",
+      "type": "string"
+    },
+    "user_overridable": {
+      "items": {
+        "type": "string"
+      },
+      "title": "User Overridable",
+      "type": "array"
+    },
+    "vault_owner": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Vault Owner"
+    }
+  },
+  "required": [
+    "slug"
+  ],
+  "title": "ToolkitSpec",
+  "type": "object"
+}

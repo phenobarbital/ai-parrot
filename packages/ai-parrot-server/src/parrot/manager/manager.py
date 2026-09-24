@@ -80,6 +80,7 @@ from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 
 # Crew:
 from ..bots.flows.crew import AgentCrew
+from ..bots.flows.crew.credentials import get_crew_google_api_key
 from ..models.crew_definition import CrewDefinition
 from ..handlers.crew.handler import CrewHandler
 from ..handlers.crew.execution_handler import CrewExecutionHandler
@@ -481,6 +482,17 @@ class BotManager:
         has_prompt_mutations = any(prompt_config_dict.get(key) for key in ("remove", "add", "customize"))
         prompt_preset_name = prompt_config_dict.get("preset") or ("default" if has_prompt_mutations else None)
 
+        # FEAT-593: DB agents get their tools (+ toolkit specs, agent-level MCP) through the
+        # same normalization boundary as YAML agents. The dead kwarg it replaces was never
+        # consumed by AbstractBot.
+        from ..tools.spec import normalize_tooling  # pylint: disable=import-outside-toplevel
+
+        tooling = normalize_tooling(
+            bot_model.tools,
+            mcp_servers=getattr(bot_model, "mcp_servers", None) or [],
+            toolkit_config=getattr(bot_model, "toolkit_config", None) or {},
+        )
+
         bot_instance = class_name(
             chatbot_id=bot_model.chatbot_id,
             name=bot_model.name,
@@ -511,7 +523,8 @@ class BotManager:
             tools_enabled=bot_model.tools_enabled,
             auto_tool_detection=bot_model.auto_tool_detection,
             tool_threshold=bot_model.tool_threshold,
-            available_tools=bot_model.tools,
+            tools=tooling.tools + tooling.toolkits,
+            agent_mcp_servers=tooling.mcp_servers,
             operation_mode=bot_model.operation_mode,
             # Memory configuration
             memory_type=bot_model.memory_type,
@@ -3085,7 +3098,9 @@ Available documentation UIs:
         ``self.get_bot_class`` as ``class_resolver``. Shared tool
         resolution is not available in this context (no tool registry on
         BotManager); ``from_definition`` handles the ``tool_resolver=None``
-        default by skipping shared tool resolution.
+        default by skipping shared tool resolution. Google agents without
+        their own credential receive ``CREW_AI_KEY`` when it is configured
+        (FEAT-575).
 
         Args:
             crew_def: Crew definition.
@@ -3096,6 +3111,7 @@ Available documentation UIs:
         return AgentCrew.from_definition(
             crew_def,
             class_resolver=self.get_bot_class,
+            google_api_key=get_crew_google_api_key(),
         )
 
     def get_crew_stats(self) -> Dict[str, Any]:
@@ -3112,7 +3128,7 @@ Available documentation UIs:
             "crews": [],
         }
 
-        for name, (crew, crew_def) in self._crews.items():
+        for _name, (crew, crew_def) in self._crews.items():
             mode = crew_def.execution_mode.value
             stats["crews_by_mode"][mode] = stats["crews_by_mode"].get(mode, 0) + 1
             stats["total_agents"] += len(crew.agents)

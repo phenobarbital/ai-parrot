@@ -22,7 +22,8 @@ from parrot.flows.dev_loop.sdd_coder.models import (
     RosterConfig,
     RosterSeat,
 )
-from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner
+from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityAssessment
+from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, eligible_seats
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
     SuspensionReceipt,
@@ -30,6 +31,23 @@ from parrot.knowledge.wiki.ledger.coder_suspensions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class SeatBusyError(RuntimeError):
+    """`admit(wait=False)` found `key` reserved by another live attempt.
+
+    Deliberately NOT a `ValueError`: the engine maps `admit()`'s `ValueError`s
+    (excluded / closed / unknown seat) to "not dispatched"; a busy seat is a
+    transient scheduling condition the caller must surface as `seat_busy`.
+    """
+
+    def __init__(self, key: ModelKey, *, task_id: str, held_by_task_id: str) -> None:
+        super().__init__(
+            f"model {key.backend}/{key.model} is busy with {held_by_task_id}; cannot admit {task_id} without waiting"
+        )
+        self.key = key
+        self.task_id = task_id
+        self.held_by_task_id = held_by_task_id
 
 
 def _effective_key(seat: RosterSeat) -> Optional[ModelKey]:
@@ -104,6 +122,7 @@ class ExecutionPool:
         self._feature_id = feature_id
         self._worktree_path = worktree_path
         self._roster_fingerprint = roster_fingerprint(roster)
+        self._complexity = roster.complexity
         self._seats: List[RosterSeat] = list(seats)
         self._suspension_store = suspension_store
         self._initial_exclusions: Set[ModelKey] = set(initial_exclusions)
@@ -177,7 +196,27 @@ class ExecutionPool:
             fallback_reason=self._fallback_reason,
             persisted=not self._persistence_degraded,
             persistence_degraded=self._persistence_degraded,
+            roster_warnings=self._roster_warnings(),
         )
+
+    def _roster_warnings(self) -> List[str]:
+        """Return advisory notes about unavailable complex-task retry capacity.
+
+        Returns:
+            Zero or more human-readable warnings; never raises.
+        """
+        if not self._complexity.strong_models:
+            return ["Roster has no strong models; every complex/unknown task will block at admission."]
+
+        restricted_assessment = ComplexityAssessment.model_construct(classification="complex")
+        restricted_seats = eligible_seats(restricted_assessment, self._seats, self._complexity)
+        retry_capable_seats = [seat for seat in restricted_seats if seat.kind != "native"]
+        if len(retry_capable_seats) < 2:
+            return [
+                "Roster has fewer than two MCP retry-capable strong seats; a failed complex/unknown "
+                "attempt has no MCP seat to retry on."
+            ]
+        return []
 
     def snapshot(self) -> ExecutionSnapshot:
         """Return a durable snapshot for journaling/restoration (TASK-3282 owns the filesystem side).
@@ -201,17 +240,25 @@ class ExecutionPool:
             generation=self._generation,
         )
 
-    async def admit(self, task_id: str, key: ModelKey) -> str:
+    async def admit(self, task_id: str, key: ModelKey, *, wait: bool = True) -> str:
         """Reserve `key` for one attempt of `task_id`, returning its reservation UID.
 
-        Blocks (releasing the condition) while `key` is busy with a healthy,
-        non-excluded seat. Every wake-up re-checks status/exclusion from
-        scratch -- a key suspended while something waits on it raises
-        `ValueError` instead of looping or hanging forever.
+        With `wait=True` (the default) this blocks (releasing the condition)
+        while `key` is busy with a healthy, non-excluded seat. Every wake-up
+        re-checks status/exclusion from scratch -- a key suspended while
+        something waits on it raises `ValueError` instead of looping or
+        hanging forever.
+
+        With `wait=False` a busy key raises `SeatBusyError` immediately. Use
+        this from request handlers that cannot afford an open-ended wait --
+        e.g. `coder_prepare_native`, whose reservation is only ever released by
+        a LATER `coder_merge` call: parking there would wait on a request that
+        has not been issued yet (the 2026-09-24 sdd-worker wedge).
 
         Raises:
             ValueError: the pool is closed/recovering, `key` is excluded
                 (initial or local), unknown to this pool, or probe-failed.
+            SeatBusyError: `wait=False` and `key` is currently reserved.
         """
         async with self._condition:
             while True:
@@ -226,6 +273,9 @@ class ExecutionPool:
                     raise ValueError(f"model {key.backend}/{key.model} failed its probe and is unavailable")
                 if key not in self._busy_seats:
                     break
+                if not wait:
+                    holder = next((tid for tid, held in self._admitted.values() if held == key), "<unknown>")
+                    raise SeatBusyError(key, task_id=task_id, held_by_task_id=holder)
                 await self._condition.wait()
 
             attempt_uid = uuid4().hex

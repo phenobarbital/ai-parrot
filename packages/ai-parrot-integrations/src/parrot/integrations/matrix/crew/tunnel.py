@@ -8,6 +8,7 @@ the matching result via a correlation-future — the same pattern used by
 ``correlation_id`` instead of ``task_id``. Idle tunnels are tombstoned by a
 periodic sweeper after ``ttl_minutes`` (``0`` = keep forever).
 """
+
 import asyncio
 import logging
 import uuid
@@ -394,9 +395,7 @@ class TunnelRegistry:
             # known tunnel rooms is defense-in-depth against a forged
             # correlation_id resolving a future from an unrelated room.
             if not self.is_tunnel_room(room_id):
-                self.logger.warning(
-                    "Ignoring m.parrot.result in non-tunnel room %s from %s", room_id, sender
-                )
+                self.logger.warning("Ignoring m.parrot.result in non-tunnel room %s from %s", room_id, sender)
                 return
             try:
                 result = ResultEventContent(**content)
@@ -411,9 +410,7 @@ class TunnelRegistry:
 
         if event_type == ParrotEventType.FEEDBACK:
             if not self.is_tunnel_room(room_id):
-                self.logger.warning(
-                    "Ignoring m.parrot.feedback in non-tunnel room %s from %s", room_id, sender
-                )
+                self.logger.warning("Ignoring m.parrot.feedback in non-tunnel room %s from %s", room_id, sender)
                 return
             try:
                 feedback = FeedbackEventContent(**content)
@@ -510,11 +507,7 @@ class TunnelRegistry:
 
         now = datetime.now(timezone.utc)
         ttl = timedelta(minutes=self._config.ttl_minutes)
-        expired = [
-            key
-            for key, t in self._tunnels.items()
-            if not t.inflight and (now - t.last_used) > ttl
-        ]
+        expired = [key for key, t in self._tunnels.items() if not t.inflight and (now - t.last_used) > ttl]
 
         count = 0
         for key in expired:

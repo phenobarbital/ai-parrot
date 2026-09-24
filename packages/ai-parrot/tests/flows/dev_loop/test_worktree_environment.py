@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import shlex
 import shutil
@@ -17,6 +18,14 @@ from parrot.flows.dev_loop import worktree_environment as policy
 from parrot.flows.dev_loop.dispatchers.llm import LLMCodeDispatcher
 from parrot.flows.dev_loop.dispatchers.claude import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import ClaudeCodeDispatchProfile, LLMCodeDispatchProfile
+
+
+@pytest.fixture(autouse=True)
+def scratch_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the sandbox's Claude scratchpad root at a private directory instead of the real ``/tmp/claude-<uid>``."""
+    root = tmp_path / "claude-scratch"
+    monkeypatch.setattr(policy, "CLAUDE_SCRATCH_ROOT", root)
+    return root
 
 
 @pytest.fixture
@@ -298,7 +307,9 @@ def test_real_native_hook_keeps_primary_environment_read_only(tmp_path: Path) ->
     command = "printf corrupt > .venv/editable.pth"
     response = policy.hook_response({"cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": command}})
     wrapped = response["hookSpecificOutput"]["updatedInput"]["command"]
-    result = subprocess.run(["/bin/bash", "-c", wrapped], capture_output=True, text=True, timeout=20)
+    # The assertion reads bash's own diagnostic, which is localized.
+    environ = {**os.environ, "LC_ALL": "C"}
+    result = subprocess.run(["/bin/bash", "-c", wrapped], capture_output=True, text=True, timeout=20, env=environ)
     assert result.returncode != 0
     assert "Read-only file system" in result.stderr
     assert target.read_text() == "original\n"
@@ -331,21 +342,65 @@ def test_feature_worktree_binds_primary_worktree_admin_dir(tmp_path: Path, monke
     assert main.resolve() not in binds
 
 
-def test_primary_checkout_has_no_extra_worktree_admin_bind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_primary_checkout_has_no_extra_worktree_admin_bind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     main = tmp_path / "main"
     (main / ".git").mkdir(parents=True)
     (main / ".claude" / "worktrees").mkdir(parents=True)
-    assert _writable_binds(policy.protected_argv(main, ["true"])) == [main.resolve()]
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
+
+
+def test_sandbox_binds_claude_scratch_root_after_private_tmp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """Claude Code's per-session scratchpads live under ``/tmp/claude-<uid>``; the private tmpfs must not hide them."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    scratch = scratch_root
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    argv = policy.protected_argv(main, ["true"])
+    assert scratch.is_dir(), "the hook creates the root so a lazily-created scratchpad has somewhere to land"
+    tmpfs_index = argv.index("--tmpfs")
+    assert argv[tmpfs_index + 1] == "/tmp"
+    bind_index = argv.index(str(scratch.resolve()))
+    assert argv[bind_index - 1] == "--bind" and argv[bind_index + 1] == str(scratch.resolve())
+    assert bind_index > tmpfs_index, "the bind must come after the tmpfs mount or the tmpfs shadows it"
+
+
+def test_real_scratchpad_survives_between_sandboxed_commands(tmp_path: Path, scratch_root: Path) -> None:
+    """A file a seat writes to its scratchpad in one Bash call must still be there in the next one."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    scratchpad = scratch_root / "-project" / "session-1" / "scratchpad"
+
+    def sandboxed(command: str) -> subprocess.CompletedProcess[str]:
+        argv = policy.protected_argv(main, ["/bin/bash", "-c", command])
+        return subprocess.run(argv, capture_output=True, text=True, timeout=20)
+
+    result = sandboxed(
+        f"mkdir -p {shlex.quote(str(scratchpad))} && echo collected > {shlex.quote(str(scratchpad / 'collected.txt'))}"
+    )
+    assert result.returncode == 0, result.stderr
+    result = sandboxed(f"cat {shlex.quote(str(scratchpad / 'collected.txt'))}")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "collected"
+    assert (scratchpad / "collected.txt").read_text().strip() == "collected"
+    # The rest of /tmp stays private: a stray write next to the scratch root never reaches the host.
+    sandboxed(f"touch {shlex.quote(str(tmp_path / 'stray-tmp-file'))}")
+    assert not (tmp_path / "stray-tmp-file").exists()
 
 
 def test_linked_checkout_without_admin_dir_binds_nothing_extra(
-    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+    checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, scratch_root: Path
 ) -> None:
     monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
     worktree, env = checkout
     binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
-    assert binds == [worktree.resolve(), (env.parent / ".git").resolve()]
+    assert binds == [scratch_root.resolve(), worktree.resolve(), (env.parent / ".git").resolve()]
 
 
 def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout(tmp_path: Path) -> None:
@@ -383,6 +438,68 @@ def test_real_feature_worktree_can_administer_worktrees_but_not_primary_checkout
     assert not feature.exists()
 
 
+def test_feature_worktree_binds_primary_shared_ledger_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A worktree agent files ledger issues in the primary's ``.parrot/ledger``; the rest of ``.parrot`` stays read-only."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    (main / ".parrot" / "ledger").mkdir(parents=True)
+    binds = _writable_binds(policy.protected_argv(worktree, ["true"]))
+    assert (main / ".parrot" / "ledger").resolve() in binds
+    assert (main / ".parrot").resolve() not in binds
+    assert main.resolve() not in binds
+
+
+def test_primary_checkout_has_no_extra_ledger_bind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main = tmp_path / "main"
+    (main / ".git").mkdir(parents=True)
+    (main / ".parrot" / "ledger").mkdir(parents=True)
+    assert _writable_binds(policy.protected_argv(main, ["true"])) == [scratch_root.resolve(), main.resolve()]
+
+
+def test_real_feature_worktree_can_write_shared_ledger_but_not_wiki_plane(tmp_path: Path) -> None:
+    """SQLite writes (with ``-wal``/``-shm`` siblings) reach the primary ledger; the wiki plane stays read-only."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    ledger_dir = main / ".parrot" / "ledger"
+    ledger_dir.mkdir(parents=True)
+    feature = main / ".claude" / "worktrees" / "feat-x"
+    feature.parent.mkdir(parents=True)
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    script = (
+        "import sqlite3, sys\n"
+        "con = sqlite3.connect(sys.argv[1])\n"
+        "con.execute('PRAGMA journal_mode=WAL')\n"
+        "con.execute('CREATE TABLE IF NOT EXISTS t (v TEXT)')\n"
+        "con.execute(\"INSERT INTO t VALUES ('filed')\")\n"
+        "con.commit()\n"
+    )
+    ledger_db = ledger_dir / "ledger.db"
+    result = subprocess.run(
+        policy.protected_argv(feature, [sys.executable, "-c", script, str(ledger_db)]),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    import sqlite3
+
+    with sqlite3.connect(ledger_db) as con:
+        assert con.execute("SELECT v FROM t").fetchall() == [("filed",)]
+
+    subprocess.run(
+        policy.protected_argv(feature, ["touch", str(main / ".parrot" / "wiki.db")]), capture_output=True, timeout=20
+    )
+    assert not (main / ".parrot" / "wiki.db").exists()
+
+
 # ---------------------------------------------------------------------------
 # Hung-command guard: a sandboxed process that never exits must not keep bwrap
 # (and the host's Bash tool) "running" forever.
@@ -394,27 +511,47 @@ def _sandboxed_argv(response: dict[str, Any]) -> list[str]:
 
 
 def test_hook_bounds_command_with_tool_timeout(checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """An explicit tool timeout is backstopped just above the host's own bound."""
     monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
     response = policy.hook_response(
         {"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "pytest -q x.py", "timeout": 90_000}}
     )
     argv = _sandboxed_argv(response)
     tail = argv[argv.index("--") + 1 :]
-    assert tail == ["/usr/bin/timeout", "-k", "5", "90", "/bin/bash", "-c", "pytest -q x.py"]
+    assert tail == ["/usr/bin/timeout", "-k", "5", "113", "/bin/bash", "-c", "pytest -q x.py"]
 
 
-def test_hook_default_timeout_matches_host_default(
+def test_hook_default_timeout_backstops_host_default(
     checkout: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An implicit bound is lifted to at least the host's maximum.
+
+    The host does not kill a foreground call at its default bound — it detaches
+    it and lets it run on. Killing inside the sandbox at that same instant
+    turned healthy slow commands (a merge-tier pytest sweep) into ``exit 124``
+    with their output discarded, so the sandbox bound must sit well above it.
+    """
     monkeypatch.setattr(policy.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.delenv("BASH_DEFAULT_TIMEOUT_MS", raising=False)
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     argv = _sandboxed_argv(response)
-    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "120"]
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "600"]
     monkeypatch.setenv("BASH_DEFAULT_TIMEOUT_MS", "600000")
     response = policy.hook_response({"cwd": str(checkout[0]), "tool_name": "Bash", "tool_input": {"command": "true"}})
     argv = _sandboxed_argv(response)
-    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "600"]
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "750"]
+
+
+@pytest.mark.parametrize("host_ms", [1_000, 30_000, 120_000, 600_000, 900_000])
+def test_sandbox_backstop_never_preempts_the_host_bound(monkeypatch: pytest.MonkeyPatch, host_ms: int) -> None:
+    """Whatever the host bound, the in-sandbox kill lands strictly after it."""
+    monkeypatch.delenv("BASH_DEFAULT_TIMEOUT_MS", raising=False)
+    explicit = policy.command_timeout_seconds({"command": "true", "timeout": host_ms})
+    assert explicit is not None and explicit > host_ms // 1000
+
+    monkeypatch.setenv("BASH_DEFAULT_TIMEOUT_MS", str(host_ms))
+    implicit = policy.command_timeout_seconds({"command": "true"})
+    assert implicit is not None and implicit > host_ms // 1000
 
 
 def test_hook_leaves_background_commands_unbounded_without_explicit_timeout(
@@ -430,7 +567,7 @@ def test_hook_leaves_background_commands_unbounded_without_explicit_timeout(
     assert argv[argv.index("--") + 1 :] == ["/bin/bash", "-c", "true"]
     payload["tool_input"]["timeout"] = 30_000
     argv = _sandboxed_argv(policy.hook_response(payload))
-    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "30"]
+    assert argv[argv.index("--") + 1 :][:4] == ["/usr/bin/timeout", "-k", "5", "38"]
 
 
 def test_real_hung_sandboxed_process_is_killed_at_tool_timeout(tmp_path: Path) -> None:
@@ -445,3 +582,70 @@ def test_real_hung_sandboxed_process_is_killed_at_tool_timeout(tmp_path: Path) -
     result = subprocess.run(argv, capture_output=True, text=True, timeout=20)
     assert result.returncode == 124, result
     assert "no such column: 624" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Vanished working directory: `/sdd-done` removes the worktree it runs in, so
+# the wrapper must keep serving commands instead of denying every one of them.
+# ---------------------------------------------------------------------------
+
+
+def test_removed_worktree_still_yields_a_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """A deleted working directory anchors on its nearest surviving ancestor, never on a denial."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    shutil.rmtree(worktree)
+    response = policy.hook_response(
+        {"cwd": str(worktree), "tool_name": "Bash", "tool_input": {"command": "git worktree list"}}
+    )
+    output = response["hookSpecificOutput"]
+    assert "permissionDecision" not in output, output
+    argv = _sandboxed_argv(response)
+    assert Path(argv[argv.index("--chdir") + 1]).is_dir()
+    assert _writable_binds(argv) == [scratch_root.resolve(), main.resolve()]
+
+
+def test_pruned_administration_directory_keeps_the_checkout_writable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scratch_root: Path
+) -> None:
+    """`git worktree prune` must not strand a live session without a writable checkout."""
+    monkeypatch.setattr(policy.shutil, "which", lambda name: "/usr/bin/bwrap")
+    main, worktree = _registered_feature_worktree(tmp_path)
+    shutil.rmtree(main / ".git" / "worktrees" / "feat-x")
+    assert policy.repository_paths(worktree) == (worktree, None)
+    assert _writable_binds(policy.protected_argv(worktree, ["true"])) == [scratch_root.resolve(), worktree.resolve()]
+
+
+def test_real_self_removal_leaves_a_usable_shell(tmp_path: Path) -> None:
+    """After `/sdd-done` removes its own worktree, the next sandboxed command still runs."""
+    _require_bubblewrap()
+    main = tmp_path / "main"
+    main.mkdir()
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    subprocess.run(["git", "init"], cwd=main, capture_output=True, check=True)
+    subprocess.run([*git, "commit", "--allow-empty", "-m", "initial"], cwd=main, capture_output=True, check=True)
+    admin_dir = main / ".claude" / "worktrees"
+    admin_dir.mkdir(parents=True)
+    feature = admin_dir / "feat-x"
+    subprocess.run(["git", "worktree", "add", "-b", "feat-x", str(feature)], cwd=main, capture_output=True, check=True)
+
+    removal = subprocess.run(
+        policy.protected_argv(feature, ["git", "worktree", "remove", str(feature)]),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert removal.returncode == 0, removal.stderr
+    assert not feature.exists()
+
+    # The session's working directory is gone, but its shell must survive it.
+    follow_up = subprocess.run(
+        policy.protected_argv(feature, ["git", "-C", str(main), "worktree", "list"]),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert follow_up.returncode == 0, follow_up.stderr
+    assert str(main) in follow_up.stdout

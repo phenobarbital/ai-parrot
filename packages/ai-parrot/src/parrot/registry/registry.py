@@ -8,6 +8,8 @@ and registering agents from the agents/ directory.
 
 from __future__ import annotations
 import sys
+import os
+import tempfile
 import asyncio
 from typing import Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
 from pathlib import Path
@@ -35,6 +37,7 @@ from ..models.basic import ModelConfig, ToolConfig
 from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
+from ..tools.spec import AgentMCPServerSpec, ToolkitSpec, normalize_tooling
 
 
 class AgentFactory(Protocol):
@@ -104,8 +107,8 @@ class BotMetadata:
 
             # --- Logic for handling new BotConfig attributes ---
             # 1. Tools handling
-            # Extract lists
-            tools_list = merged_kwargs.get("tools", [])
+            # Extract lists ('tools' itself is passed through unchanged via **merged_kwargs
+            # below — only 'toolkits' needs separate handling here)
             toolkits_list = merged_kwargs.get("toolkits", [])
             mcp_servers_config = merged_kwargs.pop("mcp_servers", [])
 
@@ -234,7 +237,7 @@ class BotConfig(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
     # New attributes
     tools: Optional[ToolConfig] = Field(default=None)
-    toolkits: List[str] = Field(default_factory=list)
+    toolkits: List[Union[str, ToolkitSpec]] = Field(default_factory=list)  # FEAT-593: str | spec
     mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
     model: Optional[ModelConfig] = Field(default=None)
     system_prompt: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
@@ -519,9 +522,6 @@ class AgentRegistry:
         if metadata is None:
             return None
         return metadata._instance
-
-    def get_metadata(self, name: str) -> Optional[BotMetadata]:
-        return self._registered_agents.get(name)
 
     def register(
         self,
@@ -904,7 +904,13 @@ class AgentRegistry:
                             tools_list.append(tool_def["name"])
                             # TODO: Handle detailed tool config if needed
 
-            merged_args["tools"] = tools_list
+            tooling = normalize_tooling(
+                tools_list,
+                list(config.toolkits) + list(config.tools.toolkits if config.tools else []),
+                list(config.mcp_servers) + list(config.tools.mcp_servers if config.tools else []),
+            )
+            merged_args["tools"] = tooling.tools + tooling.toolkits
+            merged_args["agent_mcp_servers"] = tooling.mcp_servers
 
             # 4. Handle Vector Store
             if config.vector_store:
@@ -928,27 +934,6 @@ class AgentRegistry:
             # Post-init: apply prompt layer mutations (remove, add, customize)
             if config.prompt and bot._prompt_builder:
                 self._apply_prompt_config(bot, config.prompt)
-
-            # Handle MCP Servers from ToolConfig
-            if config.tools and config.tools.mcp_servers:
-                for mcp_conf in config.tools.mcp_servers:
-                    try:
-                        # Convert dict to MCPServerConfig
-                        mcp_obj = MCPServerConfig(**mcp_conf)
-                        await bot.add_mcp_server(mcp_obj)
-                    except Exception as e:
-                        self.logger.error(f"Failed to add MCP server to {config.name}: {e}")
-
-            # Handle Toolkits
-            if config.tools and config.tools.toolkits:
-                # If the bot has a tool_manager, we can use it to load toolkits
-                if hasattr(bot, "tool_manager"):
-                    for toolkit_name in config.tools.toolkits:
-                        try:
-                            # This assumes tool_manager has a way to load toolkits or we need to resolve them here
-                            pass
-                        except Exception as e:
-                            self.logger.error(f"Failed to load toolkit {toolkit_name} for {config.name}: {e}")
 
             return bot
 
@@ -1122,7 +1107,7 @@ class AgentRegistry:
             "origin": config.origin,
             "version": "1.0.0",
             "config": config.config,
-            "toolkits": list(config.toolkits),
+            "toolkits": [t if isinstance(t, str) else t.model_dump(exclude_defaults=True) for t in config.toolkits],
             "mcp_servers": config.mcp_servers,
             "tags": sorted(config.tags) if config.tags else [],
             "singleton": config.singleton,
@@ -1156,6 +1141,74 @@ class AgentRegistry:
             yaml.dump(data, f)
 
         return file_path
+
+    def update_agent_tooling(
+        self,
+        name: str,
+        *,
+        toolkits: list[ToolkitSpec] | None = None,
+        mcp_servers: list[AgentMCPServerSpec] | None = None,
+    ) -> Path:
+        """Rewrite ``agent.toolkits`` / ``agent.mcp_servers`` of the agent's own YAML in place (FEAT-593).
+
+        Unlike :meth:`create_agent_definition` (which derives the target path from
+        ``category``/``name`` and could fork or move the definition), this method always
+        rewrites the exact file the agent was loaded from (``metadata.file_path``), leaving
+        every other YAML key untouched.
+
+        Args:
+            name: Registered agent name.
+            toolkits: New value for ``agent.toolkits``, or ``None`` to leave it unchanged.
+            mcp_servers: New value for ``agent.mcp_servers``, or ``None`` to leave it unchanged.
+
+        Returns:
+            Path to the rewritten YAML file.
+
+        Raises:
+            KeyError: unknown agent.
+            PermissionError: not an editable YAML definition under ``AGENTS_DIR`` named ``{name}.yaml``.
+        """
+        meta = self.get_metadata(name)
+        if meta is None:
+            raise KeyError(name)
+        bot_config = getattr(meta, "bot_config", None)
+        if bot_config is None:
+            raise PermissionError(f"Agent '{name}' has no declarative bot_config to rewrite.")
+        path = Path(meta.file_path).resolve() if meta.file_path else None
+        if path is None:
+            raise PermissionError(f"Agent '{name}' has no on-disk file_path to rewrite.")
+        if path.suffix not in (".yaml", ".yml"):
+            raise PermissionError(f"Agent '{name}' is not defined by a YAML file ({path.name}); refusing to edit.")
+        if not path.is_relative_to(AGENTS_DIR.resolve()):
+            raise PermissionError(f"Agent '{name}' definition {path} is outside AGENTS_DIR; refusing to edit.")
+        if path.stem != name.lower():
+            raise PermissionError(
+                f"Agent '{name}' definition file {path.name!r} does not match the expected "
+                f"'{name.lower()}.yaml'/'.yml' name; refusing to edit."
+            )
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        agent = data.setdefault("agent", {})
+        if toolkits is not None:
+            agent["toolkits"] = [t.model_dump(exclude_defaults=True) for t in toolkits]
+        if mcp_servers is not None:
+            agent["mcp_servers"] = [m.model_dump(exclude_defaults=True) for m in mcp_servers]
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                yaml.safe_dump(data, fh, sort_keys=False, allow_unicode=True)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        update: Dict[str, Any] = {}
+        if toolkits is not None:
+            update["toolkits"] = list(toolkits)
+        if mcp_servers is not None:
+            update["mcp_servers"] = [m.model_dump(exclude_defaults=True) for m in mcp_servers]
+        if update:
+            meta.bot_config = bot_config.model_copy(update=update)
+        self.logger.info("Updated tooling for agent '%s' in %s", name, path)
+        return path
 
     def delete_factory_agent(self, name: str) -> tuple[bool, str]:
         """Delete a factory-created agent: remove its YAML file and unregister.

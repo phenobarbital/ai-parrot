@@ -408,6 +408,8 @@ sdd/state/.design_research/
 # FEAT-581: target-agnostic E2E supervisor bookkeeping (parrot.e2e.state); never
 # feature-scoped, so it is not covered by sdd/state/<FEAT-ID>/e2e/ evidence dirs.
 sdd/state/e2e/
+# FEAT-577: id-less /sdd-spec intake staging; promoted to sdd/state/<FEAT-ID>/intake/ on commit, pruned after 10 days by a daily git hook (scripts/sdd/install_hooks.py)
+sdd/state/.intake/
 
 # Local Claude Code config: machine-specific settings and local-only skills
 .claude/settings.json
@@ -426,3 +428,23 @@ examples/planogram/*
 !examples/planogram/white_label_detector/
 examples/planogram/white_label_detector/*
 !examples/planogram/white_label_detector/detect_price_labels.py
+# FEAT-574: perception spike harness (code only — photos/annotations dropped here stay ignored)
+!examples/planogram/perception_spike/
+examples/planogram/perception_spike/*
+!examples/planogram/perception_spike/*.py
+!examples/planogram/perception_spike/README.md
+# FEAT-574: example scripts added by later tasks of the same feature
+!examples/planogram/descriptor_assistant.py
+!examples/planogram/backend_benchmark.py
+# FEAT-574: ink-wall pipeline example (code only — generated definitions,
+# renders, reports and the vision cache are retailer-derived and stay ignored)
+!examples/planogram/pipelines/
+examples/planogram/pipelines/*
+!examples/planogram/pipelines/*.py
+!examples/planogram/pipelines/README.md
+# FEAT-592: Nova 2 Lite planogram identification example (code only — photos,
+# results and the vision cache are retailer-derived and stay ignored)
+!examples/planogram/aws/
+examples/planogram/aws/*
+!examples/planogram/aws/*.py
+!examples/planogram/aws/README.md

@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import re
-from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
-
-_ILLUMINATION_FEATURE_PREFIX = "illumination_status:"
-_DEFAULT_ILLUMINATION_PENALTY: float = 1.0
+from abc import ABC
+from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 from PIL import Image
 
@@ -17,7 +14,15 @@ from parrot.models.detections import (
     IdentifiedProduct,
     ShelfRegion,
 )
-from parrot.models.compliance import ComplianceResult
+from parrot.models.compliance import ComplianceResult, ComplianceStatus
+from ..contracts import (
+    AssessmentStatus,
+    ComparisonResult,
+    CycleContext,
+    IdentificationResult,
+    IdentifyStrategy,
+    PerceptionResult,
+)
 
 if TYPE_CHECKING:
     from ..plan import PlanogramCompliance
@@ -25,9 +30,10 @@ if TYPE_CHECKING:
     from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy
 
 _ILLUMINATION_FEATURE_PREFIX = "illumination_status:"
+_DEFAULT_ILLUMINATION_PENALTY: float = 1.0
 
 
-class AbstractPlanogramType(ABC):
+class AbstractPlanogramType(ABC):  # noqa: B024 - contract enforced by validate_contract() (FEAT-574)
     """Contract for planogram type composables.
 
     Each composable receives a reference to the parent PlanogramCompliance
@@ -45,6 +51,15 @@ class AbstractPlanogramType(ABC):
         config: The PlanogramConfig for this compliance run.
     """
 
+    identify_strategy: ClassVar[IdentifyStrategy] = IdentifyStrategy.FULL_IMAGE
+    requires_slots_definition: ClassVar[bool] = False
+    min_usable_shapes: ClassVar[int] = 0  # fallback threshold; 0 disables the LLM-detector fallback
+    uses_enhanced_image: ClassVar[bool] = True  # legacy default; migrated types set False
+
+    _LEGACY_CONTRACT: ClassVar[Tuple[str, ...]] = ("compute_roi", "detect_objects", "check_planogram_compliance")
+    _CYCLE_HOOKS: ClassVar[Tuple[str, ...]] = ("perceive", "identify", "compare")
+    _LEGACY_PROMPTS: ClassVar[Tuple[str, ...]] = ("roi_detection_prompt", "object_identification_prompt")
+
     def __init__(
         self,
         pipeline: "PlanogramCompliance",
@@ -53,8 +68,8 @@ class AbstractPlanogramType(ABC):
         self.pipeline = pipeline
         self.config = config
         self.logger = pipeline.logger
+        self.validate_contract()
 
-    @abstractmethod
     async def compute_roi(
         self,
         img: Image.Image,
@@ -74,8 +89,8 @@ class AbstractPlanogramType(ABC):
             Tuple of (endcap_bbox, ad_detection, brand_detection,
             panel_text_detection, raw_detections_list).
         """
+        raise NotImplementedError(f"{type(self).__name__} does not implement the legacy contract")
 
-    @abstractmethod
     async def detect_objects_roi(
         self,
         img: Image.Image,
@@ -93,8 +108,8 @@ class AbstractPlanogramType(ABC):
         Returns:
             List of Detection objects for macro-level items.
         """
+        raise NotImplementedError(f"{type(self).__name__} does not implement the legacy contract")
 
-    @abstractmethod
     async def detect_objects(
         self,
         img: Image.Image,
@@ -111,8 +126,8 @@ class AbstractPlanogramType(ABC):
         Returns:
             Tuple of (identified_products, shelf_regions).
         """
+        raise NotImplementedError(f"{type(self).__name__} does not implement the legacy contract")
 
-    @abstractmethod
     def check_planogram_compliance(
         self,
         identified_products: List[IdentifiedProduct],
@@ -127,6 +142,7 @@ class AbstractPlanogramType(ABC):
         Returns:
             List of ComplianceResult, one per shelf/zone.
         """
+        raise NotImplementedError(f"{type(self).__name__} does not implement the legacy contract")
 
     @staticmethod
     def _extract_illumination_state(features: List[str]) -> Optional[str]:
@@ -231,12 +247,11 @@ class AbstractPlanogramType(ABC):
 
         raw_answer = ""
         try:
-            async with self.pipeline.roi_client as client:
+            async with self.pipeline.llm as client:
                 msg = await client.ask_to_image(
                     image=roi_small,
                     prompt=prompt,
-                    model="gemini-3.5-flash",
-                    no_memory=True,
+                    **self._vision_kwargs(),
                     max_tokens=128,
                 )
             raw_answer = (msg.output or "").strip().upper()
@@ -444,6 +459,134 @@ class AbstractPlanogramType(ABC):
             prev_y = base_y
 
         return bg_shelves + new_fg
+
+    def _implements(self, name: str) -> bool:
+        """Return True when the concrete class overrides ``name``."""
+        return getattr(type(self), name, None) is not getattr(AbstractPlanogramType, name)
+
+    def validate_contract(self) -> None:
+        """Reject incomplete types and unusable configurations at construction.
+
+        Raises:
+            TypeError: The type supplies neither the complete legacy contract nor all cycle hooks.
+            ValueError: A legacy type lacks a required prompt, or a type that requires a
+                slots definition has none.
+        """
+        legacy = all(self._implements(n) for n in self._LEGACY_CONTRACT)
+        cycle = all(self._implements(n) for n in self._CYCLE_HOOKS)
+        if not (legacy or cycle):
+            raise TypeError(
+                f"Can't instantiate {type(self).__name__} with an incomplete planogram contract: implement the "
+                f"abstract legacy contract {self._LEGACY_CONTRACT} or all cycle hooks {self._CYCLE_HOOKS}"
+            )
+        config_name = getattr(self.config, "config_name", None)
+        if legacy and not cycle:
+            for name in self._LEGACY_PROMPTS:
+                if not getattr(self.config, name, None):
+                    raise ValueError(
+                        f"{type(self).__name__} (config {config_name!r}) uses the legacy contract and requires "
+                        f"'{name}'; set it, or migrate the type as described in the FEAT-574 planogram cycle "
+                        "migration runbook under docs/pipelines"
+                    )
+        if self.requires_slots_definition and getattr(self.config, "slots_definition", None) is None:
+            raise ValueError(
+                f"{type(self).__name__} (config {config_name!r}) requires a slots_definition; see the FEAT-574 "
+                "planogram cycle migration runbook under docs/pipelines"
+            )
+
+    async def perceive(self, image: Image.Image, image_id: str, ctx: CycleContext) -> PerceptionResult:
+        """Stage 1. Default: the complete legacy preparation + detection sequence (``detection_source='legacy_llm'``).
+
+        Args:
+            image: The opened image (enhanced for legacy types).
+            image_id: Image identifier.
+            ctx: Per-run context.
+
+        Returns:
+            The perception result (with a ``LegacyPayload`` on the legacy path).
+        """
+        from .legacy_adapter import legacy_perceive  # lazy: legacy_adapter imports this module
+
+        return await legacy_perceive(self, image, image_id, ctx)
+
+    async def identify(
+        self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext
+    ) -> IdentificationResult:
+        """Stage 2. Default: pass-through — legacy types identify during detection.
+
+        Args:
+            image: The opened image.
+            perception: Stage-1 output.
+            ctx: Per-run context.
+
+        Returns:
+            An empty identification result for the image.
+        """
+        return IdentificationResult(image_id=perception.image_id, identifications=[], added=[], errors=[])
+
+    async def compare(
+        self,
+        perceptions: Sequence[PerceptionResult],
+        identifications: Sequence[IdentificationResult],
+        ctx: CycleContext,
+    ) -> ComparisonResult:
+        """Stage 3. Default: ``check_planogram_compliance`` on the first image's legacy payload.
+
+        An empty result list is never a pass (the one intended deviation from the legacy ``run()``).
+
+        Args:
+            perceptions: Stage-1 outputs (the first one carries the legacy payload).
+            identifications: Stage-2 outputs (unused on the legacy path).
+            ctx: Per-run context.
+
+        Returns:
+            The comparison result with ``assessment_status=LEGACY_UNMEASURED``.
+        """
+        payload = perceptions[0].legacy if perceptions else None
+        results: List[ComplianceResult] = []
+        errors: List[str] = []
+        if payload is None:
+            errors.append("legacy compare: no legacy payload to evaluate")
+        else:
+            description = self.config.get_planogram_description()
+            results = self.check_planogram_compliance(payload.identified_products, description)
+        score = sum(r.compliance_score for r in results) / len(results) if results else 0.0
+        compliant = bool(results) and all(r.compliance_status == ComplianceStatus.COMPLIANT for r in results)
+        return ComparisonResult(
+            compliance_results=results,
+            position_results=[],
+            shelf_scores=[],
+            overall_compliance_score=score,
+            strict_compliance_score=None,
+            overall_compliant=compliant,
+            coverage=None,
+            definition_coverage=None,
+            evidence_quality=None,
+            assessment_status=AssessmentStatus.LEGACY_UNMEASURED,
+            errors=errors,
+        )
+
+    def fallback_detection_prompt(self) -> Optional[str]:
+        """Prompt for the LLM detector fallback; ``None`` selects the generic prompt."""
+        return None
+
+    def _vision_kwargs(self, **extra: Any) -> Dict[str, Any]:
+        """Build the provider-neutral kwargs for an auxiliary ``ask_to_image`` call.
+
+        Args:
+            **extra: Additional keyword arguments merged into the result.
+
+        Returns:
+            ``{"no_memory": True, **extra}`` plus ``"model"`` when the pipeline's
+            resolved backend pins a model id. When the backend leaves the model
+            unset, ``"model"`` is omitted so the client's own default applies.
+        """
+        kwargs: Dict[str, Any] = {"no_memory": True, **extra}
+        backend = getattr(self.pipeline, "resolved_backend", None)
+        model = getattr(backend, "model", None)
+        if isinstance(model, str) and model:
+            kwargs["model"] = model
+        return kwargs
 
     def get_render_colors(self) -> Dict[str, Tuple[int, int, int]]:
         """Return color scheme for rendering compliance overlays.

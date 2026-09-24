@@ -1,6 +1,6 @@
 import asyncio
 import textwrap
-from typing import Dict, List, Tuple, Any, Optional, Union, Callable
+from typing import Dict, List, Tuple, Any, Optional, Union, Callable, Literal
 from datetime import datetime
 import uuid
 from pathlib import Path
@@ -17,6 +17,8 @@ from ..tools.json_tool import ToJsonTool
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.agent import AgentTool, AgentContext
 from ..models.google import ConversationalScriptConfig, FictionalSpeaker
+from ..models.outputs import SpeakerConfig, SpeechGenerationPrompt
+from ..outputs.formats.text import markdown_to_plain
 
 # MCP Integration
 from ..mcp import MCPServerConfig, create_http_mcp_server, create_local_mcp_server, create_api_key_mcp_server
@@ -24,6 +26,13 @@ from ..mcp import MCPServerConfig, create_http_mcp_server, create_local_mcp_serv
 from ..conf import STATIC_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
 from ..memory import AnswerMemory
+
+SpeechBackend = Literal["gemini", "google_tts", "supertonic", "aws_polly"]
+SpeechMode = Literal["script", "verbatim"]
+
+_SPEECH_TO_TTS_BACKEND = {"google_tts": "google", "supertonic": "supertonic", "aws_polly": "polly"}
+_NATIVE_MIME = {"google": "audio/wav", "supertonic": "audio/wav", "polly": "audio/mpeg"}
+_MIME_EXT = {"audio/wav": "wav", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/pcm": "pcm"}
 
 
 class BasicAgent(Chatbot, NotificationMixin):
@@ -58,6 +67,12 @@ class BasicAgent(Chatbot, NotificationMixin):
     podcast_system_instruction: str = None
     speech_length: int = 20  # Default length for the speech report
     num_speakers: int = 1  # Default number of speakers for the podcast
+    speech_backend: SpeechBackend = "gemini"
+    speech_mode: SpeechMode = "script"
+    speech_voice: Optional[str] = None
+    speech_language: Optional[str] = None
+    speech_format: Optional[str] = None
+    speech_tts_options: Dict[str, Any] = {}
     speakers: Dict[str, str] = {
         "interviewer": {"name": "Lydia", "role": "interviewer", "characteristic": "Bright", "gender": "female"},
         "interviewee": {"name": "Brian", "role": "interviewee", "characteristic": "Informative", "gender": "male"},
@@ -83,6 +98,10 @@ class BasicAgent(Chatbot, NotificationMixin):
         # to work with dataframes:
         self.dataframes = dataframes or {}
         self._dataframe_info_cache = None
+        # Copy the class-level default so per-instance mutation (e.g. a caller
+        # doing `agent.speech_tts_options["polly_engine"] = ...`) never leaks
+        # across every BasicAgent instance sharing the class attribute.
+        self.speech_tts_options = dict(self.speech_tts_options)
         self.agent_id = self.agent_id or agent_id
         self.agent_name = self.agent_name or name
         tools = self._get_default_tools(tools, use_tools=use_tools)
@@ -187,6 +206,34 @@ class BasicAgent(Chatbot, NotificationMixin):
         await runtime.start()
         self.logger.debug("Started task-memory runtime (durable=%s)", getattr(runtime.config, "durable", False))
 
+    def _iter_toolkit_owners(self) -> "list[Any]":
+        """Return each registered toolkit owner once, in registration order.
+
+        Resolves owners through ``parrot.tools.manager.get_toolkit_owner`` so a
+        toolkit registered as N wrapped ``ToolkitTool``s appears exactly once.
+        """
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is None:
+            return []
+        from parrot.tools.manager import get_toolkit_owner
+
+        if hasattr(tool_manager, "get_tools"):
+            tools = tool_manager.get_tools()
+            tool_iter = tools.values() if isinstance(tools, dict) else tools
+        elif hasattr(tool_manager, "all_tools"):
+            tool_iter = tool_manager.all_tools()
+        else:
+            tool_iter = getattr(tool_manager, "_tools", {}).values()
+        owners: "list[Any]" = []
+        seen: set[int] = set()
+        for tool in tool_iter:
+            owner = get_toolkit_owner(tool)
+            if owner is None or id(owner) in seen:
+                continue
+            seen.add(id(owner))
+            owners.append(owner)
+        return owners
+
     def _adopt_task_memory_from_toolkits(self) -> None:
         """Adopt the task memory of a registered WorkingMemoryToolkit.
 
@@ -210,24 +257,16 @@ class BasicAgent(Chatbot, NotificationMixin):
         except ImportError:
             return
 
-        if hasattr(tool_manager, "get_tools"):
-            tools = tool_manager.get_tools()
-            tool_iter = tools.values() if isinstance(tools, dict) else tools
-        elif hasattr(tool_manager, "all_tools"):
-            tool_iter = tool_manager.all_tools()
-        else:
-            tool_iter = getattr(tool_manager, "_tools", {}).values()
-
-        for tool in tool_iter:
-            if not isinstance(tool, WorkingMemoryToolkit):
+        for owner in self._iter_toolkit_owners():
+            if not isinstance(owner, WorkingMemoryToolkit):
                 continue
-            task_memory = getattr(tool, "_task_memory", None)
+            task_memory = getattr(owner, "_task_memory", None)
             if task_memory is None:
                 continue
             self.task_memory = task_memory
             self.logger.debug(
                 "Adopted task memory from WorkingMemoryToolkit '%s'",
-                getattr(tool, "name", tool),
+                getattr(owner, "name", owner),
             )
             return
 
@@ -249,22 +288,12 @@ class BasicAgent(Chatbot, NotificationMixin):
             from parrot.tools.working_memory import WorkingMemoryToolkit
         except ImportError:
             return
-        if hasattr(tool_manager, "get_tools"):
-            tools = tool_manager.get_tools()
-            if isinstance(tools, dict):
-                tool_iter = tools.values()
-            else:
-                tool_iter = tools
-        elif hasattr(tool_manager, "all_tools"):
-            tool_iter = tool_manager.all_tools()
-        else:
-            tool_iter = getattr(tool_manager, "_tools", {}).values()
-        for tool in tool_iter:
-            if isinstance(tool, WorkingMemoryToolkit) and tool._answer_memory is None:
-                tool._answer_memory = self.answer_memory
+        for owner in self._iter_toolkit_owners():
+            if isinstance(owner, WorkingMemoryToolkit) and owner._answer_memory is None:
+                owner._answer_memory = self.answer_memory
                 self.logger.debug(
                     "Auto-injected answer_memory into WorkingMemoryToolkit '%s'",
-                    getattr(tool, "name", tool),
+                    getattr(owner, "name", owner),
                 )
 
     async def _wire_tool_namespaces_into_working_memory(self) -> None:
@@ -592,6 +621,92 @@ class BasicAgent(Chatbot, NotificationMixin):
             self.logger.error(f"Error saving transcript: {e}")
             raise RuntimeError(f"Failed to save transcript: {e}") from e
 
+    def _resolve_speech_route(self, tts_backend: Optional[str], speech_mode: Optional[str]) -> tuple[str, str]:
+        """Resolve and validate the selected speech backend and mode.
+
+        Args:
+            tts_backend: Per-call backend override.
+            speech_mode: Per-call mode override.
+
+        Returns:
+            The validated backend and mode.
+
+        Raises:
+            ValueError: If either selector has an unsupported value.
+        """
+        backend = tts_backend or self.speech_backend or "gemini"
+        mode = speech_mode or self.speech_mode or "script"
+        valid_backends = ("gemini", "google_tts", "supertonic", "aws_polly")
+        valid_modes = ("script", "verbatim")
+        if backend not in valid_backends:
+            raise ValueError(f"Unknown speech backend '{backend}'. Valid values: {', '.join(valid_backends)}.")
+        if mode not in valid_modes:
+            raise ValueError(f"Unknown speech mode '{mode}'. Valid values: {', '.join(valid_modes)}.")
+        return backend, mode
+
+    @staticmethod
+    def _to_speakable(text: str, *, strip_speaker_labels: bool = False) -> str:
+        """Normalise markdown text and optionally remove leading speaker labels.
+
+        Args:
+            text: Markdown or plain text to prepare for synthesis.
+            strip_speaker_labels: Whether to remove the text preceding the
+                first colon on each non-empty line.
+
+        Returns:
+            Text safe to pass to a single-speaker synthesizer.
+        """
+        plain_text = markdown_to_plain(text)
+        if not strip_speaker_labels:
+            return plain_text
+        return "\n".join(line.partition(":")[2].lstrip() if ":" in line else line for line in plain_text.splitlines())
+
+    async def _synthesize_with_backend(self, text: str, backend: str, output_directory: Path) -> Path:
+        """Synthesize text through the optional integrations TTS layer.
+
+        Args:
+            text: Already-normalised text to synthesize.
+            backend: Valid non-Gemini speech backend selector.
+            output_directory: Directory for the generated audio file.
+
+        Returns:
+            Path to the backend-native audio file.
+
+        Raises:
+            ImportError: If the required optional integrations extra is absent.
+        """
+        tts_backend = _SPEECH_TO_TTS_BACKEND[backend]
+        try:
+            from parrot.voice.tts.models import TTSConfig
+            from parrot.voice.tts.synthesizer import get_shared_synthesizer
+        except ImportError as exc:
+            extra = (
+                "voice-supertonic"
+                if backend == "supertonic"
+                else "voice-polly" if backend == "aws_polly" else "voice-tts"
+            )
+            raise ImportError(f"Install ai-parrot-integrations[{extra}] to use speech backend '{backend}'.") from exc
+
+        config_values = dict(self.speech_tts_options)
+        config_values.update(
+            {
+                "backend": tts_backend,
+                "voice": self.speech_voice,
+                "language": self.speech_language,
+                "mime_format": self.speech_format or _NATIVE_MIME[tts_backend],
+            }
+        )
+        synthesizer = await get_shared_synthesizer(TTSConfig(**config_values))
+        result = await synthesizer.synthesize(text, language=self.speech_language)
+        extension = _MIME_EXT.get(result.mime_format)
+        if extension is None:
+            raise ValueError(f"Unsupported TTS MIME format: {result.mime_format}")
+        await asyncio.to_thread(output_directory.mkdir, parents=True, exist_ok=True)
+        podcast_path = output_directory.joinpath(self._create_filename(prefix="podcast", extension=extension))
+        async with aiofiles.open(podcast_path, "wb") as podcast_file:
+            await podcast_file.write(result.audio)
+        return podcast_path
+
     async def speech_report(
         self,
         report: str,
@@ -602,23 +717,99 @@ class BasicAgent(Chatbot, NotificationMixin):
         output_directory: Optional[Path] = None,
         script_model: Optional[str] = None,
         tts_model: Optional[str] = None,
+        tts_backend: Optional[SpeechBackend] = None,
+        speech_mode: Optional[SpeechMode] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """Generate a Transcript Report and a Podcast based on findings."""
+        backend, mode = self._resolve_speech_route(tts_backend, speech_mode)
+        if backend != "gemini" or mode != "script":
+            if directory:
+                script_output_directory = directory
+            else:
+                script_output_directory = STATIC_DIR.joinpath(self.agent_id, "generated_scripts")
+            await asyncio.to_thread(script_output_directory.mkdir, parents=True, exist_ok=True)
+            script_output_path = script_output_directory.joinpath(
+                self._create_filename(prefix="script", extension="txt")
+            )
+
+            if mode == "verbatim":
+                speakable_text = self._to_speakable(report)
+            else:
+                speaker_data = dict(next(iter(self.speakers.values())))
+                speaker_data["gender"] = speaker_data.get("gender", "neutral").lower()
+                narrator = FictionalSpeaker(**speaker_data)
+                narration_instruction = (
+                    podcast_instructions
+                    if podcast_instructions != "for_podcast.txt"
+                    else "Narrate the following report as a single presenter, clearly and concisely, "
+                    "highlighting the key findings."
+                )
+                script_config = ConversationalScriptConfig(
+                    context=self.speech_context,
+                    speakers=[narrator],
+                    report_text=report,
+                    system_prompt=self.speech_system_prompt,
+                    length=self.speech_length,
+                    system_instruction=narration_instruction,
+                )
+                async with self.client as client:
+                    script_kwargs = {
+                        "report_data": script_config,
+                        "max_lines": max_lines,
+                        "use_structured_output": True,
+                    }
+                    if script_model is not None:
+                        script_kwargs["model"] = script_model
+                    response = await client.create_conversation_script(**script_kwargs)
+                speakable_text = self._to_speakable(response.output.prompt, strip_speaker_labels=True)
+
+            async with aiofiles.open(script_output_path, "w") as script_file:
+                await script_file.write(speakable_text)
+            self.logger.info(f"Script saved to {script_output_path}")
+
+            if output_directory is None:
+                output_directory = STATIC_DIR.joinpath(self.agent_id, "podcasts")
+            if backend == "gemini":
+                prompt_kwargs = {
+                    "prompt": speakable_text,
+                    "speakers": [SpeakerConfig(name="Narrator", voice=self.speech_voice or "Charon")],
+                }
+                if self.speech_language is not None:
+                    prompt_kwargs["language"] = self.speech_language
+                voice_prompt = SpeechGenerationPrompt(**prompt_kwargs)
+                await asyncio.to_thread(output_directory.mkdir, parents=True, exist_ok=True)
+                async with self.client as client:
+                    speech_kwargs = {"prompt_data": voice_prompt, "output_directory": output_directory}
+                    if tts_model is not None:
+                        speech_kwargs["model"] = tts_model
+                    speech_result = await client.generate_speech(**speech_kwargs)
+                return {
+                    "script_path": script_output_path,
+                    "podcast_path": speech_result.files[0] if speech_result.files else None,
+                }
+
+            podcast_path = await self._synthesize_with_backend(speakable_text, backend, output_directory)
+            return {"script_path": script_output_path, "podcast_path": podcast_path}
+
         if directory:
             script_output_directory = directory
         else:
             script_output_directory = STATIC_DIR.joinpath(self.agent_id, "generated_scripts")
         script_output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix="script", extension="txt")
-        # creation of speakers:
-        speakers = []
-        for _, speaker in self.speakers.items():
-            speaker["gender"] = speaker.get("gender", "neutral").lower()
-            speakers.append(FictionalSpeaker(**speaker))
-            if len(speakers) > num_speakers:
-                self.logger.warning(f"Too many speakers defined, limiting to {num_speakers}.")
-                break
+        # creation of speakers: exactly the first `num_speakers` of the agent's
+        # speakers. Copy each definition — `self.speakers` is a class-level dict
+        # shared by every instance, so it must never be mutated here.
+        if num_speakers < 1:
+            raise ValueError(f"num_speakers must be >= 1 (got {num_speakers}).")
+        definitions = list(self.speakers.values())
+        if len(definitions) > num_speakers:
+            self.logger.warning(f"Too many speakers defined, limiting to {num_speakers}.")
+        speakers = [
+            FictionalSpeaker(**{**speaker, "gender": speaker.get("gender", "neutral").lower()})
+            for speaker in definitions[:num_speakers]
+        ]
 
         # 1. Define the script configuration
         # Check if podcast_instructions is content or filename
@@ -675,7 +866,7 @@ class BasicAgent(Chatbot, NotificationMixin):
                 speech_kwargs["model"] = tts_model
             speech_result = await client.generate_speech(**speech_kwargs)
             if speech_result and speech_result.files:
-                print(f"✅ Multi-voice speech saved to: {speech_result.files[0]}")
+                self.logger.info(f"Multi-voice speech saved to: {speech_result.files[0]}")
             # 5 Return the script and audio file paths
             return {
                 "script_path": script_output_path,

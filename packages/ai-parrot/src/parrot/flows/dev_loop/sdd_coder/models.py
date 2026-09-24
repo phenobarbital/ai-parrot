@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import UUID
 
@@ -23,6 +24,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_models import (
     ComplexityBlock,
     ComplexityPolicy,
 )
+from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef
 
 SeatKind = Literal["mcp", "native"]
 TaskOutcome = Literal[
@@ -51,11 +53,11 @@ ERROR_CODES: frozenset[str] = frozenset(
         "task_not_in_plan",
         "task_already_running",
         "seat_unavailable",
+        "seat_busy",
         "roster_empty",
         "job_not_found",
         "branch_not_found",
         "dirty_feature_worktree",
-        "dirty_task_worktree",
         "merge_conflict",
         "fidelity_violation",
         "invalid_arguments",
@@ -78,6 +80,25 @@ ERROR_CODES: frozenset[str] = frozenset(
         "model_suspended",
         "suspension_history_unavailable",
         "suspension_persistence_failed",
+        # FEAT-559: `suspend_model` already raises this (engine.py) for an
+        # attempt_uid that is not one of the pool's own admitted reservations;
+        # it belongs in this closed set alongside the other admission-scoped
+        # codes above, and `coder_record_native_observation` (FEAT-584 M2/R3)
+        # raises it too for an attempt_uid this execution never issued.
+        "attempt_not_found",
+        # FEAT-584 M2/R3: `coder_record_native_observation` error codes.
+        "observation_conflict",
+        "artifact_not_found",
+        "artifact_scope_mismatch",
+        "evidence_persistence_failed",
+        "evidence_invalid",
+        # FEAT-584 M8/R8: `coder_bg_status`/`coder_run_validation` error codes.
+        "background_not_found",
+        "background_scope_mismatch",
+        "background_source_unsupported",
+        "background_status_unavailable",
+        "validation_request_conflict",
+        "validation_scope_invalid",
     }
 )
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
@@ -97,6 +118,20 @@ def _check_uuid(v: str) -> str:
     except (ValueError, AttributeError, TypeError) as exc:
         raise ValueError(f"execution_id must be a valid UUID string, got {v!r}") from exc
     return v
+
+
+def _require_utc(value: datetime) -> datetime:
+    """Reject a naive or non-UTC-offset timestamp (spec R3: 'timestamps UTC para correlación')."""
+    if value.tzinfo is None or value.utcoffset() != timedelta(0):
+        raise ValueError(f"timestamp must be timezone-aware UTC, got {value!r}")
+    return value
+
+
+def _require_utc_optional(value: Optional[datetime]) -> Optional[datetime]:
+    """Apply `_require_utc` only when a timestamp is actually present."""
+    if value is None:
+        return value
+    return _require_utc(value)
 
 
 class RosterSeat(BaseModel):
@@ -320,6 +355,8 @@ class TaskResult(BaseModel):
     diagnostics: str = ""
     development_output: Optional[DevelopmentOutput] = None
     lint: Optional[LintReport] = None
+    native_retry: Optional["NativePrep"] = None
+    """FEAT-588: native attempt-2 reservation for `retry_native` outcomes only."""
 
 
 class NativePrep(BaseModel):
@@ -337,6 +374,10 @@ class NativePrep(BaseModel):
     """ComplexityAssessment ID for native attempts, enabling attribution."""
     execution_id: str = ""
     """FEAT-559: the execution this native reservation belongs to."""
+    bg_handle: Optional[str] = None
+    """FEAT-584 M8/R8: opaque `coder_bg_status` handle registered for this native
+    reservation's launch (never set for a legacy/no-execution call -- a
+    `BackgroundRegistration` requires a real `execution_id`)."""
 
 
 class CoderJob(BaseModel):
@@ -354,6 +395,10 @@ class CoderJob(BaseModel):
     """FEAT-559: the execution that dispatched this chunk. Empty only for
     jobs journaled before this feature; `JobTable.create` always requires
     one for new jobs (never minted implicitly)."""
+    bg_handle: Optional[str] = None
+    """FEAT-584 M8/R8: opaque `coder_bg_status` handle for this dispatch's own
+    background registration -- `job_id` itself, never invented, and never set
+    without a durable registry/real `execution_id` behind it."""
 
 
 class CoderJobView(CoderJob):
@@ -419,6 +464,8 @@ class ExecutionPoolView(BaseModel):
     fallback_reason: str = ""
     persisted: bool = True
     persistence_degraded: bool = False
+    roster_warnings: List[str] = Field(default_factory=list)
+    """FEAT-588 advisory notes about unavailable complex-task retry capacity."""
 
     _exec = field_validator("execution_id")(_check_uuid)
 
@@ -511,6 +558,18 @@ class CoderPlanArgs(_Args):
     _exec = field_validator("execution_id")(_check_uuid)
 
 
+class CoderPlanRequestArgs(CoderPlanArgs):
+    """`coder_plan` request arguments (FEAT-584 M3/R2): scope plus response projection.
+
+    Deliberately split from `CoderPlanArgs` itself: `coder_begin_execution`
+    reuses `CoderPlanArgs` directly, and `CoderRecordFeedbackArgs`/
+    `CoderRecordReviewArgs`/`CoderRecordNativeObservationArgs` all inherit
+    from it -- none of those may silently start accepting `response_mode`.
+    """
+
+    response_mode: Literal["full", "compact"] = "full"
+
+
 class CoderRunChunkArgs(_Args):
     feature: str
     worktree: str
@@ -535,6 +594,14 @@ class CoderMergeArgs(CoderPrepareNativeArgs):
     """Same shape as prepare_native."""
 
 
+class CoderTaskContextArgs(CoderPrepareNativeArgs):
+    """Same shape as prepare_native (FEAT-584 M1b/R1b) -- read-only, never allocates a worktree."""
+
+
+class CoderDeliveryReportArgs(CoderPrepareNativeArgs):
+    """Same shape as prepare_native (FEAT-584 M1b/R1b) -- read-only, never merges/validates/approves."""
+
+
 class CoderRecordFeedbackArgs(CoderPlanArgs):
     """Record a worker-confirmed correction from a known coder attempt."""
 
@@ -550,10 +617,28 @@ class CoderRecordReviewArgs(CoderPlanArgs):
 class CoderWaitArgs(_Args):
     job_id: str
     timeout_seconds: int = Field(default=120, ge=1, le=300)
+    response_mode: Literal["full", "compact"] = "full"
 
 
 class CoderStatusArgs(_Args):
     job_id: str
+    response_mode: Literal["full", "compact"] = "full"
+
+
+class CoderReadArtifactArgs(_Args):
+    """`coder_read_artifact` arguments (FEAT-584 M3/R2): opaque, execution-scoped only.
+
+    `artifact_id` is never a filesystem path -- confinement to one
+    execution's own evidence directory happens entirely inside
+    `ExecutionEvidenceStore` (evidence.py), never here; this schema only
+    bounds shape and type.
+    """
+
+    execution_id: str = Field(..., min_length=1)
+    artifact_id: str = Field(..., min_length=1, max_length=128)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=8192, ge=1, le=16384)
+    _exec = field_validator("execution_id")(_check_uuid)
 
 
 class CoderCleanupArgs(_Args):
@@ -605,4 +690,83 @@ class CoderEndExecutionArgs(_Args):
     """
 
     execution_id: str = Field(..., min_length=1)
+
+
+class CoderBgStatusArgs(_Args):
+    """`coder_bg_status` arguments (FEAT-584 M8/R8): opaque, execution-scoped read.
+
+    `handle` is caller-opaque free text emitted only at registration time --
+    never a PID or a path the model may invent -- so this schema only bounds
+    its shape (non-empty), never its content.
+    """
+
+    execution_id: str = Field(..., min_length=1)
+    handle: str = Field(..., min_length=1)
+    since_revision: Optional[int] = Field(default=None, ge=0)
+    tail_bytes: int = Field(default=2048, ge=0, le=4096)
+    _exec = field_validator("execution_id")(_check_uuid)
+
+
+class CoderRunValidationArgs(_Args):
+    """`coder_run_validation` arguments (FEAT-584 M8/R8): admits one protected, idempotent selection."""
+
+    feature: str
+    worktree: str
+    execution_id: str = Field(..., min_length=1)
+    task_ids: List[str] = Field(..., min_length=1)
+    tier: Literal["merge", "feature"]
+    timeout_seconds: int = Field(..., ge=1, le=7200)
+    request_id: str = Field(..., min_length=1)
+    _wt = field_validator("worktree")(_check_abs)
+    _tids = field_validator("task_ids")(_check_task_ids)
+    _exec = field_validator("execution_id")(_check_uuid)
+
+
+class NativeObservation(BaseModel):
+    """Typed `coder_record_native_observation.observation` payload (FEAT-584 spec §2 R3).
+
+    Reports host-observed agent linkage and completion for an already-issued
+    native attempt -- never authoritative acceptance, never a released
+    reservation (the engine's own `record_native_observation` enforces that
+    part; this model only enforces the payload's own shape).
+
+    `started_at`/`ended_at` may both be omitted: the real span is unknown
+    when only the arrival time of the result is known (spec: "El span real
+    puede ser null"). A supplied pair must not be reversed -- no invented
+    duration.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(..., min_length=1)
+    task_id: str
+    attempt_uid: str = Field(..., min_length=1)
+    agent_id: str = Field(..., min_length=1)
+    observed_at: datetime
+    kind: Literal["dispatched", "finished"]
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    terminal: Optional[Literal["completed", "failed", "salvaged"]] = None
+    evidence_ref: EvidenceRef
+
+    _tid = field_validator("task_id")(_check_task_id)
+    _attempt_uuid = field_validator("attempt_uid")(_check_uuid)
+    _observed_utc = field_validator("observed_at")(_require_utc)
+    _started_utc = field_validator("started_at")(_require_utc_optional)
+    _ended_utc = field_validator("ended_at")(_require_utc_optional)
+
+    @model_validator(mode="after")
+    def _reject_reversed_span(self) -> "NativeObservation":
+        """Reject an invented (reversed) span when both endpoints are supplied."""
+        if self.started_at is not None and self.ended_at is not None and self.ended_at < self.started_at:
+            raise ValueError(
+                f"observation has a reversed span: ended_at {self.ended_at} < started_at {self.started_at}"
+            )
+        return self
+
+
+class CoderRecordNativeObservationArgs(CoderPlanArgs):
+    """`coder_record_native_observation` arguments; `observation` is a fully typed schema (spec R3)."""
+
+    observation: NativeObservation
     _exec = field_validator("execution_id")(_check_uuid)

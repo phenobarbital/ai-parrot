@@ -1,4 +1,5 @@
 """Tests for the Matrix dev stack compose/bootstrap — FEAT-463 TASK-2486."""
+
 import pathlib
 import shutil
 import subprocess

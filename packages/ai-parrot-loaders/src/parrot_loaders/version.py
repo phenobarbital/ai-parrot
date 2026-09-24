@@ -2,7 +2,7 @@
 
 __title__ = "ai-parrot-loaders"
 __description__ = "Document loaders for AI-Parrot RAG pipelines."
-__version__ = "1.0.4"
+__version__ = "1.0.6"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"

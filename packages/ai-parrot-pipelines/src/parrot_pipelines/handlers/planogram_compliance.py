@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import shutil
 import tempfile
 import uuid
@@ -13,7 +14,7 @@ import logging
 from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611
-from parrot.conf import PLANOGRAM_FOLDER, DEFAULT_LLM_MODEL
+from parrot.conf import PLANOGRAM_FOLDER
 from parrot_pipelines.models import PlanogramConfig, EndcapGeometry
 from parrot_pipelines.planogram.plan import PlanogramCompliance
 from parrot.handlers.jobs import JobManager, JobStatus
@@ -23,6 +24,14 @@ MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB in bytes
 
 # SSE polling interval in seconds
 _SSE_POLL_INTERVAL = 1.0
+
+
+def _read_file_if_exists(path: str) -> Optional[bytes]:
+    """Blocking read of a file (run through ``asyncio.to_thread``); None when it does not exist."""
+    file_path = Path(path)
+    if not file_path.exists():
+        return None
+    return file_path.read_bytes()
 
 
 class PlanogramComplianceHandler(BaseView):
@@ -139,12 +148,9 @@ class PlanogramComplianceHandler(BaseView):
         async def run_compliance() -> dict[str, Any]:
             """Execute the planogram compliance pipeline as a background task."""
             try:
-                # FEAT-523 (TASK-2846): lazy import — core/satellites must
-                # not import a provider module at module scope (AC-3).
-                from parrot.clients.google import GoogleGenAIClient
-
-                llm = GoogleGenAIClient(model=DEFAULT_LLM_MODEL)
-                pipeline = PlanogramCompliance(planogram_config=_config, llm=llm)
+                # FEAT-574: provider/model come from PlanogramConfig.llm_backend or the
+                # package default — the handler no longer builds a provider client.
+                pipeline = PlanogramCompliance(planogram_config=_config)
                 result = await pipeline.run(
                     image=_image_path,
                     output_dir=str(_tmp_dir),
@@ -154,15 +160,20 @@ class PlanogramComplianceHandler(BaseView):
                 rendered_image_base64: Optional[str] = None
                 content_type = "image/png"
                 overlay_path = result.get("overlay_path")
-                if overlay_path and Path(overlay_path).exists():
-                    with open(overlay_path, "rb") as f:
-                        rendered_image_base64 = base64.b64encode(f.read()).decode("utf-8")
+                if overlay_path:
+                    overlay_bytes = await asyncio.to_thread(_read_file_if_exists, overlay_path)
+                    if overlay_bytes is not None:
+                        rendered_image_base64 = base64.b64encode(overlay_bytes).decode("utf-8")
 
                 serialisable: dict[str, Any] = {
                     "overall_compliant": result.get("overall_compliant"),
                     "overall_compliance_score": result.get("overall_compliance_score"),
                     "rendered_image_base64": rendered_image_base64,
                     "content_type": content_type,
+                    "assessment_status": result.get("assessment_status"),
+                    "coverage": result.get("coverage"),
+                    "detected_products": result.get("detected_products", 0),
+                    "errors": list(result.get("errors") or []),
                 }
 
                 compliance_results = result.get("compliance_results", [])
@@ -324,13 +335,34 @@ class PlanogramComplianceHandler(BaseView):
             config_name=row.get("config_name", ""),
             planogram_type=row.get("planogram_type", "product_on_shelves"),
             planogram_config=row.get("planogram_config") or {},
-            roi_detection_prompt=row.get("roi_detection_prompt", ""),
-            object_identification_prompt=row.get("object_identification_prompt", ""),
+            roi_detection_prompt=row.get("roi_detection_prompt") or None,
+            object_identification_prompt=row.get("object_identification_prompt") or None,
             reference_images=reference_images,
             confidence_threshold=row.get("confidence_threshold", 0.25),
             detection_model=row.get("detection_model", "yolo11l.pt"),
+            slots_definition=self._decode_json_column(row.get("slots_definition")),
+            llm_backend=row.get("llm_backend") or None,
             endcap_geometry=endcap_geometry,
         )
+
+    @staticmethod
+    def _decode_json_column(value: Any) -> Any:
+        """Return a JSONB column value as a Python object.
+
+        Args:
+            value: dict (decoded by the driver), JSON string, or None.
+
+        Returns:
+            The decoded object, or None when the column is NULL/empty.
+
+        Raises:
+            ValueError: When a string value is not valid JSON.
+        """
+        if value is None or value == "":
+            return None
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
 
     async def _parse_multipart(self) -> tuple[str, Optional[Path], Optional[Path]]:
         """Parse multipart form-data and extract config_name and image file."""

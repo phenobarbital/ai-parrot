@@ -1,0 +1,34 @@
+{
+  "description": "``GET /astudio/toolkits/{slug}/schema`` response.",
+  "properties": {
+    "class_name": {
+      "title": "Class Name",
+      "type": "string"
+    },
+    "schema": {
+      "additionalProperties": true,
+      "title": "Schema",
+      "type": "object"
+    },
+    "slug": {
+      "title": "Slug",
+      "type": "string"
+    },
+    "source": {
+      "enum": [
+        "model",
+        "introspection"
+      ],
+      "title": "Source",
+      "type": "string"
+    }
+  },
+  "required": [
+    "slug",
+    "class_name",
+    "source",
+    "schema"
+  ],
+  "title": "ToolkitSchemaEnvelope",
+  "type": "object"
+}

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shlex
@@ -23,9 +24,35 @@ POLICY_MESSAGE = (
 )
 
 
+def existing_directory(path: Path) -> Path:
+    """Resolve ``path``, falling back to its nearest existing ancestor.
+
+    ``/sdd-done`` ends by removing the very worktree it runs in, and
+    ``git worktree prune`` can drop an administration directory underneath a
+    live session. Resolving strictly raises there, and because every native
+    Bash call is wrapped by this module, a single raise denies *every*
+    subsequent command — the session loses its own shell and cannot even
+    ``cd`` back to the primary checkout. Anchoring on the nearest surviving
+    ancestor keeps the sandbox on a real directory instead: for a removed
+    worktree that is the primary checkout's ``.claude/worktrees``, so the next
+    command lands back inside the primary checkout.
+
+    Args:
+        path: The directory to resolve, which may no longer exist.
+
+    Returns:
+        The resolved directory, or the closest ancestor that still exists.
+    """
+    candidate = Path(os.path.abspath(path))
+    for parent in (candidate, *candidate.parents):
+        if parent.is_dir():
+            return parent.resolve()
+    return Path(candidate.anchor or os.sep)
+
+
 def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
     """Find the checkout root and common Git directory, including pool worktrees."""
-    cwd = cwd.resolve(strict=True)
+    cwd = existing_directory(cwd)
     for root in (cwd, *cwd.parents):
         marker = root / ".git"
         if marker.is_dir():
@@ -34,11 +61,13 @@ def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
             content = marker.read_text(encoding="utf-8").strip()
             if not content.startswith("gitdir: "):
                 raise ValueError(f"Invalid Git worktree marker: {marker}")
-            git_dir = (root / content.removeprefix("gitdir: ")).resolve(strict=True)
+            git_dir = Path(os.path.abspath(root / content.removeprefix("gitdir: ")))
             common = git_dir / "commondir"
             if common.is_file():
-                git_dir = (git_dir / common.read_text(encoding="utf-8").strip()).resolve(strict=True)
-            return root, git_dir
+                git_dir = Path(os.path.abspath(git_dir / common.read_text(encoding="utf-8").strip()))
+            # A pruned administration directory leaves the checkout orphaned:
+            # keep it writable rather than denying the command outright.
+            return root, git_dir.resolve() if git_dir.is_dir() else None
     return cwd, None
 
 
@@ -107,6 +136,16 @@ def command_policy_error(cwd: Path, argv: Sequence[str]) -> str | None:
 
 
 WORKTREE_ADMIN_DIR = Path(".claude") / "worktrees"
+# The shared SDD work ledger (``WikiProjectConfig.ledger_path``). It always
+# resolves to the primary checkout, so a worktree agent filing a finding with
+# ``wikitoolkit ledger open`` writes there, never into its own checkout.
+SHARED_LEDGER_DIR = Path(".parrot") / "ledger"
+# Claude Code keeps every session's scratchpad under this root
+# (``/tmp/claude-<uid>/<project-slug>/<session-id>/scratchpad``) and tells the
+# seat to use it for temporary files. The sandbox replaces ``/tmp`` with a
+# private tmpfs, so the root is bound back in — writable — for all sessions of
+# this user at once; every session on the host belongs to the same user.
+CLAUDE_SCRATCH_ROOT = Path("/tmp") / f"claude-{os.getuid()}"
 
 
 def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
@@ -139,13 +178,63 @@ def worktree_admin_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
     return (admin_dir,)
 
 
+def shared_ledger_dirs(root: Path, git_dir: Path | None) -> tuple[Path, ...]:
+    """Return the primary checkout's ledger directory when ``root`` is a linked worktree.
+
+    ``wikitoolkit ledger open/claim/close/unclaim`` resolve the ledger through
+    ``find_shared_root`` to ``<primary>/.parrot/ledger``. Only that directory
+    is returned — SQLite needs its ``-wal``/``-shm`` siblings next to
+    ``ledger.db`` — so the wiki plane and the rest of ``.parrot`` stay
+    read-only.
+
+    Args:
+        root: The checkout root resolved for the command's working directory.
+        git_dir: The common Git directory, or ``None`` outside a repository.
+
+    Returns:
+        The existing ledger directory to bind writable, or an empty tuple for
+        the primary checkout (already writable) and for primaries without a
+        ledger.
+    """
+    if git_dir is None:
+        return ()
+    primary = git_dir.parent
+    if primary == root:
+        return ()
+    ledger_dir = (primary / SHARED_LEDGER_DIR).resolve()
+    if not ledger_dir.is_dir() or ledger_dir.is_relative_to(root):
+        return ()
+    return (ledger_dir,)
+
+
+def claude_scratch_root() -> Path:
+    """Return Claude Code's per-user scratchpad root, creating it when absent.
+
+    Claude Code creates a session's scratchpad lazily, so the root may not
+    exist yet when the first sandboxed command runs. Creating it on the host
+    lets a ``mkdir -p`` of the scratchpad from inside the sandbox land on the
+    host instead of in the private tmpfs, where it would vanish with the
+    command.
+
+    Returns:
+        The resolved root directory, private to the current user.
+    """
+    root = CLAUDE_SCRATCH_ROOT
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return root.resolve()
+
+
 def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
     """Build a fail-closed Linux filesystem sandbox for a command and its children.
 
     Only the checkout, Git administration directory, the primary checkout's
     worktree directory (``.claude/worktrees``, so a worktree agent can run
-    ``git worktree add/remove`` for ``/sdd-done``), and private temporary
-    storage are writable. The rest of the primary checkout and existing shared
+    ``git worktree add/remove`` for ``/sdd-done``), the primary checkout's
+    shared SDD ledger (``.parrot/ledger``, so a worktree agent can file and
+    claim ledger issues), private temporary storage,
+    and Claude Code's scratchpad root (``/tmp/claude-<uid>``, bound back over the
+    private ``/tmp`` so a seat's scratchpad survives between commands) are
+    writable. The rest of the primary checkout and existing shared
     environments remain read-only even when the checkout is the primary
     repository. No host chmod or mount changes are performed. Network
     isolation is outside this policy's scope.
@@ -171,6 +260,10 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         "--tmpfs",
         "/tmp",
     ]
+    # Mounts apply in order: binding after the tmpfs punches the scratchpad
+    # root through it while the rest of /tmp stays private.
+    scratch_root = claude_scratch_root()
+    command.extend(["--bind", str(scratch_root), str(scratch_root)])
     admin_dirs = worktree_admin_dirs(root, git_dir)
     for admin_dir in admin_dirs:
         command.extend(["--bind", str(admin_dir), str(admin_dir)])
@@ -181,6 +274,8 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         command.extend(["--bind", str(root), str(root)])
     if git_dir is not None and not git_dir.is_relative_to(root):
         command.extend(["--bind", str(git_dir), str(git_dir)])
+    for ledger_dir in shared_ledger_dirs(root, git_dir):
+        command.extend(["--bind", str(ledger_dir), str(ledger_dir)])
     for environment in shared_environments(cwd):
         command.extend(["--ro-bind", str(environment), str(environment)])
     # Caches are disposable and must not write into the shared host cache.
@@ -192,7 +287,7 @@ def protected_argv(cwd: Path, argv: Sequence[str]) -> list[str]:
         if inherited := os.environ.get("PYTHONPATH"):
             python_path += os.pathsep + inherited
         command.extend(["--setenv", "PYTHONPATH", python_path])
-    command.extend(["--chdir", str(cwd.resolve()), "--", *argv])
+    command.extend(["--chdir", str(existing_directory(cwd)), "--", *argv])
     return command
 
 
@@ -258,29 +353,53 @@ def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:
 
 
 HOST_DEFAULT_TIMEOUT_MS = 120_000
+HOST_MAX_TIMEOUT_MS = 600_000
 KILL_GRACE_SECONDS = 5
+BACKSTOP_MARGIN_RATIO = 0.25
+MIN_BACKSTOP_MARGIN_SECONDS = 5
+
+
+def _backstop_seconds(seconds: int) -> int:
+    """Lift a host-side bound to the sandbox backstop that sits above it.
+
+    Args:
+        seconds: The host-side bound in whole seconds.
+
+    Returns:
+        That bound plus headroom — ``BACKSTOP_MARGIN_RATIO`` of it, never less
+        than ``MIN_BACKSTOP_MARGIN_SECONDS``.
+    """
+    return seconds + max(MIN_BACKSTOP_MARGIN_SECONDS, math.ceil(seconds * BACKSTOP_MARGIN_RATIO))
 
 
 def command_timeout_seconds(tool_input: dict[str, Any]) -> int | None:
-    """Resolve the wall-clock bound the sandboxed command must respect.
+    """Resolve the wall-clock backstop the sandboxed command must respect.
 
-    The host kills a foreground Bash call at ``tool_input["timeout"]`` (or its
-    default, ``BASH_DEFAULT_TIMEOUT_MS`` / 120 s). A process that prints an
-    error and then never exits — an unclosed ``aiosqlite`` worker thread is the
-    classic case — keeps Bubblewrap waiting on it, and the host's kill does not
-    always reach through the sandbox. Enforcing the same bound *inside* the
-    sandbox guarantees the call terminates either way.
+    A process that prints an error and then never exits — an unclosed
+    ``aiosqlite`` worker thread is the classic case — keeps Bubblewrap waiting
+    on it, and the host's teardown does not always reach through the sandbox,
+    so the command is bounded *inside* the sandbox too.
+
+    That bound is a backstop, never the first kill. The host does not kill a
+    foreground Bash call that overruns ``tool_input["timeout"]`` (or its
+    default, ``BASH_DEFAULT_TIMEOUT_MS`` / 120 s): it *detaches* it and lets it
+    finish in the background. A sandbox kill at exactly the host's bound turns
+    that rescue into ``exit 124`` and discards the output of a healthy slow
+    command — a merge-tier pytest sweep is the classic case. So every bound
+    gets headroom, and an implicit one is lifted to at least the host's maximum
+    (``HOST_MAX_TIMEOUT_MS``): once the host has detached a command, nothing
+    else will ever reap it.
 
     Args:
         tool_input: The native ``Bash`` tool input.
 
     Returns:
-        The bound in whole seconds (at least 1), or ``None`` for a background
-        command without an explicit timeout, which the host never bounds.
+        The backstop in whole seconds, or ``None`` for a background command
+        without an explicit timeout, which the host never bounds.
     """
     explicit = tool_input.get("timeout")
     if isinstance(explicit, (int, float)) and explicit > 0:
-        return max(1, int(explicit // 1000))
+        return _backstop_seconds(max(1, int(explicit // 1000)))
     if tool_input.get("run_in_background"):
         return None
     default_ms = os.environ.get("BASH_DEFAULT_TIMEOUT_MS", "")
@@ -288,7 +407,7 @@ def command_timeout_seconds(tool_input: dict[str, Any]) -> int | None:
         milliseconds = int(default_ms) if default_ms else HOST_DEFAULT_TIMEOUT_MS
     except ValueError:
         milliseconds = HOST_DEFAULT_TIMEOUT_MS
-    return max(1, milliseconds // 1000)
+    return max(_backstop_seconds(max(1, milliseconds // 1000)), HOST_MAX_TIMEOUT_MS // 1000)
 
 
 def bounded_shell_argv(command: str, tool_input: dict[str, Any]) -> list[str]:

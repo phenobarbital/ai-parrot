@@ -567,6 +567,66 @@ curl -X DELETE "http://localhost:8080/api/v1/crew?name=research_crew"
 
 ---
 
+## Google Credentials (`CREW_AI_KEY`)
+
+`CREW_AI_KEY` is an opt-in operational control for metering, budgeting, and rotating crew-builder Google traffic separately from every other Google consumer in the server. It only does something when an operator sets it.
+
+### Coverage
+
+`CREW_AI_KEY` applies to crews built by the AgentCrew HTTP handlers: both `PUT/POST /api/v1/crew` (CRUD) and crew execution. It covers:
+
+- Every agent in such a crew whose LLM is a Google provider (`google`, `gemini-live`, `google-compat`) and which declares **no** credential of its own.
+- The crew's own default Google orchestration LLM, including its `run_loop` and executive-summary fallbacks.
+
+### Precedence
+
+An explicit credential always wins:
+
+- `llm_kwargs.api_key`
+- `llm_kwargs.credentials_file`
+- `llm_kwargs.credentials`
+- A truthy `llm_kwargs.vertexai`
+- Passing an `AbstractClient` instance as `llm`
+
+A top-level `api_key` in an agent's `config` is **NOT** a credential — only `llm_kwargs.api_key` counts.
+
+### Unset Behavior
+
+When `CREW_AI_KEY` is unset, behavior is exactly as before: clients fall back to `GOOGLE_API_KEY`, and one warning is logged per process.
+
+### Persistence and Logging
+
+The key is never stored in a `CrewDefinition`, so it never reaches Redis and never appears in `GET /api/v1/crew`, and it is never logged.
+
+### Programmatic Use
+
+Programmatic `AgentCrew(...)` / `AgentCrew.from_definition(...)` use outside the server is unaffected — the key is opt-in via the `google_api_key` parameter, which only the server build paths pass.
+
+### Timing Caveat
+
+An agent class that builds its client inside `__init__`, or that overrides `configure()` to ignore `_llm_kwargs`, will not pick up the key.
+
+### Example: Opting Out
+
+```json
+{
+  "name": "research_crew",
+  "agents": [
+    {
+      "agent_id": "researcher",
+      "name": "researcher",
+      "agent_class": "BasicAgent",
+      "config": {
+        "llm": "google:gemini-1.5-flash",
+        "llm_kwargs": {
+          "api_key": "my_own_google_key"
+        }
+      }
+    }
+  ]
+}
+```
+
 ## Error Handling
 
 All endpoints return consistent error responses:

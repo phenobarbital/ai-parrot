@@ -23,14 +23,26 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import aiohttp
 import click
 import yaml
 from pydantic import BaseModel, Field
 
-from parrot.knowledge.graphindex.extractors.loader import PLAIN_TEXT_EXTENSIONS
-
 logger = logging.getLogger("parrot.knowledge.wiki.documents")
+
+
+def _plain_text_extensions() -> set[str]:
+    """Suffixes readable without a loader (``PLAIN_TEXT_EXTENSIONS``).
+
+    Imported lazily on purpose: the constant's home module drags in
+    graphindex -> ontology -> auth -> navconfig, ~1.4 s that EVERY
+    ``wikitoolkit`` invocation would otherwise pay at import time for a
+    set of file suffixes. ``sys.modules`` caches the real import, so the
+    call is free after the first document is acquired.
+    """
+    from parrot.knowledge.graphindex.extractors.loader import PLAIN_TEXT_EXTENSIONS
+
+    return PLAIN_TEXT_EXTENSIONS
+
 
 # Explicit, fixed order — this tuple IS the determinism guarantee for
 # render_frontmatter(). Never iterate model_dump() insertion order and
@@ -502,7 +514,7 @@ class DocumentAcquirer:
         if ref.is_url:
             return await self._acquire_url(ref)
         path = Path(ref.uri)
-        if ref.suffix in PLAIN_TEXT_EXTENSIONS:
+        if ref.suffix in _plain_text_extensions():
             return await self._acquire_plaintext(ref, path)
         return await self._acquire_via_loader(ref, path)
 
@@ -565,6 +577,11 @@ class DocumentAcquirer:
                 network/timeout error. Any partially-written temp file is
                 removed before raising.
         """
+        # Lazy for the same reason as _plain_text_extensions(): ~120 ms that every
+        # ``wikitoolkit`` invocation (the per-tool-call hook included) would pay for
+        # a module only URL acquisition needs.
+        import aiohttp
+
         timeout = aiohttp.ClientTimeout(total=self.fetch_timeout)
         tmp_path: Path | None = None
         success = False
@@ -650,7 +667,7 @@ class DocumentAcquirer:
             logger.warning(
                 "No loader for %s: ai-parrot-loaders is not installed " "(only %s are readable without it)",
                 path,
-                ", ".join(sorted(PLAIN_TEXT_EXTENSIONS)),
+                ", ".join(sorted(_plain_text_extensions())),
             )
             raise DocumentAcquisitionError(
                 f"{path}: ai-parrot-loaders is not installed; cannot extract " f"{ref.suffix or 'this file type'}"

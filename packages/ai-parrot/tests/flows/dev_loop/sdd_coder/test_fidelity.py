@@ -28,6 +28,19 @@ def test_fidelity_rejects_unexpected_and_sdd():
     assert check_fidelity(["a.py"], ["a.py"]).ok
 
 
+def test_fidelity_allows_declared_sdd_docs_never_protected_state():
+    """Declared `sdd/` docs pass; `sdd/tasks/`/`sdd/ledger/` fail even when declared (FEAT-597 AC4/AC5)."""
+    docs = ["sdd/WORKFLOW.md", "sdd/templates/spec.md"]
+    assert check_fidelity(docs, docs).ok
+    r = check_fidelity(["sdd/tasks/index/x.json"], ["sdd/tasks/index/x.json"])
+    assert not r.ok and r.sdd_touched == ["sdd/tasks/index/x.json"] and r.unexpected == []
+    r = check_fidelity(["sdd/ledger/issues.jsonl"], ["sdd/ledger/issues.jsonl"])
+    assert not r.ok and r.sdd_touched == ["sdd/ledger/issues.jsonl"]
+    # An undeclared sdd/ path is still reported in BOTH lists.
+    r = check_fidelity(["sdd/WORKFLOW.md"], ["sdd/WORKFLOW.md", "sdd/x.json"])
+    assert not r.ok and r.unexpected == ["sdd/x.json"] and r.sdd_touched == ["sdd/x.json"]
+
+
 _BANNED_CFG = '[lint]\nselect = ["TID251"]\n[lint.flake8-tidy-imports.banned-api]\n"requests".msg = "use aiohttp"\n"httpx".msg = "use aiohttp"\n'
 
 

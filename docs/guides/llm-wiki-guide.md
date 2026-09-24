@@ -19,6 +19,7 @@
   - [page — Read a Full Page](#page-read-a-full-page)
   - [related — Follow Typed Edges](#related-follow-typed-edges)
   - [status — Check Graph Health](#status-check-graph-health)
+- [Architectural Decisions (adr)](#architectural-decisions-adr)
 - [Persistent Memory](#persistent-memory)
   - [remember — Save Durable Knowledge](#remember-save-durable-knowledge)
   - [note — Annotate an Existing Page](#note-annotate-an-existing-page)
@@ -308,6 +309,25 @@ wikitoolkit status [OPTIONS]
   --ns TEXT             Namespace selector
   --json                Emit raw JSON
 ```
+
+---
+
+## Architectural Decisions (adr)
+
+The decision plane extracts Architectural Decision Records (ADRs) from your codebase and answers "why" questions with cited decision excerpts. Candidates are labeled `inferred` and accepting one does not make it documented history.
+
+```bash
+# Look up decisions that apply to a symbol
+wikitoolkit adr lookup sym:parrot.knowledge.wiki.cli.WikiStore
+
+# Answer a "why" question with cited decisions
+wikitoolkit adr why "why does the wiki use SQLite?"
+
+# Review a candidate (accept/reject/revise/link)
+wikitoolkit adr review ADR-42-candidate-abc123 --action accept --expected-revision 1 --actor "human:jlara"
+```
+
+For full details on ADR parsing, citation extraction, generation, and review policies, see [docs/guides/wiki-adr-decisions.md](./wiki-adr-decisions.md).
 
 ---
 

@@ -33,6 +33,8 @@ from parrot.tools.repo.confinement import PathOutsideRootError, SecretFileError
 from pydantic import BaseModel
 
 from .base import OptimizationToolkitBase
+from .inspection import InspectionRunner
+from .inspection_models import InspectionBatchArgs
 from .models import OperationResult, SourceInfo, SourceInfoArgs, SourceReadArgs, SourceResult
 from .policy import PolicyError, SymlinkRejectedError, measure_json_bytes, resolve_operand
 
@@ -336,7 +338,23 @@ class BoundedSourceToolkit(OptimizationToolkitBase):
     arg_models: dict[str, type[BaseModel]] = {
         "source_info": SourceInfoArgs,
         "source_read": SourceReadArgs,
+        "source_inspect_batch": InspectionBatchArgs,
     }
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialize the toolkit and its persistent inspection runner.
+
+        One :class:`~parrot_tools.tool_optimizations.inspection.InspectionRunner`
+        is cached for the lifetime of this toolkit instance, so its admission
+        semaphore is shared across every batch dispatched through it.
+
+        Args:
+            **kwargs: Forwarded to
+                :class:`~parrot_tools.tool_optimizations.base.OptimizationToolkitBase`
+                (``repo_root`` is required).
+        """
+        super().__init__(**kwargs)
+        self._inspection_runner = InspectionRunner(self)
 
     def _resolve(self, path: str) -> tuple[Path, str]:
         """Resolve a caller path under policy and require a regular file.
@@ -511,6 +529,40 @@ class BoundedSourceToolkit(OptimizationToolkitBase):
             return self._error(operation, "binary_file", str(exc), started=started)
         except Exception as exc:  # noqa: BLE001 — mapped to a domain error
             return self._path_error(operation, exc, started)
+
+    @tool_schema(InspectionBatchArgs)
+    async def source_inspect_batch(
+        self,
+        requests: list[dict[str, object]],
+        concurrency: int = 4,
+        max_output_bytes: int = 24576,
+    ) -> OperationResult:
+        """Inspect independent read-only operations with bounded concurrency.
+
+        Up to 8 read-only operations (read/info/search/files/git_status/
+        git_diff_names) run under a shared, instance-wide admission limit of
+        4 concurrent items; the whole batch is bounded to 20 seconds and each
+        item to 10 seconds. One item failing, timing out, or being cut off by
+        the batch deadline never removes another item's identity from the
+        response — see
+        :class:`~parrot_tools.tool_optimizations.inspection.InspectionRunner`.
+
+        Args:
+            requests: Raw per-item request dicts, discriminated by ``kind``.
+            concurrency: Concurrent items for this batch, between 1 and 4.
+            max_output_bytes: The serialized response byte budget.
+
+        Returns:
+            A bounded :class:`OperationResult` wrapping the batch, or an
+            ``invalid_arguments`` error result when validation fails.
+        """
+        started = time.perf_counter()
+        operation = "source_inspect_batch"
+        try:
+            args = InspectionBatchArgs(requests=requests, concurrency=concurrency, max_output_bytes=max_output_bytes)
+        except Exception as exc:  # pydantic ValidationError
+            return self._error(operation, "invalid_arguments", str(exc), started=started)
+        return await self._inspection_runner.run(args)
 
     def _read_blocking(self, args: SourceReadArgs, started: float) -> SourceResult:
         """Perform the bounded read off the event loop.

@@ -12,6 +12,7 @@ import time
 from dataclasses import asdict
 from typing import Any
 
+from parrot.tools.config_schema import ConfigOption
 from parrot.tools.toolkit import AbstractToolkit  # verified: packages/ai-parrot/src/parrot/tools/toolkit.py:206
 
 from parrot_tools.querysource import _qs
@@ -22,6 +23,7 @@ from parrot_tools.querysource.catalog import (
     TenantGuard,
     normalize_pipeline,
 )
+from parrot_tools.querysource.config import QuerysourceToolkitConfig
 from parrot_tools.querysource.dialect import (
     DIALECT_REFERENCE,
     build_conditions,
@@ -55,6 +57,11 @@ from parrot_tools.querysource.results import frame_to_result, multi_to_result
 
 class QuerysourceToolkit(AbstractToolkit):
     """Explain, list, describe and execute QuerySource query-slugs and MultiQuery pipelines, scoped to tenants."""
+
+    #: FEAT-593 — Agent Studio configuration surface.
+    config_model = QuerysourceToolkitConfig
+    options_params = frozenset({"programs"})
+    secret_params = frozenset({"dsn"})
 
     tool_prefix: str | None = "qs"  # toolkit.py:257
     exclude_tools: tuple[str, ...] = ("open", "close")  # toolkit.py:243
@@ -110,6 +117,13 @@ class QuerysourceToolkit(AbstractToolkit):
     async def _close(self) -> None:
         if self._catalog is not None:
             await self._catalog.close()
+
+    async def config_options(self, param: str) -> list[ConfigOption]:
+        """Dynamic choices for Agent Studio (FEAT-593): catalog program slugs for ``programs``."""
+        if param != "programs":
+            return await super().config_options(param)
+        await self._open()
+        return [ConfigOption(value=program, label=program) for program in await self._catalog.list_programs()]
 
     async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
         """Pydantic → dict for the LLM (pattern: databasequery/toolkit.py:180-199)."""

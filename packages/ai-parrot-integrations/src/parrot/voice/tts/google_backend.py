@@ -5,17 +5,18 @@ Implements AbstractTTSBackend using GoogleGenAIClient.generate_speech.
 This is the default backend for VoiceSynthesizer.
 
 The audio returned by ``generate_speech`` is raw PCM data (Gemini TTS
-produces 24kHz mono 16-bit PCM). The actual container format—and therefore
-the ``mime_format`` field in the returned ``SynthesisResult``—is whatever
-was requested via the ``mime_format`` argument; note that Telegram voice
-notes prefer OGG/Opus, so container conversion is handled by the caller
-(TASK-1409 / Telegram wrapper).
+produces 24kHz mono 16-bit PCM). This backend wraps it in a WAV container
+and reports the truthful ``audio/wav`` MIME; Telegram voice notes are then
+converted to OGG/Opus by the caller (TASK-1409 / Telegram wrapper).
 
 Added by FEAT-213 (Telegram Voice Reply TTS Output).
 """
+
 from __future__ import annotations
 
 import logging
+import io
+import wave
 from typing import TYPE_CHECKING, Optional
 
 from .backend import AbstractTTSBackend
@@ -26,6 +27,31 @@ if TYPE_CHECKING:
 
 # Default voice when none is specified in the config
 _DEFAULT_VOICE = "Charon"
+_PCM_RATE = 24000
+_PCM_CHANNELS = 1
+_PCM_WIDTH = 2
+
+
+def _pcm_to_wav(pcm: bytes) -> bytes:
+    """Wrap raw s16le mono 24 kHz PCM in a WAV container.
+
+    Args:
+        pcm: Raw little-endian signed 16-bit mono PCM bytes.
+
+    Returns:
+        WAV bytes with the Gemini TTS sample format, or the original bytes when
+        they already contain a RIFF container.
+    """
+    if pcm.startswith(b"RIFF"):
+        return pcm
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(_PCM_CHANNELS)
+        wav_file.setsampwidth(_PCM_WIDTH)
+        wav_file.setframerate(_PCM_RATE)
+        wav_file.writeframes(pcm)
+    return buffer.getvalue()
 
 
 class GoogleTTSBackend(AbstractTTSBackend):
@@ -106,32 +132,27 @@ class GoogleTTSBackend(AbstractTTSBackend):
         Synthesize speech from text using the Google TTS API.
 
         Builds a single-speaker ``SpeechGenerationPrompt``, calls
-        ``GoogleGenAIClient.generate_speech``, and returns the raw PCM audio
-        bytes packed in a ``SynthesisResult``.
+        ``GoogleGenAIClient.generate_speech``, and returns WAV audio bytes
+        packed in a ``SynthesisResult``.
 
         Note:
-            The Google backend always returns **raw PCM** (24 kHz, mono,
-            16-bit little-endian). The ``mime_format`` argument is passed
-            through to ``SynthesisResult.mime_format`` for the caller's
-            reference, but no container conversion is performed here. The
-            caller (e.g. the Telegram wrapper) is responsible for converting
-            the PCM bytes to OGG/Opus before sending as a Telegram voice note.
+            Gemini returns raw PCM (24 kHz, mono, 16-bit little-endian), which
+            this backend wraps in a WAV container. An already-containerized
+            RIFF response is preserved without adding a second header.
 
         Args:
             text: The text to convert to speech. Must be non-empty.
             voice: Voice identifier (e.g. ``"Charon"``). Falls back to
                 the ``voice`` supplied at construction time, then to
                 ``"Charon"``.
-            mime_format: Requested MIME type label stored in the returned
-                ``SynthesisResult.mime_format``. Does NOT affect the actual
-                encoding — raw PCM is always returned.
+            mime_format: Requested MIME type. Google output is always WAV, so
+                the returned result truthfully reports ``audio/wav``.
             language: BCP-47 language tag forwarded to
                 ``SpeechGenerationPrompt.language`` (e.g. ``"es-ES"``).
                 ``None`` leaves the prompt at its default (``"en-US"``).
 
         Returns:
-            ``SynthesisResult`` with the raw PCM audio bytes and the
-            ``mime_format`` label that was requested.
+            ``SynthesisResult`` with WAV audio bytes and ``audio/wav`` MIME.
 
         Raises:
             ValueError: If ``text`` is empty.
@@ -168,14 +189,12 @@ class GoogleTTSBackend(AbstractTTSBackend):
         client = self._get_client()
         ai_message = await client.generate_speech(prompt)
 
-        # Audio bytes live in AIMessage.output (raw PCM from Gemini TTS).
+        # Audio bytes live in AIMessage.output (normally raw PCM from Gemini TTS).
         # ai_message.files is only populated when output_directory was passed
         # to generate_speech — we do not pass one, so we always use .output.
         audio_bytes = ai_message.output
         if not audio_bytes:
-            raise RuntimeError(
-                "GoogleGenAIClient.generate_speech returned no audio data"
-            )
+            raise RuntimeError("GoogleGenAIClient.generate_speech returned no audio data")
 
         self.logger.debug(
             "GoogleTTSBackend: received %d bytes of audio (mime=%s)",
@@ -183,7 +202,7 @@ class GoogleTTSBackend(AbstractTTSBackend):
             mime_format,
         )
 
-        return SynthesisResult(audio=audio_bytes, mime_format=mime_format)
+        return SynthesisResult(audio=_pcm_to_wav(audio_bytes), mime_format="audio/wav")
 
     async def close(self) -> None:
         """

@@ -41,7 +41,7 @@ from .internals import (
 )
 
 if TYPE_CHECKING:
-    from parrot.memory import AnswerMemory
+    pass
 
 
 class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):
@@ -187,6 +187,31 @@ class WorkingMemoryToolkit(TaskMemoryToolsMixin, AbstractToolkit):
         for tool in self._tool_cache.values():
             if getattr(tool, "_method_name", "") == "get_result":
                 tool.args_schema = EnabledGetResultInput
+
+    async def _enable_plan_memory(self, task_memory: Any, catalog: Any) -> None:
+        """Install a prepared plan-only task memory and catalog (FEAT-585 M2, private).
+
+        Underscore-prefixed on purpose: ``_generate_tools`` never exposes it as an
+        LLM tool. Preserves ``_answer_memory``, ``_tool_locals`` and the session id;
+        refreshes already-generated ``get_result`` wrappers in place so a wrapper the
+        agent obtained before activation enforces the enabled raw-read ceiling (AC10).
+
+        Args:
+            task_memory: A ``TaskMemory`` whose ``config.enabled`` is True.
+            catalog: An enabled ``WorkingMemoryCatalog`` (or subclass) already
+                holding every migrated entry.
+        """
+        if not getattr(getattr(task_memory, "config", None), "enabled", False):
+            raise ValueError("_enable_plan_memory requires a TaskMemory with config.enabled=True")
+        if not getattr(catalog, "is_enabled", False):
+            raise ValueError("_enable_plan_memory requires an enabled catalog")
+        self._task_memory = task_memory
+        self._catalog = catalog
+        self.exclude_tools = tuple(name for name in self.exclude_tools if name not in TASK_TOOL_METHODS)
+        for tool in self._tool_cache.values():
+            if getattr(tool, "_method_name", "") == "get_result":
+                tool.args_schema = EnabledGetResultInput
+        self.logger.debug("plan memory enabled on WorkingMemoryToolkit session=%s", self._catalog.session_id)
 
     @classmethod
     def from_runtime(cls, runtime: Any, scope: Any, **kwargs: Any) -> "WorkingMemoryToolkit":

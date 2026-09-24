@@ -41,6 +41,7 @@ import contextlib
 import asyncio
 import re
 import uuid
+
 try:
     from tqdm.asyncio import tqdm as async_tqdm
 except ImportError:  # pragma: no cover — exercised via sys.modules patching
@@ -57,6 +58,7 @@ from ...agent import BasicAgent
 from ...abstract import AbstractBot, _resolve_supported_client
 from ....clients import AbstractClient
 from ....clients.factory import SUPPORTED_CLIENTS
+from .credentials import GOOGLE_PROVIDER_KEYS, apply_google_api_key
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
 from ....tools.abstract import AbstractTool, ToolResult
@@ -177,6 +179,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         generate_infographic: bool = False,
         result_agent_name: str = "result-agent",
         infographic_theme: Optional[str] = None,
+        google_api_key: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -213,6 +216,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             infographic_theme: Optional design-system theme name for that
                 infographic (e.g. ``"light"``, ``"dark"``, ``"corporate"``).
                 ``None``/empty keeps the ResultAgent's default.
+            google_api_key: Gemini API key for every Google client this crew
+                builds by default (orchestration LLM, run_loop /
+                executive-summary fallbacks). None -> provider default
+                (GOOGLE_API_KEY).
         """
         self.name = name or "AgentCrew"
         self.agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
@@ -224,14 +231,21 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         self.execution_log: List[Dict[str, Any]] = []
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
+        self._google_api_key = google_api_key
         if isinstance(llm, str):
             client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get(llm.lower(), None))
-            self._llm = client_cls(**kwargs) if client_cls else None
+            client_kwargs = kwargs
+            if google_api_key and llm.lower() in GOOGLE_PROVIDER_KEYS and "api_key" not in kwargs:
+                client_kwargs = {**kwargs, "api_key": google_api_key}
+            self._llm = client_cls(**client_kwargs) if client_cls else None
         elif isinstance(llm, AbstractClient):
             self._llm = llm  # Optional LLM for orchestration tasks
         else:
             client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get("google"))
-            self._llm = client_cls(**kwargs) if client_cls else None
+            client_kwargs = kwargs
+            if google_api_key and "api_key" not in kwargs:
+                client_kwargs = {**kwargs, "api_key": google_api_key}
+            self._llm = client_cls(**client_kwargs) if client_cls else None
         self.truncation_length = (
             truncation_length if truncation_length is not None else self.__class__.default_truncation_length
         )
@@ -770,6 +784,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         *,
         class_resolver: Callable[[str], Optional[type]],
         tool_resolver: Optional[Callable[[str], Optional[AbstractTool]]] = None,
+        google_api_key: Optional[str] = None,
         **kwargs,
     ) -> "AgentCrew":
         """Create an AgentCrew from a CrewDefinition.
@@ -782,6 +797,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             tool_resolver: Optional callable that maps tool name str to an
                 ``AbstractTool`` instance. When ``None`` shared tools are
                 skipped.
+            google_api_key: When set, every Google agent without its own
+                credential receives it, and it is forwarded to
+                ``AgentCrew.__init__``. ``None`` -> today's behaviour
+                (``GOOGLE_API_KEY``).
             **kwargs: Extra kwargs forwarded to ``AgentCrew.__init__``
                 (e.g. ``llm``, ``auto_configure``).
 
@@ -799,6 +818,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 **agent_def.config,
             )
             cls._apply_definition_prompt(agent, agent_def.system_prompt)
+            apply_google_api_key(agent, google_api_key)
             agents.append(agent)
 
         # Allow callers to override max_parallel_tasks/tenant via kwargs.
@@ -839,6 +859,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             infographic_theme=infographic_theme,
             enable_execution_wiki=enable_execution_wiki,
             execution_wiki_path=execution_wiki_path,
+            google_api_key=google_api_key,
             **kwargs,
         )
 
@@ -1308,7 +1329,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         # Process results and handle errors
         execution_results = {}
-        for agent_name, result in zip(agent_name_map, results):
+        for agent_name, result in zip(agent_name_map, results, strict=True):
             node = self.workflow_graph[agent_name]
             if isinstance(result, Exception):
                 context.errors[agent_name] = result
@@ -2129,7 +2150,10 @@ Current task: {current_input}"""
             # from the ai-parrot-client-google satellite.
             from ....clients.google import GoogleGenAIClient
 
-            self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192)
+            if self._google_api_key:
+                self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192, api_key=self._google_api_key)
+            else:
+                self._llm = GoogleGenAIClient(model="gemini-2.5-pro", max_tokens=8192)
 
         agent_sequence = agent_sequence or list(self.agents.keys())
         if not agent_sequence:
@@ -2703,7 +2727,7 @@ Current task: {current_input}"""
         # Process results from all parallel executions
         parallel_results = {}
 
-        for i, (result, metadata) in enumerate(zip(results, task_metadata)):
+        for i, (result, metadata) in enumerate(zip(results, task_metadata, strict=True)):
             agent_id = metadata["agent_id"]
             agent_name = metadata["agent_name"]
             agent_ids.append(agent_id)
@@ -3766,7 +3790,6 @@ analyze, and present information in the most helpful way for the user.
             "los",
             "las",
             "the",
-            "a",
             "an",
             "and",
             "or",
@@ -4380,7 +4403,11 @@ above. Ensure the summary:
             try:
                 # Default to Google GenAI if no LLM provided
                 self.logger.warning("No LLM provided for executive summary. Defaulting to Google GenAI.")
-                self._llm = _resolve_supported_client(SUPPORTED_CLIENTS["google"])()
+                client_cls = _resolve_supported_client(SUPPORTED_CLIENTS["google"])
+                if self._google_api_key:
+                    self._llm = client_cls(api_key=self._google_api_key)
+                else:
+                    self._llm = client_cls()
             except Exception as ex:
                 self.logger.error(f"Failed to initialize default LLM: {ex}")
                 raise ValueError(

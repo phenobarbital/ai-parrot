@@ -96,6 +96,9 @@ ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=False)
 ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
 ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
+# Opt-in DocumentDB persistence for optional features (e.g. Telegram /add_mcp).
+# Off by default so a deployment without DocumentDB never blocks on a connect.
+USE_DOCUMENTDB = config.getboolean("USE_DOCUMENTDB", fallback=False)
 # FEAT-249: enable the Redis structured-output transport (re-broadcasts
 # structured outputs from any ai-parrot worker to the AgentChat UI over Redis).
 # Renamed from ENABLE_LIVEAVATAR_VOICE (FEAT-243) — operators upgrading must
@@ -377,6 +380,9 @@ ENABLE_AZURE_BOT = config.getboolean("ENABLE_AZURE_BOT", fallback=True)
 
 ## Google Services:
 GOOGLE_API_KEY = config.get("GOOGLE_API_KEY")
+# Default Google credential for crews built by the AgentCrew HTTP handlers
+# (FEAT-575). Unset -> crew Google clients fall back to GOOGLE_API_KEY.
+CREW_AI_KEY = config.get("CREW_AI_KEY")
 ### Google Service Credentials:
 GA_SERVICE_ACCOUNT_NAME = config.get("GA_SERVICE_ACCOUNT_NAME", fallback="google.json")
 GA_SERVICE_PATH = config.get("GA_SERVICE_PATH", fallback="env/google/")

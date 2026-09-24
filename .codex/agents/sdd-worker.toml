@@ -65,9 +65,11 @@ Feature mode:
    - hotfix bases on main
 4. Sync the base branch with git pull --ff-only. Refuse dirty worktrees. Do not
    stash.
-5. Mark pending tasks in progress in the per-spec index and commit only that
-   index change.
-6. Create or reuse the feature worktree under .claude/worktrees/.
+5. Create or reuse the feature worktree under .claude/worktrees/.
+6. Inside the worktree, on the feature branch, mark pending tasks in progress
+   in the per-spec index and commit only that index change. Never write task
+   state on the base branch: an abandoned run would strand the tasks
+   in-progress in sdd/tasks/active/ there forever.
 7. Work through pending tasks in dependency order.
 
 Task-scoped mode:
@@ -88,21 +90,45 @@ Per-task execution:
 6. If tests fail, make up to three focused attempts. Stop and report after that
    if the failure is not understood.
 7. Clear staging with git reset HEAD. Stage only task-scoped implementation
-   files. Verify git diff --cached --name-only.
+   files, one explicit path at a time. If a declared file is git-ignored, use
+   `git add -f <file>` for that exact file; never force-add a directory.
+   Verify git diff --cached --name-only.
 8. Commit code as feat(<feature-slug>): TASK-NNN - <title>.
-9. Close the task with scripts/sdd/close_task.sh TASK-NNN <feature-slug> verified.
-10. Fill the Completion Note in the completed task file.
-11. Verify staged SDD files only, then commit sdd: complete TASK-NNN - <title>.
+9. Create a `TaskCompletionEvidence` JSON with the task id, feature slug,
+   exact implementation HEAD, durable green validation evidence, semantic
+   review evidence, and any correction commits. Run
+   `python -m scripts.sdd.finalize_task --evidence <path> --worktree <path>
+   --expected-head <full HEAD SHA>`. On success, inspect its `staged_paths`,
+   stage exactly those paths, and use its suggested commit message without a
+   pathspec (its `removed_paths` deletion of the old active/ copy is already
+   staged; `git commit -- <paths>` would leave it out). Do not
+   hand-edit the Completion Note or use `close_task.sh` as a fallback.
+
+## Deterministic task inspection and closure (FEAT-584)
+Keep wiki-first and read the complete task contract through bounded references.
+Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
+Use the existing declared test selector, environment protection and semantic delivery review.
+Finalize only with structured green evidence and the exact implementation HEAD; call
+python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
+Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
+Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
+
+10. Verify the returned SDD staged paths only, then commit the finalization.
 
 Adversarial review before push:
-1. Spawn or ask for a read-only reviewer subagent when available. Give it a
-   neutral brief containing only raw evidence:
+1. Spawn or ask for a fresh, read-only reviewer subagent when available. Give
+   it a neutral brief containing only raw evidence:
    - diff against base branch
    - changed-file stat
    - spec acceptance criteria
    - completed task list
+   - checkpoint hashes and validation evidence references, when available
 2. Ask whether the implementation satisfies acceptance criteria and repository
    conventions.
+   The reviewer must validate the branch, HEAD, spec/index/convention hashes,
+   and evidence references before review. Any change to the covered revision
+   invalidates prior review coverage.
 3. Fix critical findings before pushing.
 4. Fix important findings only when the fix is straightforward and still within
    task scope. Otherwise report them in the completion summary.
@@ -124,4 +150,3 @@ Stop conditions:
 - an import, attribute, or method cannot be verified.
 - the implementation diverged from the task specification.
 """
-

@@ -46,12 +46,24 @@ toolkit = ExecutionPlanToolkit(
 )
 
 agent.tool_manager.register_tool(toolkit)
-# Also register `working_memory` with the agent so the analyst can read
-# back artifacts under the keys the plan chose — constructor injection,
-# never auto-detected: `BasicAgent._inject_answer_memory_into_toolkits()`
-# does not match wrapped `ToolkitTool`s.
+# Also register `working_memory` with the agent so the analyst can read back
+# artifacts under the keys the plan chose. `BasicAgent` auto-injects its
+# `answer_memory` into the toolkit once (FEAT-585); an explicit
+# `WorkingMemoryToolkit(answer_memory=...)` still takes precedence.
 agent.tool_manager.register_tool(working_memory)
 ```
+
+### Recovery inputs (FEAT-585)
+
+| Keyword | Type | Meaning |
+|---|---|---|
+| `recovery` | `PlanRecoveryConfig \| None` | `max_repair_rounds` (0–2, default 2, host-only), `max_restore_bytes` (64 MiB), `checkpoint_probe_timeout` (2.0 s). `None` = defaults. |
+| `checkpoint_store` | `CheckpointStore \| str \| None` | Ephemeral tier (e.g. `"redis"`). `None` = no checkpointing; runs report `resume_level: "none"`. |
+| `durable_store` | `CheckpointStore \| str \| None` | Durable tier (`"sqlite"`/`"postgres"`/`"mongodb"`). Required for `cross_restart`. |
+| `task_memory_runtime` | `TaskMemoryRuntime \| None` | An already-started runtime to share; with `scope` it enables durable artifacts. Borrowed, never closed. |
+| `scope` | `TaskScope \| None` | Trusted host scope. A durable runtime without a scope is a configuration error. |
+
+Without any of these inputs, the toolkit uses in-memory plan memory, process-local scope, and fresh execution — no checkpointing, no cross-process recovery.
 
 Both `planner_llm` and `plans_dir` are optional and independent — set
 either, both, or neither. Neither one being set means the toolkit only
@@ -101,6 +113,41 @@ executing; the final `ExecutionManifest` once it has finished.
 
 The `ArtifactRef` list produced so far — the WorkingMemory key map the
 analyst reads back from, available even while the run is still going.
+
+### `plan_resume(run_id)`
+
+Continue an interrupted **checkpointed** run — in this process or, with a durable tier and a
+host-supplied scope, in a fresh one. Completed nodes recorded on the run's own **terminal**
+checkpoint (natural completion, or interruption after only the initial "running" checkpoint)
+are never re-dispatched; their exact `artifact_id@version` evidence is restored under a
+host-only byte budget. Never calls a planner. Refuses with `run_not_resumable`,
+`checkpoint_unavailable`, `artifacts_unavailable`, `scope_mismatch`, `policy_mismatch` or
+`run_busy`.
+
+> ⚠️ **Known limitation**: `AgentsFlow`'s required checkpoint barrier only persists per-node
+> completions incrementally for the explicit-edge scheduler mode; a `PlanFlow` (built via
+> `from_definition()`, as every plan run is) currently only checkpoints at the *start* and
+> *terminal* of a run, not after each individual node. A run interrupted **mid-execution**
+> (after some but not all nodes have completed) therefore has no incremental record of that
+> partial progress, and a subsequent `plan_resume`/`plan_repair` re-dispatches every node —
+> not just the interrupted ones — for that specific case. Resuming a run that reached a real
+> terminal state (completed/failed/partial) before the interruption is unaffected. Tracked on
+> the SDD work ledger.
+
+### `plan_repair(run_id)`
+
+Spend **one** repair attempt on a terminal `failed`/`partial` run: the planner may replace only
+nodes that errored or were never dispatched (never `ok`/`skipped`/`partial` nodes, never new
+ids), the delta is validated against the original allowlist ∩ current policy, and the child
+run inherits every successful result. At most one structural correction call per attempt;
+the attempt is persisted **before** the planner is called, so a crash consumes it.
+Refuses with `no_repairable_nodes`, `repair_limit_reached`, `planner_unavailable`,
+`run_not_repairable`, `delta_invalid`, `repair_interrupted` or `run_busy`.
+
+All four run tools (`plan_status`, `plan_artifacts`, `plan_resume`, `plan_repair`) return the
+recovery envelope: `run_id`, `root_run_id`, `parent_run_id`, `checkpoint_enabled`,
+`artifact_mode`, `resume_level`, `resumable`, `recovery_reason`, `repair_attempts_used`,
+`max_repair_rounds`, `active_child_run_id`.
 
 ### `plan_validate(objective=None, plan_name=None, params=None)`
 
@@ -180,7 +227,52 @@ with a normal per-tool-call timeout on the agent side.
 
 ---
 
-## v1 caveats (read before relying on this in production)
+## Recovery model (FEAT-585)
+
+| Checkpoints acknowledged | Artifact configuration | `resume_level` | Fresh-process `plan_resume` |
+|---|---|---|---|
+| No | any | `none` | refused: `checkpoint_unavailable` |
+| Yes | in-memory / process-local scope | `process` | refused: `artifacts_unavailable` |
+| Yes | durable backend + stable trusted scope | `cross_restart` | allowed after validation and lease acquisition |
+
+**Unknown vs missing_or_expired**: When a run ID is not found, the error code depends on the configured store tiers:
+- If a durable store is configured and `latest(run_id)` returns `None`, the run was never durably recorded (durable storage has no TTL), so the code is `unknown_run`.
+- If only an ephemeral store (Redis) is configured, the run may have expired after 24 hours (the default `FLOW_CHECKPOINT_REDIS_TTL`). Since no evidence remains, the code is `missing_or_expired`.
+
+**Lineage**: Every run has a `root_run_id` (the original run) and `parent_run_id` (the run that spawned this continuation). Repair creates a child run with its own ID; the parent records the child ID. When resolving a run, the toolkit traverses the lineage chain to find the latest consolidated result. The manifest counters are recomputed from the current state, not accumulated from parent + child.
+
+**Error codes**: The toolkit returns these stable error codes:
+
+| Code | Meaning |
+|---|---|
+| `unknown_run` | Durable store configured but no checkpoint exists for this run ID |
+| `missing_or_expired` | Ephemeral-only store, or run expired from Redis |
+| `checkpoint_unavailable` | No checkpoint store configured at all |
+| `checkpoint_invalid` | Checkpoint data is corrupted or schema-mismatched |
+| `checkpoint_write_failed` | Persistence failed mid-run; progress reported |
+| `run_busy` | Another continuation is already in progress on this run |
+| `run_not_resumable` | Run is completed, or lease cannot be acquired |
+| `run_not_repairable` | Run is not in a terminal failed/partial state |
+| `no_repairable_nodes` | No error nodes or undispatched nodes to replace |
+| `repair_limit_reached` | `max_repair_rounds` exhausted (default 2) |
+| `repair_interrupted` | Crash after attempt was reserved but before child dispatch |
+| `delta_invalid` | Repair delta failed validation |
+| `planner_unavailable` | No `planner_llm` configured for repair |
+| `scope_mismatch` | Host scope does not match the run's scope |
+| `policy_mismatch` | Current allowed tools are stricter than original |
+| `artifacts_unavailable` | Process scope cannot access the artifacts |
+| `artifact_alias_conflict` | Two restored artifacts claim the same key |
+| `restore_budget_exceeded` | Exceeded 64 MiB restoration budget |
+
+## Response schema migration
+
+Terminal responses keep every `ExecutionManifest` key at the top level and **add** the
+recovery envelope plus `status`. The frozen `parrot.bots.flows.plan.ExecutionManifest` is
+unchanged and remains `extra="forbid"`, so a strict consumer that validated the raw JSON into
+that model must now either select the manifest fields or validate into
+`parrot.tools.execution_plan.PlanRunManifest`. The JSON is additive, not byte-identical.
+
+## Caveats and limitations
 
 - **`WorkingMemory` is in-RAM, with no guardrail.** Every payload a plan
   fetches — including a 300-item fan-out over hundreds of MB of scanner
@@ -189,22 +281,18 @@ with a normal per-tool-call timeout on the agent side.
   no spill-to-disk. `bytes_stored` (per `ArtifactRef`) and
   `total_bytes_stored` (on the manifest) make the cost *visible*; they do
   not bound it. A persistent `WorkingMemory` backend is a separate,
-  future feature.
-- **The run registry is lost on a process restart.** `RunRecord`s and the
-  live `asyncio.Task`s behind them are toolkit-instance state, not
-  persisted anywhere. There is **no `plan_resume(run_id)`** — do not build
-  workflows that assume one exists. The toolkit explicitly disables
-  `AgentsFlow`'s own flow-level checkpointing (FEAT-399) for every plan
-  run — that mechanism defaults to a Redis-backed checkpoint store, which
-  would otherwise be a silent, undocumented external dependency
-  contradicting the "pure in-RAM, no persistent backend" design above.
-- **Recovery is re-issue + `skip_existing`, not resume.** If a process
-  dies mid-run, re-issuing the *same* `plan_execute(plan_name=..., params=
-  ...)` call redoes only the work that never got stored — every `for_each`
-  node defaults to `skip_existing=True`, so a `store_as` key already
-  present in `WorkingMemory` is not re-fetched. This is idempotence, not
-  checkpoint/resume; a plan with no `for_each` nodes has no such recovery
-  story and simply re-runs from the top.
+  future feature. Plan memory (activated only for plans) uses versioned
+  artifacts when a durable backend is configured.
+- **Recovery is explicit.** Nothing resumes on its own after a restart; the agent calls
+  `plan_resume(run_id)`. Without a checkpoint store, runs execute exactly as before and say so
+  (`resume_level: "none"`).
+- **No exactly-once for interrupted external calls.** A completed, checkpointed node is never
+  replayed, but a tool invocation interrupted between its external effect and the checkpoint
+  acknowledgement has no acknowledgement to consult. Such tools need their own idempotency
+  contract; `for_each` nodes still get `skip_existing` on stored item keys.
+- **Two different byte limits.** The analyst's raw-read ceiling (`max_rehydrate_bytes`, default
+  2,000,000) bounds what `wm_get_result` returns; the executor's `max_restore_bytes` (64 MiB,
+  host-only) bounds exact-version restoration during a continuation. Neither is a process RAM cap.
 - **Run-registry bounds**: completed/failed runs beyond
   `max_completed_runs` (default `50`) are evicted oldest-first. In-flight
   runs are never evicted, and there is no cap on concurrent runs in v1.
@@ -212,6 +300,11 @@ with a normal per-tool-call timeout on the agent side.
   If the manager is shared with components that register tools you would
   not want a planner-authored plan to invoke, set `allowed_tools`
   explicitly.
+
+## Delegate nodes
+
+Plans may include `"type": "delegate"` nodes that let a tiny local model pick one tool call at run
+time. See [Tool-Call Delegate](../execution_plan/tool-call-delegate.md).
 
 ---
 
@@ -223,3 +316,10 @@ with a normal per-tool-call timeout on the agent side.
 - `packages/ai-parrot/tests/tools/execution_plan/test_integration.py` — the
   end-to-end proof (zero-token execution, resumable fan-out, allowlist
   enforcement, `AgentCrew.add_tool_node()` regression).
+- `packages/ai-parrot/tests/tools/execution_plan/test_run_resolution.py` — run ID resolution, lineage traversal.
+- `packages/ai-parrot/tests/tools/execution_plan/test_checkpoint_resume.py` — checkpoint restoration, cross-process resume.
+- `packages/ai-parrot/tests/tools/execution_plan/test_runtime_repair.py` — repair delta validation, attempt accounting.
+- `packages/ai-parrot/tests/tools/execution_plan/test_integration_recovery.py` — end-to-end recovery scenarios.
+- `packages/ai-parrot/tests/tools/execution_plan/test_integration_repair.py` — end-to-end repair scenarios.
+- `packages/ai-parrot/tests/tools/execution_plan/test_toolkit_owner.py` — answer-memory injection fix (FEAT-585).
+- `packages/ai-parrot/tests/tools/execution_plan/test_toolkit_recovery.py` — recovery envelope fields.

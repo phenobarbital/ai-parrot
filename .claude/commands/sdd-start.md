@@ -1,3 +1,10 @@
+---
+model: sonnet
+description: /sdd-start — Start an SDD Task
+# Implementation executor: resolves the task, checks deps, ensures the worktree and
+# writes code. Pinned so it never inherits an Opus/Fable session model.
+---
+
 # /sdd-start — Start an SDD Task
 
 Pick up a task from the SDD task index by ID or slug, validate it is ready, mark it in-progress,
@@ -254,6 +261,16 @@ implement the task yourself — the normal route is the default.
    (`sdd/tasks/index/*.json`, task files) are never edited by the writer.
 
 ### 8. Mark Done (in place)
+
+## Deterministic task inspection and closure (FEAT-584)
+Keep wiki-first and read the complete task contract through bounded references.
+Prefer task-context inspection when the engine is present; fallback keeps explicit checks.
+Use the existing declared test selector, environment protection and semantic delivery review.
+Finalize only with structured green evidence and the exact implementation HEAD; call
+python -m scripts.sdd.finalize_task, inspect returned staged paths and commit explicitly.
+Reject stale evidence and divergent active/completed twins; never reset unrelated staging.
+Do not compact for every task. Feature handoff uses a durable checkpoint and fresh reviewer;
+Codex/Antigravity without a verified adapter report unsupported_host, never call Claude /compact.
 
 After the code is committed, update the per-spec index in the same branch
 — no `cd` to the main repo (FEAT-145).

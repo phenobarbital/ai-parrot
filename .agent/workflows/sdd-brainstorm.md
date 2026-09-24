@@ -25,6 +25,9 @@ then produce a brainstorm document that feeds directly into `/sdd-spec`.
 Extract from the user's invocation:
 - **topic / feature-name**: slug-friendly, kebab-case. If not provided, ask.
 - **free-form notes**: anything after `--`, used as initial context.
+- **intake hand-off** (FEAT-577): if the notes contain `intake: <staging-dir>`,
+  this run continues a `/sdd-spec` intake that recommended a brainstorm — see
+  "Intake hand-off" in §3.
 
 ### 2. Understand the Goal
 Before generating options, establish:
@@ -38,6 +41,19 @@ If the user provided notes, extract these from context. Otherwise, ask briefly.
 
 **DO NOT skip this step.** Before writing anything, conduct at least **two full rounds**
 of questions-and-answers with the user to deeply understand the feature.
+
+**Intake hand-off (FEAT-577) — only when §1 found `intake: <staging-dir>`:**
+
+Read `<staging-dir>/intake.json` (validate against
+`sdd/templates/intake.schema.json`) and, when `research.synthesis_path` is set,
+`<staging-dir>/synthesis.json`. Then:
+- Round 0 and the intake facts (feature name, projects, overview, problem,
+  Jira, why it matters) are **answered** — show them as a carry-in summary and
+  do not re-ask them.
+- Seed Round 1 with the synthesis `unknowns` and competing hypotheses and the recommend rationale.
+- The two mandatory rounds still run.
+- Missing or invalid staging dir ⇒ one-line warning and a normal brainstorm.
+- Never modify or delete the staging dir.
 
 **Round 0 — Flow type (always ask first; FEAT-145):**
 
@@ -104,6 +120,7 @@ ask — do not assume.
 
 ### 4. Research the Codebase & Build Code Context
 Scan the project for relevant existing components:
+- Carry the synthesis `localization` entries into `## Code Context` only after re-reading each cited path/line.
 - Search for related modules, classes, and patterns.
 - Identify reusable code that any solution should build on.
 - Note existing dependencies that could be leveraged.

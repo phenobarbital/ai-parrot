@@ -1,4 +1,5 @@
 """FEAT-565 M0: the planogram example's code is trackable, retailer data and photos are not."""
+
 from __future__ import annotations
 
 import subprocess
@@ -13,6 +14,7 @@ NOT_IGNORED = [
     "examples/planogram/tests/test_any_module.py",
     "examples/planogram/planogram_check.py",
     "examples/planogram/white_label_detector/detect_price_labels.py",
+    "examples/planogram/aws/nova2.py",
 ]
 IGNORED = [
     "examples/planogram/images/a.jpeg",

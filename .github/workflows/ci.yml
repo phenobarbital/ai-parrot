@@ -96,6 +96,64 @@ jobs:
           uv run python -m scripts.sdd.check_id_collisions \
             --baseline scripts/sdd/.collision_baseline.json
 
+      # Fails on stalled sdd/tasks/active/ files: an active/+completed/ twin, or
+      # an active/ file whose per-spec index already marks it done. heal_orphans.sh
+      # only ran on `/sdd-done --merge`, so the default PR flow let these land
+      # silently. scripts/sdd/.task_state_baseline.json lists the pre-existing
+      # ones (reported, not fatal) until they are reaped.
+      - name: Check stalled SDD task files
+        run: |
+          uv run python -m scripts.sdd.check_task_state \
+            --baseline scripts/sdd/.task_state_baseline.json
+
+  # FEAT-586: keeps docs/getting-started.md's factual claims honest (the
+  # claim-verification harness) and both installer scripts parseable.
+  # Single OS (ubuntu-latest) only — no OS matrix (spec AC13). --system-deps
+  # is never exercised here (spec §7 risk); only a --dry-run install runs.
+  install-guide:
+    name: Install guide & scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      # NavConfig refuses to import without an env/<environment>/.env file,
+      # and env/ is gitignored — same bootstrap as the other jobs in this
+      # workflow (parrot.bots.agent, imported by the hello-world test, pulls
+      # in navconfig transitively).
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Doc-claim & script tests
+        run: uv run pytest packages/ai-parrot/tests/docs/ -q
+
+      - name: POSIX installer syntax
+        run: bash -n scripts/install/install-parrot.sh
+
+      - name: PowerShell installer parse (soft)
+        run: |
+          if command -v pwsh >/dev/null 2>&1; then
+            pwsh -NoProfile -Command '
+              $errs = $null
+              [System.Management.Automation.Language.Parser]::ParseFile("scripts/install/install-parrot.ps1", [ref]$null, [ref]$errs) | Out-Null
+              if ($errs.Count -gt 0) { $errs | ForEach-Object { Write-Error $_ }; exit 1 } else { exit 0 }
+            '
+          else
+            echo "pwsh not available on this runner; skipping PowerShell parse check (single-OS scope, spec AC13)."
+          fi
+
+      - name: POSIX installer dry run
+        run: bash scripts/install/install-parrot.sh --dry-run --provider anthropic
+
   test-core:
     name: "Test ai-parrot (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest

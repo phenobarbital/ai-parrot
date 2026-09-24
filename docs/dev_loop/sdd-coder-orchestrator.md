@@ -192,14 +192,31 @@ and cleanup call (see "Execution lifecycle and suspension policy" below):
    review, push, and the summary — extended with a per-model table for this
    feature.
 
+### Inspection and compact projection (FEAT-584)
+
+Prefer `coder_task_context` and `coder_delivery_report` for known task/delivery chains. For genuinely independent source queries, use one bounded-source `source_inspect_batch` call (at most eight operations, concurrency four); it is read-only and never a shell escape.
+
+`coder_plan`, `coder_wait`, and `coder_status` retain `response_mode="full"` as their public default. The worker may explicitly request `"compact"`, but must recover mandatory evidence/pages with `coder_read_artifact` before dispatch, validation, merge, or acceptance. Compact output never changes routing, coverage, ownership, retry, fidelity, or the 90-second client poll.
+
+The durable evidence store behind `compact` views, `coder_read_artifact`, `coder_record_native_observation` and review checkpoints is **always bound** — it does not depend on `DEV_LOOP_CODER_TELEMETRY`. Its root is `SDD_CODER_TELEMETRY_DIR` when set, otherwise `<main checkout>/artifacts/logs/sdd-coder-usage` derived via git; an explicit root that is relative or lands under the worktree base still fails engine construction. Only when no root can be derived at all does the engine start without a store and log a warning, and every dependent call then reports `evidence_persistence_failed`.
+
+### Review boundary and compaction (FEAT-584)
+
+After settlement: persist checkpoint; request at most one supported between-turn compaction; record its actual receipt; reload/validate the checkpoint; start a fresh independent reviewer. Do not compact per task/tool, inside a tool call, while work is live, or by invoking `/compact` through Bash.
+
+`pre_review_compaction="auto"` is a policy request, not a host/context capability assertion. Record `skipped`, `unsupported`, `failed`, or unsettled `in_progress` explicitly; never blindly retry an unsettled receipt. Check installation diagnostics against the actual worktree, but never treat them as a capability handshake. Parent compaction is not evidence of native-child compaction.
+
+The [SDD execution optimization](sdd-execution-optimization.md) guide records the current no-default decision. API defaults and host limits above remain unchanged until the concrete host driver, real receipt/review continuation, and controlled pilot provide sufficient evidence.
+
 ## Outcomes
 
 | Outcome | Meaning | `sdd-worker` does |
 |---|---|---|
 | `merged` | Clean merge, fidelity passed | Run the task's acceptance criteria in this worktree, then step (g) with a Completion Note ending `Seat: … Backend: … Model: … Attempts: … Duration: … Tokens: …` from `attempts[*]` |
 | `merge_conflict` | Content conflict against the feature branch | Resolve manually in this worktree, commit, call `coder_merge` again |
-| `fidelity_violation` | The coder touched `sdd/` or a file not on its task's list, **or** its diff adds a banned import (`diagnostics` starts with `BannedImport:`) | Treated as `failed` — never merged by hand |
+| `fidelity_violation` | The coder touched orchestrator-owned SDD state (`sdd/tasks/`, `sdd/ledger/` — even if the task declares it) or a file not on its task's list, **or** its diff adds a banned import (`diagnostics` starts with `BannedImport:`) | Treated as `failed` — never merged by hand |
 | `failed` | Both attempts (assigned seat, then a different seat) errored | Attempt 3 is `sdd-worker`'s own: implement the task itself (Fallback loop steps c–f), then (g) |
+| `failed` + `diagnostics` starting `empty_delivery:` | The seat produced **no file change** (no commit, nothing in the tree, no declared file under an ignored path). On the MCP path the engine already ran the retry ladder (an empty attempt is a failed attempt, retried on another seat); from `coder_merge` (native path) the branch was not merged | Treat as `failed`: attempt 3 is `sdd-worker`'s, or re-dispatch once via `coder_run_chunk` when the classification is `standard` |
 | `not_dispatched` | The task lost its seat (suspended/exhausted) before admission | Task stays pending — no synthetic attempt is recorded; replan or fall back |
 | `plan_stale` | The cached plan's pool generation moved on since it was computed | Replan; the rejection does not consume an attempt |
 
@@ -379,7 +396,7 @@ native tasks and re-merges).
 To collect and analyze token usage:
 
 1. Enable telemetry by setting these environment variables:
-   - `DEV_LOOP_CODER_TELEMETRY=true` (master switch, default False)
+   - `DEV_LOOP_CODER_TELEMETRY=true` (master switch for the usage-row sink, default False; the durable evidence store is bound regardless)
    - `DEV_LOOP_CODER_LEDGER=true` (bind the observational ledger, default True)
    - `SDD_CODER_TELEMETRY_DIR=/absolute/path` (durable dir, "" = derive from main checkout)
 
@@ -412,12 +429,24 @@ as the unbudgeted comparison baseline.
   `extra_content` carry-over. Guarded by the opt-in live test:
   `pytest -m live packages/ai-parrot/tests/flows/dev_loop/test_google_compat_live.py`
   (needs `GEMINI_API_KEY`/`GOOGLE_API_KEY`).
+- **`seat_busy`** (from `coder_prepare_native`) — the native model is still
+  reserved by the task in `held_by_task_id`; a native reservation is released
+  only by that task's `coder_merge`. Merge it first, then prepare the next task.
+  The engine reports this immediately instead of waiting (a wait here parked
+  the whole server on 2026-09-24: the releasing `coder_merge` could never be
+  read while the stdio loop was serving requests one at a time — the loop now
+  dispatches each request as its own task).
 - **`task_already_running`** — a job already owns that task id; check
   `coder_status(job_id)` rather than re-dispatching. If the server
   restarted mid-job, the branch/worktree persists and surfaces as an orphan
   on the next `coder_plan`.
-- **`dirty_task_worktree`** — the coder left uncommitted or untracked
-  changes; nothing is merged until the branch is clean.
+- **uncommitted coder deliveries** — a sandboxed seat has `.git` read-only by
+  design and cannot commit; the engine extracts the task's **declared** files
+  itself and commits them on the attempt branch (`_commit_declared_changes`,
+  FEAT-587 / `ed267c217`). There is no `dirty_task_worktree` rejection. A file
+  the coder produced but the task does not declare is never merged and never
+  dropped: it surfaces as `fidelity_violation` with `unexpected_files` and the
+  `undeclared_files_left_uncommitted` diagnostic.
 - **Redis warnings** — dispatch telemetry to Redis is best-effort; a single
   startup warning when `REDIS_URL` is unreachable is expected and harmless.
   Set `REDIS_URL` to enable live event streams.
@@ -621,7 +650,10 @@ aliases, are rejected. Codex workers must retain their host's workspace sandbox
 and must not grant writable access to the shared environment.
 
 The runner exposes the host filesystem read-only, with writable mounts for the
-checkout and common Git directory and private `/tmp`. Shared environments remain
+checkout and common Git directory and private `/tmp`. Claude Code's scratchpad
+root (`/tmp/claude-<uid>`) is bound back over the private `/tmp`, so a seat's
+session scratchpad survives from one Bash call to the next instead of vanishing
+with each command. Shared environments remain
 read-only even when inside a writable checkout. Child scripts inherit these
 mounts; package-manager allowlists are only early feedback. Task package source
 directories are prepended to `PYTHONPATH` so tests exercise the task checkout.

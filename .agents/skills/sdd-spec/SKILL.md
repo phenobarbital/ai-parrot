@@ -8,7 +8,7 @@ description: Convert a brainstorm, proposal, or direct feature request into a fo
 Use this skill when the user asks to run `sdd-spec`, create a formal SDD
 specification, or convert a brainstorm/proposal into a spec.
 
-Codex invocation: `$sdd-spec <feature-slug> [--type feature|hotfix] [--base-branch <branch>] [-- <notes>]`.
+Codex invocation: `$sdd-spec [<feature-slug>] [--type feature|hotfix] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]`.
 
 ## Purpose
 
@@ -42,6 +42,9 @@ stay with the thinking model — eligibility never delegates a design choice.
    - free-form notes after `--`
    - optional `--type`
    - optional `--base-branch`
+   - intake flags (FEAT-577): with no brainstorm/proposal and no notes (or
+     with `--interview`), run intake mode by following
+     `sdd/templates/intake.procedure.md`; never in a non-interactive run.
 2. Locate prior exploration:
    - `sdd/proposals/<feature-slug>.brainstorm.md`
    - `sdd/proposals/<feature-slug>.proposal.md`
@@ -79,21 +82,33 @@ stay with the thinking model — eligibility never delegates a design choice.
    - read every file before citing imports, methods, classes, signatures, or
      paths
    - record plausible things that do not exist
-9. Reserve identity:
-   - For `type: feature`, call:
+9. Resolve identity before reserving:
+   - For `type: feature`, first check whether this slug already owns an ID in
+     `sdd/specs/<feature-slug>.spec.md` and its per-spec index. Preserve that
+     existing FEAT-ID on regeneration; never reserve a replacement. If the
+     spec and index disagree, stop and report the mismatch.
+   - If frontmatter has `reuse_feature_id`, use it only for an intentional
+     multi-spec split, document the reuse, and skip reservation.
+   - Only for a new feature without an existing or explicitly reused ID, call:
      `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
    - Use the returned `FEAT-NNN` verbatim.
    - Do not fall back to hand-computed IDs.
    - For `type: hotfix`, reserve no `FEAT-NNN`; use the Jira key as identity
      when available.
-   - If frontmatter has `reuse_feature_id`, use it only for an intentional
-     multi-spec split and document that reuse.
 10. Write the spec:
    - frontmatter `type` and `base_branch`
    - frontmatter `projects` and `tags`, carried from the exploration doc (FEAT-576)
    - ID or Jira identity
    - date
    - architecture and module breakdown
+   - Interface Skeletons for every module: public signatures and docstrings,
+     with `verified: path:NN` anchors for existing code, and no implementation
+     bodies. `$sdd-task` derives its Implementation Blueprints from these.
+   - an Edit Sites table in §6 for every file the modules modify: the verbatim
+     attachment anchor, `path:NN`, and its occurrence count verified with
+     `grep -c`. Record the base commit used for verification. When an anchor
+     is non-unique, include two or three lines of surrounding context; list
+     only actual module files. For created files, record the path only.
    - tests and acceptance criteria
    - mandatory Codebase Contract
    - Worktree Strategy
@@ -144,4 +159,3 @@ $sdd-task only for unusually large hotfixes.
 - `sdd/WORKFLOW.md`
 - `scripts/sdd/sdd_meta.py`
 - `scripts/sdd/reserve_ids.py`
-

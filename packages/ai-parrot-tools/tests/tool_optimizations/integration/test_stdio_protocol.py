@@ -12,7 +12,7 @@ from .conftest import BOOTSTRAP, worker_env
 
 EXPECTED_TOOLS = {
     "local-git": {"git_recent", "git_fetch", "git_preflight", "git_prepare_files", "git_pull", "git_push"},
-    "bounded-source": {"source_info", "source_read"},
+    "bounded-source": {"source_info", "source_read", "source_inspect_batch"},
 }
 
 MUTATING = {"git_prepare_files", "git_pull", "git_push", "writer_apply"}
@@ -127,4 +127,8 @@ def test_subprocess_stdout_is_json_rpc_only(tmp_repo_with_yaml):
 
     assert {item["id"] for item in responses} == {1, 2, 3}
     listed = next(item for item in responses if item["id"] == 2)
-    assert {tool["name"] for tool in listed["result"]["tools"]} == {"source_info", "source_read"}
+    assert {tool["name"] for tool in listed["result"]["tools"]} == {
+        "source_info",
+        "source_read",
+        "source_inspect_batch",
+    }

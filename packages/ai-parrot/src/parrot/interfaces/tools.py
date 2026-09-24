@@ -5,7 +5,14 @@ This interface provides methods for initializing, managing, and using tools
 in bot implementations.
 """
 
+import inspect
 from typing import List, Union, Dict, Any, Callable
+
+from parrot.mcp import MCPServerConfig
+from parrot.tools.dataset_manager.tool import DatasetManager
+from parrot.tools.discovery import discover_from_registry, resolve_class
+from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
+
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
 from ..clients.base import AbstractClient
@@ -37,6 +44,13 @@ class ToolInterface:
 
         for tool in tools:
             try:
+                if isinstance(tool, ToolkitSpec):
+                    # FEAT-593: configured toolkits need async secret hydration → applied in configure()
+                    if getattr(self, "_pending_toolkit_specs", None) is None:
+                        self._pending_toolkit_specs = []
+                    self._pending_toolkit_specs.append(tool)
+                    continue
+
                 if isinstance(tool, str):
                     # First check if it's a toolkit name in the registry
                     if ToolkitRegistry.get(tool.lower()) is not None:
@@ -130,9 +144,7 @@ class ToolInterface:
         """Whether this bot has GraphIndex tools incorporated."""
         if getattr(self, "_graphindex_toolkit", None) is not None:
             return True
-        return any(
-            name.startswith("graphindex") or name.startswith("graph_") for name in self.tool_manager.list_tools()
-        )
+        return any(name.startswith(("graphindex", "graph_")) for name in self.tool_manager.list_tools())
 
     @property
     def llmwiki_toolkit(self) -> Any:
@@ -160,6 +172,92 @@ class ToolInterface:
     def has_knowledge_index(self) -> bool:
         """Whether the bot exposes any knowledge index (Page or Graph)."""
         return self.has_pageindex_tools or self.has_graphindex_tools
+
+    @staticmethod
+    def _resolve_spec_class(slug: str) -> type | None:
+        """Resolve a toolkit slug via TOOL_REGISTRY (case-insensitive); None when unknown."""
+        registry = discover_from_registry()
+        dotted = registry.get(slug) or {key.lower(): value for key, value in registry.items()}.get(slug.lower())
+        if dotted is None:
+            return None
+        try:
+            return resolve_class(dotted)
+        except (ImportError, AttributeError):
+            return None
+
+    async def apply_tooling_specs(self) -> list[str]:
+        """Hydrate and register pending toolkit / MCP specs once (FEAT-593). Never raises."""
+        toolkits: list[ToolkitSpec] = list(getattr(self, "_pending_toolkit_specs", None) or [])
+        mcp_specs: list[AgentMCPServerSpec] = list(getattr(self, "_pending_mcp_specs", None) or [])
+        self._tooling_revision = tooling_revision(toolkits, mcp_specs)
+        if getattr(self, "_tooling_applied", False):
+            return []
+        self._tooling_applied = True
+
+        registered: list[str] = []
+        for spec in toolkits:
+            try:
+                cls = self._resolve_spec_class(spec.slug)
+                if cls is None:
+                    self.logger.warning("Toolkit spec '%s': unknown slug, skipped", spec.slug)
+                    continue
+
+                params = await hydrate_params(spec)
+                if spec.slug.lower() == "dataset_manager":
+                    datasources = params.pop("datasources", [])
+                    existing = getattr(self, "_dataset_manager", None)
+                    if isinstance(existing, DatasetManager):
+                        dataset_manager = existing
+                    else:
+                        signature = inspect.signature(DatasetManager.__init__).parameters
+                        accepted = {
+                            name
+                            for name, parameter in signature.items()
+                            if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
+                        }
+                        dropped = sorted(set(params) - accepted)
+                        if dropped:
+                            self.logger.warning(
+                                "Toolkit spec '%s': dropped unknown constructor params: %s", spec.slug, dropped
+                            )
+                        filtered = {name: value for name, value in params.items() if name in accepted}
+                        dataset_manager = DatasetManager(**filtered)
+                        tools = self.tool_manager.register_toolkit(dataset_manager)
+                        self._capture_knowledge_toolkit(dataset_manager)
+                        self._dataset_manager = dataset_manager
+                        registered.extend(tool.name for tool in tools)
+                    await dataset_manager.replay_datasources(datasources)
+                    continue
+
+                signature = inspect.signature(cls.__init__).parameters
+                accepted = {
+                    name
+                    for name, parameter in signature.items()
+                    if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
+                }
+                dropped = sorted(set(params) - accepted)
+                if dropped:
+                    self.logger.warning("Toolkit spec '%s': dropped unknown constructor params: %s", spec.slug, dropped)
+                filtered = {name: value for name, value in params.items() if name in accepted}
+                instance = cls(**filtered)
+                tools = self.tool_manager.register_toolkit(instance)
+                self._capture_knowledge_toolkit(instance)
+                registered.extend(tool.name for tool in tools)
+            except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
+                self.logger.warning("Toolkit spec '%s' skipped: %s", spec.slug, type(exc).__name__)
+
+        for mspec in mcp_specs:
+            try:
+                kwargs = await hydrate_mcp(mspec)
+                config = MCPServerConfig(**kwargs)
+                if hasattr(self, "add_mcp_server"):
+                    registered.extend(await self.add_mcp_server(config))
+            except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
+                self.logger.warning("MCP server spec '%s' skipped: %s", mspec.name, type(exc).__name__)
+
+        if registered and hasattr(self, "enable_tools"):
+            self.enable_tools = True
+        return registered
 
     def _capture_knowledge_toolkit(self, toolkit: Any) -> None:
         """Capture PageIndex / GraphIndex / LLMWiki toolkit instances on the bot.

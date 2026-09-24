@@ -308,6 +308,59 @@ class PostgresWikiStore(BaseWikiStore):
                     await self._upsert_page(conn, page)
         return len(pages)
 
+    async def compare_and_swap_page(
+        self,
+        page: WikiPageRecord,
+        expected_content_hash: Optional[str],
+    ) -> bool:
+        """Conditionally write one page against its open version row's hash.
+
+        See :meth:`BaseWikiStore.compare_and_swap_page` for the contract.
+        The compare and the close-and-insert share one transaction. ``FOR
+        UPDATE OF v`` alone only locks an *existing* ``node_versions`` row,
+        so it cannot serialize two concurrent insert-only CAS calls racing
+        on a page that is genuinely absent for both: the ``nodes`` table's
+        own ``ON CONFLICT`` upsert would still order their writes, but only
+        *after* both already read the (then-correct, now-stale) "absent"
+        precondition. A transaction-scoped advisory lock keyed on
+        ``concept_id``, taken before the precondition read, forces the
+        second concurrent caller to block until the first's whole
+        transaction commits, so its own precondition read then correctly
+        observes the row the first caller just wrote.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                    page.concept_id,
+                )
+                row = await conn.fetchrow(
+                    f"""
+                    SELECT v.content_hash
+                    FROM {self._schema}.node_versions v
+                    JOIN {self._schema}.nodes n ON n.concept_id = v.concept_id
+                    WHERE v.concept_id = $1
+                      AND n.namespace = $2
+                      AND upper_inf(v.validity)
+                    FOR UPDATE OF v
+                    """,
+                    page.concept_id,
+                    self._wiki_name,
+                )
+                # Evaluate the precondition:
+                # expected is None -> row must be None (insert-only)
+                # expected is not None -> row is not None and hash must match
+                if expected_content_hash is None:
+                    if row is not None:
+                        return False
+                else:
+                    if row is None or row["content_hash"] != expected_content_hash:
+                        return False
+                await self._upsert_page(conn, page)
+        self.logger.debug("compare_and_swap_page: wrote %s", page.concept_id)
+        return True
+
     async def add_edges(self, edges: list[tuple]) -> int:
         """Insert typed wiki edges (close-and-insert on provenance change).
 
@@ -849,7 +902,7 @@ class PostgresWikiStore(BaseWikiStore):
         """
         if not concept_ids:
             return {}
-        out: dict[str, Optional[str]] = {cid: None for cid in concept_ids}
+        out: dict[str, Optional[str]] = dict.fromkeys(concept_ids)
         pool = await self._ensure_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
