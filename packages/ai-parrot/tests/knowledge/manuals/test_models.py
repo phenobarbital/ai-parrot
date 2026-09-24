@@ -36,7 +36,10 @@ def test_step_requires_substantiated_evidence() -> None:
 def test_step_identity_order_independent() -> None:
     """Display renumbering does not change the immutable identity."""
     identity = StepIdentity(step_id=mint_step_id("manual", "repair"), content_hash=content_hash("tighten bolt"))
-    assert Step(identity=identity, order=1, text=_text()).identity == Step(identity=identity, order=8, text=_text()).identity
+    assert (
+        Step(identity=identity, order=1, text=_text()).identity
+        == Step(identity=identity, order=8, text=_text()).identity
+    )
 
 
 def test_content_hash_numeric_fields() -> None:
@@ -62,7 +65,11 @@ def test_manual_card_rejects_duplicate_procedure_slugs() -> None:
     """One manual cannot contain duplicate procedure slugs."""
     procedure = Procedure(procedure_id="p1", slug="repair", kind="maintenance", title=_text())
     with pytest.raises(ValueError):
-        ManualCard(manual_id="manual-1", revision="A", procedures=[procedure, procedure.model_copy(update={"procedure_id": "p2"})])
+        ManualCard(
+            manual_id="manual-1",
+            revision="A",
+            procedures=[procedure, procedure.model_copy(update={"procedure_id": "p2"})],
+        )
 
 
 def test_manual_version_interval_and_snapshot_rules() -> None:

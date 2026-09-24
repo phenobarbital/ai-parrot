@@ -12,14 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from parrot.knowledge.bookstore.models import TocEntry
 from parrot.knowledge.common.provenance import (
-    MAX_QUOTE_CHARS,
-    AnswerProvenance,
     Evidence,
     Extracted,
     FieldProvenance,
-    ProvenanceOrigin,
     VerificationState,
-    trim_quote,
 )
 
 ProcedureKind = Literal["assembly", "disassembly", "maintenance", "inspection", "troubleshooting"]

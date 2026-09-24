@@ -3,7 +3,15 @@
 import pytest
 
 from parrot.knowledge.common.provenance import Evidence, Extracted
-from parrot.knowledge.manuals.models import Applicability, SerialRange, Step, StepIdentity, applies, content_hash, normalize_serial
+from parrot.knowledge.manuals.models import (
+    Applicability,
+    SerialRange,
+    Step,
+    StepIdentity,
+    applies,
+    content_hash,
+    normalize_serial,
+)
 
 
 def _step(applicability: Applicability) -> Step:
@@ -21,13 +29,19 @@ def test_applies_matrix() -> None:
     """Models, bounded ranges, missing serials, and open ranges follow Q7."""
     evidence = Evidence(node_id="0001", quote="Applies to model X serials 2024-0001 through 2024-0099.")
     bounded = _step(
-        Applicability(models=["X"], serial_ranges=[SerialRange(start="2024-0001", end="2024-0099", format="2024-0000")], evidence=evidence)
+        Applicability(
+            models=["X"],
+            serial_ranges=[SerialRange(start="2024-0001", end="2024-0099", format="2024-0000")],
+            evidence=evidence,
+        )
     )
     assert applies(bounded, model="Y", serial="2024-0005") == "no"
     assert applies(bounded, model="X", serial=None) == "unknown"
     assert applies(bounded, model="X", serial="2024-0005") == "yes"
     assert applies(bounded, model="X", serial="2024-0100") == "no"
-    open_ended = _step(Applicability(serial_ranges=[SerialRange(end="2024-0099", format="2024-0000")], evidence=evidence))
+    open_ended = _step(
+        Applicability(serial_ranges=[SerialRange(end="2024-0099", format="2024-0000")], evidence=evidence)
+    )
     assert applies(open_ended, model=None, serial="2024-0001") == "yes"
 
 
