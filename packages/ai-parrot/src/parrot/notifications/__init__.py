@@ -1113,12 +1113,7 @@ class NotificationMixin:
                     len(files),
                 )
             else:
-                for file_path in files:
-                    card.addAction(
-                        type="Action.OpenUrl",
-                        title=f"📎 {file_path.name}",
-                        url="#",
-                    )
+                card.body_objects.append(self._teams_filename_block(files))
                 self.logger.warning(
                     "A2UI degraded delivery: Teams card listing %d filename(s) "
                     "without download links.",
@@ -1149,12 +1144,7 @@ class NotificationMixin:
                     "url": a2ui_url,
                 })
             else:
-                for file_path in files:
-                    actions.append({
-                        "type": "Action.OpenUrl",
-                        "title": f"📎 {file_path.name}",
-                        "url": "#",
-                    })
+                body.append(self._teams_filename_block(files))
             return card
 
         # JSON string — parse, inject, re-serialize
@@ -1344,6 +1334,30 @@ class NotificationMixin:
             upload.append(rendition)
             origins[rendition] = file_path
         return upload, origins
+
+    @staticmethod
+    def _teams_filename_block(files: List[Path]) -> Dict[str, Any]:
+        """Name the files in the card body when no link can be offered.
+
+        The previous downgrade added one ``Action.OpenUrl`` per file with
+        ``url="#"``. That is not a URL, and Teams rejects the entire card with
+        ``InvalidParameter (400)`` — so a failed Graph upload took the whole
+        notification down with it, message and all. A TextBlock carries the
+        same information and always renders.
+
+        Args:
+            files: The files the card was asked to carry.
+
+        Returns:
+            A TextBlock element listing the file names.
+        """
+        names = "\n".join(f"- {Path(f).name}" for f in files)
+        return {
+            "type": "TextBlock",
+            "text": f"**Attached files** (no download link available)\n{names}",
+            "wrap": True,
+            "isSubtle": True,
+        }
 
     @staticmethod
     def _teams_media_element(file_path: Path, url: str) -> Dict[str, Any]:

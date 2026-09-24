@@ -363,8 +363,13 @@ class TestCardFileAttachment:
         await owner._send_teams({"message": card}, files=[f])
 
         sent_card = capture.calls[0]["message"]
-        file_actions = [a for a in sent_card.actions if "data.xlsx" in a.title]
-        assert len(file_actions) == 1
+        # Named in the body, not as an action: an Action.OpenUrl needs a real
+        # URL, and a placeholder made Teams reject the whole card.
+        body = sent_card.to_adaptative()["body"]
+        listed = [b for b in body
+                  if b.get("type") == "TextBlock" and "data.xlsx" in b.get("text", "")]
+        assert len(listed) == 1
+        assert not [a for a in sent_card.actions if (a.url or "") in ("", "#")]
 
     async def test_dict_card_gets_file_actions(self, tmp_path, monkeypatch):
         """Dict Adaptive Cards also get file actions injected."""
