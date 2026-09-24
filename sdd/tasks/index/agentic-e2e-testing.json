@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-19T00:58:06.219373+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-24T11:03:04+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "isolation": "mixed",
@@ -26,7 +26,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T01:21:29+00:00",
-      "file": "sdd/tasks/completed/TASK-3515-e2e-http-lifetime.md"
+      "file": "sdd/tasks/completed/TASK-3515-e2e-http-lifetime.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3516",
@@ -46,7 +47,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T01:28:48+00:00",
-      "file": "sdd/tasks/completed/TASK-3516-e2e-lazy-tokenizer.md"
+      "file": "sdd/tasks/completed/TASK-3516-e2e-lazy-tokenizer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3517",
@@ -64,7 +66,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T01:56:51+00:00",
-      "file": "sdd/tasks/completed/TASK-3517-e2e-lifecycle-spike.md"
+      "file": "sdd/tasks/completed/TASK-3517-e2e-lifecycle-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3518",
@@ -84,7 +87,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T02:16:54+00:00",
-      "file": "sdd/tasks/completed/TASK-3518-e2e-session-spike.md"
+      "file": "sdd/tasks/completed/TASK-3518-e2e-session-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3519",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T02:32:28+00:00",
-      "file": "sdd/tasks/completed/TASK-3519-e2e-google-budget-spike.md"
+      "file": "sdd/tasks/completed/TASK-3519-e2e-google-budget-spike.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3520",
@@ -122,7 +127,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T01:39:41+00:00",
-      "file": "sdd/tasks/completed/TASK-3520-e2e-models.md"
+      "file": "sdd/tasks/completed/TASK-3520-e2e-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3521",
@@ -142,7 +148,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T02:43:55+00:00",
-      "file": "sdd/tasks/completed/TASK-3521-e2e-plan-loader.md"
+      "file": "sdd/tasks/completed/TASK-3521-e2e-plan-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3522",
@@ -162,7 +169,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T02:56:15+00:00",
-      "file": "sdd/tasks/completed/TASK-3522-e2e-source-identity.md"
+      "file": "sdd/tasks/completed/TASK-3522-e2e-source-identity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3523",
@@ -182,7 +190,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T03:13:58+00:00",
-      "file": "sdd/tasks/completed/TASK-3523-e2e-evidence-verifier.md"
+      "file": "sdd/tasks/completed/TASK-3523-e2e-evidence-verifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3524",
@@ -203,7 +212,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T17:51:42+00:00",
-      "file": "sdd/tasks/completed/TASK-3524-e2e-run-state.md"
+      "file": "sdd/tasks/completed/TASK-3524-e2e-run-state.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3525",
@@ -223,7 +233,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T17:35:09+00:00",
-      "file": "sdd/tasks/completed/TASK-3525-e2e-target-protocol.md"
+      "file": "sdd/tasks/completed/TASK-3525-e2e-target-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3526",
@@ -244,7 +255,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T18:06:39+00:00",
-      "file": "sdd/tasks/completed/TASK-3526-e2e-control-channel.md"
+      "file": "sdd/tasks/completed/TASK-3526-e2e-control-channel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3527",
@@ -264,7 +276,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T18:44:38+00:00",
-      "file": "sdd/tasks/completed/TASK-3527-e2e-supervisor.md"
+      "file": "sdd/tasks/completed/TASK-3527-e2e-supervisor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3528",
@@ -284,7 +297,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T19:09:51+00:00",
-      "file": "sdd/tasks/completed/TASK-3528-e2e-watchdog.md"
+      "file": "sdd/tasks/completed/TASK-3528-e2e-watchdog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3529",
@@ -306,7 +320,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T19:57:23+00:00",
-      "file": "sdd/tasks/completed/TASK-3529-e2e-mcp-targets.md"
+      "file": "sdd/tasks/completed/TASK-3529-e2e-mcp-targets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3530",
@@ -328,7 +343,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T20:27:37+00:00",
-      "file": "sdd/tasks/completed/TASK-3530-e2e-botmanager-target.md"
+      "file": "sdd/tasks/completed/TASK-3530-e2e-botmanager-target.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3531",
@@ -351,7 +367,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T20:50:14+00:00",
-      "file": "sdd/tasks/completed/TASK-3531-e2e-ui-browser-targets.md"
+      "file": "sdd/tasks/completed/TASK-3531-e2e-ui-browser-targets.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3532",
@@ -372,7 +389,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T21:14:52+00:00",
-      "file": "sdd/tasks/completed/TASK-3532-e2e-pytest-plugin.md"
+      "file": "sdd/tasks/completed/TASK-3532-e2e-pytest-plugin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3533",
@@ -572,7 +590,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-19T17:20:28+00:00",
-      "file": "sdd/tasks/completed/TASK-3541-e2e-spec-surfaces.md"
+      "file": "sdd/tasks/completed/TASK-3541-e2e-spec-surfaces.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3542",
@@ -661,7 +680,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-24T00:55:01+00:00",
-      "file": "sdd/tasks/completed/TASK-3545-e2e-ci.md"
+      "file": "sdd/tasks/completed/TASK-3545-e2e-ci.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3546",
@@ -682,7 +702,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-24T01:05:43+00:00",
-      "file": "sdd/tasks/completed/TASK-3546-e2e-docs-performance.md"
+      "file": "sdd/tasks/completed/TASK-3546-e2e-docs-performance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3547",
@@ -704,7 +725,8 @@
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
       "completed_at": "2026-09-24T01:26:32+00:00",
-      "file": "sdd/tasks/completed/TASK-3547-e2e-feature-verification.md"
+      "file": "sdd/tasks/completed/TASK-3547-e2e-feature-verification.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3548",
