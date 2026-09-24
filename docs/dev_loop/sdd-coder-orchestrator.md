@@ -226,6 +226,7 @@ The [SDD execution optimization](sdd-execution-optimization.md) guide records th
 |---|---|---|
 | `merged` | Clean merge, fidelity passed | Run the task's acceptance criteria in this worktree, then step (g) with a Completion Note ending `Seat: … Backend: … Model: … Attempts: … Duration: … Tokens: …` from `attempts[*]` |
 | `merge_conflict` | Content conflict against the feature branch | Resolve manually in this worktree, commit, call `coder_merge` again |
+| `engine_busy` (error) | Another state-changing `coder_*` call held the toolkit's exclusive slot for more than 300 s (read-only calls never take it) | Retry the call once the other one returns |
 | `merge_busy` (error) | Another consolidation held the feature-worktree merge lock for more than `MERGE_LOCK_TIMEOUT_S` (120 s) | Let the running job settle (`coder_wait`), then call `coder_merge` again |
 | `fidelity_violation` | The coder touched orchestrator-owned SDD state (`sdd/tasks/`, `sdd/ledger/` — even if the task declares it) or a file not on its task's list, **or** its diff adds a banned import (`diagnostics` starts with `BannedImport:`) | Treated as `failed` — never merged by hand |
 | `failed` | Both attempts (assigned seat, then a different seat) errored | Attempt 3 is `sdd-worker`'s own: implement the task itself (Fallback loop steps c–f), then (g) |

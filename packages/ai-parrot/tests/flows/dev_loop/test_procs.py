@@ -86,12 +86,27 @@ async def test_run_bounded_child_cannot_read_our_stdin() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_bounded_kills_child_on_cancellation() -> None:
-    task = asyncio.create_task(run_bounded([sys.executable, "-c", "import time; time.sleep(60)"], timeout_s=60))
-    await asyncio.sleep(0.2)
+async def test_run_bounded_kills_child_on_cancellation(tmp_path) -> None:
+    pid_file = tmp_path / "pid"
+    script = f"import os, time; open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+    task = asyncio.create_task(run_bounded([sys.executable, "-c", script], timeout_s=60))
+    for _ in range(100):
+        if pid_file.exists() and pid_file.read_text():
+            break
+        await asyncio.sleep(0.05)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+    child = int(pid_file.read_text())
+    for _ in range(50):
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.05)
+    else:
+        os.kill(child, signal.SIGKILL)
+        pytest.fail("child survived cancellation")
 
 
 def test_git_env_disables_every_interactive_surface() -> None:
@@ -113,3 +128,24 @@ async def test_git_env_reaches_the_child() -> None:
     )
     assert rc == 0
     assert out.split() == ["0", "true"]
+
+
+@pytest.mark.asyncio
+async def test_kill_tree_falls_back_to_plain_kill_off_posix(monkeypatch) -> None:
+    from parrot.flows.dev_loop import procs
+
+    class _Proc:
+        returncode = None
+        killed = False
+
+        def kill(self) -> None:
+            self.killed = True
+            self.returncode = -9
+
+        async def wait(self) -> int:
+            return -9
+
+    monkeypatch.setattr(procs, "_POSIX", False)
+    proc = _Proc()
+    await procs._kill_tree(proc)  # type: ignore[arg-type]
+    assert proc.killed

@@ -18,6 +18,7 @@ host cancels the matching in-flight task, which is what frees a handler
 the host has given up on (the MCP host aborts a stdio call after its idle
 timeout, 30 minutes by default) instead of leaving it pinned forever.
 """
+
 import asyncio
 import json
 import logging
@@ -122,8 +123,12 @@ class StdioMCPServer(LocalMCPServerBase):
         except asyncio.CancelledError:
             self.logger.info("Request %s cancelled", request.get("id"))
             return
-        if response is not None:
+        if response is None:
+            return
+        try:
             self._send(response)
+        except Exception as e:  # noqa: BLE001 -- non-serialisable result, closed stdout: log, never lose it silently
+            self.logger.error("Failed to write response for request %s: %s", request.get("id"), e)
 
     def _track(self, request_id: Any, task: "asyncio.Task[None]") -> None:
         self._inflight.add(task)

@@ -59,8 +59,27 @@ def git_env(base: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
     return env
 
 
+_POSIX = os.name == "posix"
+
+
 async def _kill_tree(proc: "asyncio.subprocess.Process") -> None:
-    """SIGTERM then SIGKILL the child's whole process group; never raises."""
+    """Terminate the child — its whole process group on POSIX.
+
+    Signal delivery errors are swallowed; a further cancellation while waiting
+    for the child to exit still propagates.
+
+    POSIX: SIGTERM the group (the child got its own session), then SIGKILL it
+    after `_TERMINATE_GRACE_S`. Elsewhere there is no process group to signal,
+    so the child itself is killed directly.
+    """
+    if proc.returncode is not None:
+        return
+    if not _POSIX:
+        with contextlib.suppress(ProcessLookupError, OSError):
+            proc.kill()
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(proc.wait(), timeout=_TERMINATE_GRACE_S)
+        return
     for sig in (signal.SIGTERM, signal.SIGKILL):
         if proc.returncode is not None:
             return
@@ -79,8 +98,9 @@ async def run_bounded(
 ) -> Tuple[int, str, str]:
     """Run *argv* with a wall-clock deadline and return ``(rc, stdout, stderr)``.
 
-    The child gets its own session (so it can neither read the server's stdin
-    nor reach a controlling terminal) and ``stdin=DEVNULL``. When *timeout_s*
+    On POSIX the child gets its own session (so it can neither reach a
+    controlling terminal nor survive the deadline through a grandchild); on
+    every platform its stdin is ``DEVNULL``. When *timeout_s*
     elapses the whole process group is terminated and ``(124, "", <reason>)``
     is returned; when the executable cannot be spawned ``(127, "", <reason>)``
     is returned. Cancellation of the awaiting task also kills the child before
@@ -104,11 +124,11 @@ async def run_bounded(
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
+            start_new_session=_POSIX,  # own process group so a deadline can kill the whole tree
         )
     except (FileNotFoundError, OSError) as exc:
         # asyncio's FileNotFoundError carries no filename; name the executable ourselves.
-        return SPAWN_FAILED_RC, "", f"{argv[0]}: {exc}"
+        return SPAWN_FAILED_RC, "", f"{getattr(exc, 'strerror', None) or exc}: {argv[0]}"
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
     except asyncio.TimeoutError:

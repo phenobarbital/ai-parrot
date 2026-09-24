@@ -42,7 +42,6 @@ inside its own methods -- keeping this module's own imports independent of
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import re
 from pathlib import Path
@@ -50,6 +49,7 @@ from typing import Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict
 
+from parrot.flows.dev_loop.procs import git_env, run_bounded
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.fidelity import check_fidelity, parse_task_files
 from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
@@ -62,6 +62,9 @@ _ORPHANS_INDEX_NAME = "_orphans.json"
 #: 32-lowercase-hex-char execution suffix, appended by `_worker_id` whenever
 #: an execution_id is bound to the attempt.
 _EXEC_HEX_BRANCH_SUFFIX = re.compile(r"-([0-9a-f]{32})$")
+
+#: Wall-clock cap for one read-only ``git`` child (see `parrot.flows.dev_loop.procs`).
+GIT_TIMEOUT_S: float = 300.0
 
 
 class _TextArtifact(BaseModel):
@@ -79,12 +82,8 @@ class _TextArtifact(BaseModel):
 
 
 async def _git(*args: str, cwd: Path) -> Tuple[int, str, str]:
-    """Run git read-only in *cwd*. Local, minimal mirror of `engine.py`'s own `_git` helper."""
-    proc = await asyncio.create_subprocess_exec(
-        "git", *args, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    out, err = await proc.communicate()
-    return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
+    """Run git read-only in *cwd*: bounded and headless like `engine.py`'s own `_git` (`run_bounded`)."""
+    return await run_bounded(["git", *args], cwd=str(cwd), timeout_s=GIT_TIMEOUT_S, env=git_env())
 
 
 def _excerpt(text: str, *, limit: int = _MAX_INLINE_EXCERPT_BYTES) -> Tuple[str, bool]:

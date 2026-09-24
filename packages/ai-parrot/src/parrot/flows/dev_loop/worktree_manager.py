@@ -24,6 +24,7 @@ itself is left untouched for forensic inspection.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple
@@ -212,9 +213,17 @@ class SubWorktreeManager:
             if rc != 0 or out.strip() in ("", "0"):
                 continue  # nothing new to merge for this worker
 
-            rc, _out, err = await self._git(
-                "merge", "--no-ff", branch, "-m", f"merge {branch}", cwd=self.base_worktree
-            )
+            try:
+                rc, _out, err = await self._git(
+                    "merge", "--no-ff", branch, "-m", f"merge {branch}", cwd=self.base_worktree
+                )
+            except asyncio.CancelledError:
+                # The MCP host cancelled the call mid-merge: `_git` already killed the
+                # git child, but the feature worktree may hold MERGE_HEAD / a partial
+                # index. Abort so the next consolidation finds it clean, then let the
+                # cancellation propagate.
+                await self._git("merge", "--abort", cwd=self.base_worktree)
+                raise
             if rc == 0:
                 merged.append(branch)
                 continue

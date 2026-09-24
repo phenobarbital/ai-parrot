@@ -2374,34 +2374,47 @@ class SddCoderEngine:
         return None
 
     @contextlib.asynccontextmanager
-    async def _acquire_merge_lock(self) -> AsyncIterator[None]:
-        """Hold `_merge_lock` for one consolidation, or fail fast with ``merge_busy``.
+    async def _acquire_merge_lock(self, timeout_s: Optional[float] = None) -> AsyncIterator[None]:
+        """Hold `_merge_lock` for one consolidation; with *timeout_s*, fail fast with ``merge_busy``.
 
         A background `_run_task` consolidation that stalls inside git while holding
         the lock used to make a foreground `coder_merge` wait forever — and, with the
         stdio server processing one request at a time, every later call with it.
-        Waiting is now capped at `MERGE_LOCK_TIMEOUT_S`; the lock is always released
-        on the way out, including on cancellation from the MCP host.
+        The foreground path (`merge()`) now waits at most `MERGE_LOCK_TIMEOUT_S`;
+        background job consolidations keep waiting (they pin no request handler,
+        and a `merge_busy` there would be misreported as a plain `failed` outcome).
+        The lock is always released on the way out, including on cancellation.
         """
-        try:
-            await asyncio.wait_for(self._merge_lock.acquire(), timeout=MERGE_LOCK_TIMEOUT_S)
-        except asyncio.TimeoutError as exc:
-            raise CoderFailure(
-                "merge_busy",
-                f"another consolidation has held the feature-worktree merge lock for more than "
-                f"{MERGE_LOCK_TIMEOUT_S:g}s; retry coder_merge once it settles",
-            ) from exc
+        if timeout_s is None:
+            await self._merge_lock.acquire()
+        else:
+            try:
+                await asyncio.wait_for(self._merge_lock.acquire(), timeout=timeout_s)
+            except asyncio.TimeoutError as exc:
+                raise CoderFailure(
+                    "merge_busy",
+                    f"another consolidation has held the feature-worktree merge lock for more than "
+                    f"{timeout_s:g}s; retry coder_merge once it settles",
+                ) from exc
         try:
             yield
         finally:
             self._merge_lock.release()
 
     async def _consolidate(
-        self, ctx: _FeatureCtx, manager: SubWorktreeManager, task: PlannedTask, *, branch: str, path: str
+        self,
+        ctx: _FeatureCtx,
+        manager: SubWorktreeManager,
+        task: PlannedTask,
+        *,
+        branch: str,
+        path: str,
+        lock_timeout_s: Optional[float] = None,
     ) -> TaskResult:
         """extract+commit declared work -> fidelity (committed diff only) -> locked merge.
 
-        Never raises for domain outcomes.
+        Never raises for domain outcomes — except ``merge_busy`` when *lock_timeout_s*
+        is given (the foreground `merge()` path) and the merge lock stays held past it.
         """
         # The task markdown is resolved and read FIRST (it used to be read after the
         # clean-tree check below): its declared-file list now drives BOTH the
@@ -2489,7 +2502,7 @@ class SddCoderEngine:
                 diagnostics="BannedImport: " + "; ".join(violations),
                 lint=lint_report,
             )
-        async with self._acquire_merge_lock():
+        async with self._acquire_merge_lock(lock_timeout_s):
             try:
                 await manager.merge_sequential(resolver=None)
             except SubWorktreeMergeError as exc:
@@ -2578,7 +2591,9 @@ class SddCoderEngine:
         planned = PlannedTask(
             task_id=task_id, task_file=task_ref.file, title=task_ref.title, seat_label="", native=True
         )
-        result = await self._consolidate(ctx, manager, planned, branch=branch, path=path)
+        result = await self._consolidate(
+            ctx, manager, planned, branch=branch, path=path, lock_timeout_s=MERGE_LOCK_TIMEOUT_S
+        )
         # The orchestrator calls `merge()` only after the native `Agent` returned, so
         # whatever the outcome the sub-worktree is no longer in use and `cleanup()` may
         # reclaim it (conflicts are still protected by `keep_conflicted`).

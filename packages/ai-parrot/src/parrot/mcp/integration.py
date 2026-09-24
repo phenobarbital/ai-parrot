@@ -27,6 +27,7 @@ from .client import (
     MCPConnectionError,
     MCPRateLimitError,
 )
+
 # The transport sessions (`parrot.mcp.transports.*`) and `ChromeManager`
 # (`parrot.mcp.chrome`) ship in ai-parrot-server, not in core. They are
 # imported lazily — inside `MCPClient.connect()` and `_chrome_manager_for()` —
@@ -78,6 +79,7 @@ def _transport_session_cls(transport: str) -> type:
             f"(`pip install ai-parrot-server`): {exc}"
         ) from exc
     return getattr(module, cls_name)
+
 
 logging.getLogger("MCPClient.chrome-devtools").setLevel(logging.INFO)
 logging.getLogger("MCPClient").setLevel(logging.INFO)
