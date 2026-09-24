@@ -138,9 +138,7 @@ class TestBuildLiveGenerationBudget:
     """``build_live_generation_budget`` -- one shared budget per resolved opt-in."""
 
     def test_budget_uses_opt_in_max_calls_and_plan_ceilings(self) -> None:
-        opt_in = e2e_live.require_live_opt_in(
-            env={**_FULL_OPT_IN_ENV, e2e_live.E2E_MAX_LLM_CALLS_ENV: "3"}
-        )
+        opt_in = e2e_live.require_live_opt_in(env={**_FULL_OPT_IN_ENV, e2e_live.E2E_MAX_LLM_CALLS_ENV: "3"})
         plan_budget = LiveBudget(max_output_tokens=256, max_request_bytes=8192, timeout_s=30)
 
         budget = e2e_live.build_live_generation_budget(opt_in, budget=plan_budget)

@@ -214,9 +214,7 @@ async def test_required_evidence_rejections(git_worktree: Path, monkeypatch: pyt
     owner_id = f"pytest-e2e-{uuid.uuid4().hex}"
 
     # -- Baseline: a genuinely passing run, used by the tampering scenarios --
-    plan_path = _write_plan(
-        git_worktree, scenario_id="scn-pass", node_id=f"{_FIXTURE_MODULE}::test_passes"
-    )
+    plan_path = _write_plan(git_worktree, scenario_id="scn-pass", node_id=f"{_FIXTURE_MODULE}::test_passes")
     verdict = await run_plan(plan_path, worktree=git_worktree, owner_id=owner_id)
     assert verdict.status == "PASS"
     assert verdict.exit_code == 0
@@ -255,9 +253,7 @@ async def test_required_evidence_rejections(git_worktree: Path, monkeypatch: pyt
     tampered_source.write_bytes(original_fixture_source)
 
     # -- Required skip: the only required node is skipped, never a PASS --
-    skip_plan_path = _write_plan(
-        git_worktree, scenario_id="scn-skip", node_id=f"{_FIXTURE_MODULE}::test_gets_skipped"
-    )
+    skip_plan_path = _write_plan(git_worktree, scenario_id="scn-skip", node_id=f"{_FIXTURE_MODULE}::test_gets_skipped")
     skip_verdict = await run_plan(skip_plan_path, worktree=git_worktree, owner_id=owner_id)
     assert skip_verdict.status != "PASS", "a required-but-skipped node must never be recorded as a passing run"
 

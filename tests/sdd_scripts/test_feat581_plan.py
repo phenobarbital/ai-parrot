@@ -263,7 +263,9 @@ async def test_a_genuinely_executed_required_plan_reaches_the_allow_path(
             }
         ],
     }
-    plan_path.write_text("---\n" + yaml.safe_dump(plan_payload, sort_keys=False) + "---\n\nRationale.\n", encoding="utf-8")
+    plan_path.write_text(
+        "---\n" + yaml.safe_dump(plan_payload, sort_keys=False) + "---\n\nRationale.\n", encoding="utf-8"
+    )
     _run(["git", "add", "-A"], cwd=worktree)
     _run(["git", "commit", "-m", "seed real allow-path checkout"], cwd=worktree)
 
