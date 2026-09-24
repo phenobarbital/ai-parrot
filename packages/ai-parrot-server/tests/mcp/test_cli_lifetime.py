@@ -424,7 +424,9 @@ async def test_http_serve_stays_alive_between_requests_and_stops_bounded_on_sigt
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
-            raise AssertionError("standalone HTTP server did not stop within the bounded teardown window")
+            raise AssertionError(
+                "standalone HTTP server did not stop within the bounded teardown window"
+            ) from None
 
         assert proc.returncode == 0
 
