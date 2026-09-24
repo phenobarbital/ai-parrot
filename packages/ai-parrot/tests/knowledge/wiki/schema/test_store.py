@@ -72,6 +72,4 @@ async def test_read_only_refuses(plane_dir):
     await writable.upsert_columns([])
     read_only = SchemaStore(plane_dir / "schema.db", read_only=True)
     with pytest.raises(PermissionError):
-        await read_only.upsert_columns(
-            [ColumnRecord(table_id="table:o/s.t", ordinal=0, name="x", data_type="int")]
-        )
+        await read_only.upsert_columns([ColumnRecord(table_id="table:o/s.t", ordinal=0, name="x", data_type="int")])
