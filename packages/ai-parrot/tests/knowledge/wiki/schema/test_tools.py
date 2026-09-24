@@ -33,7 +33,12 @@ async def test_ambiguous_lookup_returns_candidates(plane_dir, sales_metadata):
         plane_dir,
         config=SchemaPlaneConfig(
             sources={
-                "bigquery": {"alias": "bigquery", "dialect": "bigquery", "dsn_env": "BQ_DSN", "allowed_schemas": ["epson"]},
+                "bigquery": {
+                    "alias": "bigquery",
+                    "dialect": "bigquery",
+                    "dsn_env": "BQ_DSN",
+                    "allowed_schemas": ["epson"],
+                },
                 "warehouse": {
                     "alias": "warehouse",
                     "dialect": "postgres",
