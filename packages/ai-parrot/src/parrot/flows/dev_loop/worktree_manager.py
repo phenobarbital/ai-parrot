@@ -24,12 +24,16 @@ itself is left untouched for forensic inspection.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel, Field
+
+from parrot.flows.dev_loop.procs import git_env, run_bounded
+
+#: Wall-clock cap for one manager-owned ``git`` child (see `parrot.flows.dev_loop.procs`).
+GIT_TIMEOUT_S: float = 300.0
 
 logger = logging.getLogger(__name__)
 
@@ -120,15 +124,7 @@ class SubWorktreeManager:
         Returns:
             ``(returncode, stdout, stderr)``, all text-decoded.
         """
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            *args,
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, err = await proc.communicate()
-        return proc.returncode, out.decode(), err.decode()
+        return await run_bounded(["git", *args], cwd=cwd, timeout_s=GIT_TIMEOUT_S, env=git_env())
 
     @staticmethod
     def _branch_suffix(worker_id: str) -> str:
