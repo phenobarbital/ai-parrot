@@ -3,7 +3,7 @@
   "feat_id": "FEAT-601",
   "feature_slug": "training-agent-procedure-graph",
   "started_at": "2026-09-24T21:15:07+00:00",
-  "updated_at": "2026-09-24T21:30:39+00:00",
+  "updated_at": "2026-09-24T21:59:21+00:00",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -65,13 +65,14 @@
       "lint_iterations": 0
     },
     "qa": {
-      "status": "skipped",
+      "status": "completed",
       "started_at": "2026-09-24T21:30:10+00:00",
-      "completed_at": "2026-09-24T21:30:10+00:00",
+      "completed_at": "2026-09-24T21:59:21+00:00",
       "duration_seconds": 0,
       "questions_total": 5,
-      "questions_answered": 0,
-      "skipped_reason": "autonomous session: no interactive gate; U1-U5 left unresolved in proposal \u00a75"
+      "questions_answered": 5,
+      "skipped_reason": null,
+      "note": "U1-U5 resolved by adopting the external review recommendations (artifacts/training_agent_review.md); R1-R4 all CONFIRM"
     },
     "output": {
       "status": "completed",
@@ -81,7 +82,8 @@
       "proposal_path": "sdd/proposals/training-agent.proposal.md",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Every reuse target is line-anchored and Option B was already selected in the brainstorm; the research corrected six template claims (publish semantics, origin filter, structured_output, CLI, media path, YoutubeLoader location) which the spec must encode, and the remaining unknowns (U1\u2013U5) are owner decisions that the spec's Open Questions capture. Keep the brainstorm's spike gate as the spec's first milestone (figure pairing, media round-trip, video alignment, tip survival) since none of the four is answerable from the repo.",
-      "commit_sha": "2cee5fc87"
+      "commit_sha": "2cee5fc87",
+      "note": "proposal status review; \u00a79 review cross-check added"
     }
   },
   "budget": {

@@ -889,7 +889,9 @@
     "b) widen images/media to List[Path|str] and teach parse_response/the four wrappers",
     "c) temp-download only; Teams/Slack get a caption line (no inline figure)"
    ],
-   "ask_user": true
+   "ask_user": true,
+   "user_answer": "option a refined: image_urls/media_urls on AIMessage+AgentResponse, separate in ParsedResponse, Path fields untouched; Teams/Slack URLs, Telegram bounded temp download, WhatsApp direct URL first; sign after release from media ids",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
   },
   {
    "id": "U2",
@@ -902,7 +904,9 @@
     "b) move first (own PR), then build manuals on the shared module",
     "c) copy the primitives into manuals/models.py"
    ],
-   "ask_user": true
+   "ask_user": true,
+   "user_answer": "option b narrowed: knowledge/common/provenance.py for Evidence/Extracted/FieldProvenance/trim_quote + shared validation helpers with re-exports; no doc_id rename, no archive/version/answer move",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
   },
   {
    "id": "U3",
@@ -915,7 +919,9 @@
     "b) origin-guarded loader over shared collections",
     "c) both: non-owned collections and origin stamps for auditability"
    ],
-   "ask_user": true
+   "ask_user": true,
+   "user_answer": "option c: exclusive technician collections + origin/author stamps; immutable step identity; relink by source identity then exact normalized content; fuzzy only proposes; orphaned kept; explicit idempotent relink op",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
   },
   {
    "id": "U4",
@@ -928,7 +934,9 @@
     "b) structured_output with validators",
     "c) hybrid: structured draft, service verifies and releases"
    ],
-   "ask_user": true
+   "ask_user": true,
+   "user_answer": "option a: retrieval → deterministic assembly → completeness verification (blocking) → audit → release via ProceduresAnswerService; ProceduresAgent transport adapter so ask() is gated",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
   },
   {
    "id": "U5",
@@ -941,7 +949,9 @@
     "b) certified_for relation + per-pattern rule from day one",
     "c) has_role in v1 with the relation reserved in the YAML"
    ],
-   "ask_user": true
+   "ask_user": true,
+   "user_answer": "option a conditional on client confirming certification not required; trusted matching tenant; policy on every read path; technician read/guided/tip vs curator verify/publish; no unenforced certified_for",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
   }
  ],
  "recommended_next_command": {
@@ -983,6 +993,17 @@
    "F031"
   ],
   "findings_unused": [],
-  "notes": "Brainstorm open questions not raised as unknowns (carried to spec §8): card granularity, vision provider choice, figure storage (S3FileManager vs overflow), guided-mode state owner, tips moderation, serial/model-year applicability, offline use. Follow-up research for the spec: CompletionPolicy + association store in task_memory (F021), OntologyMerger (F011), test_dependency_boundary.py (F007), whether Google image_understanding's `images: str` accepts URLs (F023)."
+  "notes": "Brainstorm open questions not raised as unknowns (carried to spec §8): card granularity, vision provider choice, figure storage (S3FileManager vs overflow), guided-mode state owner, tips moderation, serial/model-year applicability, offline use. Follow-up research for the spec: CompletionPolicy + association store in task_memory (F021), OntologyMerger (F011), test_dependency_boundary.py (F007), whether Google image_understanding's `images: str` accepts URLs (F023).",
+  "review_crosscheck": {
+   "source": "artifacts/training_agent_review.md",
+   "reviewed_sha": "ab9f97a82",
+   "findings": {
+    "R1": "CONFIRM",
+    "R2": "CONFIRM",
+    "R3": "CONFIRM",
+    "R4": "CONFIRM"
+   },
+   "correction_to_synthesis": "F017/localization row for contracts/agent.py: ask/ask_stream/invoke REFUSE (UngatedAnswerRefused); channels call agent.ask"
+  }
  }
 }

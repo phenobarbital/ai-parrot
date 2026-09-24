@@ -4,7 +4,7 @@ title: Procedure Graph — field-training agent over equipment assembly manuals
 slug: training-agent
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: file
   jira_key: null
@@ -79,7 +79,7 @@ The request is to build a procedure knowledge graph over vendor assembly manuals
 | 20 | `knowledge/bookstore/library.py` | `Bookstore.relate_books` | 640-677 | `judged = set() if force else store.judged_pairs(...)` — the --force / judgement-log mechanics | F014 |
 | 21 | `parrot_tools/contracts/retrieval.py` | `PATTERNS / _TRIGGERS / classify / ContractRetrieval.plan / execute / execute_graph / _validate_projection` | 66-86, 142-243, 431-494, 535-629, 681-745 | deterministic substring-trigger planner (no LLM); projection validator is contract-shaped | F016 |
 | 22 | `parrot_tools/contracts/toolkit.py` | `ContractsToolkit / _gate / verify_card / retire_answer` | 39-107, 305-376 | tool_prefix, confirming_tools, per-tool authorize gate | F017 |
-| 23 | `parrot_tools/contracts/agent.py` | `ContractsAgent.__init__ / agent_tools / answer_question / _draft_reply / released_answer` | 232-353 | Agent subclass; draft via super().ask(), answer released by the service (no structured_output) | F017 |
+| 23 | `parrot_tools/contracts/agent.py` | `ContractsAgent.__init__ / agent_tools / answer_question / _draft_reply / released_answer` | 232-353 | Agent subclass; drafts via the ReAct loop, answer released by the service (no structured_output); `ask`/`ask_stream`/`invoke` REFUSE (`UngatedAnswerRefused`, 338-353) — see §2.2 R3 | F017 |
 | 24 | `parrot_tools/contracts/service.py` | `ContractsAnswerService.answer` | 105-212 | producer → CitationVerifier → released ContractAnswer gate | F018 |
 | 25 | `parrot_tools/contracts/verifier.py` | `CitationVerifier.verify` | 102-206 | citation verification before release | F018 |
 | 26 | `parrot_tools/contracts/cli.py` | `build_parser / main` | 58-66, 362-391 | argparse `python -m parrot_tools.contracts`; not a `parrot` subcommand | F018 |
@@ -189,6 +189,22 @@ The request is to build a procedure knowledge graph over vendor assembly manuals
   *Implication*: New procedure models must use distinct names (Step, ProcedureStep — not StepsBlock); everything else is greenfield inside existing packages.
   *Evidence*: F030
 
+- **`step_key = f"{procedure_slug}:{order}"` is positional and a content hash has no meaningful similarity threshold.** Inserting or renumbering a step changes every later key, so an exact key match can attach a tip to a different action; "content-hash similarity ≥ 0.9" cannot be computed on a hash.
+  *Implication*: step identity must be immutable and separate from display order; re-link by persistent source identity, then exact normalized-content equality; fuzzy text similarity only proposes curator candidates.
+  *Evidence*: source.md (brainstorm §Option B "Assembly", "Graph loader"); review R1
+
+- **`CitationVerifier.verify` checks citation validity, not entailment or completeness.** A claim is kept when at least one citation survives and an unsupported claim is silently dropped; nothing checks that every required action survived.
+  *Implication*: a procedure verifier needs replacement semantics: a missing required step or unsupported critical field blocks release as a complete procedure instead of disappearing from the answer.
+  *Evidence*: F018 (`parrot_tools/contracts/verifier.py` 156-206); review R2
+
+- **`ContractsAgent.ask/ask_stream/invoke` raise `UngatedAnswerRefused`, and every channel wrapper calls `agent.ask`** (Slack `wrapper.py:539`, WhatsApp `wrapper.py:212`, Telegram `wrapper.py:1505`).
+  *Implication*: `ProceduresAgent` needs a transport adapter so ordinary `ask()` runs the gate and returns an `AIMessage` with released content only; copying the refusal verbatim breaks delivery on every channel. (Corrects §2.1 row for `parrot_tools/contracts/agent.py`, which listed the entrypoints without noting the refusal.)
+  *Evidence*: F017 (`agent.py` 338-353), F020; review R3
+
+- **`AuthorizationChecker.check` is OR-only over five fixed rule kinds** (first matching rule grants; no generic `certified_for`).
+  *Implication*: a certification edge plus a `has_role` rule cannot express role AND certification; if certification is required, it is an explicit policy check before protected reads, applied to every fallback and child resource, with expiry/revocation semantics — not a YAML rule.
+  *Evidence*: F009 (`ontology/schema.py` 176-209), `knowledge/ontology/authorization.py` 62-120; review R4
+
 ### 2.3 Recent History (Relevant)
 
 | Area | Window | Activity | Evidence |
@@ -256,6 +272,9 @@ The request is to build a procedure knowledge graph over vendor assembly manuals
 - Figure→step pairing fidelity unmeasured (brainstorm spike 1) — nothing in the repo constrains it either way
 - Presigned URL lifetime ≤7 days in chat history; LocalFileManager file:// in dev (F024)
 - Guided-mode completion policy may require evidence refs for 'done' (F021)
+- Positional step keys silently re-attach tips to the wrong action after an insert/renumber (review R1)
+- A copied `CitationVerifier` drops unsupported steps instead of blocking release (review R2)
+- A copied `ask()` refusal breaks Slack/WhatsApp/Telegram delivery (review R3)
 
 ---
 
@@ -290,29 +309,22 @@ Distribution: **13** high, **2** medium, **1** low.
 
 ### Resolved (during proposal phase)
 
-_None — this run was autonomous (no interactive gate); nothing was asked._
+_Resolved on 2026-09-24 by adopting the external review's recommendations (`artifacts/training_agent_review.md` (copy: `sdd/state/FEAT-601/review.md`), §9). Recorded as owner decisions for `/sdd-spec`; each is still revisable there._
+
+- [x] **U1 — Media delivery route** — *Resolved*: option (a), refined: add validated http(s) `image_urls` (figures) and `media_urls` (deliverable media) to **both** `AIMessage` and `AgentResponse` (including `sync_documents_and_paths` serialization), carried separately through `ParsedResponse`; existing `Path` collections untouched. Teams/Slack render URLs; Telegram does a bounded temp download onto its local upload path; WhatsApp tries the direct-URL route first (the `chart.public_url` precedent, not yet a proven round-trip). Signed URLs are generated after authorization/release from stored media ids, never stored as evidence; downloads restrict destinations, validate redirects, enforce size/time limits and clean up. Vendor video links stay links. Channel caps keep figure→step labels and link overflow instead of dropping required figures.
+  *Resolves claims*: C5
+- [x] **U2 — Shared evidence primitives** — *Resolved*: option (b), narrowed: move `Evidence`, `Extracted`, `FieldProvenance`, `trim_quote`, their constants and the provenance type aliases into `knowledge/common/provenance.py`, promote the whitespace/quote/extraction validators (`_quote_supported`, `_validate_extracted`) into a shared validation module, keep old imports working through re-exports (private aliases included). Do **not** bundle a `doc_id` rename of `Citation`/`EvidenceRef`, archive generalization or moving versions/answers — manuals get their own equivalents. Acceptance: old/new imports resolve to the same classes; contract tests pass; importing the shared module needs no tools satellite or database.
+  *Resolves claims*: C1
+- [x] **U3 — Tip protection** — *Resolved*: option (c): technician tips and their attachment/authorship edges live in collections exclusive to technician content (not a shared `authored_by`), never touched by publish/reconcile/retract, **and** carry origin + authenticated-author metadata. Re-linking is a separate idempotent, retryable operation; step identity is immutable and independent of display order; match by persistent source identity, then exact normalized-content equality; fuzzy matches only propose curator candidates, never auto-carry across changed torque/quantities/prerequisites/warnings. Ambiguous or removed steps keep tips as orphaned/pending with their source revision; retrieval excludes unresolved links and inactive targets; publication reports link-maintenance failure rather than claiming success.
+  *Resolves claims*: C2
+- [x] **U4 — Answer release path** — *Resolved*: option (a): authorized retrieval → canonical procedure assembly → evidence/completeness verification → audit → release, behind a `ProceduresAnswerService`. Steps, prerequisites, hazards, media refs and citations come from the selected source revision; the LLM may draft optional intro prose or pick enumerated ids, never replace instructions, omit warnings, change values or mint citations. A missing required action or unsupported critical field **blocks** release as a complete procedure. `ProceduresAgent` gets a transport adapter so `ask()` reaches the service and returns an `AIMessage` with released content only (other entrypoints gated or explicitly rejected); no raw producer output through chat, MCP, HTTP, streaming or memory history. A single-step answer still carries that step's prerequisites and hazards.
+  *Resolves claims*: C6
+- [x] **U5 — Authorization granularity** — *Resolved*: option (a), conditional: tenant-wide read for authenticated technicians in v1 **provided the client confirms certification is not an access requirement**; trusted, matching tenant identity required (tighten the contracts gate, which only rejects a mismatched tenant when one is supplied); the same policy on catalog search, graph reads, PageIndex fallback, raw sections, media signing/download, tips and guided resume. Action split: technicians read, run their own guided tasks and add attributed tips; curators verify/publish and manage privileged corrections; confirmation is additional to authorization. No unenforced `certified_for` relation is reserved "for later"; if certification is required, it is an explicit role AND equipment policy check with expiry/revocation semantics. Tips moderation stays open.
+  *Resolves claims*: C8
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **Media delivery route: extend parse_response/ParsedResponse to keep http(s) strings plus an `image_urls`/`media_urls` field on AIMessage (Path fields untouched), or widen images/media to Path|str, or download each figure to a temp Path per answer (Telegram/WhatsApp only)?** — *Owner*: Jesus
-  *Blocks claims*: C5
-  *Plausible answers*: a) new URL fields + parse_response keeps http(s) strings; wrappers render URLs (Teams/Slack) or download-then-send (Telegram/WhatsApp) — recommended · b) widen images/media to List[Path|str] and teach parse_response/the four wrappers · c) temp-download only; Teams/Slack get a caption line (no inline figure)
-
-- [ ] **Shared evidence primitives: import Evidence/Extracted/FieldProvenance/trim_quote from knowledge/contracts/models.py, or move them (and promote _quote_supported/_validate_extracted) to a shared knowledge/common module now that there are two consumers, with Citation/EvidenceRef gaining a doc_id?** — *Owner*: Jesus
-  *Blocks claims*: C1
-  *Plausible answers*: a) import from contracts in v1; move in a separate tiny PR (recommended) · b) move first (own PR), then build manuals on the shared module · c) copy the primitives into manuals/models.py
-
-- [ ] **Tip protection strategy: keep Tip nodes + has_tip/authored_by edges in collections outside ManualGraphLoader's owned set (never reconciled), or stamp origin on every node/edge and add origin guards in the obsolete/reconcile/retract steps?** — *Owner*: Jesus
-  *Blocks claims*: C2
-  *Plausible answers*: a) non-owned collections for technician content + explicit re-link step by step_key (recommended, smallest loader delta) · b) origin-guarded loader over shared collections · c) both: non-owned collections and origin stamps for auditability
-
-- [ ] **ProcedureAnswer release path: copy the contracts producer → CitationVerifier → AnswerService gate (agent drafts prose only), or use structured_output=ProcedureAnswer with model validators copying steps/media/citations from RetrievalResult?** — *Owner*: Jesus
-  *Blocks claims*: C6
-  *Plausible answers*: a) copy the service gate (recommended — steps/media/hazards are never model-authored by construction) · b) structured_output with validators · c) hybrid: structured draft, service verifies and releases
-
-- [ ] **Authorization granularity for traversal patterns: tenant-wide has_role: technician on every pattern, or per-Equipment allowlists via an Employee → certified_for → Equipment relation?** — *Owner*: Jesus
-  *Blocks claims*: C8
-  *Plausible answers*: a) has_role: technician tenant-wide in v1 (recommended) · b) certified_for relation + per-pattern rule from day one · c) has_role in v1 with the relation reserved in the YAML
+_None of U1–U5 remain. Client confirmation on certification (U5) is the only external input still pending._
 
 **Carried over from the brainstorm (not re-asked; go to spec §8 as-is):** card granularity (one `ManualCard` per document with `procedures[]` vs `ProcedureCard`), vision provider for captioning (Anthropic/Google/OpenAI — capability-resolved per F023), figure storage (`S3FileManager` vs overflow store — note the 7-day presign cap, F024), guided-mode state owner (`TaskMemoryToolsMixin` composed into `ProceduresToolkit`), tips moderation, serial/model-year applicability, offline use, exploded-view callouts (v2).
 
@@ -331,6 +343,8 @@ The spec should make these six corrections explicit (each contradicts the brains
 3. `parrot manuals` is a click group mounted via `cli._lazy_commands` / `_lazy_extras`, not a copy of the argparse contracts CLI (F018).
 4. Media delivery needs a `parser.py` change plus a URL-capable field; the `Path` widening alone does nothing because `parse_response` drops non-existent paths (F019, F020, U1).
 5. `procedures.ontology.yaml` needs a dedicated `TenantOntologyManager(ontology_dir=OntologyParser.get_defaults_dir())` and a `ProceduresDomainNotLoaded` startup check (F011).
+7. `ContractsAgent.ask/ask_stream/invoke` refuse; channels call `ask` — a `ProceduresAgent` needs a gated transport adapter (review R3).
+8. `step_key` must be an immutable step identity, not `slug:order`; tip re-link is identity → exact content equality → curator candidates (review R1, U3).
 6. `YoutubeLoader` is in `parrot_loaders/youtube.py`; `VideoUnderstandingLoader` yields untimed scenes, so the video lane is whisper blocks + `bm25s` only, with Gemini `offsets`/`structured_output` called on the client directly if scene timing is wanted (F025).
 
 ### Alternatives
@@ -361,6 +375,22 @@ The spec should make these six corrections explicit (each contradicts the brains
 - Gates: plan and review gates auto-approved (autonomous session); Q&A skipped, unknowns left in §5
 
 **Mode determination**: `auto` → resolved to `enrichment` (source is an accepted design brainstorm, no defect to localize).
+
+---
+
+## 9. Review Cross-Check
+
+External review: `artifacts/training_agent_review.md` (copy: `sdd/state/FEAT-601/review.md`) (codex, against `ab9f97a82`, 2026-09-24). Every cited line range was re-read on `dev` before triage.
+
+| # | Finding | Verified evidence | Triage |
+|---|---------|-------------------|--------|
+| R1 | `step_key = slug:order` is positional; content-hash "similarity ≥ 0.9" is meaningless | brainstorm §Option B (source.md); no hash-similarity primitive exists in the repo | **CONFIRM** — folded into §2.2 and U3 |
+| R2 | `CitationVerifier` preserves a claim when one citation survives and drops the rest; no completeness/entailment | `parrot_tools/contracts/verifier.py` 156-206 read: `if not claim_citations: dropped.append(...)` | **CONFIRM** — folded into §2.2 and U4 (blocking semantics) |
+| R3 | `ContractsAgent.ask/ask_stream/invoke` raise `UngatedAnswerRefused`; Slack/WhatsApp/Telegram call `agent.ask` | `agent.py` 338-353; `slack/wrapper.py` 539, `whatsapp/wrapper.py` 212, `telegram/wrapper.py` 1505 read | **CONFIRM** — corrects my §2.1 row for `agent.py`; adapter required (U4) |
+| R4 | `AuthorizationChecker.check` is OR-only, five fixed rule kinds, no `certified_for` | `knowledge/ontology/authorization.py` 62-120 (docstring "OR semantics … first rule that grants short-circuits"); F009 rule Literal | **CONFIRM** — folded into §2.2 and U5 |
+| U1–U5 | Recommended resolutions (a, b-narrowed, c, a, a-conditional) | `responses.py` 87/1109/1176, `parser.py` 83/520, `whatsapp/wrapper.py` 303, `service.py` 214-232, `retrieval.py` 283-318 all re-read and match | **CONFIRM** — adopted in §5 |
+
+No REJECT or ESCALATE items. The review ran no spikes; the brainstorm's four-spike gate stands as the spec's first milestone.
 
 ---
 
