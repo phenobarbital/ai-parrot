@@ -1,0 +1,224 @@
+Decisions taken during discovery (all with the author, 2026-09-15):
+
+- **Flow:** `feature`, base `dev`.
+- **Scope: any surface, not only widgets.** A dashboard may declare several
+  sources; its components bind to them by `path`. The mechanism is named
+  *linked surface*; `UISurfaceKind` (`dashboard|infographic|widget`) and the
+  frontend `inferSurfaceKind` heuristic are unchanged (there is still no
+  `kind` on the wire).
+- **Where the descriptor lives:** surface-level
+  `createSurface.metadata.extensions.parrot_data_sources`, keyed by the
+  `dataModel` root key each source fills. Components keep binding with
+  ordinary `{"path": "/<key>/rows"}`. Nothing new appears as a top-level
+  component prop (spec G4: presentation semantics live in
+  `metadata.extensions`, keys `parrot_*`, `a2ui_` reserved —
+  `models.py:338-361`).
+- **Fetch path: the renderer calls QuerySource directly** with the
+  **viewer's JWT** on `POST /api/v3/queries/{slug}` (`QueryHandler`,
+  `services.py:245-248`, serves single-query **and** MultiQuery slugs) or,
+  when `source.tenant` is set, `POST /api/v1/{tenant}/queries/{slug}`
+  (`TenantQueryHandler`, `services.py:387`, which delegates a stored
+  `{slug}` to the **single-query** `QueryService`, `handlers/tenant.py:240-245`,
+  and only the slug-less collection POST to `QueryHandler`, L246-249 —
+  see the MultiQuery bullet). The legacy
+  `POST /api/v2/services/queries/{slug}` still answers single-query slugs
+  but is not the target of this contract. QuerySource PBAC
+  (`slug:execute`, `datasource:use`, `driver:use`) is the authorization.
+  ai-parrot-server does not proxy the fetch. The QuerySource base URL is
+  renderer configuration; the **tenant is descriptor content** (see the
+  tenant bullet below): the renderer builds `/api/v1/{tenant}/queries/{slug}`
+  from `source.tenant`, or `/api/v3/queries/{slug}` when it is `null`.
+- **Server-side execution is the alternative lane, not the default:** a
+  Python executor runs the same descriptor in-process
+  (`QuerySlugSource(slug, tenant=source.tenant)` → `QS(slug, conditions,
+  tenant=...)`, or `MultiQS(slug, conditions, tenant=...)` when the source
+  `is_multiquery`) for `POST .../refresh` (FEAT-492) with the **owner's**
+  `PermissionContext` (`build_principal_context`,
+  `handlers/ui_surfaces.py:620`), for the HTML lane when no snapshot is
+  present, and for scheduled delivery (FEAT-430). **Trust model (revised
+  2026-09-24):** an in-process `QS`/`MultiQS` with `request=None` runs
+  **no QuerySource PBAC** and uses the trusted service credentials
+  (`queries/qs.py:147-165`; FEAT-147 spec L225 keeps programmatic calls on
+  the trusted-service model). The owner's `PermissionContext` gates the
+  call on the ai-parrot side only (`AuthorizingDataSource`); the tenant
+  must come from the descriptor, explicitly — never from
+  `build_principal_context`'s `tenant_id`, which defaults to the
+  principal (`auth/permission.py:188-202`).
+  `UISurfaceRecord.refreshable` becomes `recipe_name is not None or
+  has_data_sources`.
+- **One descriptor, one Python reference executor, N renderer executors,
+  one set of golden fixtures.** ai-parrot ships the Python executor, the
+  JSON Schema of the descriptor/DSL and the JSON in/out fixtures. It does
+  **not** ship a TypeScript executor for third parties: every renderer
+  (`navigator-frontend-next`, and the bundled `ai-parrot-server/ui`, which
+  implements its own as one renderer among others) writes its executor
+  against the published schema and must pass the same fixtures.
+- **Transform DSL v1: ten declarative operations, no code.** `select`,
+  `rename`, `filter`, `group_by` (with `sum|avg|count|min|max`), `sort`,
+  `limit`, `derive` (arithmetic between columns and constants only),
+  `pivot`, `join` (`inner|left`, equality keys, `null` never matches,
+  column collisions resolved by prefix, one join per step, between sources
+  of the same surface) and `union` (concatenation by matching columns
+  across sources; this is how a `MultiQuerySlugSource` is expressed: N
+  descriptors plus a `union`). LLM-generated code is **vetoed** in this
+  version.
+- **Library input shapes are the renderer's job, not the DSL's.** Turning
+  rows into ECharts pie pairs, gauge values, etc. happens in the renderer's
+  adapter (today `a2ui-chart-adapter.ts`), consistent with viz-core's
+  "describe what, never how".
+- **`transform` inline is the rule; `transform.ref` is supported in v1** as
+  a URL to a TypeScript module served by ai-parrot-server from a static,
+  anonymously readable route, versioned (`<name>@<version>.js`) and pinned
+  by an `integrity` (SRI) hash carried in the descriptor. `ref` transforms
+  are catalogued, never LLM-written. **Governance:** the static directory is
+  published per ai-parrot-server release together with a signed manifest
+  (`name@version` → integrity); the builder only accepts refs present in
+  the manifest; versions are retired by marking them `deprecated` in the
+  manifest, never by deleting the file.
+- **Only TOOL-origin builders may emit a descriptor.** A `ProducerOrigin.LLM`
+  envelope carrying `parrot_data_sources` fails `validate_envelope` with a
+  new code, mirroring D10b (`ACTION_NOT_ALLOWED_FOR_LLM`,
+  `catalog/__init__.py:617-632`) and the FEAT-473 inline-data guard
+  (`INLINE_DATA_NOT_ALLOWED_FOR_LLM`, `catalog/__init__.py:646-661`). The
+  descriptor is assembled by a deterministic builder that **always
+  executes the slug once** through the Python executor
+  (`QuerySlugSource.fetch`): that run supplies the real columns and dtypes
+  the axes are validated against, and `locked` comes from the toolkit's
+  `forced_conditions`. (`QSourceTool` and its `ToolResult.metadata` were
+  hard-cut by FEAT-558 TASK-3255 and are no longer an input.) The LLM
+  chooses slug, component, axes and the request; it never types the
+  descriptor.
+- **Parameters come from the slug's contract, not from the LLM.**
+  `params` are derived from FEAT-558 `QuerysourceToolkit.describe_slug`
+  (`qs_describe_slug`, `toolkit.py:160`), whose `PlaceholderInfo`
+  (`models.py:24-29`: `name`, `type`, `default`) this feature **extends
+  with `required` and `accepts_keywords`** by calling QuerySource's own
+  `querysource.queries.describe.build_variables(query_raw, conditions,
+  cond_definition)` in-process (`queries/describe.py:108`;
+  `accepts_keywords = type ∈ KEYWORD_TYPES {date, datetime, timestamp}`
+  **or `raw_type is None`**, L29/L163; `required = name ∉ conditions ∧
+  name ∉ IMPLICIT_DEFAULTS` — static, so `firstdate`/`lastdate`/
+  `filterdate` are never required and default to `current_date`,
+  L31-33/L154; `variables` come back as `DescribeVariable` **objects**,
+  `.model_dump()` them as `describe_slug` does at L227-229) — the same
+  *parsing* as `GET /api/v1/queries/{slug}/describe`, without its
+  authorization and redaction (`slug:describe`, `slug:describe_raw`,
+  tenant ∈ JWT `programs` pre-filter; `auth/slug_visibility.py:203-206,
+  420-431`): the toolkit path is service-trust by design, exactly as
+  FEAT-558's `include_sql` already is. Requires `querysource>=5.0.0` (floor bump in
+  `packages/ai-parrot-tools/pyproject.toml:77`, today `>=4.5.11`). Relative dates
+  use QuerySource's keyword vocabulary as condition **values** (`TODAY`,
+  `YESTERDAY`, `FDOM`, `LDOM`, `CURRENT_YEAR`, `CURRENT_MONTH`, `LAST_YEAR`;
+  `GET /api/v1/queries/vocabulary`; case-insensitive, resolved as values by
+  `resolve_udf_conditions`, `types/validators.pyx:185-209`). **That
+  vocabulary is closed** (revised 2026-09-24): no `LAST_WEEK`, no offset
+  expression, and the date helpers are `invocable: false` — a linked
+  widget can express "yesterday → today", "month to date"
+  (`FDOM` → `TODAY`) or "last year", not "last 7 days". There is **no**
+  `{today}` placeholder grammar in QuerySource. The
+  FEAT-558 dialect's deployment-defined `@variables` (`@today`,
+  `dialect.py:207` `load_variables`) are **not** part of the wire: the
+  builder rejects any `@`-prefixed condition value, because they are not
+  portable across deployments.
+- **`locked` conditions are a UX hint only.** A descriptor built from a
+  dataset with `permanent_filter` carries those conditions as `locked`
+  so the filter bar does not expose them; they are **not** a security
+  barrier (a viewer could drop them). Security is QuerySource PBAC plus
+  slug design. This must be documented in the wire doc.
+- **`conditions` is carried both raw and structured.** `conditions` is
+  the exact QuerySource payload the renderer POSTs (the output of the
+  toolkit's `build_conditions`, `dialect.py`, minus the toolkit-only
+  `querylimit` cap), so an executor needs no knowledge of the dialect. A
+  sibling `request` block keeps the toolkit's structured form
+  (`placeholders`, `filter`, `fields`, `ordering`, `grouping`, `limit`) so
+  a `FilterBar` can edit `filter` entries as well as `params`. The builder
+  derives `conditions` from `request` and refuses a descriptor where they
+  disagree; an executor that re-fetches after an edit rebuilds
+  `conditions` from `request` with the same deterministic rules, which are
+  part of the golden fixtures.
+- **MultiQuery slugs: public only in v1 (revised 2026-09-24).** A *public*
+  `is_multiquery` slug is an ordinary source: the renderer fetches it on
+  `POST /api/v3/queries/{slug}` (`QueryHandler` → `MultiQS`,
+  `handlers/multi.py:327-343`) and the Python executor dispatches it to
+  `MultiQS(slug, conditions, tenant=None)`. A *tenant* MultiQuery slug has
+  **no HTTP lane**: `/api/v1/{tenant}/queries/{slug}` delegates to the
+  single-query `QueryService` (`handlers/tenant.py:240-245`) and never
+  expands the stored pipeline, and v3 has no tenant variant — contrary to
+  the FEAT-147 spec's own route table ("Unified stored single/multi
+  execution", `sdd/specs/per-tenant-queries.spec.md` ~L186). The builder
+  therefore rejects `tenant != null ∧ is_multiquery` with
+  `TENANT_MULTIQUERY_UNSUPPORTED` **while the installed QuerySource is
+  `< 5.1.0`** (`_qs.installed_version()` / `check_version_compatibility`,
+  `dialect.py`): the FEAT-147 route fix is in progress (author,
+  2026-09-24) and ships in QuerySource **5.1.0**, at which point the
+  rejection lifts with no wire change. The descriptor carries `is_multiquery` so every
+  executor dispatches correctly. `build_variables` reports
+  `variables_supported=False` only for JSON-dialect `query_raw`, so a
+  MultiQuery's `params` are usually empty. `union` remains the way to
+  express a DatasetManager `MultiQuerySlugSource` (N independent `QS`
+  calls, `sources/query_slug.py:165-260`).
+- **The builder always executes once; `snapshot` only decides whether
+  the rows are embedded.** Chat: optional, mandatory once persisted. In a
+  turn response the agent decides (`snapshot: bool`); when present it is the initial `dataModel`
+  (with `snapshot_at`), capped at **500 rows per source** by the builder
+  (`max_snapshot_rows`, `snapshot_truncated: true` when cut), and the
+  renderer paints it before applying the refresh policy; without it the
+  renderer shows a loading state until the first fetch. **At save time**
+  (`POST /api/v1/ui/surfaces`, `publish_surface`) the server executes the
+  descriptor once with the owner's context if the envelope has sources but
+  no snapshot, and persists `dataModel` + `snapshot_at`. Consequently
+  `GET` (JSON and HTML) **never executes** anything — `bake_envelope`
+  (`baking.py:140`) always finds resolvable bindings — and only
+  `POST .../refresh` renews the snapshot.
+- **Refresh policy:** `on_mount` by default; `manual` and `interval`
+  optional. `interval` is clamped to a **30 s minimum**, paused while the
+  document is hidden and resumed with an immediate fetch. The renderer
+  keeps "Filter" (local, over embedded rows, §7.4 of the frontend
+  reference) distinct from "Refresh" (re-fetch with the current params).
+- **FilterBar carries params.** The existing `FilterBar` catalog component
+  is extended: a filter may declare `metadata.extensions.parrot_param =
+  {"source": "<key>", "name": "<param>"}`; with it a change re-fetches that
+  source (Refresh), without it the filter stays local (§7.4). One
+  component, one lowering.
+- **Share-token viewers** (FEAT-492) whose own credentials are denied by
+  QuerySource keep the last server-refreshed snapshot with a "data as of
+  `snapshot_at`" notice and a button for the server-side refresh
+  (`POST .../refresh`, owner context, which the share token already
+  permits). No automatic server refresh on their behalf.
+- **Tenant is descriptor content (revised 2026-09-24; was "session
+  context").** QuerySource FEAT-147 selects the store **only** from the URL
+  path segment (`handlers/tenant.py:230-238` → `request['qs_tenant']`) or
+  the keyword-only `tenant=` of `QS`/`MultiQS` (`queries/qs.py:42-51`,
+  `multi/__init__.py:96-109`). Nothing derives it from JWT, session or
+  headers; no endpoint lists tenants (`TenantRegistry.stores()` is used
+  only by the scheduler); names are exact and case-sensitive; and
+  `resolve(None)` silently falls back to `public.queries`, so a
+  same-named public slug would run *instead of* the tenant's
+  (`tenants.py:402-419`). Therefore each source carries
+  `tenant: str | null` — the QuerySource store schema, `null` = `public`/
+  legacy. It is independent of FEAT-535's `UISurfaceRecord.tenant` (an
+  ai-parrot auth scope), which is never used to select a store. FEAT-147
+  adds **no tenant-membership check** on execution (spec L54, L226; PBAC
+  evaluates the bare slug name, `handlers/abstract.py:551-557`), so
+  `tenant` is routing, not security — the same status `locked` has.
+- **Never leak SQL.** Descriptors reference slugs only; QuerySource raw
+  `query` mode is never allowed on the wire.
+- **Additive.** No change to existing envelopes, builders' outputs, the
+  A2UI models, renderers or the ui_surfaces DDL beyond what is listed in
+  Impact. Baked surfaces keep working exactly as today.
+- **Dependencies and sequencing (closed on 2026-09-24):** QuerySource
+  **5.0.0** (tag `aebc55c`, 2026-09-16, in production) ships FEAT-148
+  `describe`/`columns`/`vocabulary` (`services.py:204-210`, tenant variants
+  `:215-219`), the `/api/v3/queries/{slug}` lane and the tenant-scoped
+  slug URLs. ai-parrot **FEAT-558 `QuerysourceToolkit`**
+  (`querysource-toolkit-refactor`, 11/11 tasks done 2026-09-17) replaced
+  the never-created "FEAT-567". Both gates are closed: `/sdd-spec`
+  proceeds now. The only sequencing left is the `querysource>=5.0.0`
+  floor bump in `packages/ai-parrot-tools/pyproject.toml` (today
+  `>=4.5.11`, L77), which is a task of this feature.
+- Conventions: Pydantic v2 models, async I/O, `self.logger`, Google
+  docstrings, `pytest` + `pytest-asyncio`, golden-file tests
+  (`tests/outputs/a2ui/golden/`), conformance registration in
+  `tests/outputs/a2ui/conformance/test_all_emitters.py`.
+
+---
