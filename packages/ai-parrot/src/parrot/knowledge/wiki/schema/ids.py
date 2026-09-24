@@ -1,4 +1,5 @@
 """Kind-first id grammar for the schema plane (FEAT-600 M1)."""
+
 from __future__ import annotations
 
 import re

@@ -1,4 +1,5 @@
 """Shared fixtures for FEAT-600 schema-plane tests."""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,5 @@
 """Tests for schema-plane concept identifiers."""
+
 import pytest
 
 from parrot.knowledge.wiki.schema.ids import normalize_ref, parse_table_id, table_concept_id

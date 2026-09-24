@@ -1,4 +1,5 @@
 """Schema-plane records and configuration (FEAT-600 M1)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -17,7 +18,9 @@ class SchemaSourceConfig(BaseModel):
     allowed_schemas: list[str] = Field(default_factory=lambda: ["public"])
     tables: list[str] | None = Field(default=None, description='Optional "schema.table" allowlist')
     include_samples: list[str] = Field(default_factory=list, description="Per-table sample_data allowlist")
-    ddl_paths: list[str] = Field(default_factory=list, description="Repo-relative .sql paths/globs for ingest-ddl --changed")
+    ddl_paths: list[str] = Field(
+        default_factory=list, description="Repo-relative .sql paths/globs for ingest-ddl --changed"
+    )
 
 
 class SchemaPlaneConfig(BaseModel):
