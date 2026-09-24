@@ -229,7 +229,8 @@ class SchemaPlaneService:
                 )
 
         live_by_id = {
-            table_concept_id(origin, record.metadata.schema, record.metadata.tablename): record.metadata for record in live
+            table_concept_id(origin, record.metadata.schema, record.metadata.tablename): record.metadata
+            for record in live
         }
         ddl_by_id = {
             table_concept_id(origin, record.metadata.schema, record.metadata.tablename): record.metadata
