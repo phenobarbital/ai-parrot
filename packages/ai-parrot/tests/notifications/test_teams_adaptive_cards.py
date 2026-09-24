@@ -8,6 +8,8 @@ and that file attachments are injected as card actions.
 import importlib
 import json
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import AsyncMock
@@ -492,3 +494,176 @@ class TestPlainTextBackwardCompat:
         sent = capture.calls[0]["message"]
         assert isinstance(sent, str)
         assert "report.pdf" in sent
+
+
+# ===================================================================
+# Inline audio: rendered to video so a Teams card can play it
+# ===================================================================
+_HAS_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+_needs_ffmpeg = pytest.mark.skipif(
+    not _HAS_FFMPEG, reason="ffmpeg/ffprobe not on PATH"
+)
+
+
+def _make_wav(path: Path, seconds: float = 0.4) -> Path:
+    """Write a short silent WAV with ffmpeg."""
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"anullsrc=r=16000:cl=mono",
+            "-t", str(seconds), str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+def _media_elements(card) -> list:
+    return [b for b in card.to_adaptative()["body"] if b.get("type") == "Media"]
+
+
+class TestInlineAudioRendition:
+    """Teams plays video in a card but not audio, so audio is wrapped in MP4."""
+
+    @_needs_ffmpeg
+    async def test_audio_is_uploaded_as_video_and_played_inline(
+        self, tmp_path, monkeypatch
+    ):
+        from notify.models import TeamsCard
+
+        _set_teams_creds(monkeypatch)
+        owner = _mixin_instance()
+        capture = _SentCapture().patch(monkeypatch)
+
+        wav = _make_wav(tmp_path / "podcast.wav")
+        uploaded: list = []
+
+        async def _upload(files):
+            uploaded.extend(files)
+            return [f"https://share/{f.name}" for f in files]
+
+        owner._teams_graph_upload_links = _upload
+
+        card = TeamsCard(title="Podcast")
+        await owner._send_teams({"message": card}, files=[wav])
+
+        # The rendition replaces the audio: uploading both would put two
+        # copies of one podcast in the recipient's drive.
+        assert [f.name for f in uploaded] == ["podcast.mp4"]
+
+        sent_card = capture.calls[0]["message"]
+        media = _media_elements(sent_card)
+        assert len(media) == 1
+        assert media[0]["sources"][0]["mimeType"] == "video/mp4"
+        assert media[0]["sources"][0]["url"] == "https://share/podcast.mp4"
+        assert any("podcast.mp4" in a.title for a in sent_card.actions)
+
+    @_needs_ffmpeg
+    async def test_rendition_is_cleaned_up(self, tmp_path, monkeypatch):
+        """The MP4 is scratch: it lives only until it has been uploaded."""
+        from notify.models import TeamsCard
+
+        _set_teams_creds(monkeypatch)
+        owner = _mixin_instance()
+        _SentCapture().patch(monkeypatch)
+
+        wav = _make_wav(tmp_path / "podcast.wav")
+        seen: list = []
+
+        async def _upload(files):
+            seen.extend(files)
+            return [f"https://share/{f.name}" for f in files]
+
+        owner._teams_graph_upload_links = _upload
+        await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[wav])
+
+        assert seen, "nothing was uploaded"
+        assert not seen[0].exists()
+        assert not seen[0].parent.exists()
+
+    async def test_document_never_becomes_media(self, tmp_path, monkeypatch):
+        """Only video is playable — a script stays an ordinary link."""
+        from notify.models import TeamsCard
+
+        _set_teams_creds(monkeypatch)
+        owner = _mixin_instance()
+        capture = _SentCapture().patch(monkeypatch)
+
+        script = tmp_path / "script.txt"
+        script.write_text("Alex: hello")
+        owner._teams_graph_upload_links = AsyncMock(
+            return_value=["https://share/script.txt"]
+        )
+
+        await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[script])
+
+        sent_card = capture.calls[0]["message"]
+        assert _media_elements(sent_card) == []
+        assert any("script.txt" in a.title for a in sent_card.actions)
+
+    async def test_without_ffmpeg_the_audio_stays_a_link(self, tmp_path, monkeypatch):
+        """No ffmpeg is a downgrade, not a failure: the card still arrives."""
+        from notify.models import TeamsCard
+
+        notifications = _load_notifications()
+        _set_teams_creds(monkeypatch)
+        monkeypatch.setattr(notifications.shutil, "which", lambda _name: None)
+
+        owner = _mixin_instance()
+        capture = _SentCapture().patch(monkeypatch)
+
+        wav = tmp_path / "podcast.wav"
+        wav.write_bytes(b"RIFF....WAVE")
+        uploaded: list = []
+
+        async def _upload(files):
+            uploaded.extend(files)
+            return [f"https://share/{f.name}" for f in files]
+
+        owner._teams_graph_upload_links = _upload
+        await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[wav])
+
+        assert [f.name for f in uploaded] == ["podcast.wav"]
+        sent_card = capture.calls[0]["message"]
+        assert _media_elements(sent_card) == []
+        assert any("podcast.wav" in a.title for a in sent_card.actions)
+
+    async def test_without_graph_credentials_nothing_is_transcoded(
+        self, tmp_path, monkeypatch
+    ):
+        """Never spend CPU rendering for a card that can only list filenames."""
+        from notify.models import TeamsCard
+
+        _set_teams_creds(monkeypatch, present=False)
+        owner = _mixin_instance()
+        _SentCapture().patch(monkeypatch)
+
+        rendered = AsyncMock()
+        owner._audio_as_video = rendered
+
+        wav = tmp_path / "podcast.wav"
+        wav.write_bytes(b"RIFF....WAVE")
+        await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[wav])
+
+        rendered.assert_not_called()
+
+    @_needs_ffmpeg
+    async def test_plain_text_channel_keeps_the_original_audio(
+        self, tmp_path, monkeypatch
+    ):
+        """A text message is a list of links, and the real file is the better link."""
+        _set_teams_creds(monkeypatch)
+        owner = _mixin_instance()
+        _SentCapture().patch(monkeypatch)
+
+        wav = _make_wav(tmp_path / "podcast.wav")
+        uploaded: list = []
+
+        async def _upload(files):
+            uploaded.extend(files)
+            return [f"https://share/{f.name}" for f in files]
+
+        owner._teams_graph_upload_links = _upload
+        await owner._send_teams({"message": "Your podcast is ready"}, files=[wav])
+
+        assert [f.name for f in uploaded] == ["podcast.wav"]
