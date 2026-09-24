@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-24T18:30:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-24T16:21:49+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -30,7 +30,8 @@
       "assigned_to": "agent:sdd-fix",
       "started_at": "2026-09-24T18:35:00+00:00",
       "completed_at": "2026-09-24T18:50:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3677-lazy-attempt-number-and-settlement-regression.md"
+      "file": "sdd/tasks/completed/TASK-3677-lazy-attempt-number-and-settlement-regression.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3678",
@@ -53,7 +54,8 @@
       "assigned_to": "agent:sdd-fix",
       "started_at": "2026-09-24T18:55:00+00:00",
       "completed_at": "2026-09-24T19:25:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3678-suspension-attribution-surfacing.md"
+      "file": "sdd/tasks/completed/TASK-3678-suspension-attribution-surfacing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3679",
@@ -76,7 +78,8 @@
       "assigned_to": "agent:sdd-fix",
       "started_at": "2026-09-24T19:30:00+00:00",
       "completed_at": "2026-09-24T19:55:00+00:00",
-      "file": "sdd/tasks/completed/TASK-3679-execution-pool-public-api.md"
+      "file": "sdd/tasks/completed/TASK-3679-execution-pool-public-api.md",
+      "verification": "verified"
     }
   ]
 }
