@@ -109,7 +109,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity import (
     evaluate_complexity,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats, eligible_seats
-from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
+from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint, SeatBusyError
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
@@ -414,6 +414,11 @@ class SddCoderEngine:
         # `prepare_native` call for the same task in the same execution reuses the
         # existing reservation instead of admitting (and worktree-creating) twice.
         self._native_reservations: Dict[Tuple[str, str], str] = {}
+        # (execution_id, task_id) -> lock serialising `_reserve_native_attempt`: with the
+        # stdio server dispatching requests concurrently, a duplicate `prepare_native`
+        # could otherwise see the reservation before its sub-worktree exists and race
+        # the first call's `git worktree add` (codex review, 2026-09-24).
+        self._native_prep_locks: Dict[Tuple[str, str], asyncio.Lock] = {}
         # Attribution for feedback is checked against attempts this engine issued.
         self._feedback_sources: Dict[str, Tuple[str, str, str, str]] = {}
         self._feedback_contexts: Dict[str, str] = {}
@@ -1897,70 +1902,98 @@ class SddCoderEngine:
         attempt: int,
     ) -> NativePrep:
         """Admit and allocate one native attempt, reusing its execution reservation."""
-        if pool is not None:
-            assert execution_id is not None
-            reservation_key = (execution_id, task.task_id)
-            existing_uid = self._native_reservations.get(reservation_key)
-            if existing_uid is not None:
-                attempt_uid = existing_uid
+        lock = self._native_prep_locks.setdefault((execution_id or "", task.task_id), asyncio.Lock())
+        async with lock:
+            reused_reservation = False
+            if pool is not None:
+                assert execution_id is not None
+                reservation_key = (execution_id, task.task_id)
+                existing_uid = self._native_reservations.get(reservation_key)
+                if existing_uid is not None:
+                    attempt_uid = existing_uid
+                    reused_reservation = True
+                else:
+                    # `wait=False`: a native reservation is released only by a LATER
+                    # `coder_merge` for the task holding it. Waiting here would park
+                    # this request on a request the orchestrator has not issued yet
+                    # (2026-09-24 FEAT-581 wedge) -- report `seat_busy` so it can merge
+                    # the holder first and retry.
+                    try:
+                        attempt_uid = await pool.admit(task.task_id, ModelKey(backend="native", model=model), wait=False)
+                    except SeatBusyError as exc:
+                        raise CoderFailure(
+                            "seat_busy",
+                            f"native model {model!r} is still reserved by {exc.held_by_task_id}; call coder_merge for "
+                            f"{exc.held_by_task_id} (or wait for its attempt to settle) before preparing {task.task_id}",
+                            task_id=task.task_id,
+                            model=model,
+                            seat_label=seat.label,
+                            held_by_task_id=exc.held_by_task_id,
+                            execution_id=execution_id,
+                        ) from exc
+                    self._native_reservations[reservation_key] = attempt_uid
             else:
-                attempt_uid = await pool.admit(task.task_id, ModelKey(backend="native", model=model))
-                self._native_reservations[reservation_key] = attempt_uid
-        else:
-            attempt_uid = uuid.uuid4().hex
+                attempt_uid = uuid.uuid4().hex
 
-        worker_id = self._worker_id(task.task_id, attempt, execution_id)
-        manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
-        path = await manager.create(worker_id)
-        await self._write_attempt_scope(path, task.task_id, task.task_file, ctx.feature_branch)
-        self._native_inflight.add(worker_id)
-        branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
-        self._feedback_sources[attempt_uid] = (ctx.worktree, task.task_id, "native", model)
-        feedback_context = await self._feedback_for(ctx, task, "native", model)
-        self._feedback_contexts[attempt_uid] = feedback_context
-
-        # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
-        # `native_observation` (below) is the ONLY authority that later links it to
-        # an agent_id/transitions its state (host_observation authority: "no son
-        # prueba independiente de proceso vivo ni código POSIX"). Idempotent by
-        # construction: a duplicate `prepare_native` call reuses the SAME
-        # `attempt_uid` above, so `BackgroundRegistry.register` just replays.
-        bg_handle: Optional[str] = None
-        if self._background_registry is not None and execution_id is not None:
-            try:
-                registration = BackgroundRegistration(
-                    handle=attempt_uid,
-                    execution_id=execution_id,
-                    task_id=task.task_id,
-                    attempt_uid=attempt_uid,
-                    launch_id=attempt_uid,
-                    owner_instance_id=self._instance_id,
-                    kind="native_agent",
-                    authority="host_observation",
-                    worktree=ctx.worktree,
-                    backend="native-agent",
-                    started_at=datetime.now(timezone.utc),
-                )
-                await self._background_registry.register(registration)
-            except Exception:  # noqa: BLE001 -- background registration must never break prepare_native
-                self.logger.exception("failed to register background handle for native attempt %s", attempt_uid)
+            worker_id = self._worker_id(task.task_id, attempt, execution_id)
+            manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
+            path = self._path_for(ctx, task.task_id, attempt, execution_id)
+            if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
+                # Duplicate `prepare_native` for a task that already holds its reservation:
+                # the sub-worktree (and its branch) exist from the first call, so a second
+                # `git worktree add -b` would fail on the existing branch. Reuse them.
+                self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
             else:
-                self._handle_execution[attempt_uid] = execution_id
-                bg_handle = attempt_uid
+                path = await manager.create(worker_id)
+            await self._write_attempt_scope(path, task.task_id, task.task_file, ctx.feature_branch)
+            self._native_inflight.add(worker_id)
+            branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
+            self._feedback_sources[attempt_uid] = (ctx.worktree, task.task_id, "native", model)
+            feedback_context = await self._feedback_for(ctx, task, "native", model)
+            self._feedback_contexts[attempt_uid] = feedback_context
 
-        return NativePrep(
-            task_id=task.task_id,
-            task_file=task.task_file,
-            branch=branch,
-            worktree_path=path,
-            seat_label=seat.label,
-            model=model,
-            attempt_uid=attempt_uid,
-            coder_feedback=feedback_context,
-            assessment_id=assessment_id,
-            execution_id=execution_id or "",
-            bg_handle=bg_handle,
-        )
+            # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
+            # `native_observation` (below) is the ONLY authority that later links it to
+            # an agent_id/transitions its state (host_observation authority: "no son
+            # prueba independiente de proceso vivo ni código POSIX"). Idempotent by
+            # construction: a duplicate `prepare_native` call reuses the SAME
+            # `attempt_uid` above, so `BackgroundRegistry.register` just replays.
+            bg_handle: Optional[str] = None
+            if self._background_registry is not None and execution_id is not None:
+                try:
+                    registration = BackgroundRegistration(
+                        handle=attempt_uid,
+                        execution_id=execution_id,
+                        task_id=task.task_id,
+                        attempt_uid=attempt_uid,
+                        launch_id=attempt_uid,
+                        owner_instance_id=self._instance_id,
+                        kind="native_agent",
+                        authority="host_observation",
+                        worktree=ctx.worktree,
+                        backend="native-agent",
+                        started_at=datetime.now(timezone.utc),
+                    )
+                    await self._background_registry.register(registration)
+                except Exception:  # noqa: BLE001 -- background registration must never break prepare_native
+                    self.logger.exception("failed to register background handle for native attempt %s", attempt_uid)
+                else:
+                    self._handle_execution[attempt_uid] = execution_id
+                    bg_handle = attempt_uid
+
+            return NativePrep(
+                task_id=task.task_id,
+                task_file=task.task_file,
+                branch=branch,
+                worktree_path=path,
+                seat_label=seat.label,
+                model=model,
+                attempt_uid=attempt_uid,
+                coder_feedback=feedback_context,
+                assessment_id=assessment_id,
+                execution_id=execution_id or "",
+                bg_handle=bg_handle,
+            )
 
     async def suspend_model(
         self,
