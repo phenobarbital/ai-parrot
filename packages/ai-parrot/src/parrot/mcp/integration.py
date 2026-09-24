@@ -1919,7 +1919,12 @@ _QUIC_REEXPORTS = ("QuicMCPSession", "QuicMCPConfig", "SerializationFormat")
 
 
 def __getattr__(name: str):
-    """Resolve the lazily re-exported QUIC symbols (PEP 562)."""
+    """Resolve the lazily re-exported QUIC symbols and ``ChromeManager`` (PEP 562)."""
     if name in _QUIC_REEXPORTS:
         return quic_attr(name)
+    if name == "ChromeManager":
+        # server-only; see module header — imported on access, never at load.
+        from .chrome import ChromeManager
+
+        return ChromeManager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
