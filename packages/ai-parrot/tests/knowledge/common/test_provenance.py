@@ -61,6 +61,7 @@ def test_trim_quote_word_boundary() -> None:
 @pytest.mark.asyncio
 async def test_load_bodies_skips_empty_and_unreadable() -> None:
     """Body loading retains only readable, nonempty bodies."""
+
     def loader(node_id: str) -> str | None:
         if node_id == "error":
             raise OSError("unreadable")

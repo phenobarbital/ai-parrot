@@ -28,7 +28,6 @@ from ..common.provenance import (
     Extracted,
     FieldProvenance,
     ProvenanceOrigin,
-    T,
     VerificationState,
     trim_quote,
 )
