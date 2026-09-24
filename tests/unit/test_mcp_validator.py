@@ -1,97 +1,20 @@
 """Unit tests for validate_mcp_http and MCPValidationError (TASK-1038).
 
-We load validate_mcp_http and MCPValidationError directly from the source
-file, bypassing the heavy parrot package chain (navconfig, Cython modules,
-etc.), then patch MCPClient at the module level so no real network calls
-are made.
+The production integration module is imported normally, then MCPClient is
+patched at the module level so no real network calls are made. Keeping test
+doubles out of ``sys.modules`` prevents this module's collection from
+poisoning later MCP imports.
 """
+
 from __future__ import annotations
 
-import importlib.util
-import sys
-import types
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from parrot.mcp import integration as _INTEGRATION_MOD
+from parrot.mcp.integration import MCPValidationError, validate_mcp_http
 
-# ---------------------------------------------------------------------------
-# Stub out heavy dependencies before loading the module.
-# ---------------------------------------------------------------------------
-
-_STUBS: list[str] = [
-    "navconfig",
-    "navconfig.config",
-    "parrot.mcp.context",
-    "parrot.mcp.oauth",
-    "parrot.mcp.client",
-    "parrot.mcp.transports",
-    "parrot.mcp.transports.stdio",
-    "parrot.mcp.transports.unix",
-    "parrot.mcp.transports.http",
-    "parrot.mcp.transports.websocket",
-    "parrot.mcp.transports.sse",
-    "parrot.mcp.transports.quic",
-    "parrot.mcp.chrome",
-    "parrot.mcp.filtering",
-    "parrot.tools.abstract",
-]
-
-for _stub_name in _STUBS:
-    if _stub_name not in sys.modules:
-        _mod = types.ModuleType(_stub_name)
-        # Provide common attributes that integration.py references at import time.
-        _mod.BASE_DIR = Path("/tmp")  # type: ignore[attr-defined]
-        _mod.config = MagicMock()  # type: ignore[attr-defined]
-        _mod.ReadonlyContext = MagicMock()  # type: ignore[attr-defined]
-        _mod.AbstractTool = MagicMock()  # type: ignore[attr-defined]
-        _mod.ToolResult = MagicMock()  # type: ignore[attr-defined]
-        _mod.OAuthManager = MagicMock()  # type: ignore[attr-defined]
-        _mod.InMemoryTokenStore = MagicMock()  # type: ignore[attr-defined]
-        _mod.RedisTokenStore = MagicMock()  # type: ignore[attr-defined]
-        _mod.TokenStore = MagicMock()  # type: ignore[attr-defined]
-        _mod.VaultTokenStore = MagicMock()  # type: ignore[attr-defined]
-        _mod.MCPClientConfig = MagicMock()  # type: ignore[attr-defined]
-        _mod.MCPConnectionError = Exception  # type: ignore[attr-defined]
-        _mod.StdioMCPSession = MagicMock()  # type: ignore[attr-defined]
-        _mod.UnixMCPSession = MagicMock()  # type: ignore[attr-defined]
-        _mod.HttpMCPSession = MagicMock()  # type: ignore[attr-defined]
-        _mod.WebSocketMCPSession = MagicMock()  # type: ignore[attr-defined]
-        _mod.SseMCPSession = MagicMock()  # type: ignore[attr-defined]
-        _mod.QuicMCPSession = MagicMock()  # type: ignore[attr-defined]
-        _mod.QuicMCPConfig = MagicMock()  # type: ignore[attr-defined]
-        _mod.SerializationFormat = MagicMock()  # type: ignore[attr-defined]
-        _mod.ChromeManager = MagicMock()  # type: ignore[attr-defined]
-        _mod.ToolPredicate = MagicMock()  # type: ignore[attr-defined]
-        _mod.filter_tools = MagicMock()  # type: ignore[attr-defined]
-        sys.modules[_stub_name] = _mod
-
-_WT_ROOT = Path(__file__).resolve().parents[2]
-_INTEGRATION_SRC = (
-    _WT_ROOT / "packages" / "ai-parrot" / "src" / "parrot" / "mcp" / "integration.py"
-)
-
-_MOD_NAME = "parrot.mcp.integration"
-if _MOD_NAME not in sys.modules:
-    _spec = importlib.util.spec_from_file_location(_MOD_NAME, str(_INTEGRATION_SRC))
-    _imod = importlib.util.module_from_spec(_spec)
-    sys.modules[_MOD_NAME] = _imod
-    try:
-        _spec.loader.exec_module(_imod)
-    except Exception:
-        pass  # Partial load is OK — we only need the tail functions
-
-from parrot.mcp.integration import MCPValidationError, validate_mcp_http  # noqa: E402
-
-# Grab the live module object so we can patch.object on it directly
-# (patch("parrot.mcp.integration.X") fails because parrot.mcp is not a
-#  real sub-package in this test environment — we loaded it via importlib).
-_INTEGRATION_MOD = sys.modules["parrot.mcp.integration"]
-
-
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_config(url: str = "http://mcp.example.com") -> MagicMock:
@@ -248,10 +171,8 @@ class TestMCPValidationError:
             raise MCPValidationError("test msg")
 
     def test_importable_from_integration(self) -> None:
-        """Both symbols must be importable from parrot.mcp.integration."""
-        from parrot.mcp.integration import MCPValidationError as MVE
-        from parrot.mcp.integration import validate_mcp_http as vmh
-
-        assert issubclass(MVE, Exception)
+        """Both symbols must be defined by the loaded integration module."""
+        assert issubclass(_INTEGRATION_MOD.MCPValidationError, Exception)
         import asyncio
-        assert asyncio.iscoroutinefunction(vmh)
+
+        assert asyncio.iscoroutinefunction(_INTEGRATION_MOD.validate_mcp_http)

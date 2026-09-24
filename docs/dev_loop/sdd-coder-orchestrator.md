@@ -173,10 +173,22 @@ and cleanup call (see "Execution lifecycle and suspension policy" below):
    is requested — a timeout never leaves a job unresolved: it simply
    returns the current `"running"` snapshot, and jobs persist until
    `coder_cleanup` runs. The 90-second client poll leaves margin below Claude
-   Code's 120-second foreground MCP-call limit. **Never call `coder_status`
-   or anything else in the same message as `coder_wait`** — the stdio MCP server handles
-   requests strictly sequentially, so a second call in the same turn would
-   queue behind the blocking wait instead of running concurrently.
+   Code's 120-second foreground MCP-call limit. Do not pair `coder_wait` with
+   `coder_status` in the same message: the server now runs every `tools/call`
+   as its own task (a read-only call is never queued behind a wait or a merge),
+   so the second call is not blocked — it is simply a wasted poll.
+
+   **Why the server is concurrent.** Until this change the stdio server awaited
+   each request inline, so one handler stuck in an unbounded `git`/`ruff` child
+   or waiting on the merge lock pinned every later call, and Claude Code's
+   30-minute stdio idle timeout (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`) then
+   killed them one by one — "the engine is unresponsive, even `coder_status`".
+   Three guards close that: `tools/call` handlers are independent tasks and a
+   host `notifications/cancelled` cancels the matching one; every engine-owned
+   subprocess runs through `parrot.flows.dev_loop.procs.run_bounded` (own
+   process group, `stdin=DEVNULL`, a wall-clock cap, headless `git_env()`); and
+   `coder_merge` waits at most `MERGE_LOCK_TIMEOUT_S` for the feature-worktree
+   merge lock before failing with `merge_busy` (retry later) instead of hanging.
 4. Consolidate every task by outcome (see below), running acceptance
    criteria for every `merged` task before recording it. A `not_dispatched`
    task stays pending (never treated as completed); a `plan_stale` task is
@@ -214,6 +226,8 @@ The [SDD execution optimization](sdd-execution-optimization.md) guide records th
 |---|---|---|
 | `merged` | Clean merge, fidelity passed | Run the task's acceptance criteria in this worktree, then step (g) with a Completion Note ending `Seat: … Backend: … Model: … Attempts: … Duration: … Tokens: …` from `attempts[*]` |
 | `merge_conflict` | Content conflict against the feature branch | Resolve manually in this worktree, commit, call `coder_merge` again |
+| `engine_busy` (error) | Another state-changing `coder_*` call held the toolkit's exclusive slot for more than 300 s (read-only calls never take it) | Retry the call once the other one returns |
+| `merge_busy` (error) | Another consolidation held the feature-worktree merge lock for more than `MERGE_LOCK_TIMEOUT_S` (120 s) | Let the running job settle (`coder_wait`), then call `coder_merge` again |
 | `fidelity_violation` | The coder touched orchestrator-owned SDD state (`sdd/tasks/`, `sdd/ledger/` — even if the task declares it) or a file not on its task's list, **or** its diff adds a banned import (`diagnostics` starts with `BannedImport:`) | Treated as `failed` — never merged by hand |
 | `failed` | Both attempts (assigned seat, then a different seat) errored | Attempt 3 is `sdd-worker`'s own: implement the task itself (Fallback loop steps c–f), then (g) |
 | `failed` + `diagnostics` starting `empty_delivery:` | The seat produced **no file change** (no commit, nothing in the tree, no declared file under an ignored path). On the MCP path the engine already ran the retry ladder (an empty attempt is a failed attempt, retried on another seat); from `coder_merge` (native path) the branch was not merged | Treat as `failed`: attempt 3 is `sdd-worker`'s, or re-dispatch once via `coder_run_chunk` when the classification is `standard` |
@@ -429,6 +443,13 @@ as the unbudgeted comparison baseline.
   `extra_content` carry-over. Guarded by the opt-in live test:
   `pytest -m live packages/ai-parrot/tests/flows/dev_loop/test_google_compat_live.py`
   (needs `GEMINI_API_KEY`/`GOOGLE_API_KEY`).
+- **`seat_busy`** (from `coder_prepare_native`) — the native model is still
+  reserved by the task in `held_by_task_id`; a native reservation is released
+  only by that task's `coder_merge`. Merge it first, then prepare the next task.
+  The engine reports this immediately instead of waiting (a wait here parked
+  the whole server on 2026-09-24: the releasing `coder_merge` could never be
+  read while the stdio loop was serving requests one at a time — the loop now
+  dispatches each request as its own task).
 - **`task_already_running`** — a job already owns that task id; check
   `coder_status(job_id)` rather than re-dispatching. If the server
   restarted mid-job, the branch/worktree persists and surfaces as an orphan

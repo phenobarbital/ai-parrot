@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import asyncio
+import inspect
 import time
 from typing import Any, Awaitable, Dict, List, Literal, Optional, Union
 
@@ -54,6 +56,10 @@ def _is_missing_execution_id(exc: ValidationError) -> bool:
     generic `invalid_arguments` path.
     """
     return any(err["type"] == "missing" and err["loc"] == ("execution_id",) for err in exc.errors())
+
+
+#: How long a state-changing tool waits for `_exclusive` before reporting ``engine_busy``.
+EXCLUSIVE_WAIT_S: float = 300.0
 
 
 class SddCoderToolkit(AbstractToolkit):
@@ -130,6 +136,13 @@ class SddCoderToolkit(AbstractToolkit):
             worktree_base_path=worktree_base_path,
             telemetry_dir=telemetry_dir,
         )
+        # The stdio server runs every tools/call concurrently. Read-only tools may
+        # interleave freely, but the engine's admissions are check-then-act across
+        # awaits (`_execution_owners` in `begin_execution`, `running_task_ids()` in
+        # `run_chunk`, ...), so state-changing tools are serialised here — one at a
+        # time, bounded by `EXCLUSIVE_WAIT_S` (then `engine_busy`), never queued
+        # behind a stuck call forever.
+        self._exclusive = asyncio.Lock()
 
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Validate against arg_models (extra='forbid'); adapter.py:79 does not validate (S6).
@@ -185,10 +198,21 @@ class SddCoderToolkit(AbstractToolkit):
                 except KeyError:
                     continue
 
-    async def _run(self, operation: str, coro: Awaitable[Union[BaseModel, Dict[str, Any]]]) -> CoderResult:
+    async def _run(
+        self, operation: str, coro: Awaitable[Union[BaseModel, Dict[str, Any]]], *, exclusive: bool = False
+    ) -> CoderResult:
+        """Await one engine operation and wrap its outcome in a `CoderResult`.
+
+        Args:
+            operation: Tool name, echoed in the result.
+            coro: The engine call to await.
+            exclusive: Serialise this call behind `_exclusive` (state-changing
+                tools). Waiting is capped at `EXCLUSIVE_WAIT_S`; on expiry the
+                call is not run and `engine_busy` is reported.
+        """
         t0 = time.monotonic()
         try:
-            data = await coro
+            data = await (self._run_exclusive(coro) if exclusive else coro)
             # FEAT-584 M1b: `coder_task_context`/`coder_delivery_report` resolve to a plain
             # bounded dict (`inspection.py`'s own return type), not a `CoderResult`-nested
             # BaseModel like every other tool here -- accept both rather than forcing a
@@ -212,6 +236,25 @@ class SddCoderToolkit(AbstractToolkit):
                 error=CoderError(code="internal_error", message=str(exc)),
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
             )
+
+    async def _run_exclusive(
+        self, coro: Awaitable[Union[BaseModel, Dict[str, Any]]]
+    ) -> Union[BaseModel, Dict[str, Any]]:
+        """Run `coro` while holding `_exclusive`, or fail fast with ``engine_busy``."""
+        try:
+            await asyncio.wait_for(self._exclusive.acquire(), timeout=EXCLUSIVE_WAIT_S)
+        except asyncio.TimeoutError as exc:
+            if inspect.iscoroutine(coro):
+                coro.close()  # never awaited: silence the "coroutine was never awaited" warning
+            raise CoderFailure(
+                "engine_busy",
+                f"another state-changing coder_* call has been running for more than {EXCLUSIVE_WAIT_S:g}s; "
+                "retry once it settles",
+            ) from exc
+        try:
+            return await coro
+        finally:
+            self._exclusive.release()
 
     async def _project(self, payload: BaseModel, mode: Literal["full", "compact"], execution_id: str) -> Dict[str, Any]:
         """Apply `response_mode` (FEAT-584 M3/R2) via `views.project_response`.
@@ -254,23 +297,29 @@ class SddCoderToolkit(AbstractToolkit):
             plan = await self._engine.plan(feature, worktree, execution_id=execution_id)
             return await self._project(plan, response_mode, execution_id)
 
-        return await self._run("coder_plan", _p())
+        return await self._run("coder_plan", _p(), exclusive=True)
 
     async def coder_run_chunk(self, feature: str, worktree: str, task_ids: List[str], execution_id: str) -> CoderResult:
         """Dispatch the MCP-seat tasks of the current chunk in parallel; returns a job id immediately."""
         return await self._run(
-            "coder_run_chunk", self._engine.run_chunk(feature, worktree, task_ids, execution_id=execution_id)
+            "coder_run_chunk",
+            self._engine.run_chunk(feature, worktree, task_ids, execution_id=execution_id),
+            exclusive=True,
         )
 
     async def coder_prepare_native(self, feature: str, worktree: str, task_id: str, execution_id: str) -> CoderResult:
         """Create the sub-worktree for a native (haiku) task; the orchestrator launches the agent itself."""
         return await self._run(
-            "coder_prepare_native", self._engine.prepare_native(feature, worktree, task_id, execution_id=execution_id)
+            "coder_prepare_native",
+            self._engine.prepare_native(feature, worktree, task_id, execution_id=execution_id),
+            exclusive=True,
         )
 
     async def coder_merge(self, feature: str, worktree: str, task_id: str, execution_id: str) -> CoderResult:
         """Clean-status check, fidelity check and merge of the task's latest attempt branch."""
-        return await self._run("coder_merge", self._engine.merge(feature, worktree, task_id, execution_id=execution_id))
+        return await self._run(
+            "coder_merge", self._engine.merge(feature, worktree, task_id, execution_id=execution_id), exclusive=True
+        )
 
     async def coder_record_feedback(
         self, feature: str, worktree: str, feedback: Dict[str, Any], execution_id: str
@@ -291,6 +340,7 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run(
             "coder_record_feedback",
             self._engine.record_feedback(feature, worktree, CoderFeedback(**feedback), execution_id=execution_id),
+            exclusive=True,
         )
 
     async def coder_record_review(
@@ -308,6 +358,7 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run(
             "coder_record_review",
             self._engine.record_review(feature, worktree, CoderReview(**review), execution_id=execution_id),
+            exclusive=True,
         )
 
     async def coder_record_native_observation(
@@ -330,6 +381,7 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run(
             "coder_record_native_observation",
             self._engine.record_native_observation(feature, worktree, execution_id, observation),
+            exclusive=True,
         )
 
     async def coder_task_context(self, feature: str, worktree: str, task_id: str, execution_id: str) -> CoderResult:
@@ -377,7 +429,9 @@ class SddCoderToolkit(AbstractToolkit):
         require the SAME id). Only one active execution may own a canonical
         worktree at a time -- a second id gets `execution_in_progress`.
         """
-        return await self._run("coder_begin_execution", self._engine.begin_execution(feature, worktree, execution_id))
+        return await self._run(
+            "coder_begin_execution", self._engine.begin_execution(feature, worktree, execution_id), exclusive=True
+        )
 
     async def coder_end_execution(self, execution_id: str) -> CoderResult:
         """End an execution, releasing worktree ownership once all admitted work has settled.
@@ -386,7 +440,7 @@ class SddCoderToolkit(AbstractToolkit):
         are still in flight -- an error report alone never unlocks this; only
         explicit settlement (a real `coder_merge`) does.
         """
-        return await self._run("coder_end_execution", self._engine.end_execution(execution_id))
+        return await self._run("coder_end_execution", self._engine.end_execution(execution_id), exclusive=True)
 
     async def coder_suspend_model(
         self, execution_id: str, attempt_uid: str, reason: str, evidence_ref: str
@@ -401,7 +455,9 @@ class SddCoderToolkit(AbstractToolkit):
         invent a model directly.
         """
         return await self._run(
-            "coder_suspend_model", self._engine.suspend_model(execution_id, attempt_uid, reason, evidence_ref)
+            "coder_suspend_model",
+            self._engine.suspend_model(execution_id, attempt_uid, reason, evidence_ref),
+            exclusive=True,
         )
 
     async def coder_wait(
@@ -480,7 +536,9 @@ class SddCoderToolkit(AbstractToolkit):
         reservations or worktrees, even on the same engine instance.
         """
         return await self._run(
-            "coder_cleanup", self._engine.cleanup(feature, worktree, keep_conflicted, execution_id=execution_id)
+            "coder_cleanup",
+            self._engine.cleanup(feature, worktree, keep_conflicted, execution_id=execution_id),
+            exclusive=True,
         )
 
     async def coder_bg_status(
@@ -530,4 +588,5 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run(
             "coder_run_validation",
             self._engine.run_validation(feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id),
+            exclusive=True,
         )

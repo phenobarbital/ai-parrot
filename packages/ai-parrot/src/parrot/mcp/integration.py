@@ -2,7 +2,8 @@ import contextlib
 import os
 import base64
 import uuid
-from typing import Dict, List, Any, Optional, Union, Callable
+import importlib
+from typing import TYPE_CHECKING, Dict, List, Any, Optional, Union, Callable
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
@@ -26,25 +27,66 @@ from .client import (
     MCPConnectionError,
     MCPRateLimitError,
 )
-from .transports.stdio import StdioMCPSession
-from .transports.unix import UnixMCPSession
-from .transports.http import HttpMCPSession
-from .transports.websocket import WebSocketMCPSession
-from .transports.sse import SseMCPSession
 
+# The transport sessions (`parrot.mcp.transports.*`) and `ChromeManager`
+# (`parrot.mcp.chrome`) ship in ai-parrot-server, not in core. They are
+# imported lazily — inside `MCPClient.connect()` and `_chrome_manager_for()` —
+# so a core-only install (e.g. a project venv with the `ai-parrot` wheel and no
+# server package) can still import this module and everything that reaches it
+# through `parrot.mcp.__getattr__` (`parrot.bots.abstract`, the `mcp-local`
+# toolkits such as `parrot-sdd-coder`). Connecting still needs the server
+# package; only then does the ImportError surface, with an install hint.
 # QUIC lives behind the optional `ai-parrot-server[mcp]` extra (aioquic), so
 # its symbols are resolved lazily — see parrot.mcp._quic. Importing them here
 # would make every other transport unusable on a bare install.
 from ._quic import quic_attr
-from .chrome import ChromeManager
 from .filtering import ToolPredicate, filter_tools
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from .chrome import ChromeManager
+
+_TRANSPORT_SESSIONS: Dict[str, tuple[str, str]] = {
+    "stdio": ("parrot.mcp.transports.stdio", "StdioMCPSession"),
+    "http": ("parrot.mcp.transports.http", "HttpMCPSession"),
+    "sse": ("parrot.mcp.transports.sse", "SseMCPSession"),
+    "unix": ("parrot.mcp.transports.unix", "UnixMCPSession"),
+    "websocket": ("parrot.mcp.transports.websocket", "WebSocketMCPSession"),
+}
+
+
+def _transport_session_cls(transport: str) -> type:
+    """Resolve a transport's session class from ai-parrot-server, lazily.
+
+    Args:
+        transport: One of the keys of `_TRANSPORT_SESSIONS`.
+
+    Returns:
+        The session class.
+
+    Raises:
+        ImportError: The server package is not installed.
+        ValueError: Unknown transport name.
+    """
+    try:
+        module_path, cls_name = _TRANSPORT_SESSIONS[transport]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported transport: {transport}") from exc
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as exc:
+        raise ImportError(
+            f"MCP client transport {transport!r} needs the ai-parrot-server package "
+            f"(`pip install ai-parrot-server`): {exc}"
+        ) from exc
+    return getattr(module, cls_name)
+
 
 logging.getLogger("MCPClient.chrome-devtools").setLevel(logging.INFO)
 logging.getLogger("MCPClient").setLevel(logging.INFO)
 
 # Module-level registry to track ChromeManager instances by port
 # This allows proper cleanup during shutdown
-_chrome_managers: Dict[int, ChromeManager] = {}
+_chrome_managers: Dict[int, "ChromeManager"] = {}
 
 
 class MCPToolProxy(AbstractTool):
@@ -355,17 +397,8 @@ class MCPClient:
         transport = self._detect_transport()
 
         try:
-            if transport == "stdio":
-                self._session = StdioMCPSession(self.config, self.logger)
-            elif transport == "http":
-                self._session = HttpMCPSession(self.config, self.logger)
-            elif transport == "sse":
-                self._session = SseMCPSession(self.config, self.logger)
-            elif transport == "unix":
-                self._session = UnixMCPSession(self.config, self.logger)
-            elif transport == "websocket":
-
-                self._session = WebSocketMCPSession(self.config, self.logger)
+            if transport in _TRANSPORT_SESSIONS:
+                self._session = _transport_session_cls(transport)(self.config, self.logger)
             elif transport == "quic":
                 quic_session_cls = quic_attr("QuicMCPSession")
                 self._session = quic_session_cls(self.config, self.logger)
@@ -1099,7 +1132,7 @@ _LOCAL_HOSTS = ("localhost", "127.0.0.1", "0.0.0.0", "::1")
 async def ensure_chrome_running(
     browser_url: str,
     headless: bool = False,
-) -> Optional[ChromeManager]:
+) -> Optional["ChromeManager"]:
     """Start (or reuse) the managed local Chrome behind ``browser_url``.
 
     Only loopback hosts are managed. For a remote ``browser_url`` the caller
@@ -1135,6 +1168,8 @@ async def ensure_chrome_running(
 
     manager = _chrome_managers.get(port)
     if manager is None:
+        from .chrome import ChromeManager  # server-only; see module header
+
         manager = ChromeManager(port=port)
         _chrome_managers[port] = manager
 
@@ -1884,7 +1919,12 @@ _QUIC_REEXPORTS = ("QuicMCPSession", "QuicMCPConfig", "SerializationFormat")
 
 
 def __getattr__(name: str):
-    """Resolve the lazily re-exported QUIC symbols (PEP 562)."""
+    """Resolve the lazily re-exported QUIC symbols and ``ChromeManager`` (PEP 562)."""
     if name in _QUIC_REEXPORTS:
         return quic_attr(name)
+    if name == "ChromeManager":
+        # server-only; see module header — imported on access, never at load.
+        from .chrome import ChromeManager
+
+        return ChromeManager
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

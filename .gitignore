@@ -405,6 +405,9 @@ packages/ai-parrot-server/ui/node_modules/
 .parrot/
 # FEAT-545: id-independent staging for /sdd-spec §3b; committed copies live under sdd/state/<FEAT-ID>/design_research/
 sdd/state/.design_research/
+# FEAT-581: target-agnostic E2E supervisor bookkeeping (parrot.e2e.state); never
+# feature-scoped, so it is not covered by sdd/state/<FEAT-ID>/e2e/ evidence dirs.
+sdd/state/e2e/
 # FEAT-577: id-less /sdd-spec intake staging; promoted to sdd/state/<FEAT-ID>/intake/ on commit, pruned after 10 days by a daily git hook (scripts/sdd/install_hooks.py)
 sdd/state/.intake/
 

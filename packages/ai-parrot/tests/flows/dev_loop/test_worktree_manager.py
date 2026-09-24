@@ -230,3 +230,36 @@ class TestCleanup:
 
         assert not Path(clean_path).exists()
         assert Path(conflict_path).exists()
+
+
+@pytest.mark.asyncio
+async def test_merge_sequential_aborts_an_interrupted_merge(tmp_path, monkeypatch) -> None:
+    """Host cancellation mid-`git merge` must leave the feature worktree clean (no MERGE_HEAD)."""
+    import asyncio
+
+    from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
+
+    base = tmp_path / "base"
+    base.mkdir()
+    manager = SubWorktreeManager(base_worktree=str(base), feature_branch="feat", worktree_base_path=str(tmp_path))
+    manager._created["w1"] = (str(tmp_path / "w1"), "feat--w1")
+    calls: list[tuple[str, ...]] = []
+
+    async def fake_git(*args: str, cwd: str):
+        calls.append(args)
+        if args[0] == "rev-list":
+            return 0, "1\n", ""
+        if args[:2] == ("merge", "--abort"):
+            return 0, "", ""
+        if args[0] == "merge":
+            await asyncio.sleep(30)  # the child hangs until the host cancels us
+        return 0, "", ""
+
+    monkeypatch.setattr(manager, "_git", fake_git)
+    task = asyncio.create_task(manager.merge_sequential(resolver=None))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert ("merge", "--abort") in calls
+    assert calls.index(("merge", "--abort")) > calls.index(("merge", "--no-ff", "feat--w1", "-m", "merge feat--w1"))

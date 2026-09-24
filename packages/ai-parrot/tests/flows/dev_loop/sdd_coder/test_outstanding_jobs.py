@@ -135,3 +135,85 @@ async def test_end_execution_busy_while_job_running(tmp_path: Path) -> None:
     snapshot = await engine._read_execution_snapshot(worktree, execution_id)  # noqa: SLF001
     assert snapshot is not None
     assert snapshot.outstanding_job_ids == []
+
+
+# --- FEAT-599 (issue:c1e28856ab0c, issue:5944887877e1, issue:971e11917b19) -----------------
+
+
+def _reserve_native(engine: SddCoderEngine, execution_id: str, task_id: str) -> None:
+    """Bookkeep a native reservation exactly like `prepare_native` does, for a task with no recorded attempt."""
+    engine._native_reservations[(execution_id, task_id)] = "uid-" + task_id  # noqa: SLF001
+    engine._manager_execution[f"{task_id}.a1"] = execution_id  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_end_execution_reclose_with_native_reservation_does_not_raise(tmp_path: Path) -> None:
+    """Idempotent re-close reaches the enrichment loop; a native task without an attempt maps to `.a1` (AC1).
+
+    issue:c1e28856ab0c: the loop used to evaluate ``AttemptRecord(attempt=1)`` eagerly as a
+    ``dict.get`` default and raise ``ValidationError`` for every native task.
+    """
+    engine = _engine(tmp_path)
+    execution_id, worktree = await _begin(engine, tmp_path)
+    pool = engine._executions[execution_id]  # noqa: SLF001
+    await pool.close()  # skip the busy gate: the pool is already closed, the loop still runs
+    _reserve_native(engine, execution_id, "TASK-1")
+    assert "TASK-1" not in engine._latest_attempt  # noqa: SLF001
+
+    view = await engine.end_execution(execution_id)
+
+    assert view.status == "closed"
+    snapshot = await engine._read_execution_snapshot(worktree, execution_id)  # noqa: SLF001
+    assert snapshot is not None
+    assert snapshot.native_reservations == {"TASK-1": "TASK-1.a1"}
+
+
+@pytest.mark.asyncio
+async def test_status_persistence_retry_with_native_reservation(tmp_path: Path) -> None:
+    """The degraded-persistence retry in `status()` never constructs an AttemptRecord (AC1)."""
+    engine = _engine(tmp_path)
+    execution_id, worktree = await _begin(engine, tmp_path)
+    pool = engine._executions[execution_id]  # noqa: SLF001
+    pool._persistence_degraded = True  # noqa: SLF001 -- force the retry path
+    _reserve_native(engine, execution_id, "TASK-1")
+    gate = asyncio.Event()
+    job_id = _register_job(engine, worktree, execution_id, gate)
+    try:
+        job = await engine.status(job_id)
+    finally:
+        gate.set()
+        await engine._jobs.wait(job_id, 5)  # noqa: SLF001
+
+    assert job.state == "running"
+    assert pool.view().persistence_degraded is False
+    snapshot = await engine._read_execution_snapshot(worktree, execution_id)  # noqa: SLF001
+    assert snapshot is not None
+    assert snapshot.native_reservations == {"TASK-1": "TASK-1.a1"}
+    assert snapshot.outstanding_job_ids == [job_id]
+
+
+@pytest.mark.asyncio
+async def test_settlement_artifact_after_done_job_has_no_outstanding_ids(tmp_path: Path) -> None:
+    """The published settlement of an execution whose `run_chunk` job reached `done` lists no outstanding jobs (AC5).
+
+    issue:5944887877e1 / issue:971e11917b19 reported `prepare_review_checkpoint` refusing every
+    execution that ever dispatched a job because the settlement artifact still carried the job id.
+    FEAT-594 fixed the producer; this pins the artifact contract the checkpoint reads.
+    """
+    from parrot.flows.dev_loop.sdd_coder.checkpoint import _find_settlement_snapshot
+
+    engine = _engine(tmp_path)
+    assert engine._evidence_store is not None  # noqa: SLF001 -- bound by the hermetic conftest root
+    execution_id, worktree = await _begin(engine, tmp_path)
+    gate = asyncio.Event()
+    job_id = _register_job(engine, worktree, execution_id, gate)
+    gate.set()
+    assert (await engine._jobs.wait(job_id, 5)).state == "done"  # noqa: SLF001
+
+    await engine.end_execution(execution_id)
+
+    settlement = await _find_settlement_snapshot(engine._evidence_store, execution_id)  # noqa: SLF001
+    assert settlement is not None
+    assert settlement.status == "closed"
+    assert settlement.outstanding_job_ids == []
+    assert job_id in engine._job_worktrees  # noqa: SLF001 -- bookkeeping kept for wait()

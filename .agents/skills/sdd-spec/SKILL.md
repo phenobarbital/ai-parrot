@@ -112,6 +112,18 @@ stay with the thinking model — eligibility never delegates a design choice.
    - tests and acceptance criteria
    - mandatory Codebase Contract
    - Worktree Strategy
+   - optional `e2e` frontmatter and `### E2E Scenarios` subsection (FEAT-581)
+     only when the feature exercises the deterministic E2E gate: `policy`
+     must be exactly `required`, `optional` or `none` (never coerced when
+     invalid — the loader fails plan loading closed instead); a `required`
+     policy needs at least one required, codified (non-exploratory,
+     node-bearing) scenario; live and exploratory scenarios are listed
+     separately from deterministic ones and are never called
+     "deterministic" — exploratory scenarios can never be `required`.
+     Omit both entirely for a feature with no E2E surface (absence defaults
+     the later-generated plan's policy to `optional`); the complete
+     `e2e-plan.md` frontmatter is generated later, at task decomposition,
+     once pytest node IDs are frozen
    - Open Questions with resolved/unresolved state preserved
 11. Commit:
    - clear staging with `git reset HEAD`

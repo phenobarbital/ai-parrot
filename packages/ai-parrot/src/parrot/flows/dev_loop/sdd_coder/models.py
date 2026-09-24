@@ -53,12 +53,19 @@ ERROR_CODES: frozenset[str] = frozenset(
         "task_not_in_plan",
         "task_already_running",
         "seat_unavailable",
+        "seat_busy",
         "roster_empty",
         "job_not_found",
         "branch_not_found",
         "dirty_feature_worktree",
         "merge_conflict",
         "fidelity_violation",
+        # `_consolidate` could not take the feature-worktree merge lock within
+        # `engine.MERGE_LOCK_TIMEOUT_S`; the caller retries `coder_merge` later.
+        "merge_busy",
+        # A state-changing coder_* call waited more than `toolkit.EXCLUSIVE_WAIT_S` for
+        # another one to finish (the stdio server runs calls concurrently); retry later.
+        "engine_busy",
         "invalid_arguments",
         "internal_error",
         # Complexity routing error codes (FEAT-561 spec §2)
@@ -292,6 +299,9 @@ class CoderPlan(BaseModel):
     pool_generation: int = Field(default=0, ge=0)
     """Execution pool generation this plan was computed against; `run_chunk`
     rejects a stale plan (`plan_stale`) once the generation has moved on."""
+    suspension_summary: str = ""
+    """FEAT-599 (FEAT-559 AC-12): same text as `ExecutionPoolView.suspension_summary` for this plan's
+    execution pool; empty on the legacy (no execution) path."""
 
 
 class AttemptRecord(BaseModel):
@@ -441,6 +451,12 @@ class PoolSeatView(BaseModel):
     reason: str = ""
     suspension_id: str = ""
     suspended_until: str = ""
+    suspension_source: str = ""
+    """FEAT-599 (FEAT-559 AC-12): `SuspensionRecord.source` of the incident that suspended this seat."""
+    source_task_id: str = ""
+    """FEAT-599: task id (or probe uid) whose attempt caused the suspension; empty when unattributed."""
+    source_execution_id: str = ""
+    """FEAT-599: execution that recorded the suspension."""
 
 
 class ExecutionPoolView(BaseModel):
@@ -465,6 +481,10 @@ class ExecutionPoolView(BaseModel):
     persistence_degraded: bool = False
     roster_warnings: List[str] = Field(default_factory=list)
     """FEAT-588 advisory notes about unavailable complex-task retry capacity."""
+    suspension_summary: str = ""
+    """FEAT-599 (FEAT-559 AC-12): bounded `render_suspension_history()` text over every suspension this
+    pool knows about (inherited from durable history + its own). Display only -- the pool's exclusion
+    sets remain the selection authority."""
 
     _exec = field_validator("execution_id")(_check_uuid)
 

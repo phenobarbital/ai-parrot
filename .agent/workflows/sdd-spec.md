@@ -609,6 +609,31 @@ Include a `## Worktree Strategy` section in the spec with:
   `parallel: false`.
 - Cross-feature dependencies: list any specs that must be merged first.
 
+**E2E plan hint (new section in spec, FEAT-581 — optional):**
+Only add this when the feature exercises the deterministic E2E gate
+(`parrot e2e run` / `parrot e2e verify`); otherwise omit both the
+frontmatter `e2e` key and the `### E2E Scenarios` subsection entirely — an
+absent `e2e` key defaults the later-generated plan's policy to `optional`
+(`parrot.e2e.plan.load_plan`). When it does apply:
+- Frontmatter `e2e: {policy, scenario_ids}` — `policy` MUST be exactly
+  `required`, `optional` or `none`; never write, coerce, or silently repair
+  an invalid value — `load_plan` fails plan loading closed on it instead.
+- Add `### E2E Scenarios` under §4 Test Specification: declare stable
+  `ScenarioSpec.id` values per scenario, its tier (`deterministic`, `live`
+  or `exploratory`) and whether it is `required`. A `required` policy
+  demands at least one required, codified (non-exploratory, node-bearing)
+  scenario — an empty or all-exploratory scenario list under `required` is
+  a spec defect, not something the plan loader defaults around.
+- Keep live and exploratory scenarios in separate rows from deterministic
+  ones and never describe them as "deterministic" — live scenarios need
+  explicit `PARROT_TEST_REAL_LLM=1` opt-in and a request budget;
+  exploratory scenarios carry no node IDs and can never be `required`.
+- The complete `e2e-plan.md` frontmatter (`schema_version`, `feature_id`,
+  `spec_path`, `policy`, `targets`, `scenarios`, `budget`, `run_timeout_s`)
+  is generated later, during task decomposition, once pytest node IDs are
+  frozen — the spec declares policy/scenario intent only, never fabricated
+  node IDs.
+
 ### 6. Commit the Spec
 
 > **CRITICAL — Worktrees branch from the current state of the repo.**

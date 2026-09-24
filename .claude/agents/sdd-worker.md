@@ -324,6 +324,9 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    that known chain, after wiki-first discovery, and never to re-read a file whose content hash you already hold.
 2. **Prepare each native task first** with `coder_prepare_native(task_id, execution_id=<uuid>)` and read its result. Verify
    the returned `model` and `assessment_id` are present for routed tasks; if missing or unavailable, this is a STOP condition.
+   A native model serves ONE task at a time: `seat_busy` means the task named in `held_by_task_id` still holds that
+   model's reservation (it is released only by its `coder_merge`). Finish and `coder_merge` that task first, then call
+   `coder_prepare_native` again — never retry in a loop and never dispatch the native Agent without a prepared result.
    Then dispatch the FIRST chunk in ONE message: `coder_run_chunk(task_ids=<the chunk's non-native ids>, execution_id=<uuid>)`
    AND, for each prepared task, `Agent(subagent_type="sdd-coder", model=<prepared.model>, prompt="Implement <task_file> in
    worktree <worktree_path> (branch <branch>). Work only there. Complexity assessment: <assessment_id>, classification:
@@ -337,8 +340,10 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    toolset can query a running agent. **Never call `Agent` again for the same task** — no `"continue"`, no
    status probe, no call without a `prompt`: that spawns a second, context-less coder that fights the first one.
 3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=90, response_mode="compact")` until `data.state != "running"`.
-   Never call `coder_status` or any other tool in the same message as `coder_wait` — the server handles requests one
-   at a time. When a native coder's completion notification arrives, call `coder_merge(task_id)` for it. If the job
+   Do not call `coder_status` in the same message as `coder_wait` — the server runs tool calls concurrently, so the
+   extra call is not blocked, only wasted. When a native coder's completion notification arrives, call
+   `coder_merge(task_id)` for it. A `merge_busy` error from `coder_merge` means another consolidation still holds the
+   feature-worktree merge lock: wait for the running job to settle and call `coder_merge` again. If the job
    is done but native coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
    (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
    The same no-busy-wait rule applies to any handle you hold from `coder_run_validation` below: only call

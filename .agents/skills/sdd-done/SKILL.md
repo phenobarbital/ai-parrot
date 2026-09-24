@@ -34,6 +34,14 @@ when safe.
 - Ledger snapshots use throwaway worktrees and never modify active worktrees.
 - Hotfixes skip ledger snapshots.
 - Bounded retry for rejected pushes (max 3 attempts).
+- Required E2E evidence (FEAT-581) is checked before any index stamp, push,
+  PR, merge or cleanup. Missing, stale, tampered, blocked or failed required
+  evidence aborts closeout. `--force` bypasses per-task partial/missing
+  evidence and ledger merge blockers only — it never bypasses a required
+  E2E gate (spec AC9).
+- The E2E check is read-only (`parrot e2e verify`); it never reruns the
+  ordinary task test suite and never reads an exploration report —
+  exploratory-tier scenarios can never satisfy the gate.
 
 ## Workflow
 
@@ -63,6 +71,28 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      worktree
    - do not rerun the whole test suite here; tests should have run during task
      execution
+4.5. Verify E2E evidence (FEAT-581), before any stamp/push/merge-blocker/PR/
+   merge/cleanup step below:
+   - read `e2e.policy` from the spec's frontmatter: no `e2e` key defaults to
+     `optional`; a present but malformed policy value is never coerced — treat
+     it exactly like `required` with missing evidence
+   - `none`: no execution expected or fabricated; record as exempt and continue
+   - `required`/`optional` with no plan file at
+     `sdd/state/<FEAT-ID>/e2e-plan.md` in the worktree: `optional` records an
+     advisory skip and continues (no plan means no automatic run for an
+     optional spec); `required` falls through to the block below
+   - otherwise run the same read-only validator the Claude twin uses:
+     `parrot e2e verify --plan sdd/state/<FEAT-ID>/e2e-plan.md` from the
+     worktree — it never executes pytest or a target, only validates a
+     previously persisted verdict (exit 0=PASS, 1=FAIL, 3=BLOCKED, 4=MISSING/
+     stale/tampered); an unavailable CLI or non-JSON stdout counts as MISSING
+   - `required` and `status == PASS` with `gate_satisfied: true`: record and
+     continue
+   - `required` and anything else (FAIL/BLOCKED/MISSING, missing plan,
+     unavailable CLI, malformed policy): abort the entire command now, before
+     building the verification report — `--force` does not bypass this
+   - `optional`: record the outcome as advisory only (never blocks), reporting
+     the real status honestly, never upgraded to a pass
 5. Classify:
    - `VERIFIED`: commit found and files exist
    - `PARTIAL`: commit found but files are missing
@@ -73,6 +103,7 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - commit count
    - task count by status
    - task-by-task evidence
+   - E2E policy/status/gate_satisfied recorded in step 4.5
 7. Respect flags:
    - `--dry-run`: stop after the report
    - `--force`: allow forced closeout with partial/no evidence noted
@@ -152,6 +183,7 @@ Report:
 FEAT-NNN - <title>: <closed>/<total> tasks closed
 Branch pushed: <branch>
 PR opened: <url> or manual command printed
+E2E: <policy> - <status> (gate_satisfied: <bool>)
 Worktree removed: .claude/worktrees/<name>
 Jira: <key> -> Done, when requested and successful
 ```
@@ -164,4 +196,6 @@ Jira: <key> -> Done, when requested and successful
 - `scripts/sdd/sdd_meta.py`
 - `scripts/sdd/heal_orphans.sh`
 - `sdd/WORKFLOW.md`
+- `sdd/state/<FEAT-ID>/e2e-plan.md` (E2E plan, FEAT-581); validator:
+  `parrot e2e verify --plan <path>` (`ai-parrot-server`, optional install)
 

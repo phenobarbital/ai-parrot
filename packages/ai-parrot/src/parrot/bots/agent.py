@@ -128,13 +128,17 @@ class BasicAgent(Chatbot, NotificationMixin):
         ##  Logging:
         self.logger = logging.getLogger(f"{self.name}.Agent")
         ## Google GenAI Client (for multi-modal responses and TTS generation):
-        # FEAT-523 (TASK-2846): lazy import — core must not import a
-        # provider client at module scope (AC-3).
-        from ..clients.google import GoogleGenAIClient
-
-        default_client = GoogleGenAIClient()
         if self._llm_raw is None:
-            self.client = default_client
+            # FEAT-523 (TASK-2846): lazy import — core must not import a
+            # provider client at module scope (AC-3). issue:93f86dab44e5:
+            # only import/construct the Google default when no explicit llm
+            # was requested. Previously this ran on every construction, so
+            # BasicAgent(llm="anthropic:...") still imported google-genai and
+            # raised when that satellite was absent, even though Google was
+            # never the resolved provider.
+            from ..clients.google import GoogleGenAIClient
+
+            self.client = GoogleGenAIClient()
             # Initialize the underlying AbstractBot LLM with the same client.
             if not self._llm:
                 self._llm = self.client
