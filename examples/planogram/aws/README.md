@@ -1,7 +1,9 @@
 # Planogram slot identification with Amazon Nova 2 Lite
 
 Feeds real Stage-1 OpenCV detection boxes to Amazon Nova 2 Lite and asks, per box,
-whether a product is present and which brand/product it is. Output is flat
+whether a product is present and which brand/product it is. Before the call, RapidOCR
+reads the text printed inside every slot box and the prompt hands that text to Nova
+per area (`ocr_text` / `ocr_confidence`) as an anchor. Output is flat
 `{bbox, brand, product, occupancy}` JSON in source-image pixels, plus an annotated
 image.
 
@@ -48,7 +50,8 @@ source .venv/bin/activate
 The packages needed are `ai-parrot`, `ai-parrot-client-amazon`,
 `ai-parrot-pipelines`, `opencv-python`, `numpy`. `aioboto3` is already a
 declared dependency of `ai-parrot-client-amazon`; there is nothing extra to
-install.
+install. `rapidocr` (the `planogram` extra) is optional: without it every area is
+sent with an empty `ocr_text` and a warning is logged.
 
 ## Usage
 
@@ -66,7 +69,7 @@ python examples/planogram/aws/nova2.py \
 |------|----------|---------|-------------|
 | `--image` | Yes | — | Path to the store photo (JPEG/PNG). |
 | `--boxes` | No | — | JSON file with pre-computed perception results (bypasses Stage-1). |
-| `--planogram` | Yes | — | Planogram JSON with product/brand vocabulary for closed-set prompting. |
+| `--planogram` | Yes | — | Planogram JSON; only its **brands** reach the prompt, as a logo-reading hint. |
 | `--output` | Yes | — | Output directory for `detections.json`, `annotated.jpg` and `run.json`. |
 | `--model` | No | `nova-2-lite` | Model alias (resolves to `us.amazon.nova-2-lite-v1:0`). |
 | `--region` | No | `us-east-1` | AWS region for the Bedrock call. |
@@ -74,11 +77,13 @@ python examples/planogram/aws/nova2.py \
 | `--aws-id` | No | `default` | `AWS_CREDENTIALS` profile name in `parrot.conf`. |
 | `--concurrency` | No | `4` | Concurrent strip calls (1–16). |
 | `--no-marks` | No | (off) | Disable Set-of-Marks outlines on strips. |
+| `--no-ocr` | No | (off) | Skip RapidOCR inside the slot boxes (areas are sent with empty `ocr_text`). |
+| `--max-slots` | No | `8` | Maximum slots per strip; rows are split into balanced contiguous chunks. Shorter strips cost more calls but Nova reads them more reliably. |
 | `--cache-dir` | No | — | Directory for the vision response cache (makes re-runs free). |
 
 ## Outputs
 
-Three files are written to `--output`:
+Four files are written to `--output`:
 
 - `detections.json`: Flat array of detections, one per target. Each row has
   `bbox` in **source-image pixels** `[x1, y1, x2, y2]`, `occupancy`
@@ -88,9 +93,12 @@ Three files are written to `--output`:
 - `annotated.jpg`: The source image with boxes drawn and labelled
   `brand / product`. Empty slots are shown in a distinct colour.
 
+- `ocr.json`: What RapidOCR read inside each slot box (`text`, `confidence`),
+  keyed by target id — exactly what the prompt received as `ocr_text`.
+
 - `run.json`: Metadata including the resolved model id, region, prompt version,
   `strips`, `calls`, `cache_hits`, `incomplete_retries`, `image_bytes_sent`,
-  token counts and wall time.
+  `ocr_available`, `ocr_hits`, token counts and wall time.
 
 ### Exit codes
 
@@ -116,9 +124,30 @@ includes the prompt version, model id and image content hash.
    local Converse call. When `BedrockConverseBase` gains real image support, this
    shim is superseded.
 
-2. **Closed-set prompt is example-local**: The prompt builder lives in
-   `prompt.py` and is not part of the pipeline. The pipeline's
-   `build_identify_prompt` remains contractually open-set.
+2. **The prompt is example-local**: The prompt builder lives in `prompt.py` and
+   is not part of the pipeline. The pipeline's `build_identify_prompt` remains
+   contractually open-set.
+
+   The first version (`nova-closed-set-v1`) offered the planogram's product SKUs
+   (`3YM58AN#140`, `T822XL-BCS`) as expected candidates. Those part numbers are
+   not printed on the package front — the front shows the retail code (`62XL`,
+   `564`, `TN-830`) — so Nova read the code correctly in `evidence` and then
+   snapped `product` (sometimes `brand` too) to an unrelated SKU. `nova-ocr-v3`
+   drops the SKU list, keeps brands as a logo hint, sends each area the text
+   RapidOCR read inside its box, and asks for the *printed* code in `text` /
+   `product`. Matching that code to a planogram SKU is a deterministic
+   post-step that does not exist yet.
+
+5. **Nova 2 Lite is not deterministic and misses some end-of-strip boxes**:
+   `render_marked_strip` now sizes the mark label to 12 % of the box height
+   (clamped 11–64 px) — the old fixed 0.5 font scale was about 10 px on a
+   1400-px strip and Nova permuted answers across neighbouring areas. With
+   per-area `ocr_text` the permutations are gone, but at `temperature=0` two
+   runs of the same prompt still differ on a few slots, and one occupied slot
+   at the right end of a row (`r4:s12` in the reference photo) comes back
+   `empty` with confidence 1.0 in every run even though the strip shows the
+   box. `--max-slots 4` (20 calls instead of 12) recovers its neighbour but
+   not that slot. One crop per slot is the remaining lever.
 
 3. **No automated test of the live Converse round-trip**: The request is guarded
    at runtime instead — `ask_to_image` refuses to send a call with no image

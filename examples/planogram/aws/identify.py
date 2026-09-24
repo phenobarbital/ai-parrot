@@ -1,4 +1,4 @@
-"""Closed-set strip orchestration for Nova (FEAT-592)."""
+"""OCR-anchored strip orchestration for Nova (FEAT-592)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import math
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from pydantic import BaseModel
@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 PixelBox = Tuple[int, int, int, int]
 Target = Union[Slot, Shape]
+#: ``target id -> (text, confidence)`` read by local OCR inside each target's box.
+OcrByTarget = Mapping[str, Tuple[str, float]]
 SUBSTRIP_MAX_SLOTS: int = 8
 
 
@@ -122,9 +124,18 @@ def _uncertain(target: Target, perception: PerceptionResult, reason: str) -> Ide
     )
 
 
-def _target_ocr_text(target: Target) -> str:
-    """Return a target's direct OCR text, or an empty string when unavailable."""
-    return target.ocr_text or "" if isinstance(target, Shape) else ""
+def _target_ocr(target: Target, ocr: Optional[OcrByTarget]) -> Tuple[str, Optional[float]]:
+    """Return ``(text, confidence)`` read inside a target's box.
+
+    The per-target ``ocr`` mapping (slot crops, see nova2.read_slot_text) wins; a Shape's own
+    ``ocr_text`` is the fallback; ``("", None)`` when nothing was read.
+    """
+    if ocr is not None and _target_id(target) in ocr:
+        text, confidence = ocr[_target_id(target)]
+        return (text, round(confidence, 2)) if text else ("", None)
+    if isinstance(target, Shape) and target.ocr_text:
+        return target.ocr_text, target.ocr_confidence
+    return "", None
 
 
 def _id_allocator(perception: PerceptionResult) -> Callable[[], str]:
@@ -151,19 +162,23 @@ async def _run_strip(
     marks: bool,
     next_shape_id: Callable[[], str],
     stats: RunStats,
+    ocr: Optional[OcrByTarget] = None,
 ) -> Tuple[List[Identification], List[Shape], List[str]]:
     """Run and validate one strip, isolating provider failures to its targets."""
     strip = strip_box(targets, perception.image_size)
     mark_list = [(number, _as_tuple(target.box)) for number, target in enumerate(targets, start=1)] if marks else []
-    areas: List[Dict[str, Any]] = [
-        {
-            "id": _target_id(target),
-            "mark": number if marks else None,
-            "box_2d": to_strip_norm(target.box, strip),
-            "ocr_text": _target_ocr_text(target),
-        }
-        for number, target in enumerate(targets, start=1)
-    ]
+    areas: List[Dict[str, Any]] = []
+    for number, target in enumerate(targets, start=1):
+        text, confidence = _target_ocr(target, ocr)
+        areas.append(
+            {
+                "id": _target_id(target),
+                "mark": number if marks else None,
+                "box_2d": to_strip_norm(target.box, strip),
+                "ocr_text": text,
+                "ocr_confidence": confidence,
+            }
+        )
     prompt = build_nova_identify_prompt(areas, vocabulary, schema_instruction)
     png = await executor.run(render_marked_strip, image, _as_tuple(strip), mark_list)
     stats.image_bytes_sent += len(png)
@@ -229,8 +244,13 @@ async def identify_strips_closed_set(
     schema_instruction: str,
     marks: bool = True,
     substrip_max_slots: int = SUBSTRIP_MAX_SLOTS,
+    ocr: Optional[OcrByTarget] = None,
 ) -> Tuple[IdentificationResult, RunStats]:
-    """Identify row chunks concurrently with a closed-set Nova prompt.
+    """Identify row chunks concurrently with the OCR-anchored Nova prompt.
+
+    Args:
+        ocr: Optional ``target id -> (text, confidence)`` read by local OCR inside each
+            target's box; forwarded to the prompt as each area's ``ocr_text``.
 
     Returns:
         The validated result for the whole image and the provider-call accounting.
@@ -251,6 +271,7 @@ async def identify_strips_closed_set(
                 marks=marks,
                 next_shape_id=allocate,
                 stats=stats,
+                ocr=ocr,
             )
             for chunk in chunks
         )
