@@ -14,7 +14,9 @@ available in the project, global location, or `PARROT_LIBRARY_DIR`, it also adds
 - The `$bookstore` research skill at `.agents/skills/bookstore/SKILL.md`.
 
 If no library is defined (no resolved location contains `library.db`), Bookstore
-is silently skipped. No server is registered and no new skill is installed.
+is skipped and the installer prints `bookstore — skipped: no indexed library
+found`. No server is registered and no new skill is installed; index a book
+with `bookstore add <file>` and re-run the install to pick it up.
 Re-running installation after a library disappears removes its managed MCP
 registration; existing skills and user-owned MCP settings are retained.
 

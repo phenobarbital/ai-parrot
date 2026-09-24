@@ -62,7 +62,10 @@ class NovaVisionClient:
             RuntimeError: The resolved model id carries no geo/global prefix.
         """
         nova = NovaClient(model=model, aws_id=aws_id, region=region, region_prefix=region_prefix)
-        await nova.get_client()
+        # ``_ensure_client()`` caches the aioboto3 client per event loop so ``close()`` tears it
+        # down. A bare ``get_client()`` builds an uncached client whose aiohttp session leaks
+        # ("Unclosed client session" at exit).
+        await nova._ensure_client()
         model_id = nova._translate_model(model)
         if not model_id.startswith(_GEO_PREFIXES):
             await nova.close()
@@ -126,7 +129,7 @@ class NovaVisionClient:
             blocks.append({"image": {"format": "png", "source": {"bytes": image_bytes}}})
 
         image_bytes = self._assert_has_image(blocks)
-        client = await self._nova.get_client()
+        client = await self._nova._ensure_client()  # cached per loop; closed by ``aclose()``
         response = await client.converse(
             modelId=self._model_id,
             messages=[{"role": "user", "content": blocks}],
