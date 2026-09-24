@@ -42,6 +42,7 @@ from typing import Any, Optional, cast
 import click
 from pydantic import ValidationError
 
+from parrot.bots.database.toolkits.sql import _SQLGLOT_DIALECT_MAP
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
@@ -70,10 +71,12 @@ from parrot.knowledge.wiki.project import (
     config_path,
     derive_env_overlay,
     find_project_root,
+    find_shared_root,
     global_registry_path,
     load_effective_config,
     load_global_registry,
     load_project_config,
+    is_linked_worktree,
     merge_namespaces,
     parrot_home,
     resolve_entry_base,
@@ -95,6 +98,7 @@ from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
+from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -3074,6 +3078,175 @@ def ledger_audit() -> None:
     click.echo(f"Broken edges: {audit['broken_edges']}")
     if sqlite_info := audit.get("sqlite"):
         click.echo(f"SQLite: journal={sqlite_info['journal_mode']}, " f"timeout={sqlite_info['busy_timeout_ms']}ms")
+
+
+# --------------------------------------------------------------------------
+# SQL schema-plane commands (FEAT-600)
+# --------------------------------------------------------------------------
+
+
+def _refuse_in_linked_worktree(root: Path) -> None:
+    """Refuse schema-plane writes from a linked worktree."""
+    if is_linked_worktree(root / ".git"):
+        raise click.UsageError("wikitoolkit schema write verbs must run from the main checkout, not a linked worktree.")
+
+
+def _schema_service() -> "SchemaPlaneService":
+    """Create the schema-plane service only when a schema command needs it."""
+    from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+
+    return SchemaPlaneService.from_root()
+
+
+def _changed_ddl_paths(root: Path, origin: str) -> list[Path]:
+    """Return configured DDL files touched by the merge leading to ``HEAD``."""
+    config = load_effective_config(root).config
+    source = config.schema.sources.get(origin)
+    if source is None:
+        raise click.UsageError(f"Unknown schema source {origin!r}.")
+    if not source.ddl_paths:
+        return []
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
+    changed = proc.stdout.splitlines()
+    return [
+        root / path
+        for path in changed
+        if any(
+            PurePosixPath(path).match(pattern) or path.startswith(f"{pattern.rstrip('/')}/")
+            for pattern in source.ddl_paths
+        )
+        and (root / path).is_file()
+    ]
+
+
+@wiki.group(name="schema")
+def schema() -> None:
+    """Manage the SQL schema plane (sources, sync, DDL ingest, diff, lookup)."""
+
+
+@schema.command("sources")
+def schema_sources() -> None:
+    """List declared sources without exposing DSN values."""
+    for source in _run(_schema_service().sources()):
+        click.echo(f"{source.alias}\t{source.dialect}\t{','.join(source.allowed_schemas)}\t${source.dsn_env}")
+
+
+@schema.command("add-source")
+@click.argument("alias", required=False)
+@click.option("--dialect", required=True, type=click.Choice(sorted(_SQLGLOT_DIALECT_MAP)))
+@click.option("--dsn-env", required=True, help="Environment variable NAME holding the DSN (never the value).")
+@click.option("--schemas", default="public", help="Comma-separated allowed schemas.")
+@click.option("--tables", default=None, help="Comma-separated schema.table allowlist.")
+def schema_add_source(alias: str | None, dialect: str, dsn_env: str, schemas: str, tables: str | None) -> None:
+    """Declare a source in ``.parrot/wiki.json`` under ``schema.sources``."""
+    _refuse_in_linked_worktree(Path.cwd())
+    root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
+    config = load_project_config(root)
+    alias = alias or dialect
+    if alias in config.schema.sources:
+        raise click.ClickException(
+            f"Schema source alias {alias!r} already exists; existing aliases: {', '.join(config.schema.sources)}"
+        )
+    config.schema.sources[alias] = SchemaSourceConfig(
+        alias=alias,
+        dialect=dialect,
+        dsn_env=dsn_env,
+        allowed_schemas=[schema_name.strip() for schema_name in schemas.split(",") if schema_name.strip()],
+        tables=[table.strip() for table in tables.split(",") if table.strip()] if tables else None,
+    )
+    written = save_project_config(root, config)
+    click.echo(f"Added schema source {alias!r} to {written}")
+
+
+@schema.command("sync")
+@click.argument("origin")
+@click.option("--tables", default=None)
+@click.option("--changed", is_flag=True)
+@click.option("--json", "as_json", is_flag=True)
+def schema_sync(origin: str, tables: str | None, changed: bool, as_json: bool) -> None:
+    """Introspect ORIGIN and write its table pages."""
+    _refuse_in_linked_worktree(Path.cwd())
+    report = _run(_schema_service().sync(origin, tables=tables.split(",") if tables else None, changed_only=changed))
+    if as_json:
+        click.echo(report.model_dump_json())
+    else:
+        click.echo(
+            f"created {len(report.created)} updated {len(report.updated)} unchanged {len(report.unchanged)} "
+            f"removed {len(report.removed)} failed {len(report.failed)}"
+        )
+
+
+@schema.command("ingest-ddl")
+@click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path))
+@click.option("--origin", required=True)
+@click.option("--dialect", required=True, type=click.Choice(sorted(_SQLGLOT_DIALECT_MAP)))
+@click.option("--changed", is_flag=True)
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--quiet", is_flag=True)
+def schema_ingest_ddl(
+    paths: tuple[Path, ...], origin: str, dialect: str, changed: bool, as_json: bool, quiet: bool
+) -> None:
+    """Fold SQL files into the schema plane without requiring a database."""
+    _refuse_in_linked_worktree(Path.cwd())
+    root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
+    files = [file for path in paths for file in (path.rglob("*.sql") if path.is_dir() else [path])]
+    if not files and changed:
+        files = _changed_ddl_paths(root, origin)
+        if not files:
+            return
+    report = _run(_schema_service().ingest_ddl(files, origin=origin, dialect=dialect, changed_only=changed, root=root))
+    if not quiet:
+        if as_json:
+            click.echo(report.model_dump_json())
+        else:
+            click.echo(
+                f"created {len(report.created)} updated {len(report.updated)} parse_errors {len(report.parse_errors)}"
+            )
+
+
+@schema.command("diff")
+@click.argument("origin")
+@click.option("--ledger", "to_ledger", is_flag=True, help="File each divergence as a tech_debt ledger issue.")
+def schema_diff(origin: str, to_ledger: bool) -> None:
+    """Report live-vs-DDL divergence for ORIGIN without resolving it."""
+    if to_ledger:
+        _refuse_in_linked_worktree(Path.cwd())
+    rows = _run(_schema_service().diff(origin))
+    for row in rows:
+        click.echo(f"{row['table_id']}\t{row['field']}\tlive={row['live']}\tddl={row['ddl']}")
+    if to_ledger and rows:
+        service = LedgerService.from_root()
+        for row in rows:
+            _run(
+                service.open_issue(
+                    title=f"Schema divergence: {row['table_id']} {row['field']}",
+                    body=f"Live value: {row['live']}\nDDL value: {row['ddl']}",
+                    kind="tech_debt",
+                    severity="minor",
+                    discovered_from=f"schema-diff:{origin}",
+                    about=[row["table_id"]],
+                )
+            )
+
+
+@schema.command("lookup")
+@click.argument("ref")
+@click.option("--json", "as_json", is_flag=True)
+def schema_lookup(ref: str, as_json: bool) -> None:
+    """Show a table page for REF."""
+    result = _run(_schema_service().lookup(ref))
+    if isinstance(result, list):
+        raise click.UsageError("ambiguous reference; candidates: " + ", ".join(result))
+    click.echo(result.model_dump_json(indent=2) if as_json else result.ddl)
 
 
 @wiki.command()
