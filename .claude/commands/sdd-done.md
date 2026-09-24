@@ -219,30 +219,57 @@ If any tasks are ⚠️ PARTIAL or ❌ NO EVIDENCE:
 If `--dry-run`, show the report and STOP.
 If `--force`, close all tasks regardless.
 
-### 7. Stamp Verification (on feature branch)
+### 7. Close & Stamp Verification (on feature branch)
 
-Stamp verification metadata on each closed task in the worktree's per-spec
-index. The feature branch already carries the task files in `completed/` and
-the index with `status: "done"` — this step only adds the `verification`
-field and the feature-level `completed_at`.
+Close every task being closed ON THE FEATURE BRANCH, then stamp verification
+metadata in the worktree's per-spec index. Normally the implementing lane
+(`sdd-worker` / `sdd-start`) already moved the file `active/` → `completed/`
+and set `status: "done"`, so this step only adds the `verification` field and
+the feature-level `completed_at`.
 
-> **Why not close_task.sh?** The feature branch already moved files
-> `active/` → `completed/` and set status/completed_at/file during
-> `sdd-worker`/`sdd-start`. Running `close_task.sh` again on `base_branch`
-> would create duplicate state that conflicts on merge (FEAT-414).
+> **Verified is not closed.** Some lanes commit code but never close the task
+> (the `/sdd-fix` SDD lane, a worker that died before `finalize_task`, code
+> written by hand). Such a task shows up here as ✅ VERIFIED while its file is
+> still in `active/` and its index entry is still `pending`/`in-progress`;
+> stamping only `verification` would merge it into `base_branch` stalled in
+> `active/` forever. So a task that is not closed yet is closed here with
+> `scripts/sdd/close_task.sh` — **inside the worktree, on the feature branch**.
+> Never run it on `base_branch`: that creates duplicate state that conflicts on
+> merge (FEAT-414). A task the lane already closed is left untouched, so its
+> original `completed_at` is preserved.
 
 ```bash
 WORKTREE_PATH="$WORKTREES_DIR/feat-<FEAT-ID>-<slug>"   # absolute: valid from the main repo and from inside the worktree
 INDEX="sdd/tasks/index/${FEATURE_SLUG}.json"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 
-# Stamp verification on each task being closed.
+# Close (if the lane did not) and stamp verification on each task being closed.
 # Use "verified" for ✅ VERIFIED tasks, "partial" for ⚠️ PARTIAL, "forced" for --force.
 for TASK_ID in "${TASK_IDS[@]}"; do
+  STATUS=$(jq -r --arg id "$TASK_ID" '.tasks[] | select(.id == $id) | .status' "$WORKTREE_PATH/$INDEX")
+  if [[ -z "$STATUS" ]]; then
+    echo "⚠️  $TASK_ID is not in $INDEX — skipping (check TASK_IDS)." >&2
+    continue
+  fi
+  if compgen -G "$WORKTREE_PATH/sdd/tasks/active/${TASK_ID}-*.md" >/dev/null \
+     || [[ "$STATUS" != "done" && "$STATUS" != "done-with-issues" ]]; then
+    # git mv active → completed, index status/completed_at/file, hard-verified.
+    (cd "$WORKTREE_PATH" && scripts/sdd/close_task.sh "$TASK_ID" "$FEATURE_SLUG" "$VERIFICATION")
+    # close_task.sh always writes status "done"; keep Step 6's distinction.
+    if [[ "$VERIFICATION" != "verified" ]]; then
+      jq --arg id "$TASK_ID" '(.tasks[] | select(.id == $id) | .status) = "done-with-issues"' \
+        "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
+    fi
+  fi
   jq --arg id "$TASK_ID" --arg ver "$VERIFICATION" '
     (.tasks[] | select(.id == $id) | .verification) = $ver
   ' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
 done
+
+# Reap any active/ copy of a task that is already done with a completed/ twin
+# (e.g. brought back by a base-branch merge). Runs for BOTH the PR flow and
+# --merge: the PR flow previously had no sweep at all.
+(cd "$WORKTREE_PATH" && scripts/sdd/heal_orphans.sh "$FEATURE_SLUG")
 
 # Stamp feature-level completed_at if all tasks are done.
 jq --arg now "$NOW" '
@@ -250,8 +277,8 @@ jq --arg now "$NOW" '
 ' "$WORKTREE_PATH/$INDEX" > tmp && mv tmp "$WORKTREE_PATH/$INDEX"
 
 # Commit on the feature branch (inside the worktree) — never on base_branch.
-git -C "$WORKTREE_PATH" add "$INDEX"
-git -C "$WORKTREE_PATH" diff --cached --name-only   # sanity-check: only the index
+git -C "$WORKTREE_PATH" add "$INDEX" sdd/tasks/completed/
+git -C "$WORKTREE_PATH" diff --cached --name-only   # sanity-check: only the index + this feature's task files
 git -C "$WORKTREE_PATH" commit -m "sdd: close tasks for FEAT-<ID> — <slug>"
 ```
 
@@ -456,8 +483,9 @@ If the user aborts, STOP and do NOT proceed to cleanup.
 
 **Self-heal — reap stalled `active/` orphans (runs after every `--merge`):**
 
-> Only applies when `--merge` is used. When using PR flow, the orphan sweep
-> happens on the PR merge side.
+> Only applies when `--merge` is used. In the PR flow the sweep already ran on
+> the feature branch in Step 7, and CI's `scripts/sdd/check_task_state.py`
+> fails the PR if a twin or a closed-but-active task file still reaches it.
 
 ```bash
 scripts/sdd/heal_orphans.sh <feature-slug>
