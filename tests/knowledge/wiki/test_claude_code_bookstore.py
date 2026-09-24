@@ -15,6 +15,7 @@ from click.testing import CliRunner
 from parrot.cli import cli
 from parrot.knowledge.bookstore.catalog import CatalogStore
 from parrot.knowledge.wiki.claude_code.bookstore import (
+    BOOKSTORE_SKIPPED,
     SKILL_PATH,
     bookstore_status,
     install_bookstore,
@@ -110,19 +111,17 @@ def test_cli_default_opt_out_and_uninstall(tmp_path: Path) -> None:
     assert not any(bookstore_status(tmp_path).values())
 
 
-def test_missing_library_silently_skipped(
+def test_missing_library_reports_skip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
     monkeypatch.delenv("PARROT_LIBRARY_DIR")
-    assert install_bookstore(tmp_path) == []
+    assert install_bookstore(tmp_path) == [BOOKSTORE_SKIPPED]
     assert not (tmp_path / ".mcp.json").exists()
     assert not (tmp_path / SKILL_PATH).exists()
     assert capsys.readouterr() == ("", "")
-    result = CliRunner().invoke(
-        cli, ["claude", "install", "--path", str(tmp_path), "--no-build", "--no-git-hook"]
-    )
+    result = CliRunner().invoke(cli, ["claude", "install", "--path", str(tmp_path), "--no-build", "--no-git-hook"])
     assert result.exit_code == 0, result.output
-    assert "bookstore" not in result.output.lower()
+    assert "bookstore — skipped: no indexed library found" in result.output
     assert not any(bookstore_status(tmp_path).values())
 
 
@@ -133,7 +132,10 @@ def test_missing_library_removes_only_managed_registration(tmp_path: Path, monke
     data["mcpServers"]["other"] = {"command": "keep"}
     mcp_json.write_text(json.dumps(data), encoding="utf-8")
     monkeypatch.delenv("PARROT_LIBRARY_DIR")
-    assert install_bookstore(tmp_path) == []
+    assert install_bookstore(tmp_path) == [
+        BOOKSTORE_SKIPPED,
+        "bookstore MCP — removed (library no longer found)",
+    ]
     assert json.loads(mcp_json.read_text())["mcpServers"] == {"other": {"command": "keep"}}
     assert (tmp_path / SKILL_PATH).exists()
 
@@ -149,7 +151,7 @@ def test_available_library_enables_install(tmp_path: Path, monkeypatch: pytest.M
     else:
         location = tmp_path / "custom"
         monkeypatch.setenv("PARROT_LIBRARY_DIR", str(location))
-    assert install_bookstore(tmp_path) == []
+    assert install_bookstore(tmp_path) == [BOOKSTORE_SKIPPED]
     CatalogStore(location / "library.db")
     assert install_bookstore(tmp_path)
     assert all(bookstore_status(tmp_path).values())
