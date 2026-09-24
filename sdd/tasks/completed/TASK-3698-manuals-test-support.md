@@ -458,10 +458,15 @@ def test_image_only_pdf_has_no_text(image_only_pdf):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3698
+- Feature: training-agent
+- Implementation SHA: 73a75c3b00b1fe29cc071373671fbc340844c448
+- Closed at (UTC): 2026-09-24T23:04:18+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 234.9s · Tokens: n/a |

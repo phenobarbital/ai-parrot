@@ -34,7 +34,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +42,9 @@
       "parallelism_notes": "exclusive: creates packages/ai-parrot/tests/knowledge/manuals/conftest.py, which every later manuals test module loads",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3698-manuals-test-support.md"
+      "completed_at": "2026-09-24T23:04:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3698-manuals-test-support.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3699",
