@@ -105,7 +105,7 @@ class Completeness(IntEnum):
     FULL = 3          # Fully introspected entry (columns, PKs, FKs, indexes)
 
 
-MetadataSource = Literal["frontend", "information_schema", "pg_catalog", "unknown"]
+MetadataSource = Literal["frontend", "information_schema", "pg_catalog", "ddl", "unknown"]
 
 
 @dataclass
