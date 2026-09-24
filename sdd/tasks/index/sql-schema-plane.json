@@ -16,7 +16,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "wave-1 foundation; every other FEAT-600 task imports TableRecord/ColumnRecord/ids/SchemaPlaneConfig from here",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3680-schema-models-ids-config.md"
+      "completed_at": "2026-09-24T21:58:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3680-schema-models-ids-config.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3681",

@@ -492,10 +492,17 @@ def test_normalize_ambiguous_returns_candidates():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3680
+- Feature: sql-schema-plane
+- Implementation SHA: aba3ed782604b949c8674820129980c8a9bdbfd5
+- Closed at (UTC): 2026-09-24T21:58:59+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_validation | merge-tier (root scope) 4 failed, 1132 passed, 7 skipped, 20 warnings in 66.36s — all 4 failures confirmed pre-existing on origin/dev / known worktree environment limitation, unrelated to this task (see issue:33fe54e65d2d) |
+| review_feedback_id | coder-review:fe5418549d936fb9cf76badf |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 191.72s · Tokens: n/a |
