@@ -670,7 +670,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -681,8 +681,8 @@
       "parallelism_notes": "TASK-3546 owns its declared files for M9. TASK-3545 supplies add deterministic nightly and explicit live ci plans; TASK-3544 supplies add optional api ui exploration and owner-scoped teardown hooks. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3546-e2e-docs-performance.md"
+      "completed_at": "2026-09-24T01:05:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3546-e2e-docs-performance.md"
     },
     {
       "id": "TASK-3547",

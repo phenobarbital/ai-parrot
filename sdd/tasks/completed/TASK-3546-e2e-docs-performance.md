@@ -175,5 +175,34 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24. Implemented via a manual worktree + native sonnet `sdd-coder`
+dispatch (the `parrot-sdd-coder` MCP engine was unresponsive at the time) and
+merged by hand (`git merge --no-ff`) after verifying real delivery (exactly the
+2 declared files, single commit).
+
+Created `docs/testing/agentic-e2e.md` (install/preflight, fixture Redis/session
+limits, live cost semantics, browser setup, ownership/lease recovery, evidence
+reuse — verified live against the real CLI: `parrot e2e --help`, `parrot e2e
+status`, `parrot e2e verify --plan .../deterministic.md` → exit 4
+`evidence_pointer_missing`, matching the spec's exit-code table) and
+`sdd/state/FEAT-581/research/full-profile.md`.
+
+**AC16 (full-profile measurement) disposition: BLOCKED**, for two disclosed,
+verified reasons (no invented timings): (1) no shipped target adapter
+implements a "full" application profile — `botmanager` `profile='full'`
+constructs at the schema layer but its real `prepare()` raises
+`E2EConfigError(reason_code="botmanager_full_profile_unsupported")`, matching
+TASK-3530's own completion note; (2) measuring the bare application directly
+is also blocked in this sandbox — no `app/` module for `run.py` to import, no
+`redis-server`/Postgres tooling, no standing containers. Environment findings
+recorded for a future full-profile follow-up: redis-server missing, pnpm/node
+v20.20.2 present, obscura v0.2.2 present, playwright 1.52.0 present, docker
+daemon reachable but idle, Postgres tooling absent. This BLOCKED disposition
+does not promote/demote full-profile eligibility (remains nightly/opt-in) and
+does not affect any other module's evidence — an explicit, spec-permitted
+(AC16) outcome, not a gap.
+
+Tests: `pytest tests/sdd_scripts/test_check_task_graph.py -q` → 14 passed
+(re-run verified). `ruff check` / `black --check` clean on no Python files
+changed (both deliverables are markdown). No STOP conditions; no unauthorized
+deviations.
