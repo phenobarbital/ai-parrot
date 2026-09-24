@@ -183,10 +183,8 @@ def test_permissions_present():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-luna, backend: codex, attempt_uid b999a311112548aea21a81c4c3382dd5)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `8bca6de70a62e8916d08bf1bfe7574888ee2b90f` (merge `7e06261d6`). Added the `schema ingest-ddl --changed --quiet` line inside the existing `if [ ! -f .git ]` guard in `git_hook_block()`, right after the `upsert` line, and appended the four `mcp__wikitoolkit__wiki_schema_*` permission strings to `PERMISSION_RULES`. Engine-side merge fidelity check passed (`unexpected_files: []`). Merge-tier validation (root scope): 4 failed, 1132 passed — all 4 failures confirmed pre-existing on origin/dev / a known worktree environment limitation, unrelated to this task's two files (see `issue:33fe54e65d2d`). Reviewed via `coder-review:d1493a7b30b18b201c51139a`, zero fix commits needed.
 
 **Deviations from spec**: none

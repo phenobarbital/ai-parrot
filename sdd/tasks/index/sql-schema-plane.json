@@ -181,7 +181,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -189,8 +189,9 @@
       "parallelism_notes": "text-only change to claude_code/assets.py (no imports from FEAT-600 modules); only this task touches assets.py",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3688-schema-hook-and-permissions.md"
+      "completed_at": "2026-09-24T22:02:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3688-schema-hook-and-permissions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3689",
