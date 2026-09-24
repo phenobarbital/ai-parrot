@@ -16,14 +16,14 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "wave-1 foundation; every other FEAT-600 task imports TableRecord/ColumnRecord/ids/SchemaPlaneConfig from here",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3680-schema-models-ids-config.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "imports TableRecord/ColumnRecord/ids from TASK-3680 (schema/models.py, schema/ids.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3681-schema-render.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "imports ColumnRecord from TASK-3680 (schema/models.py); extends SQLiteWikiStore (store.py:855)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3682-schema-store-columns.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,7 +84,7 @@
       "parallel": true,
       "parallelism_notes": "needs SchemaSourceConfig/TableRecord from TASK-3680 (schema/models.py) and content_hash from TASK-3681 (schema/render.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3683-schema-live-producer.md"
     },
@@ -95,7 +95,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -107,7 +107,7 @@
       "parallel": true,
       "parallelism_notes": "imports SchemaStore (TASK-3682 schema/store.py), render_page/render_source_page (TASK-3681), introspect (TASK-3683 producers/live.py), models/ids (TASK-3680)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3684-schema-plane-service-core.md"
     },
@@ -118,7 +118,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -128,7 +128,7 @@
       "parallel": true,
       "parallelism_notes": "needs TableRecord from TASK-3680 (schema/models.py) and content_hash from TASK-3681 (schema/render.py); uses repo_scan.file_concept_id (existing)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3685-schema-ddl-producer.md"
     },
@@ -139,7 +139,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -147,9 +147,9 @@
         "TASK-3685"
       ],
       "parallel": true,
-      "parallelism_notes": "modifies schema/service.py created by TASK-3684 (shared file \u2192 serialized); imports fold_ddl from TASK-3685 (producers/ddl.py)",
+      "parallelism_notes": "modifies schema/service.py created by TASK-3684 (shared file → serialized); imports fold_ddl from TASK-3685 (producers/ddl.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3686-schema-ingest-ddl-and-diff.md"
     },
@@ -160,7 +160,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -169,7 +169,7 @@
       "parallel": true,
       "parallelism_notes": "calls SchemaPlaneService.sync/lookup (TASK-3684) and ingest_ddl/diff (TASK-3686, which extends service.py); modifies knowledge/wiki/cli.py (only this task touches cli.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3687-schema-cli-group.md"
     },
@@ -180,14 +180,14 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "text-only change to claude_code/assets.py (no imports from FEAT-600 modules); only this task touches assets.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3688-schema-hook-and-permissions.md"
     },
@@ -198,7 +198,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -207,7 +207,7 @@
       "parallel": true,
       "parallelism_notes": "calls SchemaPlaneService.lookup/search/neighbors/sources from TASK-3684 (schema/service.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3689-schema-tools-and-toolkit.md"
     },
@@ -218,7 +218,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -227,7 +227,7 @@
       "parallel": true,
       "parallelism_notes": "imports create_schema_tools from TASK-3689 (schema/tools.py) and SchemaPlaneService from TASK-3684 (transitive); modifies knowledge/wiki/mcp_server.py (only this task touches it). Sequence after FEAT-569 TASK-3358 if it merges first (same file).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3690-schema-mcp-overlay-mount.md"
     },
@@ -238,7 +238,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -247,7 +247,7 @@
       "parallel": true,
       "parallelism_notes": "types against SchemaPlaneReader from TASK-3684 (schema/service.py) under TYPE_CHECKING only; tests use a fake reader. Modifies bots/database/cache.py and toolkits/base.py (only this task touches them).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3691-cache-partition-plane-tier.md"
     },
@@ -258,7 +258,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -267,18 +267,18 @@
       "parallel": true,
       "parallelism_notes": "reads cache_partition.plane / plane_write attributes added by TASK-3691 (cache.py); modifies bots/database/toolkits/sql.py (only this task touches it)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3692-sqltoolkit-plane-repair.md"
     },
     {
       "id": "TASK-3693",
       "slug": "database-agent-schema-plane",
-      "title": "`DatabaseAgent(schema_plane=\u2026)`: open the plane, propagate `origin`, warm toolkits from it",
+      "title": "`DatabaseAgent(schema_plane=…)`: open the plane, propagate `origin`, warm toolkits from it",
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -288,7 +288,7 @@
       "parallel": true,
       "parallelism_notes": "sets partition.plane/plane_write/origin attributes added by TASK-3691 (cache.py) and lazily imports SchemaPlaneService.from_dir from TASK-3684 (schema/service.py); modifies bots/database/agent.py (only this task touches it)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3693-database-agent-schema-plane.md"
     },
@@ -299,14 +299,14 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no FEAT-600 import: uses only BaseWikiStore.search_fts(category='table') on the injected store (store.py:576); table pages are written by other tasks but tests seed them directly",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3694-devloop-schema-context.md"
     },
@@ -317,7 +317,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -327,18 +327,18 @@
       "parallel": true,
       "parallelism_notes": "documents the six CLI verbs from TASK-3687 (cli.py) and the four tool names from TASK-3689 (schema/tools.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3695-schema-plane-docs.md"
     },
     {
       "id": "TASK-3696",
       "slug": "schema-plane-integration-tests",
-      "title": "Integration tests: DDL ingest \u2192 MCP lookup; live SQLite sync \u2192 plane-warmed partition; bots/database suite plane on/off",
+      "title": "Integration tests: DDL ingest → MCP lookup; live SQLite sync → plane-warmed partition; bots/database suite plane on/off",
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -349,7 +349,7 @@
       "parallel": true,
       "parallelism_notes": "exercises ingest_ddl (TASK-3686 service.py), the MCP mount + wiki_schema_lookup (TASK-3690 mcp_server.py), and DatabaseAgent/CachePartition wiring (TASK-3693/3691)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-24T21:44:03+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3696-schema-plane-integration-tests.md"
     }
