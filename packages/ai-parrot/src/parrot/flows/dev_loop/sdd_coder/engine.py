@@ -1976,7 +1976,9 @@ class SddCoderEngine:
                     # (2026-09-24 FEAT-581 wedge) -- report `seat_busy` so it can merge
                     # the holder first and retry.
                     try:
-                        attempt_uid = await pool.admit(task.task_id, ModelKey(backend="native", model=model), wait=False)
+                        attempt_uid = await pool.admit(
+                            task.task_id, ModelKey(backend="native", model=model), wait=False
+                        )
                     except SeatBusyError as exc:
                         raise CoderFailure(
                             "seat_busy",
