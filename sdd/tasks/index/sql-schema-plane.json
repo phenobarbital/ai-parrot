@@ -35,7 +35,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports TableRecord/ColumnRecord/ids from TASK-3680 (schema/models.py, schema/ids.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3681-schema-render.md"
+      "completed_at": "2026-09-24T22:08:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3681-schema-render.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3682",
@@ -55,7 +56,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -65,8 +66,9 @@
       "parallelism_notes": "imports ColumnRecord from TASK-3680 (schema/models.py); extends SQLiteWikiStore (store.py:855)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3682-schema-store-columns.md"
+      "completed_at": "2026-09-24T22:08:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3682-schema-store-columns.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3683",
