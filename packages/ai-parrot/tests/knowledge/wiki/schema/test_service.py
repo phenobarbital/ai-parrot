@@ -25,29 +25,46 @@ class FakeToolkit:
 def sales_metadata() -> TableMetadata:
     """Return a deterministic complete sales-table record."""
     return TableMetadata(
-        schema="epson", tablename="sales", table_type="BASE TABLE", full_name="epson.sales",
-        columns=[{"name": "id", "type": "INT", "nullable": False}], primary_keys=["id"],
-        completeness=Completeness.FULL, source="information_schema",
+        schema="epson",
+        tablename="sales",
+        table_type="BASE TABLE",
+        full_name="epson.sales",
+        columns=[{"name": "id", "type": "INT", "nullable": False}],
+        primary_keys=["id"],
+        completeness=Completeness.FULL,
+        source="information_schema",
     )
 
 
 @pytest.fixture
 def schema_service(tmp_path: Path) -> SchemaPlaneService:
     """Return an isolated writable schema plane."""
-    config = SchemaPlaneConfig(sources={"bigquery": SchemaSourceConfig(
-        alias="bigquery", dialect="bigquery", dsn_env="TEST_DSN", allowed_schemas=["epson"], tables=["epson.sales"]
-    )})
+    config = SchemaPlaneConfig(
+        sources={
+            "bigquery": SchemaSourceConfig(
+                alias="bigquery",
+                dialect="bigquery",
+                dsn_env="TEST_DSN",
+                allowed_schemas=["epson"],
+                tables=["epson.sales"],
+            )
+        }
+    )
     return SchemaPlaneService.from_dir(tmp_path / "schema", config=config, read_only=False)
 
 
-async def test_sync_then_unchanged_and_lookup(schema_service: SchemaPlaneService, sales_metadata: TableMetadata) -> None:
+async def test_sync_then_unchanged_and_lookup(
+    schema_service: SchemaPlaneService, sales_metadata: TableMetadata
+) -> None:
     """Sync reports creation then unchanged content and normalizes lookup refs."""
     toolkit = FakeToolkit(sales_metadata)
     first = await schema_service.sync("bigquery", dsn_resolver=lambda _: "dsn", toolkit=toolkit)
     second = await schema_service.sync("bigquery", dsn_resolver=lambda _: "dsn", toolkit=toolkit, changed_only=True)
     assert first.created == ["table:bigquery/epson.sales"]
     assert second.unchanged == ["table:bigquery/epson.sales"]
-    assert await schema_service.lookup("bigquery:epson.sales") == await schema_service.lookup("table:bigquery/epson.sales")
+    assert await schema_service.lookup("bigquery:epson.sales") == await schema_service.lookup(
+        "table:bigquery/epson.sales"
+    )
 
 
 async def test_read_only_service_refuses_put(tmp_path: Path, sales_metadata: TableMetadata) -> None:

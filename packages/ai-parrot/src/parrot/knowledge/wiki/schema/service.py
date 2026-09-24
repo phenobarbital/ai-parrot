@@ -45,7 +45,9 @@ class SchemaPlaneReader(Protocol):
 class SchemaPlaneService:
     """Coordinate schema sync, lookup, relationship traversal, and search."""
 
-    def __init__(self, store: SchemaStore, config: SchemaPlaneConfig, plane_dir: Path, shared_root: Optional[Path]) -> None:
+    def __init__(
+        self, store: SchemaStore, config: SchemaPlaneConfig, plane_dir: Path, shared_root: Optional[Path]
+    ) -> None:
         """Initialize a service with its already-openable schema store."""
         self._store = store
         self.config = config
@@ -60,7 +62,9 @@ class SchemaPlaneService:
         config = load_effective_config(shared_root).config
         plane_dir = config.schema_path(shared_root)
         plane_dir.mkdir(parents=True, exist_ok=True)
-        store = SchemaStore(plane_dir / "schema.db", wiki_name="schema", sqlite_policy=sqlite_policy_from_config(config))
+        store = SchemaStore(
+            plane_dir / "schema.db", wiki_name="schema", sqlite_policy=sqlite_policy_from_config(config)
+        )
         return cls(store, config.schema, plane_dir, shared_root)
 
     @classmethod
@@ -112,7 +116,9 @@ class SchemaPlaneService:
             report.removed.extend(sorted(old_ids - set(ids)))
 
         changed_ids = set(report.created + report.updated)
-        write_records = [record for record, table_id in zip(records, ids, strict=True) if not changed_only or table_id in changed_ids]
+        write_records = [
+            record for record, table_id in zip(records, ids, strict=True) if not changed_only or table_id in changed_ids
+        ]
         if changed_only and report.removed:
             write_records = records
         pages, columns, edges = [], [], []
@@ -223,21 +229,45 @@ class SchemaPlaneService:
                 target_id, target_column = column.fk_target.rsplit(".", 1)
                 _, target_schema, target_table = parse_table_id(target_id)
                 foreign_keys.append(
-                    {"column": column.name, "ref_schema": target_schema, "ref_table": target_table, "ref_column": target_column}
+                    {
+                        "column": column.name,
+                        "ref_schema": target_schema,
+                        "ref_table": target_table,
+                        "ref_column": target_column,
+                    }
                 )
         return TableMetadata(
-            schema=frontmatter["schema"], tablename=frontmatter["table"], table_type=frontmatter["table_type"],
-            full_name=f"{frontmatter['schema']}.{frontmatter['table']}", comment=page["summary"],
-            columns=[{"name": col.name, "type": col.data_type, "nullable": col.nullable, "default": col.default, "comment": col.comment} for col in columns],
-            primary_keys=[col.name for col in columns if col.is_primary_key], foreign_keys=foreign_keys,
-            row_count=frontmatter.get("row_count"), completeness=Completeness(int(frontmatter["completeness"])),
+            schema=frontmatter["schema"],
+            tablename=frontmatter["table"],
+            table_type=frontmatter["table_type"],
+            full_name=f"{frontmatter['schema']}.{frontmatter['table']}",
+            comment=page["summary"],
+            columns=[
+                {
+                    "name": col.name,
+                    "type": col.data_type,
+                    "nullable": col.nullable,
+                    "default": col.default,
+                    "comment": col.comment,
+                }
+                for col in columns
+            ],
+            primary_keys=[col.name for col in columns if col.is_primary_key],
+            foreign_keys=foreign_keys,
+            row_count=frontmatter.get("row_count"),
+            completeness=Completeness(int(frontmatter["completeness"])),
             source=frontmatter["source"],
         )
 
     async def put_table(self, origin: str, dialect: str, metadata: TableMetadata) -> None:
         """Write one metadata entry through the schema plane."""
-        record = TableRecord(origin=origin, dialect=dialect, metadata=metadata, content_hash=content_hash(metadata),
-                             introspected_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        record = TableRecord(
+            origin=origin,
+            dialect=dialect,
+            metadata=metadata,
+            content_hash=content_hash(metadata),
+            introspected_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
         page, columns, edges = render_page(record)
         await self._store.upsert_pages([page])
         await self._store.upsert_columns(columns)
@@ -247,7 +277,8 @@ class SchemaPlaneService:
         """List stored tables for one origin, optionally narrowed to a schema."""
         pages = await self._store.list_pages(category="table", limit=100_000)
         return sorted(
-            page["concept_id"] for page in pages
+            page["concept_id"]
+            for page in pages
             if (parts := parse_table_id(page["concept_id"]))[0] == origin and (schema is None or parts[1] == schema)
         )
 
