@@ -3,7 +3,7 @@
   "feat_id": "FEAT-600",
   "feature_slug": "sql-schema-plane",
   "started_at": "2026-09-24T20:35:39+00:00",
-  "updated_at": "2026-09-24T20:45:25+00:00",
+  "updated_at": "2026-09-24T20:45:42+00:00",
   "source": {
     "kind": "file",
     "jira_key": null,
@@ -14,7 +14,7 @@
     "summary_oneline": "Schema Plane \u2014 SQL data-model knowledge (sources/schemas/tables) as a wikitoolkit overlay plane, ids origin:object"
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -74,12 +74,12 @@
       "skipped_reason": "unattended session: review gate and Q&A auto-skipped; U1-U5 carried into proposal \u00a75 with recommended answers"
     },
     "output": {
-      "status": "running",
+      "status": "completed",
       "started_at": "2026-09-24T20:45:25+00:00",
-      "completed_at": null,
-      "duration_seconds": null,
+      "completed_at": "2026-09-24T20:45:42+00:00",
+      "duration_seconds": 600,
       "proposal_path": "sdd/proposals/sql-schema-plane.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "a0377ef67",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization high-confidence; Option B pre-selected; U1-U5 are owner decisions for the spec; sequence tools/mount lane after FEAT-569 M2d/M6a"
     }
@@ -101,7 +101,7 @@
   "errors": [],
   "resume_hint": {
     "next_phase": "committed",
-    "next_action": "commit proposal + state"
+    "next_action": "Proposal committed. Next: /sdd-spec FEAT-600"
   },
   "detected_mode": "enrichment"
 }
