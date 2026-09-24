@@ -1,6 +1,7 @@
 """Tests for TASK-3692: error-driven read-repair, plane-first warm, plane-aware
 validate_query and generate_query (FEAT-600 SQL Schema Plane).
 """
+
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock
@@ -10,10 +11,10 @@ import pytest
 from parrot.bots.database.models import Completeness, TableMetadata
 from parrot.bots.database.toolkits.sql import SQLToolkit
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _col(name: str, type_: str = "text"):
     return {"name": name, "type": type_, "nullable": True}
@@ -77,6 +78,7 @@ class _FakePartitionWithPlane:
 # _repair_from_error
 # ---------------------------------------------------------------------------
 
+
 class TestRepairFromError:
     async def test_repair_noop_without_cache_partition(self):
         tk = _make_toolkit(cache=None)
@@ -133,6 +135,7 @@ class TestRepairFromError:
 # _warm_table_cache
 # ---------------------------------------------------------------------------
 
+
 class TestWarmTableCache:
     async def test_warm_skips_db_when_plane_serves(self):
         served = _meta("epson", "sales", completeness=Completeness.FULL)
@@ -171,6 +174,7 @@ class TestWarmTableCache:
 # validate_query
 # ---------------------------------------------------------------------------
 
+
 class TestValidateQuery:
     async def test_message_names_plane_when_plane_is_set(self):
         part = _FakePartitionWithPlane(get_table_metadata_return=None)
@@ -204,6 +208,7 @@ class TestValidateQuery:
 # ---------------------------------------------------------------------------
 # generate_query — plane-aware join paths
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateQueryJoinPaths:
     async def test_appends_join_paths_when_plane_present(self):

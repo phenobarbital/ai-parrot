@@ -8,6 +8,7 @@ hook methods.
 All execution goes through asyncdb — the asyncpg-native path is the only
 supported backend. Query builders emit ``$1, $2, …`` positional placeholders.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,7 +24,6 @@ from ..models import (
 )
 from ..retries import QueryRetryConfig, RetryContext, SQLRetryHandler
 from .base import DatabaseToolkit
-
 
 # Matches leading SQL/PL-pgSQL comments and whitespace so we can identify the
 # first significant keyword. Used by ``explain_query`` safety guard to decide
@@ -141,7 +141,10 @@ class SQLToolkit(DatabaseToolkit):
                 search_term = parts[1]
                 self.logger.debug(
                     "search_schema: auto-split '%s %s' → schema_name=%r search_term=%r",
-                    schema_name, search_term, schema_name, search_term,
+                    schema_name,
+                    search_term,
+                    schema_name,
+                    search_term,
                 )
 
         target_schemas = [schema_name] if schema_name else self.allowed_schemas
@@ -149,8 +152,10 @@ class SQLToolkit(DatabaseToolkit):
         cache_hits: List[TableMetadata] = []
         if self.cache_partition is not None:
             cache_hits = await self.cache_partition.search(
-                target_schemas, search_term,
-                completeness_min=Completeness.NAME_ONLY, limit=limit,
+                target_schemas,
+                search_term,
+                completeness_min=Completeness.NAME_ONLY,
+                limit=limit,
             )
 
         db_hits = await self._search_in_database(search_term, schema_name, limit)
@@ -201,7 +206,9 @@ class SQLToolkit(DatabaseToolkit):
         """
         if self.cache_partition is not None:
             cached = await self.cache_partition.get(
-                schema, table, required=Completeness.FULL,
+                schema,
+                table,
+                required=Completeness.FULL,
             )
             if cached is not None:
                 return cached
@@ -265,11 +272,7 @@ class SQLToolkit(DatabaseToolkit):
 
         skeleton_parts = []
         for meta in resolved:
-            col_list = (
-                ", ".join(col["name"] for col in meta.columns)
-                if meta.columns
-                else "*"
-            )
+            col_list = ", ".join(col["name"] for col in meta.columns) if meta.columns else "*"
             skeleton = (
                 f"-- Auto-generated SELECT skeleton (LLM should refine WHERE/JOIN):\n"
                 f"SELECT {col_list}\n"
@@ -382,9 +385,7 @@ class SQLToolkit(DatabaseToolkit):
             sample_data = ""
             if table and column:
                 try:
-                    sample_data = await handler._get_sample_data_for_error(
-                        self.primary_schema, table, column
-                    )
+                    sample_data = await handler._get_sample_data_for_error(self.primary_schema, table, column)
                 except Exception:
                     pass
             correction = await handler.retry_query(query, err, attempt=1)
@@ -416,9 +417,7 @@ class SQLToolkit(DatabaseToolkit):
             prefix = self._get_explain_prefix()
         else:
             prefix = self._get_explain_prefix_planner_only()
-            self.logger.info(
-                "explain_query: stripping ANALYZE — query is not read-only"
-            )
+            self.logger.info("explain_query: stripping ANALYZE — query is not read-only")
         explain_sql = f"{prefix} {query}"
         try:
             data, error = await self._execute_asyncdb(explain_sql, limit=0, timeout=60)
@@ -518,7 +517,7 @@ class SQLToolkit(DatabaseToolkit):
         for trim in (1, 2):
             if len(longest) - trim < 4:
                 break
-            stem = longest[: -trim]
+            stem = longest[:-trim]
             new_tokens = list(tokens)
             new_tokens[idx_longest] = stem
             variants.append("".join(new_tokens))
@@ -559,7 +558,9 @@ class SQLToolkit(DatabaseToolkit):
             if self.cache_partition:
                 meta = await self.cache_partition.get_table_metadata(schema, table_part)
                 if meta is None:
-                    where = "schema plane or cache" if getattr(self.cache_partition, "plane", None) is not None else "cache"
+                    where = (
+                        "schema plane or cache" if getattr(self.cache_partition, "plane", None) is not None else "cache"
+                    )
                     errors.append(f"Table '{schema}.{table_part}' not found in {where}.")
 
         return {
@@ -575,7 +576,9 @@ class SQLToolkit(DatabaseToolkit):
         part = self.cache_partition
         if part is None or getattr(part, "plane", None) is None:
             return
-        refs = re.findall(r'(?:FROM|JOIN)\s+(?:"?(\w+)"?\.)?"?(\w+)"?', query, re.IGNORECASE)  # same regex as validate_query :522
+        refs = re.findall(
+            r'(?:FROM|JOIN)\s+(?:"?(\w+)"?\.)?"?(\w+)"?', query, re.IGNORECASE
+        )  # same regex as validate_query :522
         for schema_part, table in refs[:10]:
             try:
                 meta = await self._introspect_table_full(schema_part or self.primary_schema, table)
@@ -606,9 +609,7 @@ class SQLToolkit(DatabaseToolkit):
         from ....security import QueryValidator
 
         dialect = _SQLGLOT_DIALECT_MAP.get(self.database_type)
-        result = QueryValidator.validate_sql_ast(
-            sql, dialect=dialect, read_only=self.read_only
-        )
+        result = QueryValidator.validate_sql_ast(sql, dialect=dialect, read_only=self.read_only)
         if not result.get("is_safe", False):
             return result.get("message", "Query rejected by validator")
         return None
@@ -638,23 +639,19 @@ class SQLToolkit(DatabaseToolkit):
         for entry in self.tables:
             parsed = self._parse_table_entry(entry)
             if parsed is None:
-                self.logger.warning(
-                    "Skipping malformed 'tables' entry: %r", entry
-                )
+                self.logger.warning("Skipping malformed 'tables' entry: %r", entry)
                 continue
             schema, table = parsed
             if self.cache_partition is not None:
-                cached = await self.cache_partition.get(schema, table, required=Completeness.FULL)  # plane tier included (TASK-3691)
+                cached = await self.cache_partition.get(
+                    schema, table, required=Completeness.FULL
+                )  # plane tier included (TASK-3691)
                 if cached is not None:
                     continue  # FEAT-600: warmed from the plane, no database round-trip
             try:
-                metadata = await self._build_table_metadata(
-                    schema, table, "BASE TABLE", None
-                )
+                metadata = await self._build_table_metadata(schema, table, "BASE TABLE", None)
             except Exception as exc:
-                self.logger.warning(
-                    "Warm-up failed for %s.%s: %s", schema, table, exc
-                )
+                self.logger.warning("Warm-up failed for %s.%s: %s", schema, table, exc)
                 continue
             if metadata is None or not metadata.columns:
                 self.logger.warning(
@@ -759,9 +756,7 @@ class SQLToolkit(DatabaseToolkit):
         """
         return sql, (schema, table)
 
-    def _get_unique_constraints_query(
-        self, schema: str, table: str
-    ) -> tuple[str, tuple]:
+    def _get_unique_constraints_query(self, schema: str, table: str) -> tuple[str, tuple]:
         """Return ``(sql, params)`` for UNIQUE constraint columns of (schema, table).
 
         Queries ``information_schema.table_constraints`` joined with
@@ -795,9 +790,7 @@ class SQLToolkit(DatabaseToolkit):
         """
         return sql, (schema, table)
 
-    def _get_sample_data_query(
-        self, schema: str, table: str, limit: int = 3
-    ) -> str:
+    def _get_sample_data_query(self, schema: str, table: str, limit: int = 3) -> str:
         """Return SQL for fetching sample rows."""
         safe_schema = self._validate_identifier(schema)
         safe_table = self._validate_identifier(table)
@@ -910,7 +903,8 @@ class SQLToolkit(DatabaseToolkit):
             for fallback in self._stem_variants(search_term):
                 self.logger.debug(
                     "search_schema: retrying with stem %r (no hits for %r)",
-                    fallback, search_term,
+                    fallback,
+                    search_term,
                 )
                 data, error = await _run(fallback)
                 if data:
@@ -994,7 +988,9 @@ class SQLToolkit(DatabaseToolkit):
 
         try:
             meta = await self._build_table_metadata(
-                schema, table, table_type="BASE TABLE",
+                schema,
+                table,
+                table_type="BASE TABLE",
             )
             if meta is not None:
                 meta.completeness = Completeness.FULL
@@ -1041,32 +1037,32 @@ class SQLToolkit(DatabaseToolkit):
 
         try:
             if isinstance(col_result, Exception):
-                self.logger.warning(
-                    "Column introspection failed for %s.%s: %s", schema, table, col_result
-                )
+                self.logger.warning("Column introspection failed for %s.%s: %s", schema, table, col_result)
                 col_data = None
             else:
                 col_data, _ = col_result
             columns = []
             if col_data:
                 for col in col_data:
-                    columns.append({
-                        "name": col.get("column_name", ""),
-                        "type": col.get("data_type", "unknown"),
-                        "nullable": col.get("is_nullable", "YES") == "YES",
-                        "default": col.get("column_default"),
-                    })
+                    columns.append(
+                        {
+                            "name": col.get("column_name", ""),
+                            "type": col.get("data_type", "unknown"),
+                            "nullable": col.get("is_nullable", "YES") == "YES",
+                            "default": col.get("column_default"),
+                        }
+                    )
 
             pk_data, _ = pk_result if not isinstance(pk_result, Exception) else (None, str(pk_result))
-            primary_keys = [
-                row.get("column_name", "") for row in (pk_data or [])
-            ]
+            primary_keys = [row.get("column_name", "") for row in (pk_data or [])]
 
             unique_constraints: List[List[str]] = []
             if isinstance(uq_result, Exception):
                 self.logger.debug(
                     "Failed to fetch UNIQUE constraints for %s.%s: %s",
-                    schema, table, uq_result,
+                    schema,
+                    table,
+                    uq_result,
                 )
             else:
                 uq_data, _uq_error = uq_result
@@ -1082,9 +1078,7 @@ class SQLToolkit(DatabaseToolkit):
                         key=lambda cols: (cols[0] if cols else ""),
                     )
                 else:
-                    self.logger.debug(
-                        "No UNIQUE constraints found for %s.%s", schema, table
-                    )
+                    self.logger.debug("No UNIQUE constraints found for %s.%s", schema, table)
 
             return TableMetadata(
                 schema=schema,
