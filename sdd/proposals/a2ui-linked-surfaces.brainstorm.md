@@ -12,7 +12,7 @@ tags: [a2ui, querysource, linked-surfaces, ui-surfaces, transform-dsl, widgets]
 
 **Date**: 2026-09-15
 **Author**: Jesus Lara (discovery with Claude, same session as the QuerySource `describe-queryslug` brainstorm)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 **Revised**: 2026-09-24 — re-verified against FEAT-558 `QuerysourceToolkit`
 (landed 2026-09-17, replaces the never-created "FEAT-567") and QuerySource
