@@ -691,7 +691,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -703,8 +703,8 @@
       "parallelism_notes": "TASK-3547 owns its declared files for M5/M9. TASK-3545 supplies add deterministic nightly and explicit live ci plans; TASK-3546 supplies document operations and measure opt-in full profile; TASK-3548 supplies exercise owned browser navigation console and network behavior. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3547-e2e-feature-verification.md"
+      "completed_at": "2026-09-24T01:26:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3547-e2e-feature-verification.md"
     },
     {
       "id": "TASK-3548",
