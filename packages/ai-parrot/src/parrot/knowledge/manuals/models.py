@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from parrot.knowledge.bookstore.models import TocEntry
 from parrot.knowledge.common.provenance import (
+    MAX_QUOTE_CHARS,
+    AnswerProvenance,
     Evidence,
     Extracted,
     FieldProvenance,
@@ -396,3 +398,210 @@ def manual_snapshot_payload(card: ManualCard) -> dict[str, Any]:
     payload = card.model_dump(mode="json")
     payload.pop("versions", None)
     return payload
+
+
+class ProcedureCitation(BaseModel):
+    """One released evidence pointer pinned to an immutable manual version (mirrors contracts Citation :701-737)."""
+
+    model_config = ConfigDict(extra="forbid")
+    manual_id: str = Field(..., min_length=1)
+    node_id: str = Field(..., min_length=1)
+    quote: str = Field(..., min_length=1, max_length=MAX_QUOTE_CHARS)
+    page: Optional[int] = Field(default=None, ge=1)
+    verification: VerificationState = "extracted"
+    version_n: int = Field(default=1, ge=1)
+    source_sha256: str = ""
+
+    @field_validator("quote")
+    @classmethod
+    def _nonblank_quote(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("a citation quote cannot be blank")
+        return value
+
+    @property
+    def key(self) -> tuple[str, str]:
+        """The ``(manual_id, node_id)`` pair."""
+        return (self.manual_id, self.node_id)
+
+
+def derive_provenance(citations: Sequence[ProcedureCitation]) -> AnswerProvenance:
+    """Same rule as contracts/models.py:800-818."""
+    if not citations:
+        return "extracted"
+    verifications = {citation.verification for citation in citations}
+    if verifications == {"verified"}:
+        return "verified"
+    if "verified" in verifications:
+        return "mixed"
+    return "extracted"
+
+
+class ProcedureRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    procedure_id: str
+    manual_id: str
+    slug: str
+    title: str
+    equipment_id: Optional[str] = None
+
+
+class ProcedureView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    procedure_id: str
+    manual_id: str
+    title: str
+    kind: ProcedureKind
+    estimated_minutes: Optional[int] = None
+    skill_level: Optional[str] = None
+    verification: VerificationState = "extracted"
+
+
+class StepView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    step_id: str
+    order: int = Field(..., ge=1)
+    text: str = Field(..., min_length=1)
+    torque: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    applicability: Literal["yes", "unknown"] = "yes"
+    applicability_note: Optional[str] = None
+    part_ids: list[str] = Field(default_factory=list)
+    tool_ids: list[str] = Field(default_factory=list)
+    hazard_ids: list[str] = Field(default_factory=list)
+    media_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_applicability_note(self) -> "StepView":
+        if self.applicability == "unknown" and not (self.applicability_note or "").strip():
+            raise ValueError("applicability_note is required when applicability is 'unknown'")
+        return self
+
+
+class HazardView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hazard_id: str
+    severity: HazardSeverity
+    text: str
+    step_ids: list[str] = Field(default_factory=list)
+
+
+class MediaView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    media_id: str
+    kind: MediaKind
+    role: MediaRole
+    step_id: Optional[str] = None
+    caption: Optional[str] = None
+    label: Optional[str] = None
+    page: Optional[int] = None
+    t_start: Optional[float] = None
+    t_end: Optional[float] = None
+
+
+class TipView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tip_id: str
+    step_id: str
+    text: str
+    author_employee_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class Prerequisites(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    parts: list[PartRef] = Field(default_factory=list)
+    tools: list[ToolRef] = Field(default_factory=list)
+    hazards: list[HazardView] = Field(default_factory=list)
+
+
+class ProcedureAnswer(BaseModel):
+    """The single channel-agnostic answer shape (spec §2). ``answer`` is the only model-authored field."""
+
+    model_config = ConfigDict(extra="forbid")
+    answer_kind: ProcedureAnswerKind
+    answer: str = ""
+    procedure: Optional[ProcedureView] = None
+    steps: list[StepView] = Field(default_factory=list)
+    prerequisites: Optional[Prerequisites] = None
+    hazards: list[HazardView] = Field(default_factory=list)
+    media: list[MediaView] = Field(default_factory=list)
+    tips: list[TipView] = Field(default_factory=list)
+    citations: list[ProcedureCitation] = Field(default_factory=list)
+    provenance: AnswerProvenance = "extracted"
+    pattern: Optional[str] = None
+    reason: Optional[str] = None
+    manual_revision: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _check_kind_invariants(self) -> "ProcedureAnswer":
+        kind = self.answer_kind
+        if kind == "procedure":
+            if self.reason:
+                raise ValueError("a 'procedure' answer must not carry a 'reason'")
+            if not self.procedure:
+                raise ValueError("a 'procedure' answer must carry a procedure view")
+            if not self.steps:
+                raise ValueError("a 'procedure' answer must carry at least one step")
+            orders = [step.order for step in self.steps]
+            if orders != sorted(orders) or len(set(orders)) != len(orders):
+                raise ValueError("a 'procedure' answer's steps must have strictly increasing, unique orders")
+            step_ids = [step.step_id for step in self.steps]
+            if len(step_ids) != len(set(step_ids)):
+                raise ValueError("a 'procedure' answer's steps must have unique step_id values")
+            if not self.citations:
+                raise ValueError("a 'procedure' answer must carry at least one citation")
+        elif kind == "step":
+            if len(self.steps) != 1:
+                raise ValueError("a 'step' answer must carry exactly one step")
+            if not self.citations:
+                raise ValueError("a 'step' answer must carry at least one citation")
+        elif kind == "prerequisites":
+            if not self.prerequisites:
+                raise ValueError("a 'prerequisites' answer must carry prerequisites")
+            if not self.citations:
+                raise ValueError("a 'prerequisites' answer must carry at least one citation")
+        elif kind == "lookup":
+            if not self.answer.strip():
+                raise ValueError("a 'lookup' answer must carry non-blank answer text")
+            if not self.citations:
+                raise ValueError("a 'lookup' answer must carry at least one citation")
+            if self.steps:
+                raise ValueError("a 'lookup' answer must not carry steps")
+            if self.procedure:
+                raise ValueError("a 'lookup' answer must not carry a procedure")
+        elif kind == "incomplete":
+            if not (self.reason or "").strip():
+                raise ValueError("an 'incomplete' answer must carry a non-blank reason")
+            if self.steps:
+                raise ValueError("an 'incomplete' answer must not carry steps")
+            if self.media:
+                raise ValueError("an 'incomplete' answer must not carry media")
+            if self.tips:
+                raise ValueError("an 'incomplete' answer must not carry tips")
+        elif kind in ("clarification", "not_found", "out_of_scope"):
+            if self.steps:
+                raise ValueError(f"a '{kind}' answer must not carry steps")
+            if self.media:
+                raise ValueError(f"a '{kind}' answer must not carry media")
+            if self.tips:
+                raise ValueError(f"a '{kind}' answer must not carry tips")
+            if self.citations:
+                raise ValueError(f"a '{kind}' answer must not carry citations")
+        elif kind == "denied":
+            if self.answer.strip():
+                raise ValueError("a 'denied' answer must not carry answer text")
+            if self.steps:
+                raise ValueError("a 'denied' answer must not carry steps")
+            if self.media:
+                raise ValueError("a 'denied' answer must not carry media")
+            if self.tips:
+                raise ValueError("a 'denied' answer must not carry tips")
+            if self.citations:
+                raise ValueError("a 'denied' answer must not carry citations")
+            if self.procedure:
+                raise ValueError("a 'denied' answer must not carry a procedure")
+            if self.prerequisites:
+                raise ValueError("a 'denied' answer must not carry prerequisites")
+        self.provenance = derive_provenance(self.citations)
+        return self
