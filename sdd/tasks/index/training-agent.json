@@ -16,7 +16,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "root lane — creates parrot.knowledge.common; only task touching contracts/models.py and contracts/carding.py",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3697-common-provenance.md"
+      "completed_at": "2026-09-24T23:20:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3697-common-provenance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3698",
@@ -154,7 +155,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -162,8 +163,9 @@
       "parallelism_notes": "no dependency — additive edit to pageindex/pdf_to_markdown.py, the only task touching that file",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3704-pdf-page-images.md"
+      "completed_at": "2026-09-24T23:24:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3704-pdf-page-images.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3705",

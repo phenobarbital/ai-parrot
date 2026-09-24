@@ -430,10 +430,16 @@ async def test_load_bodies_skips_empty_and_unreadable():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3697
+- Feature: training-agent
+- Implementation SHA: 4f5e0cc575a567a0104cde4abbe7147e0109d354
+- Closed at (UTC): 2026-09-24T23:20:28+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 307.3s · Tokens: n/a |
+| supplementary_test_evidence | 460 passed, 56 skipped, 0 failed (scoped direct pytest run over common/pageindex/contracts) |

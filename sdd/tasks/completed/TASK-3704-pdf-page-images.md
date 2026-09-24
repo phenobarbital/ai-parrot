@@ -298,10 +298,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3704
+- Feature: training-agent
+- Implementation SHA: 4f5e0cc575a567a0104cde4abbe7147e0109d354
+- Closed at (UTC): 2026-09-24T23:24:06+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: haiku(native sonnet) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| supplementary_test_evidence | 460 passed, 56 skipped, 0 failed (scoped direct pytest run over common/pageindex/contracts) |
