@@ -45,7 +45,9 @@ async def test_partial_failure_and_sample_redaction(cfg: SchemaSourceConfig, sal
     """A failed table is reported and non-allowlisted samples are removed."""
     sales_metadata.sample_data = [{"id": 1}]
 
-    records, failed = await introspect(cfg, "bigquery://project", toolkit=FakeToolkit(sales_metadata, failures={"broken"}))
+    records, failed = await introspect(
+        cfg, "bigquery://project", toolkit=FakeToolkit(sales_metadata, failures={"broken"})
+    )
 
     assert [record.metadata.tablename for record in records] == ["sales"]
     assert "epson.broken" in failed
