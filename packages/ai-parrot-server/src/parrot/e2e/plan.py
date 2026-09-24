@@ -62,8 +62,10 @@ def load_plan(path: Path, *, worktree: Path) -> E2EPlan:
             the parsed content fails :class:`E2EPlan` validation (duplicate
             or undeclared node/target/prerequisite IDs, wildcard or
             bare-directory node selection, an invalid/malformed policy
-            value, ...), or the plan's ``policy``/scenario IDs disagree with
-            the ones declared by the authoritative spec's own frontmatter.
+            value, ...), or — only when ``path`` is the canonical
+            ``sdd/state/<feature_id>/e2e-plan.md`` — its ``policy``/scenario
+            IDs disagree with the ones declared by the authoritative spec's
+            own frontmatter.
     """
     resolved_worktree = _resolve_root(worktree)
     resolved_plan_path = _resolve_within(resolved_worktree, path, root_label="worktree", path_label="plan path")
@@ -88,7 +90,9 @@ def load_plan(path: Path, *, worktree: Path) -> E2EPlan:
             reason_code="spec_path_missing",
         )
 
-    _check_spec_consistency(plan, spec_path=resolved_spec_path)
+    canonical_plan_path = resolved_worktree / "sdd" / "state" / plan.feature_id / "e2e-plan.md"
+    if resolved_plan_path == canonical_plan_path:
+        _check_spec_consistency(plan, spec_path=resolved_spec_path)
     return plan
 
 
@@ -237,17 +241,27 @@ def _build_plan(raw: dict[str, Any], *, source: Path) -> E2EPlan:
 
 
 def _check_spec_consistency(plan: E2EPlan, *, spec_path: Path) -> None:
-    """Cross-validate the plan's policy/scenario IDs against the authoritative spec.
+    """Cross-validate the canonical plan's policy/scenario IDs against the spec.
+
+    Only ``load_plan`` invokes this, and only when the loaded path is the
+    canonical ``sdd/state/<feature_id>/e2e-plan.md`` (spec §2: "``e2e-plan.md``
+    has YAML frontmatter containing the complete ``E2EPlan``; ... The spec
+    remains authoritative for policy and scenario IDs"). Other, independently
+    authored plan documents that merely reference the same ``spec_path`` (for
+    example a CI-scoped deterministic/live subset plan) are never subject to
+    this exact-set check — they legitimately declare a different, smaller
+    scenario-ID vocabulary than the canonical plan's frozen set.
 
     The referenced spec file's own frontmatter may declare an ``e2e``
     mapping (``policy`` and/or ``scenario_ids``) once a feature spec adopts
     that metadata (spec §2: "Feature policy metadata ... introduced by this
-    feature are prospective"). When present, any disagreement with the plan
-    is a configuration error (spec §2: "Plan/spec disagreements are
-    configuration errors."). When the spec declares no ``e2e`` metadata at
-    all — the case for every spec in this repository today — no cross-check
-    is performed; this keeps ``load_plan`` forward-compatible without
-    inventing a schema no other module writes yet.
+    feature are prospective"). When present, any disagreement with the
+    canonical plan is a configuration error (spec §2: "Plan/spec
+    disagreements are configuration errors."). When the spec declares no
+    ``e2e`` metadata at all — the case for every spec in this repository
+    before this feature's own canonical plan lands — no cross-check is
+    performed; this keeps ``load_plan`` forward-compatible without inventing
+    a schema no other module writes yet.
 
     Args:
         plan: The already-validated plan.

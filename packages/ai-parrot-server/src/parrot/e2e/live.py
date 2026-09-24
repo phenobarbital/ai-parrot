@@ -158,9 +158,7 @@ class LiveOptIn(BaseModel):
     env_overrides: dict[str, str] = Field(default_factory=dict)
 
 
-def require_live_opt_in(
-    *, budget: Optional[LiveBudget] = None, env: Optional[Mapping[str, str]] = None
-) -> LiveOptIn:
+def require_live_opt_in(*, budget: Optional[LiveBudget] = None, env: Optional[Mapping[str, str]] = None) -> LiveOptIn:
     """Validate live opt-in flags/credential and env overrides before any client exists.
 
     Must be called -- and must succeed -- before :func:`build_live_client` (or
@@ -534,9 +532,7 @@ def _main(argv: Optional[list[str]] = None) -> int:
         return 2
 
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(
-        serve_live_agent_mount(host=args.host, port=args.port, server_name=args.server_name, api_key=api_key)
-    )
+    asyncio.run(serve_live_agent_mount(host=args.host, port=args.port, server_name=args.server_name, api_key=api_key))
     return 0
 
 

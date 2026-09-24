@@ -516,7 +516,8 @@ async def _spawn_detached_target(
         "--ticket-path",
         str(ticket_path),
     ]
-    with open(daemon_log, "ab") as handle:
+    handle = await asyncio.to_thread(open, daemon_log, "ab")
+    try:
         process = await asyncio.create_subprocess_exec(
             *argv,
             cwd=str(worktree),
@@ -525,6 +526,8 @@ async def _spawn_detached_target(
             stderr=handle,
             start_new_session=True,
         )
+    finally:
+        handle.close()
 
     deadline = time.monotonic() + config.startup_timeout_s + _UP_DAEMON_SPAWN_GRACE_S
     while True:

@@ -399,8 +399,12 @@ def test_load_plan_accepts_matching_spec_declared_policy(worktree: Path) -> None
 
 
 def test_load_plan_rejects_spec_plan_policy_mismatch(worktree: Path) -> None:
+    # The spec/plan cross-check only ever fires for the canonical
+    # sdd/state/<feature_id>/e2e-plan.md location (see plan.py's
+    # _check_spec_consistency docstring) — an independently authored plan
+    # elsewhere is never subject to it.
     _seed_spec(worktree, e2e={"policy": "optional"})
-    plan_path = _seed_plan(worktree, policy="required")
+    plan_path = _seed_plan(worktree, relative="sdd/state/FEAT-581/e2e-plan.md", policy="required")
 
     with pytest.raises(E2EConfigError) as excinfo:
         load_plan(plan_path, worktree=worktree)
@@ -410,12 +414,29 @@ def test_load_plan_rejects_spec_plan_policy_mismatch(worktree: Path) -> None:
 
 def test_load_plan_rejects_spec_plan_scenario_id_mismatch(worktree: Path) -> None:
     _seed_spec(worktree, e2e={"scenario_ids": ["scn-other"]})
-    plan_path = _seed_plan(worktree)
+    plan_path = _seed_plan(worktree, relative="sdd/state/FEAT-581/e2e-plan.md")
 
     with pytest.raises(E2EConfigError) as excinfo:
         load_plan(plan_path, worktree=worktree)
 
     assert excinfo.value.reason_code == "spec_plan_scenario_mismatch"
+
+
+def test_load_plan_ignores_spec_mismatch_for_a_non_canonical_plan_path(worktree: Path) -> None:
+    """A CI-scoped or otherwise independently authored plan (not at the
+    canonical sdd/state/<feature_id>/e2e-plan.md path) may legitimately
+    declare a different scenario-ID vocabulary than the spec's canonical
+    set — this is the real, observed shape of TASK-3545's deterministic/live
+    CI plans coexisting with TASK-3547's canonical plan against the same
+    spec_path.
+    """
+    _seed_spec(worktree, e2e={"policy": "optional", "scenario_ids": ["scn-other"]})
+    plan_path = _seed_plan(worktree, relative="sdd/state/e2e-plan.md", policy="required")
+
+    plan = load_plan(plan_path, worktree=worktree)
+
+    assert plan.policy == "required"
+    assert plan.scenarios[0].id == "scn-mcp-stdio"
 
 
 def test_load_plan_ignores_spec_without_e2e_metadata(worktree: Path) -> None:

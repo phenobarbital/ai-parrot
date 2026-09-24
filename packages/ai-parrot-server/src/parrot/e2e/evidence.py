@@ -311,7 +311,11 @@ def _is_excluded(path: str, *, feature_id: str) -> bool:
         path: A worktree-relative, POSIX-separated candidate path.
         feature_id: The owning plan's ``feature_id``, scoping the excluded
             per-feature run-evidence/candidates directory
-            (``sdd/state/<feature_id>/e2e/``).
+            (``sdd/state/<feature_id>/e2e/``). The target-agnostic
+            supervisor bookkeeping directory (``sdd/state/e2e/`` — see
+            ``parrot.e2e.state``'s ``_STATE_RELATIVE_PARTS``) is excluded
+            unconditionally, since every real target start/stop writes
+            there regardless of which feature's plan is running.
 
     Returns:
         ``True`` if ``path`` is a declared generated artifact/cache or SDD
@@ -322,6 +326,8 @@ def _is_excluded(path: str, *, feature_id: str) -> bool:
     if path.startswith(_EXCLUDED_PREFIXES):
         return True
     if path.startswith(f"sdd/state/{feature_id}/e2e/"):
+        return True
+    if path.startswith("sdd/state/e2e/"):
         return True
     if any(segment in _EXCLUDED_PATH_SEGMENTS for segment in path.split("/")):
         return True

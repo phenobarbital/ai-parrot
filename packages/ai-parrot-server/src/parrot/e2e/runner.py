@@ -70,7 +70,7 @@ async def run_plan(plan_path: Path, *, worktree: Path, owner_id: str) -> E2EVerd
         The completed verdict, including cleanup and source identities.
     """
     plan = load_plan(plan_path, worktree=worktree)
-    resolved_worktree = worktree.resolve()
+    resolved_worktree = await asyncio.to_thread(worktree.resolve)
     started_at = datetime.now(timezone.utc)
     source_before = await capture_identity(plan, worktree=resolved_worktree)
     run_id = f"run-{uuid.uuid4().hex}"
@@ -276,7 +276,7 @@ def _bridge_results(scenario: ScenarioSpec, bridge: dict[str, Any], target_run_i
     exit_code = bridge.get("exit_status")
     results: list[ScenarioResult] = []
     for node_id in scenario.node_ids:
-        item = observed.get(node_id)
+        item = observed.get(node_id) or _find_by_rootdir_suffix(node_id, observed)
         if item is None:
             results.extend(
                 _results_for_nodes(
@@ -302,6 +302,27 @@ def _bridge_results(scenario: ScenarioSpec, bridge: dict[str, Any], target_run_i
             )
         )
     return results
+
+
+def _find_by_rootdir_suffix(node_id: str, observed: dict[str, Any]) -> dict[str, Any] | None:
+    """Recover a bridge entry pytest reported relative to a nested package rootdir.
+
+    Plan ``node_ids`` are always worktree-root-relative (e.g.
+    ``packages/ai-parrot-server/tests/e2e/test_mcp_http.py::test_...``), but
+    pytest computes its own ``nodeid`` relative to whichever ``rootdir`` its
+    ini-file discovery lands on -- a nested package's own
+    ``[tool.pytest.ini_options]`` (e.g. ``packages/ai-parrot-server/pyproject.toml``)
+    can win over the worktree root, so the bridge records the *same* passing
+    test under a shorter, package-relative key. A dict-equality lookup then
+    misses a real pass. Since the package-relative form is always a proper
+    path suffix of the worktree-relative one, matching by suffix recovers the
+    real observation without ever fabricating a pass for an unrelated test
+    (the suffix includes the full file path plus ``::``-qualified test name).
+    """
+    for observed_node_id, item in observed.items():
+        if observed_node_id and node_id.endswith(observed_node_id):
+            return item
+    return None
 
 
 def _blocked_results(
