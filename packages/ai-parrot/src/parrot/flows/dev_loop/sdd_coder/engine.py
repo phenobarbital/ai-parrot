@@ -111,7 +111,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity import (
     evaluate_complexity,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats, eligible_seats
-from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint, SeatBusyError
+from parrot.flows.dev_loop.sdd_coder.pool import effective_key, ExecutionPool, roster_fingerprint, SeatBusyError
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
@@ -696,7 +696,7 @@ class SddCoderEngine:
                 )
 
                 # Restore local exclusions (from this execution's own suspensions)
-                pool._local_exclusions = set(durable_snapshot.local_exclusions)
+                pool.restore_local_exclusions(durable_snapshot.local_exclusions)
 
                 # Check for unresolved running/prepared attempts that require reconciliation
                 if (
@@ -705,13 +705,12 @@ class SddCoderEngine:
                     or durable_snapshot.outstanding_job_ids
                 ):
                     # Uncertain work requires reconciliation before dispatch
-                    pool._status = "recovery_required"
+                    await pool.mark_recovery_required()
 
                 # Check if pool has any available seats
                 view = pool.view()
                 if not any(seat.available and not seat.suspended for seat in view.seats):
-                    pool._fallback_required = True
-                    pool._fallback_reason = "all_seats_exhausted"
+                    pool.require_fallback("all_seats_exhausted")
 
                 self._executions[execution_id] = pool
                 self._execution_owners[canonical_worktree] = execution_id
@@ -767,12 +766,11 @@ class SddCoderEngine:
                 suspension_store=self._suspension_store,
                 initial_exclusions=[],
             )
-            pool._fallback_required = True
-            pool._fallback_reason = "suspension_history_unavailable"
+            pool.require_fallback("suspension_history_unavailable")
             # Spec §2 "Persistence failure behavior": unreadable/invalid
             # suspension history at begin "yields an EXHAUSTED pool" --
             # not just fallback_required with status left at "active".
-            pool._status = "exhausted"
+            await pool.mark_exhausted()
             self._executions[execution_id] = pool
             self._execution_owners[canonical_worktree] = execution_id
             return pool.view()
@@ -797,8 +795,7 @@ class SddCoderEngine:
         # Check if pool has any available seats
         view = pool.view()
         if not any(seat.available and not seat.suspended for seat in view.seats):
-            pool._fallback_required = True
-            pool._fallback_reason = "all_seats_exhausted"
+            pool.require_fallback("all_seats_exhausted")
 
         self._executions[execution_id] = pool
         self._execution_owners[canonical_worktree] = execution_id
@@ -943,7 +940,7 @@ class SddCoderEngine:
                 )
 
         # Mark as closed and write durable snapshot before releasing ownership
-        pool._status = "closed"
+        await pool.close()
         canonical_worktree = pool.worktree_path
 
         # Enrich snapshot with native reservations and outstanding job IDs from engine bookkeeping
@@ -964,7 +961,7 @@ class SddCoderEngine:
         # Write durable snapshot atomically
         persisted = await self._write_execution_snapshot(canonical_worktree, execution_id, snapshot)
         if not persisted:
-            pool._persistence_degraded = True
+            pool.set_persistence_degraded(True)
             self.logger.warning("failed to durably close execution %s; persistence status is degraded", execution_id)
 
         # FEAT-584 M8/R8: publish a durable settlement artifact OUTSIDE the
@@ -978,7 +975,7 @@ class SddCoderEngine:
             try:
                 await self._evidence_store.put_artifact(execution_id, snapshot)
             except (OSError, ValueError) as exc:
-                pool._persistence_degraded = True
+                pool.set_persistence_degraded(True)
                 self.logger.warning(
                     "failed to publish durable settlement artifact for execution %s: %s", execution_id, exc
                 )
@@ -1514,7 +1511,7 @@ class SddCoderEngine:
             suspension_summary = pool.view().suspension_summary
             # Use the pool's own eligibility-filtered assigner -- `pool.assigner()`
             # excludes suspended/busy/probe-failed seats (its own documented
-            # contract); constructing a bare `ChunkAssigner(pool._seats)` here
+            # contract); constructing a bare `ChunkAssigner(pool.seats)` here
             # bypassed that filtering entirely, so a replan right after a
             # mid-execution suspension could still assign a task to the
             # just-suspended seat (caught later by `pool.admit()`, but wasting
@@ -1540,7 +1537,7 @@ class SddCoderEngine:
                     pool_generation=pool_generation,
                     suspension_summary=suspension_summary,
                 )
-            seats = pool._seats
+            seats = pool.seats
             probe_results = [
                 SeatProbeResult(
                     label=s.label,
@@ -2092,7 +2089,7 @@ class SddCoderEngine:
             raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
         pool = self._executions[execution_id]
 
-        entry = pool._admitted.get(attempt_uid)  # noqa: SLF001 — engine already reaches into pool internals elsewhere
+        entry = pool.resolve_admission(attempt_uid)
         if entry is None:
             raise CoderFailure(
                 "attempt_not_found", f"attempt {attempt_uid} is not an admitted reservation in execution {execution_id}"
@@ -2883,7 +2880,7 @@ class SddCoderEngine:
 
         # Flush any pending execution snapshots (retry persistence if degraded)
         for execution_id, pool in list(self._executions.items()):
-            if pool._persistence_degraded:
+            if pool.persistence_degraded:
                 # Try to persist current state atomically
                 snapshot = pool.snapshot()
                 # Enrich with engine bookkeeping (native_reservations and outstanding_job_ids)
@@ -2902,7 +2899,7 @@ class SddCoderEngine:
 
                 persisted = await self._write_execution_snapshot(pool.worktree_path, execution_id, snapshot)
                 if persisted:
-                    pool._persistence_degraded = False
+                    pool.set_persistence_degraded(False)
                     self.logger.info("recovered persistence for execution %s", execution_id)
 
         return job
@@ -2966,9 +2963,7 @@ class SddCoderEngine:
 
         # FEAT-559: Admission gating - check pool admission before dispatch
         if pool is not None and execution_id is not None:
-            from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-
-            key = _effective_key(seat)
+            key = effective_key(seat)
             if key is None:
                 # No model identity - cannot admit
                 return (
@@ -3343,11 +3338,6 @@ class SddCoderEngine:
         - Poll timeout
         - Git conflicts
         """
-        from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-        from parrot.knowledge.wiki.ledger.coder_suspensions import (
-            SuspensionRecord,
-        )
-
         reason = self._classify_failure_reason(error, attempt_rec.error_class)
         if reason is None:
             self.logger.info(
@@ -3358,7 +3348,7 @@ class SddCoderEngine:
             )
             return
 
-        key = _effective_key(seat)
+        key = effective_key(seat)
         if key is None:
             self.logger.warning("Cannot suspend seat %s - no model identity", seat.label)
             return
@@ -3443,28 +3433,9 @@ class SddCoderEngine:
         """
         if pool is None:
             return None
-        async with pool._condition:
-            if pool._status in ("closed", "recovery_required"):
-                return None
-            for seat in pool._seats:
-                from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-
-                if seat.kind != "native":
-                    continue
-                key = _effective_key(seat)
-                if key is None or seat.label in tried_seats:
-                    continue
-                if eligible_labels is not None and seat.label not in eligible_labels:
-                    continue
-                if key in pool._busy_seats:
-                    continue
-                if key in pool._initial_exclusions or key in pool._local_exclusions:
-                    continue
-                view = pool._seat_views.get(key)
-                if view is None or not view.available or view.suspended or view.probe_unavailable:
-                    continue
-                return seat
-        return None
+        return await pool.select_free_seat(
+            kind="native", tried_seats=tried_seats, eligible_labels=eligible_labels, wait=False
+        )
 
     async def _select_retry_seat(
         self,
@@ -3500,67 +3471,15 @@ class SddCoderEngine:
                 return None
             return self._assigner.retry_seat(failed_label, tried_seats, eligible_labels=eligible_labels)
 
-        # Pool-based selection: find healthy, not-yet-tried seats
-        async with pool._condition:
-            while True:
-                # Check pool status
-                if pool._status in ("closed", "recovery_required"):
-                    return None
-
-                # Find eligible seats
-                for seat in pool._seats:
-                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-
-                    # A native seat has no dispatcher: `_run_attempt` asserts
-                    # `seat.backend is not None` and `_run_task` never routes a
-                    # retry through `coder_prepare_native`, so selecting one here
-                    # would crash the attempt instead of retrying it (mirrors
-                    # `ChunkAssigner.retry_seat`'s own `kind == "native"` guard,
-                    # issue:e01c03baf493).
-                    if seat.kind == "native":
-                        continue
-                    key = _effective_key(seat)
-                    if key is None:
-                        continue
-                    if seat.label in tried_seats:
-                        continue
-                    if eligible_labels is not None and seat.label not in eligible_labels:
-                        continue
-                    if key in pool._busy_seats:
-                        continue
-                    if key in pool._initial_exclusions or key in pool._local_exclusions:
-                        continue
-                    view = pool._seat_views.get(key)
-                    if view is None or not view.available or view.suspended or view.probe_unavailable:
-                        continue
-                    # Found a healthy, free seat
-                    return seat
-
-                # No healthy free seat available - check if we should wait
-                # Check if any healthy seat is busy (worth waiting for)
-                has_busy_healthy = False
-                for seat in pool._seats:
-                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-
-                    if seat.kind == "native":
-                        continue
-                    key = _effective_key(seat)
-                    if key is None or seat.label in tried_seats:
-                        continue
-                    if eligible_labels is not None and seat.label not in eligible_labels:
-                        continue
-                    if key in pool._busy_seats:
-                        view = pool._seat_views.get(key)
-                        if view and view.available and not view.suspended and not view.probe_unavailable:
-                            has_busy_healthy = True
-                            break
-
-                if not has_busy_healthy:
-                    # Pool exhausted - no point waiting
-                    return None
-
-                # Wait for a seat to be released or suspended
-                await pool._condition.wait()
+        # Pool-based selection (FEAT-599: behind `ExecutionPool`'s own condition):
+        # a healthy, free, not-yet-tried MCP seat; waits while a busy-but-healthy
+        # candidate could still free up, returns None once the pool is exhausted
+        # for this request. Native seats are never retry targets here: `_run_attempt`
+        # asserts `seat.backend is not None` and `_run_task` never routes a retry
+        # through `coder_prepare_native` (issue:e01c03baf493).
+        return await pool.select_free_seat(
+            kind="mcp", tried_seats=tried_seats, eligible_labels=eligible_labels, wait=True
+        )
 
     async def _run_task(
         self,
@@ -3678,7 +3597,7 @@ class SddCoderEngine:
                 # Materialized first: `all()` over an empty candidate set is
                 # vacuously True and would mislabel the diagnostic as MCP-only.
                 remaining_seats = (
-                    [candidate for candidate in pool._seats if candidate.label in remaining] if pool is not None else []
+                    [candidate for candidate in pool.seats if candidate.label in remaining] if pool is not None else []
                 )
                 if remaining_seats and all(candidate.kind == "native" for candidate in remaining_seats):
                     no_retry_error = (
@@ -3717,7 +3636,7 @@ class SddCoderEngine:
             # only runs when `len(attempts) > 1`, which only happens after the
             # `if retry is not None:` branch above appended attempt 2 -- passing
             # `attempts[-1].seat_label` (a str, not a RosterSeat) here raised
-            # AttributeError inside `_classify_and_suspend`/`_effective_key` on
+            # AttributeError inside `_classify_and_suspend`/`effective_key` on
             # every second-attempt failure, silently swallowed by run_chunk's
             # `return_exceptions=True` gather into an opaque "failed" outcome.
             if pool is not None and execution_id is not None and len(attempts) > 1:
@@ -3832,7 +3751,7 @@ class SddCoderEngine:
 
         # FEAT-559: Use execution pool's seats when available
         if pool is not None:
-            seats = {s.label: s for s in pool._seats}
+            seats = {s.label: s for s in pool.seats}
         else:
             seats = {s.label: s for s in self.seats}
 

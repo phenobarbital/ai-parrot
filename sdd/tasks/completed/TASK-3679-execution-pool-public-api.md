@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-599 — sdd-coder engine fixes 2 (suspension attribution + pool encapsulation + settlement hygiene)
 **Spec**: `sdd/specs/sdd-coder-engine-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3678
-**Assigned-to**: unassigned
+**Assigned-to**: agent:sdd-fix
 **discovered_from**: issue:700660c7f663
 
 ---
@@ -167,4 +167,10 @@ def test_engine_has_no_private_pool_access() -> None:
 
 ## Completion Note
 
-(Agent fills this in when done)
+**Completed by**: Claude Fable 5.1 via `/sdd-fix`
+**Date**: 2026-09-24
+
+- `pool.py`: `effective_key` public (alias `_effective_key` kept); new `status` / `seats` / `persistence_degraded` properties, `resolve_admission`, `restore_local_exclusions`, `require_fallback`, `set_persistence_degraded`, `mark_exhausted`, `select_free_seat(kind, tried_seats, eligible_labels, wait)`.
+- `engine.py`: all 35 private accesses converted; `_select_native_retry_seat` / `_select_retry_seat` pool paths are one `select_free_seat` call each (native never waits; MCP waits for busy-but-healthy). `end_execution` now uses `await pool.close()` (also wakes waiters). Five local `_effective_key` imports replaced by the module-level import.
+- Tests: `test_pool.py` +5 (accessors, admission/exhausted, native no-wait, MCP wait-for-release, nothing-to-wait-for); new `test_pool_encapsulation.py` (source guard: no `pool._<name>`, no `_effective_key` in `engine.py`).
+- Validation: task set → 94 passed; full `tests/flows/dev_loop/sdd_coder/` → 522 passed, 1 failed (`test_engine_plan_merge.py::test_all_seats_exhausted`, pre-existing on `origin/dev`). `ruff check` clean on all touched files.
