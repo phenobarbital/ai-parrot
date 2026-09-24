@@ -647,7 +647,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -660,8 +660,8 @@
       "parallelism_notes": "TASK-3545 owns its declared files for M9. TASK-3536 supplies exercise real sessions and offline minimal startup; TASK-3537 supplies exercise crash cleanup and concurrent worktree isolation; TASK-3540 supplies wire bounded live google agent mcp target and smoke; TASK-3543 supplies require validated e2e evidence before both closeout flows. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3545-e2e-ci.md"
+      "completed_at": "2026-09-24T00:55:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3545-e2e-ci.md"
     },
     {
       "id": "TASK-3546",

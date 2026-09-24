@@ -207,5 +207,32 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24. Implemented via a manual worktree + native sonnet `sdd-coder`
+dispatch (the `parrot-sdd-coder` MCP engine was unresponsive at the time — see
+FEAT-581 orchestration notes) and merged by hand (`git merge --no-ff`) after
+verifying real delivery (exactly the 4 declared files, single commit).
+
+Created `.github/workflows/e2e.yml` (deterministic nightly/manual job with no
+provider secrets, local Redis provisioning, `set -o pipefail` on the plan run,
+failure-only artifact upload; a separate `live` job gated on
+`workflow_dispatch.inputs.run_live == 'true'`, the only job referencing
+`secrets.GOOGLE_API_KEY`), `packages/ai-parrot-server/tests/e2e/plans/deterministic.md`
+(wraps the 8 frozen deterministic node IDs from TASK-3535/3536/3537 as `required:
+true`, plus TASK-3548's browser scenario as `required: false` since this task's
+declared scope did not include provisioning a Node/pnpm/Playwright toolchain in
+CI — flagged for a possible follow-up task if full M9 browser-lane CI
+provisioning is wanted), `packages/ai-parrot-server/tests/e2e/plans/live.md`
+(dedicated `policy: required` plan wrapping TASK-3540's frozen live node with
+the default `LiveBudget`, so a missing live secret yields `BLOCKED`/exit 3
+rather than a false pass when explicitly requested), and
+`tests/sdd_scripts/test_e2e_ci_plans.py` (29 tests validating both plans
+through the real `E2EPlan` loader and the workflow YAML structurally via
+`yaml.safe_load`).
+
+Tests: `pytest tests/sdd_scripts/test_e2e_ci_plans.py -q` → 29 passed (re-run
+verified). Regression: `tests/sdd_scripts/test_e2e_spec_contract.py` +
+`test_e2e_closeout_contract.py` + `test_e2e_ci_plans.py` → 76 passed, no
+interference (re-run verified). `ruff check` / `black --check` clean.
+
+No STOP conditions. One disclosed, in-scope deviation: browser-lane CI
+provisioning deferred (see above), consistent with AC14 and this task's Scope.
