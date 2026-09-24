@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import re
 from typing import List
 
 from pydantic import BaseModel, Field
+
+from parrot.flows.dev_loop.procs import SPAWN_FAILED_RC, run_bounded
+
+#: Wall-clock cap for the banned-import ruff pass.
+RUFF_TIMEOUT_S: float = 120.0
 
 _HEADING = re.compile(r"^## Files to Create ?/ ?Modify\s*$", re.M)  # sdd/templates/task.md:33
 _NEXT_HEADING = re.compile(r"^## ", re.M)
@@ -96,8 +100,8 @@ async def check_banned_imports(cwd: str, changed: List[str], *, ruff_bin: str = 
     py_files = [p for p in changed if p.endswith(".py")]
     if not py_files:
         return []
-    try:
-        proc = await asyncio.create_subprocess_exec(
+    rc, out, err = await run_bounded(
+        [
             ruff_bin,
             "check",
             "--select",
@@ -107,18 +111,17 @@ async def check_banned_imports(cwd: str, changed: List[str], *, ruff_bin: str = 
             "--output-format",
             "json",
             *py_files,
-            cwd=cwd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, err = await proc.communicate()
-    except (FileNotFoundError, OSError) as exc:
-        return [f"ruff: {exc}"]
-    if proc.returncode not in (0, 1):
-        return [f"ruff: exit {proc.returncode}: {err.decode('utf-8', 'replace').strip()}"]
+        ],
+        cwd=cwd,
+        timeout_s=RUFF_TIMEOUT_S,
+    )
+    if rc == SPAWN_FAILED_RC:
+        return [f"ruff: {err}"]
+    if rc not in (0, 1):
+        return [f"ruff: exit {rc}: {err.strip()}"]
     # Parse JSON output
     try:
-        findings = json.loads(out or b"[]")
+        findings = json.loads(out or "[]")
     except json.JSONDecodeError:
         return ["ruff: unparseable output"]
     results: List[str] = []

@@ -60,6 +60,12 @@ ERROR_CODES: frozenset[str] = frozenset(
         "dirty_feature_worktree",
         "merge_conflict",
         "fidelity_violation",
+        # `_consolidate` could not take the feature-worktree merge lock within
+        # `engine.MERGE_LOCK_TIMEOUT_S`; the caller retries `coder_merge` later.
+        "merge_busy",
+        # A state-changing coder_* call waited more than `toolkit.EXCLUSIVE_WAIT_S` for
+        # another one to finish (the stdio server runs calls concurrently); retry later.
+        "engine_busy",
         "invalid_arguments",
         "internal_error",
         # Complexity routing error codes (FEAT-561 spec §2)

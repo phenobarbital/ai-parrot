@@ -340,8 +340,10 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    toolset can query a running agent. **Never call `Agent` again for the same task** — no `"continue"`, no
    status probe, no call without a `prompt`: that spawns a second, context-less coder that fights the first one.
 3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=90, response_mode="compact")` until `data.state != "running"`.
-   Never call `coder_status` or any other tool in the same message as `coder_wait` — the server handles requests one
-   at a time. When a native coder's completion notification arrives, call `coder_merge(task_id)` for it. If the job
+   Do not call `coder_status` in the same message as `coder_wait` — the server runs tool calls concurrently, so the
+   extra call is not blocked, only wasted. When a native coder's completion notification arrives, call
+   `coder_merge(task_id)` for it. A `merge_busy` error from `coder_merge` means another consolidation still holds the
+   feature-worktree merge lock: wait for the running job to settle and call `coder_merge` again. If the job
    is done but native coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
    (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
    The same no-busy-wait rule applies to any handle you hold from `coder_run_validation` below: only call
