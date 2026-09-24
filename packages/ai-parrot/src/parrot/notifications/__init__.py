@@ -3,9 +3,12 @@ Notification Mixin for AI-Parrot Agents.
 
 Provides notification capabilities to agents using the async-notify library.
 """
+import asyncio
 import json
 import logging
-from typing import Union, List, Optional, Dict, Any
+import shutil
+import tempfile
+from typing import Union, List, Optional, Dict, Any, Tuple
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
@@ -991,44 +994,70 @@ class NotificationMixin:
         # File handling — inject links into card actions or message text
         # ------------------------------------------------------------------
         if files and len(files) > 0:
-            # FEAT-273: attempt real Graph-API upload → org-view share links.
-            share_links = await self._teams_graph_upload_links(files)
-
-            if is_card:
-                # Inject file links as card actions
-                notify_args["message"] = self._teams_card_attach_files(
-                    message, files, share_links, a2ui_url
-                )
-            else:
-                # Plain text — existing behaviour: append links/filenames
-                message_text = message if isinstance(message, str) else str(message)
-                if share_links:
-                    links_md = "\n".join(
-                        f"- [{f.name}]({url})" for f, url in zip(files, share_links)
-                    )
-                    notify_args["message"] = f"{message_text}\n\n**Attached Files:**\n{links_md}"
-                    self.logger.info(
-                        "Teams notification with %d Graph-uploaded file link(s)", len(share_links)
-                    )
-                elif a2ui_url:
-                    notify_args["message"] = (
-                        f"{message_text}\n\nView the full artifact: {a2ui_url}"
-                    )
-                    self.logger.warning(
-                        "A2UI degraded delivery: Teams Graph upload unavailable; sending "
-                        "public URL for %d file(s).",
-                        len(files),
+            # A card can play a video but not an audio file, so audio is first
+            # rendered to MP4 and the card points at that rendition instead.
+            # Only the card path does this: plain text is a list of links, and
+            # a link to the original file is the better one.
+            scratch = (
+                tempfile.TemporaryDirectory(prefix="parrot-teams-")
+                if is_card and self._teams_graph_configured()
+                else None
+            )
+            try:
+                if scratch is not None:
+                    upload_files, _renditions = await self._teams_playable_files(
+                        files, Path(scratch.name)
                     )
                 else:
-                    file_list = "\n".join([f"- {f.name}" for f in files])
-                    notify_args["message"] = (
-                        f"{message_text}\n\n**Attached Files:**\n{file_list}"
+                    upload_files = files
+
+                # FEAT-273: attempt real Graph-API upload → org-view share links.
+                share_links = await self._teams_graph_upload_links(upload_files)
+
+                if is_card:
+                    # Inject file links as card actions
+                    notify_args["message"] = self._teams_card_attach_files(
+                        message, upload_files, share_links, a2ui_url
                     )
-                    self.logger.warning(
-                        "A2UI degraded delivery: Teams Graph upload unavailable; listing "
-                        "%d filename(s) in message text.",
-                        len(files),
-                    )
+                else:
+                    # Plain text — existing behaviour: append links/filenames
+                    message_text = message if isinstance(message, str) else str(message)
+                    if share_links:
+                        links_md = "\n".join(
+                            f"- [{f.name}]({url})"
+                            for f, url in zip(upload_files, share_links)
+                        )
+                        notify_args["message"] = (
+                            f"{message_text}\n\n**Attached Files:**\n{links_md}"
+                        )
+                        self.logger.info(
+                            "Teams notification with %d Graph-uploaded file link(s)",
+                            len(share_links),
+                        )
+                    elif a2ui_url:
+                        notify_args["message"] = (
+                            f"{message_text}\n\nView the full artifact: {a2ui_url}"
+                        )
+                        self.logger.warning(
+                            "A2UI degraded delivery: Teams Graph upload unavailable; sending "
+                            "public URL for %d file(s).",
+                            len(files),
+                        )
+                    else:
+                        file_list = "\n".join([f"- {f.name}" for f in upload_files])
+                        notify_args["message"] = (
+                            f"{message_text}\n\n**Attached Files:**\n{file_list}"
+                        )
+                        self.logger.warning(
+                            "A2UI degraded delivery: Teams Graph upload unavailable; listing "
+                            "%d filename(s) in message text.",
+                            len(files),
+                        )
+            finally:
+                # The renditions are only needed until they are uploaded; the
+                # card carries share links, not local paths.
+                if scratch is not None:
+                    scratch.cleanup()
         elif not is_card and a2ui_url:
             # No files but a public URL hint — append to text.
             message_text = message if isinstance(message, str) else str(message)
@@ -1059,6 +1088,12 @@ class NotificationMixin:
         if isinstance(card, TeamsCard):
             if share_links:
                 for file_path, url in zip(files, share_links):
+                    # A video plays inside the card; everything else can only
+                    # be opened, so it gets an action and nothing more.
+                    if self._classify_file(file_path) is FileType.VIDEO:
+                        card.body_objects.append(
+                            self._teams_media_element(file_path, url)
+                        )
                     card.addAction(
                         type="Action.OpenUrl",
                         title=f"📎 {file_path.name}",
@@ -1092,9 +1127,12 @@ class NotificationMixin:
             return card
 
         if isinstance(card, dict):
+            body = card.setdefault("body", [])
             actions = card.setdefault("actions", [])
             if share_links:
                 for file_path, url in zip(files, share_links):
+                    if self._classify_file(file_path) is FileType.VIDEO:
+                        body.append(self._teams_media_element(file_path, url))
                     actions.append({
                         "type": "Action.OpenUrl",
                         "title": f"📎 {file_path.name}",
@@ -1123,9 +1161,12 @@ class NotificationMixin:
         if isinstance(card, str):
             try:
                 parsed = json.loads(card)
+                body = parsed.setdefault("body", [])
                 actions = parsed.setdefault("actions", [])
                 if share_links:
                     for file_path, url in zip(files, share_links):
+                        if self._classify_file(file_path) is FileType.VIDEO:
+                            body.append(self._teams_media_element(file_path, url))
                         actions.append({
                             "type": "Action.OpenUrl",
                             "title": f"📎 {file_path.name}",
@@ -1143,6 +1184,213 @@ class NotificationMixin:
 
         return card
 
+    # ------------------------------------------------------------------
+    # Inline media (Teams cards)
+    # ------------------------------------------------------------------
+    #: Canvas of the generated video. It exists so Teams has a video track to
+    #: play, not to be looked at, so it is small and flat.
+    _INLINE_VIDEO_SIZE: str = "640x360"
+    _INLINE_VIDEO_COLOR: str = "0x12233F"
+    _INLINE_VIDEO_FPS: int = 2
+
+    async def _run_command(self, *args: str, timeout: float = 300.0) -> Optional[str]:
+        """Run a command and return its stdout, or ``None`` on any failure.
+
+        Args:
+            *args: Program and arguments, passed without a shell.
+            timeout: Seconds to wait before killing the process.
+
+        Returns:
+            Captured stdout stripped of surrounding whitespace, or ``None``
+            when the program is missing, times out, or exits non-zero.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError:
+            self.logger.exception("Cannot execute %s", args[0])
+            return None
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            self.logger.error("%s timed out after %ss", args[0], timeout)
+            return None
+        if proc.returncode != 0:
+            self.logger.error(
+                "%s failed (exit %s): %s",
+                args[0],
+                proc.returncode,
+                stderr.decode("utf-8", "replace")[:300],
+            )
+            return None
+        return stdout.decode("utf-8", "replace").strip()
+
+    async def _audio_as_video(self, audio: Path, out_dir: Path) -> Optional[Path]:
+        """Wrap an audio file in a minimal MP4 so Teams can play it in a card.
+
+        Teams renders the Adaptive Card ``Media`` element for video only. An
+        audio source either fails to send or draws a black frame, and inline
+        audio playback is still an open request upstream, so the only way to
+        make a generated podcast playable without leaving the card is to give
+        it a video track.
+
+        That track is deliberately inert — flat colour at 2fps, which h264
+        compresses to almost nothing — so the MP4 costs little more than the
+        AAC audio it carries.
+
+        Args:
+            audio: Source audio file.
+            out_dir: Directory the MP4 is written into.
+
+        Returns:
+            Path of the MP4, or ``None`` when ffmpeg is unavailable or either
+            step fails. Never raises: the caller falls back to a plain link.
+        """
+        ffmpeg = shutil.which("ffmpeg")
+        ffprobe = shutil.which("ffprobe")
+        if not ffmpeg or not ffprobe:
+            self.logger.warning(
+                "Teams inline media: ffmpeg/ffprobe not on PATH; %s stays a link.",
+                audio.name,
+            )
+            return None
+
+        # The length is measured and passed as `-t` rather than relying on
+        # `-shortest`, which does not clamp an infinite lavfi source: on ffmpeg
+        # n8 it overran the audio by 30s, and pairing it with `-fflags
+        # +shortest` produced an empty file instead.
+        duration = await self._run_command(
+            ffprobe,
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "csv=p=0",
+            str(audio),
+        )
+        try:
+            seconds = float(duration)
+        except (TypeError, ValueError):
+            self.logger.error(
+                "Teams inline media: cannot read the duration of %s", audio.name
+            )
+            return None
+        if seconds <= 0:
+            return None
+
+        target = out_dir / f"{audio.stem}.mp4"
+        produced = await self._run_command(
+            ffmpeg,
+            "-y", "-loglevel", "error",
+            "-f", "lavfi",
+            "-i", (
+                f"color=c={self._INLINE_VIDEO_COLOR}"
+                f":s={self._INLINE_VIDEO_SIZE}"
+                f":r={self._INLINE_VIDEO_FPS}"
+            ),
+            "-i", str(audio),
+            "-c:v", "libx264", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "128k",
+            "-t", f"{seconds:.3f}",
+            "-movflags", "+faststart",
+            str(target),
+            timeout=600.0,
+        )
+        if produced is None or not target.exists() or target.stat().st_size == 0:
+            self.logger.warning(
+                "Teams inline media: could not render %s as video; it stays a link.",
+                audio.name,
+            )
+            return None
+        self.logger.info(
+            "Teams inline media: %s rendered as %s (%.1fs)",
+            audio.name,
+            target.name,
+            seconds,
+        )
+        return target
+
+    async def _teams_playable_files(
+        self, files: List[Path], out_dir: Path
+    ) -> Tuple[List[Path], Dict[Path, Path]]:
+        """Swap each audio file for an inline-playable MP4 rendition.
+
+        The rendition *replaces* the audio in the upload rather than joining
+        it: it carries the same sound, so uploading both would put two copies
+        of one podcast in the recipient's drive. Delivery of the original file
+        is the e-mail channel's job.
+
+        Args:
+            files: Files the card was asked to carry.
+            out_dir: Scratch directory for the renditions.
+
+        Returns:
+            The list to upload, and a mapping from each rendition back to the
+            audio it came from.
+        """
+        upload: List[Path] = []
+        origins: Dict[Path, Path] = {}
+        for file_path in files:
+            if self._classify_file(file_path) is not FileType.AUDIO:
+                upload.append(file_path)
+                continue
+            rendition = await self._audio_as_video(file_path, out_dir)
+            if rendition is None:
+                upload.append(file_path)
+                continue
+            upload.append(rendition)
+            origins[rendition] = file_path
+        return upload, origins
+
+    @staticmethod
+    def _teams_media_element(file_path: Path, url: str) -> Dict[str, Any]:
+        """Build an Adaptive Card ``Media`` element for an uploaded video.
+
+        ``mimeType`` is required by the Teams web and desktop clients. No
+        ``poster`` is set: Teams honours one on mobile only, and the desktop
+        client supplies its own placeholder.
+
+        Args:
+            file_path: The video file, used to infer the MIME type.
+            url: Share link the client plays from.
+
+        Returns:
+            The element, ready to append to an Adaptive Card body.
+        """
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+        return {
+            "type": "Media",
+            "sources": [{"mimeType": mime_type or "video/mp4", "url": url}],
+        }
+
+    @staticmethod
+    def _teams_graph_configured() -> bool:
+        """Whether Graph file upload has the credentials it needs.
+
+        Consulted *before* any rendition work: without these, nothing can be
+        uploaded, and transcoding an audio file for a card that will only ever
+        show filenames is wasted CPU.
+
+        Returns:
+            ``True`` when every credential the upload requires is present.
+        """
+        from ..conf import (
+            TEAMS_NOTIFY_TENANT_ID,
+            TEAMS_NOTIFY_CLIENT_ID,
+            TEAMS_NOTIFY_CLIENT_SECRET,
+            TEAMS_NOTIFY_USERNAME,
+        )
+
+        return bool(
+            TEAMS_NOTIFY_TENANT_ID
+            and TEAMS_NOTIFY_CLIENT_ID
+            and TEAMS_NOTIFY_CLIENT_SECRET
+            and TEAMS_NOTIFY_USERNAME
+        )
+
     async def _teams_graph_upload_links(
         self, files: List[Path]
     ) -> Optional[List[str]]:
@@ -1158,12 +1406,7 @@ class NotificationMixin:
             TEAMS_NOTIFY_USERNAME,
         )
 
-        if not (
-            TEAMS_NOTIFY_TENANT_ID
-            and TEAMS_NOTIFY_CLIENT_ID
-            and TEAMS_NOTIFY_CLIENT_SECRET
-            and TEAMS_NOTIFY_USERNAME
-        ):
+        if not self._teams_graph_configured():
             return None
         try:
             from parrot.integrations.msteams.graph import GraphClient
