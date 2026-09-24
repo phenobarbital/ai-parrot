@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from parrot.knowledge.wiki.decisions.models import DecisionConfig
+from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig
 
 if TYPE_CHECKING:
     # Import only for the annotation below — the real (runtime) import in
@@ -483,6 +484,10 @@ class WikiProjectConfig(BaseModel):
             "Generation is disabled by default."
         ),
     )
+    schema: SchemaPlaneConfig = Field(
+        default_factory=SchemaPlaneConfig,
+        description="SQL schema plane settings (FEAT-600): declared sources (env NAMES only), staleness policy.",
+    )
     sqlite_busy_timeout: float = Field(
         default=15.0,
         ge=1.0,
@@ -528,6 +533,17 @@ class WikiProjectConfig(BaseModel):
             ``<root>/.parrot/ledger``.
         """
         return root / PARROT_DIR / "ledger"
+
+    def schema_path(self, root: Path) -> Path:
+        """Directory of the shared SQL schema plane (``.parrot/schema``, FEAT-600).
+
+        Args:
+            root: Shared root (main checkout) — see ``find_shared_root``.
+
+        Returns:
+            ``<root>/.parrot/schema``.
+        """
+        return root / PARROT_DIR / "schema"
 
     def storage_path(self, root: Path) -> Path:
         """Resolve the wiki storage directory against the repo root."""
