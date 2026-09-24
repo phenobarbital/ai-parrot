@@ -16,6 +16,18 @@ from parrot.e2e import live as e2e_live
 from parrot.e2e.errors import E2EConfigError, E2EPrerequisiteError
 from parrot.e2e.models import LiveBudget
 
+try:
+    import parrot.clients.google.budget  # noqa: F401
+
+    _has_google_budget = True
+except (ImportError, ModuleNotFoundError):
+    _has_google_budget = False
+
+_skip_no_google_budget = pytest.mark.skipif(
+    not _has_google_budget,
+    reason="parrot.clients.google.budget not installed (ai-parrot-client-google satellite)",
+)
+
 _FULL_OPT_IN_ENV = {
     e2e_live.PARROT_TEST_E2E_ENV: "1",
     e2e_live.PARROT_TEST_REAL_LLM_ENV: "1",
@@ -121,6 +133,7 @@ class TestRequireLiveOptIn:
         assert excinfo.value.reason_code == "invalid_override"
 
 
+@_skip_no_google_budget
 class TestBuildLiveGenerationBudget:
     """``build_live_generation_budget`` -- one shared budget per resolved opt-in."""
 
@@ -139,6 +152,7 @@ class TestBuildLiveGenerationBudget:
         assert budget.calls_used == 0
 
 
+@_skip_no_google_budget
 class TestBuildLiveClient:
     """``build_live_client`` -- resolves through ``LLMFactory`` only after opt-in succeeded."""
 

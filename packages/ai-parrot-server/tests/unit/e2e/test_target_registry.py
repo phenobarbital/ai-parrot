@@ -179,38 +179,35 @@ def test_get_target_adapter_rejects_unknown_kind() -> None:
 # ---------------------------------------------------------------------------
 
 
-_STILL_UNIMPLEMENTED_KINDS = sorted(TARGET_KINDS - {"mcp-toolkit", "mcp-stdio", "botmanager", "ui", "browser"})
+def test_get_target_adapter_raises_prerequisite_error_for_missing_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A registry entry whose module cannot be imported raises E2EPrerequisiteError."""
+    from parrot.e2e import targets as targets_mod
 
+    monkeypatch.setitem(
+        targets_mod._ADAPTER_REGISTRY,
+        "mcp-toolkit",
+        ("parrot.e2e.targets._nonexistent_module", "build_adapter"),
+    )
 
-@pytest.mark.parametrize("kind", _STILL_UNIMPLEMENTED_KINDS)
-def test_get_target_adapter_raises_prerequisite_error_for_unimplemented_kind(kind: str) -> None:
-    """Every kind whose adapter module genuinely does not exist yet in this checkout.
-
-    `mcp-toolkit`/`mcp-stdio` are excluded here since TASK-3529 implemented
-    real adapters for them in `parrot.e2e.targets.mcp` (see
-    `test_mcp_targets.py` for their own prerequisite-error-free coverage).
-    `botmanager` is excluded since TASK-3530 implemented a real adapter in
-    `parrot.e2e.targets.botmanager` (see `test_botmanager_target.py`).
-    `ui`/`browser` are excluded since TASK-3531 implemented real adapters in
-    `parrot.e2e.targets.ui`/`.browser` (see `test_ui_browser_targets.py`).
-    Only `mcp-agent` (TASK-3540, M6 live-agent scope) remains genuinely
-    unimplemented.
-    """
     with pytest.raises(E2EPrerequisiteError) as excinfo:
-        get_target_adapter(kind)
+        get_target_adapter("mcp-toolkit")
     assert excinfo.value.exit_code == EXIT_BLOCKED
     assert excinfo.value.reason_code == "target_adapter_unavailable"
 
 
 def test_get_target_adapter_only_imports_the_requested_module(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Resolving one kind must never attempt to import a different kind's module.
-
-    Uses "mcp-agent" as the still-genuinely-unimplemented kind (TASK-3540,
-    M6 live-agent scope) — "browser" was unimplemented when this test was
-    first written, but TASK-3531 landed a real adapter for it, so it no
-    longer raises E2EPrerequisiteError and can't exercise this failure path.
-    """
+    """Resolving one kind must never attempt to import a different kind's module."""
     import importlib
+
+    from parrot.e2e import targets as targets_mod
+
+    monkeypatch.setitem(
+        targets_mod._ADAPTER_REGISTRY,
+        "mcp-toolkit",
+        ("parrot.e2e.targets._nonexistent_module", "build_adapter"),
+    )
 
     calls: list[str] = []
     real_import_module = importlib.import_module
@@ -222,9 +219,9 @@ def test_get_target_adapter_only_imports_the_requested_module(monkeypatch: pytes
     monkeypatch.setattr("parrot.e2e.targets.importlib.import_module", _spy_import_module)
 
     with pytest.raises(E2EPrerequisiteError):
-        get_target_adapter("mcp-agent")
+        get_target_adapter("mcp-toolkit")
 
-    assert calls == ["parrot.e2e.targets.mcp"]
+    assert calls == ["parrot.e2e.targets._nonexistent_module"]
 
 
 # ---------------------------------------------------------------------------
