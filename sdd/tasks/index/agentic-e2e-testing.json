@@ -538,7 +538,7 @@
       "feature_id": "FEAT-581",
       "feature": "agentic-e2e-testing",
       "spec": "sdd/specs/agentic-e2e-testing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -549,8 +549,9 @@
       "parallelism_notes": "TASK-3540 owns its declared files for M6. TASK-3539 supplies guard every budgeted google ask request and retry; TASK-3535 supplies add shared e2e fixtures and real mcp scenarios. After dependencies pass, disjoint files may run concurrently; no shared-file edits outside this ownership.",
       "assigned_to": null,
       "started_at": "2026-09-19T01:05:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3540-e2e-live-agent.md"
+      "completed_at": "2026-09-24T00:42:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3540-e2e-live-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3541",

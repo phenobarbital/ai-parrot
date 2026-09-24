@@ -213,5 +213,69 @@ pytest contract above. This task cannot claim E2E success solely from agent-tier
 
 ## Completion Note
 
-To be filled by the implementing agent with actual completion date, tests,
-observations, limitations and any explicitly authorized deviations.
+Completed 2026-09-24 (commit `0d9a8ece9`). The sdd-coder MCP engine was
+unresponsive for this dispatch (multiple prior calls timed out after 1800s),
+so this task was implemented via a manually-created git worktree +
+directly-dispatched `sdd-coder` subagent (bypassing the stuck orchestration
+tooling), then merged via plain `git merge --no-ff` and verified directly,
+same as TASK-3548.
+
+Created `packages/ai-parrot-server/src/parrot/e2e/live.py`: pure gating
+(`require_live_opt_in()` validates `PARROT_TEST_E2E`/`PARROT_TEST_REAL_LLM`/
+`GOOGLE_API_KEY` and `E2E_MODEL`/`E2E_MAX_LLM_CALLS` overrides before any
+client exists; unsupported provider → config error) plus the `mcp-agent`
+child-process entry point (`serve_live_agent_mount()`/`_main()`) mounting a
+real, API-key-authenticated `AgentMCPMount` with one fixture tool
+delegating to a real `Agent.ask()`, asserting an observable synthetic tool
+effect rather than judging prose; readiness never triggers a generation.
+Modified `targets/mcp.py` to add `build_mcp_agent_adapter()`/
+`_MCPAgentAdapter`, following the existing `_MCPToolkitAdapter` pattern:
+allocates a port, mints a per-run fixture API key, spawns
+`python -m parrot.e2e.live`, and re-adds `GOOGLE_API_KEY` to the launch env
+(which `E2ESupervisor._build_child_env` strips by default as a credential
+var). Created `tests/e2e/test_mcp_agent_live.py` (frozen node ID
+`test_live_google_tool_and_schema`) and `tests/unit/e2e/test_live_gate.py`.
+
+Real bug found and fixed during implementation: importing
+`GenerationBudget`/`GenerationBudgetExceeded` from
+`parrot.clients.google.budget` at `live.py` module scope still triggered
+navconfig's `uvloop.install()` bootstrap (Python must execute
+`parrot/clients/__init__.py` first) — moved those imports to be fully
+function-scoped inside `build_live_generation_budget()` and
+`serve_live_agent_mount()`; re-verified the module-level import no longer
+prints the bootstrap banner.
+
+Tests:
+- `pytest packages/ai-parrot-server/tests/unit/e2e/test_live_gate.py -q`
+  → 13 passed (this task's declared Validation Command).
+- Regression: `pytest packages/ai-parrot-server/tests/unit/e2e/test_mcp_targets.py -q`
+  → 24 passed, no regressions from the `targets/mcp.py` modification.
+- `tests/e2e/test_mcp_agent_live.py::test_live_google_tool_and_schema`
+  collects cleanly and skips honestly (no `GOOGLE_API_KEY`/network in this
+  sandbox) — by design; live execution is deferred to
+  `parrot e2e run --plan` with real credentials, out of this task's scope.
+
+Only the 4 declared files touched (1104 insertions across CREATE+MODIFY);
+nothing under `sdd/` touched.
+
+Deviations/notes (none blocking):
+- The task's Modify-Target Freshness note claiming `targets/mcp.py` "is
+  created by TASK-3529; no current hash/import exists" was stale — the
+  file already existed from an earlier task in this feature's chain; the
+  implementing agent re-read and modified the actual current file rather
+  than treating it as a fresh CREATE.
+- `@pytest.mark.real_llm` is registered in root `pyproject.toml` but not
+  in `packages/ai-parrot-server/pyproject.toml`'s own pytest config (which
+  is what applies when invoking under that package path) — produces a
+  harmless `PytestUnknownMarkWarning`, does not fail the run since
+  `--strict-markers` only lives in the root config. Neither pyproject.toml
+  is in this task's declared scope, so not touched.
+- Pre-existing, unrelated: running `tests/e2e/` and `tests/unit/e2e/`
+  together in one invocation errors on an import-file-mismatch for
+  `test_supervisor.py` (duplicate basename, no `__init__.py` in either
+  dir) — does not affect this task's own validation command (single file).
+
+No unresolved limitations for this task's own scope. AC11 demonstrated by
+the gate's own test suite; real-LLM round-trip is unverifiable without
+credentials/network, consistent with the task's own acknowledgment that
+agent-tier tests cannot claim E2E success alone.
