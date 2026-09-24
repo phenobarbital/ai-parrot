@@ -492,10 +492,12 @@ def test_normalize_ambiguous_returns_candidates():
 
 ## Completion Note
 
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-terra, backend: codex, attempt_uid 52e92c89743a49858c0b4acbe2dd3402)
+**Notes**: Implementation commit `784ac5ee2` + engine lint-autofix commit `27c9e8289` (merge `9cf7f3c6b`). Created `schema/models.py`, `schema/ids.py`, `schema/producers/__init__.py`, `schema/__init__.py` (lazy `__getattr__`), the `tests/knowledge/wiki/schema/` package, added `schema: SchemaPlaneConfig` + `schema_path()` to `project.py`, and `"ddl"` to `MetadataSource`. Engine-side merge fidelity check passed (`unexpected_files: []`).
 
 - Task: TASK-3680
 - Feature: sql-schema-plane
-- Implementation SHA: aba3ed782604b949c8674820129980c8a9bdbfd5
+- Implementation SHA: 784ac5ee2 (+ lint-autofix 27c9e8289)
 - Closed at (UTC): 2026-09-24T21:58:59+00:00
 - Fix commits: none
 
