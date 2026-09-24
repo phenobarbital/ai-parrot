@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-599 — sdd-coder engine fixes 2 (suspension attribution + pool encapsulation + settlement hygiene)
 **Spec**: `sdd/specs/sdd-coder-engine-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2–4h)
 **Depends-on**: TASK-3677
-**Assigned-to**: unassigned
+**Assigned-to**: agent:sdd-fix
 **discovered_from**: issue:bd1c792a5afc
 
 ---
@@ -235,4 +235,12 @@ def test_inherited_records_attribute_seats_and_summary(...):  # FILL IN — AC3 
 
 ## Completion Note
 
-(Agent fills this in when done)
+**Completed by**: Claude Fable 5.1 via `/sdd-fix`
+**Date**: 2026-09-24
+
+- `PoolSeatView` += `suspension_source` / `source_task_id` / `source_execution_id`; `ExecutionPoolView` and `CoderPlan` += `suspension_summary` (rendered by `render_suspension_history`, now with a production caller).
+- `ExecutionPool(inherited_records=...)` keeps every known record (inherited + own), attributes seat views on construction and in `suspend()`, renders the summary in `view()`.
+- Engine: `_roster_model_keys()` extracted; fresh path passes `recent`, restore path looks records up best-effort; `plan()` fills `CoderPlan.suspension_summary` on both return paths.
+- Tests: `test_pool.py` +3, new `test_suspension_attribution.py` (+2: plan summary after `suspend_model`; new engine on the same worktree inherits the attribution through the durable ledger).
+- Validation: pool/suspensions/attribution/integration/dispatch/plan_merge/toolkit/outstanding → 155 passed, 1 failed. The one failure, `test_engine_plan_merge.py::test_all_seats_exhausted`, fails identically on `origin/dev` (main checkout, same assertion) — pre-existing, not introduced here.
+- Note: an inherited-excluded identity is filtered before the probe (AC-4), so it has no seat view; the summary is the attribution channel for it.

@@ -263,3 +263,72 @@ async def test_admit_without_wait_fails_fast_on_a_busy_seat(
     # Once free, the non-waiting form admits normally too.
     await pool.release(await waiter)
     assert await pool.admit("TASK-3", key, wait=False)
+
+
+# --- FEAT-599 / issue:bd1c792a5afc: suspension attribution (FEAT-559 AC-12) --------------------
+
+
+async def test_suspend_sets_seat_attribution(
+    mock_suspension_store: Mock, sample_roster: RosterConfig, sample_seats: list
+) -> None:
+    """After `suspend()`, the blocked seat view names the incident's source, task and execution (AC3)."""
+    pool = make_pool(EXEC_A, sample_roster, sample_seats, mock_suspension_store)
+    key = ModelKey(backend="nova", model="qwen3")
+    record = suspension_for(EXEC_A, key, attempt_uid="att-1")
+    mock_suspension_store.record.return_value = SuspensionReceipt(
+        suspension_id=record.suspension_id,
+        execution_id=EXEC_A,
+        blocked_keys=[key],
+        persisted=True,
+        expires_at=record.expires_at,
+    )
+
+    await pool.suspend(record)
+
+    seat = next(view for view in pool.view().seats if view.label == "qwen")
+    assert seat.suspended is True
+    assert seat.suspension_source == "engine"
+    assert seat.source_task_id == "TASK-1"
+    assert seat.source_execution_id == EXEC_A
+    assert seat.suspension_id == record.suspension_id
+    untouched = next(view for view in pool.view().seats if view.label == "haiku")
+    assert untouched.source_task_id == "" and untouched.suspension_source == ""
+
+
+def test_inherited_records_attribute_seats_and_summary(
+    mock_suspension_store: Mock, sample_roster: RosterConfig, sample_seats: list
+) -> None:
+    """Durable-history records passed at construction attribute the inherited seat and render the summary (AC2, AC3)."""
+    key = ModelKey(backend="nova", model="qwen3")
+    record = suspension_for(EXEC_A, key, attempt_uid="att-0")  # recorded by an EARLIER execution
+    pool = ExecutionPool(
+        execution_id=EXEC_B,
+        feature_id="FEAT-559",
+        worktree_path="/test/path",
+        roster=sample_roster,
+        seats=sample_seats,
+        suspension_store=mock_suspension_store,
+        initial_exclusions=[key],
+        inherited_records=[record],
+    )
+
+    view = pool.view()
+    seat = next(s for s in view.seats if s.label == "qwen")
+    assert seat.suspended is True
+    assert seat.reason == "inherited_suspension"  # existing contract preserved
+    assert seat.suspension_id == record.suspension_id
+    assert seat.suspended_until == record.expires_at.isoformat()
+    assert seat.suspension_source == "engine"
+    assert seat.source_task_id == "TASK-1"
+    assert seat.source_execution_id == EXEC_A
+    # AC-12 fields: model, incident id, source task/execution, reason, remaining cooldown
+    for needle in (record.suspension_id, "qwen3", "TASK-1", EXEC_A, "timeout", "remaining_cooldown_s="):
+        assert needle in view.suspension_summary, needle
+
+
+def test_view_without_suspensions_has_empty_summary(
+    mock_suspension_store: Mock, sample_roster: RosterConfig, sample_seats: list
+) -> None:
+    """No records → no summary text (never a header-only string)."""
+    pool = make_pool(EXEC_A, sample_roster, sample_seats, mock_suspension_store)
+    assert pool.view().suspension_summary == ""

@@ -39,7 +39,7 @@
       "feature_id": "FEAT-599",
       "feature": "sdd-coder-engine-fixes-2",
       "spec": "sdd/specs/sdd-coder-engine-fixes-2.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -50,10 +50,10 @@
       "discovered_from": [
         "issue:bd1c792a5afc"
       ],
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3678-suspension-attribution-surfacing.md"
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-24T18:55:00+00:00",
+      "completed_at": "2026-09-24T19:25:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3678-suspension-attribution-surfacing.md"
     },
     {
       "id": "TASK-3679",

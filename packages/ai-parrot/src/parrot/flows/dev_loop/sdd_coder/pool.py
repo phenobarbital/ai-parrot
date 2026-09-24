@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 import logging
 from asyncio import Condition
-from typing import Dict, List, Optional, Set, Tuple
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 from uuid import UUID, uuid4
 
 from parrot.flows.dev_loop.sdd_coder.models import (
@@ -28,6 +29,7 @@ from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
     SuspensionReceipt,
     SuspensionRecord,
+    render_suspension_history,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,7 @@ class ExecutionPool:
         seats: List[RosterSeat],
         suspension_store: CoderSuspensionStore,
         initial_exclusions: List[ModelKey],
+        inherited_records: Sequence[SuspensionRecord] = (),
     ) -> None:
         """Initialize one execution's private pool.
 
@@ -115,6 +118,10 @@ class ExecutionPool:
                 history) before this execution began; immutable for this
                 execution's lifetime -- only `suspend()` adds further,
                 execution-local exclusions on top of these.
+            inherited_records: The durable `SuspensionRecord`s behind
+                `initial_exclusions` (FEAT-599 / FEAT-559 AC-12). Display and
+                attribution only: a key listed here but absent from
+                `initial_exclusions` is NOT excluded.
         """
         UUID(execution_id)  # Raises ValueError if not a valid UUID string.
 
@@ -158,6 +165,34 @@ class ExecutionPool:
                 reason="inherited_suspension" if suspended else "",
             )
 
+        # FEAT-599: every suspension this pool knows about (inherited + own), for
+        # AC-12 attribution on seat views and the rendered `suspension_summary`.
+        self._suspension_records: List[SuspensionRecord] = list(inherited_records)
+        for record in self._suspension_records:
+            self._attribute_seats(record, inherited=True)
+
+    def _attribute_seats(self, record: SuspensionRecord, *, inherited: bool) -> None:
+        """Copy *record*'s attribution onto every seat view it blocks (FEAT-599 / FEAT-559 AC-12).
+
+        Args:
+            record: The suspension incident.
+            inherited: True for durable-history records seen at construction --
+                those seat views were built with `reason="inherited_suspension"`
+                and no incident id, so the id and expiry are filled in here;
+                `suspend()` already sets them for the pool's own records.
+        """
+        origin = record.task_id or record.probe_uid or ""
+        for key in record.blocked_keys:
+            seat_view = self._seat_views.get(key)
+            if seat_view is None:
+                continue
+            seat_view.suspension_source = record.source
+            seat_view.source_task_id = origin
+            seat_view.source_execution_id = record.execution_id
+            if inherited:
+                seat_view.suspension_id = record.suspension_id
+                seat_view.suspended_until = record.expires_at.isoformat()
+
     @property
     def execution_id(self) -> str:
         """The execution UUID this pool is bound to."""
@@ -197,6 +232,7 @@ class ExecutionPool:
             persisted=not self._persistence_degraded,
             persistence_degraded=self._persistence_degraded,
             roster_warnings=self._roster_warnings(),
+            suspension_summary=render_suspension_history(self._suspension_records, datetime.now(timezone.utc)),
         )
 
     def _roster_warnings(self) -> List[str]:
@@ -322,6 +358,8 @@ class ExecutionPool:
                     seat_view.reason = record.reason
                     seat_view.suspension_id = record.suspension_id
                     seat_view.suspended_until = record.expires_at.isoformat()
+            self._suspension_records.append(record)
+            self._attribute_seats(record, inherited=False)
             self._generation += 1
             self._cached_assigner = None
             # Spec §2: state is active|exhausted|recovery_required|closed --

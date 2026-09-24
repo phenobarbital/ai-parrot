@@ -672,6 +672,18 @@ class SddCoderEngine:
                 self.probe_results = await self._probe.probe(self.roster, excluded=excluded_set)
                 self.seats = available_seats(self.roster, self.probe_results)
 
+                # FEAT-599 (AC-12): attribution for the restored exclusions is
+                # display-only -- the snapshot stays the exclusion authority, so
+                # an unreadable history degrades to "no attribution", never to
+                # a failed restore.
+                inherited_records: List[SuspensionRecord] = []
+                try:
+                    inherited_records = await self._suspension_store.recent(self._roster_model_keys(), now)
+                except Exception as exc:  # noqa: BLE001 -- see comment above
+                    self.logger.warning(
+                        "suspension attribution unavailable while restoring execution %s: %s", execution_id, exc
+                    )
+
                 pool = ExecutionPool(
                     execution_id=execution_id,
                     feature_id=ctx.feature_id,
@@ -680,6 +692,7 @@ class SddCoderEngine:
                     seats=self.seats,
                     suspension_store=self._suspension_store,
                     initial_exclusions=combined_inherited,
+                    inherited_records=inherited_records,
                 )
 
                 # Restore local exclusions (from this execution's own suspensions)
@@ -721,22 +734,7 @@ class SddCoderEngine:
                     CoderSuspensionStore.from_root, Path(canonical_worktree)
                 )
             now = datetime.now(timezone.utc)
-            # Get all model keys from roster to query history
-            model_keys = []
-            for seat in self.roster.seats:
-                if seat.kind == "native":
-                    model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
-                    continue
-                if seat.model:
-                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
-                # A previously-suspended FALLBACK-only identity must also be
-                # excluded before the initial probe -- omitting it left a
-                # recently-failed fallback model eligible for a fresh smoke
-                # probe/dispatch even though its own incident is still within
-                # cooldown (AC-4: "excludes all unexpired matching records
-                # BEFORE any primary/fallback smoke probe or dispatcher call").
-                if seat.fallback_model:
-                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.fallback_model))
+            model_keys = self._roster_model_keys()
             # Query recent suspensions. `CoderSuspensionStore.recent` is itself an
             # `async def` that already offloads its file I/O via `asyncio.to_thread`
             # internally -- wrapping it in ANOTHER `asyncio.to_thread` here would call
@@ -793,6 +791,7 @@ class SddCoderEngine:
             seats=self.seats,
             suspension_store=self._suspension_store,
             initial_exclusions=initial_exclusions,
+            inherited_records=recent,
         )
 
         # Check if pool has any available seats
@@ -804,6 +803,32 @@ class SddCoderEngine:
         self._executions[execution_id] = pool
         self._execution_owners[canonical_worktree] = execution_id
         return pool.view()
+
+    def _roster_model_keys(self) -> List[ModelKey]:
+        """Every model identity in the roster, for durable suspension-history lookups.
+
+        Native seats map to ``native/<model or haiku>``; MCP seats contribute
+        their primary model AND their ``fallback_model``: a previously-suspended
+        fallback-only identity must also be excluded before the initial probe --
+        omitting it left a recently-failed fallback model eligible for a fresh
+        smoke probe/dispatch even though its own incident is still within
+        cooldown (FEAT-559 AC-4: "excludes all unexpired matching records
+        BEFORE any primary/fallback smoke probe or dispatcher call").
+
+        Returns:
+            Keys in roster order; duplicates are harmless to
+            `CoderSuspensionStore.recent`.
+        """
+        model_keys: List[ModelKey] = []
+        for seat in self.roster.seats:
+            if seat.kind == "native":
+                model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
+                continue
+            if seat.model:
+                model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
+            if seat.fallback_model:
+                model_keys.append(ModelKey(backend=seat.backend or "", model=seat.fallback_model))
+        return model_keys
 
     def _latest_attempt_number(self, task_id: str) -> int:
         """Return the attempt number of *task_id*'s latest recorded attempt, or ``1``.
@@ -1477,6 +1502,7 @@ class SddCoderEngine:
         """
         # If execution_id provided, use the execution pool's assigner
         pool_generation = 0
+        suspension_summary = ""
         if execution_id is not None:
             if execution_id not in self._executions:
                 raise CoderFailure(
@@ -1485,6 +1511,7 @@ class SddCoderEngine:
                 )
             pool = self._executions[execution_id]
             pool_generation = pool.generation
+            suspension_summary = pool.view().suspension_summary
             # Use the pool's own eligibility-filtered assigner -- `pool.assigner()`
             # excludes suspended/busy/probe-failed seats (its own documented
             # contract); constructing a bare `ChunkAssigner(pool._seats)` here
@@ -1511,6 +1538,7 @@ class SddCoderEngine:
                     orphan_branches=[],
                     execution_id=execution_id,
                     pool_generation=pool_generation,
+                    suspension_summary=suspension_summary,
                 )
             seats = pool._seats
             probe_results = [
@@ -1624,6 +1652,7 @@ class SddCoderEngine:
             routing_blocks=routing_blocks,
             execution_id=execution_id or "",
             pool_generation=pool_generation,
+            suspension_summary=suspension_summary,
         )
         # Cache the computed plan, keyed by feature_id (and execution_id when present).
         # For execution pools, also store against execution_id for private cache.
