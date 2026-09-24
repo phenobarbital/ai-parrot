@@ -1,4 +1,5 @@
 """FEAT-601 M12 — URL media fields on AIMessage / AgentResponse (TASK-3715)."""
+
 from __future__ import annotations
 
 from pathlib import Path
