@@ -190,10 +190,8 @@ async def test_related_tables_block(tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: sonnet, backend: native, attempt_uid 409c71dda27243d5ad121ec49f8aecdc)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `6a91062f7` (merge `aba3ed782`). Added `DevLoopWikiSearch._get_schema_context(query, max_tokens) -> Optional[str]` mirroring `_get_ledger_context`'s best-effort pattern (queries `search_fts(query, category="table", limit=8)`, `None` on empty/exception), folded into `build_research_context` as a `## Related Tables` block. Coder caught and fixed a stale blueprint bug: `truncate_to_tokens` returns `tuple[str, bool]`, not `str` — unpacked correctly instead of following the blueprint verbatim. Engine-side merge fidelity check passed (`unexpected_files: []`). Merge-tier validation (root scope): 4 failed, 1132 passed — all 4 failures confirmed pre-existing on origin/dev / a known worktree environment limitation, unrelated to this task's two files (see `issue:33fe54e65d2d`). Reviewed via `coder-review:a66d1c15e4475f6ce97d0e9d`, zero fix commits needed.
 
 **Deviations from spec**: none

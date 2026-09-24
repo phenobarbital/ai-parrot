@@ -301,7 +301,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -309,8 +309,9 @@
       "parallelism_notes": "no FEAT-600 import: uses only BaseWikiStore.search_fts(category='table') on the injected store (store.py:576); table pages are written by other tasks but tests seed them directly",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3694-devloop-schema-context.md"
+      "completed_at": "2026-09-24T22:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3694-devloop-schema-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3695",
