@@ -12,6 +12,7 @@ via :class:`parrot_loaders.pdf.PDFLoader`. Calling it directly keeps the
 page indexing aligned with ``get_page_tokens`` (no implicit reordering,
 no page-filtering side effects).
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -75,8 +76,7 @@ def extract_markdown_per_page(
     """
     if pymupdf is None or pymupdf4llm is None:
         raise ImportError(
-            "extract_markdown_per_page requires pymupdf and pymupdf4llm; "
-            "install them via the [pdf] extra."
+            "extract_markdown_per_page requires pymupdf and pymupdf4llm; " "install them via the [pdf] extra."
         )
 
     path_str = os.fspath(pdf_path)

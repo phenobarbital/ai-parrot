@@ -1,4 +1,5 @@
 """FEAT-601 M6 — additive image extraction in pdf_to_markdown (AC12)."""
+
 from __future__ import annotations
 
 from pathlib import Path
