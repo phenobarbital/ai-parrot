@@ -81,6 +81,10 @@ also edits can mask the very defects it should surface.
 6. **Decide the verdict.** `PASS` only if: the feature's targeted tests all
    pass AND `ruff` returns 0 AND `mypy` returns 0 (when configured) AND no
    acceptance criterion is left without a test. Otherwise `FAIL`.
+7. **Keep E2E separate.** The outer dev-loop runs `parrot e2e run --plan`
+   after final QA/review edits and deterministic rechecks. Do not add E2E to
+   the FEAT-563 selector or treat an agent judgement as E2E evidence. Preserve
+   this report's `verdict: PASS|FAIL`; record the rich E2E result separately.
 
 ## Output Contract
 

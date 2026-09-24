@@ -1,0 +1,177 @@
+name: E2E — Deterministic Gate & Live Opt-In (FEAT-581)
+
+# FEAT-581 M9: a dedicated, separate lane from `ci.yml`. Only two triggers —
+# nightly cron and manual dispatch — deliberately no `push`/`pull_request`
+# trigger at all, so a fork-authored pull request can never reach the `live`
+# job's secret regardless of any other guard (spec §3 M9: "Never expose
+# credentials to pull-request forks.").
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      run_live:
+        description: >-
+          Also run the optional, paid live Google MCP-agent scenario
+          (dispatch-only; requires the GOOGLE_API_KEY repository secret).
+        type: boolean
+        default: false
+        required: false
+
+# Scoped by workflow + ref (spec §3 M9 "concurrency scoped by workflow/ref"):
+# a second dispatch/cron tick for the same ref cancels an in-flight run
+# rather than piling up concurrent, port-colliding E2E supervisors.
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic:
+    name: Deterministic E2E gate (no provider secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      # Install only already-declared package/dev dependencies (spec §3 M9:
+      # "Install existing package/dev dependencies through uv") -- the `mcp`
+      # extra is what the deterministic MCP-toolkit/MCP-stdio/BotManager
+      # targets themselves import (the official `mcp` SDK, click, PyYAML);
+      # no new dependency is added by this workflow.
+      - name: Sync workspace (+ mcp extra)
+        run: uv sync --all-packages --extra mcp
+
+      # NavConfig refuses to import without an env/<environment>/.env file,
+      # and env/ is gitignored -- same bootstrap as ci.yml's other jobs.
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      # Local `redis-server` binary only (spec §3 M9: "provision Redis binary
+      # for fixture-owned processes") -- the `botmanager` target spawns its
+      # own private, persistence-disabled redis-server per run; there is no
+      # managed service container and no credential configured here.
+      - name: Provision local Redis binary
+        run: |
+          sudo apt-get install -y redis-server
+          redis-server --version
+
+      # Always-run fast harness prerequisites (never E2E-gated themselves),
+      # run first so a broken harness fails fast before any real subprocess
+      # scenario is attempted.
+      - name: Run E2E harness unit prerequisites
+        run: uv run pytest packages/ai-parrot-server/tests/unit/e2e/ -q --tb=short
+
+      # The one declared, frozen deterministic plan -- never a broad root
+      # `pytest -m e2e` and never `--continue-on-collection-errors` (spec §3
+      # M9: "no broad root pytest -m e2e, no collection-error suppression").
+      # `set -o pipefail` so a nonzero `parrot e2e run` exit (FAIL/BLOCKED)
+      # fails this step even though its JSON verdict is also teed to a file.
+      - name: Run deterministic E2E plan
+        shell: bash
+        env:
+          PARROT_TEST_E2E: "1"
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/logs/e2e
+          uv run parrot e2e run \
+            --plan packages/ai-parrot-server/tests/e2e/plans/deterministic.md \
+            | tee artifacts/logs/e2e/deterministic-verdict.json
+
+      # Failure artifacts are always published, never conditionally silenced
+      # (spec §3 M9: "logs/evidence upload on failure").
+      - name: Upload deterministic E2E evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-deterministic-evidence
+          path: |
+            artifacts/logs/e2e/deterministic-verdict.json
+            sdd/state/FEAT-581/e2e/
+          retention-days: 14
+          if-no-files-found: warn
+
+  live:
+    name: Optional live Google E2E (dispatch-only)
+    needs: deterministic
+    # Dispatch-only, explicit opt-in (spec §3 M9: "separate live job only on
+    # dispatch with explicit live input and secret"). `schedule` events have
+    # no `inputs` context at all, so the nightly cron run can never satisfy
+    # this condition -- only an operator explicitly dispatching with
+    # `run_live: true` can.
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_live == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Sync workspace (+ mcp extra)
+        run: uv sync --all-packages --extra mcp
+
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      # If the GOOGLE_API_KEY secret is not configured on this repository,
+      # `parrot.e2e.runner._live_enabled()` reports the one required live
+      # scenario `blocked` and the whole run's verdict is BLOCKED (exit code
+      # 3) -- a visible, honest outcome, never a silently-skipped green
+      # (spec §3 M9: "Missing live secret is BLOCKED when the live job was
+      # explicitly requested.").
+      - name: Run optional live E2E plan
+        shell: bash
+        env:
+          PARROT_TEST_E2E: "1"
+          PARROT_TEST_REAL_LLM: "1"
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/logs/e2e
+          uv run parrot e2e run \
+            --plan packages/ai-parrot-server/tests/e2e/plans/live.md \
+            | tee artifacts/logs/e2e/live-verdict.json
+
+      - name: Upload live E2E evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-live-evidence
+          path: |
+            artifacts/logs/e2e/live-verdict.json
+            sdd/state/FEAT-581/e2e/
+          retention-days: 14
+          if-no-files-found: warn
