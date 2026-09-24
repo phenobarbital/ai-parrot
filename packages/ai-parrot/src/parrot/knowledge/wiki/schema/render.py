@@ -85,7 +85,9 @@ def render_page(record: TableRecord) -> tuple[WikiPageRecord, list[ColumnRecord]
     """
     metadata = record.metadata
     table_id = table_concept_id(record.origin, metadata.schema, metadata.tablename)
-    foreign_keys = {foreign_key["column"]: foreign_key for foreign_key in metadata.foreign_keys if "column" in foreign_key}
+    foreign_keys = {
+        foreign_key["column"]: foreign_key for foreign_key in metadata.foreign_keys if "column" in foreign_key
+    }
     columns = [
         ColumnRecord(
             table_id=table_id,
@@ -97,16 +99,18 @@ def render_page(record: TableRecord) -> tuple[WikiPageRecord, list[ColumnRecord]
             comment=column.get("comment"),
             is_primary_key=column["name"] in metadata.primary_keys,
             fk_target=(
-                table_concept_id(
-                    record.origin,
-                    foreign_keys[column["name"]]["ref_schema"],
-                    foreign_keys[column["name"]]["ref_table"],
+                (
+                    table_concept_id(
+                        record.origin,
+                        foreign_keys[column["name"]]["ref_schema"],
+                        foreign_keys[column["name"]]["ref_table"],
+                    )
+                    + "."
+                    + foreign_keys[column["name"]]["ref_column"]
                 )
-                + "."
-                + foreign_keys[column["name"]]["ref_column"]
-            )
-            if column["name"] in foreign_keys
-            else None,
+                if column["name"] in foreign_keys
+                else None
+            ),
         )
         for ordinal, column in enumerate(metadata.columns)
     ]

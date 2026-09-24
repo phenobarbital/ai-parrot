@@ -48,8 +48,6 @@ def test_page_edges_and_fk_target(sales_metadata) -> None:
 
 def test_source_page_contains_only_dsn_environment_name() -> None:
     """Source pages expose a credential reference, not the credential value."""
-    page = render_source_page(
-        SchemaSourceConfig(alias="warehouse", dialect="postgres", dsn_env="WAREHOUSE_DSN")
-    )
+    page = render_source_page(SchemaSourceConfig(alias="warehouse", dialect="postgres", dsn_env="WAREHOUSE_DSN"))
     assert "WAREHOUSE_DSN" in page.body
     assert "postgresql://secret" not in page.body
