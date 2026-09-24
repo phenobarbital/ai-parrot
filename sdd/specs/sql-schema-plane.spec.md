@@ -11,7 +11,7 @@ tags: [wiki, schema-plane, database-agent, sqlglot, mcp, dev-loop]
 **Feature ID**: FEAT-600
 **Date**: 2026-09-24
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot`
 **Exploration**: `sdd/proposals/schema-plane.brainstorm.md` (Option B, all 9 questions resolved) ·
 `sdd/proposals/sql-schema-plane.proposal.md` (FEAT-600 research, 25 findings under `sdd/state/FEAT-600/`)
