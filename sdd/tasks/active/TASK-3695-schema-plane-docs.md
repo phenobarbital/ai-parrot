@@ -1,0 +1,181 @@
+# TASK-3695: Operator guide `docs/wiki/schema-plane.md` + CLAUDE.md knowledge-graph paragraph
+
+**Feature**: FEAT-600 — SQL Schema Plane
+**Spec**: `sdd/specs/sql-schema-plane.spec.md`
+**Status**: pending
+**Priority**: low
+**Estimated effort**: S (< 2h)
+**Depends-on**: TASK-3687, TASK-3689
+**Assigned-to**: unassigned
+
+---
+
+## Context
+
+Spec §3 Module 8 / AC15. One operator guide (declare a source, sync, ingest-ddl, diff, lookup, annotate; id grammar; merge rule; security invariants; freshness) and one paragraph in CLAUDE.md's Codebase Knowledge Graph section pointing agents at `wiki_schema_*`.
+
+---
+
+## Scope
+
+- Create `docs/wiki/schema-plane.md`.
+- Modify `CLAUDE.md`: add a **Schema plane (FEAT-600).** paragraph right after the **Symbol lookup and blast radius (FEAT-498).** paragraph (CLAUDE.md:404).
+- Create `test_docs_present.py` asserting the doc exists and names the six verbs and four tools.
+
+**NOT in scope**: Code changes; `.agent/` twin regeneration (note it in the completion note if AGENTS.md regen is required by FEAT-553 conventions).
+
+---
+
+## Files to Create / Modify
+
+| File | Action | Description |
+|---|---|---|
+| `docs/wiki/schema-plane.md` | CREATE | operator guide |
+| `CLAUDE.md` | MODIFY | one paragraph |
+| `packages/ai-parrot/tests/knowledge/wiki/schema/test_docs_present.py` | CREATE | doc presence test |
+
+---
+
+## Codebase Contract (Anti-Hallucination)
+
+> **CRITICAL**: VERIFIED references (HEAD `0384596cf`, 2026-09-24). Use them VERBATIM. Anything not listed
+> here must be verified with `grep`/`read` before use.
+
+### Verified Imports
+```python
+# none — documentation task
+```
+
+### Existing Signatures to Use
+```python
+# CLAUDE.md:404 — paragraph starting `**Symbol lookup and blast radius (FEAT-498).**` (occurrences: 1) ← insert the new paragraph AFTER it
+# docs/wiki/ currently holds cheatsheet.md only
+```
+
+### Does NOT Exist
+- ~~`docs/wiki/schema-plane.md`~~ — new
+- ~~a `wikitoolkit schema` section in `docs/wiki/cheatsheet.md`~~ — optional; not required by AC15
+
+---
+
+## Complexity Contract
+
+```json
+{
+  "schema_version": 1,
+  "targets": [
+    {
+      "path": "docs/wiki/schema-plane.md",
+      "action": "CREATE"
+    },
+    {
+      "path": "CLAUDE.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/knowledge/wiki/schema/test_docs_present.py",
+      "action": "CREATE"
+    }
+  ],
+  "contract_symbols": []
+}
+```
+
+---
+
+## Implementation Notes
+
+### Pattern to Follow
+`docs/wiki/cheatsheet.md` tone; the CLAUDE.md FEAT-498 paragraph for length and voice.
+
+### Key Constraints
+- English; id grammar written exactly as `table:<origin>/<schema>.<table>`; state the merge rule (live wins, DDL fills gaps, diff reports) and G7 (env NAMES only, samples off by default).
+- CLAUDE.md paragraph ≤ 8 lines.
+
+### References in Codebase
+- sdd/specs/sql-schema-plane.spec.md §2, §5 AC15
+- sdd/proposals/schema-plane.brainstorm.md — Feature Description
+
+---
+
+## Implementation Blueprint
+
+> Executor-ready starting point derived from spec §3 Interface Skeletons; anchors re-verified at HEAD
+> `0384596cf`. Complete every `# FILL IN:` marker; never change a signature, class name or path fixed here.
+
+### Steps (in order)
+1. Write the guide with sections: Why, Ids, Declare a source, Sync, Offline DDL ingest, Lookup & join paths (MCP + CLI), Annotate, Drift (`diff`), Freshness & repair, Security, Runtime (`DatabaseAgent(schema_plane=…)`).
+2. Insert the CLAUDE.md paragraph.
+3. Add the presence test.
+
+### `CLAUDE.md` (MODIFY)
+```python
+# occurrences: 1 (verified: grep -c '**Symbol lookup and blast radius (FEAT-498).**' CLAUDE.md) → CLAUDE.md:404
+# AFTER — insert a blank line then this paragraph below the FEAT-498 paragraph:
+**Schema plane (FEAT-600).** SQL data models live in a separate overlay plane
+(`.parrot/schema/schema.db`) as `source:` / `schema:` / `table:<origin>/<schema>.<table>`
+pages. Before writing SQL, a repository, or a `DatabaseToolkit` subclass, read the
+table with `wiki_schema_lookup("<origin>:<schema>.<table>")` (DDL, columns, FKs,
+annotations, staleness), find join paths with `wiki_schema_neighbors`, and search
+names/comments with `wiki_schema_search`. Never introspect `information_schema`
+yourself when a page exists. Operator guide: `docs/wiki/schema-plane.md`.
+```
+**Why**: Agents must be told the plane exists or they keep re-discovering the schema (problem statement §1).
+
+### FILL IN checklist
+- [ ] guide body per the Steps outline
+- [ ] presence test
+
+---
+
+## Acceptance Criteria
+
+- [ ] `docs/wiki/schema-plane.md` exists and documents id grammar, merge rule, security invariants and the six CLI verbs (AC15)
+- [ ] CLAUDE.md paragraph present after the FEAT-498 paragraph
+- [ ] presence test green
+
+---
+
+## Validation Commands
+
+- `pytest packages/ai-parrot/tests/knowledge/wiki/schema/test_docs_present.py -q`
+
+---
+
+## Test Specification
+
+```python
+# packages/ai-parrot/tests/knowledge/wiki/schema/test_docs_present.py
+from pathlib import Path
+
+def test_guide_mentions_verbs_and_tools():
+    text = Path("docs/wiki/schema-plane.md").read_text()
+    for verb in ("sources", "add-source", "sync", "ingest-ddl", "diff", "lookup"):
+        assert verb in text
+    for tool in ("wiki_schema_lookup", "wiki_schema_search", "wiki_schema_neighbors", "wiki_schema_sources"):
+        assert tool in text
+    assert "table:<origin>/<schema>.<table>" in text
+```
+
+---
+
+## Agent Instructions
+
+1. Read the spec (`sdd/specs/sql-schema-plane.spec.md`) §2, §3 module for this task, §6 Codebase Contract, §7.
+2. Check dependencies — `TASK-3687, TASK-3689` must be in `sdd/tasks/completed/`.
+3. Verify the Codebase Contract above (`grep`/`read`) before writing code; re-run `grep -c` on every MODIFY anchor.
+4. Implement from the Blueprint; complete every `# FILL IN:`; run the Validation Commands
+   (inside a worktree: `PYTHONPATH=packages/ai-parrot/src pytest …`), then `ruff check` + `black --check` on touched files.
+5. Commit ONLY the files listed above. Move this file to `sdd/tasks/completed/`, update the per-spec index, fill the Completion Note.
+
+---
+
+## Completion Note
+
+*(Agent fills this in when done)*
+
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**: none
