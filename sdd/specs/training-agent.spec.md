@@ -13,7 +13,7 @@ tags: [knowledge-graph, ontology, manuals, procedures, figures, video, media-del
 **Feature ID**: FEAT-601 (reserved by `/sdd-proposal` on 2026-09-24, ledger label `training-agent`; reused verbatim — no second reservation)
 **Date**: 2026-09-25
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: draft
+**Status**: approved — all §8 questions resolved 2026-09-25
 **Target version**: next minor release
 **Exploration**: `sdd/proposals/training-agent.brainstorm.md` (Option B) → `sdd/proposals/training-agent.proposal.md` (FEAT-601, status `review`, U1–U5 resolved) → external review `sdd/state/FEAT-601/review.md` (R1–R4 all CONFIRM)
 
@@ -45,17 +45,19 @@ Plain RAG over chunked manuals is the wrong shape for this content:
 - **G7 — Bitemporal procedure versions.** `Procedure.versions[]` with `valid_from` inclusive / `valid_to` exclusive, `null` = current; a manual revision is a new version of each procedure it touches.
 - **G8 — No new heavy dependency.** `pymupdf`/`pymupdf4llm` (pinned), `rapidfuzz`, `bm25s`, ArangoDB via `asyncdb`, and the existing vision entry points.
 - **G9 — Validation-first.** The four spikes (figure pairing, media round-trip, video alignment, tip survival) are the first milestone (M0) and gate M5–M9 sign-off.
+- **G10 — Applicability by serial / model year (Q7, v1).** A step carries structured `Applicability` (model qualifiers + serial ranges) extracted with evidence; the answer path resolves it against the technician's declared serial and never shows a step that does not apply, nor hides one it cannot decide — undecidable ⇒ the step is shown with an explicit applicability note.
+- **G11 — Exploded-view callouts (Q8, v1).** Numbered callouts in an exploded view map to `Part` nodes through a vision structured-output pass (`ask_to_image(structured_output=CalloutMap)`); "which one is part 7?" is a `depicts` traversal. The pass is gated on spike 1 passing for plain figure pairing.
+- **G12 — Offline bundle (Q9, v1).** `parrot manuals export <manual_id>` produces a self-contained bundle (manifest, procedures, steps, applicability, hazards, tips, figures as files with captions, video deep links) for a per-device viewer. The viewer itself is not built here.
 
 ### Non-Goals (explicitly out of scope)
 
 - OCR for scanned / image-only manuals — refused with a clear message in v1 (`PDFLoader.is_image_only` semantics kept).
-- Exploded-view callout → `Part` mapping via vision structured output (v2, brainstorm §Open Questions).
-- Serial-range / model-year applicability on `Step` (v2).
-- Offline / per-device viewer.
+- The per-device **viewer** that consumes the export bundle (G12) — the bundle format is in scope, the app is not.
 - A generic `OntologyToolkit` exposing traversal patterns to any agent.
 - Re-hosting vendor video; keyframe extraction; timecoded Gemini scene parsing at loader level.
 - Changing `OntologyRefreshPipeline` semantics — the loader is the write path, as in contracts (proposal F012).
 - Admin UI curator view (follow-up, same shape as the contracts verification queue).
+- Certification-gated reads: the client confirmed (Q1, 2026-09-25) that equipment certification is **not** an access requirement.
 - Renaming `Citation.contract_id` / `EvidenceRef.contract_id` to `doc_id`, generalizing `EvidenceArchive`, or moving `ContractVersion`/`ContractAnswer` (U2 narrowed).
 - Unenforced `certified_for` relation "reserved for later" (U5, R4).
 - Options A (books + PageIndex only), C (wiki plane) and D (long-context prompt) were rejected in the brainstorm; A survives only as the in-graph fallback retrieval path (`answer_kind="lookup"`).
@@ -77,6 +79,12 @@ Copy the contracts architecture one level up: the **document** gets a card (`Man
 **Guided mode** ("guíame"): `proc_start_guided` calls `begin_task(goal=<procedure title>, steps=[{label: step_id, title, description, required: True, depends_on_labels: [prev]}], plan_complete=True)`; `proc_next_step` / `proc_mark_done` wrap `update_step(expected_revision=…)` / `set_resume_hint`; `proc_resume` uses `recall_task` + `select_task` with the durable `TaskAssociationStore` so "¿dónde me quedé?" works the next day; completion records `record_episode(category=EpisodeCategory.WORKFLOW_PATTERN, metadata={procedure_id, manual_id, revision})` — no core enum change.
 
 **Tips** ("anota que el clip de la rev B va al revés"): `proc_add_tip` (confirming tool) writes a `Tip` node into the technician-owned collection `tech_tip` with `origin="technician"`, `author_employee_id` from the trusted `RequestContext` (never model-supplied), and a `tech_tip_on` edge to the step. Visible from the next answer on (moderation remains an open question, §8).
+
+**Applicability** (Q7): pass 2 captures "for model …" / "from S/N …" / "serial numbers 2024-0001 and later" qualifiers as evidence-backed `Applicability` on each step (`models[]`, `serial_ranges[]` with vendor-format-preserving `SerialRange(start, end, format)`); the technician's serial arrives in the trusted `RequestContext.equipment_serial` (asked once per session when the resolved procedure has any serial-qualified step); `assemble_procedure` filters with `applies(step, …)` and marks undecidable steps (`applicability="unknown"`) instead of dropping them.
+
+**Callouts** (Q8): for every figure whose caption or step evidence mentions callout numbers, M6 runs one `ask_to_image(prompt, image, structured_output=CalloutMap)` call (all three providers accept `structured_output` — §6) and resolves each callout label to a `Part` from the header parts table by part number or `similarity ≥ 0.85`; resolved callouts become `depicts(Media → Part, callouts[])` edges; unresolved ones stay on the media node as `unresolved_callouts[]` and enter the verification queue. `proc_find_part(media_id, callout)` answers "which one is part 7?". The pass runs only when spike 1 passes.
+
+**Export** (Q9): `parrot manuals export <manual_id> --out <dir>` writes `<manual_id>-<revision>.bundle/` (`manifest.json` with manual/revision/generated_at/sha256s, `procedures.json` with steps, applicability, hazards, prerequisites, media roles, active tips, `figures/<media_id>.png` downloaded from storage, `captions.json`, `videos.json` with URIs + `t_start`/`t_end`) and an optional `.zip`; no presigned URLs, no graph internals; authorized as a curator action.
 
 **Re-ingest** (`parrot manuals refresh <manual_id> <file>`): new card revision, `Procedure.versions[]` appended (`valid_from = now`, previous `valid_to = now`), `publish_all()` reconciles only manual-owned collections, then the explicit, idempotent `relink_tips(manual_id)` operation re-attaches `tech_tip_on` edges by `step.source_identity` → exact `content_hash` equality → curator candidates (`rapidfuzz` on *text*, never on hashes); orphans keep `orphaned=true` with their source revision; the publication report carries link-maintenance failures instead of claiming success.
 
@@ -120,6 +128,7 @@ Copy the contracts architecture one level up: the **document** gets a card (`Man
 | `knowledge/pageindex/pdf_to_markdown.py` | **modifies** (additive `images_dir`; new `extract_page_images`) | M6; the `(page, text)` contract and the "never pass `pages=`" rule are preserved |
 | `knowledge/pageindex/toolkit.py::PageIndexToolkit` | uses (`create_tree`, `insert_markdown`, `get_tree`, `search`) | M8, M10 |
 | `knowledge/bookstore/carding.py` (`slugify`, `unique_slug`, `derive_toc`) | uses | M5, M8 |
+| `FileManagerInterface.download_file` | uses | M14 export (figures pulled from storage) |
 | `knowledge/bookstore/relations.py` / `library.py::relate_books` | pattern copy (judgement log + `--force`) | M7 |
 | `parrot_loaders/{basevideo,youtube,videolocal}.py` | uses (`transcript_to_blocks`) | M7 (optional import — core must not hard-require the loaders satellite) |
 | `parrot_loaders/extractors/{base,factory}.py` (`ExtractDataSource`, `DataSourceFactory`) | uses | M8 (optional import, as `contracts/datasource.py`) |
@@ -152,7 +161,7 @@ class Step(BaseModel):
     text: Extracted[str]                # evidence required — no quote ⇒ rejected at carding
     torque: Extracted[str] | None
     duration_minutes: Extracted[int] | None
-    applies_to: list[str]               # equipment model qualifiers; empty = all
+    applicability: Applicability        # Q7: models[] + serial_ranges[]; empty = all; evidence-backed
     figure_refs: list[str]              # "Fig. 3-4" as written, captured in pass 2
     parts: list[PartRef]; tools: list[ToolRef]; hazards: list[Hazard]; media: list[MediaRef]
 
@@ -169,6 +178,13 @@ class ManualCard(BaseModel):
     procedures: list[Procedure]; global_parts: list[PartRef]; global_tools: list[ToolRef]; global_hazards: list[Hazard]
     figures: list[MediaRef]; field_provenance: dict[str, FieldProvenance]; verification: VerificationState
     versions: list[ManualVersion]; card_origin: CardOrigin
+
+class SerialRange(BaseModel):
+    start: str | None; end: str | None; format: str        # vendor format preserved (e.g. "2024-0001"); comparison via normalize_serial()
+class Applicability(BaseModel):
+    models: list[str] = []; serial_ranges: list[SerialRange] = []; evidence: Evidence | None
+class CalloutMap(BaseModel):                                 # Q8 — vision structured output
+    callouts: list[Callout]                                  # Callout(label: str, description: str, part_number: str | None, bbox: tuple | None)
 
 class ProcedureAnswer(BaseModel):
     answer_kind: ProcedureAnswerKind    # "procedure" | "step" | "prerequisites" | "lookup" | "clarification" | "not_found" | "out_of_scope" | "denied" | "incomplete"
@@ -189,8 +205,9 @@ from parrot.knowledge.manuals.catalog_postgres import PostgresManualCatalog
 from parrot.knowledge.manuals.figures import extract_figures, pair_figures, caption_figures, upload_figures
 from parrot.knowledge.manuals.video import align_video
 from parrot.knowledge.manuals.tips import relink_tips
+from parrot.knowledge.manuals.export import export_bundle
 from parrot_tools.procedures import ProcedureRetrieval, ProceduresToolkit, ProceduresAgent, ProceduresAnswerService, ProcedureAnswer
-# CLI: parrot manuals {add, add-video, refresh, verify, queue, relink-tips, spike}
+# CLI: parrot manuals {add, add-video, refresh, verify, queue, relink-tips, export, spike}
 ```
 
 ---
@@ -214,7 +231,8 @@ All paths are relative to the repository. Each module ships focused tests in its
 | M10 Retrieval + release | `parrot_tools/procedures/{__init__,retrieval,assembly,verifier,service}.py` | Authorize, resolve, plan, traverse, assemble, verify (blocking), audit, presign; M2, M3, M4, M9 |
 | M11 Toolkit + agent + guided | `parrot_tools/procedures/{toolkit,agent,guided}.py` | One action per tool, confirming writes, transport adapter, task-memory guided mode, episodes; M10 |
 | M12 Media delivery | `models/responses.py`; `integrations/parser.py`; four wrappers + three duplicate senders | `image_urls`/`media_urls` end to end; Path behaviour untouched; independent |
-| M13 CLI + packaging + docs | `parrot_tools/procedures/{cli,__main__}.py`; `cli/__init__.py`; `pyproject.toml`; `docs/knowledge/manuals.md` | click group, lazy registration, `manuals` extra, operator docs; M8, M10, M11 |
+| M13 CLI + packaging + docs | `parrot_tools/procedures/{cli,__main__}.py`; `cli/__init__.py`; `pyproject.toml`; `docs/knowledge/manuals.md` | click group, lazy registration, `manuals` extra, operator docs; M8, M10, M11, M14 |
+| M14 Export bundle | `knowledge/manuals/export.py` | Q9: self-contained per-manual bundle (manifest, procedures, figures, captions, videos); M2, M4, M6 |
 
 #### Delegation-eligible modules
 
@@ -234,6 +252,7 @@ All paths are relative to the repository. Each module ships focused tests in its
 | M11 | yes | tool names, prefixes, confirming set, adapter shape fixed | — |
 | M12 | yes | field names, parser semantics, per-channel behaviour fixed in §3 M12 | — |
 | M13 | yes | command names, lazy registration lines, extra composition fixed | — |
+| M14 | yes | bundle layout and manifest fields fixed in §3 M14 | — |
 
 ### Module 0: Spike harness
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/manuals/spikes.py`
@@ -323,11 +342,21 @@ All paths are relative to the repository. Each module ships focused tests in its
       media_id: str; kind: MediaKind; storage_key: str | None; uri: str | None; page: int | None
       bbox: tuple[float, float, float, float] | None; sha256: str | None; caption: str | None; label: str | None
       t_start: float | None; t_end: float | None; origin: TipOrigin = "manual"
+      callouts: list[CalloutLink] = []; unresolved_callouts: list[Callout] = []      # Q8
       # validator: figure/photo ⇒ storage_key; video_segment ⇒ uri and t_start < t_end; never an http(s) URL in storage_key
   class MediaLink(BaseModel): media_id: str; role: MediaRole; confidence: float; origin: Literal["manual", "llm"]
+  class SerialRange(BaseModel): start: str | None; end: str | None; format: str          # Q7
+  class Applicability(BaseModel): models: list[str] = []; serial_ranges: list[SerialRange] = []; evidence: Evidence | None = None
+      # validator: any serial_ranges ⇒ evidence required (a serial qualifier is a critical field, G2)
+  def normalize_serial(value: str, *, format: str) -> tuple[int, ...]: ...   # deterministic key for range comparison; ValueError when the value does not match the format
+  def applies(step: "Step", *, model: str | None, serial: str | None) -> Literal["yes", "no", "unknown"]:
+      """Pure. models[] mismatch ⇒ no; serial_ranges present and serial None ⇒ unknown; serial outside every range ⇒ no; else yes."""
+  class Callout(BaseModel): label: str; description: str; part_number: str | None; bbox: tuple[float, float, float, float] | None   # Q8
+  class CalloutMap(BaseModel): callouts: list[Callout]                                    # vision structured output
+  class CalloutLink(BaseModel): media_id: str; part_id: str; callout: str; confidence: float; origin: Literal["vision"]
   class Step(BaseModel):
       identity: StepIdentity; order: int; text: Extracted[str]; torque: Extracted[str] | None = None
-      duration_minutes: Extracted[int] | None = None; applies_to: list[str] = []; figure_refs: list[str] = []
+      duration_minutes: Extracted[int] | None = None; applicability: Applicability = Applicability(); figure_refs: list[str] = []
       parts: list[PartRef] = []; tools: list[ToolRef] = []; hazards: list[Hazard] = []; media: list[MediaLink] = []
       cross_refs: list[str] = []          # "before step N" / "§4.2" phrases, evidence-backed, resolved by assembly
       # validator: text.evidence is required and substantiates() — otherwise ValueError (G2)
@@ -364,7 +393,7 @@ All paths are relative to the repository. Each module ships focused tests in its
     Equipment:  {collection: equipment, source: manualcard, key_field: equipment_id, properties: [...model, family, revision, aliases(list)], vectorize: [model]}
     Manual:     {collection: manual,    source: manualcard, key_field: manual_id, properties: [...revision, source_sha256, active(boolean), versions(list)]}
     Procedure:  {collection: procedure, source: manualcard, key_field: procedure_id, properties: [...kind(enum), title, estimated_minutes(int), skill_level, active(boolean), verification(enum), versions(list)], vectorize: [title]}
-    Step:       {collection: step,      source: manualcard, key_field: step_id, properties: [...order(int), source_identity, content_hash, text, torque, duration_minutes(int), applies_to(list), node_id, page(int), active(boolean)]}
+    Step:       {collection: step,      source: manualcard, key_field: step_id, properties: [...order(int), source_identity, content_hash, text, torque, duration_minutes(int), applies_models(list), applies_serial_ranges(list), node_id, page(int), active(boolean)]}
     Part:       {collection: part,      source: manualcard, key_field: part_id, properties: [...part_number, name]}
     Tool:       {collection: tool,      source: manualcard, key_field: tool_id, properties: [...name, spec]}
     Hazard:     {collection: hazard,    source: manualcard, key_field: hazard_id, properties: [...severity(enum), text]}
@@ -380,18 +409,19 @@ All paths are relative to the repository. Each module ships focused tests in its
     warns:          {from: Step,      to: Hazard,    edge_collection: warns}
     illustrated_by: {from: Step,      to: Media,     edge_collection: illustrated_by, properties: [roles(list), confidence(float), origin(string)]}   # roles is a LIST for the same reason
     overview_media: {from: Procedure, to: Media,     edge_collection: overview_media}
+    depicts:        {from: Media,     to: Part,      edge_collection: depicts,        properties: [callouts(list), confidence(float), origin(string)]}   # Q8; one edge per (media, part), callout labels as a list (F010)
     shares_module:  {from: Equipment, to: Equipment, edge_collection: shares_module, properties: [module(string)]}
     supersedes:     {from: Procedure, to: Procedure, edge_collection: supersedes}
     tech_tip_on:    {from: Tip,       to: Step,      edge_collection: tech_tip_on,   properties: [linked_by(string), linked_at(date)]}     # technician-owned
     tech_tip_by:    {from: Tip,       to: Employee,  edge_collection: tech_tip_by, discovery: {strategy: field_match, rules: [{source_field: author_employee_id, target_field: employee_id, match_type: exact}]}}   # copies is_employee (contracts.ontology.yaml:300-310)
   traversal_patterns:   # every query_template filters `active != false AND _active != false` (contracts precedent 466-508); authorization: {rules: [{rule: has_role, role: technician}, {rule: has_role, role: manual_curator}], default_deny: true}
-    procedure_steps, procedure_prerequisites, procedures_for_equipment, step_detail, equipment_sharing_module, procedure_in_force, tips_for_procedure, verification_queue_procedures (curator only)
+    procedure_steps, procedure_prerequisites, procedures_for_equipment, step_detail, equipment_sharing_module, procedure_in_force, tips_for_procedure, part_for_callout (Q8: Media → depicts → Part by callout label), verification_queue_procedures (curator only)
   ```
   ```python
   # packages/ai-parrot/src/parrot/knowledge/manuals/domain.py  (new)
   PROCEDURES_DOMAIN = "procedures"
   OWNED_VERTEX_COLLECTIONS: tuple[str, ...] = ("equipment", "manual", "procedure", "step", "part", "tool", "hazard", "media")
-  OWNED_EDGE_COLLECTIONS: tuple[str, ...] = ("documents", "assembles", "has_step", "precedes", "requires_part", "requires_tool", "warns", "illustrated_by", "overview_media", "shares_module", "supersedes")
+  OWNED_EDGE_COLLECTIONS: tuple[str, ...] = ("documents", "assembles", "has_step", "precedes", "requires_part", "requires_tool", "warns", "illustrated_by", "overview_media", "depicts", "shares_module", "supersedes")
   TECHNICIAN_COLLECTIONS: tuple[str, ...] = ("tech_tip", "tech_tip_on", "tech_tip_by")   # never reconciled by M9
   TECHNICIAN_ROLE = "technician"; CURATOR_ROLE = "manual_curator"
   class ProceduresDomainNotLoaded(RuntimeError): ...          # mirrors ContractsDomainNotLoaded, verified: contracts/graph_loader.py:102
@@ -445,7 +475,9 @@ All paths are relative to the repository. Each module ships focused tests in its
   def select_header_nodes(toc: Sequence[TocEntry], bodies: Mapping[str, str]) -> list[str]: ...
   def select_procedure_nodes(toc: Sequence[TocEntry], bodies: Mapping[str, str], *, limit: int = DEFAULT_MAX_PROCEDURE_SECTIONS, exclude: Sequence[str] = ()) -> list[str]: ...
   class ManualHeaderDraft(BaseModel): ...             # equipment models, revision, global parts/tools/hazards — every value Extracted[...]
-  class StepDraft(BaseModel): text: Extracted[str]; order: int; source_identity: str | None; torque: Extracted[str] | None; duration_minutes: Extracted[int] | None; part_mentions: list[str]; tool_mentions: list[str]; hazard_texts: list[Extracted[str]]; figure_refs: list[str]; applies_to: list[str]; cross_refs: list[str]
+  class StepDraft(BaseModel): text: Extracted[str]; order: int; source_identity: str | None; torque: Extracted[str] | None; duration_minutes: Extracted[int] | None; part_mentions: list[str]; tool_mentions: list[str]; hazard_texts: list[Extracted[str]]; figure_refs: list[str]; applies_models: list[str]; serial_qualifiers: list[Extracted[str]]; callout_mentions: list[str]; cross_refs: list[str]
+  SERIAL_QUALIFIER_RE = re.compile(r"(?:S/N|serial(?:\s+numbers?)?|n[úu]mero de serie)\s*(?:from|desde|>=|≥|and later|y posteriores)?\s*([A-Z0-9\-]+)(?:\s*(?:to|hasta|-|–)\s*([A-Z0-9\-]+))?", re.I)
+  def parse_serial_qualifier(text: str) -> SerialRange | None: ...   # deterministic; format inferred from the literal; None when unparseable (kept as literal + queue entry)
   class ProcedureDraft(BaseModel): title: Extracted[str]; kind: ProcedureKind; steps: list[StepDraft]; node_id: str
   class CardingDraft(BaseModel): header: ManualHeaderDraft; procedures: list[ProcedureDraft]; warnings: list[str]
   def header_prompt(*, filename: str, toc_digest: str, material: str) -> str: ...
@@ -456,7 +488,7 @@ All paths are relative to the repository. Each module ships focused tests in its
   def fallback_header_draft(source: str | Path, toc: Sequence[TocEntry] = ()) -> ManualHeaderDraft: ...
   async def draft_manual(adapter: Any, *, filename: str, toc: Sequence[TocEntry], toc_digest: str, loader: Callable[[str], str | None], max_procedure_sections: int = DEFAULT_MAX_PROCEDURE_SECTIONS) -> CardingDraft: ...
   def assemble_card(draft: CardingDraft, *, manual_id: str, source: SourceInfo, figures: Sequence[MediaRef], page_map: Mapping[str, int], now: datetime) -> ManualCard:
-      """Deterministic: resolve parts (similarity ≥ 0.85), mint step ids, hash content, derive precedes, pair figure_refs → media by label (M6.pair_figures), sum durations."""
+      """Deterministic: resolve parts (similarity ≥ 0.85), mint step ids, hash content (Applicability is part of the hash), derive precedes, pair figure_refs → media by label (M6.pair_figures), parse serial qualifiers → Applicability (Q7), sum durations."""
   ```
 
 ### Module 6: Figures
@@ -484,6 +516,13 @@ All paths are relative to the repository. Each module ships focused tests in its
   def resolve_captioner(client: Any) -> VisionCaptioner:
       """hasattr(client, "ask_to_image") ⇒ adapter over it (Anthropic/Google/OpenAI verified: proposal F023; input is Path/bytes, never a URL); ClaudeAgentClient raises NotImplementedError ⇒ treated as absent; otherwise raise CaptioningUnavailable."""
   async def caption_figures(figures: Sequence[FigureCandidate], captioner: VisionCaptioner, *, concurrency: int = 4) -> list[FigureCandidate]: ...
+  class CalloutMapper(Protocol):                                                                 # Q8
+      async def map_callouts(self, image: Path, *, context: str) -> CalloutMap: ...
+  def resolve_callout_mapper(client: Any) -> CalloutMapper:
+      """client.ask_to_image(prompt, image, structured_output=CalloutMap) — structured_output verified on Anthropic (client.py:1329+), Google (client.py:5160+) and OpenAI (client.py:1468+); same capability rule as resolve_captioner."""
+  def is_exploded_view(figure: FigureCandidate, steps: Sequence[StepDraft]) -> bool: ...        # caption/step evidence mentions ≥ 2 callout numbers
+  async def map_callouts(figures: Sequence[FigureCandidate], mapper: CalloutMapper, *, parts: Sequence[PartRef], steps: Sequence[StepDraft]) -> tuple[list[CalloutLink], list[Callout]]:
+      """One structured call per exploded view; label → Part by part_number (exact) else similarity(description, part.name) ≥ 0.85; else unresolved (queue). Runs only when settings.callouts_enabled (flipped by spike 1 passing)."""
   async def upload_figures(figures: Sequence[FigureCandidate], fm: Any, *, prefix: str) -> list[MediaRef]:
       """fm.upload_file(...) (FileManagerInterface, navigator-api 4.0.0 — verified: proposal F024); MediaRef.storage_key = returned key; no URL stored."""
   async def presign(fm: Any, storage_key: str, *, expiry: int = 900) -> str:
@@ -588,9 +627,9 @@ All paths are relative to the repository. Each module ships focused tests in its
   ```python
   # parrot_tools/procedures/retrieval.py  (new; template verified: parrot_tools/contracts/retrieval.py:66-86, 142-243, 261-278, 282-319, 323-413, 431-494, 535-629, 681-745)
   READ_ROLES = frozenset({"technician", "manual_curator"}); CURATOR_ROLE = "manual_curator"
-  PATTERNS: tuple[str, ...] = ("procedure_steps", "procedure_prerequisites", "procedures_for_equipment", "step_detail", "equipment_sharing_module", "procedure_in_force", "tips_for_procedure", "lookup")
+  PATTERNS: tuple[str, ...] = ("procedure_steps", "procedure_prerequisites", "procedures_for_equipment", "step_detail", "equipment_sharing_module", "procedure_in_force", "tips_for_procedure", "part_for_callout", "lookup")
   _TRIGGERS: tuple[tuple[str, tuple[str, ...]], ...]   # ordered; es/en phrases ("cómo ensamblo", "how do i assemble", "qué necesito", "what do i need", "paso", "step", "next", "siguiente", …)
-  class RequestContext(BaseModel): authenticated: bool; tenant_id: str; user_id: str; employee_id: str | None; roles: frozenset[str]; channel: str | None; session_id: str | None
+  class RequestContext(BaseModel): authenticated: bool; tenant_id: str; user_id: str; employee_id: str | None; roles: frozenset[str]; channel: str | None; session_id: str | None; equipment_serial: str | None = None; equipment_model: str | None = None   # Q7: from the session (asked once), never from model output
       # trusted only — constructed by the transport adapter from the platform session, never from model output
   class AuthorizationDenied(PermissionError): ...
   class Clarification(BaseModel): reason: str; candidates: list[EquipmentRef | ProcedureRef]; pattern: str | None
@@ -613,9 +652,10 @@ All paths are relative to the repository. Each module ships focused tests in its
       def _validate_projection(rows: Sequence[Mapping[str, Any]], *, pattern: str) -> None: ...
 
   # parrot_tools/procedures/assembly.py  (new)
-  class AssembledProcedure(BaseModel): procedure: ProcedureView; steps: list[StepView]; prerequisites: Prerequisites; hazards: list[HazardView]; media: list[MediaView]; tips: list[TipView]; citations: list[ProcedureCitation]; revision: ManualVersion; missing_required: list[str]; unsupported_fields: list[str]
+  class AssembledProcedure(BaseModel): procedure: ProcedureView; steps: list[StepView]; prerequisites: Prerequisites; hazards: list[HazardView]; media: list[MediaView]; tips: list[TipView]; citations: list[ProcedureCitation]; revision: ManualVersion; missing_required: list[str]; unsupported_fields: list[str]; filtered_by_serial: list[str]; needs_serial: bool
+  # StepView carries applicability: Literal["yes", "unknown"] — steps with applies()=="no" are excluded and listed in filtered_by_serial; needs_serial=True when any step is "unknown" because context.equipment_serial is None (the agent asks for the serial once, then re-plans)
   def assemble_procedure(result: RetrievalResult, *, kind: ProcedureAnswerKind, step_order: int | None = None, include_tips: bool = True) -> AssembledProcedure:
-      """Pure. Orders steps by has_step.order, checks precedes consistency, unions prerequisites (dedup by _key — FEAT-539 lesson), inlines hazards, picks media by roles (primary first; overview at procedure level), excludes tech_tip rows with orphaned=true or inactive targets, builds citations from step evidence (node_id/page/quote) for the selected revision; a single-step answer still carries that step's prerequisites and hazards. Records gaps in missing_required/unsupported_fields — it never fills them."""
+      """Pure. Applies models.applies(step, model=context.equipment_model, serial=context.equipment_serial) (Q7). Orders steps by has_step.order, checks precedes consistency, unions prerequisites (dedup by _key — FEAT-539 lesson), inlines hazards, picks media by roles (primary first; overview at procedure level), excludes tech_tip rows with orphaned=true or inactive targets, builds citations from step evidence (node_id/page/quote) for the selected revision; a single-step answer still carries that step's prerequisites and hazards. Records gaps in missing_required/unsupported_fields — it never fills them."""
 
   # parrot_tools/procedures/verifier.py  (new; replaces CitationVerifier semantics — verified: parrot_tools/contracts/verifier.py:102-206)
   class VerificationOutcome(BaseModel): answer: ProcedureAnswer; rejected: list[RejectedCitation]; blocked_reason: str | None
@@ -653,13 +693,15 @@ All paths are relative to the repository. Each module ships focused tests in its
       async def media_for_step(self, step_id: str) -> dict: ...
       async def tips_for_step(self, step_id: str) -> dict: ...
       async def related_equipment(self, equipment_id: str) -> dict: ...
+  async def find_part(self, media_id: str, callout: str) -> dict: ...                    # Q8: part_for_callout traversal
+  async def set_equipment_serial(self, serial: str) -> dict: ...                          # Q7: stores on the session-bound RequestContext (validated with normalize_serial against the resolved manual's formats)
       async def add_tip(self, step_id: str, text: str) -> dict: ...                 # author = request_context.employee_id (trusted); confirming
       async def retire_tip(self, tip_id: str) -> dict: ...                          # curator; confirming
       async def verification_queue(self, limit: int = 20) -> dict: ...              # curator
       async def verify_procedure(self, procedure_id: str) -> dict: ...              # curator; confirming
       async def start_guided(self, procedure_id: str) -> dict: ...                  # begin_task(goal, steps=[{label: step_id, title, description, required: True, depends_on_labels: [prev]}], plan_complete=True)
       async def next_step(self, task_id: str) -> dict: ...                          # recall_task → first pending step → get_step view with media
-      async def mark_done(self, task_id: str, step_id: str, note: Optional[str] = None) -> dict: ...   # update_step(expected_revision=current, status="completed", evidence_refs=[…]) per CompletionPolicy (models.py:683)
+      async def mark_done(self, task_id: str, step_id: str, note: Optional[str] = None) -> dict: ...   # update_step(expected_revision=current, status="completed", evidence_refs=[f"procedure:{procedure_id}@{revision}"]) — Q10: synthetic evidence ref satisfies the default CompletionPolicy (models.py:683); no task-memory change
       async def resume_guided(self) -> dict: ...                                    # TaskAssociationStore (association.py:316) + select_task (tools.py:687); scope (chatbot_id,user_id,session_id) (models.py:571-587)
   # parrot_tools/procedures/guided.py  (new)
   def task_steps_for(procedure: AssembledProcedure) -> list[dict[str, Any]]: ...
@@ -710,8 +752,8 @@ All paths are relative to the repository. Each module ships focused tests in its
 
 ### Module 13: CLI, packaging, docs
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/procedures/{cli,__main__}.py`; `packages/ai-parrot/src/parrot/cli/__init__.py`; `packages/ai-parrot/pyproject.toml`; `docs/knowledge/manuals.md`
-- **Responsibility**: a **click** group `manuals` (not the contracts argparse — proposal F018) with `add`, `add-video`, `refresh`, `verify`, `queue`, `relink-tips`, `spike {figures,media,video,tips}`; registered lazily in `cli._lazy_commands` with an install hint in `cli._lazy_extras`; a `manuals` extra that self-references `ai-parrot[graphindex,bookstore]` (rapidfuzz stays declared **only** in `graphindex` — `tests/knowledge/contracts/test_dependency_boundary.py` asserts `holders == ["graphindex"]`); operator docs (install, tenancy, storage, spike gate, limitations).
-- **Depends on**: M8, M10, M11
+- **Responsibility**: a **click** group `manuals` (not the contracts argparse — proposal F018) with `add`, `add-video`, `refresh`, `verify`, `queue`, `relink-tips`, `export` (Q9), `spike {figures,media,video,tips}`; registered lazily in `cli._lazy_commands` with an install hint in `cli._lazy_extras`; a `manuals` extra that self-references `ai-parrot[graphindex,bookstore]` (rapidfuzz stays declared **only** in `graphindex` — `tests/knowledge/contracts/test_dependency_boundary.py` asserts `holders == ["graphindex"]`); operator docs (install, tenancy, storage, spike gate, limitations).
+- **Depends on**: M8, M10, M11, M14
 - **Interface Skeleton**:
   ```python
   # parrot_tools/procedures/cli.py  (new)
@@ -723,11 +765,27 @@ All paths are relative to the repository. Each module ships focused tests in its
   @manuals.command("verify")     # <manual_id> <procedure_id> --user
   @manuals.command("queue")      # --limit
   @manuals.command("relink-tips")  # <manual_id>
+  @manuals.command("export")     # <manual_id> --out <dir> --zip/--no-zip --include-tips/--no-include-tips  (curator)
   @manuals.command("spike")      # {figures,media,video,tips} --corpus <dir>
   def build_library(*, dsn: str, tenant: str, storage_root: Path, evidence_root: Path, adapter: Any | None) -> ManualLibrary: ...   # injected factory, as contracts main(factory=)
   # parrot/cli/__init__.py  (modifies cli/__init__.py:109 `cli._lazy_commands = {` — add `"manuals": "parrot_tools.procedures.cli",`; and :139 `cli._lazy_extras = {` — add `"manuals": "ai-parrot-tools: pip install ai-parrot-tools ai-parrot[manuals]",`)
   # packages/ai-parrot/pyproject.toml  (modifies pyproject.toml:341 — insert after the `bookstore` extra)
   # manuals = ["ai-parrot[graphindex,bookstore]"]     # self-reference precedent: pyproject.toml:334
+  ```
+
+### Module 14: Export bundle
+- **Path**: `packages/ai-parrot/src/parrot/knowledge/manuals/export.py`
+- **Responsibility**: Q9. Build a self-contained, offline-consumable bundle for one manual revision from the catalog card and object storage — never from presigned URLs and never exposing graph internals. Curator-only (`authorize(curator_only=True)` when invoked through the toolkit/CLI service factory). Deterministic output (sorted keys, stable file names) so bundles are diffable across revisions.
+- **Depends on**: M2, M4, M6
+- **Interface Skeleton**:
+  ```python
+  # packages/ai-parrot/src/parrot/knowledge/manuals/export.py  (new)
+  BUNDLE_SCHEMA_VERSION = "1.0"
+  class BundleManifest(BaseModel): schema_version: str; manual_id: str; revision: str; version_n: int; generated_at: datetime; source_sha256: str; files: dict[str, str]   # relative path → sha256
+  class ExportReport(BaseModel): bundle_dir: Path; zip_path: Path | None; procedures: int; steps: int; figures: int; figures_missing: list[str]; tips: int; bytes: int
+  async def export_bundle(card: ManualCard, *, file_manager: Any, out_dir: Path, include_tips: bool = True, zip_bundle: bool = True, tips: Sequence[Tip] = ()) -> ExportReport:
+      """Writes <manual_id>-<revision>.bundle/{manifest.json, procedures.json, captions.json, videos.json, figures/<media_id>.png}; figures via file_manager.download_file(storage_key) (FileManagerInterface, navigator-api 4.0.0 — F024); missing storage objects are listed, not fatal; optional zip. procedures.json carries steps with applicability, hazards, prerequisites, media roles/callouts and active non-orphaned tips."""
+  def render_procedures(card: ManualCard, tips: Sequence[Tip]) -> dict[str, Any]: ...   # pure; sorted; no URLs
   ```
 
 ---
@@ -784,6 +842,16 @@ All paths are relative to the repository. Each module ships focused tests in its
 | `test_slack_renders_image_urls` | M12 | one image block per URL |
 | `test_telegram_downloads_then_send_photo` | M12 | allowlisted host ⇒ temp file → `send_photo`; foreign host/redirect/oversize ⇒ refused, cleanup verified; both sender paths |
 | `test_whatsapp_direct_url_then_fallback` | M12 | `send_image(image=url)`; provider error ⇒ download path |
+| `test_applies_matrix` | M2 | model mismatch ⇒ no; ranges present + no serial ⇒ unknown; inside/outside ranges; unparseable serial ⇒ ValueError from normalize_serial |
+| `test_applicability_requires_evidence` | M2 | serial_ranges without evidence ⇒ ValueError |
+| `test_parse_serial_qualifier` | M5 | "from S/N 2024-0001", "serial numbers A100 to A250", Spanish forms; unparseable ⇒ None + queue entry |
+| `test_map_callouts_structured_output` | M6 | fake mapper returns CalloutMap; part_number exact and similarity resolution; unresolved listed; disabled when callouts_enabled is False |
+| `test_assemble_filters_by_serial_and_flags_unknown` | M10 | steps outside range excluded + listed; unknown kept with note; needs_serial when serial absent |
+| `test_find_part_traversal` | M11 | proc_find_part returns the Part for a callout label via part_for_callout |
+| `test_set_equipment_serial_validates` | M11 | serial validated against the manual's formats; stored on the trusted context only |
+| `test_export_bundle_layout_and_manifest` | M14 | manifest sha256s match files; procedures.json sorted/deterministic; no http(s) strings anywhere; missing figure listed not fatal; zip optional |
+| `test_export_excludes_orphaned_tips` | M14 | orphaned/inactive tips absent from the bundle |
+| `test_cli_export_is_curator_only` | M13 | technician context ⇒ AuthorizationDenied |
 | `test_cli_group_registered_lazily` | M13 | `cli._lazy_commands["manuals"]` resolves; missing satellite ⇒ install hint |
 | `test_manuals_extra_self_reference` | M13 | `pyproject` `manuals` extra equals `["ai-parrot[graphindex,bookstore]"]`; rapidfuzz holders still `["graphindex"]` |
 
@@ -839,6 +907,9 @@ def request_context() -> RequestContext: ...   # authenticated technician, tenan
 - [ ] **AC16** `parrot manuals --help` lists the seven commands; `cli._lazy_extras["manuals"]` gives an install hint when the satellite is missing; the `manuals` extra self-references `ai-parrot[graphindex,bookstore]` and `test_dependency_boundary.py` still passes.
 - [ ] **AC17** Ontology imports use submodules (`parrot.knowledge.ontology.schema/graph_store/tenant/parser`), never the package root (FEAT-540 lazy-root compatibility).
 - [ ] **AC18** No new third-party dependency; `ruff check` (TID251) and `black --check` pass; `docs/knowledge/manuals.md` documents install, tenancy, storage, the spike gate and v1 limitations (OCR, callouts, serials, offline).
+- [ ] **AC20** Serial applicability (Q7): `Applicability` with evidence on every serial-qualified step; `applies()` matrix passes; answers never show a step that does not apply, never hide an undecidable one, and ask for the serial once when needed.
+- [ ] **AC21** Callouts (Q8): exploded views get one structured vision call; resolved callouts become `depicts` edges; unresolved ones enter the verification queue; `proc_find_part` answers by label; the pass is disabled until spike 1 passes.
+- [ ] **AC22** Export (Q9): `parrot manuals export` produces a deterministic bundle with a sha256 manifest, figures as files, captions, applicability, hazards, active tips and video deep links; no presigned URLs or graph internals; curator-only.
 - [ ] **AC19** `pytest packages/ai-parrot/tests/knowledge/manuals packages/ai-parrot/tests/knowledge/common packages/ai-parrot-tools/tests/procedures packages/ai-parrot-integrations/tests -q` passes; live Arango/Postgres tests skip cleanly without credentials.
 
 ---
@@ -1004,9 +1075,9 @@ class PDFMarkdownLoader: extract_images stored at pdfmark.py:67, never read
 class ImageUnderstandingLoader._analyze_image_with_ai → GoogleGenAIClient.image_understanding(...)   # imageunderstanding.py:162-187
 
 # vision entry points (per provider — NOT on AbstractClient, clients/base.py:254)
-AnthropicClient.ask_to_image   # ai-parrot-client-anthropic/.../anthropic/client.py:1329-1342
-GoogleGenAIClient.ask_to_image # ai-parrot-client-google/.../google/client.py:5160-5172 ; image_understanding analysis.py:438-452 ; video_understanding analysis.py:208-229 (offsets, structured_output)
-OpenAIClient.ask_to_image      # ai-parrot-client-openai/.../openai/client.py:1468-1479
+AnthropicClient.ask_to_image(prompt, image: Path|bytes|Image, …, structured_output: Union[type, StructuredOutputConfig] = None, count_objects=False)   # ai-parrot-client-anthropic/.../anthropic/client.py:1329-1342
+GoogleGenAIClient.ask_to_image(prompt, image: Path|bytes, …, structured_output: Union[type, StructuredOutputConfig] = None, count_objects=False) # ai-parrot-client-google/.../google/client.py:5160-5172 ; image_understanding analysis.py:438-452 ; video_understanding analysis.py:208-229 (offsets, structured_output)
+OpenAIClient.ask_to_image(prompt, image: Path|bytes|Image, …, structured_output: Optional[type] = None)      # ai-parrot-client-openai/.../openai/client.py:1468-1479 (parsed → AIMessage.structured_output)
 ClaudeAgentClient.ask_to_image # claude_agent.py:1036-1040 — raises NotImplementedError
 
 # storage / file managers (navigator-api 4.0.0)
@@ -1029,7 +1100,8 @@ cli._lazy_extras = {...}     # 139 — install hints
 | `ManualCardDataSource` | `DataSourceFactory.register_api_source("manualcard", …)` | import-time `register()` | `extractors/factory.py:35-80`; `contracts/datasource.py:447-455` |
 | `ManualLibrary._to_markdown` | `extract_markdown_per_page(path, images_dir=…)` | call | `pdf_to_markdown.py:35, 72` (M6 kwarg) |
 | `figures.extract_page_images` | `pymupdf.Page.get_image_info / get_image_bbox` | call | F026 probe |
-| `figures.resolve_captioner` | `client.ask_to_image(prompt, image, …)` | `hasattr` capability check | F023 anchors above |
+| `figures.resolve_captioner` / `resolve_callout_mapper` | `client.ask_to_image(prompt, image, …, structured_output=…)` | `hasattr` capability check | F023 anchors above (structured_output verified 2026-09-25) |
+| `export.export_bundle` | `FileManagerInterface.download_file(storage_key, …)` | call | `navigator/utils/file/abstract.py` (F024 re-export) |
 | `figures.upload_figures / presign` | `FileManagerInterface.upload_file / get_file_url(path, expiry=…)` | call | `navigator/utils/file/abstract.py:67-92` |
 | `video.blocks_from_transcript` | `BaseVideoLoader.transcript_to_blocks` | call (optional import) | `basevideo.py:860-887` |
 | `ProcedureRetrieval.execute_graph` | `OntologyGraphStore.execute_traversal(ctx, aql, bind_vars, collection_binds)` | call | `graph_store.py:271-309` |
@@ -1065,6 +1137,7 @@ cli._lazy_extras = {...}     # 139 — install hints
 - ~~`rapidfuzz` in any core extra other than `graphindex`~~ — `test_dependency_boundary.py` asserts it (holders == `["graphindex"]`).
 - ~~Shared test doubles in `tests/knowledge/contracts/conftest.py`~~ — `FakeGraphStore`/`FakeAdapter`/`FakeIndexer` live inside test modules (F007); M-tests copy them into `tests/knowledge/_support/`.
 - ~~A `step_key` derived from `slug:order`; content-hash "similarity"~~ — rejected by R1; identity is minted, hash is equality-only.
+- ~~A serial-number parser, `Applicability` model, `depicts` edge, `CalloutMap`, or bundle exporter anywhere in the tree~~ — all new (M2, M3, M6, M14).
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -1081,7 +1154,7 @@ Verified against: `55e01d496` (2026-09-25). `/sdd-task` MUST re-run `grep -c` fo
 | `packages/ai-parrot/src/parrot/knowledge/contracts/models.py` | MODIFY | `class FieldProvenance(BaseModel):` | `models.py:265` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/contracts/carding.py` | MODIFY | `def _quote_supported(evidence: Optional[Evidence], bodies: Mapping[str, str]) -> bool:` | `carding.py:456` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/contracts/carding.py` | MODIFY | `def _validate_extracted(field: Extracted[Any], bodies: Mapping[str, str]) -> tuple[Extracted[Any], bool]:` | `carding.py:471` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/manuals/{__init__,models,domain,catalog,catalog_postgres,carding,figures,video,library,datasource,graph_loader,tips,spikes}.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/knowledge/manuals/{__init__,models,domain,catalog,catalog_postgres,carding,figures,video,library,datasource,graph_loader,tips,export,spikes}.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/procedures.ontology.yaml` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/pdf_to_markdown.py` | MODIFY | `def extract_markdown_per_page(pdf_path: str \| Path) -> list[tuple[int, str]]:` | `pdf_to_markdown.py:35` | 1 |
 | `packages/ai-parrot/src/parrot/models/responses.py` | MODIFY | `media: Optional[List[Path]] = Field(default_factory=list, description="List of media files generated by the model")` (AIMessage; preceded by the 3-line `images:` field at 87-89) | `responses.py:90` | 1 |
@@ -1137,6 +1210,9 @@ Verified against: `55e01d496` (2026-09-25). `/sdd-task` MUST re-run `grep -c` fo
 - **FTS regconfig** — English-only in contracts; `search_regconfig` is validated as an identifier and defaults to `english`; Spanish corpora set `spanish` per tenant.
 - **In-flight overlap** — FEAT-539 still open (TASK-3056); FEAT-540 restructures `knowledge/ontology/__init__.py`; land M1 first and small; rebase M3/M9 if FEAT-540 merges mid-flight.
 - **Scanned manuals** — refused with a clear message; do not attempt OCR in v1.
+- **Serial formats vary per vendor** (Q7) — `SerialRange.format` is inferred per literal; a serial that does not match any format of the resolved manual ⇒ `unknown`, never a silent "applies". Ask the technician once per session; store only on the trusted context.
+- **Callout pass cost and fidelity** (Q8) — one vision call per exploded view at ingest; gated behind `callouts_enabled` until spike 1 passes; unresolved callouts are queue items, never guessed `depicts` edges.
+- **Bundle freshness** (Q9) — a bundle is a snapshot of one revision; the manifest carries `version_n`/`source_sha256` so a viewer can detect staleness; tips exported are those active at export time.
 - **`transcript_to_blocks` type hint is wrong** (`str` vs dict, F025) — pass the whisper dict.
 - **`VideoUnderstandingLoader` model bug** (does not pass `model=`, F025) — not used by M7; do not "fix" it in this feature.
 
@@ -1167,18 +1243,22 @@ No new third-party package. New extra: `manuals = ["ai-parrot[graphindex,booksto
 - [x] **U4 — Answer release path** — *Resolved in proposal*: option (a) — retrieval → deterministic assembly → blocking completeness verification → audit → release via `ProceduresAnswerService`; `ProceduresAgent.ask()` transport adapter. → §3 M10/M11, §5 AC7–AC8.
 - [x] **U5 — Authorization granularity** — *Resolved in proposal*: option (a) conditional — tenant-wide technician reads in v1 provided the client confirms certification is not required; trusted matching tenant; policy on every read path; technician vs curator actions; no unenforced `certified_for`. → §3 M3/M10, §5 AC9–AC10.
 
-### Unresolved (spec assumes the brainstorm's recommended answer where one exists)
+### Resolved 2026-09-25 (owner Q&A in the `/sdd-spec` follow-up)
 
-- [ ] **Q1 — Client confirmation that equipment certification is NOT an access requirement** (U5 precondition). *Owner: client.* If required: explicit role AND equipment-policy check in `authorize`, applied to every fallback/child resource, with expiry/revocation — new scope.
-- [ ] **Q2 — Card granularity**: one `ManualCard` per document with `procedures[]` (spec assumes this — brainstorm recommended) vs one `ProcedureCard` per procedure. *Owner: Jesus.*
-- [ ] **Q3 — Vision provider for captioning**: capability-resolved at runtime (spec assumes) vs one pinned provider for cost/determinism. *Owner: Jesus.*
-- [ ] **Q4 — Figure storage**: tenant S3 bucket via `S3FileManager` (spec assumes) vs the overflow store (7-day presign default is the wrong lifetime). *Owner: Jesus.*
-- [ ] **Q5 — Guided-mode state owner**: `TaskMemoryToolsMixin` composed into `ProceduresToolkit` (spec assumes) vs the agent carrying `WorkingMemoryToolkit` separately. *Owner: Jesus.*
-- [ ] **Q6 — Tips moderation**: visible immediately, attributed, retirable (spec assumes) vs curator approval before visibility. *Owner: client.*
-- [ ] **Q7 — Serial / model-year applicability** on `Step` (`applies_to` ranges + resolver) — v2 unless the spike corpus shows it. *Owner: Jesus.*
-- [ ] **Q8 — Exploded-view callouts → `Part`** via `ask_to_image(structured_output=CalloutMap)` — v2, only after spike 1 passes. *Owner: Jesus.*
-- [ ] **Q9 — Offline field use** — out of scope for this agent; separate feature if required. *Owner: client.*
-- [ ] **Q10 — Guided completion policy**: does `CompletionPolicy` (`task_memory/models.py:683`) accept a synthetic evidence ref for "listo", or should guided tasks run with a lenient policy? Decided during M11 implementation; blocks nothing in the spec. *Owner: implementer.*
+- [x] **Q1 — Equipment certification as an access requirement** — *Resolved*: **No** — tenant-wide technician reads; curators verify/publish. → §1 Non-Goals, §3 M3/M10, AC9–AC10.
+- [x] **Q2 — Card granularity** — *Resolved*: one `ManualCard` per document with `procedures[]` embedded; `manual_id == tree_name`. → §2 Data Models, §3 M2/M4.
+- [x] **Q3 — Vision client for captioning** — *Resolved*: capability-resolved at runtime (`resolve_captioner` / `resolve_callout_mapper` over any client with `ask_to_image`). → §3 M6, AC13.
+- [x] **Q4 — Figure storage** — *Resolved*: tenant S3 bucket via `S3FileManager` (injected `FileManagerInterface`), 15-min presign per answer; dev uses `TempFileManager` + the download path. → §3 M6/M12, §7 Risks.
+- [x] **Q5 — Guided-mode state owner** — *Resolved*: `TaskMemoryToolsMixin` composed into `ProceduresToolkit`. → §3 M11, AC15.
+- [x] **Q6 — Tips moderation** — *Resolved*: visible immediately, attributed, retirable by curators; `Tip.history` is the audit trail. → §2 Overview (Tips), §3 M9/M11.
+- [x] **Q7 — Serial / model-year applicability** — *Resolved*: **include in v1** — `Applicability(models[], serial_ranges[])` with evidence on `Step`, `RequestContext.equipment_serial`, `applies()` filter in assembly, `proc_set_equipment_serial`. → G10, §3 M2/M5/M10/M11, AC20.
+- [x] **Q8 — Exploded-view callouts → Part** — *Resolved*: **include in v1** — `ask_to_image(structured_output=CalloutMap)` per exploded view, `depicts(Media → Part, callouts[])` edges, `proc_find_part`; enabled once spike 1 passes. → G11, §3 M2/M3/M6/M11, AC21.
+- [x] **Q9 — Offline field use** — *Resolved*: **include a graph export in v1** — `parrot manuals export` bundle (M14); the per-device viewer stays out of scope. → G12, §3 M13/M14, AC22.
+- [x] **Q10 — Guided completion policy** — *Resolved*: synthetic evidence ref per step (`procedure:{procedure_id}@{revision}`) satisfies the default `CompletionPolicy`; no task-memory change. → §3 M11, AC15.
+
+### Unresolved
+
+_None._
 
 ---
 
@@ -1210,13 +1290,14 @@ An equivalent independent codex review of the proposal (`sdd/state/FEAT-601/revi
   - M9 → M2, M3, M4 (`OWNED_*`, `resolve_context`, catalog snapshot)
   - M10 → M2, M3, M4, M9 (`ProcedureAnswer`, patterns, catalog, graph content)
   - M11 → M10 (+ M12 field names on `AIMessage`)
-  - M13 → M8, M10, M11
+  - M13 → M8, M10, M11, M14
+  - M14 → M2, M4, M6 (`export_bundle` reads `ManualCard`, catalog, storage keys)
   - M0 → M5, M6, M7, M9, M12
   - **No edge**: M12 is independent of everything (runs concurrently from day one); M4, M6, M7 are mutually independent after M2; M3 and M4 are independent.
 - **Shared files**: none between modules. `contracts/models.py` and `contracts/carding.py` are touched by M1 only; `responses.py`/`parser.py`/wrappers by M12 only; `cli/__init__.py`/`pyproject.toml` by M13 only.
 - **Exclusive resources**: `packages/ai-parrot/pyproject.toml` (+ `uv.lock` regeneration if the extra requires it) — M13's packaging task is `parallel: false`. Live Arango/Postgres tests share the `arango_params`/`pg_pool` fixtures — mark their tasks `parallel: false`.
 - **Cross-feature dependencies**: none blocking. FEAT-539 (open, contracts) — M1 touches `contracts/models.py`/`carding.py` behaviour-preservingly; land M1 first. FEAT-540 (pending) — if it merges mid-flight, rebase M3/M9 imports (already submodule-only, AC17).
-- **Suggested lanes**: Lane A = M1 → M2 → {M3, M4} ; Lane B = M12 (immediately) ; then {M5, M6, M7} ‖ M9 ; then M8, M10 ; then M11, M13 ; M0 last (needs the owner's corpus).
+- **Suggested lanes**: Lane A = M1 → M2 → {M3, M4} ; Lane B = M12 (immediately) ; then {M5, M6, M7} ‖ M9 ‖ M14 ; then M8, M10 ; then M11, M13 ; M0 last (needs the owner's corpus).
 
 ---
 
@@ -1225,3 +1306,4 @@ An equivalent independent codex review of the proposal (`sdd/state/FEAT-601/revi
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-25 | Jesus Lara (with Claude) | Initial draft from brainstorm (Option B) + proposal FEAT-601 (U1–U5 resolved, R1–R4 confirmed) |
+| 0.2 | 2026-09-25 | Jesus Lara (with Claude) | Status approved by owner; Q1–Q10 resolved; Q7/Q8/Q9 widen v1 (Applicability, callouts, export bundle M14) |
