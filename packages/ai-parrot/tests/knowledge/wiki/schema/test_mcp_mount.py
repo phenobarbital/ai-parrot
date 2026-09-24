@@ -8,7 +8,6 @@ from parrot.knowledge.wiki.project import WikiNamespaceConfig, WikiProjectConfig
 from parrot.knowledge.wiki.schema.store import SchemaStore
 from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord, create_wiki_store
 
-
 BASE_TOOLS = {
     "wiki_query",
     "wiki_page",
