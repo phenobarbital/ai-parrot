@@ -466,7 +466,8 @@
     "a) kind-first table:<origin>/<schema>.<table>, with normalize_ref() accepting bare bigquery:epson.sales on input (recommended)",
     "b) bare origin:object as concept id; add each alias to overlay_prefixes",
     "c) one overlay namespace per origin"
-   ]
+   ],
+   "user_answer": "kind-first table:<origin>/<schema>.<table>; normalize_ref accepts bare origin:object on input"
   },
   {
    "id": "U2",
@@ -478,7 +479,8 @@
     "a) attrs JSON column on edges (schema v3) — cleaner, touches sqlite/memory/arango/postgres stores",
     "b) rel encoding — zero schema change, ugly, breaks rel filtering",
     "c) store column pairs only in the table page body / columns side table; edge stays plain `references`"
-   ]
+   ],
+   "user_answer": "no edge attribute in v1; plain references edge + column pair in columns side table (fk_target); attrs column deferred"
   },
   {
    "id": "U3",
@@ -490,7 +492,8 @@
     "a) newest introspected_at wins per table; defined_in edges always kept; conflicts reported by `schema diff` (recommended)",
     "b) live always authoritative; DDL contributes only defined_in edges",
     "c) separate origins (e.g. `formdesigner-ddl` vs `formdesigner`) — never merged"
-   ]
+   ],
+   "user_answer": "live authoritative for facts; DDL fills live-absent tables and always adds defined_in; schema diff reports divergence"
   },
   {
    "id": "U4",
@@ -503,7 +506,8 @@
     "a) v1 = SQLite schema.db with from_root + from_dir; backend swap as a follow-up once FEAT-569 lands (recommended)",
     "b) v1 includes create_wiki_store(backend=…) plane with widened Literal",
     "c) v1 waits for FEAT-569 and mounts the plane in the remote server only"
-   ]
+   ],
+   "user_answer": "v1 SQLite schema.db with from_root + from_dir; postgres/arangodb plane after FEAT-569"
   },
   {
    "id": "U5",
@@ -516,7 +520,8 @@
     "a) explicit origin on DatabaseToolkitConfig defaulting to database_type; DatabaseAgent passes it to the partition (recommended)",
     "b) derive origin from tk_id by convention",
     "c) rename tk_id to the origin alias (breaks query_router registration)"
-   ]
+   ],
+   "user_answer": "explicit origin on DatabaseToolkitConfig defaulting to database_type; tk_id unchanged"
   }
  ],
  "recommended_next_command": {

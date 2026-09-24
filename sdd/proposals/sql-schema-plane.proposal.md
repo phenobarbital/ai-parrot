@@ -4,7 +4,7 @@ title: SQL Schema Plane — data-model knowledge (sources/schemas/tables) as a w
 slug: sql-schema-plane
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: file
   jira_key: null
@@ -231,25 +231,24 @@ path and the architecture call both depend on owner decisions U1–U4) and the u
 - [x] **Columns as pages?** — *Resolved by default*: side table in v1 (mirrors `symbols`, F003); `col:` pages can be added later without changing table ids. Owner may override.
 - [x] **`maps_to`, schema history, DatasetManager exposure?** — *Resolved by default*: v2 / follow-ups (§3 Non-Goals).
 
+### Resolved (2026-09-24 — owner decisions recorded in the brainstorm)
+
+- [x] **U1 — Final id grammar** — *Resolved*: kind-first `table:<origin>/<schema>.<table>`; `normalize_ref()` accepts bare `bigquery:epson.sales` on input. *Resolves claims*: C2, C9
+- [x] **U2 — FK edge payload** — *Resolved*: no edge attribute in v1; plain `references` edge, column pair stored in the `columns` side table (`fk_target`) and rendered in `## Relations`; `attrs` column deferred to a possible store schema v3. *Resolves claims*: C3
+- [x] **U3 — Live vs DDL merge rule** — *Resolved*: live authoritative for facts; DDL fills tables with no live counterpart (`source="ddl"`) and always contributes `defined_in`; divergence reported by `schema diff`, never timestamp-resolved. *Resolves claims*: C11
+- [x] **U4 — Production placement** — *Resolved*: v1 = SQLite `schema.db` with `from_root` + `from_dir`; postgres/arangodb-backed plane and Literal widening follow FEAT-569. *Resolves claims*: C11, C8
+- [x] **U5 — Origin key** — *Resolved*: explicit `origin` on `DatabaseToolkitConfig` defaulting to `database_type`, passed to the partition; `tk_id` unchanged. *Resolves claims*: C5, C6
+
 ### Unresolved (defer to spec)
 
-- [ ] **U1 — Final id grammar**: kind-first `table:<origin>/<schema>.<table>` (routing-safe, *recommended*, with `normalize_ref()` accepting bare `bigquery:epson.sales` on input) vs bare `<origin>:<schema>.<table>` as concept id (every alias in `overlay_prefixes`) vs one namespace per origin. — *Owner*: Jesus
-  *Blocks claims*: C2, C9
-- [ ] **U2 — FK edge payload**: a) `attrs` JSON column on `edges` (schema v3, all backends) · b) `rel` encoding `references:store_id->id` · c) keep the pair only in the `columns` side table / page body, edge stays plain `references`. — *Owner*: Jesus
-  *Blocks claims*: C3
-- [ ] **U3 — Live vs DDL merge rule** for one origin: a) newest `introspected_at` wins per table, `defined_in` always kept, conflicts reported by `schema diff` (*recommended*) · b) live always authoritative · c) separate origins, never merged. — *Owner*: Jesus
-  *Blocks claims*: C11
-- [ ] **U4 — Production placement and FEAT-569 dependency**: a) v1 = SQLite `schema.db` with `from_root` + `from_dir`, backend swap later (*recommended*) · b) v1 ships `create_wiki_store(backend=…)` with a widened Literal · c) v1 waits for FEAT-569 and mounts only in the remote server. — *Owner*: Jesus
-  *Blocks claims*: C11, C8
-- [ ] **U5 — Origin key**: a) explicit `origin` on `DatabaseToolkitConfig` defaulting to `database_type`, passed to the partition (*recommended*) · b) derive from `tk_id` by convention · c) rename `tk_id`. — *Owner*: Jesus
-  *Blocks claims*: C5, C6
+- [ ] None. Spikes 3 (BigQuery cost baseline) and 4 (plane-tier regression) remain implementation tasks, not open questions.
 
 ---
 
 ## 6. Recommended Next Step
 
 **`/sdd-spec FEAT-600`** — *Rationale*: localization is high-confidence (C1–C6, C9, C10) and the
-brainstorm already selected Option B; U1–U5 are owner decisions the spec's Open Questions capture,
+brainstorm already selected Option B; U1–U5 were resolved on 2026-09-24 (brainstorm + §5),
 and the DDL probe (C7) replaces spike 1 with measured numbers. The spec should sequence the
 tools/mount module after FEAT-569 M2d (`build_wiki_tools`) and M6a (`remote_cli`) or state the rebase
 plan explicitly, and keep spikes 3 (BigQuery cost baseline) and 4 (plane-tier regression) as tasks.
@@ -284,7 +283,7 @@ plan explicitly, and keep spikes 3 (BigQuery cost baseline) and 4 (plane-tier re
 no defect signal).
 
 **Gates**: the session ran unattended, so the plan gate, review gate and Q&A were auto-skipped and
-recorded in `state.json`; unknowns are carried unresolved into §5 with recommended answers.
+recorded in `state.json`; the unknowns were resolved by the owner afterwards (§5).
 
 ---
 
