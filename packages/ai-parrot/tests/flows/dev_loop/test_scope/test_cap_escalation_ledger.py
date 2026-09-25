@@ -16,6 +16,9 @@ from parrot.flows.dev_loop.test_scope.context import (
     record_red_run,
     worktree_git_dir,
 )
+from parrot.flows.dev_loop.test_scope.datatypes import ScopePlan
+from parrot.flows.dev_loop.test_scope.policy import ScopePolicy
+from parrot.flows.dev_loop.test_scope.select import plan_tests
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -81,3 +84,77 @@ def test_red_run_preserves_other_entries_new_fields(worktree: Path) -> None:
     assert set(entries) == {"b"}
     assert entries["b"].impact_blobs == {"changed.py": _git(worktree, "hash-object", "--", "changed.py")}
     assert entries["b"].impacted_hash == "b-hash"
+
+
+@pytest.fixture
+def plan_worktree(tmp_path: Path) -> Path:
+    """Create a git worktree with one source module and its importing test."""
+    root = tmp_path / "plan-repo"
+    source = root / "packages/a/src/pa/leaf.py"
+    test = root / "packages/a/tests/test_leaf.py"
+    source.parent.mkdir(parents=True)
+    test.parent.mkdir(parents=True)
+    source.write_text("VALUE = 1\n")
+    test.write_text("import pa.leaf\n")
+    _git(root, "init", "-q", "-b", "main")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
+    return root
+
+
+def _cap_plan(worktree: Path) -> ScopePlan:
+    """Select one changed module with a cap that escalates its distribution."""
+    return plan_tests(
+        worktree=worktree,
+        changed_files=["packages/a/src/pa/leaf.py"],
+        tier="merge",
+        policy=ScopePolicy(impact_cap=0, core_fanin_threshold=999),
+    )
+
+
+def test_plan_reports_cap_driving_files(plan_worktree: Path) -> None:
+    """ScopePlan.cap_hits names the changed files per cap-escalated distribution (spec §4)."""
+    plan = _cap_plan(plan_worktree)
+    assert plan.cap_hits == {"a": ("packages/a/src/pa/leaf.py",)}
+    assert len(plan.cap_impacted["a"]) == 64
+    assert int(plan.cap_impacted["a"], 16) >= 0
+
+
+def test_second_selection_skips_unchanged_cap_suite(plan_worktree: Path) -> None:
+    """Green record + identical content omits its cap suite and reports the skipped distribution."""
+    first = _cap_plan(plan_worktree)
+    record_green_escalation(
+        plan_worktree,
+        ["a"],
+        [],
+        first.cap_hits["a"],
+        first.cap_impacted,
+    )
+
+    second = _cap_plan(plan_worktree)
+
+    assert second.skipped_escalations == ("a",)
+    assert all(invocation.distribution != "a" for invocation in second.invocations)
+    assert "a: cap escalation skipped — ledger blobs and impacted hash match" in second.notes
+
+
+def test_cap_skip_rearmed_by_impacted_set_change(plan_worktree: Path) -> None:
+    """A new importing test changes the impacted hash and re-arms the cap suite."""
+    first = _cap_plan(plan_worktree)
+    record_green_escalation(
+        plan_worktree,
+        ["a"],
+        [],
+        first.cap_hits["a"],
+        first.cap_impacted,
+    )
+    new_test = plan_worktree / "packages/a/tests/test_second_leaf.py"
+    new_test.write_text("import pa.leaf\n")
+    _git(plan_worktree, "add", "-A")
+    _git(plan_worktree, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "add test")
+
+    rearmed = _cap_plan(plan_worktree)
+
+    assert rearmed.skipped_escalations == ()
+    assert rearmed.cap_impacted["a"] != first.cap_impacted["a"]
+    assert any(invocation.distribution == "a" for invocation in rearmed.invocations)
