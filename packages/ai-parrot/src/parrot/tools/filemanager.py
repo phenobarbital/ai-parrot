@@ -334,7 +334,10 @@ class FileManagerTool(AbstractTool):
         except Exception as e:
             self.logger.error(f"Operation {operation} failed: {str(e)}", exc_info=True)
             return ToolResult(
-                success=False, error=str(e), metadata={"operation": operation, "manager_type": self.manager_type}
+                success=False,
+                result=None,
+                error=str(e),
+                metadata={"operation": operation, "manager_type": self.manager_type},
             )
 
     async def _list_files(self, args: FileManagerToolArgs) -> Dict[str, Any]:

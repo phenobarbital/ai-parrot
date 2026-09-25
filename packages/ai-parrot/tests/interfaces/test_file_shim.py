@@ -198,4 +198,4 @@ def test_toolkit_literal_accepts_new_types(monkeypatch):
 
     toolkit = FileManagerToolkit(manager_type="sharepoint", site="TeamSite")
     tools = toolkit.get_tools()
-    assert len(tools) == 9
+    assert len(tools) == 12
