@@ -65,6 +65,7 @@ def test_operation_kinds_covers_every_tool():
 
 async def test_open_does_not_start_browser():
     web = MagicMock()
+    web.started = False
     toolkit = make_toolkit(web=web)
     await toolkit._ensure_open()
     toolkit._api._ensure_session.assert_awaited_once_with()

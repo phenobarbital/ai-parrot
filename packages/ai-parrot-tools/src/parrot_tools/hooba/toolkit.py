@@ -90,9 +90,14 @@ class HoobaToolkit(AbstractToolkit):
         return own + api
 
     def operation_kinds(self) -> Dict[str, OperationKind]:
-        """Map every composite and generated tool name to its operation kind."""
+        """Map every composite and generated tool name to its operation kind.
+
+        Only the tools this task actually generates (`_READ_TOOLS` plus the
+        bound API toolkit's own tools). `_DRAFT_TOOLS` names TASK-3743's
+        not-yet-implemented composite tools and is intentionally excluded
+        here -- TASK-3743 extends this method when it adds those methods.
+        """
         kinds = dict.fromkeys(_READ_TOOLS, OperationKind.READ)
-        kinds.update(dict.fromkeys(_DRAFT_TOOLS, OperationKind.DRAFT))
         kinds.update(self._api.operation_kinds())
         return kinds
 
