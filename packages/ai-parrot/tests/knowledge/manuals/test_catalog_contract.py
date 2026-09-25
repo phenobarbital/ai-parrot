@@ -116,13 +116,15 @@ async def test_queue_ordering(catalog: InMemoryManualCatalog) -> None:
         text=Extracted(value="Install", evidence=Evidence(node_id="n2", quote="Install"), confidence=0.5),
     )
     low = make_card("a-low", procedures=[make_card().procedures[0].model_copy(update={"steps": [low_step]})])
+    unpaired_step = Step(
+        identity=StepIdentity(step_id="c-figure:install:one", content_hash="c" * 64),
+        order=1,
+        text=Extracted(value="Install", evidence=Evidence(node_id="n3", quote="Install"), confidence=0.9),
+        figure_refs=["Missing"],
+    )
     unpaired = make_card(
         "c-figure",
-        procedures=[
-            make_card()
-            .procedures[0]
-            .model_copy(update={"steps": [low_step.model_copy(update={"figure_refs": ["Missing"]})]})
-        ],
+        procedures=[make_card().procedures[0].model_copy(update={"steps": [unpaired_step]})],
     )
     stale = make_card("d-stale", verification="stale")
     for card in (missing, low, unpaired, stale):
