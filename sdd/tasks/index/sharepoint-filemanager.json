@@ -120,7 +120,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -130,8 +130,9 @@
       "parallelism_notes": "TASK-3752: same file graph.py; uses _ensure_parent and appends after download_file",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3753-graph-copy-links-folders.md"
+      "completed_at": "2026-09-25T20:08:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3753-graph-copy-links-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3754",
