@@ -1,11 +1,17 @@
 """Tests for deterministic procedure retrieval."""
+
 from __future__ import annotations
 
 import pytest
 
 from parrot.knowledge.manuals.domain import CURATOR_ROLE, TECHNICIAN_ROLE
 from parrot_tools.procedures.retrieval import (
-    READ_ROLES, AuthorizationDenied, Clarification, PatternPlan, ProcedureRetrieval, classify,
+    READ_ROLES,
+    AuthorizationDenied,
+    Clarification,
+    PatternPlan,
+    ProcedureRetrieval,
+    classify,
 )
 
 from ._doubles import FakeCatalog, FakeGraphStore, FakeOntology, FakePageIndex, FakePattern, make_context
@@ -13,8 +19,14 @@ from ._doubles import FakeCatalog, FakeGraphStore, FakeOntology, FakePageIndex, 
 
 def _retrieval(**kw):
     """Create retrieval with independently replaceable collaborators."""
-    return ProcedureRetrieval(catalog=kw.pop("catalog", FakeCatalog()), graph_store=kw.pop("graph", FakeGraphStore()),
-                              tenant_context=None, ontology=kw.pop("ontology", FakeOntology()), authorization=None, **kw)
+    return ProcedureRetrieval(
+        catalog=kw.pop("catalog", FakeCatalog()),
+        graph_store=kw.pop("graph", FakeGraphStore()),
+        tenant_context=None,
+        ontology=kw.pop("ontology", FakeOntology()),
+        authorization=None,
+        **kw,
+    )
 
 
 class TestAuthorizeTightenedTenantGate:
@@ -24,7 +36,12 @@ class TestAuthorizeTightenedTenantGate:
         """Only an authenticated reader on the catalog tenant passes the local gate."""
         retrieval = _retrieval()
         retrieval.authorize(make_context())
-        for context in (make_context(tenant_id=""), make_context(tenant_id="t2"), make_context(roles=()), make_context(authenticated=False)):
+        for context in (
+            make_context(tenant_id=""),
+            make_context(tenant_id="t2"),
+            make_context(roles=()),
+            make_context(authenticated=False),
+        ):
             with pytest.raises(AuthorizationDenied):
                 retrieval.authorize(context)
 

@@ -1,4 +1,5 @@
 """Deterministic, authorized retrieval over the procedures graph (FEAT-601 M10)."""
+
 from __future__ import annotations
 
 import logging
@@ -18,8 +19,15 @@ logger = logging.getLogger(__name__)
 READ_ROLES: frozenset[str] = frozenset({TECHNICIAN_ROLE, DOMAIN_CURATOR_ROLE})
 CURATOR_ROLE = DOMAIN_CURATOR_ROLE
 PATTERNS: tuple[str, ...] = (
-    "procedure_steps", "procedure_prerequisites", "procedures_for_equipment", "step_detail",
-    "equipment_sharing_module", "procedure_in_force", "tips_for_procedure", "part_for_callout", "lookup",
+    "procedure_steps",
+    "procedure_prerequisites",
+    "procedures_for_equipment",
+    "step_detail",
+    "equipment_sharing_module",
+    "procedure_in_force",
+    "tips_for_procedure",
+    "part_for_callout",
+    "lookup",
 )
 _TRIGGERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("part_for_callout", ("which one is part", "qué pieza es", "cuál es la pieza", "callout")),
@@ -28,7 +36,21 @@ _TRIGGERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("step_detail", ("step ", "paso ", "next step", "siguiente paso")),
     ("equipment_sharing_module", ("shares", "comparte", "same module", "mismo módulo")),
     ("procedure_in_force", ("revision", "revisión", "as of", "vigente")),
-    ("procedure_steps", ("how do i assemble", "how to assemble", "cómo ensamblo", "cómo se monta", "cómo instalo", "how do i install", "steps", "pasos", "procedure", "procedimiento")),
+    (
+        "procedure_steps",
+        (
+            "how do i assemble",
+            "how to assemble",
+            "cómo ensamblo",
+            "cómo se monta",
+            "cómo instalo",
+            "how do i install",
+            "steps",
+            "pasos",
+            "procedure",
+            "procedimiento",
+        ),
+    ),
     ("procedures_for_equipment", ("procedures for", "procedimientos de", "what procedures", "qué procedimientos")),
 )
 _WORD_RE = re.compile(r"[\wáéíóúñü]+", re.UNICODE)
@@ -105,8 +127,17 @@ def classify(question: str) -> str | None:
 class ProcedureRetrieval:
     """Authorized deterministic catalog, graph, and PageIndex retrieval."""
 
-    def __init__(self, *, catalog: ManualCatalogStore, graph_store: Any, tenant_context: Any, ontology: Any,
-                 authorization: Any, pageindex: Any | None = None, today: Callable[[], date] = date.today) -> None:
+    def __init__(
+        self,
+        *,
+        catalog: ManualCatalogStore,
+        graph_store: Any,
+        tenant_context: Any,
+        ontology: Any,
+        authorization: Any,
+        pageindex: Any | None = None,
+        today: Callable[[], date] = date.today,
+    ) -> None:
         self.catalog = catalog
         self.graph_store = graph_store
         self.tenant_context = tenant_context
@@ -141,13 +172,18 @@ class ProcedureRetrieval:
         if len(hits) == 1:
             return hits[0]
         normalized = _normalize(text)
-        exact = [hit for hit in hits if _normalize(hit.model) in normalized or any(_normalize(alias) in normalized for alias in hit.aliases)]
+        exact = [
+            hit
+            for hit in hits
+            if _normalize(hit.model) in normalized or any(_normalize(alias) in normalized for alias in hit.aliases)
+        ]
         if len(exact) == 1:
             return exact[0]
         return Clarification(reason="several equipment models match this question", candidates=list(hits))
 
-    async def resolve_procedure(self, text: str, equipment: EquipmentRef | None,
-                                context: RequestContext) -> ProcedureRef | Clarification:
+    async def resolve_procedure(
+        self, text: str, equipment: EquipmentRef | None, context: RequestContext
+    ) -> ProcedureRef | Clarification:
         """Resolve one active procedure without allowing a caller to choose ties."""
         self.authorize(context)
         hits = await self.catalog.search(text, top_k=8)
@@ -158,9 +194,15 @@ class ProcedureRetrieval:
                 continue
             for procedure in card.procedures:
                 if procedure.active:
-                    candidates.append(ProcedureRef(procedure_id=procedure.procedure_id, manual_id=card.manual_id,
-                                                    slug=procedure.slug, title=procedure.title.value,
-                                                    equipment_id=equipment.equipment_id if equipment else None))
+                    candidates.append(
+                        ProcedureRef(
+                            procedure_id=procedure.procedure_id,
+                            manual_id=card.manual_id,
+                            slug=procedure.slug,
+                            title=procedure.title.value,
+                            equipment_id=equipment.equipment_id if equipment else None,
+                        )
+                    )
         unique = {candidate.procedure_id: candidate for candidate in candidates}
         if len(unique) == 1:
             return next(iter(unique.values()))
@@ -196,19 +238,39 @@ class ProcedureRetrieval:
                 return Clarification(reason="step number is required", pattern=pattern)
             order = int(match.group(1))
             card = await self.catalog.get(procedure.manual_id)
-            selected = next((step for proc in (card.procedures if card else []) if proc.procedure_id == procedure.procedure_id for step in proc.steps if step.order == order), None)
+            selected = next(
+                (
+                    step
+                    for proc in (card.procedures if card else [])
+                    if proc.procedure_id == procedure.procedure_id
+                    for step in proc.steps
+                    if step.order == order
+                ),
+                None,
+            )
             if selected is None:
                 return Clarification(reason="step not found", pattern=pattern)
             binds = {"step_id": selected.identity.step_id}
-            return PatternPlan(pattern=pattern, bind_vars=binds, manual_id=procedure.manual_id,
-                               procedure_id=procedure.procedure_id, step_order=order, as_of=as_of)
+            return PatternPlan(
+                pattern=pattern,
+                bind_vars=binds,
+                manual_id=procedure.manual_id,
+                procedure_id=procedure.procedure_id,
+                step_order=order,
+                as_of=as_of,
+            )
         if pattern == "part_for_callout":
             match = _CALLOUT_RE.search(question)
             if not match:
                 return Clarification(reason="callout label is required", pattern=pattern)
             return Clarification(reason="media reference is required", pattern=pattern)
-        return PatternPlan(pattern=pattern, bind_vars=binds, manual_id=procedure.manual_id,
-                           procedure_id=procedure.procedure_id, as_of=as_of)
+        return PatternPlan(
+            pattern=pattern,
+            bind_vars=binds,
+            manual_id=procedure.manual_id,
+            procedure_id=procedure.procedure_id,
+            as_of=as_of,
+        )
 
     async def execute(self, plan: PatternPlan, context: RequestContext) -> RetrievalResult:
         """Run a graph plan and select the manual revision active on its effective date."""
@@ -217,7 +279,9 @@ class ProcedureRetrieval:
             raise AuthorizationDenied("lookup has no graph pattern; call fallback_lookup", pattern=plan.pattern)
         rows = await self.execute_graph(plan, context)
         manual = await self.catalog.get(plan.manual_id) if plan.manual_id else None
-        revision = next((item for item in (manual.versions if manual and plan.as_of else []) if item.in_force(plan.as_of)), None)
+        revision = next(
+            (item for item in (manual.versions if manual and plan.as_of else []) if item.in_force(plan.as_of)), None
+        )
         return RetrievalResult(pattern=plan.pattern, rows=rows, manual=manual, revision=revision)
 
     async def execute_graph(self, plan: PatternPlan, context: RequestContext) -> list[dict[str, Any]]:
@@ -225,8 +289,9 @@ class ProcedureRetrieval:
         self.authorize(context, pattern=plan.pattern)
         if self.graph_store is None:
             raise RuntimeError("no graph store configured")
-        rows = await self.graph_store.execute_traversal(self.tenant_context, self.aql_for(plan.pattern),
-                                                        bind_vars=dict(plan.bind_vars), collection_binds={})
+        rows = await self.graph_store.execute_traversal(
+            self.tenant_context, self.aql_for(plan.pattern), bind_vars=dict(plan.bind_vars), collection_binds={}
+        )
         result = list(rows or [])
         self._validate_projection(result, pattern=plan.pattern)
         return result
@@ -237,8 +302,10 @@ class ProcedureRetrieval:
         if self.pageindex is None:
             return RetrievalResult(pattern="lookup")
         sections = await self.pageindex.search(manual_id, question, top_k=5, use_llm_walk=False)
-        projected = [{key: value for key, value in section.items() if key in {"node_id", "title", "page", "text", "excerpt"}}
-                     for section in (sections or [])]
+        projected = [
+            {key: value for key, value in section.items() if key in {"node_id", "title", "page", "text", "excerpt"}}
+            for section in (sections or [])
+        ]
         return RetrievalResult(pattern="lookup", fallback_sections=projected, manual=await self.catalog.get(manual_id))
 
     def aql_for(self, pattern: str) -> str:
@@ -256,9 +323,12 @@ class ProcedureRetrieval:
     def _validate_projection(rows: Sequence[dict[str, Any]], *, pattern: str) -> None:
         """Reject inactive traversal rows before an assembler can consume them."""
         required = {
-            "procedure_steps": {"procedure", "step", "order"}, "procedure_prerequisites": {"step", "parts", "tools", "hazards"},
-            "step_detail": {"step", "media", "parts", "tools", "hazards"}, "equipment_sharing_module": {"equipment", "module"},
-            "procedure_in_force": {"procedure", "version"}, "tips_for_procedure": {"step", "tip"},
+            "procedure_steps": {"procedure", "step", "order"},
+            "procedure_prerequisites": {"step", "parts", "tools", "hazards"},
+            "step_detail": {"step", "media", "parts", "tools", "hazards"},
+            "equipment_sharing_module": {"equipment", "module"},
+            "procedure_in_force": {"procedure", "version"},
+            "tips_for_procedure": {"step", "tip"},
             "part_for_callout": {"part", "confidence", "origin"},
         }
         for row in rows:

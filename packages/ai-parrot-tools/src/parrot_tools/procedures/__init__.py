@@ -1,17 +1,31 @@
 """Procedures answering layer — retrieval, assembly, verification, and release."""
+
 from __future__ import annotations
 
 import importlib
 from typing import Any
 
 _EXPORTS: dict[str, str] = {
-    "READ_ROLES": "retrieval", "CURATOR_ROLE": "retrieval", "PATTERNS": "retrieval",
-    "RequestContext": "retrieval", "AuthorizationDenied": "retrieval", "Clarification": "retrieval",
-    "PatternPlan": "retrieval", "RetrievalResult": "retrieval", "classify": "retrieval",
-    "ProcedureRetrieval": "retrieval", "AssembledProcedure": "assembly", "assemble_procedure": "assembly",
-    "ProcedureVerifier": "verifier", "VerificationOutcome": "verifier", "AnswerProducer": "service",
-    "AnswerOutcome": "service", "ProceduresAnswerService": "service", "ProceduresToolkit": "toolkit",
-    "ProceduresAgent": "agent", "PROCEDURES_SYSTEM_PROMPT": "agent",
+    "READ_ROLES": "retrieval",
+    "CURATOR_ROLE": "retrieval",
+    "PATTERNS": "retrieval",
+    "RequestContext": "retrieval",
+    "AuthorizationDenied": "retrieval",
+    "Clarification": "retrieval",
+    "PatternPlan": "retrieval",
+    "RetrievalResult": "retrieval",
+    "classify": "retrieval",
+    "ProcedureRetrieval": "retrieval",
+    "AssembledProcedure": "assembly",
+    "assemble_procedure": "assembly",
+    "ProcedureVerifier": "verifier",
+    "VerificationOutcome": "verifier",
+    "AnswerProducer": "service",
+    "AnswerOutcome": "service",
+    "ProceduresAnswerService": "service",
+    "ProceduresToolkit": "toolkit",
+    "ProceduresAgent": "agent",
+    "PROCEDURES_SYSTEM_PROMPT": "agent",
     "ProcedureAnswer": "parrot.knowledge.manuals.models",
 }
 
