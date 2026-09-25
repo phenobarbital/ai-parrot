@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-608",
+  "mode_hint": "enrichment",
+  "wiki_available": true,
+  "budget": {"profile": "default", "max_files_read": 40, "max_grep_calls": 25, "max_git_calls": 10, "max_depth": 2, "max_wall_seconds": 300},
+  "queries": [
+    {"id": "Q001", "type": "wiki_query", "priority": 1, "intent": "Locate the existing Google services client and any Drive-specific code", "params": {"question": "google drive client interface"}},
+    {"id": "Q002", "type": "wiki_page", "priority": 1, "intent": "Read GoogleClient API outline (auth modes, execute_api_call, get_drive_client)", "params": {"id": "file:packages/ai-parrot/src/parrot/interfaces/google.py"}},
+    {"id": "Q003", "type": "wiki_page", "priority": 1, "intent": "Read GoogleBaseTool (auth_mode handling, client cache) — the analogue of O365Tool._get_client", "params": {"id": "file:packages/ai-parrot-tools/src/parrot_tools/google/base.py"}},
+    {"id": "Q004", "type": "wiki_page", "priority": 1, "intent": "Read parrot.interfaces.file shim (lazy re-exports) on dev", "params": {"id": "file:packages/ai-parrot/src/parrot/interfaces/file/__init__.py"}},
+    {"id": "Q005", "type": "read", "priority": 1, "intent": "FileManagerInterface abstract contract in navigator-api 4.0.0", "params": {"path": ".venv/lib/python3.12/site-packages/navigator/utils/file/abstract.py"}},
+    {"id": "Q006", "type": "read", "priority": 1, "intent": "GCSFileManager — the existing Google-auth file manager pattern upstream", "params": {"path": ".venv/lib/python3.12/site-packages/navigator/utils/file/gcs.py"}},
+    {"id": "Q007", "type": "grep", "priority": 1, "intent": "Find existing Drive tools in the Google Workspace toolkit", "params": {"pattern": "drive", "path": "packages/ai-parrot-tools/src/parrot_tools/google/tools.py", "flags": "-in"}},
+    {"id": "Q008", "type": "grep", "priority": 1, "intent": "Any other Google Drive consumers (loaders, integrations, docs)", "params": {"pattern": "googleapis.com/auth/drive|GoogleDrive|google_drive|gdrive", "path": "packages docs examples", "flags": "-rl"}},
+    {"id": "Q009", "type": "tree", "priority": 1, "intent": "FEAT-603 reference implementation layout in its worktree", "params": {"path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file", "maxdepth": 1}},
+    {"id": "Q010", "type": "read", "priority": 1, "intent": "GraphDriveFileManager skeleton (class layout, hooks, extensions) in the FEAT-603 worktree — outline only", "params": {"path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/graph.py", "outline": true}},
+    {"id": "Q011", "type": "read", "priority": 1, "intent": "SharePointFileManager thin subclass — the two hooks pattern to mirror", "params": {"path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/sharepoint.py"}},
+    {"id": "Q012", "type": "read", "priority": 1, "intent": "batch.py — BatchItemResult/BatchSummary shared models the Drive manager should reuse", "params": {"path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/batch.py"}},
+    {"id": "Q013", "type": "read", "priority": 1, "intent": "file/__init__.py in the FEAT-603 worktree — how the new managers were registered lazily", "params": {"path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/__init__.py"}},
+    {"id": "Q014", "type": "grep", "priority": 1, "intent": "FileManagerFactory / manager_type literal / _PARROT_NATIVE / _OP_TO_METHOD in the FEAT-603 worktree filemanager tool", "params": {"pattern": "_PARROT_NATIVE|manager_type|_OP_TO_METHOD|class FileManager", "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/tools/filemanager.py", "flags": "-n"}},
+    {"id": "Q015", "type": "grep", "priority": 2, "intent": "Google extras / pins in core pyproject (aiogoogle, google-api, google-auth)", "params": {"pattern": "aiogoogle|google-api-python|google-auth|google-cloud-storage|msgraph", "path": "packages/ai-parrot/pyproject.toml packages/ai-parrot-tools/pyproject.toml", "flags": "-n"}},
+    {"id": "Q016", "type": "grep", "priority": 2, "intent": "GOOGLE_CREDENTIALS_FILE and other Google conf keys", "params": {"pattern": "GOOGLE_CREDENTIALS_FILE|GOOGLE_API_KEY|GOOGLE_USER", "path": "packages/ai-parrot/src/parrot/conf.py", "flags": "-n"}},
+    {"id": "Q017", "type": "grep", "priority": 2, "intent": "aiogoogle media upload/download support (upload_file / download_file kwargs on method calls)", "params": {"pattern": "upload_file|download_file|pipe_to|pipe_from|resumable", "path": ".venv/lib/python3.12/site-packages/aiogoogle/resource.py", "flags": "-n"}},
+    {"id": "Q018", "type": "glob", "priority": 2, "intent": "Existing Google tool tests and docs", "params": {"pattern": "packages/ai-parrot-tools/tests/google/* docs/integrations/*google*"}},
+    {"id": "Q019", "type": "glob", "priority": 2, "intent": "FEAT-603 task files — decomposition shape to mirror", "params": {"pattern": "sdd/tasks/active/TASK-37[4-6]*"}},
+    {"id": "Q020", "type": "git_log", "priority": 2, "intent": "Recent activity on the Google interface + tools", "params": {"path": "packages/ai-parrot/src/parrot/interfaces/google.py packages/ai-parrot-tools/src/parrot_tools/google/", "since": "90 days"}},
+    {"id": "Q021", "type": "git_log", "priority": 2, "intent": "Is FEAT-603 merged into dev? (dev history on the graph manager paths)", "params": {"path": "packages/ai-parrot/src/parrot/interfaces/file/", "since": "60 days"}},
+    {"id": "Q022", "type": "read", "priority": 2, "intent": "FEAT-603 spec §4-§7: tests, acceptance criteria and codebase contract shape to mirror", "params": {"path": "sdd/specs/sharepoint-filemanager.spec.md", "lines": "567-1403", "outline": true}},
+    {"id": "Q023", "type": "grep", "priority": 2, "intent": "How GoogleWorkspaceToolkit / bundle registers tools (toolkit name, tool registry)", "params": {"pattern": "class .*Toolkit|register|^from|^import", "path": "packages/ai-parrot-tools/src/parrot_tools/google/__init__.py packages/ai-parrot-tools/src/parrot_tools/google/tools.py", "flags": "-n"}}
+  ]
+}
