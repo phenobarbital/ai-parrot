@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-25T14:47:02+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-25T23:30:10+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -352,7 +352,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -362,8 +362,9 @@
       "parallelism_notes": "its test drives the example's smoke() against build_fake_hooba_app from TASK-3744 (tests/hooba/fake_server.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3747-hooba-example-agent.md"
+      "completed_at": "2026-09-25T23:30:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3747-hooba-example-agent.md",
+      "verification": "verified"
     }
   ]
 }

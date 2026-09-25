@@ -245,10 +245,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (seat=glm5, backend=nova, model=zai.glm-5,
+attempt_uid=9dfcc3e8f07e482e986cb8bcf7c9b591, execution_id=85c083ec-56b6-42fe-8884-e686fbcf7a61)
+**Date**: 2026-09-26
+**Notes**: `examples/agents/finance/hooba_agent.py` (CLI agent on `HoobaToolkit` + broker,
+`--smoke` mode) and `test_example_agent.py`. Delivered in 1 attempt, 0 retries, 0 lint
+residuals. Full `packages/ai-parrot-tools/tests/hooba/` suite post-merge: 62 passed,
+2 skipped (opt-in live/browser). This is the FINAL task of FEAT-602 — all 17 tasks done.
 
 **Deviations from spec**: none | describe if any
