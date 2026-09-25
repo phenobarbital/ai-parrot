@@ -9,6 +9,8 @@ from parrot.knowledge.manuals.models import ManualVersion, Prerequisites, normal
 from parrot.knowledge.manuals.tips import add_tip as _add_tip
 from parrot.knowledge.manuals.tips import retire_tip as _retire_tip
 from parrot.tools.toolkit import AbstractToolkit
+from parrot.tools.working_memory.task_memory.models import ScopeViolation, StepStatus
+from parrot.tools.working_memory.task_memory.service import TaskNotFound
 from parrot.tools.working_memory.task_memory.tools import TASK_TOOL_METHODS, TaskMemoryToolsMixin
 from parrot_tools.procedures.assembly import AssembledProcedure
 from parrot_tools.procedures.guided import record_completion, task_steps_for
@@ -79,6 +81,75 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
         if isinstance(outcome, Clarification):
             return {"status": "clarification", **outcome.model_dump(mode="json")}
         return outcome.answer.model_dump(mode="json")
+
+    async def _build_assembled(self, procedure_id: str) -> AssembledProcedure | dict[str, Any]:
+        """Rebuild the released :class:`AssembledProcedure` for ``procedure_id``.
+
+        Returns an error dict (``not_found``/``clarification``/anything else
+        :meth:`_released_answer` returns for a non-"procedure" answer) instead when it cannot.
+        """
+        answer_data = await self._released_answer(procedure_id)
+        if answer_data.get("answer_kind") != "procedure":
+            return answer_data
+        card = await self._card_for_procedure(procedure_id)
+        if card is None:
+            return {"status": "not_found"}
+        revision = next((item for item in card.versions if item.revision == answer_data.get("manual_revision")), None)
+        revision = revision or ManualVersion(n=1, revision=answer_data.get("manual_revision") or card.revision)
+        return AssembledProcedure(
+            procedure=answer_data["procedure"],
+            steps=answer_data["steps"],
+            prerequisites=answer_data.get("prerequisites") or Prerequisites(),
+            hazards=answer_data.get("hazards", []),
+            media=answer_data.get("media", []),
+            tips=answer_data.get("tips", []),
+            citations=answer_data.get("citations", []),
+            revision=revision,
+        )
+
+    async def _guided_state(self, task_id: str) -> Optional[dict[str, Any]]:
+        """Return this task's guided-mode state, rehydrating it from durable task-memory storage
+        if this process never ran :meth:`start_guided` for it (a different gunicorn worker, a
+        restart, a fresh deploy — the in-process ``self._guided`` cache does not survive any of
+        those). ``None`` means the task genuinely does not exist or is not a guided procedure.
+        """
+        cached = self._guided.get(task_id)
+        if cached is not None:
+            return cached
+        tm = self._tm()
+        try:
+            snapshot = await tm.service.get_task(tm.scope, task_id)
+        except (TaskNotFound, ScopeViolation):
+            return None
+        procedure_id = next(
+            (
+                constraint.text.split("=", 1)[1]
+                for constraint in snapshot.state.active_constraints
+                if constraint.text.startswith("procedure_id=")
+            ),
+            None,
+        )
+        if procedure_id is None:
+            return None
+        assembled = await self._build_assembled(procedure_id)
+        if isinstance(assembled, dict):
+            return None
+        labels: dict[str, str] = {}
+        completed: set[str] = set()
+        for tm_step in snapshot.state.steps:
+            try:
+                order = int(tm_step.title.split(".", 1)[0])
+            except (ValueError, IndexError):
+                continue
+            view = next((item for item in assembled.steps if item.order == order), None)
+            if view is None:
+                continue
+            labels[view.step_id] = tm_step.step_id
+            if tm_step.status == StepStatus.COMPLETED:
+                completed.add(view.step_id)
+        state = {"procedure": assembled, "labels": labels, "completed": completed, "recorded": False}
+        self._guided[task_id] = state
+        return state
 
     async def find_procedure(self, query: str, equipment: Optional[str] = None) -> dict[str, Any]:
         """Find a procedure without guessing when multiple candidates match."""
@@ -261,27 +332,16 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
             self._gate(pattern="procedure_steps")
             if self._task_memory is None:
                 return {"status": "unavailable", "reason": "task memory is not configured"}
-            answer_data = await self._released_answer(procedure_id)
-            if answer_data.get("answer_kind") != "procedure":
-                return answer_data
-            card = await self._card_for_procedure(procedure_id)
-            assert card is not None
-            revision = next(
-                (item for item in card.versions if item.revision == answer_data.get("manual_revision")), None
-            )
-            revision = revision or ManualVersion(n=1, revision=answer_data.get("manual_revision") or card.revision)
-            assembled = AssembledProcedure(
-                procedure=answer_data["procedure"],
-                steps=answer_data["steps"],
-                prerequisites=answer_data.get("prerequisites") or Prerequisites(),
-                hazards=answer_data.get("hazards", []),
-                media=answer_data.get("media", []),
-                tips=answer_data.get("tips", []),
-                citations=answer_data.get("citations", []),
-                revision=revision,
-            )
+            assembled = await self._build_assembled(procedure_id)
+            if isinstance(assembled, dict):
+                return assembled
             result = await self.begin_task(
-                goal=assembled.procedure.title, steps=task_steps_for(assembled), plan_complete=True
+                goal=assembled.procedure.title,
+                # Durable — not just an in-process cache — so any worker can rehydrate this
+                # guided task's full state later via ``_guided_state`` (see there for why).
+                constraints=[f"procedure_id={procedure_id}"],
+                steps=task_steps_for(assembled),
+                plan_complete=True,
             )
             if result.get("status") != "started":
                 return result
@@ -314,12 +374,16 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
             pending = next((item for item in state.get("steps", []) if item.get("status") == "pending"), None)
             if pending is None:
                 return {"status": "complete"}
-            procedure = self._guided.get(task_id, {}).get("procedure")
-            step = (
-                next((item for item in procedure.steps if item.step_id == pending["step_id"]), None)
-                if procedure
-                else None
-            )
+            guided = await self._guided_state(task_id)
+            step = None
+            if guided is not None:
+                # ``pending["step_id"]`` is task-memory's own runtime id (freshly minted per step,
+                # never equal to our procedure's step_id — see ``_resolve_initial_plan``); translate
+                # through ``labels`` (procedure step_id -> task-memory step_id) the other way round.
+                reverse_labels = {taskmem_id: proc_id for proc_id, taskmem_id in guided["labels"].items()}
+                proc_step_id = reverse_labels.get(pending["step_id"])
+                if proc_step_id is not None:
+                    step = next((item for item in guided["procedure"].steps if item.step_id == proc_step_id), None)
             await self.set_resume_hint(task_id, "complete the next procedure step", step_id=pending["step_id"])
             return {"status": "ok", "step": step.model_dump(mode="json") if step else pending}
         except AuthorizationDenied as exc:
@@ -329,7 +393,7 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
         """Complete one procedure step with synthetic revision-pinned evidence."""
         try:
             self._gate(pattern="step_detail")
-            guided = self._guided.get(task_id)
+            guided = await self._guided_state(task_id)
             if guided is None or step_id not in guided["labels"]:
                 return {"status": "not_found", "reason": "guided procedure state is unavailable"}
             recalled = await self.recall_task(task_id)
@@ -337,13 +401,32 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
                 return recalled
             revision = recalled["snapshot"]["revision"]
             procedure = guided["procedure"]
+            completion_note = note or "completed by technician"
+            # update_step's default AGENT_ASSERTED completion policy requires evidence_refs to
+            # resolve to a REAL artifact ("a tool call that merely succeeded is never on its own
+            # evidence that a step is done") — a synthetic, never-registered "procedure:X@N"
+            # string always fails with completion_refused. Register the completion itself as a
+            # tiny artifact first, then cite ITS resolved ref.
+            tm = self._tm()
+            descriptor = await tm.artifacts.put(
+                tm.scope,
+                f"procedure_step_completion:{task_id}:{step_id}",
+                {
+                    "procedure_id": procedure.procedure.procedure_id,
+                    "manual_revision": procedure.revision.revision,
+                    "step_id": step_id,
+                    "note": completion_note,
+                },
+                task_id=task_id,
+                description="Guided-mode step completion evidence (FEAT-601 M11)",
+            )
             result = await self.update_step(
                 task_id,
                 guided["labels"][step_id],
                 expected_revision=revision,
                 status="completed",
-                evidence_refs=[f"procedure:{procedure.procedure.procedure_id}@{procedure.revision.revision}"],
-                note=note or "completed by technician",
+                evidence_refs=[str(descriptor.ref)],
+                note=completion_note,
             )
             if result.get("status") != "updated":
                 return result
