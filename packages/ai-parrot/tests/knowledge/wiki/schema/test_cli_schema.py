@@ -61,3 +61,56 @@ def test_lookup_ambiguous_prints_candidates(monkeypatch) -> None:
     assert result.exit_code != 0
     assert "candidates" in result.output
     assert "table:a/public.users" in result.output
+
+
+def _declare_sources(tmp_path) -> None:
+    """Declare one DDL-backed postgres source and one live-only mysql source."""
+    runner = CliRunner()
+    for alias, dialect in (("pg", "postgres"), ("my", "mysql")):
+        result = runner.invoke(wiki, ["schema", "add-source", alias, "--dialect", dialect, "--dsn-env", "DSN"])
+        assert result.exit_code == 0, result.output
+    path = tmp_path / ".parrot" / "wiki.json"
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config["schema"]["sources"]["pg"]["ddl_paths"] = ["db/*.sql"]
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+
+def test_hook_invocation_ingests_every_declared_source(tmp_path, monkeypatch) -> None:
+    """The post-merge hook's exact argv parses and ingests each source with its own dialect."""
+    from parrot.knowledge.wiki.claude_code import assets
+
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+    _declare_sources(tmp_path)
+    ddl = tmp_path / "db" / "users.sql"
+    ddl.parent.mkdir()
+    ddl.write_text("CREATE TABLE users (id int);", encoding="utf-8")
+    calls: list[tuple[str, str, list]] = []
+
+    class FakeService:
+        async def ingest_ddl(self, files, *, origin, dialect, changed_only, root):
+            calls.append((origin, dialect, list(files)))
+            return type("Report", (), {"created": [], "updated": [], "parse_errors": []})()
+
+    monkeypatch.setattr(cli, "_schema_service", lambda: FakeService())
+    monkeypatch.setattr(cli, "_changed_ddl_paths", lambda root, origin: [ddl] if origin == "pg" else [])
+    hook_line = next(line for line in assets.git_hook_block(tmp_path).splitlines() if "schema ingest-ddl" in line)
+    argv = hook_line.split(">/dev/null")[0].split()[1:]
+
+    result = CliRunner().invoke(wiki, argv)
+
+    assert result.exit_code == 0, result.output
+    assert calls == [("pg", "postgres", [ddl])]
+
+
+def test_ingest_ddl_requires_origin_without_changed(tmp_path, monkeypatch) -> None:
+    """Explicit PATHS or a non-``--changed`` run still need an origin."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+    ddl = tmp_path / "users.sql"
+    ddl.write_text("CREATE TABLE users (id int);", encoding="utf-8")
+
+    result = CliRunner().invoke(wiki, ["schema", "ingest-ddl", str(ddl)])
+
+    assert result.exit_code != 0
+    assert "--origin is required" in result.output

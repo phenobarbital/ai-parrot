@@ -3190,29 +3190,60 @@ def schema_sync(origin: str, tables: str | None, changed: bool, as_json: bool) -
 
 @schema.command("ingest-ddl")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path))
-@click.option("--origin", required=True)
-@click.option("--dialect", required=True, type=click.Choice(sorted(_SQLGLOT_DIALECT_MAP)))
+@click.option("--origin", default=None, help="Source alias; omit with --changed to scan every declared source.")
+@click.option(
+    "--dialect",
+    default=None,
+    type=click.Choice(sorted(_SQLGLOT_DIALECT_MAP)),
+    help="SQL dialect; defaults to the source's configured dialect.",
+)
 @click.option("--changed", is_flag=True)
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--quiet", is_flag=True)
 def schema_ingest_ddl(
-    paths: tuple[Path, ...], origin: str, dialect: str, changed: bool, as_json: bool, quiet: bool
+    paths: tuple[Path, ...], origin: str | None, dialect: str | None, changed: bool, as_json: bool, quiet: bool
 ) -> None:
-    """Fold SQL files into the schema plane without requiring a database."""
+    """Fold SQL files into the schema plane without requiring a database.
+
+    With ``--changed`` and neither PATHS nor ``--origin`` (the post-merge
+    hook's invocation), every declared ``schema.sources`` entry is scanned
+    for DDL files touched by the merge, each ingested with its own dialect.
+    """
     _refuse_in_linked_worktree(Path.cwd())
     root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
+    sources = load_effective_config(root).config.schema.sources
+    if origin is None:
+        if paths or not changed:
+            raise click.UsageError("--origin is required unless --changed is given without PATHS.")
+        if dialect is not None:
+            raise click.UsageError("--dialect requires --origin.")
+        origins = list(sources)
+    else:
+        if origin not in sources and dialect is None:
+            raise click.UsageError(f"Unknown schema source {origin!r}; pass --dialect or declare it with add-source.")
+        origins = [origin]
     files = [file for path in paths for file in (path.rglob("*.sql") if path.is_dir() else [path])]
-    if not files and changed:
-        files = _changed_ddl_paths(root, origin)
-        if not files:
-            return
-    report = _run(_schema_service().ingest_ddl(files, origin=origin, dialect=dialect, changed_only=changed, root=root))
-    if not quiet:
+    for alias in origins:
+        alias_files = files
+        if not alias_files and changed:
+            alias_files = _changed_ddl_paths(root, alias)
+            if not alias_files:
+                continue
+        alias_dialect = dialect or sources[alias].dialect
+        report = _run(
+            _schema_service().ingest_ddl(
+                alias_files, origin=alias, dialect=alias_dialect, changed_only=changed, root=root
+            )
+        )
+        if quiet:
+            continue
         if as_json:
             click.echo(report.model_dump_json())
         else:
+            prefix = f"{alias}: " if len(origins) > 1 else ""
             click.echo(
-                f"created {len(report.created)} updated {len(report.updated)} parse_errors {len(report.parse_errors)}"
+                f"{prefix}created {len(report.created)} updated {len(report.updated)} "
+                f"parse_errors {len(report.parse_errors)}"
             )
 
 
