@@ -256,7 +256,9 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
                 elif self.auth_mode == "on_behalf_of":
                     if self.user_assertion is None:
                         raise ValueError("user_assertion is required for on_behalf_of authentication")
-                    await loop.run_in_executor(None, client.acquire_token_on_behalf_of, self.user_assertion, self.scopes)
+                    await loop.run_in_executor(
+                        None, client.acquire_token_on_behalf_of, self.user_assertion, self.scopes
+                    )
                 elif self.auth_mode == "delegated":
                     await client.interactive_login(scopes=self.scopes)
                 elif self.auth_mode == "cached":

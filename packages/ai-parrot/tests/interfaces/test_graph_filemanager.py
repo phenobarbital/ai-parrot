@@ -21,7 +21,15 @@ from parrot.interfaces.file.graph import (
     GraphFileManagerError,
 )
 
-from ._graph_fakes import FakeAPIError, FakeDrive, FakeDriveItem, FakeGraphClient, make_onedrive_client, make_probe, make_sharepoint_client
+from ._graph_fakes import (
+    FakeAPIError,
+    FakeDrive,
+    FakeDriveItem,
+    FakeGraphClient,
+    make_onedrive_client,
+    make_probe,
+    make_sharepoint_client,
+)
 from parrot.interfaces.sharepoint import SharepointClient
 
 
