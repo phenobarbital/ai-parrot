@@ -1,4 +1,5 @@
 """SharePoint document-library FileManager (FEAT-603)."""
+
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -23,10 +24,10 @@ class SharePointFileManager(GraphDriveFileManager):
 
     def __init__(self, site: str, library: str = "Documents", *, tenant: Optional[str] = None, **kwargs: Any) -> None:
         """Args:
-            site: Site path under ``/sites/`` (``"parent/sub"`` for a sub-site).
-            library: Document library name.
-            tenant: ``<tenant>.sharepoint.com`` host name; falls back to credentials / SHAREPOINT_TENANT_NAME.
-            **kwargs: Forwarded to :class:`GraphDriveFileManager` (prefix, credentials, auth_mode, ...).
+        site: Site path under ``/sites/`` (``"parent/sub"`` for a sub-site).
+        library: Document library name.
+        tenant: ``<tenant>.sharepoint.com`` host name; falls back to credentials / SHAREPOINT_TENANT_NAME.
+        **kwargs: Forwarded to :class:`GraphDriveFileManager` (prefix, credentials, auth_mode, ...).
         """
         super().__init__(**kwargs)
         if not site or not str(site).strip("/"):

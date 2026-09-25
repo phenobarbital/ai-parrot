@@ -1,4 +1,5 @@
 """FEAT-603 TASK-3756 — SharePointFileManager."""
+
 import sys
 from types import SimpleNamespace
 from unittest import mock
@@ -110,8 +111,18 @@ def test_subclass_overrides_only_allowed_members():
     # assignments the blueprint fixes (`manager_name: str = ...`, `client_class: type
     # = ...`); it carries no additional override surface beyond those two allowed names.
     allowed = {
-        "manager_name", "client_class", "__init__", "_build_client", "_resolve_drive_id", "__doc__", "__module__",
-        "__qualname__", "__abstractmethods__", "_abc_impl", "__firstlineno__", "__static_attributes__",
+        "manager_name",
+        "client_class",
+        "__init__",
+        "_build_client",
+        "_resolve_drive_id",
+        "__doc__",
+        "__module__",
+        "__qualname__",
+        "__abstractmethods__",
+        "_abc_impl",
+        "__firstlineno__",
+        "__static_attributes__",
         "__annotations__",
     }
     assert set(vars(SharePointFileManager)) - allowed == set()
