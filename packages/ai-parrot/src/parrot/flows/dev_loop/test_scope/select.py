@@ -223,9 +223,21 @@ def plan_tests(
                         escalated.append(dist)
                 else:
                     notes.append(f"{dist}: {reason} escalation target suite does not exist, skipped")
+            skipped_cap_dists = {dist for dist in ledger_skipped if dist in cap_candidates}
             for dist in ledger_skipped:
                 if dist in cap_candidates:
                     notes.append(f"{dist}: cap escalation skipped — ledger blobs and impacted hash match")
+            if skipped_cap_dists:
+                # A ledger-skipped cap escalation must produce NO invocation for its
+                # distribution at all — a "mirror" target added earlier (top of this
+                # function, before cap detection ran) for the exact changed file that
+                # drove the escalation is otherwise a leftover invocation for content
+                # the ledger already proved green (spec §3 M2; TASK-3798 scope).
+                targets = [
+                    target
+                    for target in targets
+                    if not (target.reason == "mirror" and target.distribution in skipped_cap_dists)
+                ]
 
     return build_plan(
         targets,
