@@ -13,15 +13,34 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.bookstore.models import TocEntry
-from parrot.knowledge.common.provenance import Evidence, Extracted
+from parrot.knowledge.bookstore.carding import slugify, unique_slug
+from parrot.knowledge.common.provenance import Evidence, Extracted, FieldProvenance
 from parrot.knowledge.common.validation import load_bodies, normalize_whitespace, quote_supported, validate_extracted
-from parrot.knowledge.manuals.models import ProcedureKind
+from parrot.knowledge.manuals.figures import FigureCandidate, pair_figures
+from parrot.knowledge.manuals.models import (
+    Applicability,
+    EquipmentRef,
+    Hazard,
+    ManualCard,
+    MediaLink,
+    MediaRef,
+    PartRef,
+    Procedure,
+    ProcedureKind,
+    SerialRange,
+    Step,
+    StepIdentity,
+    ToolRef,
+    content_hash,
+    mint_step_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -644,4 +663,317 @@ async def draft_manual(
         header_nodes=header_nodes,
         procedure_nodes=procedure_nodes,
         warnings=notes,
+    )
+
+
+# --------------------------------------------------------------------------
+# Deterministic card assembly
+# --------------------------------------------------------------------------
+
+
+PART_SIMILARITY_THRESHOLD = 0.85
+SERIAL_QUALIFIER_RE = re.compile(
+    r"(?:(?P<prefix>from|desde|>=|≥|up to|hasta)\s+)?"
+    r"(?:S/N|serial(?:\s+numbers?)?|n[úu]mero de serie)\s*"
+    r"(?:(?P<direction>from|desde|>=|≥|and later|y posteriores|up to|hasta)\s*)?"
+    r"(?P<start>[A-Z0-9\-]+)(?:\s*(?:to|hasta|-|–)\s*(?P<end>[A-Z0-9\-]+))?",
+    re.I,
+)
+
+
+class SourceInfo(BaseModel):
+    """Source facts and ingest-time context handed to :func:`assemble_card`."""
+
+    source_uri: str | None = None
+    source_sha256: str
+    source_format: str
+    revision: str
+    equipment: list[str] = Field(default_factory=list)
+    toc: list[TocEntry] = Field(default_factory=list)
+    toc_digest: str = ""
+    page_count: int = 0
+    figure_candidates: list[FigureCandidate] = Field(default_factory=list)
+    previous_card: ManualCard | None = None
+
+
+def parse_serial_qualifier(text: str) -> SerialRange | None:
+    """Parse a serial qualifier into its vendor-preserved range.
+
+    Args:
+        text: Literal serial qualifier extracted from a manual.
+
+    Returns:
+        A serial range, or ``None`` when the qualifier is not recognized.
+    """
+    match = SERIAL_QUALIFIER_RE.search(text or "")
+    if not match:
+        return None
+    start = match.group("start")
+    end = match.group("end")
+    if match.group("prefix") in {"up to", "hasta"} or match.group("direction") in {"up to", "hasta"}:
+        start, end = None, start
+    shape = start or end or ""
+    format_value = "".join("9" if char.isdigit() else "A" if char.isalpha() else char for char in shape)
+    return SerialRange(start=start, end=end, format=format_value)
+
+
+def _similarity(left: str, right: str) -> float:
+    """Return rapidfuzz token-sort similarity normalized to ``[0, 1]``."""
+    if not (left or "").strip() or not (right or "").strip():
+        return 0.0
+    if left == right:
+        return 1.0
+    try:
+        from rapidfuzz import fuzz  # noqa: PLC0415 - optional dependency
+    except ImportError as exc:  # pragma: no cover - depends on install extras
+        raise RuntimeError(
+            "Manual part resolution requires rapidfuzz. Install it with " "`pip install 'ai-parrot[graphindex]'`."
+        ) from exc
+    return float(fuzz.token_sort_ratio(left, right)) / 100.0
+
+
+def _carry_forward_identity(
+    manual_id: str,
+    slug: str,
+    source_identity: str | None,
+    digest: str,
+    previous: Sequence[StepIdentity],
+) -> StepIdentity:
+    """Reuse a prior id by source identity then exact content hash (R1)."""
+    for prior in previous:
+        if source_identity and prior.source_identity == source_identity:
+            return StepIdentity(step_id=prior.step_id, source_identity=source_identity, content_hash=digest)
+    for prior in previous:
+        if prior.content_hash == digest:
+            return StepIdentity(step_id=prior.step_id, source_identity=source_identity, content_hash=digest)
+    return StepIdentity(step_id=mint_step_id(manual_id, slug), source_identity=source_identity, content_hash=digest)
+
+
+def _provenance(field: Extracted[Any]) -> FieldProvenance:
+    """Build field provenance from one extraction field."""
+    evidence = field.evidence
+    return FieldProvenance(
+        origin="llm",
+        node_id=evidence.node_id if evidence else None,
+        page=evidence.page if evidence else None,
+        quote=evidence.quote if evidence else None,
+        confidence=field.confidence,
+    )
+
+
+def _part_number(value: str) -> str | None:
+    """Return the first token in a header part row as its printed number."""
+    token = (value or "").strip().split(maxsplit=1)
+    return token[0] if token else None
+
+
+def _part_ref(manual_id: str, value: Extracted[str], index: int) -> PartRef:
+    """Create a stable global part reference from one header row."""
+    name = (value.value or "").strip()
+    number = _part_number(name)
+    key = slugify(number or name) if name else str(index)
+    return PartRef(
+        part_id=f"{manual_id}:part:{key}",
+        part_number=number,
+        name=value,
+        resolved=True,
+    )
+
+
+def _resolve_parts(mentions: Sequence[str], globals_: Sequence[PartRef], warnings: list[str]) -> list[PartRef]:
+    """Resolve mentioned parts exactly or by the bounded fuzzy threshold."""
+    resolved: list[PartRef] = []
+    for mention in mentions:
+        literal = (mention or "").strip()
+        exact = next(
+            (part for part in globals_ if part.part_number and part.part_number.casefold() == literal.casefold()),
+            None,
+        )
+        candidate = exact
+        if candidate is None:
+            candidate = next(
+                (part for part in globals_ if _similarity(literal, part.name.value or "") >= PART_SIMILARITY_THRESHOLD),
+                None,
+            )
+        if candidate is not None:
+            resolved.append(candidate.model_copy(update={"resolved": True}))
+            continue
+        warnings.append(f"unresolved part mention: {literal}")
+        resolved.append(
+            PartRef(
+                part_id=f"literal-part:{slugify(literal)}",
+                part_number=None,
+                name=Extracted[str](value=literal, confidence=1.0),
+                resolved=False,
+            )
+        )
+    return resolved
+
+
+def _tool_ref(manual_id: str, value: Extracted[str], index: int) -> ToolRef:
+    """Create a stable global tool reference from one header tool."""
+    name = (value.value or "").strip()
+    return ToolRef(tool_id=f"{manual_id}:tool:{slugify(name) or index}", name=value)
+
+
+def _hazard(manual_id: str, value: Extracted[str], index: int) -> Hazard:
+    """Create a global caution hazard from one header warning."""
+    return Hazard(hazard_id=f"{manual_id}:hazard:{index}", severity="caution", text=value)
+
+
+def assemble_card(
+    draft: CardingDraft,
+    *,
+    manual_id: str,
+    source: SourceInfo,
+    figures: Sequence[MediaRef],
+    page_map: Mapping[str, int],
+    now: datetime,
+) -> ManualCard:
+    """Assemble a deterministic manual card from validated extraction drafts.
+
+    The injected ``now`` establishes a pure assembly boundary; it is retained
+    in the signature for the ingest contract even though M5 does not persist a
+    timestamp until the version append in M8.
+    """
+    del now
+    header = draft.header
+    warnings = list(draft.warnings)
+    global_parts = [_part_ref(manual_id, part, index) for index, part in enumerate(header.parts, start=1)]
+    global_tools = [_tool_ref(manual_id, tool, index) for index, tool in enumerate(header.tools, start=1)]
+    global_hazards = [_hazard(manual_id, hazard, index) for index, hazard in enumerate(header.hazards, start=1)]
+    prior_identities = [
+        step.identity
+        for procedure in (source.previous_card.procedures if source.previous_card else [])
+        for step in procedure.steps
+    ]
+    media_by_id = {media.media_id: media for media in figures}
+    taken: set[str] = set()
+    procedures: list[Procedure] = []
+
+    for procedure_index, procedure_draft in enumerate(draft.procedures, start=1):
+        base = slugify(procedure_draft.title.value or "")
+        slug = unique_slug(base if base and base != "book" else f"procedure-{procedure_index}", taken)
+        taken.add(slug)
+        page = page_map.get(procedure_draft.node_id, 0)
+        links_by_step: dict[int, list[MediaLink]] = {}
+        for step_index, link in pair_figures(
+            procedure_draft.steps,
+            source.figure_candidates,
+            page_of_step=dict.fromkeys(range(len(procedure_draft.steps)), page),
+        ):
+            if link.media_id in media_by_id:
+                links_by_step.setdefault(step_index, []).append(link)
+
+        steps: list[Step] = []
+        durations: list[int] = []
+        for step_index, step_draft in enumerate(procedure_draft.steps):
+            serial_ranges: list[SerialRange] = []
+            serial_evidence: Evidence | None = None
+            for qualifier in step_draft.serial_qualifiers:
+                parsed = parse_serial_qualifier(qualifier.value or "")
+                if parsed is None:
+                    warnings.append(f"unparseable serial qualifier: {qualifier.value}")
+                    continue
+                if qualifier.evidence is None or not qualifier.evidence.substantiates:
+                    warnings.append(f"serial qualifier lacks evidence: {qualifier.value}")
+                    continue
+                serial_ranges.append(parsed)
+                serial_evidence = serial_evidence or qualifier.evidence
+            applicability = Applicability(
+                models=list(step_draft.applies_models),
+                serial_ranges=serial_ranges,
+                evidence=serial_evidence,
+            )
+            duration = step_draft.duration_minutes.value if step_draft.duration_minutes else None
+            if duration is not None:
+                durations.append(duration)
+            applies_to = [*applicability.models, *(rng.start or "" for rng in applicability.serial_ranges)]
+            applies_to.extend(rng.end or "" for rng in applicability.serial_ranges)
+            digest = content_hash(
+                step_draft.text.value or "",
+                torque=step_draft.torque.value if step_draft.torque else None,
+                duration_minutes=duration,
+                applies_to=applies_to,
+            )
+            steps.append(
+                Step(
+                    identity=_carry_forward_identity(
+                        manual_id,
+                        slug,
+                        step_draft.source_identity,
+                        digest,
+                        prior_identities,
+                    ),
+                    order=step_draft.order,
+                    text=step_draft.text,
+                    torque=step_draft.torque,
+                    duration_minutes=step_draft.duration_minutes,
+                    applicability=applicability,
+                    figure_refs=list(step_draft.figure_refs),
+                    parts=_resolve_parts(step_draft.part_mentions, global_parts, warnings),
+                    tools=[
+                        tool
+                        for tool in global_tools
+                        if any(
+                            (tool.name.value or "").casefold() == mention.casefold()
+                            for mention in step_draft.tool_mentions
+                        )
+                    ],
+                    hazards=[
+                        hazard
+                        for hazard in global_hazards
+                        if any(
+                            (hazard.text.value or "").casefold() == text.value.casefold()
+                            for text in step_draft.hazard_texts
+                        )
+                    ],
+                    media=links_by_step.get(step_index, []),
+                    cross_refs=list(step_draft.cross_refs),
+                )
+            )
+        procedures.append(
+            Procedure(
+                procedure_id=f"{manual_id}:{slug}",
+                slug=slug,
+                kind=procedure_draft.kind,
+                title=procedure_draft.title,
+                steps=steps,
+                estimated_minutes=sum(durations) if durations else None,
+                skill_level=None,
+            )
+        )
+
+    equipment_values = [*source.equipment, *(model.value or "" for model in header.equipment_models)]
+    equipment = [
+        EquipmentRef(equipment_id=f"{manual_id}:equipment:{slugify(model)}", model=model, revision=source.revision)
+        for model in dict.fromkeys(model.strip() for model in equipment_values if model and model.strip())
+    ]
+    provenance = {
+        **{f"equipment.{index}.model": _provenance(model) for index, model in enumerate(header.equipment_models)},
+        "revision": _provenance(header.revision),
+        **{f"global_parts.{index}": _provenance(part) for index, part in enumerate(header.parts)},
+        **{f"global_tools.{index}": _provenance(tool) for index, tool in enumerate(header.tools)},
+        **{f"global_hazards.{index}": _provenance(hazard) for index, hazard in enumerate(header.hazards)},
+    }
+    logger.info("Assembled manual card %s with %d warnings", manual_id, len(warnings))
+    return ManualCard(
+        manual_id=manual_id,
+        equipment=equipment,
+        revision=source.revision,
+        source_uri=source.source_uri,
+        source_sha256=source.source_sha256,
+        source_format=source.source_format,
+        toc=source.toc,
+        toc_digest=source.toc_digest,
+        page_count=source.page_count,
+        procedures=procedures,
+        global_parts=global_parts,
+        global_tools=global_tools,
+        global_hazards=global_hazards,
+        figures=list(figures),
+        field_provenance=provenance,
+        verification="extracted",
+        versions=[],
+        card_origin=draft.origin,
     )
