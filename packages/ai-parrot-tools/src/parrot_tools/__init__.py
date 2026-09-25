@@ -34,6 +34,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "break_even_analysis": "parrot_tools.breakeven.BreakEvenAnalysisTool",
     "web_browsing": "parrot_tools.browsing.toolkit.WebBrowsingToolkit",
     "business_automation": "parrot_tools.business_automation.toolkit.BusinessAutomationToolkit",
+    "hooba": "parrot_tools.hooba.toolkit.HoobaToolkit",
     "calculator": "parrot_tools.calculator.tool.CalculatorTool",
     "chart": "parrot_tools.chart.ChartTool",
     "cloud_sploit": "parrot_tools.cloudsploit.toolkit.CloudSploitToolkit",
