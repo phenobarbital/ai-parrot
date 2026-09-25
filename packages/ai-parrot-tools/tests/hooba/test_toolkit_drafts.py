@@ -46,7 +46,9 @@ class _StubApi:
         return dict(self._cookies)
 
 
-def _make_toolkit(fake_call: FakeHooba, *, rules_path: Optional[str] = None, base_url: Optional[str] = None) -> HoobaToolkit:
+def _make_toolkit(
+    fake_call: FakeHooba, *, rules_path: Optional[str] = None, base_url: Optional[str] = None
+) -> HoobaToolkit:
     """Build a HoobaToolkit whose ``_api`` never touches the network and whose ``_call`` is scripted."""
     settings = HoobaSettings(account_id=123, base_url=base_url or "https://api.hooba.com")
     toolkit = HoobaToolkit(settings=settings, api=_StubApi(), rules_path=rules_path)
@@ -171,9 +173,7 @@ async def test_create_draft_reuses_existing_by_correlation_key():
     assert set(receipt["line_ids"]) == {700, 701}
 
     line_posts = [
-        (method, path, data)
-        for method, path, data in fake.calls
-        if method == "POST" and path.endswith("invoice-lines")
+        (method, path, data) for method, path, data in fake.calls if method == "POST" and path.endswith("invoice-lines")
     ]
     assert len(line_posts) == 1
     assert line_posts[0][2]["name"] == "Line B"

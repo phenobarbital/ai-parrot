@@ -396,7 +396,11 @@ class HoobaToolkit(AbstractToolkit):
 
     async def _resolve_serie(self, code: Optional[str], simplified: bool) -> int:
         """Resolve an invoice serie code, or the account's default serie for `simplified`."""
-        series = [serie for serie in (await self._call("GET", "/accounts/{accountId}/invoice-series") or []) if isinstance(serie, dict)]
+        series = [
+            serie
+            for serie in (await self._call("GET", "/accounts/{accountId}/invoice-series") or [])
+            if isinstance(serie, dict)
+        ]
         if code:
             for serie in series:
                 if serie.get("code") == code:
@@ -475,7 +479,9 @@ class HoobaToolkit(AbstractToolkit):
         return f"/accounts/{{accountId}}/{entity_segment}/{entity_id}"
 
     @staticmethod
-    def _line_body(kind: Literal["invoice", "purchase_invoice"], line: Any, tax_id: Optional[int], income_tax_id: Optional[int]) -> dict:
+    def _line_body(
+        kind: Literal["invoice", "purchase_invoice"], line: Any, tax_id: Optional[int], income_tax_id: Optional[int]
+    ) -> dict:
         """Build the ``oneOf`` Product line body (invoices) or the flat purchase-invoice-line body."""
         if kind == "invoice":
             return {
