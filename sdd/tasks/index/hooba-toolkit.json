@@ -309,7 +309,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -319,8 +319,9 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot-tools/pyproject.toml (dependency manifest; uv.lock refresh in the main checkout); needs the finished HoobaToolkit from TASK-3743 (hooba/toolkit.py) for the registry path, and the hooba/spec (TASK-3735) and hooba/rules (TASK-3740) data files it declares as package-data, both reached through TASK-3743",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3745-hooba-packaging.md"
+      "completed_at": "2026-09-25T23:12:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3745-hooba-packaging.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3746",

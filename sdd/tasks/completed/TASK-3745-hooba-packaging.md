@@ -225,10 +225,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat=mistral, backend=nova, model=mistral.devstral-2-123b,
+attempt_uid=c583d9474a97487b8a10b22d647af397, execution_id=85c083ec-56b6-42fe-8884-e686fbcf7a61)
+**Date**: 2026-09-26
+**Notes**: Registered `TOOL_REGISTRY['hooba'] = 'parrot_tools.hooba.toolkit.HoobaToolkit'`,
+added the `hooba` extra (`ai-parrot-tools[business_automation,excel,scraping]` + `pyyaml>=6.0`)
+and included it in `all`, and added `package-data` entries for
+`parrot_tools.hooba.spec` (`*.json`) and `parrot_tools.hooba.rules` (`*.yaml`). Delivered
+via `coder_run_chunk` (1 attempt, 0 retries, 0 failures), merged cleanly with 0 lint
+residuals. Full `packages/ai-parrot-tools/tests/hooba/` suite: 55/55 passed post-merge
+(includes new `test_packaging.py`). **`uv lock` was NOT run inside the worktree** (per
+task instructions, to avoid repointing the shared venv) — **the main-checkout operator
+must run `uv lock` after this branch merges** to pick up the new `hooba` extra.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
