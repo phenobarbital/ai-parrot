@@ -261,10 +261,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3736
+- Feature: hooba-toolkit
+- Implementation SHA: 6961067fda8cf2548a7817a7fdd47e125ee22daf
+- Closed at (UTC): 2026-09-25T17:15:17+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 2 |
+| fix_commits | 0 |
+| merge_tier_engine_outcome | failed (same workspace-wide sweep as TASK-3731/TASK-3733; ai-parrot-tools distribution itself never completed collection due to 5 pre-existing unrelated ImportErrors in shell_tool/alpaca/zoom test modules, none touching scraping/drivers) |
+| orchestrator_targeted_verification | packages/ai-parrot-tools/tests/scraping/test_driver_get_cookies.py run together with test_models.py: 8/8 passed. Full packages/ai-parrot-tools/tests/scraping/ + tests/hooba/ sweep: 15 failed/871 passed on worktree vs 15 failed/863 passed on unmodified origin/dev baseline for tests/scraping/ alone -- identical failure set (test_driver_factory/test_fixture_site_integration/test_toolkit_integration, all pre-existing, unrelated to get_cookies()); zero regressions attributable to this diff. Native coder's own delivery also reported test_abstract_driver.py 14 passed and test_abstract_driver_extensions.py 13 passed. |
+| seat_summary | Seat: haiku(native)->sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~169.8s · Tokens: ~91498 total (in/out breakdown n/a) |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions (parrot.utils.types, parrot.utils.parsers.toml) temporarily copied in from the identical-source main checkout since worktrees have no compiled .so per project's known limitation; removed both temp .so copies afterward (never committed, git status clean). |

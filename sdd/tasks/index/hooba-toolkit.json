@@ -114,7 +114,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -122,8 +122,9 @@
       "parallelism_notes": "foundation: no dependency; the only task touching scraping/drivers/abstract.py and playwright_driver.py",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3736-driver-context-cookies.md"
+      "completed_at": "2026-09-25T17:15:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3736-driver-context-cookies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3737",
