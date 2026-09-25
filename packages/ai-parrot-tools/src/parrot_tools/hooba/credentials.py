@@ -1,4 +1,5 @@
 """Broker-backed Hooba credentials and the cookie-session login hook (FEAT-602 M2)."""
+
 from __future__ import annotations
 
 import logging

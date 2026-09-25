@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3734 — settings, env resolver, broker registration, login hook."""
+
 import logging
 from types import SimpleNamespace
 
@@ -63,7 +64,10 @@ def test_settings_missing_account_id_raises():
 
 async def test_env_resolver_and_broker_registration():
     resolver = EnvCredentialResolver(env=ENV)
-    assert await resolver.resolve("hooba", "hooba") == {"username": ENV["HOOBA_USERNAME"], "password": ENV["HOOBA_PASSWORD"]}
+    assert await resolver.resolve("hooba", "hooba") == {
+        "username": ENV["HOOBA_USERNAME"],
+        "password": ENV["HOOBA_PASSWORD"],
+    }
 
     broker = CredentialBroker()
     register_hooba_provider(broker, resolver=resolver)

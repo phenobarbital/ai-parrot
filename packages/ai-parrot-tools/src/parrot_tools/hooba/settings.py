@@ -1,4 +1,5 @@
 """Hooba configuration from the environment (FEAT-602 M2)."""
+
 from __future__ import annotations
 
 import os
