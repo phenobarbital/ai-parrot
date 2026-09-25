@@ -111,6 +111,49 @@ async def test_verifier_prose_cannot_add_steps():
     assert outcome.dropped_claims
 
 
+async def test_verifier_prose_cannot_add_steps_word_form_or_unitless_value():
+    """Word-form step references and unit-less/uncommon-unit values are caught too (not just digit-form N·m).
+
+    Regression test for a confirmed review finding: the previous sanitizer only recognized "step 7"
+    (digit form) and a fixed unit whitelist (N·m/nm/n-m/min/mm/kg), so "the seventh step" and a
+    hallucinated value in an unlisted unit ("45 psi") or with no unit at all ("torque it to 45")
+    slipped through unexamined.
+    """
+    steps = [_step_view(order, torque=f"{order * 10} N·m") for order in range(1, 6)]
+    citations = [_citation(f"node-{order}", f"Step {order} text") for order in range(1, 6)]
+    sections = {f"node-{order}": f"Step {order} text in the full body." for order in range(1, 6)}
+    assembled = _assembled(steps, citations)
+    evidence = FakeEvidence(sections)
+    verifier = ProcedureVerifier(catalog=None, evidence=evidence, allowed_revision=_revision())
+
+    word_form = await verifier.verify(
+        assembled, draft_prose="Then do the seventh step at 45 psi", kind="procedure", pattern=None
+    )
+    assert word_form.answer.answer == ""
+    assert word_form.dropped_claims
+
+    unitless = await verifier.verify(assembled, draft_prose="Torque it to 45", kind="procedure", pattern=None)
+    assert unitless.answer.answer == ""
+    assert unitless.dropped_claims
+
+
+async def test_verifier_prose_allows_word_form_step_reference_and_recognized_value():
+    """A legitimate word-form step reference and its exact released torque value are NOT dropped."""
+    steps = [_step_view(order, torque=f"{order * 10} N·m") for order in range(1, 6)]
+    citations = [_citation(f"node-{order}", f"Step {order} text") for order in range(1, 6)]
+    sections = {f"node-{order}": f"Step {order} text in the full body." for order in range(1, 6)}
+    assembled = _assembled(steps, citations)
+    evidence = FakeEvidence(sections)
+    verifier = ProcedureVerifier(catalog=None, evidence=evidence, allowed_revision=_revision())
+
+    outcome = await verifier.verify(
+        assembled, draft_prose="Follow step three at 30 N·m.", kind="procedure", pattern=None
+    )
+
+    assert outcome.answer.answer == "Follow step three at 30 N·m."
+    assert not outcome.dropped_claims
+
+
 async def test_verifier_releases_complete_procedure():
     """All quotes verbatim ⇒ answer_kind "procedure", 5 steps, 5 citations."""
     steps = [_step_view(order, torque=f"{order * 10} N·m") for order in range(1, 6)]
