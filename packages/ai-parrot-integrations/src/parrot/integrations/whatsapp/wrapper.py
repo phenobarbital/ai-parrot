@@ -25,6 +25,7 @@ from .models import WhatsAppAgentConfig
 from .handler import WhatsAppUserSession
 from .utils import convert_markdown_to_whatsapp, split_message, sanitize_phone_number
 from ..parser import parse_response, ParsedResponse
+from ..media_download import MediaDownloadRefused, allowed_media_hosts, temp_download
 from ...models.outputs import OutputMode
 
 if TYPE_CHECKING:
@@ -294,6 +295,26 @@ class WhatsAppAgentWrapper:
                 )
             except Exception as e:
                 self.logger.error("Failed to send image to %s: %s", to, e)
+
+        # Remote image URLs (FEAT-601 M12): direct URL first, bounded download on provider rejection
+        for url in getattr(parsed, "image_urls", []) or []:
+            try:
+                await loop.run_in_executor(
+                    _executor, lambda u=url: client.send_image(to=to, image=u)
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001 — provider rejection triggers the fallback
+                self.logger.warning("WhatsApp rejected image URL %s (%s); downloading", url, exc)
+            try:
+                async with temp_download(url, allowed_hosts=allowed_media_hosts()) as path:
+                    await loop.run_in_executor(
+                        _executor, lambda p=path: client.send_image(to=to, image=str(p))
+                    )
+            except MediaDownloadRefused as exc:
+                self.logger.warning("Refused image URL %s: %s", url, exc)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("Failed to send image URL to %s: %s", to, exc)
+        # FILL IN: parsed.media_urls → send as a text message with the links (client.send_message) — bounded by spec §3 M12
 
         # Send charts as images
         if parsed.has_charts:
