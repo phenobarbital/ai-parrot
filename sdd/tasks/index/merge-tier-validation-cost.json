@@ -16,7 +16,7 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies: creates LedgerEntry.impact_blobs/impacted_hash, ScopePlan.cap_hits/cap_impacted and the extended context.py functions every other M1/M2 task consumes; owns datatypes.py, context.py, planner.py exclusively.",
       "assigned_to": null,
       "started_at": "2026-09-25T18:28:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3797-cap-ledger-datatypes-context.md"
+      "completed_at": "2026-09-25T19:05:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3797-cap-ledger-datatypes-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3798",
