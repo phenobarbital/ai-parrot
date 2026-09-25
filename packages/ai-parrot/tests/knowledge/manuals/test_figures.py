@@ -1,4 +1,5 @@
 """FEAT-601 M6 — figures (AC13)."""
+
 from __future__ import annotations
 
 from pathlib import Path

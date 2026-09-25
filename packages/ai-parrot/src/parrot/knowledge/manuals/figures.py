@@ -1,4 +1,5 @@
 """Figure extraction, deterministic pairing, vision captioning and storage (FEAT-601 M6)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -182,7 +183,9 @@ def pair_figures(
             # Captioned figures are only linked when a step cites them (above).
             continue
         same_page_steps = [
-            step_index for step_index, page in page_of_step.items() if page == fig.image.page and step_index < len(steps)
+            step_index
+            for step_index, page in page_of_step.items()
+            if page == fig.image.page and step_index < len(steps)
         ]
         if not same_page_steps:
             continue
