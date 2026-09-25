@@ -518,7 +518,7 @@ class OneDriveClient(O365Client):
             uploaded_items = []
 
             # Get all files in the folder recursively
-            for root, dirs, files in os.walk(local_path):
+            for root, _dirs, files in os.walk(local_path):
                 relative_path = Path(root).relative_to(local_path)
 
                 # Calculate OneDrive destination path

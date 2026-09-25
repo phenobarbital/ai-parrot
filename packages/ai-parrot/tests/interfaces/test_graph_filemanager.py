@@ -522,7 +522,7 @@ def _shape(fn):
 
 def test_all_interface_methods_implemented_with_exact_signatures():
     """AC1: no abstract interface method left; parameter shapes equal navigator's."""
-    names = {name for name in FileManagerInterface.__abstractmethods__}
+    names = set(FileManagerInterface.__abstractmethods__)
     assert not (names & GraphDriveFileManager.__abstractmethods__)
     for name in names | {"create_folder", "remove_folder", "rename_folder", "rename_file", "find_files"}:
         assert _shape(getattr(GraphDriveFileManager, name)) == _shape(getattr(FileManagerInterface, name)), name

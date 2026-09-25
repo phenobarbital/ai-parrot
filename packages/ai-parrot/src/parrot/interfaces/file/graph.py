@@ -488,7 +488,7 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
             nxt = getattr(resp, "odata_next_link", None)
             if not nxt:
                 break
-            resp, _ = await self._retrying(lambda: builder.with_url(nxt).get(), label="children-next")
+            resp, _ = await self._retrying(lambda _nxt=nxt: builder.with_url(_nxt).get(), label="children-next")
 
     async def _iter_search(self, q: str) -> AsyncIterator[Any]:
         """Yield every ``search(q)`` hit on the drive across all pages (S4)."""
@@ -500,7 +500,7 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
             nxt = getattr(resp, "odata_next_link", None)
             if not nxt:
                 break
-            resp, _ = await self._retrying(lambda: builder.with_url(nxt).get(), label="search-next")
+            resp, _ = await self._retrying(lambda _nxt=nxt: builder.with_url(_nxt).get(), label="search-next")
 
     @staticmethod
     def _query_is_api_safe(query: str) -> bool:
@@ -670,7 +670,7 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
                 )
                 try:
                     parent, _ = await self._retrying(
-                        lambda: self._drive().items.by_drive_item_id(parent.id).children.post(folder),
+                        lambda _pid=parent.id, _f=folder: self._drive().items.by_drive_item_id(_pid).children.post(_f),
                         label="create-folder",
                     )
                 except Exception as create_error:
@@ -716,8 +716,8 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
                     "Content-Range": f"bytes {offset}-{end}/{size}",
                 }
 
-                async def put_chunk() -> Tuple[int, Dict[str, Any]]:
-                    async with session.put(url, data=chunk, headers=headers, allow_redirects=False) as response:
+                async def put_chunk(_chunk=chunk, _headers=headers) -> Tuple[int, Dict[str, Any]]:
+                    async with session.put(url, data=_chunk, headers=_headers, allow_redirects=False) as response:
                         if response.status not in {200, 201, 202}:
                             raise _RawHTTPError(response.status, dict(response.headers))
                         return response.status, await response.json()

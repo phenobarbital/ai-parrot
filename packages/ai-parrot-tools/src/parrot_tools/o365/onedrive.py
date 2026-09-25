@@ -8,6 +8,7 @@ Tools for interacting with OneDrive:
 - Upload files
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type
 
@@ -254,11 +255,12 @@ class DownloadOneDriveFileTool(O365Tool):
 
             local = dest_dir / (rename_as or Path(file_path).name)
             await manager.download_file(file_path, local)
+            local_exists = await asyncio.to_thread(local.exists)
             return {
                 "file_path": file_path,
                 "file_id": file_id,
                 "local_path": str(local),
-                "size": local.stat().st_size if local.exists() else 0,
+                "size": (await asyncio.to_thread(local.stat)).st_size if local_exists else 0,
             }
         except Exception as e:
             self.logger.error(f"Failed to download OneDrive file: {e}")
@@ -319,7 +321,7 @@ class UploadOneDriveFileTool(O365Tool):
         folder_path = kwargs.get("folder_path", "")
         rename_as = kwargs.get("rename_as")
         local_path = Path(local_file_path)
-        if not local_path.exists():
+        if not await asyncio.to_thread(local_path.exists):
             raise FileNotFoundError(f"Local file not found: {local_file_path}")
         manager = OneDriveFileManager(user=kwargs.get("user_id") or "me", credentials=dict(self.credentials or {}))
         manager.adopt_client(client)
@@ -625,7 +627,7 @@ class DeltaOneDriveFilesTool(O365Tool):
         # content_hashes, so model_dump() omits both — yet the contracts
         # ingest job reads them per item (as a source-URI fallback and as
         # the content hash it persists). Project them explicitly.
-        for serialized, item in zip(payload["items"], enumeration.items):
+        for serialized, item in zip(payload["items"], enumeration.items, strict=True):
             serialized["path"] = item.path
             serialized["sha256"] = item.content_hashes.get("sha256Hash")
         payload.update(

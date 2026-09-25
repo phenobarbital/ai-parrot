@@ -8,6 +8,7 @@ Tools for interacting with SharePoint document libraries:
 - Upload files
 """
 
+import asyncio
 from typing import Dict, Any, Optional, List, Type
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -393,7 +394,7 @@ class UploadSharePointFileTool(O365Tool):
 
         # Validate local file
         local_path = Path(local_file_path)
-        if not local_path.exists():
+        if not await asyncio.to_thread(local_path.exists):
             raise FileNotFoundError(f"Local file not found: {local_file_path}")
 
         manager = SharePointFileManager(
@@ -752,7 +753,7 @@ class DeltaSharePointFilesTool(O365Tool):
         # content_hashes, so model_dump() omits both — yet the contracts
         # ingest job reads them per item (as a source-URI fallback and as
         # the content hash it persists). Project them explicitly.
-        for serialized, item in zip(payload["items"], enumeration.items):
+        for serialized, item in zip(payload["items"], enumeration.items, strict=True):
             serialized["path"] = item.path
             serialized["sha256"] = item.content_hashes.get("sha256Hash")
         payload.update(
