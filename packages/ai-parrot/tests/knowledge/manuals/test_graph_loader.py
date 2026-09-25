@@ -1,4 +1,5 @@
 """ManualGraphLoader reconciliation (FEAT-601 M9, AC5, AC11)."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -52,7 +53,9 @@ def _card(revision: str = "A") -> ManualCard:
         revision=revision,
         source_sha256=f"{revision.lower()}" * 64,
         equipment=[EquipmentRef(equipment_id="equipment-1", model="Model 1")],
-        procedures=[Procedure(procedure_id="manual-1:fit", slug="fit", kind="assembly", title=_extracted("Fit"), steps=[step])],
+        procedures=[
+            Procedure(procedure_id="manual-1:fit", slug="fit", kind="assembly", title=_extracted("Fit"), steps=[step])
+        ],
         global_parts=[part],
         figures=[MediaRef(media_id="media-1", kind="figure", storage_key="manual-1/figure.png")],
     )
@@ -77,7 +80,15 @@ async def _catalog(card: ManualCard) -> InMemoryManualCatalog:
 def test_desired_edges_merges_duplicate_pairs() -> None:
     """Two step/media roles collapse into one edge with a sorted role list."""
     snapshot: dict[str, list[dict[str, Any]]] = {
-        "Step": [{"step_id": "step-1", "media": [{"media_id": "media-1", "role": "secondary", "confidence": 0.8}, {"media_id": "media-1", "role": "primary", "confidence": 0.9}]}],
+        "Step": [
+            {
+                "step_id": "step-1",
+                "media": [
+                    {"media_id": "media-1", "role": "secondary", "confidence": 0.8},
+                    {"media_id": "media-1", "role": "primary", "confidence": 0.9},
+                ],
+            }
+        ],
         "Media": [{"media_id": "media-1", "callouts": []}],
     }
     edges = ManualGraphLoader.desired_edges(snapshot)
@@ -93,7 +104,11 @@ async def test_publish_all_never_touches_technician_collections() -> None:
     graph.nodes["tech_tip"] = {"tip-1": {"_key": "tip-1", "tip_id": "tip-1", "_active": True}}
     graph.edges["tech_tip_on"] = [{"_from": "tech_tip/tip-1", "_to": "step/manual-1:step-1"}]
     graph.edges["tech_tip_by"] = [{"_from": "tech_tip/tip-1", "_to": "employee/e-1"}]
-    original = (deepcopy(graph.nodes["tech_tip"]), deepcopy(graph.edges["tech_tip_on"]), deepcopy(graph.edges["tech_tip_by"]))
+    original = (
+        deepcopy(graph.nodes["tech_tip"]),
+        deepcopy(graph.edges["tech_tip_on"]),
+        deepcopy(graph.edges["tech_tip_by"]),
+    )
     loader = ManualGraphLoader(catalog=catalog, graph_store=graph, tenant_manager=FakeTenantManager())
     await loader.publish_all()
     await loader.retract("manual-1")
@@ -118,7 +133,9 @@ async def test_edges_carry_origin_and_triple() -> None:
 async def test_startup_check_foreign_manager_raises() -> None:
     """A manager lacking the procedures entities fails the domain check."""
     catalog = await _catalog(_card())
-    loader = ManualGraphLoader(catalog=catalog, graph_store=FakeGraphStore(), tenant_manager=FakeTenantManager(("Contract",)))
+    loader = ManualGraphLoader(
+        catalog=catalog, graph_store=FakeGraphStore(), tenant_manager=FakeTenantManager(("Contract",))
+    )
     from parrot.knowledge.manuals.domain import ProceduresDomainNotLoaded
 
     with pytest.raises(ProceduresDomainNotLoaded):
@@ -142,7 +159,9 @@ async def test_relink_failure_makes_report_incomplete(monkeypatch: pytest.Monkey
         ),
     )
     graph = FakeGraphStore()
-    graph.nodes["manual"] = {"manual-1": {"_key": "manual-1", "manual_id": "manual-1", "revision": "A", "_active": True}}
+    graph.nodes["manual"] = {
+        "manual-1": {"_key": "manual-1", "manual_id": "manual-1", "revision": "A", "_active": True}
+    }
 
     async def failed_relink(*args: Any, **kwargs: Any) -> RelinkReport:
         """Return a deterministic relink failure without writing technician collections."""
