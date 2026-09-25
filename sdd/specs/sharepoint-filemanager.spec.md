@@ -17,7 +17,7 @@ tags: [filemanager, sharepoint, onedrive, microsoft-graph, o365, storage]
 **Feature ID**: FEAT-603
 **Date**: 2026-09-25
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.1.0 (next minor after 1.0.6)
 **Brainstorm**: `sdd/proposals/sharepoint-filemanager.brainstorm.md` (accepted, Option B)
 
