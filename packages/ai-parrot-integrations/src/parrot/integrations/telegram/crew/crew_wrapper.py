@@ -22,6 +22,7 @@ from .payload import DataPayload
 from ..filters import BotMentionedFilter
 from ..utils import extract_query_from_mention
 from ...parser import parse_response, ParsedResponse
+from ...media_download import MediaDownloadRefused, allowed_media_hosts, temp_download
 from ....models.outputs import OutputMode
 
 if TYPE_CHECKING:
@@ -346,6 +347,17 @@ class CrewAgentWrapper:
             )
             if i < len(chunks) - 1:
                 await asyncio.sleep(_SEND_DELAY)
+
+        # Remote image URLs (FEAT-601 M12) — bounded download, then the same send_photo path
+        for url in getattr(parsed, "image_urls", []) or []:
+            try:
+                async with temp_download(url, allowed_hosts=allowed_media_hosts()) as path:
+                    await self.bot.send_photo(chat_id=chat_id, photo=FSInputFile(path))
+                await asyncio.sleep(_SEND_DELAY)
+            except MediaDownloadRefused as exc:
+                self.logger.warning("Refused image URL %s: %s", url, exc)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("Failed to send image URL %s: %s", url, exc)
 
         # Send attachments (images)
         for image_path in parsed.images:
