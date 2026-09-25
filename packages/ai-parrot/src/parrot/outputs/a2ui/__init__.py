@@ -42,6 +42,7 @@ from parrot.outputs.a2ui.serialization import (
     serialize,
     to_jsonl,
 )
+from parrot.outputs.a2ui.linked import LinkedDataSource, LinkedSources, TransformSpec, has_data_sources
 
 __all__ = [
     "A2UI_VERSION",
@@ -57,13 +58,17 @@ __all__ = [
     "CreateSurface",
     "DeleteSurface",
     "ErrorMessage",
+    "LinkedDataSource",
+    "LinkedSources",
     "RendererFunctionResponse",
+    "TransformSpec",
     "UpdateComponents",
     "UpdateDataModel",
     "deserialize",
     "is_binding_expression",
     "is_legacy_envelope",
     "is_valid_pointer",
+    "has_data_sources",
     "iter_jsonl",
     "normalize_legacy",
     "normalize_legacy_component",
