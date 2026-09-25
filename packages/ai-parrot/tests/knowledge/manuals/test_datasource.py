@@ -85,15 +85,23 @@ def _card() -> ManualCard:
                 callouts=[CalloutLink(media_id="media-1", part_id="part-1", callout="1", confidence=0.95)],
             )
         ],
-        versions=[ManualVersion(n=1, revision="A", valid_from=date(2026, 1, 1), source_sha256="c" * 64)],
     )
 
 
 @pytest.fixture()
 async def source() -> ManualCardDataSource:
-    """Return a tenant-bound source with one full card."""
+    """Return a tenant-bound source with one full card.
+
+    ``ManualCatalogStore.upsert`` owns bitemporal version metadata and
+    discards any ``versions`` pre-populated on the card itself (see its
+    contract in ``catalog.py``) — the caller supplies version metadata via
+    the ``version=`` kwarg instead.
+    """
     catalog = InMemoryManualCatalog()
-    await catalog.upsert(_card())
+    await catalog.upsert(
+        _card(),
+        version=ManualVersion(n=1, revision="A", valid_from=date(2026, 1, 1), source_sha256="c" * 64),
+    )
     return ManualCardDataSource(SOURCE_NAME, {"catalog": catalog})
 
 
