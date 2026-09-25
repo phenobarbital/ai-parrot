@@ -1,4 +1,5 @@
 """Playwright fallback for Hooba over a PRIVATE action catalog (FEAT-602 M7, U1)."""
+
 from __future__ import annotations
 
 import logging
@@ -85,9 +86,7 @@ class HoobaWebAdapter:
             logger.warning("Hooba web session recovery failed")
             return {}
 
-    async def run_navigation(
-        self, action: str, params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    async def run_navigation(self, action: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Run a catalog action only when its kind is ``navigation``."""
         toolkit = self._tk()
         meta = await toolkit.get_site_action(self.site, action)

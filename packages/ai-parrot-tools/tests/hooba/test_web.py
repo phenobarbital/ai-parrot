@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3738 — web adapter and catalog seeding (no real browser)."""
+
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -24,9 +25,7 @@ async def test_recover_session_returns_sid(tmp_path: Any) -> None:
     """Recovery exports the requested context-level sid cookie."""
     adapter = HoobaWebAdapter(tmp_path, _resolver)
     driver = MagicMock()
-    driver.get_cookies = AsyncMock(
-        return_value=[{"name": "sid", "value": "v", "httpOnly": True}]
-    )
+    driver.get_cookies = AsyncMock(return_value=[{"name": "sid", "value": "v", "httpOnly": True}])
     toolkit = MagicMock()
     toolkit.run_site_action = AsyncMock(return_value={"success": True})
     toolkit._ensure_session_driver = AsyncMock(return_value=driver)
