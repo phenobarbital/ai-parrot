@@ -7,6 +7,30 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **sdd-coder merge-tier validation scope.** `coder_run_validation(tier='merge')`
+  planned its selection from the feature branch's whole cumulative diff against
+  `origin/dev`, so every merge re-validated every task merged before it; past a
+  few dozen changed files the impact cap and the core-path list escalate whole
+  package suites and the "changed scope" check degenerated into a serial,
+  monorepo-wide sweep (26 full suites on a mid-size feature). The engine now
+  resolves the fork point of the merged tasks' own attempt branches and plans
+  from there, falling back to the cumulative base when it cannot resolve one
+  (slower, never less covered). `tier='feature'` keeps the cumulative base on
+  purpose — it is the whole-feature gate.
+- **`coder_bg_wait`: the missing blocking wait for a background handle.** A
+  `coder_run_validation` handle raises no host task notification and
+  `coder_bg_status` is non-blocking by contract, so an orchestrator holding one
+  had no sanctioned way to wait — it ended its turn expecting a wake-up that
+  structurally never arrives, stalling unattended runs until a human intervened.
+  The new tool mirrors `coder_wait`'s bounded-blocking contract (1..300s),
+  checks ownership before waiting, and never cancels the supervised run.
+- **`sdd-worker` prompt twins reconciled.** `.claude/agents/sdd-worker.md` and
+  the packaged `_subagent_data/sdd-worker.md` had drifted into contradicting
+  each other about MCP server concurrency; `test_prompt_parity[sdd-worker]`
+  was red on `dev`. The packaged copy is byte-identical to the repo copy again.
+
 ---
 
 ## [1.0.6] — 2026-09-24 — Plan-then-execute hardening, tool-call delegates and Agent Studio tooling

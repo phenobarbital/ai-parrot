@@ -19,15 +19,17 @@ tags: [agentstudio, multi-tenant, visibility, byok, pbac]
 **Date**: 2026-09-24
 **Author**: Juan Ruffato (with Claude)
 **Status**: exploration
-**Recommended Option**: A
+**Recommended Option**: A (revised — registry/YAML metadata is the Agent
+Studio agent system of record)
 
 > **Follow-up to** FEAT-467 `agentstudio-management` (the `/api/v1/astudio/*`
 > control plane, PR #1255) and FEAT-535 `ui-surfaces-tenant-visibility`
 > (PR #1332), whose scope mechanism this brainstorm proposes to generalise.
-> **Downstream consumer**: FieldSync (separate brainstorm in the FieldSync
-> repo: `sdd/proposals/fieldsync-agentstudio.brainstorm.md`), which wants to
-> expose Agent Studio to every user of a programme (tenant) through
-> navigator-svelte.
+> **Downstream consumer**: FieldSync (companion brainstorm in the FieldSync
+> repository: `sdd/proposals/fieldsync-agentstudio.brainstorm.md`). That file
+> is not present in this checkout. This document therefore defines the
+> required FieldSync resolver and mount contract; the companion must adopt it
+> before integration is approved.
 >
 > **Relation to FEAT-598** (`a2ui-linked-surfaces`, draft): checked — it makes
 > `tenant` a field of a surface's data-source descriptor and explicitly lists
@@ -35,7 +37,8 @@ tags: [agentstudio, multi-tenant, visibility, byok, pbac]
 > not cover agents/astudio. No spec on any pushed ref (961 `origin` refs swept
 > 2026-09-24) proposes tenant columns for `ai_bots` / `studio_drafts` /
 > `ai_skills_catalog` or a tenant-aware Agent Studio. **To confirm with Jesus**
-> whether he has an unpublished local draft on this (see Open Questions).
+> whether he has an unpublished local draft on this (recorded as an external
+> integration prerequisite below).
 
 ---
 
@@ -64,7 +67,8 @@ pokemon, …) cannot offer Agent Studio to its users without every programme
 seeing and being able to test every other programme's agents, drafts and
 skills. The desired model, decided by the FieldSync owner (2026-09-24):
 
-1. Agents belong to a **tenant** (programme).
+1. Studio-managed agents belong to a **tenant** (programme), including the
+   normal FEAT-467 registry/YAML creation and draft-activation paths.
 2. **Any entitled user** of the tenant may create agents — who may author is
    **configurable per tenant** by the host.
 3. The **owner decides visibility**: `private` (only me), `tenant` (whole
@@ -78,14 +82,12 @@ not invent a second, divergent mechanism.
 
 ## Constraints & Requirements
 
-- **Backwards compatible for single-tenant hosts.** A host that installs no
-  resolver, or a session with zero/several programmes, must keep today's
-  behaviour exactly — FEAT-535's rule: `tenant=None` ⇒ owner-only semantics
-  (`SessionSurfaceScopeResolver`, `ui_surfaces_scope.py:86-146`, sets a tenant
-  only when the session carries exactly one programme).
-  *Open question*: today's reads are NOT owner-only (list-all); whether
-  single-tenant hosts keep list-all or move to owner+tenant must be decided
-  (see Open Questions).
+- **Resolved default-host compatibility rule.** When no scope resolver is
+  installed, Studio preserves FEAT-467's current list-all/read behavior and
+  does not expose sharing controls. When a resolver is installed but resolves
+  no tenant (zero/several programmes), it is an opted-in tenant host and gets
+  owner-only reads; non-private creates/patches return 422. This deliberately
+  differs from a silent behavior change for existing single-tenant installs.
 - **Tenant is always server-set** — never read from a request body (same
   invariant as `ui_surfaces.py:566`). A non-`private` visibility without a
   tenant answers 422 (same as `ui_surfaces.py:512`, `:686`).
@@ -93,14 +95,19 @@ not invent a second, divergent mechanism.
   resolved tenant (`scope_grants`, `ui_surfaces_scope.py:171-198`).
 - **Owner-only visibility changes** (mirrors `_UPDATE_VISIBILITY_SQL`,
   `models/ui_surfaces.py:243-248`: `WHERE … AND user_id = $2`).
-- **One scope seam for the whole server**: a host that already installed a
-  resolver for surfaces (FieldSync) must not need a second one for Studio.
+- **One scope seam for the whole server**: Studio reads the neutral resolver
+  key first and falls back to FieldSync's existing surface-resolver key.
+  FieldSync updates its existing resolver once to the extended contract; it
+  does not install a separate Studio resolver.
 - **Idempotent DDL** in the same idiom as `models/ui_surfaces.py:149-151`
   (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`) — no data migration for
   existing rows (they stay `tenant NULL`, `visibility 'private'`).
-- **Runtime parity**: an agent a caller cannot see in Studio must not be
-  reachable by that caller through the Studio test lane
-  (`/agents/{name}/test/ask`) or the tool/toolkit assignment verbs.
+- **Control-plane containment**: an agent a caller cannot see in Studio must
+  not be reachable through *any* Agent Studio agent-addressed route, including
+  test sessions and FEAT-593 overrides. Existing non-Studio chat routes remain
+  unchanged by this feature; this feature must describe itself as Studio
+  control-plane visibility, never as a global runtime-tenant authorization
+  boundary.
 - Async-first, Pydantic models for every payload, `navigator.views` CBVs
   (existing Studio conventions).
 
@@ -108,46 +115,66 @@ not invent a second, divergent mechanism.
 
 ## Options Explored
 
-### Option A: Generalise FEAT-535's scope into core + tenant/visibility columns on the three Studio tables
+### Option A: Generalise FEAT-535's server scope + persist visibility in each actual Studio system of record
 
-Lift the FEAT-535 scope primitives out of `handlers/ui_surfaces_scope.py`
-into a neutral module (e.g. `parrot/auth/scope.py` or
-`parrot/handlers/scope.py`): the frozen scope dataclass, the resolver
-Protocol, the default session resolver, `get_scope_resolver(app)` and a
-**record-agnostic** `scope_grants(tenant, visibility, allowed_groups, scope)`.
-`ui_surfaces_scope.py` keeps re-exporting the old names (no consumer breaks).
+Lift the FEAT-535 scope primitives into the server-neutral
+`parrot.handlers.scope` module, not `parrot.auth` (the resolver depends on
+aiohttp/navigator-session). It defines `RequestScope(user_id, tenant, groups,
+is_superuser, may_author=True)`, the resolver Protocol, the default session
+resolver, `get_scope_resolver(app)`, and the primitive-only
+`scope_grants(*, tenant, visibility, allowed_groups, scope)`. Visibility is a
+validated string (`private|tenant|groups`) at this seam; it must not import
+`UISurfaceRecord` or `SurfaceVisibility`. `ui_surfaces_scope.py` re-exports
+the compatible names and adapts its surface enum/record call.
 
-Add `tenant VARCHAR(63)`, `visibility VARCHAR(16) DEFAULT 'private'`,
-`allowed_groups JSONB DEFAULT '[]'` to `navigator.ai_bots`,
-`navigator.studio_drafts` and `navigator.ai_skills_catalog`, with a
-`(tenant, visibility)` index each.
+Persist `tenant VARCHAR(63)`, `visibility VARCHAR(16) NOT NULL DEFAULT
+'private'`, and `allowed_groups JSONB NOT NULL DEFAULT '[]'::jsonb` on the
+three PostgreSQL resources: `navigator.ai_bots`, `navigator.studio_drafts`,
+and `navigator.ai_skills_catalog`, with a `(tenant, visibility)` index each.
+Add corresponding asyncdb fields and idempotent `ALTER TABLE ... ADD COLUMN
+IF NOT EXISTS` statements. Existing rows are legacy (`tenant NULL`, private).
+
+For FEAT-467's **primary agent path**, persist the same server-stamped values
+in `BotMetadata.bot_config.config` under reserved keys `tenant`, `visibility`,
+and `allowed_groups`, alongside the existing `created_by`. `POST /agents`
+creates registry/YAML metadata, not an `ai_bots` row; draft activation imports
+a Python module and stamps registry metadata, also not an `ai_bots` row. The
+lossless FEAT-467 YAML serializer must retain these keys. A database-origin
+agent instead reads the three table columns. A shared access service converts
+either storage shape into one `StudioVisibilityRecord`; handlers must never
+infer tenant state from an absent `ai_bots` row.
 
 `StudioBaseView` resolves the scope once per request through the same app
 key FieldSync already installs (`app["ui_surfaces_scope_resolver"]`, or a new
 neutral `app["scope_resolver"]` that falls back to it). Then:
 
-- **Create** stamps `tenant = scope.tenant` (server-set) and `visibility`
-  from the body (`private` by default; non-private requires a tenant → 422).
+- **Create** stamps the applicable system of record with
+  `tenant = scope.tenant` (server-set) and visibility from the body (`private`
+  by default; non-private requires a tenant → 422). Client-supplied reserved
+  metadata keys are rejected/overwritten before registry/YAML persistence.
 - **List/read** filter with the `_LIST_VISIBLE_SQL` shape
   (`models/ui_surfaces.py:223-237`): mine OR (same tenant AND
-  (tenant-visible OR groups-intersect OR superuser)). Registry (YAML/code)
-  agents, which have no row, are treated as `tenant NULL` — visible only
-  where they are today (see Edge Cases).
+  (tenant-visible OR groups-intersect OR superuser)). Registry/YAML agents
+  use the same rule against their reserved metadata; only pre-existing
+  metadata-less agents are legacy (see Edge Cases).
 - **New verb** `PATCH /astudio/agents/{name}/visibility` (and the same for
   `/drafts/{name}` and `/skills/{id}`), owner-only.
-- **Authoring gate**: the resolved scope carries an optional
-  `may_author: bool` computed by the host (FieldSync: "configurable per
-  programme"); `POST /agents`, `POST /drafts`, `POST /skills` answer 403
-  `authoring_denied` when it is `False`. Default resolver: `True` (today's
-  behaviour).
-- **Optional tenant-in-URL mount**: `setup_studio_routes(app, prefix=…)`
-  gains a prefix parameter so a host can mount `/api/v1/{tenant}/astudio/*`;
-  the declared tenant must match the resolved scope (FieldSync validates it
-  in its own programme seam; parrot only checks equality).
+- **Authoring gate**: `RequestScope.may_author` is computed by the host;
+  `POST /agents`, `POST /drafts`, `POST /skills`, and the write-capable
+  assistant flow answer 403 `authoring_denied` when it is false. The default
+  is `True`. A legacy FieldSync resolver without the field remains readable
+  through the default, but FieldSync must add its programme-specific rule
+  before relying on authoring denial.
+- **Optional tenant-in-URL mount**: `setup_studio_routes(app,
+  prefix=STUDIO_PREFIX)` registers one mount only. A FieldSync mount uses
+  `/api/v1/{tenant}/astudio`; the FieldSync resolver validates membership and
+  resolves that tenant, while the Studio base view rejects a declared/resolved
+  mismatch with 403 `tenant_mismatch` before accessing any record.
 
 ✅ **Pros:**
-- One mechanism for surfaces and agents; FieldSync's existing
-  `FieldSyncSurfaceScopeResolver` is reused unchanged.
+- One mechanism for surfaces and agents; FieldSync changes its existing
+  resolver once to return the extended `RequestScope` rather than acquiring a
+  second resolver.
 - All three sharing levels (`private`/`tenant`/`groups`) come for free —
   the SQL, enum and rule already exist and are tested.
 - Filtering happens in SQL, not by hosts re-filtering JSON responses.
@@ -156,10 +183,11 @@ neutral `app["scope_resolver"]` that falls back to it). Then:
 ❌ **Cons:**
 - Touches three tables and ~6 handler modules (agents, drafts, files,
   skills_catalog, testing, toolkits/toolkit_config).
-- Registry agents (YAML/code) have no row to stamp — they stay global.
-- Agent **names stay globally unique** (registry keyed by name) — two
-  programmes cannot both own `sales-helper`. Acceptable for v1 (409 on
-  collision, as today) but visible to users.
+- Registry/YAML metadata needs a versioned, reserved-key persistence contract.
+- Names remain globally unique for agents, drafts, and skills in v1. A
+  collision in any tenant returns the same non-enumerating `409 name_taken`;
+  no endpoint reveals the owning tenant. This is required by the existing
+  registry, global draft filesystem paths, and `UNIQUE(name)` catalog schema.
 - Moving the scope module is a small refactor of already-merged FEAT-535
   code (re-exports keep it non-breaking).
 
@@ -281,12 +309,12 @@ schema-per-tenant layout.
 - All three sharing levels requested (`private`/`tenant`/`groups`) exist in
   the FEAT-535 enum and SQL already.
 
-What we trade off: registry agents stay global, and agent names stay
-globally unique across tenants in v1. Both are acceptable for the first
-consumer (FieldSync ships `agents: []` in its registry, and a 409 on a name
-collision is today's behaviour). Per-tenant names and tenant-aware runtime
-resolution in `BotManager.get_bot` for the chat routes are explicit
-follow-ups.
+What we trade off: names remain globally unique across agents, drafts and
+skills in v1, so tenants cannot independently reuse a slug. In exchange,
+visibility is correct for both database-origin and the normal registry/YAML
+Agent Studio paths. This is a Studio control-plane boundary; a tenant-aware
+`BotManager.get_bot` contract for non-Studio chat routes remains a separate
+feature rather than an unstated security guarantee here.
 
 ---
 
@@ -297,7 +325,9 @@ follow-ups.
 (API consumers — the UI lives in host frontends.)
 
 - Creating an agent/draft/skill in a tenant-scoped session stamps the
-  caller's tenant automatically. The response carries `tenant` and
+  caller's tenant automatically in its actual system of record. Agent
+  registry/YAML metadata carries the fields; database agents, drafts, and
+  skills use their table columns. The response carries `tenant` and
   `visibility`.
 - `GET /astudio/agents`, `/drafts`, `/skills` return only what the caller
   owns, plus what their tenant shares with them (`tenant`, or `groups` they
@@ -307,36 +337,47 @@ follow-ups.
   `superuser`) so a UI can render "shared with me" vs "mine".
 - `PATCH …/visibility {visibility, allowed_groups?}` — owner-only; `groups`
   requires a non-empty `allowed_groups`; non-private requires a tenant.
-- Non-owners with visibility can **read and test** a shared agent, and
-  **import** a shared skill, but cannot modify, delete, activate or reload
-  (unchanged `_require_owner` on writes).
+- Non-owners with visibility can read and test a shared agent, read a shared
+  draft, and import a shared skill, but cannot modify, delete, activate or
+  reload. Agent asset-file contents and agent/toolkit configuration remain
+  owner-only because they may disclose implementation or secret-adjacent
+  data. A user may manage their own `/toolkits/{slug}/me` override only after
+  the target agent passes the visibility gate.
 - When the host denies authoring for the caller's tenant, `POST` answers
   403 `authoring_denied`.
 - A host may mount the same API under `/api/v1/{tenant}/astudio/*`.
 
 ### Internal Behavior
 
-1. `StudioBaseView._get_user()` also resolves the scope via the shared
-   resolver and exposes `tenant` and `may_author` on `StudioUser`.
-2. Models gain three fields each; `CREATE TABLE` DDL and idempotent
-   `ALTER`s are updated.
-3. List paths query with a visible-rows WHERE (owner OR tenant rule); single
-   reads apply the same rule and answer **404** (not 403) when not visible,
-   so existence does not leak across tenants.
-4. Write paths keep `_require_owner`; create paths stamp tenant and check
-   `may_author`.
-5. Draft **activation** copies the draft's tenant/visibility onto the
-   resulting `ai_bots` row.
-6. Skill **import** into an agent requires the skill to be visible to the
-   caller, and the target agent to be owned by the caller.
-7. The test lane (`/agents/{name}/test/ask`), tool execute/assign and
-   toolkit config verbs run the visibility check before touching the agent.
+1. `StudioBaseView` resolves and caches one `RequestScope` per request,
+   exposes its tenant/authoring state on `StudioUser`, and verifies a URL
+   tenant when present.
+2. PostgreSQL models gain three fields each. Registry-created and
+   draft-activated agents receive the matching reserved configuration keys;
+   no path assumes an `ai_bots` row exists.
+3. Database lists use visible-row SQL; registry lists apply the same pure
+   rule to metadata. Single reads and every agent-addressed derivative route
+   apply the shared access service and answer **404** when invisible.
+4. Write paths retain owner checks; creation and write-capable assistant
+   operations also check `may_author`.
+5. Draft activation propagates the draft's tenant/visibility/groups into the
+   newly registered `BotMetadata.bot_config.config`, then persists the
+   activated draft row with the same values.
+6. Skill import requires a visible skill and an owner-controlled target
+   agent. Skill registry dual-write/reconciliation retains the catalog row's
+   tenant metadata as the authorization source; it never treats the shared
+   Redis namespace as an authorization grant.
+7. The visibility gate covers Agent Studio agent reads, test ask/test stop,
+   files (owner-only after existence resolution), tool assignment, toolkit
+   assignment/configuration, MCP configuration, and FEAT-593 per-user
+   overrides. `/tools/{slug}/execute` has no agent identifier and remains a
+   PBAC-only global tool endpoint; it must not be claimed as an agent
+   visibility enforcement point.
 8. BYOK: unchanged per-user lookup (`resolve_user_api_key`,
    `studio/byok.py:55`). When no user key is stored, the agent's configured
    client is used (`testing.py:305-308`) — i.e. **the fallback to the
-   organisation's key already exists**. New optional piece: a per-tenant key
-   slot resolved between "user key" and "server default" (see Open
-   Questions), plus usage attribution by `(tenant, user, key_source)`.
+   organisation's key already exists**. Per-tenant key slots, quota, and
+   usage attribution are explicitly excluded and tracked as a follow-up.
 
 ### Edge Cases & Error Handling
 
@@ -344,16 +385,18 @@ follow-ups.
   resolver yields `tenant=None` → owner-only; non-private visibility → 422.
 - **Tenant declared in URL ≠ resolved tenant** → 400/403 (host seam decides;
   parrot rejects the mismatch).
-- **Legacy rows** (`tenant NULL`) → visible to their owner only in a
-  tenant-scoped session; list-all behaviour for single-tenant hosts per the
-  open question.
-- **Registry (YAML/code) agents** → no row, treated as `tenant NULL`; a
-  multi-tenant host can hide them or show them as read-only globals (host
-  flag).
+- **Legacy rows/metadata** (`tenant NULL`) → in an opted-in tenant host,
+  visible only to their owner; ownerless legacy registry/code agents are
+  hidden. In a host with no resolver, the unchanged FEAT-467 global listing
+  remains available and no visibility PATCH is offered.
+- **Registry (YAML/code) agents** → Studio-created/persisted and activated
+  agents have reserved metadata and are scopeable. Pre-existing ownerless
+  registry/code agents follow the legacy rule above; there is no host flag
+  that can accidentally make them tenant-visible.
 - **Owner leaves the tenant / is removed from a group** → the row keeps its
   tenant; the ex-owner loses access through the resolver, not by mutation.
-- **Name collision across tenants** → 409 `name_taken` without revealing
-  which tenant owns it.
+- **Name collision across tenants** (agents, drafts, or skills) → 409
+  `name_taken` without revealing which tenant owns it.
 - **Visibility downgraded while another user has a live test session** →
   the next `test/ask` re-checks visibility and answers 404.
 - **Skill imported, then un-shared** → the copy in the agent's `skills/`
@@ -364,18 +407,26 @@ follow-ups.
 ## Capabilities
 
 ### New Capabilities
-- `request-scope-core`: record-agnostic scope dataclass, resolver Protocol, default session resolver and `scope_grants`, lifted from FEAT-535 with re-exports.
+- `request-scope-server`: record-agnostic server scope dataclass, resolver
+  Protocol, default session resolver and primitive-only `scope_grants`, lifted
+  from FEAT-535 with compatibility re-exports.
 - `astudio-tenant-columns`: `tenant` / `visibility` / `allowed_groups` on `ai_bots`, `studio_drafts`, `ai_skills_catalog` (+ idempotent DDL, indexes).
+- `astudio-registry-visibility-metadata`: reserved, server-owned
+  `tenant`/`visibility`/`allowed_groups` keys on registry/YAML Agent Studio
+  metadata, including draft activation propagation and a common access record.
 - `astudio-visible-listing`: scope-aware list/read for agents, drafts, skills (SQL filter, 404 on invisible).
 - `astudio-visibility-patch`: owner-only `PATCH …/visibility` for the three resources.
 - `astudio-authoring-gate`: host-computed `may_author` on the scope; 403 `authoring_denied` on create verbs.
 - `astudio-tenant-prefix-mount`: `setup_studio_routes(app, prefix=…)` for `/api/v1/{tenant}/astudio`.
-- `astudio-tenant-key-slot` (optional): per-tenant LLM key between user BYOK and server default, with usage attribution.
 
 ### Modified Capabilities
-- `agentstudio-management` (FEAT-467): reads become scope-aware; create stamps tenant.
-- `tool-configuration-agentstudio` (FEAT-593): toolkit/MCP config verbs check visibility (writes stay owner-only); `user_toolkit_configs` stays per-user.
-- `ui-surfaces-tenant-visibility` (FEAT-535): scope module moves to core (re-exported, no behaviour change).
+- `agentstudio-management` (FEAT-467): reads become scope-aware; registry/YAML
+  and database-origin creation paths stamp tenant metadata.
+- `tool-configuration-agentstudio` (FEAT-593): all agent-addressed toolkit/
+  MCP endpoints check visibility first; agent changes remain owner-only and
+  `user_toolkit_configs` stays per-user.
+- `ui-surfaces-tenant-visibility` (FEAT-535): scope module moves within the
+  server package and retains source-compatible re-exports.
 
 ---
 
@@ -383,19 +434,48 @@ follow-ups.
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `handlers/ui_surfaces_scope.py` | modifies | becomes a re-export shim of the core scope module |
-| `handlers/studio/_base.py` | modifies | `StudioUser.tenant`, `may_author`; scope resolution |
-| `handlers/studio/agents.py` | modifies | visible listing, tenant stamp, 404 on invisible |
-| `handlers/studio/drafts.py` | modifies | same + activation carries tenant/visibility |
-| `handlers/studio/skills_catalog.py` | modifies | visible listing, import visibility check |
-| `handlers/studio/testing.py`, `toolkits.py`, `toolkit_config.py`, `files.py` | modifies | visibility pre-check |
+| `handlers/scope.py`, `handlers/ui_surfaces_scope.py` | creates/modifies | neutral `RequestScope`; compatibility re-export/adaptor for FEAT-535 |
+| `handlers/studio/_base.py` | modifies | cached scope, URL-tenant match, `StudioUser.tenant`/`may_author` |
+| `handlers/studio/access.py` | creates | one access service for registry metadata and DB rows; no handler-local policy |
+| `handlers/studio/agents.py` | modifies | visible merged listing; reserved registry/YAML tenant metadata; 404 on invisible |
+| `handlers/studio/drafts.py` | modifies | visible reads; stamped fields; activation carries metadata into registry |
+| `handlers/studio/skills_catalog.py` | modifies | visible reads, tenant-aware catalog rows, import visibility check |
+| `handlers/studio/testing.py`, `toolkits.py`, `toolkit_config.py`, `toolkit_overrides.py`, `files.py` | modifies | complete per-route visibility/owner policy |
 | `handlers/models/bots.py`, `studio_drafts.py`, `skills_catalog.py` | modifies | three new columns + DDL |
 | `handlers/studio/__init__.py` | modifies | `prefix` parameter; new PATCH routes |
 | `docs/agent_studio_api.md` | modifies | visibility, tenant, errors |
-| FieldSync | depends on | consumes via its existing scope resolver + a `may_author` rule |
+| FieldSync | depends on | update the existing resolver once to return `RequestScope(..., may_author=...)`; mount once under its tenant URL |
 | navigator-frontend-next / navigator-svelte | depends on | UI must render `access` / visibility controls |
 
-No breaking change for single-tenant hosts. DB change: additive columns only.
+No silent breaking change for hosts without a resolver. DB change is additive;
+registry/YAML metadata is backward-compatible but its three reserved keys are
+server-owned and cannot be supplied by API clients.
+
+### Required Coverage
+
+The FEAT-467 suite covers its individual surfaces but has no Agent Studio
+tenant-visibility coverage. The spec must add unit and integration tests for
+both database-origin and registry/YAML-origin agents (including draft
+activation), for every actor below:
+
+| Actor / state | Required assertions |
+|---|---|
+| owner | private/tenant/groups list, read, PATCH and allowed owner writes succeed |
+| same-tenant peer | tenant read/test succeeds; groups succeeds only on intersection; owner-only files/config/writes remain denied |
+| different tenant | list omits and every addressed Studio route returns 404 without leaking existence |
+| tenant superuser | sees all records in the resolved tenant only; cannot cross tenant |
+| no tenant / multi-programme | opted-in resolver yields owner-only and rejects non-private visibility with 422 |
+| no resolver | regression test retains FEAT-467 list-all/read behavior and hides sharing controls |
+| legacy and collisions | NULL tenant/ownerless registry behavior, non-enumerating `name_taken` for agent/draft/skill, reserved-key overwrite rejection |
+
+Route coverage must include agent list/read/PATCH, drafts list/read/PATCH/
+activate, skills list/read/PATCH/import, test ask and stop, files GET/PUT/
+DELETE, tool assignment, toolkit assignment/config/options/MCP, and
+`/agents/{name}/toolkits/{slug}/me`. Add an end-to-end tenant-URL mount test
+against FieldSync once its companion brainstorm and resolver implementation
+are available. `/tools/{slug}/execute`, catalogs, and BYOK keys are asserted
+to remain outside agent visibility and retain their existing PBAC/per-user
+contracts.
 
 ---
 
@@ -452,6 +532,11 @@ class SurfaceScope:
 # :196-207  _get_all: every DB agent + every registry agent, no owner/tenant filter
 # :209  async def post(self)  ; :281 config_dict["created_by"] = user.user_id
 # :373  async def delete(self)
+# :106-119  registry ownership is BotMetadata.bot_config.config["created_by"]
+
+# handlers/studio/drafts.py
+# :354-391  activation moves/imports Python then stamps only registry metadata;
+#           it does not create a BotModel/ai_bots row
 
 # handlers/studio/__init__.py
 # :23   STUDIO_PREFIX = "/api/v1/astudio"
@@ -514,32 +599,47 @@ from parrot.handlers.studio import setup_studio_routes        # handlers/studio/
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: after `request-scope-core` + `astudio-tenant-columns`
-  land (sequential foundation), agents / drafts / skills handlers are
-  independent and can go in parallel; the tenant-key slot is independent of
-  all of them.
+- **Internal parallelism**: `request-scope-server` + shared Studio access
+  service + model/registry metadata contract land sequentially. Then agents,
+  drafts, skills, and derivative-route enforcement can proceed in parallel;
+  the optional tenant-key slot is deliberately excluded from this feature.
 - **Cross-feature independence**: FEAT-598 (`a2ui-linked-surfaces`, draft)
   touches `ui_surfaces` records, not the scope module — coordinate only on
   the re-export of `ui_surfaces_scope.py`. FEAT-593 files
   (`toolkit_config.py`, `tooling_store.py`) are touched for the visibility
   pre-check only.
 - **Recommended isolation**: `mixed`
-- **Rationale**: a short sequential foundation, then three handler lanes
-  with disjoint files.
+- **Rationale**: persistence and access semantics must be identical before
+  handler lanes fan out; the remaining work has manageable overlap only in
+  route registration and shared tests.
 
 ---
 
-## Open Questions
+## Resolved Decisions and External Prerequisite
 
-- [ ] Is there an unpublished draft (local) of a multi-tenant A2UI/agents spec that this should merge into, or is FEAT-598 the one referenced? — *Owner: Jesus*
-- [ ] Single-tenant hosts: keep today's list-all read behaviour when `tenant=None`, or move everyone to owner + tenant visibility (FEAT-535 semantics)? — *Owner: Jesus*
-- [ ] Scope module location: `parrot/auth/scope.py` (core) vs `parrot/handlers/scope.py` (server) — and a new neutral app key `scope_resolver` with fallback to `ui_surfaces_scope_resolver`, or reuse the existing key? — *Owner: Jesus*
-- [ ] `may_author` on the scope vs a PBAC action (`astudio:agents:create`) — PBAC is fail-open without a PDP, so the scope field is proposed; acceptable? — *Owner: Jesus*
-- [ ] Per-tenant LLM key slot: in scope for this feature or a follow-up? Where stored (vault per tenant vs DocumentDB), and is usage attribution/quota needed in v1? — *Owner: Juan / Jesus*
-- [ ] Registry (YAML/code) agents in a multi-tenant host: hidden, or read-only globals? — *Owner: Jesus*
-- [ ] Runtime chat parity (`BotManager.get_bot` for `/agents/chat/*`) — follow-up feature, or must v1 block a non-visible agent in chat too? — *Owner: Jesus*
-- [ ] Per-tenant agent names (composite uniqueness) — follow-up, or needed before FieldSync launch? — *Owner: Juan*
-- [ ] On-disk state (`AGENTS_DIR` drafts and asset files) is per-pod — out of scope here, but multi-pod hosts will need a shared store; track separately? — *Owner: Jesus*
+- **Default behavior:** no resolver means unchanged FEAT-467 global reads;
+  an installed resolver with no resolved tenant means owner-only reads.
+- **Scope seam:** `parrot.handlers.scope`, with `app["scope_resolver"]`
+  preferred and `app["ui_surfaces_scope_resolver"]` as compatibility
+  fallback. `RequestScope.may_author` is the authoritative host gate because
+  PBAC can be fail-open.
+- **Persistence:** registry/YAML config metadata is authoritative for
+  Studio-created and activated agents; table fields are authoritative for
+  database-origin agents. Pre-existing ownerless registry agents are hidden
+  in opted-in tenant hosts.
+- **Names:** global uniqueness remains for agents, drafts, and skills; all
+  collisions return non-enumerating `409 name_taken`.
+- **Runtime boundary:** this work enforces Studio control-plane visibility,
+  not general non-Studio chat authorization.
+- **BYOK:** the proposed tenant key slot, quota, and attribution are a
+  separate feature; FEAT-467's user key then configured-server-client
+  fallback is unchanged.
+- **Deployment:** `AGENTS_DIR` remains pod-local exactly as FEAT-467 today;
+  a multi-pod shared-storage migration is a separate operational feature.
+- **FieldSync prerequisite:** its absent companion brainstorm and resolver
+  implementation must adopt the `RequestScope` and URL-mount contracts before
+  the cross-repository integration test can close. This is an integration
+  dependency, not an unspecified design choice in this brainstorm.
 
 ---
 
@@ -552,4 +652,6 @@ from parrot.handlers.studio import setup_studio_routes        # handlers/studio/
 - [x] R3 app.py delta: N/A in parrot (hosts call `setup_studio_routes`).
 - [ ] R4 Complexity budgets: to verify per task (flake8) at spec time.
 - [x] R5 Layering: SQL stays in models/stores; handlers call them.
-- [ ] R6 Test doubles: spec must require `make_mocked_request` with the session installed under the real key, and a mutation check of the visible-listing WHERE.
+- [x] R6 Test doubles: the Required Coverage matrix requires
+  `make_mocked_request` with the real session key, SQL mutation checks, and
+  registry/YAML metadata-path assertions.

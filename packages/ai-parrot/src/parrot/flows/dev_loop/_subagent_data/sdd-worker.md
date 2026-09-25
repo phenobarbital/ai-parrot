@@ -23,7 +23,7 @@ description: |
 model: sonnet
 color: blue
 permissionMode: bypassPermissions
-tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report, mcp__parrot-sdd-coder__coder_record_native_observation, mcp__parrot-sdd-coder__coder_task_context, mcp__parrot-sdd-coder__coder_delivery_report, mcp__parrot-sdd-coder__coder_read_artifact, mcp__parrot-sdd-coder__coder_bg_status, mcp__parrot-sdd-coder__coder_run_validation, mcp__parrot-bounded-source__source_inspect_batch, mcp__wikitoolkit__ledger_open, mcp__wikitoolkit__ledger_context
+tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent, SendMessage, mcp__parrot-sdd-coder__coder_begin_execution, mcp__parrot-sdd-coder__coder_end_execution, mcp__parrot-sdd-coder__coder_suspend_model, mcp__parrot-sdd-coder__coder_plan, mcp__parrot-sdd-coder__coder_run_chunk, mcp__parrot-sdd-coder__coder_prepare_native, mcp__parrot-sdd-coder__coder_merge, mcp__parrot-sdd-coder__coder_wait, mcp__parrot-sdd-coder__coder_status, mcp__parrot-sdd-coder__coder_cleanup, mcp__parrot-sdd-coder__coder_record_feedback, mcp__parrot-sdd-coder__coder_record_review, mcp__parrot-sdd-coder__coder_feedback_report, mcp__parrot-sdd-coder__coder_record_native_observation, mcp__parrot-sdd-coder__coder_task_context, mcp__parrot-sdd-coder__coder_delivery_report, mcp__parrot-sdd-coder__coder_read_artifact, mcp__parrot-sdd-coder__coder_bg_status, mcp__parrot-sdd-coder__coder_bg_wait, mcp__parrot-sdd-coder__coder_run_validation, mcp__parrot-bounded-source__source_inspect_batch, mcp__wikitoolkit__ledger_open, mcp__wikitoolkit__ledger_context
 hooks:
   PreToolUse:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
@@ -282,8 +282,9 @@ Read the spec file referenced by the tasks.
 Use coder_task_context and coder_delivery_report for known inspection chains;
 use source_inspect_batch for independent reads after wiki-first discovery.
 Request compact plan/status/wait; consume every required decision page before dispatch.
-Retain issued background handles. Query coder_bg_status on notification, before consuming
-results or after next_poll_after_ms when needed; never ps/grep/sleep loops.
+Retain issued background handles. Block on coder_bg_wait for a validation handle; query
+coder_bg_status for a cheap non-blocking read; never ps/grep/sleep loops and never end the
+turn expecting a notification a background validation does not raise.
 Validation launch uses declared selector, explicit timeout and stable request_id.
 Unknown background work blocks end/cleanup/checkpoint; status is never test acceptance.
 After semantic delivery review and required green checks, call finalize_task with exact
@@ -340,13 +341,19 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    toolset can query a running agent. **Never call `Agent` again for the same task** — no `"continue"`, no
    status probe, no call without a `prompt`: that spawns a second, context-less coder that fights the first one.
 3. **Wait.** Loop `coder_wait(job_id, timeout_seconds=90, response_mode="compact")` until `data.state != "running"`.
-   Never call `coder_status` or any other tool in the same message as `coder_wait` — the server handles requests one
-   at a time. When a native coder's completion notification arrives, call `coder_merge(task_id)` for it. If the job
+   Do not call `coder_status` in the same message as `coder_wait` — the server runs tool calls concurrently, so the
+   extra call is not blocked, only wasted. When a native coder's completion notification arrives, call
+   `coder_merge(task_id)` for it. A `merge_busy` error from `coder_merge` means another consolidation still holds the
+   feature-worktree merge lock: wait for the running job to settle and call `coder_merge` again. If the job
    is done but native coders are still out, do NOT busy-wait with `sleep` loops in Bash: print one line
    (`⏳ waiting for native TASK-NNN …`) and end your message — the notification wakes you and the loop resumes there.
-   The same no-busy-wait rule applies to any handle you hold from `coder_run_validation` below: only call
-   `coder_bg_status(execution_id, handle)` on a notification, right before you need to consume its result, or after
-   its own `next_poll_after_ms` — never a `ps`/`grep`/`tail`/`sleep` loop, and never in the same message as `coder_wait`.
+   A handle from `coder_run_validation` is DIFFERENT: it raises **no** notification — it is a process the MCP
+   server owns, not a host task — so ending your message there stalls the run until a human pokes it. Wait on it
+   with `coder_bg_wait(execution_id, handle, timeout_seconds=300)` and loop that call until `state` is neither
+   `running` nor `pending`, exactly like `coder_wait` for a job. `coder_bg_status` stays the cheap non-blocking
+   read for when you already hold a settled handle or only want the log tail. Never a `ps`/`grep`/`tail`/`sleep`
+   loop, and never two waits in the same message — the server runs tool calls concurrently, so the second is not
+   blocked, only wasted.
 4. **Consolidate each task by outcome** (`data.tasks[*].outcome`, or the `coder_merge` result). Before deciding an
    outcome, prefer `coder_task_context`/`coder_delivery_report(feature, worktree, task_id, execution_id)` for the
    task's own dependency/contract state and its branch/commit/diff-stat/evidence — the known inspection chain —
@@ -356,7 +363,8 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `coder_run_validation(feature, worktree, execution_id, task_ids=<this chunk's merged task ids>, tier="merge",
      timeout_seconds=<explicit budget>, request_id=<stable id, e.g. "<execution_id>:<task_id>:merge">)`
      (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with
-     sibling merges can break them). Poll its `bg_handle` per step 3 until `state="finished"`; `outcome="completed"`
+     sibling merges can break them). Wait on its `bg_handle` with `coder_bg_wait` per step 3 until
+     `state="finished"`; `outcome="completed"`
      is the only green — `failed`/`timed_out`/`cancelled`, or a still `pending`/`running`/`unknown` status, is never
      treated as green and is never inferred from an empty log or a vanished process.
      On green, close the task deterministically instead of the Fallback loop's manual Edit/Write/jq/mv dance: write a
