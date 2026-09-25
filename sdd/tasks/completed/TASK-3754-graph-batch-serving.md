@@ -353,10 +353,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3754
+- Feature: sharepoint-filemanager
+- Implementation SHA: 875aecb041f6015a6f2c5ab57c1f43eebfdec707
+- Closed at (UTC): 2026-09-25T20:53:15+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: mistral · Backend: nova · Model: mistral.devstral-2-123b · Attempts: 1 · Duration: 526.4s · Tokens: 2734830/8228 |
+| validation_note | Delivered semaphore was constructed but never acquired (unbounded concurrency) plus 4 test bugs; fixed and squashed into this commit (coder-feedback:2e518baf394b3f77c1608475). Own test file: pytest test_graph_filemanager.py -q -> 57 passed. The merge-tier validation's packages/ai-parrot/tests segment is entirely blocked at collection time (18 pre-existing errors, 0 tests run) by the same test_file_shim.py bug already ledger'd (issue:71cbc792726c) plus 17 other unrelated pre-existing import/version-drift errors; none attributable to this diff. |

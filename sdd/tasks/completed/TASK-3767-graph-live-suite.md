@@ -242,10 +242,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3767
+- Feature: sharepoint-filemanager
+- Implementation SHA: 7be7a2d8077a6fcf1a7f7767d833593fd68799cd
+- Closed at (UTC): 2026-09-25T20:59:40+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: haiku (native) · Backend: native · Model: haiku · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| validation_note | Opt-in live suite, skipped by default (AC18): pytest test_graph_filemanager_live.py -q -> 4 skipped (no PARROT_LIVE_GRAPH set), never reported as a pass. Only file created matches Files to Create/Modify exactly. |

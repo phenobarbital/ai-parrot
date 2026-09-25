@@ -128,7 +128,7 @@ def create_schema_tools(
     service: Optional[SchemaPlaneService] = None,
 ) -> list[AbstractTool]:
     """Return the four read tools bound to ``service``; ``[]`` when no plane is available."""
-    if service is None or not config.schema.enabled:
+    if service is None or not config.schema_plane.enabled:
         return []
     return [
         WikiSchemaLookupTool(service),

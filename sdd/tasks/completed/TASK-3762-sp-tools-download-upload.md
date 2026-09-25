@@ -281,10 +281,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3762
+- Feature: sharepoint-filemanager
+- Implementation SHA: 124d6896df2ea90b9e23601d90694d3df608974f
+- Closed at (UTC): 2026-09-25T21:13:37+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| validation_note | packages/ai-parrot-tools/tests collection blocked by 5 pre-existing unrelated errors (ledger issue:69189219cfd6). Own tests confirmed manually: 75 passed across the three o365 test files after cherry-pick re-verification. |

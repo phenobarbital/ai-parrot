@@ -5,56 +5,58 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-25T16:45:51+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-25T21:37:27+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
     {
       "id": "TASK-3748",
       "slug": "graph-test-harness",
-      "title": "Graph test harness \u2014 in-memory msgraph builder tree, aiohttp fake, fake drive clients",
+      "title": "Graph test harness — in-memory msgraph builder tree, aiohttp fake, fake drive clients",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "foundation: creates tests/interfaces/_graph_fakes.py used by every FEAT-603 test; no dependency; no conftest.py (keeps it non-exclusive)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3748-graph-test-harness.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T18:33:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3748-graph-test-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3749",
       "slug": "graph-core-models-paths",
-      "title": "GraphDriveFileManager core \u2014 batch models, errors, class shell, path model, metadata mapping",
+      "title": "GraphDriveFileManager core — batch models, errors, class shell, path model, metadata mapping",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-3748"
       ],
       "parallel": true,
-      "parallelism_notes": "TASK-3748: tests import make_probe / FakeDriveItem from _graph_fakes.py; creates graph.py + batch.py (first of the graph.py chain 3749\u21923754)",
+      "parallelism_notes": "TASK-3748: tests import make_probe / FakeDriveItem from _graph_fakes.py; creates graph.py + batch.py (first of the graph.py chain 3749→3754)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3749-graph-core-models-paths.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T18:47:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3749-graph-core-models-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3750",
       "slug": "graph-lifecycle-retry-urls",
-      "title": "GraphDriveFileManager lifecycle \u2014 connect/auth modes, adopt_client, close, retry policy, URL boundary",
+      "title": "GraphDriveFileManager lifecycle — connect/auth modes, adopt_client, close, retry policy, URL boundary",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,18 +66,19 @@
       "parallel": true,
       "parallelism_notes": "TASK-3749: modifies graph.py it creates (same file, serialized) and extends GraphDriveFileManager; TASK-3748: tests use make_sharepoint_client / FakeAPIError",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3750-graph-lifecycle-retry-urls.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T18:55:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3750-graph-lifecycle-retry-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3751",
       "slug": "graph-read-ops",
-      "title": "GraphDriveFileManager read ops \u2014 paginated listing, list_entries, exists, metadata, find_entries/find_files, delete",
+      "title": "GraphDriveFileManager read ops — paginated listing, list_entries, exists, metadata, find_entries/find_files, delete",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,18 +87,19 @@
       "parallel": true,
       "parallelism_notes": "TASK-3750: same file graph.py; calls _ready / _retrying / _map_error it adds",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3751-graph-read-ops.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T19:22:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3751-graph-read-ops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3752",
       "slug": "graph-write-ops",
-      "title": "GraphDriveFileManager transfer ops \u2014 folder chain, small PUT, upload session, bytes upload, streaming download",
+      "title": "GraphDriveFileManager transfer ops — folder chain, small PUT, upload session, bytes upload, streaming download",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,18 +108,19 @@
       "parallel": true,
       "parallelism_notes": "TASK-3751: same file graph.py; uses _get_item / _get_item_by_id / _drive it adds",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3752-graph-write-ops.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T19:48:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3752-graph-write-ops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3753",
       "slug": "graph-copy-links-folders",
-      "title": "GraphDriveFileManager \u2014 async copy + monitor, sharing links, get_file_url, folders, rename/move",
+      "title": "GraphDriveFileManager — async copy + monitor, sharing links, get_file_url, folders, rename/move",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,18 +129,19 @@
       "parallel": true,
       "parallelism_notes": "TASK-3752: same file graph.py; uses _ensure_parent and appends after download_file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3753-graph-copy-links-folders.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T20:08:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3753-graph-copy-links-folders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3754",
       "slug": "graph-batch-serving",
-      "title": "GraphDriveFileManager \u2014 batch upload/download engine and size-guarded HTTP serving",
+      "title": "GraphDriveFileManager — batch upload/download engine and size-guarded HTTP serving",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -144,36 +150,38 @@
       "parallel": true,
       "parallelism_notes": "TASK-3753: same file graph.py; batch engine wraps upload_file/download_file and appends after _move_or_rename",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3754-graph-batch-serving.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T20:53:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3754-graph-batch-serving.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3755",
       "slug": "onedrive-user-drive",
-      "title": "OneDriveClient._resolve_user_drive \u2014 cache-safe port from flowtask (me / UPN / object id)",
+      "title": "OneDriveClient._resolve_user_drive — cache-safe port from flowtask (me / UPN / object id)",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: only edits interfaces/onedrive.py (no other FEAT-603 task touches it); self-contained tests",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3755-onedrive-user-drive.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T18:48:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3755-onedrive-user-drive.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3756",
       "slug": "sharepoint-filemanager",
-      "title": "SharePointFileManager \u2014 site + library targeting over SharepointClient",
+      "title": "SharePointFileManager — site + library targeting over SharepointClient",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -183,18 +191,19 @@
       "parallel": true,
       "parallelism_notes": "TASK-3750: subclasses GraphDriveFileManager and relies on adopt_client/_ready/client_class; TASK-3748: tests adopt make_sharepoint_client",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3756-sharepoint-filemanager.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T19:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3756-sharepoint-filemanager.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3757",
       "slug": "onedrive-filemanager",
-      "title": "OneDriveFileManager \u2014 user / \"me\" targeting over OneDriveClient",
+      "title": "OneDriveFileManager — user / \"me\" targeting over OneDriveClient",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -205,18 +214,19 @@
       "parallel": true,
       "parallelism_notes": "TASK-3750: subclasses GraphDriveFileManager (adopt_client/_ready); TASK-3755: calls OneDriveClient._resolve_user_drive; TASK-3748: make_onedrive_client",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3757-onedrive-filemanager.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T19:23:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3757-onedrive-filemanager.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3758",
       "slug": "filemanager-registration",
-      "title": "Registration \u2014 lazy shim exports, parrot-native factory keys, manager_type literals",
+      "title": "Registration — lazy shim exports, parrot-native factory keys, manager_type literals",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -224,20 +234,21 @@
         "TASK-3757"
       ],
       "parallel": true,
-      "parallelism_notes": "TASK-3756/TASK-3757: lazy targets parrot.interfaces.file.sharepoint/.onedrive must exist for the shim and factory tests; first of the filemanager.py chain 3758\u21923759\u21923760",
+      "parallelism_notes": "TASK-3756/TASK-3757: lazy targets parrot.interfaces.file.sharepoint/.onedrive must exist for the shim and factory tests; first of the filemanager.py chain 3758→3759→3760",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3758-filemanager-registration.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T19:47:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3758-filemanager-registration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3759",
       "slug": "toolkit-find-batch-ops",
-      "title": "FileManagerToolkit \u2014 fs_find_files / fs_batch_upload / fs_batch_download + drive-relative storage paths",
+      "title": "FileManagerToolkit — fs_find_files / fs_batch_upload / fs_batch_download + drive-relative storage paths",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -247,18 +258,19 @@
       "parallel": true,
       "parallelism_notes": "TASK-3758: same file parrot/tools/filemanager.py (serialized) and ManagerType alias; TASK-3749: imports BatchItemResult/BatchSummary from parrot/interfaces/file/batch.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3759-toolkit-find-batch-ops.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T20:19:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3759-toolkit-find-batch-ops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3760",
       "slug": "tool-find-batch-ops",
-      "title": "FileManagerTool \u2014 operation find / batch_upload / batch_download + drive-relative storage paths",
+      "title": "FileManagerTool — operation find / batch_upload / batch_download + drive-relative storage paths",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -267,9 +279,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-3759: same file parrot/tools/filemanager.py and the same test file test_filemanager_batch_ops.py it creates",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3760-tool-find-batch-ops.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T20:49:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3760-tool-find-batch-ops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3761",
@@ -278,7 +291,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -286,11 +299,12 @@
         "TASK-3751"
       ],
       "parallel": true,
-      "parallelism_notes": "TASK-3756: builds SharePointFileManager; TASK-3751: calls list_entries / find_entries; first of the o365/sharepoint.py chain 3761\u21923762",
+      "parallelism_notes": "TASK-3756: builds SharePointFileManager; TASK-3751: calls list_entries / find_entries; first of the o365/sharepoint.py chain 3761→3762",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3761-sp-tools-list-search.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T20:50:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3761-sp-tools-list-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3762",
@@ -299,7 +313,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -309,9 +323,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-3761: same files o365/sharepoint.py + test_o365_sharepoint_file_tools.py; TASK-3752: calls download_file / upload_file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3762-sp-tools-download-upload.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T21:13:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3762-sp-tools-download-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3763",
@@ -320,7 +335,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -328,11 +343,12 @@
         "TASK-3751"
       ],
       "parallel": true,
-      "parallelism_notes": "TASK-3757: builds OneDriveFileManager; TASK-3751: calls list_entries / find_entries; first of the o365/onedrive.py chain 3763\u21923764",
+      "parallelism_notes": "TASK-3757: builds OneDriveFileManager; TASK-3751: calls list_entries / find_entries; first of the o365/onedrive.py chain 3763→3764",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3763-od-tools-list-search.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T21:11:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3763-od-tools-list-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3764",
@@ -341,7 +357,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -351,36 +367,38 @@
       "parallel": true,
       "parallelism_notes": "TASK-3763: same files o365/onedrive.py + test_o365_onedrive_file_tools.py; TASK-3752: calls download_file / upload_file / _get_item_by_id",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3764-od-tools-download-upload.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T21:19:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3764-od-tools-download-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3765",
       "slug": "msgraph-extra",
-      "title": "Packaging \u2014 ai-parrot[msgraph] extra, included in all",
+      "title": "Packaging — ai-parrot[msgraph] extra, included in all",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml and regenerates uv.lock (shared dependency manifests)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3765-msgraph-extra.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T18:20:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3765-msgraph-extra.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3766",
       "slug": "graph-filemanager-docs",
-      "title": "Docs \u2014 Graph FileManager guide + Office 365 permissions for the managers",
+      "title": "Docs — Graph FileManager guide + Office 365 permissions for the managers",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -390,9 +408,10 @@
       "parallel": true,
       "parallelism_notes": "TASK-3754: documents batch/serving API it finishes (serving limit); TASK-3760: documents the agent-facing find/batch operations",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3766-graph-filemanager-docs.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T21:12:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3766-graph-filemanager-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3767",
@@ -401,7 +420,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -412,18 +431,19 @@
       "parallel": false,
       "parallelism_notes": "exclusive: live runs share one real tenant; exercises SharePointFileManager (TASK-3756), OneDriveFileManager (TASK-3757) and the full graph.py API (TASK-3754)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3767-graph-live-suite.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T20:59:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3767-graph-live-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3768",
       "slug": "feature-guards",
-      "title": "Feature guards \u2014 no httpx / no tools import in core, byte-identical files, signature snapshot, _srcfiles",
+      "title": "Feature guards — no httpx / no tools import in core, byte-identical files, signature snapshot, _srcfiles",
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -437,9 +457,10 @@
       "parallel": true,
       "parallelism_notes": "final guard: scans graph.py/batch.py (TASK-3754), sharepoint/onedrive managers (TASK-3756/3757), filemanager.py (TASK-3760) and the refactored tool modules (TASK-3762/3764)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3768-feature-guards.md"
+      "started_at": "2026-09-25T16:54:14+00:00",
+      "completed_at": "2026-09-25T21:37:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3768-feature-guards.md",
+      "verification": "verified"
     }
   ]
 }

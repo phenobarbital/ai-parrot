@@ -354,10 +354,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3758
+- Feature: sharepoint-filemanager
+- Implementation SHA: 0da7211382fe75a037d21d494114449a7ec22f37
+- Closed at (UTC): 2026-09-25T19:47:33+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| known_deviation | SharePointFileManager/OneDriveFileManager are still abstract at this point in the dependency graph (write-ops land in sibling TASK-3752/3753/3754, not in this task's depends_on). Two new tests use monkeypatch.setattr(Class, '__abstractmethods__', frozenset()) to exercise factory/toolkit dispatch without depending on unmerged siblings; auto-restoring, test-scope only, no source file touched. |
+| merge_tier_gate_note | This merge-tier run escalated far wider than earlier chunks (touches shared parrot.interfaces.file / parrot_tools.file shims), sweeping most workspace distributions. All failures found are pre-existing and unrelated to this feature: the same 18 known ai-parrot collection errors, plus unrelated failures in parrot-formdesigner (venue service, slug collision, version bump), ai-parrot-client-grok (multiround usage accounting), and ai-parrot-integrations. None touch sharepoint/onedrive/graph/filemanager code. Tracked as pre-existing debt (FEAT-604 draft covers the escalation-cost side). |
+| scoped_test_result | tests/tools/test_filemanager_toolkit.py: 132 passed, 1 skipped (root distribution invocation within this same merge-tier run). test_file_shim.py (this task's other declared validation command) remains uncollectable due to the same pre-existing conftest.py sys.modules-race bug already tracked (independently reproduced on plain dev with zero FEAT-603 code present); its 5 new/modified assertions were verified directly via PYTHONPATH python3 -c invocation instead, all passing (registration exports resolve, lazy, factory dispatch, unknown-key error message, toolkit tool count). |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |

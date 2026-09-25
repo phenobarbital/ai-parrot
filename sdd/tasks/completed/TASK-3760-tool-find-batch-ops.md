@@ -24,6 +24,18 @@ drive-relative. Record under "Deviations from spec".
 
 Third and last edit to `parrot/tools/filemanager.py` (after TASK-3758, TASK-3759).
 
+**Task-time finding (contract correction, discovered by the TASK-3759 delivery):** this task's own AC below already
+required `tests/tools/test_filemanager_toolkit.py` to "still pass", but neither TASK-3759 nor this task originally
+listed it under Files to Create/Modify. TASK-3759 adding `find`/`batch_upload`/`batch_download` to `_OP_TO_METHOD`
+unavoidably grows `FileManagerToolkit`'s default `allowed_operations`/tool count from 9 to 12 when
+`allowed_operations=None` (the toolkit's default is `set(_ALL_OPS)`), which is exactly what three tests in that file
+hardcode: `TestToolkitInit.test_all_operations_allowed_by_default` (expected set of 9 ops), `TestToolGeneration.
+test_tool_count_default` (`== 9`), and `TestToolGeneration.test_tool_names` (hardcoded set of 9 `fs_*` tool names).
+This is structural fallout of the feature's own declared scope, not a regression — added `tests/tools/
+test_filemanager_toolkit.py` to Files to Create/Modify below; update those three assertions to the new 12-op/12-tool
+set (adding `"find"`, `"batch_upload"`, `"batch_download"` and `"fs_find_files"`, `"fs_batch_upload"`,
+`"fs_batch_download"` respectively). Record this under "Deviations from spec" in the Completion Note.
+
 ---
 
 ## Scope
@@ -33,6 +45,8 @@ Third and last edit to `parrot/tools/filemanager.py` (after TASK-3758, TASK-3759
 - `FileManagerTool`: add `_storage_path`, swap the three storage call sites, add three `elif` branches in `_execute`, and
   add `_find_files`, `_batch_upload`, `_batch_download`.
 - Append tool tests to `test_filemanager_batch_ops.py`.
+- Update the 3 hardcoded assertions in `tests/tools/test_filemanager_toolkit.py` (default op set, default tool count,
+  default tool names) to the new 12-op/12-tool set — see the Context note above.
 
 **NOT in scope**: the toolkit (done in TASK-3759).
 
@@ -43,6 +57,7 @@ Third and last edit to `parrot/tools/filemanager.py` (after TASK-3758, TASK-3759
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/tools/filemanager.py` | MODIFY | tool args, dispatch, handlers, `_storage_path` |
+| `tests/tools/test_filemanager_toolkit.py` | MODIFY | update 3 hardcoded default-op/tool-count/tool-name assertions grown 9→12 by TASK-3759+3760 (see Context) |
 | `packages/ai-parrot/tests/tools/test_filemanager_batch_ops.py` | MODIFY | append tool tests |
 
 ---
@@ -90,6 +105,7 @@ class FileManagerTool(AbstractTool):                       # :140
   "schema_version": 1,
   "targets": [
     {"path": "packages/ai-parrot/src/parrot/tools/filemanager.py", "action": "MODIFY"},
+    {"path": "tests/tools/test_filemanager_toolkit.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/tools/test_filemanager_batch_ops.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
@@ -301,10 +317,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3760
+- Feature: sharepoint-filemanager
+- Implementation SHA: baae59ffb5e8f65c3cf59fe69defb288c7d041f3
+- Closed at (UTC): 2026-09-25T20:49:38+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 227.9s · Tokens: n/a |
+| validation_note | Delivered commit initially omitted tests/tools/test_filemanager_toolkit.py despite it being explicitly added to this task's own Files to Create/Modify; fixed and squashed into this commit (recorded as coder-feedback:015b5e46e09665a7c296e443). Scoped merge-tier selection tests/tools/test_filemanager_toolkit.py + tests/tools/test_office365_toolkit.py -> 54 passed. The 37 other failures in that validation run are entirely inside packages/parrot-formdesigner/tests (unrelated distribution: form versioning/venue service/UI imports) -- pre-existing, consistent with this repo's known baseline breakage (see ledger issue:71cbc792726c). |

@@ -60,6 +60,19 @@ keep the consent screen minimal):
 | `Sites.ReadWrite.All`     | Write to SharePoint document libraries        |
 | `Calendars.ReadWrite`     | Create / update calendar events               |
 
+## File managers (SharePoint / OneDrive)
+
+`SharePointFileManager` / `OneDriveFileManager` (see `docs/interfaces/graph-filemanager.md`) need:
+
+| Mode | Permission | Why |
+|------|------------|-----|
+| Application (app-only) | `Sites.ReadWrite.All` | read/write SharePoint document libraries |
+| Application (app-only) | `Files.ReadWrite.All` | read/write any user's OneDrive (`user="<upn>"`) |
+| Delegated | `Files.ReadWrite` | the signed-in user's OneDrive (`user="me"`) |
+| Delegated | `Sites.ReadWrite.All` | SharePoint libraries the user can write to |
+
+Application permissions require admin consent.
+
 ## Azure AD app registration
 
 1. Sign in to the [Azure portal](https://portal.azure.com) → **App registrations** → **New registration**.

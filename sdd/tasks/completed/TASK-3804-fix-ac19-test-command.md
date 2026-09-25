@@ -151,10 +151,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-worker session, via `/sdd-fix issue:59c2804dc17a`)
+**Date**: 2026-09-26
+**Notes**: Replaced AC19's single composite pytest invocation in
+`sdd/specs/training-agent.spec.md` with the three separately-scoped
+invocations declared in the FEAT-607 spec §3 Module 1. Verified fresh
+against merged `dev` (post PR #1500): manuals+common `128 passed, 3
+skipped`; procedures `44 passed`; integrations (6 named files) `23 passed`
+— all exactly matching the spec's declared expectations. Confirmed
+`--import-mode=importlib` alone does NOT fix the composite command (a
+deeper conftest identity collision from root-level + per-package
+`conftest.py` files remains), so that was not proposed as an alternative
+fix. Closes ledger `issue:59c2804dc17a`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none. `git status --porcelain` confirms only
+`sdd/specs/training-agent.spec.md` was touched by the code commit.

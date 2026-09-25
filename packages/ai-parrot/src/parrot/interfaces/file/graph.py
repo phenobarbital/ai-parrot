@@ -1,0 +1,1121 @@
+"""FileManagerInterface over Microsoft Graph drives (SharePoint and OneDrive)."""
+
+from __future__ import annotations
+
+import fnmatch
+import io
+import logging
+import re
+from abc import ABC, abstractmethod
+import asyncio
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+from typing import Any, AsyncIterator, Awaitable, BinaryIO, Callable, Dict, List, Literal, Optional, Tuple, Union
+from urllib.parse import quote, urlsplit
+
+import aiohttp
+import aiofiles
+from kiota_abstractions.base_request_configuration import RequestConfiguration
+from kiota_abstractions.native_response_handler import NativeResponseHandler
+from kiota_http.middleware.options.response_handler_option import ResponseHandlerOption
+from msgraph.generated.drives.item.items.item.copy.copy_post_request_body import CopyPostRequestBody
+from msgraph.generated.drives.item.items.item.create_link.create_link_post_request_body import (
+    CreateLinkPostRequestBody,
+)
+from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
+    CreateUploadSessionPostRequestBody,
+)
+from msgraph.generated.models.drive_item import DriveItem
+from msgraph.generated.models.drive_item_uploadable_properties import DriveItemUploadableProperties
+from msgraph.generated.models.folder import Folder
+from msgraph.generated.models.item_reference import ItemReference
+
+import contextvars
+from typing import Sequence
+
+from aiohttp import web
+from navigator.utils.file import FileManagerInterface, FileMetadata
+from navigator.utils.file.web import FileServingExtension
+from pydantic import BaseModel, ConfigDict
+
+from parrot.interfaces.o365 import O365Client
+
+# Incremented by GraphDriveFileManager._retrying on every retry; set per batch item (TASK-3754).
+_RETRY_COUNTER: contextvars.ContextVar[Optional[List[int]]] = contextvars.ContextVar(
+    "_graph_retry_counter", default=None
+)
+
+from .batch import BatchErrorCode, BatchItemResult, BatchState, BatchSummary
+
+__all__ = (
+    "BatchErrorCode",
+    "BatchItemResult",
+    "BatchState",
+    "BatchSummary",
+    "DriveEntry",
+    "GraphDriveFileManager",
+    "GraphFileManagerError",
+)
+
+
+class _GuardedFileServingExtension(FileServingExtension):
+    """FileServingExtension that refuses (413) files larger than ``max_bytes`` before buffering them (S7, AC22)."""
+
+    def __init__(self, *args: Any, max_bytes: int, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.max_bytes = max_bytes
+
+    async def handle_file(self, request: web.Request) -> web.StreamResponse:
+        filepath = request.match_info.get("filepath", "")
+        try:
+            meta = await self.manager.get_file_metadata(filepath)
+            if meta.size > self.max_bytes:
+                return web.Response(status=413, text=f"File exceeds the serving limit of {self.max_bytes} bytes")
+        except FileNotFoundError:
+            # Expected: let the base extension's own 404 handling take over.
+            pass
+        except Exception as exc:
+            # Unexpected (auth failure, transient Graph error, ...): the size guard degrades
+            # fail-open by design (never blocks serving on a metadata-lookup error), but a
+            # silent `except Exception: pass` here previously hid genuine problems. Log and
+            # still fall through to the base extension.
+            self.logger.warning("Size-guard metadata lookup failed for %r, serving unguarded: %s", filepath, exc)
+        return await super().handle_file(request)
+
+
+ConflictBehavior = Literal["replace", "fail", "rename"]
+LinkType = Literal["view", "edit"]
+LinkScope = Literal["organization", "anonymous", "users"]
+AuthMode = Literal["direct", "on_behalf_of", "delegated", "cached"]
+
+
+class DriveEntry(BaseModel):
+    """One child of a folder, including folders returned by ``list_entries``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    path: str
+    is_folder: bool
+    size: int = 0
+    modified_at: Optional[datetime] = None
+    web_url: Optional[str] = None
+    content_type: Optional[str] = None
+
+
+class _RawHTTPError(Exception):
+    """Non-2xx aiohttp response shaped like a kiota API error for retry handling."""
+
+    def __init__(self, status: int, headers: Optional[Dict[str, str]] = None) -> None:
+        super().__init__(f"HTTP {status}")
+        self.response_status_code = status
+        self.response_headers = dict(headers or {})
+
+
+class GraphFileManagerError(RuntimeError):
+    """Base error for Graph file-manager failures, with an optional status code."""
+
+    def __init__(self, message: str, *, status_code: Optional[int] = None) -> None:
+        """Initialize the error.
+
+        Args:
+            message: Human-readable failure description.
+            status_code: Graph HTTP response status when known.
+        """
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class GraphDriveFileManager(FileManagerInterface, ABC):
+    """FileManagerInterface over one Microsoft Graph drive.
+
+    Paths are drive-relative and use ``prefix`` with S3-compatible semantics.
+    """
+
+    manager_name: str = "graphfile"
+    client_class: type = O365Client
+    SMALL_FILE_THRESHOLD: int = 4 * 1024 * 1024
+    CHUNK_SIZE: int = 10 * 1024 * 1024
+    MAX_CONCURRENCY: int = 5
+    MAX_RETRIES: int = 3
+    COPY_TIMEOUT_S: float = 120.0
+    RETRYABLE_STATUS: frozenset = frozenset({429, 503, 504})
+    SERVING_MAX_BYTES: int = 64 * 1024 * 1024
+    ALLOWED_ORIGINS: tuple = (
+        "https://graph.microsoft.com",
+        "https://graph.microsoft.us",
+        "https://dod-graph.microsoft.us",
+        "https://microsoftgraph.chinacloudapi.cn",
+        "https://graph.microsoft.de",
+    )
+    ALLOWED_HOST_SUFFIXES: tuple = (".sharepoint.com", ".sharepoint-df.com", ".files.1drv.com")
+
+    def __init__(
+        self,
+        *,
+        prefix: str = "",
+        credentials: Optional[Dict[str, Any]] = None,
+        auth_mode: AuthMode = "direct",
+        user_assertion: Optional[str] = None,
+        scopes: Optional[List[str]] = None,
+        conflict_behavior: ConflictBehavior = "replace",
+        link_type: LinkType = "view",
+        link_scope: LinkScope = "organization",
+        max_concurrency: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        chunk_size: Optional[int] = None,
+        small_file_threshold: Optional[int] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Store configuration without performing network I/O.
+
+        Args:
+            prefix: Drive-relative folder used to scope all paths.
+            credentials: O365 credential configuration.
+            auth_mode: O365 authentication mode.
+            user_assertion: Incoming user token for on-behalf-of authentication.
+            scopes: Optional Graph scopes.
+            conflict_behavior: Upload conflict behaviour.
+            link_type: Default sharing-link type.
+            link_scope: Default sharing-link scope.
+            max_concurrency: Batch concurrency limit.
+            max_retries: Retry budget for retryable Graph responses.
+            chunk_size: Upload-session chunk size.
+            small_file_threshold: Single-request upload size threshold.
+            **kwargs: Ignored factory or toolkit pass-through options.
+        """
+        self.logger = logging.getLogger(__name__)
+        normalized_prefix = prefix.replace("\\", "/").strip("/")
+        self.prefix = f"{normalized_prefix}/" if normalized_prefix else ""
+        self.credentials = dict(credentials or {})
+        if user_assertion is not None:
+            self.credentials["assertion"] = user_assertion
+        self.auth_mode = auth_mode
+        self.user_assertion = user_assertion
+        self.scopes = scopes
+        self.conflict_behavior = conflict_behavior
+        self.link_type = link_type
+        self.link_scope = link_scope
+        self.max_concurrency = max_concurrency or self.MAX_CONCURRENCY
+        self.max_retries = max_retries if max_retries is not None else self.MAX_RETRIES
+        self.chunk_size = chunk_size or self.CHUNK_SIZE
+        self.small_file_threshold = small_file_threshold or self.SMALL_FILE_THRESHOLD
+        self._client: Optional[O365Client] = None
+        self._drive_id: Optional[str] = None
+        self._owns_client = False
+        self._adopted = None
+        if kwargs:
+            self.logger.debug("Ignoring Graph file manager options: %s", sorted(kwargs))
+
+    @abstractmethod
+    def _build_client(self) -> O365Client:
+        """Return the unauthenticated O365Client subclass for this drive kind."""
+
+    @abstractmethod
+    async def _resolve_drive_id(self) -> str:
+        """Resolve and return the Graph drive id."""
+
+    @property
+    def client(self) -> O365Client:
+        """Return the authenticated client after it has been connected or adopted."""
+        if self._client is None:
+            raise GraphFileManagerError("Graph client is not connected")
+        return self._client
+
+    @property
+    def drive_id(self) -> str:
+        """Return the resolved drive id after connection."""
+        if self._drive_id is None:
+            raise GraphFileManagerError("Graph drive id is not resolved")
+        return self._drive_id
+
+    def _prefixed(self, key: str) -> str:
+        """Return ``prefix + key`` while rejecting parent-directory segments."""
+        normalized_key = key.replace("\\", "/").lstrip("/")
+        if any(segment == ".." for segment in normalized_key.split("/")):
+            raise ValueError("Parent-directory segments are not allowed")
+        if not normalized_key:
+            return self.prefix.rstrip("/")
+        return f"{self.prefix}{normalized_key}"
+
+    def _unprefixed(self, key: str) -> str:
+        """Strip the configured prefix from a drive-relative path when present."""
+        normalized_key = key.replace("\\", "/").lstrip("/")
+        if self.prefix and normalized_key.startswith(self.prefix):
+            return normalized_key[len(self.prefix) :]
+        return normalized_key
+
+    def _item_ref(self, full_path: str) -> str:
+        """Return a root or per-segment-quoted Microsoft Graph item reference."""
+        segments = [segment for segment in (full_path or "").strip("/").split("/") if segment]
+        if not segments:
+            return "root"
+        return "root:/" + "/".join(quote(segment, safe="") for segment in segments) + ":"
+
+    def _item_path(self, item: Any) -> Optional[str]:
+        """Return an item's drive-relative path, or None when Graph omitted it."""
+        parent_reference = getattr(item, "parent_reference", None)
+        parent_path = getattr(parent_reference, "path", None)
+        if not parent_path or "root:" not in parent_path:
+            return None
+        parent = parent_path.split("root:", 1)[1].strip(":/")
+        return "/".join(part for part in (parent, item.name) if part)
+
+    def _make_metadata(self, item: Any, *, full_path: Optional[str] = None) -> FileMetadata:
+        """Map a Graph DriveItem into its FileMetadata representation."""
+        path = self._unprefixed(full_path or self._item_path(item) or item.name)
+        is_folder = getattr(item, "folder", None) is not None
+        file_info = getattr(item, "file", None)
+        return FileMetadata(
+            name=item.name,
+            path=path,
+            size=0 if is_folder else (getattr(item, "size", None) or 0),
+            content_type=None if is_folder or file_info is None else getattr(file_info, "mime_type", None),
+            modified_at=getattr(item, "last_modified_date_time", None),
+            url=getattr(item, "web_url", None),
+        )
+
+    def _make_entry(self, item: Any, *, full_path: Optional[str] = None) -> DriveEntry:
+        """Map a Graph DriveItem into a DriveEntry, preserving folders."""
+        path = self._unprefixed(full_path or self._item_path(item) or item.name)
+        is_folder = getattr(item, "folder", None) is not None
+        file_info = getattr(item, "file", None)
+        return DriveEntry(
+            id=item.id,
+            name=item.name,
+            path=path,
+            is_folder=is_folder,
+            size=0 if is_folder else (getattr(item, "size", None) or 0),
+            modified_at=getattr(item, "last_modified_date_time", None),
+            web_url=getattr(item, "web_url", None),
+            content_type=None if is_folder or file_info is None else getattr(file_info, "mime_type", None),
+        )
+
+    async def connect(self) -> "GraphDriveFileManager":
+        """Build, authenticate, and resolve the drive id once."""
+        async with self._get_lock():
+            if self._client is None:
+                client = self._build_client()
+                client.processing_credentials()
+                client.set_auth_mode(self.auth_mode)
+                loop = asyncio.get_running_loop()
+                if self.auth_mode == "direct":
+                    username = self.credentials.get("username")
+                    password = self.credentials.get("password")
+                    if username is not None and password is not None:
+                        await loop.run_in_executor(None, client.user_auth, username, password, self.scopes)
+                    else:
+                        await loop.run_in_executor(None, client.acquire_token, self.scopes)
+                elif self.auth_mode == "on_behalf_of":
+                    if self.user_assertion is None:
+                        raise ValueError("user_assertion is required for on_behalf_of authentication")
+                    await loop.run_in_executor(
+                        None, client.acquire_token_on_behalf_of, self.user_assertion, self.scopes
+                    )
+                elif self.auth_mode == "delegated":
+                    await client.interactive_login(scopes=self.scopes)
+                elif self.auth_mode == "cached":
+                    await client.ensure_interactive_session(scopes=self.scopes)
+                else:
+                    raise ValueError(f"Unknown authentication mode: {self.auth_mode}")
+                self._client, self._owns_client = client, True
+            if self._drive_id is None:
+                self._drive_id = await self._resolve_drive_id()
+        return self
+
+    def adopt_client(self, client: O365Client) -> None:
+        """Reuse an authenticated client without acquiring another token."""
+        if isinstance(client, self.client_class):
+            self._client = client
+            self._owns_client = False
+        else:
+            wrapper = self._build_client()
+            wrapper.processing_credentials()
+            for attribute in ("_credential", "_graph_client", "_access_token", "auth_mode"):
+                setattr(wrapper, attribute, getattr(client, attribute))
+            self._client = wrapper
+            self._owns_client = True
+        self._adopted = client
+        self._drive_id = None
+
+    async def _ready(self) -> str:
+        """Return the drive id, connecting or resolving it on an adopted client."""
+        if self._drive_id is None:
+            if self._client is None:
+                await self.connect()
+            else:
+                async with self._get_lock():
+                    if self._drive_id is None:
+                        self._drive_id = await self._resolve_drive_id()
+        return self._drive_id
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Return the lazily-created lifecycle lock."""
+        lock = self.__dict__.get("_lock_obj")
+        if lock is None:
+            lock = self.__dict__["_lock_obj"] = asyncio.Lock()
+        return lock
+
+    async def close(self) -> None:
+        """Close only a client owned by this manager and clear cached state."""
+        client = self._client
+        if client is not None and self._owns_client:
+            await client.close()
+        self._client = None
+        self._drive_id = None
+        self._owns_client = False
+        self._adopted = None
+
+    async def __aenter__(self) -> "GraphDriveFileManager":
+        """Connect the manager for asynchronous context-manager use."""
+        return await self.connect()
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        """Release manager-owned resources at context exit."""
+        await self.close()
+
+    def _http_session(self) -> aiohttp.ClientSession:
+        """Return a session for pre-authenticated raw Graph URLs."""
+        return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, sock_read=300))
+
+    async def _sleep(self, seconds: float) -> None:
+        """Sleep for retry backoff; separated for deterministic tests."""
+        await asyncio.sleep(seconds)
+
+    @staticmethod
+    def _status_code_of(error: BaseException) -> Optional[int]:
+        """Extract an HTTP status code from Graph or raw HTTP errors."""
+        code = getattr(error, "response_status_code", None)
+        if isinstance(code, int) and code:
+            return code
+        for attribute in ("status_code", "status", "code"):
+            code = getattr(error, attribute, None)
+            if isinstance(code, int) and code:
+                return code
+        return None
+
+    @staticmethod
+    def _retry_after_seconds(error: BaseException) -> Optional[float]:
+        """Extract a non-negative Retry-After delay from an HTTP error."""
+        headers = getattr(error, "response_headers", None)
+        getter = getattr(headers, "get", None)
+        if not callable(getter):
+            return None
+        try:
+            raw = getter("Retry-After") or getter("retry-after")
+        except TypeError:
+            return None
+        if isinstance(raw, (set, frozenset, list, tuple)):
+            raw = next(iter(sorted(str(value) for value in raw)), None)
+        if raw is None:
+            return None
+        try:
+            value = float(str(raw).strip())
+        except (TypeError, ValueError):
+            try:
+                when = parsedate_to_datetime(str(raw).strip())
+            except (TypeError, ValueError):
+                return None
+            if when is None:
+                return None
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            value = (when - datetime.now(timezone.utc)).total_seconds()
+        return value if value >= 0 else None
+
+    def _map_error(self, exc: BaseException, *, path: str) -> BaseException:
+        """Map a Graph error to the public file-manager exception contract."""
+        status = self._status_code_of(exc)
+        if status == 404:
+            return FileNotFoundError(path)
+        if status in {401, 403}:
+            return PermissionError("Graph access was denied")
+        if status == 409:
+            return FileExistsError(path)
+        return GraphFileManagerError(str(exc), status_code=status)
+
+    async def _retrying(
+        self, op: Callable[[], Awaitable[Any]], *, label: str, idempotent: bool = True
+    ) -> Tuple[Any, int]:
+        """Run an operation with the single bounded Graph retry policy."""
+        attempts = 1
+        while True:
+            try:
+                return await op(), attempts
+            except Exception as exc:
+                status = self._status_code_of(exc)
+                if not idempotent or status not in self.RETRYABLE_STATUS or attempts > self.max_retries:
+                    raise
+                delay = min(self._retry_after_seconds(exc) or 2 ** (attempts - 1), 60)
+                self.logger.warning("Retrying Graph operation %s after status %s (attempt %s)", label, status, attempts)
+                counter = _RETRY_COUNTER.get()
+                if counter is not None:
+                    counter[0] += 1
+                await self._sleep(delay)
+                attempts += 1
+
+    def _validate_graph_url(self, url: str, *, purpose: str) -> str:
+        """Accept only approved HTTPS Graph, SharePoint, and OneDrive URLs."""
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        allowed = f"https://{host}" in self.ALLOWED_ORIGINS or host.endswith(self.ALLOWED_HOST_SUFFIXES)
+        if parts.scheme != "https" or not host or not allowed:
+            raise GraphFileManagerError(f"Invalid {purpose} URL")
+        return url
+
+    def _drive(self) -> Any:
+        """``graph_client.drives.by_drive_id(<resolved drive>)`` request builder."""
+        return self.client.graph_client.drives.by_drive_id(self.drive_id)
+
+    async def _get_item(self, full_path: str) -> Any:
+        """GET the DriveItem at a prefixed drive path (retried; raw errors propagate to the caller's mapping)."""
+        item, _ = await self._retrying(
+            lambda: self._drive().items.by_drive_item_id(self._item_ref(full_path)).get(), label="get"
+        )
+        if item is None:
+            raise FileNotFoundError(full_path)
+        return item
+
+    async def _get_item_by_id(self, item_id: str) -> Any:
+        """GET by stable item id (search hits without a path; the OneDrive download-by-id tool)."""
+        item, _ = await self._retrying(lambda: self._drive().items.by_drive_item_id(item_id).get(), label="get")
+        if item is None:
+            raise FileNotFoundError(item_id)
+        return item
+
+    async def _iter_children(self, item_id: str) -> AsyncIterator[Any]:
+        """Yield every child of ``item_id`` across all pages (S4)."""
+        builder = self._drive().items.by_drive_item_id(item_id).children
+        resp, _ = await self._retrying(lambda: builder.get(), label="children")
+        while resp is not None:
+            for child in resp.value or []:
+                yield child
+            nxt = getattr(resp, "odata_next_link", None)
+            if not nxt:
+                break
+            resp, _ = await self._retrying(lambda _nxt=nxt: builder.with_url(_nxt).get(), label="children-next")
+
+    async def _iter_search(self, q: str) -> AsyncIterator[Any]:
+        """Yield every ``search(q)`` hit on the drive across all pages (S4)."""
+        builder = self._drive().search_with_q(q)
+        resp, _ = await self._retrying(lambda: builder.get(), label="search")
+        while resp is not None:
+            for hit in resp.value or []:
+                yield hit
+            nxt = getattr(resp, "odata_next_link", None)
+            if not nxt:
+                break
+            resp, _ = await self._retrying(lambda _nxt=nxt: builder.with_url(_nxt).get(), label="search-next")
+
+    @staticmethod
+    def _query_is_api_safe(query: str) -> bool:
+        """True when ``query`` has no wildcard/regex metacharacters (rule of sharepoint.py:867-873)."""
+        return not re.search(r"[*?\[\]\{\}\(\)\^\$|\\]", query or "")
+
+    async def list_files(self, path: str = "", pattern: str = "*") -> List[FileMetadata]:
+        """Non-recursive listing of ``path``: files only, fnmatch ``pattern``, all pages (S4/S8)."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            folder = await self._get_item(full)
+            out: List[FileMetadata] = []
+            async for child in self._iter_children(folder.id):
+                if getattr(child, "folder", None) is not None:
+                    continue
+                if not fnmatch.fnmatch(child.name, pattern):
+                    continue
+                child_path = f"{full}/{child.name}" if full else child.name
+                out.append(self._make_metadata(child, full_path=child_path))
+            return out
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def list_entries(self, path: str = "") -> List[DriveEntry]:
+        """Non-recursive listing INCLUDING folders, all pages; used by the O365 List tools (S8)."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            folder = await self._get_item(full)
+            out: List[DriveEntry] = []
+            async for child in self._iter_children(folder.id):
+                child_path = f"{full}/{child.name}" if full else child.name
+                out.append(self._make_entry(child, full_path=child_path))
+            return out
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def exists(self, path: str) -> bool:
+        """True for files AND folders that resolve; False on 404."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            await self._get_item(full)
+            return True
+        except Exception as exc:
+            mapped = self._map_error(exc, path=path)
+            if isinstance(mapped, FileNotFoundError):
+                return False
+            raise mapped from exc
+
+    async def get_file_metadata(self, path: str) -> FileMetadata:
+        """Metadata of one item; FileNotFoundError on 404."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            item = await self._get_item(full)
+            return self._make_metadata(item, full_path=full)
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def find_entries(
+        self,
+        keywords: Optional[Union[str, List[str]]] = None,
+        extension: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> List[DriveEntry]:
+        """Graph search when the keyword is API-safe, else a recursive walk under ``prefix``; files only, all pages (AC20)."""
+        await self._ready()
+        full_prefix = self._prefixed(prefix if prefix is not None else "")
+        prefix_check = f"{full_prefix}/" if full_prefix else ""
+        keyword_list = [keywords] if isinstance(keywords, str) else list(keywords or [])
+        keywords_lower = [keyword.lower() for keyword in keyword_list if keyword]
+        out: List[DriveEntry] = []
+        try:
+            if keyword_list and keyword_list[0] and self._query_is_api_safe(keyword_list[0]):
+                async for hit in self._iter_search(keyword_list[0]):
+                    if getattr(hit, "folder", None) is not None:
+                        continue
+                    item_path = self._item_path(hit)
+                    if item_path is None:
+                        resolved = await self._get_item_by_id(hit.id)
+                        item_path = self._item_path(resolved)
+                        if item_path is not None:
+                            hit = resolved
+                    if item_path is None:
+                        continue
+                    if prefix_check and not item_path.startswith(prefix_check):
+                        continue
+                    if keywords_lower and not all(keyword in item_path.lower() for keyword in keywords_lower):
+                        continue
+                    if extension and not item_path.endswith(extension):
+                        continue
+                    out.append(self._make_entry(hit, full_path=item_path))
+            else:
+                root_item = await self._get_item(full_prefix)
+                queue: List[Tuple[str, str]] = [(root_item.id, full_prefix)]
+                while queue:
+                    current_id, current_path = queue.pop(0)
+                    async for child in self._iter_children(current_id):
+                        child_path = f"{current_path}/{child.name}" if current_path else child.name
+                        if getattr(child, "folder", None) is not None:
+                            queue.append((child.id, child_path))
+                            continue
+                        if keywords_lower and not all(keyword in child_path.lower() for keyword in keywords_lower):
+                            continue
+                        if extension and not child_path.endswith(extension):
+                            continue
+                        out.append(self._make_entry(child, full_path=child_path))
+            return out
+        except Exception as exc:
+            raise self._map_error(exc, path=full_prefix) from exc
+
+    async def find_files(
+        self,
+        keywords: Optional[Union[str, List[str]]] = None,
+        extension: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> List[FileMetadata]:
+        """FileManagerInterface override (abstract.py:265): ``find_entries`` mapped to FileMetadata."""
+        entries = await self.find_entries(keywords=keywords, extension=extension, prefix=prefix)
+        return [
+            FileMetadata(
+                name=entry.name,
+                path=entry.path,
+                size=entry.size,
+                content_type=entry.content_type,
+                modified_at=entry.modified_at,
+                url=entry.web_url,
+            )
+            for entry in entries
+        ]
+
+    async def delete_file(self, path: str) -> bool:
+        """DELETE the item (goes to the recycle bin). False when it does not exist."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            item = await self._get_item(full)
+        except Exception as exc:
+            mapped = self._map_error(exc, path=path)
+            if isinstance(mapped, FileNotFoundError):
+                return False
+            raise mapped from exc
+        try:
+            await self._retrying(lambda: self._drive().items.by_drive_item_id(item.id).delete(), label="delete")
+            return True
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def _ensure_parent(self, full_path: str) -> Any:
+        """Ensure the parent folder chain of ``full_path`` exists and return its final item."""
+        parent = await self._get_item("")
+        segments = [segment for segment in full_path.strip("/").split("/") if segment][:-1]
+        current_path = ""
+        for segment in segments:
+            current_path = f"{current_path}/{segment}".strip("/")
+            try:
+                parent = await self._get_item(current_path)
+            except Exception as exc:
+                if self._status_code_of(exc) != 404:
+                    raise
+                folder = DriveItem(
+                    name=segment,
+                    folder=Folder(),
+                    additional_data={"@microsoft.graph.conflictBehavior": "fail"},
+                )
+                try:
+                    parent, _ = await self._retrying(
+                        lambda _pid=parent.id, _f=folder: self._drive().items.by_drive_item_id(_pid).children.post(_f),
+                        label="create-folder",
+                    )
+                except Exception as create_error:
+                    if self._status_code_of(create_error) != 409:
+                        raise
+                    parent = await self._get_item(current_path)
+        return parent
+
+    async def _put_small(self, parent_id: str, name: str, data: bytes) -> Any:
+        """Single PUT for replace-conflict uploads below the configured threshold."""
+        ref = f"{parent_id}:/{quote(name, safe='')}:"
+        item, _ = await self._retrying(
+            lambda: self._drive().items.by_drive_item_id(ref).content.put(data), label="content-put"
+        )
+        return item
+
+    async def _create_session(self, parent_id: str, name: str) -> str:
+        """Create a configurable-conflict upload session and return its pre-authenticated URL."""
+        body = CreateUploadSessionPostRequestBody()
+        body.item = DriveItemUploadableProperties()
+        body.item.name = name
+        body.item.additional_data = {"@microsoft.graph.conflictBehavior": self.conflict_behavior}
+        ref = f"{parent_id}:/{quote(name, safe='')}:"
+        session, _ = await self._retrying(
+            lambda: self._drive().items.by_drive_item_id(ref).create_upload_session.post(body),
+            label="create-upload-session",
+            idempotent=False,
+        )
+        return session.upload_url
+
+    async def _put_session(self, upload_url: str, read: Callable[[int], Awaitable[bytes]], size: int) -> Dict[str, Any]:
+        """Upload chunks to a validated pre-authenticated session URL."""
+        url = self._validate_graph_url(upload_url, purpose="upload session")
+        offset = 0
+        async with self._http_session() as session:
+            while offset < size:
+                chunk = await read(min(self.chunk_size, size - offset))
+                if not chunk:
+                    break
+                end = offset + len(chunk) - 1
+                headers = {
+                    "Content-Length": str(len(chunk)),
+                    "Content-Range": f"bytes {offset}-{end}/{size}",
+                }
+
+                async def put_chunk(_chunk=chunk, _headers=headers) -> Tuple[int, Dict[str, Any]]:
+                    async with session.put(url, data=_chunk, headers=_headers, allow_redirects=False) as response:
+                        if response.status not in {200, 201, 202}:
+                            raise _RawHTTPError(response.status, dict(response.headers))
+                        return response.status, await response.json()
+
+                (status, result), _ = await self._retrying(put_chunk, label="upload-chunk")
+                if status in {200, 201}:
+                    return result
+                offset += len(chunk)
+        raise GraphFileManagerError(f"upload session ended at byte {offset} of {size} without a final item")
+
+    async def upload_file(self, source: Union[BinaryIO, Path], destination: str) -> FileMetadata:
+        """Upload a local file or binary stream and return Graph metadata."""
+        await self._ready()
+        dest_full = self._prefixed(destination)
+        try:
+            parent = await self._ensure_parent(dest_full)
+            name = dest_full.rsplit("/", 1)[-1]
+
+            if isinstance(source, (str, Path)):
+                local_path = Path(source)
+                size = (await asyncio.to_thread(local_path.stat)).st_size
+                if size < self.small_file_threshold and self.conflict_behavior == "replace":
+                    async with aiofiles.open(local_path, "rb") as handle:
+                        item = await self._put_small(parent.id, name, await handle.read())
+                else:
+                    async with aiofiles.open(local_path, "rb") as handle:
+                        upload_url = await self._create_session(parent.id, name)
+                        result = await self._put_session(upload_url, handle.read, size)
+                    item = await self._get_item_by_id(result["id"])
+            else:
+                try:
+                    position = await asyncio.to_thread(source.tell)
+                    await asyncio.to_thread(source.seek, 0, 2)
+                    size = await asyncio.to_thread(source.tell)
+                    await asyncio.to_thread(source.seek, position)
+                except (AttributeError, OSError, io.UnsupportedOperation):
+                    source = io.BytesIO(await asyncio.to_thread(source.read))
+                    size = len(source.getvalue())
+                if size < self.small_file_threshold and self.conflict_behavior == "replace":
+                    item = await self._put_small(parent.id, name, await asyncio.to_thread(source.read))
+                else:
+                    upload_url = await self._create_session(parent.id, name)
+
+                    async def read_stream(length: int) -> bytes:
+                        return await asyncio.to_thread(source.read, length)
+
+                    result = await self._put_session(upload_url, read_stream, size)
+                    item = await self._get_item_by_id(result["id"])
+            return self._make_metadata(item, full_path=dest_full)
+        except Exception as exc:
+            raise self._map_error(exc, path=destination) from exc
+
+    async def create_file(self, path: str, content: bytes) -> bool:
+        """Upload raw bytes to ``path`` and report completion."""
+        await self.upload_file(io.BytesIO(content), path)
+        return True
+
+    async def upload_file_from_bytes(
+        self, file_obj: bytes, destination_key: str, content_type: str = "application/octet-stream"
+    ) -> str:
+        """Upload bytes with S3-compatible arguments and return the Graph web URL."""
+        self.logger.debug("upload_file_from_bytes: content_type=%s (Graph infers MIME from the name)", content_type)
+        metadata = await self.upload_file(io.BytesIO(file_obj), destination_key)
+        return metadata.url or ""
+
+    async def download_file(self, source: str, destination: Union[Path, BinaryIO]) -> Path:
+        """Stream a Graph download URL into a local path or writable binary stream."""
+        _, result = await self._download_file_with_item(source, destination)
+        return result
+
+    async def _download_file_with_item(self, source: str, destination: Union[Path, BinaryIO]) -> Tuple[Any, Path]:
+        """Shared ``download_file`` implementation that also returns the fetched Graph item.
+
+        ``download_files`` (batch) uses the returned item to build its ``FileMetadata`` without
+        a second ``get_file_metadata`` round-trip per item.
+        """
+        await self._ready()
+        full_path = self._prefixed(source)
+        try:
+            item = await self._get_item(full_path)
+            if getattr(item, "folder", None) is not None:
+                raise IsADirectoryError(source)
+            url = getattr(item, "additional_data", {}).get("@microsoft.graph.downloadUrl")
+            if not url:
+                raise GraphFileManagerError("Graph item has no download URL")
+            url = self._validate_graph_url(url, purpose="download")
+            async with self._http_session() as session:
+                async with session.get(url, headers={}, allow_redirects=False) as response:
+                    if response.status != 200:
+                        raise _RawHTTPError(response.status, dict(response.headers))
+                    if isinstance(destination, (str, Path)):
+                        target = Path(destination)
+                        await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
+                        async with aiofiles.open(target, "wb") as handle:
+                            async for chunk in response.content.iter_chunked(1024 * 1024):
+                                await handle.write(chunk)
+                        return item, target
+                    async for chunk in response.content.iter_chunked(1024 * 1024):
+                        await asyncio.to_thread(destination.write, chunk)
+            return item, Path(source)
+        except IsADirectoryError:
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=source) from exc
+
+    async def copy_file(self, source: str, destination: str) -> FileMetadata:
+        """POST copy (202 + Location; never retried), then poll the validated monitor (AC6, AC21)."""
+        await self._ready()
+        src_full, dest_full = self._prefixed(source), self._prefixed(destination)
+        try:
+            src = await self._get_item(src_full)
+            parent = await self._ensure_parent(dest_full)
+            body = CopyPostRequestBody(
+                name=dest_full.rsplit("/", 1)[-1],
+                parent_reference=ItemReference(drive_id=self.drive_id, id=parent.id),
+            )
+            config = RequestConfiguration(options=[ResponseHandlerOption(NativeResponseHandler())])
+            response, _ = await self._retrying(
+                lambda: self._drive().items.by_drive_item_id(src.id).copy.post(body, request_configuration=config),
+                label="copy",
+                idempotent=False,
+            )
+            location = getattr(response, "headers", {}).get("Location")
+            if getattr(response, "status_code", None) != 202 or not location:
+                raise GraphFileManagerError("Graph copy did not return a 202 monitor location")
+            new_id = await self._poll_copy_monitor(location, source=source)
+            return self._make_metadata(await self._get_item_by_id(new_id), full_path=dest_full)
+        except TimeoutError:
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=source) from exc
+
+    async def _poll_copy_monitor(self, url: str, *, source: str) -> str:
+        """Poll the copy monitor until completed; return the new item id (TimeoutError after COPY_TIMEOUT_S)."""
+        monitor_url = self._validate_graph_url(url, purpose="copy monitor")
+        started_at = asyncio.get_running_loop().time()
+        attempt = 0
+        async with self._http_session() as session:
+            while True:
+                if asyncio.get_running_loop().time() - started_at >= self.COPY_TIMEOUT_S:
+                    raise TimeoutError(f"Graph copy timed out for {source}")
+
+                async def poll() -> Dict[str, Any]:
+                    async with session.get(monitor_url, headers={}, allow_redirects=False) as response:
+                        if response.status not in {200, 202}:
+                            raise _RawHTTPError(response.status, dict(response.headers))
+                        return await response.json()
+
+                result, _ = await self._retrying(poll, label="copy-monitor")
+                status = result.get("status")
+                if status == "completed":
+                    resource_id = result.get("resourceId")
+                    if resource_id:
+                        return resource_id
+                    raise GraphFileManagerError("Graph copy completed without a resource id")
+                if status == "failed":
+                    raise GraphFileManagerError("Graph copy monitor reported failure")
+                await self._sleep(min(1.0 * 2**attempt, 5.0))
+                attempt += 1
+
+    async def create_sharing_link(
+        self, path: str, *, link_type: LinkType = "view", scope: LinkScope = "organization", expiry: int = 3600
+    ) -> str:
+        """POST createLink; creates a sharing permission (S3)."""
+        await self._ready()
+        full_path = self._prefixed(path)
+
+        def body_with_expiry(include_expiry: bool) -> CreateLinkPostRequestBody:
+            return CreateLinkPostRequestBody(
+                type=link_type,
+                scope=scope,
+                expiration_date_time=(
+                    datetime.now(timezone.utc) + timedelta(seconds=expiry) if include_expiry and expiry > 0 else None
+                ),
+            )
+
+        try:
+            item = await self._get_item(full_path)
+            body = body_with_expiry(True)
+            try:
+                permission, _ = await self._retrying(
+                    lambda: self._drive().items.by_drive_item_id(item.id).create_link.post(body),
+                    label="create-link",
+                    idempotent=False,
+                )
+            except Exception as exc:
+                status = self._status_code_of(exc)
+                if status == 403 or (status == 400 and scope in str(exc).lower()):
+                    raise PermissionError("Graph sharing scope was denied") from exc
+                if status != 400 or body.expiration_date_time is None:
+                    raise
+                self.logger.warning("tenant rejected link expiration; creating a non-expiring link")
+                permission, _ = await self._retrying(
+                    lambda: self._drive().items.by_drive_item_id(item.id).create_link.post(body_with_expiry(False)),
+                    label="create-link",
+                    idempotent=False,
+                )
+            url = getattr(getattr(permission, "link", None), "web_url", None)
+            if not url:
+                raise GraphFileManagerError("Graph createLink returned no sharing URL")
+            return url
+        except PermissionError:
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def get_file_url(self, path: str, expiry: int = 3600) -> str:
+        """Exact FileManagerInterface signature (abstract.py:67); wraps create_sharing_link with the defaults."""
+        return await self.create_sharing_link(path, link_type=self.link_type, scope=self.link_scope, expiry=expiry)
+
+    async def create_folder(self, folder_name: str) -> None:
+        """Create ``folder_name`` (and missing parents); an existing folder is not an error."""
+        await self._ready()
+        full_path = self._prefixed(folder_name)
+        try:
+            await self._ensure_parent(f"{full_path}/.")
+        except Exception as exc:
+            raise self._map_error(exc, path=folder_name) from exc
+
+    async def remove_folder(self, folder_name: str) -> None:
+        """Delete a folder and its contents (recycle bin); FileNotFoundError when missing."""
+        await self._ready()
+        full_path = self._prefixed(folder_name)
+        try:
+            item = await self._get_item(full_path)
+            await self._retrying(lambda: self._drive().items.by_drive_item_id(item.id).delete(), label="delete")
+        except Exception as exc:
+            raise self._map_error(exc, path=folder_name) from exc
+
+    async def rename_file(self, old_file_name: str, new_file_name: str) -> None:
+        """Rename and/or move a file within the drive (single PATCH)."""
+        await self._move_or_rename(old_file_name, new_file_name)
+
+    async def rename_folder(self, old_folder_name: str, new_folder_name: str) -> None:
+        """Rename and/or move a folder within the drive (single PATCH; task-time deviation, see Context)."""
+        await self._move_or_rename(old_folder_name, new_folder_name)
+
+    async def _move_or_rename(self, old: str, new: str) -> None:
+        """Rename an item, moving it with the same PATCH when its parent changes."""
+        await self._ready()
+        old_full, new_full = self._prefixed(old), self._prefixed(new)
+        try:
+            item = await self._get_item(old_full)
+            old_parent = old_full.rpartition("/")[0]
+            new_parent = new_full.rpartition("/")[0]
+            body = DriveItem(name=new_full.rsplit("/", 1)[-1])
+            if old_parent != new_parent:
+                parent = await self._ensure_parent(new_full)
+                body.parent_reference = ItemReference(id=parent.id)
+            await self._retrying(lambda: self._drive().items.by_drive_item_id(item.id).patch(body), label="patch")
+        except Exception as exc:
+            raise self._map_error(exc, path=old) from exc
+
+    async def upload_files(self, items: Sequence[Tuple[Union[Path, BinaryIO, bytes], str]]) -> List[BatchItemResult]:
+        """Batch upload (AC8): bounded concurrency, per-item results in input order, never raises for an item."""
+        self._reject_shared_streams([src for src, _ in items])
+
+        async def run_one(index: int, src: Any, dst: str) -> FileMetadata:
+            source = io.BytesIO(src) if isinstance(src, (bytes, bytearray)) else src
+            return await self.upload_file(source, dst)
+
+        return await self._run_batch(list(items), run_one)
+
+    async def download_files(self, items: Sequence[Tuple[str, Union[Path, BinaryIO]]]) -> List[BatchItemResult]:
+        """Batch download with the same semantics as ``upload_files``."""
+        self._reject_shared_streams([dst for _, dst in items])
+
+        async def run_one(index: int, src: str, dst: Any) -> FileMetadata:
+            # Reuse the item _download_file_with_item already fetched from Graph instead of a
+            # second get_file_metadata round-trip per item (review finding).
+            item, _ = await self._download_file_with_item(src, dst)
+            return self._make_metadata(item, full_path=self._prefixed(src))
+
+        return await self._run_batch(list(items), run_one)
+
+    def _reject_shared_streams(self, objs: List[Any]) -> None:
+        seen = set()
+        for obj in objs:
+            if isinstance(obj, (Path, str, bytes)):
+                continue
+            obj_id = id(obj)
+            if obj_id in seen:
+                raise ValueError("the same stream object appears more than once in the batch")
+            seen.add(obj_id)
+
+    async def _run_batch(
+        self, items: List[Tuple[Any, Any]], run_one: Callable[[int, Any, Any], Awaitable[FileMetadata]]
+    ) -> List[BatchItemResult]:
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+        abort = asyncio.Event()
+        results: List[Optional[BatchItemResult]] = [None] * len(items)
+
+        async def worker(index: int, src: Any, dst: Any) -> None:
+            async with semaphore:
+                if abort.is_set():
+                    results[index] = BatchItemResult(
+                        index=index,
+                        source=(
+                            str(src)
+                            if isinstance(src, (Path, str))
+                            else ("<bytes>" if isinstance(src, bytes) else "<stream>")
+                        ),
+                        destination=str(dst) if isinstance(dst, (Path, str)) else "<stream>",
+                        state="skipped",
+                        ok=False,
+                        error="aborted after authentication failure",
+                        error_code="auth",
+                        status_code=None,
+                        attempts=0,
+                    )
+                    return
+
+                _RETRY_COUNTER.set([0])
+                try:
+                    metadata = await run_one(index, src, dst)
+                    results[index] = BatchItemResult(
+                        index=index,
+                        source=(
+                            str(src)
+                            if isinstance(src, (Path, str))
+                            else ("<bytes>" if isinstance(src, bytes) else "<stream>")
+                        ),
+                        destination=str(dst) if isinstance(dst, (Path, str)) else "<stream>",
+                        state="succeeded",
+                        ok=True,
+                        metadata=metadata,
+                        error=None,
+                        error_code=None,
+                        status_code=None,
+                        attempts=1 + _RETRY_COUNTER.get()[0],
+                    )
+                except Exception as exc:
+                    error_code, status_code = self._classify(exc)
+                    if error_code == "auth":
+                        abort.set()
+                    results[index] = BatchItemResult(
+                        index=index,
+                        source=(
+                            str(src)
+                            if isinstance(src, (Path, str))
+                            else ("<bytes>" if isinstance(src, bytes) else "<stream>")
+                        ),
+                        destination=str(dst) if isinstance(dst, (Path, str)) else "<stream>",
+                        state="failed",
+                        ok=False,
+                        metadata=None,
+                        error=str(exc),
+                        error_code=error_code,
+                        status_code=status_code,
+                        attempts=1 + _RETRY_COUNTER.get()[0],
+                    )
+
+        tasks = [asyncio.create_task(worker(index, src, dst)) for index, (src, dst) in enumerate(items)]
+        await asyncio.gather(*tasks)
+        return [result for result in results if result is not None]
+
+    def _classify(self, exc: BaseException) -> Tuple[str, Optional[int]]:
+        status = self._status_code_of(exc)
+        if isinstance(exc, PermissionError):
+            return "auth", status
+        if isinstance(exc, FileNotFoundError):
+            return "not_found", status
+        if isinstance(exc, FileExistsError):
+            return "conflict", status
+        if isinstance(exc, TimeoutError):
+            return "timeout", status
+        if isinstance(exc, ValueError) and "path" in str(exc).lower():
+            return "invalid_path", status
+        if isinstance(exc, GraphFileManagerError) and status in {429, 503, 504}:
+            return "throttled", status
+        if isinstance(exc, OSError):
+            return "io", status
+        return "unknown", status
+
+    def setup(
+        self, app: Any, route: str = "/data", base_url: Optional[str] = None, *, serving_max_bytes: Optional[int] = None
+    ) -> FileServingExtension:
+        """Mount a size-guarded FileServingExtension (buffers whole objects — S7; guard AC22). Returns the extension."""
+        ext = _GuardedFileServingExtension(
+            manager=self,
+            route=route,
+            manager_name=self.manager_name,
+            max_bytes=serving_max_bytes or self.SERVING_MAX_BYTES,
+        )
+        ext.setup(app)
+        self._serving_ext = ext
+        return ext
+
+    async def handle_file(self, request: Any) -> Any:
+        """Size guard then the extension's buffered handler (S3 parity with s3.py:635)."""
+        ext = getattr(self, "_serving_ext", None) or _GuardedFileServingExtension(
+            manager=self, manager_name=self.manager_name, max_bytes=self.SERVING_MAX_BYTES
+        )
+        return await ext.handle_file(request)

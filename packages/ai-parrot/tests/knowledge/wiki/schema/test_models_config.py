@@ -10,7 +10,7 @@ from parrot.knowledge.wiki.schema.models import ColumnRecord, TableRecord
 def test_project_config_has_enabled_schema(tmp_path: Path) -> None:
     """Schema config defaults to enabled and resolves its plane path."""
     config = WikiProjectConfig()
-    assert config.schema.enabled is True
+    assert config.schema_plane.enabled is True
     assert config.schema_path(tmp_path) == tmp_path / PARROT_DIR / "schema"
 
 
@@ -19,7 +19,7 @@ def test_project_config_without_schema_loads(tmp_path: Path) -> None:
     config_path = tmp_path / PARROT_DIR / "wiki.json"
     config_path.parent.mkdir()
     config_path.write_text('{"wiki_name": "example"}', encoding="utf-8")
-    assert load_project_config(tmp_path).schema.enabled is True
+    assert load_project_config(tmp_path).schema_plane.enabled is True
 
 
 def test_table_metadata_accepts_ddl_source() -> None:

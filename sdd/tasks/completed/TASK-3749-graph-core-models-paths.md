@@ -517,10 +517,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3749
+- Feature: sharepoint-filemanager
+- Implementation SHA: d522d33b1060a176645d76d11773181ef220e18a
+- Closed at (UTC): 2026-09-25T18:47:42+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_tier_gate_note | Full ai-parrot distribution escalation (core-path/impact-cap rule, tracked as FEAT-604 draft) collects 18 test files that fail to import for reasons unrelated to this task (existing on origin/dev prior to this feature): crypto/notification/scheduler/forms/obsidian/handlers modules. None overlap this task's files. This task's own declared test file is the acceptance evidence above. |
+| scoped_test_result | packages/ai-parrot/tests/interfaces/test_graph_filemanager.py: 10 passed, 0 failed (run directly, 2026-09-25T18:44 UTC) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 334.233s · Tokens: n/a |

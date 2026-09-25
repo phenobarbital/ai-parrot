@@ -519,10 +519,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3748
+- Feature: sharepoint-filemanager
+- Implementation SHA: 2027a4e33f635a3f5c89d45135192da993ea31d8
+- Closed at (UTC): 2026-09-25T18:33:46+00:00
+- Fix commits: 2027a4e33f635a3f5c89d45135192da993ea31d8
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| review_fix | Found via own declared self-test (test_graph_fakes.py::test_children_paginate_with_next_link): FakeDrive.children() had an off-by-one path-depth bug breaking pagination for nested folders. Fixed in commit 2027a4e33 (see coder-feedback:45aa5f7b338c055ea682deb7). All 8 self-tests pass after fix; ruff clean. |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 311.66s · Tokens: n/a |
+| validation_waiver | Merge-tier validation (tier=merge) escalates to the full ai-parrot distribution (pyproject.toml core-path escalation carried over from this chunk). Red due to 18 pre-existing, unrelated test-collection errors already present on origin/dev (same set confirmed on the primary checkout directly, unrelated to this task's files). Tracked separately as FEAT-604 (draft). User explicitly authorized continuing past this known debt. This task's OWN declared test file (test_graph_fakes.py) is the real acceptance evidence: 8 passed after the review fix above. |

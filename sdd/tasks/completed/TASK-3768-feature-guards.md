@@ -286,10 +286,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3768
+- Feature: sharepoint-filemanager
+- Implementation SHA: 859d193446df7b81c68a14f6603164d57c6931ba
+- Closed at (UTC): 2026-09-25T21:37:27+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 653.8s · Tokens: 2224900/13646 |
+| validation_note | AC23 guard test invented a nonexistent API and was delivered unexecuted (agent could not run pytest); fixed using the proven fake-client wiring pattern from test_sharepoint_filemanager.py/test_graph_filemanager.py (coder-feedback:e0cf9994c08e771847fc5d82). pytest test_feat603_guards.py -q -> 12 passed. Merge-tier selector errored trying to pytest-collect the declared .json snapshot data file as a test module -- a selector quirk, not a content defect. |

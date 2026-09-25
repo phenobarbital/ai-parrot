@@ -239,10 +239,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3765
+- Feature: sharepoint-filemanager
+- Implementation SHA: 79c88e60fdff19d182a09a4ac18f5579d9680d02
+- Closed at (UTC): 2026-09-25T18:20:33+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| scoped_test_result | packages/ai-parrot/tests/test_msgraph_extra.py: 2 passed, 0 failed (run directly, 2026-09-25T18:04 UTC) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 161.032s · Tokens: n/a |
+| validation_waiver | Merge-tier validation (tier=merge) escalates to the full ai-parrot distribution because this task touches pyproject.toml (a core path). The escalated run is red due to 18 pre-existing, unrelated test-collection errors already present on origin/dev before this task (confirmed by running the identical pytest invocation directly against the primary checkout's dev branch: same 18 errors, same files -- crypto/notification/scheduler/forms/obsidian/handlers/expense_approval -- none overlapping pyproject.toml or test_msgraph_extra.py). Root-cause fix is tracked separately as FEAT-604 (merge-tier-validation-cost, still draft) plus already-landed fixes (PR #1494 merge-scope, PR #1495 chat-storage test imports, PR #1496 remove-extracted-finance-tests) reduced the count from 26 to these 18. User explicitly authorized continuing past this known, out-of-scope debt. Direct evidence this task's own delivery is correct: `PYTHONPATH=packages/ai-parrot/src pytest packages/ai-parrot/tests/test_msgraph_extra.py` -> 2 passed. |

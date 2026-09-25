@@ -299,10 +299,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3763
+- Feature: sharepoint-filemanager
+- Implementation SHA: d42ef2e86ba422fb0b9737cd66988ff9593e81e2
+- Closed at (UTC): 2026-09-25T21:11:45+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 210.1s · Tokens: n/a |
+| validation_note | packages/ai-parrot-tools/tests collection blocked by 5 pre-existing unrelated errors (ledger issue:69189219cfd6). Own tests confirmed manually: 75 passed across the three o365 test files; tests/tools/test_office365_toolkit.py 8/8 passed. |
