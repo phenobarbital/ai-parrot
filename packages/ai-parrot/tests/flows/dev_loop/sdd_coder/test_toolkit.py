@@ -42,6 +42,9 @@ EXPECTED_TOOLS = {
     "coder_read_artifact",
     # FEAT-584 M8/R8: deterministic background status + protected validation.
     "coder_bg_status",
+    # The blocking counterpart of `coder_bg_status`: a validation handle raises
+    # no host notification, so waiting on one needs its own bounded primitive.
+    "coder_bg_wait",
     "coder_run_validation",
 }
 
@@ -200,6 +203,7 @@ def test_registered_schemas_require_execution_identity(three_seat_roster):
         "coder_delivery_report",
         "coder_read_artifact",
         "coder_bg_status",
+        "coder_bg_wait",
         "coder_run_validation",
     }
     unscoped = {"coder_wait", "coder_status", "coder_feedback_report"}

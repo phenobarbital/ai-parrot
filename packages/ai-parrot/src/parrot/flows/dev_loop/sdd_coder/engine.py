@@ -134,6 +134,13 @@ GIT_TIMEOUT_S: float = 300.0
 #: How long `_consolidate` waits for `_merge_lock` before failing with ``merge_busy``
 #: instead of pinning the request handler behind another consolidation.
 MERGE_LOCK_TIMEOUT_S: float = 120.0
+#: Bounds for one `bg_wait` blocking budget, mirroring `wait()`'s own <=300s cap:
+#: a background handle is waited on in bounded slices, never indefinitely.
+BG_WAIT_MIN_TIMEOUT_S: int = 1
+BG_WAIT_MAX_TIMEOUT_S: int = 300
+#: Poll cadence `bg_wait` falls back to for a handle this engine does not
+#: supervise in-process (no settlement task to await).
+BG_WAIT_POLL_INTERVAL_S: float = 1.0
 _CONFLICT_LINE = re.compile(r"^CONFLICT \([^)]*\):.* in (.+)$", re.M)
 
 
@@ -1077,6 +1084,68 @@ class SddCoderEngine:
             )
         return status
 
+    async def bg_wait(
+        self,
+        execution_id: str,
+        handle: str,
+        timeout_seconds: int = 120,
+        since_revision: Optional[int] = None,
+        tail_bytes: int = 2048,
+    ) -> BackgroundStatus:
+        """Block up to *timeout_seconds* for a background handle to leave `pending`/`running`.
+
+        `bg_status` is deliberately non-blocking, and `wait()` only accepts a
+        chunk `job_id` -- so a caller holding a `coder_run_validation` handle had
+        no sanctioned way to wait at all: a background validation is a process
+        this server owns, it raises no host-level task notification, and the
+        orchestrator prompt forbids shell `sleep`/`ps` loops. That left ending
+        the turn as the only option, which stalls an unattended run until a
+        human pokes it. This method is that missing primitive, mirroring
+        `wait()`'s own bounded-blocking contract.
+
+        Ownership, scope and existence are checked BEFORE any waiting (a
+        foreign or unknown handle fails immediately, it never blocks), and the
+        returned snapshot is always `bg_status`'s own authoritative one:
+        `state="finished"` still reports a receipt, not success -- inspect
+        `outcome`/`exit_code`. Expiring the budget returns the last known
+        non-terminal snapshot; it never cancels the run, never kills the child
+        and never resurrects a state from an absent process or an empty log.
+
+        Args:
+            execution_id: The execution that must own this handle.
+            handle: The opaque handle emitted at registration time.
+            timeout_seconds: Blocking budget, 1..300.
+            since_revision: Forwarded to `bg_status` for the returned snapshot.
+            tail_bytes: Forwarded to `bg_status`, 0..4096.
+
+        Raises:
+            CoderFailure: every code `bg_status` itself raises, plus
+                invalid_arguments when `timeout_seconds` is out of range.
+        """
+        if not (BG_WAIT_MIN_TIMEOUT_S <= timeout_seconds <= BG_WAIT_MAX_TIMEOUT_S):
+            raise CoderFailure(
+                "invalid_arguments",
+                f"timeout_seconds must be within {BG_WAIT_MIN_TIMEOUT_S}..{BG_WAIT_MAX_TIMEOUT_S},"
+                f" got {timeout_seconds!r}",
+            )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        status = await self.bg_status(execution_id, handle, since_revision=since_revision, tail_bytes=tail_bytes)
+        while status.state in ("pending", "running"):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            awaited = False
+            if self._validation_supervisor is not None:
+                awaited = await self._validation_supervisor.wait(execution_id, handle, remaining)
+            if not awaited:
+                # A handle this engine did not supervise in-process (a chunk or
+                # native launch, or a record recovered from the durable store):
+                # poll its authoritative record instead of inventing a receipt.
+                await asyncio.sleep(min(BG_WAIT_POLL_INTERVAL_S, max(remaining, 0.0)))
+            status = await self.bg_status(execution_id, handle, since_revision=since_revision, tail_bytes=tail_bytes)
+        return status
+
     async def run_validation(
         self,
         feature: str,
@@ -1134,6 +1203,19 @@ class SddCoderEngine:
                 "tier='feature' requires the full applicable task set from the per-spec index",
             )
 
+        # A merge-tier check is scoped to what THIS chunk's merges introduced;
+        # the feature tier keeps the cumulative base on purpose -- it is the
+        # whole-feature gate, not a per-merge one.
+        base_ref: Optional[str] = None
+        if tier == "merge":
+            base_ref = await self._merge_scope_base(ctx, task_ids, execution_id)
+            if base_ref is None:
+                self.logger.warning(
+                    "run_validation: no merged attempt branch resolved for %s; falling back to the cumulative"
+                    " diff base for this merge-tier selection",
+                    ",".join(task_ids),
+                )
+
         try:
             registration = await self._validation_supervisor.start(
                 feature=feature,
@@ -1143,6 +1225,7 @@ class SddCoderEngine:
                 tier=tier,
                 timeout_seconds=timeout_seconds,
                 request_id=request_id,
+                base_ref=base_ref,
             )
         except BackgroundConflictError as exc:
             raise CoderFailure("validation_request_conflict", str(exc)) from exc
@@ -1857,6 +1940,83 @@ class SddCoderEngine:
         return str(
             Path(self._base_path) / f"{ctx.feature_branch}--pool" / SubWorktreeManager._branch_suffix(worker_id)
         )  # noqa: SLF001
+
+    async def _merged_attempt_branch(
+        self, ctx: _FeatureCtx, task_id: str, execution_id: Optional[str]
+    ) -> Optional[str]:
+        """The newest attempt branch of *task_id* that is already contained in `ctx.feature_branch`.
+
+        Discovered from git refs by the `_branch_for` naming convention rather
+        than from `self._managers`, so it still resolves after `cleanup()` has
+        reclaimed the sub-worktrees (the orchestrator validates a merge only
+        once the merge itself is done) and across an engine restart.
+        `execution_id` narrows the candidates to THIS execution's own branches,
+        never a previous execution's leftovers for the same task+attempt.
+
+        Returns None when no such merged branch exists -- the caller must then
+        fall back to the cumulative base, never to a narrower guess.
+        """
+        prefix = f"{ctx.feature_branch}--{task_id}-a"
+        rc, out, _err = await _git("branch", "--list", f"{prefix}*", "--format=%(refname:short)", cwd=ctx.worktree)
+        if rc != 0:
+            return None
+        exec_hex = execution_id.replace("-", "") if execution_id else ""
+        candidates: List[Tuple[int, str]] = []
+        for line in out.splitlines():
+            name = line.strip()
+            if not name.startswith(prefix):
+                continue
+            attempt_part = name[len(prefix) :].split("-", 1)[0]
+            if not attempt_part.isdigit():
+                continue
+            if exec_hex and not name.endswith(exec_hex):
+                continue
+            candidates.append((int(attempt_part), name))
+        for _attempt, name in sorted(candidates, reverse=True):
+            rc, _out, _err = await _git("merge-base", "--is-ancestor", name, ctx.feature_branch, cwd=ctx.worktree)
+            if rc == 0:
+                return name
+        return None
+
+    async def _merge_scope_base(
+        self, ctx: _FeatureCtx, task_ids: List[str], execution_id: Optional[str]
+    ) -> Optional[str]:
+        """Diff base covering exactly what merging *task_ids* introduced on the feature branch.
+
+        A merge-tier validation used to be planned from `origin/dev...HEAD`,
+        i.e. the feature branch's WHOLE cumulative diff, so every merge
+        re-validated every task merged before it; past a few dozen changed
+        files the impact cap and the core-path list escalate whole package
+        suites and the "changed scope" check degenerates into a serial
+        monorepo-wide sweep.
+
+        The base returned here is the common fork point of these tasks' own
+        attempt branches (`_consolidate_diff_base` resolves each one, including
+        the already-merged and manually-resolved cases). Diffing from there to
+        HEAD therefore also covers whatever the orchestrator itself committed
+        on the feature branch alongside those merges -- review fixes, a manual
+        conflict resolution -- which a per-branch union would miss.
+
+        Returns None when any task's merged branch cannot be resolved, so the
+        caller keeps the cumulative base: slower, never less covered.
+        """
+        bases: List[str] = []
+        for task_id in task_ids:
+            branch = await self._merged_attempt_branch(ctx, task_id, execution_id)
+            if branch is None:
+                return None
+            base = await _consolidate_diff_base(ctx.feature_branch, branch, cwd=ctx.worktree)
+            if not base:
+                return None
+            bases.append(base)
+        if not bases:
+            return None
+        if len(bases) == 1:
+            return bases[0]
+        rc, out, _err = await _git("merge-base", *bases, cwd=ctx.worktree)
+        if rc != 0 or not out.strip():
+            return None
+        return out.strip()
 
     async def _write_attempt_scope(self, worktree_path: str, task_id: str, task_file: str, base_ref: str) -> None:
         """Write the task-tier test-scope context into an attempt sub-worktree (FEAT-563).

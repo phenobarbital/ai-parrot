@@ -493,8 +493,26 @@ class ValidationSupervisor:
         tier: Literal["merge", "feature"],
         timeout_seconds: int,
         request_id: str,
+        base_ref: Optional[str] = None,
     ) -> BackgroundRegistration:
         """Admit only a declared, protected, idempotent selection; never await the suite.
+
+        `base_ref` is the diff base the tier-scoped selection is computed from.
+        The caller (`SddCoderEngine.run_validation`) resolves it deterministically
+        from the merged task branches themselves, so a merge-tier check covers
+        what THIS chunk introduced instead of the feature branch's whole
+        cumulative diff against `origin/dev` -- re-validating every previously
+        merged task on every merge made the selection grow with the feature and
+        escalated whole package suites (impact cap / core paths) long before the
+        feature was done. `None` keeps the historical `_DEFAULT_BASE_REF`
+        behaviour, which is also the deliberate fallback whenever the caller
+        cannot resolve a narrower base: slower, never less covered.
+
+        It is deliberately NOT part of `_payload_hash`: the base is derived
+        server-side from repository state, not declared by the caller, so
+        folding it in would turn a legitimate idempotent replay (same
+        `request_id`, same declared payload) into a `BackgroundConflictError`
+        as soon as another task merged in between.
 
         Raises:
             ValueError: a malformed request (bad ids, tier, timeout, paths).
@@ -521,6 +539,8 @@ class ValidationSupervisor:
                 raise ValueError(f"invalid task id {task_id!r}; expected TASK-<1-5 digits> (never a foreign id)")
         if not request_id:
             raise ValueError("request_id must be a non-empty string")
+        if base_ref is not None and not base_ref.strip():
+            raise ValueError("base_ref must be a non-empty string when supplied")
 
         handle = request_id
         launch_id = self._payload_hash(
@@ -550,7 +570,7 @@ class ValidationSupervisor:
             return registration
 
         try:
-            plan = await self._plan_selection(worktree=worktree, tier=tier)
+            plan = await self._plan_selection(worktree=worktree, tier=tier, base_ref=base_ref)
             log_path = self._log_path(execution_id, handle)
             await asyncio.to_thread(log_path.parent.mkdir, parents=True, exist_ok=True)
 
@@ -602,6 +622,42 @@ class ValidationSupervisor:
         self._background_tasks[(execution_id, handle)] = task
         return registration
 
+    async def wait(self, execution_id: str, handle: str, timeout_seconds: float) -> bool:
+        """Block up to *timeout_seconds* for this handle's OWN settlement task, without cancelling it.
+
+        Returns True when a settlement task for `(execution_id, handle)` is
+        owned by THIS supervisor instance and was awaited (whether it settled
+        within the budget or the wait expired), False when there is nothing to
+        await here -- a handle registered by another launch path, an already
+        drained entry, or a process this instance no longer owns. The caller
+        (`SddCoderEngine.bg_wait`) falls back to bounded polling on False, so a
+        `False` answer never means "finished" and never invents a receipt.
+
+        The task is `shield`-ed: a caller's expiring budget must never cancel
+        the supervision that owns the child process, its deadline and its
+        terminal receipt. A settlement failure is not re-raised either -- it is
+        already logged and recorded by `_supervise`; this method only ever
+        reports *whether it waited*, never an outcome. The authoritative state
+        stays `BackgroundRegistry.status()`.
+        """
+        task = self._background_tasks.get((execution_id, handle))
+        if task is None:
+            return False
+        if timeout_seconds > 0 and not task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout_seconds)
+            except asyncio.TimeoutError:
+                pass
+            except Exception:
+                # `_supervise` already logged and recorded whatever went wrong;
+                # the authoritative answer is the registry's, not this wait's.
+                # `CancelledError` is deliberately NOT swallowed: it means the
+                # CALLER was cancelled (the shielded task never is).
+                self.logger.debug(
+                    "background settlement raised while waiting on handle=%s; status stays authoritative", handle
+                )
+        return True
+
     # -- admission helpers ---------------------------------------------------
 
     async def _claim(self, execution_id: str, handle: str) -> bool:
@@ -641,9 +697,16 @@ class ValidationSupervisor:
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    async def _plan_selection(self, *, worktree: Path, tier: Literal["merge", "feature"]) -> "ScopePlan":
-        """Build the tier-scoped selection from the existing selector -- never a free-form argv."""
-        changed = await asyncio.to_thread(changed_files, worktree, _DEFAULT_BASE_REF)
+    async def _plan_selection(
+        self, *, worktree: Path, tier: Literal["merge", "feature"], base_ref: Optional[str] = None
+    ) -> "ScopePlan":
+        """Build the tier-scoped selection from the existing selector -- never a free-form argv.
+
+        `base_ref` defaults to `_DEFAULT_BASE_REF` (`select_tests.py`'s own CLI
+        default) whenever the caller could not resolve a narrower, merge-scoped
+        base -- the selection is then the historical cumulative one.
+        """
+        changed = await asyncio.to_thread(changed_files, worktree, base_ref or _DEFAULT_BASE_REF)
         return await asyncio.to_thread(plan_tests, worktree=worktree, changed_files=changed, tier=tier)
 
     def _log_path(self, execution_id: str, handle: str) -> Path:
