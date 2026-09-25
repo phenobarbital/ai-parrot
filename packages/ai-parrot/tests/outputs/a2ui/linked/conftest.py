@@ -1,4 +1,5 @@
 """Shared fixtures for linked-surface tests (FEAT-598)."""
+
 from __future__ import annotations
 
 import datetime as dt

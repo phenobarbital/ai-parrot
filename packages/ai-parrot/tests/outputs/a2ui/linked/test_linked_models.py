@@ -1,4 +1,5 @@
 """Unit tests for linked descriptor models (FEAT-598 M1)."""
+
 from __future__ import annotations
 
 import subprocess

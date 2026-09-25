@@ -1,4 +1,5 @@
 """Linked-surface descriptors (FEAT-598)."""
+
 from __future__ import annotations
 
 import importlib

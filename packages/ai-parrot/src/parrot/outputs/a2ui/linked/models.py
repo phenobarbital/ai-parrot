@@ -1,4 +1,5 @@
 """Wire models of ``parrot_data_sources`` and the transform DSL v1 (FEAT-598)."""
+
 from __future__ import annotations
 
 import re
