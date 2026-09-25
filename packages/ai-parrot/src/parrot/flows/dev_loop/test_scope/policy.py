@@ -745,6 +745,7 @@ XDIST_SAFE_DISTRIBUTIONS: frozenset[str] = frozenset(
         "ai-parrot-client-amazon",
         "ai-parrot-client-anthropic",
         "ai-parrot-client-gemma4",
+        "ai-parrot-client-google",
         "ai-parrot-client-grok",
         "ai-parrot-client-groq",
         "ai-parrot-client-hf",
@@ -757,7 +758,12 @@ XDIST_SAFE_DISTRIBUTIONS: frozenset[str] = frozenset(
         "ai-parrot-client-openrouter",
         "ai-parrot-client-vllm",
         "ai-parrot-client-zai",
+        "ai-parrot-embeddings",
+        "ai-parrot-loaders",
         "ai-parrot-openlit-bridge",
+        "ai-parrot-pipelines",
+        "ai-parrot-visualizations",
+        "navrules",
     }
 )
 TIERS: tuple[str, ...] = ("task", "merge", "feature")
