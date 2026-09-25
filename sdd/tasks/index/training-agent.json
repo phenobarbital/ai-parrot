@@ -698,7 +698,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -708,8 +708,9 @@
       "parallelism_notes": "documents the command set defined by TASK-3727 (parrot_tools/procedures/cli.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3729-manuals-docs.md"
+      "completed_at": "2026-09-25T18:35:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3729-manuals-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3730",
