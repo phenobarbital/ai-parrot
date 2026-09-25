@@ -21,12 +21,13 @@ def _extracted(value: str | int, *, node_id: str = "node-1") -> Extracted[str | 
 
 def _source(**updates: object) -> cd.SourceInfo:
     """Create a minimal source context for deterministic assembly tests."""
-    return cd.SourceInfo(
-        source_sha256="a" * 64,
-        source_format="pdf",
-        revision="A",
-        **updates,
-    )
+    defaults: dict[str, object] = {
+        "source_sha256": "a" * 64,
+        "source_format": "pdf",
+        "revision": "A",
+    }
+    defaults.update(updates)
+    return cd.SourceInfo(**defaults)
 
 
 @pytest.mark.parametrize(
