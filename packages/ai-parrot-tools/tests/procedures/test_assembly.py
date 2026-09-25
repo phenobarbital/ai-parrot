@@ -69,7 +69,9 @@ def test_assemble_filters_by_serial_and_flags_unknown():
     card = make_card()
     step = card.procedures[0].steps[3]
     evidence = Evidence(node_id="serial", quote="A100 to A250", page=4)
-    applicability = Applicability(serial_ranges=[SerialRange(start="A100", end="A250", format="A000")], evidence=evidence)
+    applicability = Applicability(
+        serial_ranges=[SerialRange(start="A100", end="A250", format="A000")], evidence=evidence
+    )
     card.procedures[0].steps[3] = step.model_copy(update={"applicability": applicability})
     rows = _rows(card)
 
@@ -91,7 +93,9 @@ def test_single_step_keeps_prerequisites_and_hazards():
     card.procedures[0].steps[1] = step.model_copy(
         update={
             "parts": [PartRef(part_id="nut", name=Extracted[str](value="Nut", evidence=evidence, confidence=1.0))],
-            "tools": [ToolRef(tool_id="wrench", name=Extracted[str](value="Wrench", evidence=evidence, confidence=1.0))],
+            "tools": [
+                ToolRef(tool_id="wrench", name=Extracted[str](value="Wrench", evidence=evidence, confidence=1.0))
+            ],
             "media": [MediaLink(media_id="figure-1", role="primary", confidence=1.0)],
         }
     )

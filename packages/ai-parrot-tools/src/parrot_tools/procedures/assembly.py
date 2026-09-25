@@ -117,9 +117,7 @@ def _select_procedure(result: RetrievalResult) -> Procedure:
     """Return the card procedure identified by the traversal projection."""
     assert result.manual is not None
     procedure_ids = {
-        value
-        for row in result.rows
-        if (value := _identifier(row.get("procedure"), "procedure_id")) is not None
+        value for row in result.rows if (value := _identifier(row.get("procedure"), "procedure_id")) is not None
     }
     if len(procedure_ids) > 1:
         raise ValueError("assembly requires rows for one procedure")
