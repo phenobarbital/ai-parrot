@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3745 — registry and packaging."""
+
 import importlib
 import tomllib
 from pathlib import Path
