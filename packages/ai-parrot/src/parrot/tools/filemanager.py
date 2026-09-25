@@ -8,7 +8,7 @@ Preferred API: ``FileManagerToolkit`` — each file operation is a separate, foc
 Legacy API: ``FileManagerTool`` — single tool with an ``operation`` dispatch field (deprecated).
 """
 
-from typing import Literal, Optional, Dict, Any, Union, Set
+from typing import Literal, Optional, Dict, Any, List, Tuple, Union, Set
 from pathlib import Path
 from io import BytesIO
 import importlib
@@ -18,6 +18,7 @@ from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 from .toolkit import AbstractToolkit
 from parrot.conf import OUTPUT_DIR
 from parrot.interfaces.file import FileManagerInterface
+from parrot.interfaces.file.batch import BatchItemResult, BatchSummary
 from navigator.utils.file import FileManagerFactory as _UpstreamFileManagerFactory
 
 #: Storage backends accepted by :class:`FileManagerFactory` / ``FileManagerTool`` /
@@ -468,6 +469,9 @@ _OP_TO_METHOD: Dict[str, str] = {
     "get_url": "get_file_url",
     "get_metadata": "get_file_metadata",
     "create": "create_file",
+    "find": "find_files",
+    "batch_upload": "batch_upload",
+    "batch_download": "batch_download",
 }
 _ALL_OPS: frozenset = frozenset(_OP_TO_METHOD)
 
@@ -489,6 +493,9 @@ class FileManagerToolkit(AbstractToolkit):
       - ``fs_get_file_url``    — get a URL to access a file
       - ``fs_get_file_metadata`` — fetch detailed file metadata
       - ``fs_create_file``     — create a new file with text content
+      - ``fs_find_files``      — find files by keyword(s)/extension under a prefix
+      - ``fs_batch_upload``    — upload many local files in one call
+      - ``fs_batch_download``  — download many files in one call
 
     Supported backends:
       - ``"fs"``   — local filesystem (sandboxed by default)
@@ -610,6 +617,27 @@ class FileManagerToolkit(AbstractToolkit):
         if size > self.max_file_size:
             raise ValueError(f"File size ({size} bytes) exceeds maximum allowed size " f"({self.max_file_size} bytes)")
 
+    #: Backends whose paths are drive-relative (Microsoft Graph document libraries) — never
+    #: joined onto the local ``default_output_dir`` (FEAT-603).
+    _DRIVE_RELATIVE_BACKENDS = frozenset({"sharepoint", "onedrive"})
+
+    def _storage_path(self, path: Optional[str]) -> str:
+        """Resolve a *storage-side* path for the configured backend.
+
+        Graph backends (``sharepoint``, ``onedrive``) address files by a drive-relative path,
+        so *path* is returned unchanged. Every other backend keeps the historical behaviour of
+        joining it onto ``default_output_dir`` via :meth:`_resolve_output_path`.
+
+        Args:
+            path: Storage-side path (relative or absolute), or ``None``/empty.
+
+        Returns:
+            The path to hand to ``self.manager`` for this backend.
+        """
+        if self.manager_type in self._DRIVE_RELATIVE_BACKENDS:
+            return (path or "").strip()
+        return self._resolve_output_path(path) if path else ""
+
     def _resolve_output_path(self, path: Optional[str] = None) -> str:
         """Resolve *path* relative to the default output directory.
 
@@ -647,7 +675,7 @@ class FileManagerToolkit(AbstractToolkit):
         Returns:
             Dict containing ``files``, ``count``, ``directory``, ``pattern``.
         """
-        resolved = self._resolve_output_path(path) if path else ""
+        resolved = self._storage_path(path)
         self.logger.info("Listing files in '%s' with pattern '%s'", resolved, pattern)
         files = await self.manager.list_files(resolved, pattern)
         return {
@@ -703,7 +731,7 @@ class FileManagerToolkit(AbstractToolkit):
         dest = destination_name or source.name
         if destination:
             dest = str(Path(destination) / dest)
-        dest = self._resolve_output_path(dest)
+        dest = self._storage_path(dest)
 
         self.logger.info("Uploading '%s' to '%s'", source_path, dest)
         metadata = await self.manager.upload_file(source, dest)
@@ -928,7 +956,7 @@ class FileManagerToolkit(AbstractToolkit):
         content_bytes = content.encode(encoding)
         self._check_file_size(len(content_bytes))
 
-        dest = self._resolve_output_path(path)
+        dest = self._storage_path(path)
         self.logger.info("Creating file '%s' (%d bytes)", dest, len(content_bytes))
 
         # Upstream create_from_bytes returns bool; fetch metadata explicitly.
@@ -943,3 +971,193 @@ class FileManagerToolkit(AbstractToolkit):
             "content_type": metadata.content_type,
             "url": metadata.url,
         }
+
+    async def find_files(
+        self,
+        keywords: Optional[Union[str, List[str]]] = None,
+        extension: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Find files whose name contains ALL ``keywords`` and ends with ``extension``, under ``prefix``.
+
+        Uses the backend's server-side search when available (SharePoint / OneDrive), otherwise lists and filters.
+
+        Args:
+            keywords: One substring or a list of substrings that must all appear in the file name.
+            extension: File extension filter, e.g. ``".csv"``.
+            prefix: Only search under this folder/path prefix.
+
+        Returns:
+            Dict with ``files`` (list of file info dicts, same shape as ``list_files``) and ``count``.
+        """
+        resolved_prefix = self._storage_path(prefix) if prefix else None
+        self.logger.info(
+            "Finding files under '%s' (keywords=%s, extension=%s)", resolved_prefix, keywords, extension
+        )
+        files = await self.manager.find_files(keywords=keywords, extension=extension, prefix=resolved_prefix)
+        return {
+            "files": [
+                {
+                    "name": f.name,
+                    "path": f.path,
+                    "size": f.size,
+                    "content_type": f.content_type,
+                    "modified_at": f.modified_at.isoformat() if f.modified_at else None,
+                    "url": f.url,
+                }
+                for f in files
+            ],
+            "count": len(files),
+        }
+
+    async def batch_upload(self, items: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Upload many local files at once; one failing file never fails the batch.
+
+        Args:
+            items: ``[{"source": "<local file path>", "destination": "<storage path incl. file name>"}, ...]``.
+
+        Returns:
+            Dict with ``total``, ``succeeded``, ``failed``, ``skipped``, ``aborted`` and ``items`` (per-file result with
+            ``state``, ``error`` and ``metadata``), in input order.
+        """
+        results: Dict[int, BatchItemResult] = {}
+        pending: List[Tuple[int, Path, str]] = []
+
+        for index, item in enumerate(items):
+            source = item.get("source")
+            destination = item.get("destination")
+            if not source or not destination:
+                results[index] = BatchItemResult(
+                    index=index,
+                    source=source or "",
+                    destination=destination or "",
+                    state="failed",
+                    ok=False,
+                    error="both 'source' and 'destination' are required",
+                    error_code="invalid_path",
+                )
+                continue
+
+            source_path = Path(source)
+            if not source_path.exists():
+                results[index] = BatchItemResult(
+                    index=index,
+                    source=source,
+                    destination=destination,
+                    state="failed",
+                    ok=False,
+                    error=f"source file not found: {source}",
+                    error_code="invalid_path",
+                )
+                continue
+
+            try:
+                self._check_file_size(source_path.stat().st_size)
+            except ValueError as exc:
+                results[index] = BatchItemResult(
+                    index=index,
+                    source=source,
+                    destination=destination,
+                    state="failed",
+                    ok=False,
+                    error=str(exc),
+                    error_code="io",
+                )
+                continue
+
+            pending.append((index, source_path, self._storage_path(destination)))
+
+        if pending:
+            if hasattr(self.manager, "upload_files"):
+                native_results = await self.manager.upload_files([(src, dst) for _, src, dst in pending])
+                for (index, _, _), result in zip(pending, native_results, strict=True):
+                    result.index = index
+                    results[index] = result
+            else:
+                for index, source_path, dest in pending:
+                    try:
+                        metadata = await self.manager.upload_file(source_path, dest)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=str(source_path),
+                            destination=dest,
+                            state="succeeded",
+                            ok=True,
+                            metadata=metadata,
+                        )
+                    except Exception as exc:
+                        self.logger.warning("batch_upload: item %d failed: %s", index, exc)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=str(source_path),
+                            destination=dest,
+                            state="failed",
+                            ok=False,
+                            error=str(exc),
+                            error_code="unknown",
+                        )
+
+        ordered = [results[i] for i in range(len(items))]
+        return BatchSummary.from_items(ordered).model_dump(mode="json")
+
+    async def batch_download(self, items: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Download many files at once; one failing file never fails the batch.
+
+        Args:
+            items: ``[{"source": "<storage path>", "destination": "<local path, optional>"}, ...]``.
+
+        Returns:
+            Same shape as ``batch_upload``.
+        """
+        results: Dict[int, BatchItemResult] = {}
+        pending: List[Tuple[int, str, str]] = []
+
+        for index, item in enumerate(items):
+            source = item.get("source")
+            if not source:
+                results[index] = BatchItemResult(
+                    index=index,
+                    source="",
+                    destination=item.get("destination") or "",
+                    state="failed",
+                    ok=False,
+                    error="'source' is required",
+                    error_code="invalid_path",
+                )
+                continue
+
+            destination = item.get("destination") or self._resolve_output_path(Path(source).name)
+            pending.append((index, source, destination))
+
+        if pending:
+            if hasattr(self.manager, "download_files"):
+                native_results = await self.manager.download_files([(src, Path(dst)) for _, src, dst in pending])
+                for (index, _, _), result in zip(pending, native_results, strict=True):
+                    result.index = index
+                    results[index] = result
+            else:
+                for index, source, destination in pending:
+                    dest_path = Path(destination)
+                    try:
+                        await self.manager.download_file(source, dest_path)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=source,
+                            destination=destination,
+                            state="succeeded",
+                            ok=True,
+                        )
+                    except Exception as exc:
+                        self.logger.warning("batch_download: item %d failed: %s", index, exc)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=source,
+                            destination=destination,
+                            state="failed",
+                            ok=False,
+                            error=str(exc),
+                            error_code="unknown",
+                        )
+
+        ordered = [results[i] for i in range(len(items))]
+        return BatchSummary.from_items(ordered).model_dump(mode="json")
