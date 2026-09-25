@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3735 — pinned spec loader and pruner."""
+
 import json
 
 import pytest
@@ -57,11 +58,7 @@ def test_prune_spec_keeps_referenced_components_only():
                 "get": {
                     "tags": ["Invoice"],
                     "responses": {
-                        "200": {
-                            "content": {
-                                "application/json": {"schema": {"$ref": "#/components/schemas/Kept"}}
-                            }
-                        }
+                        "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Kept"}}}}
                     },
                 }
             },
@@ -69,11 +66,7 @@ def test_prune_spec_keeps_referenced_components_only():
                 "get": {
                     "tags": ["NotKept"],
                     "responses": {
-                        "200": {
-                            "content": {
-                                "application/json": {"schema": {"$ref": "#/components/schemas/Dropped"}}
-                            }
-                        }
+                        "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Dropped"}}}}
                     },
                 }
             },

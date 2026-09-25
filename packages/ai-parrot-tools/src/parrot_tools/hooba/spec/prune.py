@@ -4,6 +4,7 @@ Usage::
 
     python -m parrot_tools.hooba.spec.prune --source https://api.hooba.com/api/doc.json --out <file>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,9 +20,25 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 KEEP_TAGS: tuple[str, ...] = (
-    "Invoice", "InvoiceLine", "InvoiceSerie", "PurchaseInvoice", "PurchaseInvoiceLine", "Contact", "Tax",
-    "IncomeTax", "AccountingAccount", "PaymentMethod", "PaymentTerm", "Currency", "Document", "DocumentType",
-    "InboxFile", "UnitOfMeasure", "Account", "Member", "Authentication",
+    "Invoice",
+    "InvoiceLine",
+    "InvoiceSerie",
+    "PurchaseInvoice",
+    "PurchaseInvoiceLine",
+    "Contact",
+    "Tax",
+    "IncomeTax",
+    "AccountingAccount",
+    "PaymentMethod",
+    "PaymentTerm",
+    "Currency",
+    "Document",
+    "DocumentType",
+    "InboxFile",
+    "UnitOfMeasure",
+    "Account",
+    "Member",
+    "Authentication",
 )
 SERVERS = [{"url": "https://api.hooba.com"}]
 

@@ -1,4 +1,5 @@
 """The pinned Hooba OpenAPI document (FEAT-602 M3)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -59,9 +60,7 @@ def load_pinned_spec(path: Optional[str] = None) -> Dict[str, Any]:
         raise HoobaSpecError(f"Hooba OpenAPI document not found at {target}") from exc
 
     if is_override:
-        logger.warning(
-            "Loading Hooba OpenAPI document from override path %s (skipping SHA-256 pin check)", target
-        )
+        logger.warning("Loading Hooba OpenAPI document from override path %s (skipping SHA-256 pin check)", target)
     else:
         digest = hashlib.sha256(raw).hexdigest()
         if digest != PINNED_SHA256:
@@ -85,7 +84,9 @@ def load_pinned_spec(path: Optional[str] = None) -> Dict[str, Any]:
     if is_override:
         logger.warning(
             "Hooba OpenAPI override document at %s reports version %s (pinned=%s)",
-            target, doc_version, PINNED_VERSION,
+            target,
+            doc_version,
+            PINNED_VERSION,
         )
     if doc_version != PINNED_VERSION:
         logger.warning(
