@@ -564,8 +564,8 @@ class TestInlineAudioRendition:
         assert any("podcast.mp4" in a.title for a in sent_card.actions)
 
     @_needs_ffmpeg
-    async def test_rendition_is_cleaned_up(self, tmp_path, monkeypatch):
-        """The MP4 is scratch: it lives only until it has been uploaded."""
+    async def test_rendition_lands_beside_a_writable_source(self, tmp_path, monkeypatch):
+        """The MP4 is a real artefact now: an HTTP-served card links to it."""
         from notify.models import TeamsCard
 
         _set_teams_creds(monkeypatch)
@@ -583,8 +583,9 @@ class TestInlineAudioRendition:
         await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[wav])
 
         assert seen, "nothing was uploaded"
-        assert not seen[0].exists()
-        assert not seen[0].parent.exists()
+        assert seen[0].name == "podcast.mp4"
+        assert seen[0].parent == tmp_path      # beside the source, not scratch
+        assert seen[0].exists()                # and it survives the send
 
     async def test_document_never_becomes_media(self, tmp_path, monkeypatch):
         """Only video is playable — a script stays an ordinary link."""
@@ -633,24 +634,30 @@ class TestInlineAudioRendition:
         assert _media_elements(sent_card) == []
         assert any("podcast.wav" in a.title for a in sent_card.actions)
 
-    async def test_without_graph_credentials_nothing_is_transcoded(
+    async def test_renders_even_without_graph_credentials(
         self, tmp_path, monkeypatch
     ):
-        """Never spend CPU rendering for a card that can only list filenames."""
+        """The MP4 is needed whether it is uploaded or served over HTTP.
+
+        An earlier version skipped the render when Graph was unconfigured, on
+        the grounds that nothing could be uploaded. That reasoning does not
+        hold once a card can link to an HTTP-served directory instead: the
+        rendition is the artefact, not just the payload.
+        """
         from notify.models import TeamsCard
 
         _set_teams_creds(monkeypatch, present=False)
         owner = _mixin_instance()
         _SentCapture().patch(monkeypatch)
 
-        rendered = AsyncMock()
+        rendered = AsyncMock(return_value=None)
         owner._audio_as_video = rendered
 
         wav = tmp_path / "podcast.wav"
         wav.write_bytes(b"RIFF....WAVE")
         await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[wav])
 
-        rendered.assert_not_called()
+        rendered.assert_called_once()
 
     @_needs_ffmpeg
     async def test_plain_text_channel_keeps_the_original_audio(
@@ -672,3 +679,73 @@ class TestInlineAudioRendition:
         await owner._send_teams({"message": "Your podcast is ready"}, files=[wav])
 
         assert [f.name for f in uploaded] == ["podcast.wav"]
+
+
+class TestMediaAndPersistence:
+    """Support for the HTTP-served card: an embedded player and a real file."""
+
+    def test_build_teams_card_embeds_media(self):
+        owner = _mixin_instance()
+        card = owner.build_teams_card(
+            title="Podcast",
+            media=[{"url": "https://host/static/finance/podcast.mp4"}],
+        )
+        media = [b for b in card.to_adaptative()["body"] if b.get("type") == "Media"]
+        assert len(media) == 1
+        assert media[0]["sources"][0]["url"].endswith(".mp4")
+        # Required by the Teams web and desktop clients.
+        assert media[0]["sources"][0]["mimeType"] == "video/mp4"
+
+    def test_media_without_url_is_skipped(self):
+        owner = _mixin_instance()
+        card = owner.build_teams_card(title="Podcast", media=[{"poster": "x"}, {}])
+        assert not [b for b in card.to_adaptative()["body"] if b.get("type") == "Media"]
+
+    @_needs_ffmpeg
+    async def test_rendition_persists_beside_a_writable_source(
+        self, tmp_path, monkeypatch
+    ):
+        """An HTTP-served card links the MP4, so it must outlive the send."""
+        from notify.models import TeamsCard
+
+        _set_teams_creds(monkeypatch, present=False)   # no Graph: the URL path
+        owner = _mixin_instance()
+        _SentCapture().patch(monkeypatch)
+        owner._teams_graph_upload_links = AsyncMock(return_value=None)
+
+        wav = _make_wav(tmp_path / "podcast.wav")
+        await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[wav])
+
+        assert (tmp_path / "podcast.mp4").exists()
+        assert wav.exists()
+
+    @_needs_ffmpeg
+    async def test_rendition_falls_back_to_scratch_when_source_is_read_only(
+        self, tmp_path, monkeypatch
+    ):
+        """A read-only output directory must not break the notification."""
+        from notify.models import TeamsCard
+
+        _set_teams_creds(monkeypatch)
+        owner = _mixin_instance()
+        _SentCapture().patch(monkeypatch)
+
+        source = tmp_path / "readonly"
+        source.mkdir()
+        wav = _make_wav(source / "podcast.wav")
+        source.chmod(0o555)          # readable, not writable
+        uploaded: list = []
+
+        async def _upload(files):
+            uploaded.extend(files)
+            return [f"https://share/{f.name}" for f in files]
+
+        owner._teams_graph_upload_links = _upload
+        try:
+            await owner._send_teams({"message": TeamsCard(title="Podcast")}, files=[wav])
+        finally:
+            source.chmod(0o755)      # so tmp_path can be torn down
+
+        assert [f.name for f in uploaded] == ["podcast.mp4"]
+        assert uploaded[0].parent != source      # scratch, not the source dir
+        assert not uploaded[0].exists()          # and cleaned up afterwards
