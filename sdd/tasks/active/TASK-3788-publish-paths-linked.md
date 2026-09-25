@@ -103,7 +103,7 @@ async def publish_surface(self, *, kind, title, envelope, recipe_name=None, reci
 ```
 
 ### Does NOT Exist
-- ~~`self._linked_surface_service` / `self._dataplane_guard` on any bot~~ — nothing sets them in THIS task's code (read with `getattr(..., None)`); TASK-3805 injects `bot._dataplane_guard` from the app guard at server startup for managed bots. Standalone/un-wired bots still fail CLOSED for linked envelopes (`LinkedGuardRequired`) and are unaffected for baked ones — this task's unit tests construct bots without the attribute, so the fail-closed tests stay valid regardless of TASK-3805's landing order.
+- ~~`self._linked_surface_service` / `self._dataplane_guard` on any bot~~ — nothing sets them in THIS task's code (read with `getattr(..., None)`); TASK-3805 injects `bot._dataplane_guard` from the app guard at server startup for managed bots, so on a wired deployment the attribute exists. Standalone/un-wired bots still fail CLOSED for linked envelopes (`LinkedGuardRequired`) and are unaffected for baked ones — this task's unit tests construct bots without the attribute, so the fail-closed tests stay valid regardless of TASK-3805's landing order.
 - ~~`PublishSurfaceTool(linked_service=…)`~~ — added here.
 - ~~`validate_envelope` on any existing save path~~ — the service runs it for linked envelopes only (TASK-3781 Decision; running it on baked `components=[]` envelopes would break existing tests, AC11).
 - ~~a record returned by `bot.publish_surface`~~ — it returns only the id; the tool computes `refreshable` with the same rule as `UISurfaceRecord.refreshable`.
