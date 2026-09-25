@@ -602,6 +602,18 @@ class SlackAgentWrapper:
                     "elements": [{"type": "mrkdwn", "text": f"Image generated: `{img}`"}]
                 })
 
+        # Remote image URLs (FEAT-601 M12) — one image block each, uncapped like Path images
+        for n, url in enumerate(getattr(parsed, "image_urls", []) or [], start=1):
+            blocks.append({"type": "image", "image_url": url, "alt_text": f"Figure {n}"})
+
+        # Remote media URLs (FEAT-601 M12) — rendered as context links
+        media_urls = getattr(parsed, "media_urls", []) or []
+        if media_urls:
+            elements = [
+                {"type": "mrkdwn", "text": f"<{url}|Video {n}>"} for n, url in enumerate(media_urls, start=1)
+            ]
+            blocks.append({"type": "context", "elements": elements})
+
         return blocks or [{"type": "section", "text": {"type": "mrkdwn", "text": "No content."}}]
 
     def _help_text(self) -> str:

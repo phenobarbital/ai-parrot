@@ -1275,6 +1275,19 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     )
                 )
 
+        # Remote image URLs (FEAT-601 M12): fill up to 3 entries total, link the overflow
+        overflow_links: list[str] = []
+        for n, url in enumerate(getattr(parsed, "image_urls", []) or [], start=1):
+            label = f"Figure {n}"
+            if len(image_entries) < 3:
+                image_entries.append(ImageEntry(url=url, alt_text=label, size="Large"))
+            else:
+                overflow_links.append(f"[{label}]({url})")
+        for n, url in enumerate(getattr(parsed, "media_urls", []) or [], start=1):
+            overflow_links.append(f"[Video {n}]({url})")
+        if overflow_links:
+            sections.append(TextSection(text=" · ".join(overflow_links), is_subtle=True))
+
         # Documents that are base64 data URIs (inline images)
         for doc in parsed.documents[:5]:
             doc_str = str(doc) if hasattr(doc, "__str__") else doc
