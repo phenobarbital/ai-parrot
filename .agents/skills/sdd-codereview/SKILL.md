@@ -5,6 +5,14 @@ description: Code review a completed SDD task against acceptance criteria, code 
 
 # SDD Code Review
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-codereview procedure](../../../.claude/commands/sdd-codereview.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to review a completed SDD task, run `sdd-codereview`, or perform an adversarial code review on completed task artifacts.
 
 **Mandatory Deferred Findings Table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be

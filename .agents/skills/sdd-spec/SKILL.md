@@ -5,6 +5,14 @@ description: Convert a brainstorm, proposal, or direct feature request into a fo
 
 # SDD Spec
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-spec procedure](../../../.claude/commands/sdd-spec.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to run `sdd-spec`, create a formal SDD
 specification, or convert a brainstorm/proposal into a spec.
 
@@ -25,7 +33,7 @@ feature or hotfix.
   verbatim and route them into the correct spec sections.
 - Build a verified Codebase Contract with file paths and line numbers.
 - Identify delegation-eligible modules (see the workflow note below).
-- Commit only the spec file.
+- Commit only the spec and this run's promoted design-research/intake artifacts.
 
 ## Workflow
 
@@ -82,6 +90,17 @@ stay with the thinking model — eligibility never delegates a design choice.
    - read every file before citing imports, methods, classes, signatures, or
      paths
    - record plausible things that do not exist
+8b. Optional independent design research, before drafting the spec:
+   - when prior exploration is accepted or intake reached `rounds_complete`,
+     follow the full procedure's collaborative research step using
+     `sdd/templates/design_research.prompt.md` and its schema
+   - supply only accepted input and verified code anchors, never your draft or
+     preferred conclusion; use a separate read-only reviewer, not this session
+   - bound execution, validate affected paths for repository containment and
+     existence, and disposition every suggestion as CONFIRM/REJECT/ESCALATE
+   - persist the brief, raw output and triage in run-scoped staging; fill §9
+     Design Research Cross-Check, or record the concrete skip reason
+   - this optional step never blocks spec creation when the capability fails
 9. Resolve identity before reserving:
    - For `type: feature`, first check whether this slug already owns an ID in
      `sdd/specs/<feature-slug>.spec.md` and its per-spec index. Preserve that
@@ -126,8 +145,13 @@ stay with the thinking model — eligibility never delegates a design choice.
      once pytest node IDs are frozen
    - Open Questions with resolved/unresolved state preserved
 11. Commit:
-   - clear staging with `git reset HEAD`
-   - stage only `sdd/specs/<feature-slug>.spec.md`
+   - preserve unrelated staging; stop before committing if it is outside this run's scope
+   - stage `sdd/specs/<feature-slug>.spec.md` and only this run's promoted artifacts
+   - promote design research into `sdd/state/<FEAT-ID>/design_research/`
+   - for intake, set `feat_id`, `phase: committed` and `updated_at` in
+     `intake.json`, then promote into `sdd/state/<FEAT-ID>/intake/`
+   - never overwrite existing promoted directories; retain staging and report
+     the collision for inspection; preserve source artifacts until copying succeeds
    - verify cached names
    - commit `sdd: add spec for FEAT-NNN - <feature-slug>` for features, or a
      hotfix equivalent for hotfixes
