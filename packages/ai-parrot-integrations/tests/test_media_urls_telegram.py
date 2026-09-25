@@ -1,4 +1,5 @@
 """FEAT-601 M12 — Telegram URL images: download → send_photo → cleanup (TASK-3718)."""
+
 from __future__ import annotations
 
 import contextlib
@@ -68,9 +69,7 @@ async def test_telegram_downloads_then_send_photo(monkeypatch: pytest.MonkeyPatc
     w = _wrapper()
     fake_temp_download, created = _make_fake_temp_download(tmp_path)
     monkeypatch.setattr("parrot.integrations.telegram.wrapper.temp_download", fake_temp_download)
-    monkeypatch.setattr(
-        "parrot.integrations.telegram.wrapper.allowed_media_hosts", lambda: ("example.com",)
-    )
+    monkeypatch.setattr("parrot.integrations.telegram.wrapper.allowed_media_hosts", lambda: ("example.com",))
     parsed = ParsedResponse(image_urls=["https://example.com/figure.png"])
 
     await w._send_attachments(chat_id=123, parsed=parsed)
@@ -90,9 +89,7 @@ async def test_telegram_parsed_response_path_sends_url(monkeypatch: pytest.Monke
     w.config = SimpleNamespace(use_html=False)
     fake_temp_download, created = _make_fake_temp_download(tmp_path)
     monkeypatch.setattr("parrot.integrations.telegram.wrapper.temp_download", fake_temp_download)
-    monkeypatch.setattr(
-        "parrot.integrations.telegram.wrapper.allowed_media_hosts", lambda: ("example.com",)
-    )
+    monkeypatch.setattr("parrot.integrations.telegram.wrapper.allowed_media_hosts", lambda: ("example.com",))
 
     message = MagicMock()
     message.chat.id = 456
@@ -114,9 +111,7 @@ async def test_telegram_foreign_host_refused_no_send(monkeypatch: pytest.MonkeyP
     w = _wrapper()
     fake_temp_download, created = _make_fake_temp_download(tmp_path)
     monkeypatch.setattr("parrot.integrations.telegram.wrapper.temp_download", fake_temp_download)
-    monkeypatch.setattr(
-        "parrot.integrations.telegram.wrapper.allowed_media_hosts", lambda: ("example.com",)
-    )
+    monkeypatch.setattr("parrot.integrations.telegram.wrapper.allowed_media_hosts", lambda: ("example.com",))
     parsed = ParsedResponse(image_urls=["https://evil.example.net/figure.png"])
 
     await w._send_attachments(chat_id=123, parsed=parsed)
@@ -130,9 +125,7 @@ async def test_crew_wrapper_sends_url_images(monkeypatch: pytest.MonkeyPatch, tm
     """CrewAgentWrapper._send_response downloads and sends URL images."""
     w = _crew_wrapper()
     fake_temp_download, created = _make_fake_temp_download(tmp_path)
-    monkeypatch.setattr(
-        "parrot.integrations.telegram.crew.crew_wrapper.temp_download", fake_temp_download
-    )
+    monkeypatch.setattr("parrot.integrations.telegram.crew.crew_wrapper.temp_download", fake_temp_download)
     monkeypatch.setattr(
         "parrot.integrations.telegram.crew.crew_wrapper.allowed_media_hosts",
         lambda: ("example.com",),
