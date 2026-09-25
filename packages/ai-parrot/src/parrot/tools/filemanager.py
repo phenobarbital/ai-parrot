@@ -253,7 +253,7 @@ class FileManagerTool(AbstractTool):
                 cleanup_on_exit=kwargs.get("cleanup_on_exit", True),
                 **{k: v for k, v in kwargs.items() if k != "cleanup_on_exit"},
             )
-        else:  # s3 or gcs
+        else:  # s3, gcs, sharepoint, or onedrive
             return FileManagerFactory.create(manager_type, **kwargs)
 
     _DRIVE_RELATIVE_BACKENDS = frozenset({"sharepoint", "onedrive"})
@@ -844,7 +844,7 @@ class FileManagerToolkit(AbstractToolkit):
                 cleanup_on_exit=kwargs.get("cleanup_on_exit", True),
                 **{k: v for k, v in kwargs.items() if k != "cleanup_on_exit"},
             )
-        else:  # s3 or gcs
+        else:  # s3, gcs, sharepoint, or onedrive
             return FileManagerFactory.create(manager_type, **kwargs)
 
     def _check_file_size(self, size: int) -> None:

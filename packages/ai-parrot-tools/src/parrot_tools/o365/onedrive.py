@@ -242,19 +242,11 @@ class DownloadOneDriveFileTool(O365Tool):
                 await manager._ready()
                 item = await manager._get_item_by_id(file_id)
                 file_path = manager._item_path(item) or item.name
-            else:
-                local = dest_dir / (rename_as or file_path.rsplit("/", 1)[-1])
-                await manager.download_file(file_path, local)
-                file_id = (await manager._get_item(manager._prefixed(file_path))).id
-                return {
-                    "file_path": file_path,
-                    "file_id": file_id,
-                    "local_path": str(local),
-                    "size": local.stat().st_size if local.exists() else 0,
-                }
 
             local = dest_dir / (rename_as or Path(file_path).name)
             await manager.download_file(file_path, local)
+            if not file_id:
+                file_id = (await manager._get_item(manager._prefixed(file_path))).id
             local_exists = await asyncio.to_thread(local.exists)
             return {
                 "file_path": file_path,
@@ -627,7 +619,7 @@ class DeltaOneDriveFilesTool(O365Tool):
         # content_hashes, so model_dump() omits both — yet the contracts
         # ingest job reads them per item (as a source-URI fallback and as
         # the content hash it persists). Project them explicitly.
-        for serialized, item in zip(payload["items"], enumeration.items, strict=True):
+        for serialized, item in zip(payload["items"], enumeration.items):
             serialized["path"] = item.path
             serialized["sha256"] = item.content_hashes.get("sha256Hash")
         payload.update(

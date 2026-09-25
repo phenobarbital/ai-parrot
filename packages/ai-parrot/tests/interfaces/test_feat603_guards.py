@@ -98,7 +98,10 @@ def _shape(fn):
     out = [[p.arg, "pos", ast.unparse(d) if d is not None else None] for p, d in zip(pos, defs, strict=True)]
     if a.vararg:
         out.append([a.vararg.arg, "var", None])
-    out += [[p.arg, "kwonly", ast.unparse(d) if d is not None else None] for p, d in zip(a.kwonlyargs, a.kw_defaults, strict=True)]
+    out += [
+        [p.arg, "kwonly", ast.unparse(d) if d is not None else None]
+        for p, d in zip(a.kwonlyargs, a.kw_defaults, strict=True)
+    ]
     if a.kwarg:
         out.append([a.kwarg.arg, "varkw", None])
     return out

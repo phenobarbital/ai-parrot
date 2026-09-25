@@ -792,6 +792,15 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
 
     async def download_file(self, source: str, destination: Union[Path, BinaryIO]) -> Path:
         """Stream a Graph download URL into a local path or writable binary stream."""
+        _, result = await self._download_file_with_item(source, destination)
+        return result
+
+    async def _download_file_with_item(self, source: str, destination: Union[Path, BinaryIO]) -> Tuple[Any, Path]:
+        """Shared ``download_file`` implementation that also returns the fetched Graph item.
+
+        ``download_files`` (batch) uses the returned item to build its ``FileMetadata`` without
+        a second ``get_file_metadata`` round-trip per item.
+        """
         await self._ready()
         full_path = self._prefixed(source)
         try:
@@ -812,10 +821,10 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
                         async with aiofiles.open(target, "wb") as handle:
                             async for chunk in response.content.iter_chunked(1024 * 1024):
                                 await handle.write(chunk)
-                        return target
+                        return item, target
                     async for chunk in response.content.iter_chunked(1024 * 1024):
                         await asyncio.to_thread(destination.write, chunk)
-            return Path(source)
+            return item, Path(source)
         except IsADirectoryError:
             raise
         except Exception as exc:
@@ -984,8 +993,10 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
         self._reject_shared_streams([dst for _, dst in items])
 
         async def run_one(index: int, src: str, dst: Any) -> FileMetadata:
-            await self.download_file(src, dst)
-            return await self.get_file_metadata(src)
+            # Reuse the item _download_file_with_item already fetched from Graph instead of a
+            # second get_file_metadata round-trip per item (review finding).
+            item, _ = await self._download_file_with_item(src, dst)
+            return self._make_metadata(item, full_path=self._prefixed(src))
 
         return await self._run_batch(list(items), run_one)
 

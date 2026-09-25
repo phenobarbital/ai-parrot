@@ -40,7 +40,11 @@ class SharePointFileManager(GraphDriveFileManager):
         """A not-yet-authenticated SharepointClient targeting ``site`` (and ``tenant`` when known)."""
         credentials = {**self.credentials, "site": self.site, **({"tenant": self.tenant} if self.tenant else {})}
         client = SharepointClient(credentials=credentials)
-        assert client._srcfiles == []
+        if client._srcfiles != []:
+            # AC23 invariant: a freshly built SharepointClient must never carry pre-populated
+            # `_srcfiles` state — that would silently leak files between managers. A bare
+            # `assert` is stripped under `python -O`; this must never be skippable.
+            raise RuntimeError("SharepointClient._srcfiles must be empty on a freshly built client")
         return client
 
     async def _resolve_drive_id(self) -> str:

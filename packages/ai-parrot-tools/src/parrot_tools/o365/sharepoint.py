@@ -753,7 +753,7 @@ class DeltaSharePointFilesTool(O365Tool):
         # content_hashes, so model_dump() omits both — yet the contracts
         # ingest job reads them per item (as a source-URI fallback and as
         # the content hash it persists). Project them explicitly.
-        for serialized, item in zip(payload["items"], enumeration.items, strict=True):
+        for serialized, item in zip(payload["items"], enumeration.items):
             serialized["path"] = item.path
             serialized["sha256"] = item.content_hashes.get("sha256Hash")
         payload.update(
