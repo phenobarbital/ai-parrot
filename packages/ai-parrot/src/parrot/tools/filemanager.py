@@ -85,7 +85,18 @@ class FileManagerToolArgs(AbstractToolArgsSchema):
     """
 
     operation: Literal[
-        "list", "upload", "download", "copy", "delete", "exists", "get_url", "get_metadata", "create"
+        "list",
+        "upload",
+        "download",
+        "copy",
+        "delete",
+        "exists",
+        "get_url",
+        "get_metadata",
+        "create",
+        "find",
+        "batch_upload",
+        "batch_download",
     ] = Field(
         ...,
         description=(
@@ -98,7 +109,10 @@ class FileManagerToolArgs(AbstractToolArgsSchema):
             "- 'exists': Check if a file exists\n"
             "- 'get_url': Get a URL to access a file\n"
             "- 'get_metadata': Get detailed file metadata\n"
-            "- 'create': Create a new file with content"
+            "- 'create': Create a new file with content\n"
+            "- 'find': Find files by keywords / extension / prefix\n"
+            "- 'batch_upload': Upload many local files (items=[{source, destination}])\n"
+            "- 'batch_download': Download many files (items=[{source, destination}])"
         ),
     )
 
@@ -124,6 +138,16 @@ class FileManagerToolArgs(AbstractToolArgsSchema):
 
     # URL operation
     expiry_seconds: Optional[int] = Field(3600, description="URL expiry time in seconds (default: 3600 = 1 hour)")
+
+    # find / batch operations (FEAT-603)
+    keywords: Optional[Union[str, List[str]]] = Field(
+        None, description="find: substrings that must all appear in the filename"
+    )
+    extension: Optional[str] = Field(None, description="find: file extension filter, e.g. '.csv'")
+    prefix: Optional[str] = Field(None, description="find: restrict the search to this path prefix")
+    items: Optional[List[Dict[str, str]]] = Field(
+        None, description="batch_*: list of {'source': ..., 'destination': ...}"
+    )
 
 
 class FileManagerTool(AbstractTool):
@@ -195,6 +219,9 @@ class FileManagerTool(AbstractTool):
             "get_url",
             "get_metadata",
             "create",
+            "find",
+            "batch_upload",
+            "batch_download",
         }
 
         self.manager = self._create_manager(manager_type, **manager_kwargs)
@@ -227,6 +254,22 @@ class FileManagerTool(AbstractTool):
             )
         else:  # s3 or gcs
             return FileManagerFactory.create(manager_type, **kwargs)
+
+    _DRIVE_RELATIVE_BACKENDS = frozenset({"sharepoint", "onedrive"})
+
+    def _storage_path(self, path: Optional[str]) -> str:
+        """Resolve a storage-side path for the configured backend.
+
+        Args:
+            path: Storage-side path, or ``None``/empty.
+
+        Returns:
+            Drive-relative paths unchanged for Graph backends; otherwise the
+            existing output-directory-relative path.
+        """
+        if self.manager_type in self._DRIVE_RELATIVE_BACKENDS:
+            return (path or "").strip()
+        return self._resolve_output_path(path) if path else ""
 
     def _check_operation(self, operation: str):
         """Check if operation is allowed."""
@@ -275,6 +318,12 @@ class FileManagerTool(AbstractTool):
                 result = await self._get_file_metadata(args)
             elif operation == "create":
                 result = await self._create_file(args)
+            elif operation == "find":
+                result = await self._find_files(args)
+            elif operation == "batch_upload":
+                result = await self._batch_upload(args)
+            elif operation == "batch_download":
+                result = await self._batch_download(args)
             else:
                 return ToolResult(success=False, result=None, error=f"Unknown operation: {operation}")
 
@@ -290,7 +339,7 @@ class FileManagerTool(AbstractTool):
 
     async def _list_files(self, args: FileManagerToolArgs) -> Dict[str, Any]:
         """List files in a directory."""
-        path = self._resolve_output_path(args.path) if args.path else ""
+        path = self._storage_path(args.path)
         pattern = args.pattern or "*"
 
         self.logger.info(f"Listing files in '{path}' with pattern '{pattern}'")
@@ -328,7 +377,7 @@ class FileManagerTool(AbstractTool):
         dest = args.destination_name or source.name
         if args.destination:
             dest = str(Path(args.destination) / dest)
-        dest = self._resolve_output_path(dest)
+        dest = self._storage_path(dest)
 
         self.logger.info(f"Uploading '{args.source_path}' to '{dest}'")
         metadata = await self.manager.upload_file(source, dest)
@@ -437,7 +486,7 @@ class FileManagerTool(AbstractTool):
         content_bytes = args.content.encode(encoding)
         self._check_file_size(len(content_bytes))
 
-        dest = self._resolve_output_path(args.path)
+        dest = self._storage_path(args.path)
         self.logger.info(f"Creating file '{dest}' ({len(content_bytes)} bytes)")
 
         # Upstream create_from_bytes returns bool; fetch metadata explicitly.
@@ -452,6 +501,194 @@ class FileManagerTool(AbstractTool):
             "content_type": metadata.content_type,
             "url": metadata.url,
         }
+
+    async def _find_files(self, args: FileManagerToolArgs) -> Dict[str, Any]:
+        """Find files by keywords, extension, and prefix.
+
+        Args:
+            args: Validated tool arguments carrying optional search filters.
+
+        Returns:
+            File details and the number of matching files.
+        """
+        prefix = self._storage_path(args.prefix) if args.prefix else None
+        files = await self.manager.find_files(keywords=args.keywords, extension=args.extension, prefix=prefix)
+        return {
+            "files": [
+                {
+                    "name": file.name,
+                    "path": file.path,
+                    "size": file.size,
+                    "content_type": file.content_type,
+                    "modified_at": file.modified_at.isoformat() if file.modified_at else None,
+                    "url": file.url,
+                }
+                for file in files
+            ],
+            "count": len(files),
+        }
+
+    async def _batch_upload(self, args: FileManagerToolArgs) -> Dict[str, Any]:
+        """Upload multiple local files without failing for individual item errors.
+
+        Args:
+            args: Validated tool arguments containing source/destination items.
+
+        Returns:
+            JSON-serializable ``BatchSummary`` data.
+
+        Raises:
+            ValueError: If no batch items were supplied.
+        """
+        if args.items is None:
+            raise ValueError("items is required for batch_upload operation")
+
+        results: Dict[int, BatchItemResult] = {}
+        pending: List[Tuple[int, Path, str]] = []
+        for index, item in enumerate(args.items):
+            source = item.get("source")
+            destination = item.get("destination")
+            if not source or not destination:
+                results[index] = BatchItemResult(
+                    index=index,
+                    source=source or "",
+                    destination=destination or "",
+                    state="failed",
+                    ok=False,
+                    error="both 'source' and 'destination' are required",
+                    error_code="invalid_path",
+                )
+                continue
+
+            source_path = Path(source)
+            if not source_path.exists():
+                results[index] = BatchItemResult(
+                    index=index,
+                    source=source,
+                    destination=destination,
+                    state="failed",
+                    ok=False,
+                    error=f"source file not found: {source}",
+                    error_code="invalid_path",
+                )
+                continue
+
+            try:
+                self._check_file_size(source_path.stat().st_size)
+            except ValueError as exc:
+                results[index] = BatchItemResult(
+                    index=index,
+                    source=source,
+                    destination=destination,
+                    state="failed",
+                    ok=False,
+                    error=str(exc),
+                    error_code="io",
+                )
+                continue
+
+            pending.append((index, source_path, self._storage_path(destination)))
+
+        if pending:
+            if hasattr(self.manager, "upload_files"):
+                native_results = await self.manager.upload_files(
+                    [(source, destination) for _, source, destination in pending]
+                )
+                for (index, _, _), result in zip(pending, native_results, strict=True):
+                    result.index = index
+                    results[index] = result
+            else:
+                for index, source_path, destination in pending:
+                    try:
+                        metadata = await self.manager.upload_file(source_path, destination)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=str(source_path),
+                            destination=destination,
+                            state="succeeded",
+                            ok=True,
+                            metadata=metadata,
+                        )
+                    except Exception as exc:
+                        self.logger.warning("batch_upload: item %d failed: %s", index, exc)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=str(source_path),
+                            destination=destination,
+                            state="failed",
+                            ok=False,
+                            error=str(exc),
+                            error_code="unknown",
+                        )
+
+        return BatchSummary.from_items([results[index] for index in range(len(args.items))]).model_dump(mode="json")
+
+    async def _batch_download(self, args: FileManagerToolArgs) -> Dict[str, Any]:
+        """Download multiple files without failing for individual item errors.
+
+        Args:
+            args: Validated tool arguments containing source/destination items.
+
+        Returns:
+            JSON-serializable ``BatchSummary`` data.
+
+        Raises:
+            ValueError: If no batch items were supplied.
+        """
+        if args.items is None:
+            raise ValueError("items is required for batch_download operation")
+
+        results: Dict[int, BatchItemResult] = {}
+        pending: List[Tuple[int, str, str]] = []
+        for index, item in enumerate(args.items):
+            source = item.get("source")
+            if not source:
+                results[index] = BatchItemResult(
+                    index=index,
+                    source="",
+                    destination=item.get("destination") or "",
+                    state="failed",
+                    ok=False,
+                    error="'source' is required",
+                    error_code="invalid_path",
+                )
+                continue
+            destination = item.get("destination") or self._resolve_output_path(Path(source).name)
+            pending.append((index, source, destination))
+
+        if pending:
+            if hasattr(self.manager, "download_files"):
+                native_results = await self.manager.download_files(
+                    [(source, Path(destination)) for _, source, destination in pending]
+                )
+                for (index, _, _), result in zip(pending, native_results, strict=True):
+                    result.index = index
+                    results[index] = result
+            else:
+                for index, source, destination in pending:
+                    dest_path = Path(destination)
+                    try:
+                        await self.manager.download_file(source, dest_path)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=source,
+                            destination=destination,
+                            state="succeeded",
+                            ok=True,
+                        )
+                    except Exception as exc:
+                        self.logger.warning("batch_download: item %d failed: %s", index, exc)
+                        results[index] = BatchItemResult(
+                            index=index,
+                            source=source,
+                            destination=destination,
+                            state="failed",
+                            ok=False,
+                            error=str(exc),
+                            error_code="unknown",
+                        )
+
+        return BatchSummary.from_items([results[index] for index in range(len(args.items))]).model_dump(mode="json")
 
 
 # ---------------------------------------------------------------------------

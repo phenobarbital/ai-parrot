@@ -13,7 +13,7 @@ sys.modules.pop("parrot.tools.filemanager", None)
 
 from navigator.utils.file import FileMetadata  # noqa: E402
 from parrot.interfaces.file.batch import BatchItemResult  # noqa: E402
-from parrot.tools.filemanager import FileManagerToolkit  # noqa: E402
+from parrot.tools.filemanager import FileManagerTool, FileManagerToolkit  # noqa: E402
 
 
 def _fake_metadata(path: str) -> FileMetadata:
@@ -44,6 +44,9 @@ class _LoopOnlyManager:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(b"data")
         return destination
+
+    async def find_files(self, keywords=None, extension=None, prefix=None):
+        return []
 
 
 class _NativeBatchManager:
@@ -175,3 +178,49 @@ def test_storage_path_is_drive_relative_for_graph_and_unchanged_otherwise():
 
     tk_local = FileManagerToolkit(manager_type="temp")
     assert tk_local._storage_path("a/b.txt") == tk_local._resolve_output_path("a/b.txt")
+
+
+async def test_tool_find_batch_ops_dispatch(tmp_path):
+    tool = FileManagerTool(manager_type="temp", default_output_dir=str(tmp_path))
+    tool.manager = _LoopOnlyManager()
+    source = tmp_path / "source.txt"
+    source.write_text("data")
+
+    find_result = await tool._execute(operation="find", keywords="source")
+    upload_result = await tool._execute(
+        operation="batch_upload",
+        items=[{"source": str(source), "destination": "remote/source.txt"}],
+    )
+    download_result = await tool._execute(
+        operation="batch_download",
+        items=[{"source": "remote/source.txt", "destination": str(tmp_path / "downloaded.txt")}],
+    )
+
+    assert find_result.success
+    assert find_result.result == {"files": [], "count": 0}
+    for result in (upload_result, download_result):
+        assert result.success, result.error
+        assert {"total", "succeeded", "failed", "skipped", "aborted", "items"} <= result.result.keys()
+        assert result.result["succeeded"] == 1
+
+
+async def test_tool_batch_requires_items():
+    tool = FileManagerTool(manager_type="temp")
+
+    result = await tool._execute(operation="batch_upload")
+
+    assert not result.success
+    assert result.error == "items is required for batch_upload operation"
+
+
+def test_tool_default_allowed_operations_include_new_ops():
+    tool = FileManagerTool(manager_type="temp")
+
+    assert {"find", "batch_upload", "batch_download"} <= tool.allowed_operations
+
+
+def test_tool_storage_path_is_drive_relative_for_graph():
+    tool = FileManagerTool.__new__(FileManagerTool)
+    tool.manager_type = "onedrive"
+
+    assert tool._storage_path("x/y") == "x/y"

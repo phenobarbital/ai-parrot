@@ -251,7 +251,10 @@ class TestToolkitInit:
 
     def test_all_operations_allowed_by_default(self):
         tk = FileManagerToolkit(manager_type="temp")
-        expected = {"list", "upload", "download", "copy", "delete", "exists", "get_url", "get_metadata", "create"}
+        expected = {
+            "list", "upload", "download", "copy", "delete", "exists", "get_url", "get_metadata", "create",
+            "find", "batch_upload", "batch_download",
+        }
         assert tk.allowed_operations == expected
 
 
@@ -260,7 +263,7 @@ class TestToolGeneration:
 
     def test_tool_count_default(self, tmp_path):
         tk = _make_toolkit(tmp_path)
-        assert len(tk.get_tools()) == 9
+        assert len(tk.get_tools()) == 12
 
     def test_tool_names(self, tmp_path):
         tk = _make_toolkit(tmp_path)
@@ -269,6 +272,7 @@ class TestToolGeneration:
             "fs_list_files", "fs_upload_file", "fs_download_file",
             "fs_copy_file", "fs_delete_file", "fs_file_exists",
             "fs_get_file_url", "fs_get_file_metadata", "fs_create_file",
+            "fs_find_files", "fs_batch_upload", "fs_batch_download",
         }
         assert names == expected
 
