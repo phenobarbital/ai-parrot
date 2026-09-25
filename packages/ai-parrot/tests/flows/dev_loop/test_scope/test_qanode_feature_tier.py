@@ -93,7 +93,7 @@ async def test_qanode_records_green_escalations(tmp_path, monkeypatch):
     await node._record_green_escalations(shared, _research(tmp_path), report)
 
     record_mock.assert_called_once_with(
-        Path(str(tmp_path)), ["ai-parrot"], ["packages/ai-parrot/src/parrot/clients/base.py"]
+        Path(str(tmp_path)), ["ai-parrot"], ["packages/ai-parrot/src/parrot/clients/base.py"], [], {}
     )
 
 
