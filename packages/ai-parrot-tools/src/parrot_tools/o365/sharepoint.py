@@ -10,12 +10,12 @@ Tools for interacting with SharePoint document libraries:
 
 from typing import Dict, Any, Optional, List, Type
 from pathlib import Path
+from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
 
 from .base import O365Tool, O365ToolArgsSchema
 from .delta import DEFAULT_MAX_PAGES, DriveDeltaHelper
 from parrot.interfaces.o365 import O365Client
-from parrot.interfaces.sharepoint import SharepointClient
 from parrot.interfaces.file.sharepoint import SharePointFileManager
 
 # ============================================================================
@@ -271,12 +271,12 @@ class DownloadSharePointFileTool(O365Tool):
     )
     args_schema: Type[BaseModel] = DownloadSharePointFileArgs
 
-    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
         """
-        Download SharePoint file using the SharepointClient.
+        Download a SharePoint file through SharePointFileManager (streamed to disk).
 
         Args:
-            client: Authenticated SharepointClient instance
+            client: Authenticated O365Client instance
             **kwargs: Tool parameters
 
         Returns:
@@ -288,53 +288,18 @@ class DownloadSharePointFileTool(O365Tool):
         local_destination = kwargs.get("local_destination")
         rename_as = kwargs.get("rename_as")
 
+        manager = SharePointFileManager(site=site, library=library, credentials=dict(self.credentials or {}))
+        manager.adopt_client(client)
         try:
-            # Configure client
-            client.site = site
-            client.credentials["tenant"] = site
-
-            # Parse file path
-            path_parts = file_path.rsplit("/", 1)
-            if len(path_parts) == 2:
-                folder_path, filename = path_parts
-            else:
-                folder_path = ""
-                filename = file_path
-
-            full_directory = f"{library}/{folder_path}".strip("/")
-
-            self.logger.info(f"Downloading: {site}/{full_directory}/{filename}")
+            self.logger.info(f"Downloading: {site}/{library}/{file_path}")
 
             # Set up download destination
             dest_dir = Path(local_destination) if local_destination else Path.cwd()
-
             dest_dir.mkdir(parents=True, exist_ok=True)
-            client.directory = str(dest_dir)
+            local_path = dest_dir / (rename_as or file_path.rsplit("/", 1)[-1])
 
-            # Configure file lookup
-            client._srcfiles = [{"directory": full_directory, "filename": filename}]
-
-            # Set rename if requested
-            if rename_as:
-                client._filenames = [rename_as]
-
-            # Verify access
-            await client.verify_sharepoint_access()
-
-            # Find file
-            found_files = await client.file_lookup()
-
-            if not found_files:
-                raise FileNotFoundError(f"File not found: {file_path}")
-
-            # Download files
-            downloaded = await client.download_found_files(found_files)
-
-            if not downloaded:
-                raise RuntimeError("Download failed")
-
-            download_info = downloaded[0]
-            local_path = download_info["filename"]
+            await manager.download_file(file_path, local_path)
+            meta = await manager.get_file_metadata(file_path)
 
             self.logger.info(f"Downloaded to: {local_path}")
 
@@ -342,14 +307,16 @@ class DownloadSharePointFileTool(O365Tool):
                 "site": site,
                 "library": library,
                 "file_path": file_path,
-                "local_path": local_path,
-                "download_url": download_info.get("download_url", ""),
-                "size": Path(local_path).stat().st_size if Path(local_path).exists() else 0,
+                "local_path": str(local_path),
+                "download_url": meta.url or "",
+                "size": local_path.stat().st_size if local_path.exists() else 0,
             }
 
         except Exception as e:
             self.logger.error(f"Failed to download SharePoint file: {e}")
             raise
+        finally:
+            await manager.close()
 
 
 # ============================================================================
@@ -406,12 +373,12 @@ class UploadSharePointFileTool(O365Tool):
     )
     args_schema: Type[BaseModel] = UploadSharePointFileArgs
 
-    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
         """
-        Upload file to SharePoint using the SharepointClient.
+        Upload a local file to SharePoint through SharePointFileManager (single PUT or upload session).
 
         Args:
-            client: Authenticated SharepointClient instance
+            client: Authenticated O365Client instance
             **kwargs: Tool parameters
 
         Returns:
@@ -424,52 +391,42 @@ class UploadSharePointFileTool(O365Tool):
         rename_as = kwargs.get("rename_as")
         overwrite = kwargs.get("overwrite", True)
 
+        # Validate local file
+        local_path = Path(local_file_path)
+        if not local_path.exists():
+            raise FileNotFoundError(f"Local file not found: {local_file_path}")
+
+        manager = SharePointFileManager(
+            site=site,
+            library=library,
+            credentials=dict(self.credentials or {}),
+            conflict_behavior="replace" if overwrite else "fail",
+        )
+        manager.adopt_client(client)
         try:
-            # Validate local file
-            local_path = Path(local_file_path)
-            if not local_path.exists():
-                raise FileNotFoundError(f"Local file not found: {local_file_path}")
+            destination = f"{folder_path}/{rename_as or local_path.name}".strip("/")
 
-            # Configure client
-            client.site = site
-            client.credentials["tenant"] = site
+            self.logger.info(f"Uploading {local_path.name} to {site}/{library}/{destination}")
 
-            # Build destination path
-            destination = f"{library}/{folder_path}".strip("/")
+            meta = await manager.upload_file(local_path, destination)
 
-            self.logger.info(f"Uploading {local_path.name} to {site}/{destination}")
-
-            # Verify access
-            await client.verify_sharepoint_access()
-
-            # Upload file
-            filenames = [local_path]
-            destination_filenames = [rename_as] if rename_as else None
-
-            upload_results = await client.upload_files(
-                filenames=filenames, destination=destination, destination_filenames=destination_filenames
-            )
-
-            if not upload_results:
-                raise RuntimeError("Upload failed")
-
-            result = upload_results[0]["filename"]
-
-            self.logger.info(f"Uploaded successfully: {result['name']}")
+            self.logger.info(f"Uploaded successfully: {meta.name}")
 
             return {
                 "site": site,
                 "library": library,
                 "folder_path": folder_path,
-                "uploaded_file": result["name"],
-                "size": result["size"],
-                "web_url": result.get("web_url", ""),
-                "server_relative_url": result.get("serverRelativeUrl", ""),
+                "uploaded_file": meta.name,
+                "size": meta.size,
+                "web_url": meta.url or "",
+                "server_relative_url": urlsplit(meta.url).path if meta.url else "",
             }
 
         except Exception as e:
             self.logger.error(f"Failed to upload to SharePoint: {e}")
             raise
+        finally:
+            await manager.close()
 
 
 # ============================================================================

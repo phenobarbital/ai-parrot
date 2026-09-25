@@ -6,7 +6,13 @@ import sys
 
 import pytest
 
-from parrot_tools.o365.sharepoint import ListSharePointFilesTool, SearchSharePointFilesTool
+from parrot.interfaces.file.sharepoint import SharePointFileManager
+from parrot_tools.o365.sharepoint import (
+    DownloadSharePointFileTool,
+    ListSharePointFilesTool,
+    SearchSharePointFilesTool,
+    UploadSharePointFileTool,
+)
 
 _FAKES = pathlib.Path(__file__).resolve().parents[2] / "ai-parrot" / "tests" / "interfaces" / "_graph_fakes.py"
 _spec = importlib.util.spec_from_file_location("feat603_graph_fakes", _FAKES)
@@ -109,3 +115,103 @@ async def test_tools_do_not_close_the_adopted_client(fake):
     await tool._execute_graph_operation(client, site="TeamSite", library="Documents", folder_path="Reports")
 
     assert client._graph_client is fake
+
+
+DOWNLOAD_KEYS = {"site", "library", "file_path", "local_path", "download_url", "size"}
+UPLOAD_KEYS = {"site", "library", "folder_path", "uploaded_file", "size", "web_url", "server_relative_url"}
+
+
+async def test_download_sharepoint_file_tool_response_shape(fake, tmp_path, monkeypatch):
+    session = fakes.FakeAiohttpSession(fake)
+    monkeypatch.setattr(SharePointFileManager, "_http_session", lambda self: session)
+    client = fakes.make_sharepoint_client(fake, drive_id="drive-1")
+    tool = DownloadSharePointFileTool(credentials={})
+
+    result = await tool._execute_graph_operation(
+        client,
+        site="TeamSite",
+        library="Documents",
+        file_path="Reports/2025/q4.pdf",
+        local_destination=str(tmp_path),
+        rename_as="renamed.pdf",
+    )
+
+    assert set(result) == DOWNLOAD_KEYS
+    assert result["site"] == "TeamSite"
+    assert result["library"] == "Documents"
+    assert result["file_path"] == "Reports/2025/q4.pdf"
+    local_path = tmp_path / "renamed.pdf"
+    assert result["local_path"] == str(local_path)
+    assert local_path.exists()
+    assert local_path.read_bytes() == b"pdf-bytes"
+    assert result["size"] == len(b"pdf-bytes")
+    # download_url is the item's web_url, never the pre-authenticated @microsoft.graph.downloadUrl
+    assert result["download_url"] == "https://contoso.sharepoint.com/Reports/2025/q4.pdf"
+    assert not result["download_url"].startswith(fakes.FAKE_DOWNLOAD)
+
+
+async def test_download_missing_file_raises_filenotfound(fake, tmp_path, monkeypatch):
+    session = fakes.FakeAiohttpSession(fake)
+    monkeypatch.setattr(SharePointFileManager, "_http_session", lambda self: session)
+    client = fakes.make_sharepoint_client(fake, drive_id="drive-1")
+    tool = DownloadSharePointFileTool(credentials={})
+
+    with pytest.raises(FileNotFoundError):
+        await tool._execute_graph_operation(
+            client,
+            site="TeamSite",
+            library="Documents",
+            file_path="Reports/does-not-exist.pdf",
+            local_destination=str(tmp_path),
+        )
+
+
+async def test_upload_sharepoint_file_tool_response_shape_and_overwrite(fake, tmp_path, monkeypatch):
+    session = fakes.FakeAiohttpSession(fake)
+    monkeypatch.setattr(SharePointFileManager, "_http_session", lambda self: session)
+    client = fakes.make_sharepoint_client(fake, drive_id="drive-1")
+    tool = UploadSharePointFileTool(credentials={})
+    local_file = tmp_path / "upload.txt"
+    local_file.write_bytes(b"0123456789abcdefghij")
+
+    result = await tool._execute_graph_operation(
+        client,
+        site="TeamSite",
+        library="Documents",
+        local_file_path=str(local_file),
+        folder_path="Uploads",
+        overwrite=True,
+    )
+
+    assert set(result) == UPLOAD_KEYS
+    assert result["site"] == "TeamSite"
+    assert result["library"] == "Documents"
+    assert result["folder_path"] == "Uploads"
+    assert result["uploaded_file"] == "upload.txt"
+    assert result["size"] == len(b"0123456789abcdefghij")
+    assert result["web_url"] == "https://contoso.sharepoint.com/Uploads/upload.txt"
+    assert result["server_relative_url"] == "/Uploads/upload.txt"
+
+    # overwrite=False -> the upload session body carries conflictBehavior "fail".
+    # The upload-session route addresses the target by path, so the fake (like the manager-level
+    # xfer_manager tests in test_graph_filemanager.py) requires the destination to already exist.
+    fake.drives_by_id["drive-1"].put_file("Uploads/other.txt", b"")
+    session.requests.clear()
+    fake.calls.clear()
+    await tool._execute_graph_operation(
+        client,
+        site="TeamSite",
+        library="Documents",
+        local_file_path=str(local_file),
+        folder_path="Uploads",
+        rename_as="other.txt",
+        overwrite=False,
+    )
+    body = next(call[3] for call in fake.calls if call[0] == "create_upload_session")
+    assert body.item.additional_data["@microsoft.graph.conflictBehavior"] == "fail"
+
+
+def test_sharepoint_client_import_removed():
+    import parrot_tools.o365.sharepoint as mod
+
+    assert "SharepointClient" not in vars(mod)
