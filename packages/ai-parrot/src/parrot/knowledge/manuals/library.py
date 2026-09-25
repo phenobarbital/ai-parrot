@@ -1,4 +1,5 @@
 """ManualLibrary: staged ingest of assembly manuals into cards (FEAT-601 M8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -19,8 +20,17 @@ from ..pageindex.content_store import NodeContentStore
 from ..pageindex.pdf_to_markdown import extract_markdown_per_page
 from .carding import SourceInfo, assemble_card, draft_manual
 from .catalog import CatalogError, ManualCatalogStore, UnknownManualError, queue_entries_for
-from .figures import (CaptioningUnavailable, FigureCandidate, caption_figures, extract_figures, map_callouts,
-                      resolve_callout_mapper, resolve_captioner, unpaired_references, upload_figures)
+from .figures import (
+    CaptioningUnavailable,
+    FigureCandidate,
+    caption_figures,
+    extract_figures,
+    map_callouts,
+    resolve_callout_mapper,
+    resolve_captioner,
+    unpaired_references,
+    upload_figures,
+)
 from .graph_loader import ManualGraphLoader
 from .models import ManualCard, ManualVersion, MediaRef, SourceFormat, manual_snapshot_payload
 from .video import AlignmentReport, JudgementLog, align_video
@@ -52,8 +62,9 @@ class TreeIndexer(Protocol):
     """The PageIndex surface the library depends on (PageIndexToolkit or a test double)."""
 
     async def create_tree(self, tree_name: str, doc_name: Optional[str] = None) -> dict[str, Any]: ...
-    async def insert_markdown(self, tree_name: str, markdown: str, parent_node_id: Optional[str] = None,
-                              doc_name: Optional[str] = None) -> dict[str, Any]: ...
+    async def insert_markdown(
+        self, tree_name: str, markdown: str, parent_node_id: Optional[str] = None, doc_name: Optional[str] = None
+    ) -> dict[str, Any]: ...
     async def get_tree(self, tree_name: str) -> dict[str, Any]: ...
     async def delete_tree(self, tree_name: str) -> dict[str, Any]: ...
 
@@ -92,11 +103,20 @@ def _source_format(path: Path) -> SourceFormat:
 class ManualLibrary:
     """Ingest manuals into the tenant catalog, then publish to the graph."""
 
-    def __init__(self, *, catalog: ManualCatalogStore, storage_root: str | Path, evidence_root: str | Path,
-                 adapter: Any = None, file_manager: Any, vision_client: Any | None = None,
-                 indexer_factory: Optional[Callable[[Path, Any], TreeIndexer]] = None,
-                 graph_loader: Optional[ManualGraphLoader] = None, max_procedure_sections: int = 20,
-                 now: Callable[[], datetime] = _utcnow) -> None:
+    def __init__(
+        self,
+        *,
+        catalog: ManualCatalogStore,
+        storage_root: str | Path,
+        evidence_root: str | Path,
+        adapter: Any = None,
+        file_manager: Any,
+        vision_client: Any | None = None,
+        indexer_factory: Optional[Callable[[Path, Any], TreeIndexer]] = None,
+        graph_loader: Optional[ManualGraphLoader] = None,
+        max_procedure_sections: int = 20,
+        now: Callable[[], datetime] = _utcnow,
+    ) -> None:
         self.catalog = catalog
         self.storage_root = Path(storage_root)
         self.evidence_root = Path(evidence_root)
@@ -109,8 +129,15 @@ class ManualLibrary:
         self._now = now
         self.logger = logging.getLogger(__name__)
 
-    async def add_manual(self, source: str | Path, *, equipment: Sequence[str], revision: str,
-                         source_uri: Optional[str] = None, force: bool = False) -> IngestResult:
+    async def add_manual(
+        self,
+        source: str | Path,
+        *,
+        equipment: Sequence[str],
+        revision: str,
+        source_uri: Optional[str] = None,
+        force: bool = False,
+    ) -> IngestResult:
         """sha dedup → markdown → staged tree → carding → figures → assemble → upsert → publish."""
         path = Path(source)
         if not await asyncio.to_thread(path.is_file):
@@ -134,8 +161,7 @@ class ManualLibrary:
             base = slugify(f"{equipment[0]} {revision}")
             if not base or base == "book":
                 raise ValueError(
-                    "equipment/revision produced an empty slug (non-Latin title collapses); "
-                    "pass an explicit slug"
+                    "equipment/revision produced an empty slug (non-Latin title collapses); " "pass an explicit slug"
                 )
             taken = {card.manual_id for card in await self.catalog.list_cards(active_only=False)}
             manual_id = unique_slug(base, taken)
@@ -150,7 +176,9 @@ class ManualLibrary:
             previous=existing,
         )
 
-    async def add_folder(self, folder: str | Path, *, recursive: bool = False, force: bool = False) -> list[IngestResult]:
+    async def add_folder(
+        self, folder: str | Path, *, recursive: bool = False, force: bool = False
+    ) -> list[IngestResult]:
         """Ingest every supported file; equipment/revision come from a sidecar `<file>.manual.json`."""
         base = Path(folder)
         if not await asyncio.to_thread(base.is_dir):
@@ -182,8 +210,15 @@ class ManualLibrary:
             results.append(await self.add_manual(candidate, equipment=equipment, revision=revision, force=force))
         return results
 
-    async def add_video(self, manual_id: str, *, uri: str, transcript: Mapping[str, Any] | None = None,
-                        local_path: Optional[Path] = None, force: bool = False) -> AlignmentReport:
+    async def add_video(
+        self,
+        manual_id: str,
+        *,
+        uri: str,
+        transcript: Mapping[str, Any] | None = None,
+        local_path: Optional[Path] = None,
+        force: bool = False,
+    ) -> AlignmentReport:
         """align_video over the stored card; persist segments with expected_revision; judgement log under storage_root."""
         del local_path  # v1: automatic transcription is not wired (see Completion Note deviation)
         card = await self.catalog.get(manual_id)
@@ -238,8 +273,9 @@ class ManualLibrary:
             previous=previous,
         )
 
-    async def verify_procedure(self, manual_id: str, procedure_id: str, *, user: str,
-                               expected_revision: Optional[int] = None) -> ManualCard:
+    async def verify_procedure(
+        self, manual_id: str, procedure_id: str, *, user: str, expected_revision: Optional[int] = None
+    ) -> ManualCard:
         """Flip verification → verified (verified_by/at) and freeze the current ManualVersion."""
         card = await self.catalog.get(manual_id)
         if card is None:
@@ -280,8 +316,17 @@ class ManualLibrary:
 
         return await asyncio.to_thread(_read)
 
-    async def _ingest(self, path: Path, *, manual_id: str, equipment: Sequence[str], revision: str,
-                      source_uri: Optional[str], sha256: str, previous: Optional[ManualCard]) -> IngestResult:
+    async def _ingest(
+        self,
+        path: Path,
+        *,
+        manual_id: str,
+        equipment: Sequence[str],
+        revision: str,
+        source_uri: Optional[str],
+        sha256: str,
+        previous: Optional[ManualCard],
+    ) -> IngestResult:
         """Shared pipeline; deletes the staged tree and returns 'refused' on any failure."""
         try:
             source_format = _source_format(path)
@@ -337,9 +382,7 @@ class ManualLibrary:
             if source_format == "pdf":
                 pages = await asyncio.to_thread(extract_markdown_per_page, path, images_dir=images_dir)
                 page_texts = dict(pages)
-                figure_candidates = await asyncio.to_thread(
-                    extract_figures, path, figures_dir, page_texts=page_texts
-                )
+                figure_candidates = await asyncio.to_thread(extract_figures, path, figures_dir, page_texts=page_texts)
 
             if figure_candidates:
                 try:
@@ -373,7 +416,9 @@ class ManualLibrary:
                             media_ids={candidate.image.sha256: ref.media_id},
                         )
                         if links or unresolved:
-                            media_refs[index] = ref.model_copy(update={"callouts": links, "unresolved_callouts": unresolved})
+                            media_refs[index] = ref.model_copy(
+                                update={"callouts": links, "unresolved_callouts": unresolved}
+                            )
 
             source_info = SourceInfo(
                 source_uri=source_uri,
@@ -451,7 +496,9 @@ class ManualLibrary:
             warnings=warnings,
         )
 
-    async def _to_markdown(self, path: Path, source_format: SourceFormat, *, images_dir: Path) -> tuple[str, dict[int, int]]:
+    async def _to_markdown(
+        self, path: Path, source_format: SourceFormat, *, images_dir: Path
+    ) -> tuple[str, dict[int, int]]:
         """PDF via extract_markdown_per_page(images_dir=…) as '## Page N'; DOCX via docx_to_markdown; image-only ⇒ ImageOnlyManual."""
         if source_format == "pdf":
             all_empty = await asyncio.to_thread(self._pdf_all_pages_textless, path)

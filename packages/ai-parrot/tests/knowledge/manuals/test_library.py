@@ -69,9 +69,7 @@ def _header_draft() -> cd.ManualHeaderDraft:
             )
         ],
         parts=[
-            Extracted[str](
-                value="Base plate", evidence=Evidence(node_id="0001", quote="Base plate"), confidence=0.9
-            ),
+            Extracted[str](value="Base plate", evidence=Evidence(node_id="0001", quote="Base plate"), confidence=0.9),
         ],
         hazards=[
             Extracted[str](
@@ -88,9 +86,7 @@ def _procedure_draft(steps: tuple[str, ...], figure_step_refs: Mapping[int, str]
     step_drafts = [
         cd.StepDraft(
             order=index + 1,
-            text=Extracted[str](
-                value=line, evidence=Evidence(node_id="0002", quote=line), confidence=0.9
-            ),
+            text=Extracted[str](value=line, evidence=Evidence(node_id="0002", quote=line), confidence=0.9),
             figure_refs=[figure_step_refs[index]] if index in figure_step_refs else [],
         )
         for index, line in enumerate(steps)
@@ -111,7 +107,9 @@ def _procedure_draft(steps: tuple[str, ...], figure_step_refs: Mapping[int, str]
     )
 
 
-def _build_library(*, tmp_path: Path, adapter, file_manager, indexer_factory) -> tuple[ManualLibrary, InMemoryManualCatalog]:
+def _build_library(
+    *, tmp_path: Path, adapter, file_manager, indexer_factory
+) -> tuple[ManualLibrary, InMemoryManualCatalog]:
     """Build a ManualLibrary wired to an in-memory catalog and fake collaborators."""
     catalog = InMemoryManualCatalog()
     library = ManualLibrary(
@@ -126,7 +124,9 @@ def _build_library(*, tmp_path: Path, adapter, file_manager, indexer_factory) ->
     return library, catalog
 
 
-async def test_add_manual_pipeline_fake_indexer(fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory) -> None:
+async def test_add_manual_pipeline_fake_indexer(
+    fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory
+) -> None:
     """Card with 1 procedure / 5 ordered steps, 2 paired figures uploaded (storage keys, no URLs), queue entries listed."""
     pytest.importorskip("pymupdf")
     manual_pdf = _build_captioned_manual_pdf(tmp_path / "manuals" / "model-x-rev-a.pdf")
@@ -155,7 +155,9 @@ async def test_add_manual_pipeline_fake_indexer(fake_adapter, fake_file_manager,
     assert stored is not None and stored.manual_id == result.card.manual_id
 
 
-async def test_add_manual_refuses_image_only(image_only_pdf, fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory) -> None:
+async def test_add_manual_refuses_image_only(
+    image_only_pdf, fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory
+) -> None:
     """status='refused' with an OCR-not-supported warning; no catalog write."""
     library, catalog = _build_library(
         tmp_path=tmp_path, adapter=fake_adapter, file_manager=fake_file_manager, indexer_factory=fake_indexer_factory
@@ -172,7 +174,9 @@ async def test_add_manual_refuses_image_only(image_only_pdf, fake_adapter, fake_
     assert await catalog.list_cards() == []
 
 
-async def test_add_manual_unchanged_on_same_sha(manual_pdf, fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory) -> None:
+async def test_add_manual_unchanged_on_same_sha(
+    manual_pdf, fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory
+) -> None:
     """Second add ⇒ 'unchanged'; force=True re-cards."""
     fake_adapter.script(cd.ManualHeaderDraft, _header_draft())
     fake_adapter.script(cd.ProcedureStepsDraft, _procedure_draft(STEPS_REV_A, {2: "Fig. 1", 4: "Fig. 2"}), key="0002")
@@ -232,7 +236,9 @@ async def test_refresh_appends_version_and_relinks(
     assert new_steps[2].identity.step_id not in original_step_ids
 
 
-async def test_verify_procedure_freezes_version(manual_pdf, fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory) -> None:
+async def test_verify_procedure_freezes_version(
+    manual_pdf, fake_adapter, fake_file_manager, tmp_path, fake_indexer_factory
+) -> None:
     """verification == 'verified', verified_by stamped."""
     fake_adapter.script(cd.ManualHeaderDraft, _header_draft())
     fake_adapter.script(cd.ProcedureStepsDraft, _procedure_draft(STEPS_REV_A, {2: "Fig. 1", 4: "Fig. 2"}), key="0002")
