@@ -90,7 +90,11 @@ class ParsedResponse:
     images: List[Path] = field(default_factory=list)
     documents: List[Path] = field(default_factory=list)
     media: List[Path] = field(default_factory=list)  # Videos, audio
-    
+
+    # Remote http(s) media (presigned figures, video deep links) — never Path-coerced (FEAT-601 M12)
+    image_urls: List[str] = field(default_factory=list)
+    media_urls: List[str] = field(default_factory=list)
+
     # Charts
     charts: List[ChartData] = field(default_factory=list)
     
@@ -389,6 +393,19 @@ def _extract_charts_from_response(response: Any, parsed: ParsedResponse) -> None
                     parsed.images.remove(path)
 
 
+def _collect_url_media(source: Any, parsed: ParsedResponse) -> None:
+    """Copy ``image_urls`` / ``media_urls`` from ``source`` into ``parsed``.
+
+    Args:
+        source: An AIMessage/AgentResponse-like object (attributes optional).
+        parsed: The ParsedResponse being built; mutated in place.
+    """
+    for attr, target in (("image_urls", parsed.image_urls), ("media_urls", parsed.media_urls)):
+        for url in getattr(source, attr, None) or []:
+            if isinstance(url, str) and url.startswith(("http://", "https://")) and url not in target:
+                target.append(url)
+
+
 def parse_response(response: Any) -> ParsedResponse:
     """
     Parse an AIMessage or similar response into structured content.
@@ -516,6 +533,12 @@ def parse_response(response: Any) -> ParsedResponse:
             if inner is not None:
                 _extract_table_from_inner(inner, parsed)
     
+    # Extract remote URL media (FEAT-601 M12) — no exists() check, no Path() coercion
+    _collect_url_media(response, parsed)
+    inner = getattr(response, 'response', None)
+    if inner is not None and not isinstance(inner, str):
+        _collect_url_media(inner, parsed)
+
     # Extract images
     if hasattr(response, 'images') and response.images:
         for img_path in response.images:
