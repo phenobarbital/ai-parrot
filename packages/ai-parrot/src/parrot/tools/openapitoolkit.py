@@ -65,6 +65,12 @@ class OpenAPIToolkit(AbstractToolkit):
     for robust HTTP handling with retry logic, proxy support, etc.
     """
 
+    #: `set_cookies` is a programmatic cookie-jar API for cookie-mode session
+    #: handoff (e.g. from a browser driver), never an LLM-invokable tool —
+    #: exclude it from `_generate_tools()` so AC-4 (byte-identical generated
+    #: tools with defaults) holds regardless of `auth_type`.
+    exclude_tools: tuple[str, ...] = ("set_cookies",)
+
     def __init__(
         self,
         spec: Union[str, Dict[str, Any]],
