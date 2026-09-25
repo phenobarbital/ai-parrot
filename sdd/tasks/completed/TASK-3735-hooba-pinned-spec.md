@@ -339,10 +339,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3735
+- Feature: hooba-toolkit
+- Implementation SHA: 7fd930fa5bcbaed6a72188db5cbe94e2110da0f4
+- Closed at (UTC): 2026-09-25T17:49:28+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_tier_engine_outcome | failed (workspace-wide import-impact sweep; pre-existing unrelated failures across ai-parrot-integrations/voice, ai-parrot-loaders, etc.) |
+| orchestrator_targeted_verification | packages/ai-parrot-tools/tests/hooba/ full directory (test_models.py + test_settings_credentials.py + test_spec.py): 14/14 passed. Native coder verified live fetch of api.hooba.com (656 paths pruned to 136, all 14 REQUIRED_PATHS present) and ruff clean before commit. |
+| seat_summary | Seat: haiku(native)->sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~251.5s · Tokens: ~74773 total (in/out breakdown n/a) |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions temporarily copied in from the main checkout since worktrees have no compiled .so; removed afterward (never committed). |

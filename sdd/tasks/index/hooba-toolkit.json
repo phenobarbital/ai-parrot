@@ -96,7 +96,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -106,8 +106,9 @@
       "parallelism_notes": "depends on TASK-3733: hooba/spec/ is a subpackage of the parrot_tools/hooba package it creates; tests go in its tests/hooba package",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3735-hooba-pinned-spec.md"
+      "completed_at": "2026-09-25T17:49:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3735-hooba-pinned-spec.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3736",
