@@ -458,7 +458,10 @@ async def test_outbound_calls_have_no_auth_header_and_no_redirects(xfer_manager)
     await manager.download_file("download.txt", io.BytesIO())
 
     assert session.requests
-    assert all("Authorization" not in headers and allow_redirects is False for _, _, headers, allow_redirects in session.requests)
+    assert all(
+        "Authorization" not in headers and allow_redirects is False
+        for _, _, headers, allow_redirects in session.requests
+    )
 
 
 async def test_upload_session_rejects_foreign_upload_url(xfer_manager):

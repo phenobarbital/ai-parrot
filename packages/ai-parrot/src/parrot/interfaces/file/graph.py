@@ -630,7 +630,8 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
                 )
                 try:
                     parent, _ = await self._retrying(
-                        lambda: self._drive().items.by_drive_item_id(parent.id).children.post(folder), label="create-folder"
+                        lambda: self._drive().items.by_drive_item_id(parent.id).children.post(folder),
+                        label="create-folder",
                     )
                 except Exception as create_error:
                     if self._status_code_of(create_error) != 409:
@@ -660,9 +661,7 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
         )
         return session.upload_url
 
-    async def _put_session(
-        self, upload_url: str, read: Callable[[int], Awaitable[bytes]], size: int
-    ) -> Dict[str, Any]:
+    async def _put_session(self, upload_url: str, read: Callable[[int], Awaitable[bytes]], size: int) -> Dict[str, Any]:
         """Upload chunks to a validated pre-authenticated session URL."""
         url = self._validate_graph_url(upload_url, purpose="upload session")
         offset = 0
