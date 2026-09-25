@@ -1,4 +1,5 @@
 """FEAT-601 M12 — WhatsApp URL images: direct send, download fallback (TASK-3719)."""
+
 from __future__ import annotations
 
 import contextlib
@@ -35,12 +36,8 @@ async def test_whatsapp_direct_url_then_fallback(monkeypatch: pytest.MonkeyPatch
     async def _fake_temp_download(url: str, *, allowed_hosts) -> AsyncIterator[Path]:
         yield fake_path
 
-    monkeypatch.setattr(
-        "parrot.integrations.whatsapp.wrapper.temp_download", _fake_temp_download
-    )
-    monkeypatch.setattr(
-        "parrot.integrations.whatsapp.wrapper.allowed_media_hosts", lambda: ("example.com",)
-    )
+    monkeypatch.setattr("parrot.integrations.whatsapp.wrapper.temp_download", _fake_temp_download)
+    monkeypatch.setattr("parrot.integrations.whatsapp.wrapper.allowed_media_hosts", lambda: ("example.com",))
 
     parsed = ParsedResponse(
         image_urls=[
@@ -73,12 +70,8 @@ async def test_whatsapp_refused_fallback_is_logged(monkeypatch: pytest.MonkeyPat
         raise MediaDownloadRefused(f"Host not allowlisted for {url!r}")
         yield  # pragma: no cover - unreachable, keeps this an async generator
 
-    monkeypatch.setattr(
-        "parrot.integrations.whatsapp.wrapper.temp_download", _fake_temp_download
-    )
-    monkeypatch.setattr(
-        "parrot.integrations.whatsapp.wrapper.allowed_media_hosts", lambda: ("example.com",)
-    )
+    monkeypatch.setattr("parrot.integrations.whatsapp.wrapper.temp_download", _fake_temp_download)
+    monkeypatch.setattr("parrot.integrations.whatsapp.wrapper.allowed_media_hosts", lambda: ("example.com",))
 
     parsed = ParsedResponse(image_urls=["https://evil.example.net/figure.png"])
 

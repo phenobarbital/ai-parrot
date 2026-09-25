@@ -11,6 +11,7 @@ Supports:
 - Per-user conversation memory
 - 24-hour messaging window tracking
 """
+
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
@@ -51,7 +52,7 @@ class WhatsAppAgentWrapper:
 
     def __init__(
         self,
-        agent: 'AbstractBot',
+        agent: "AbstractBot",
         config: WhatsAppAgentConfig,
         app: web.Application,
     ):
@@ -82,7 +83,7 @@ class WhatsAppAgentWrapper:
         )
 
         # Register aiohttp webhook routes
-        safe_id = config.chatbot_id.replace(' ', '_').lower()
+        safe_id = config.chatbot_id.replace(" ", "_").lower()
         self.route = config.webhook_path or f"/api/whatsapp/{safe_id}/webhook"
 
         # GET for Meta verification challenge
@@ -111,7 +112,7 @@ class WhatsAppAgentWrapper:
         """
         vt = request.query.get("hub.verify_token")
         ch = request.query.get("hub.challenge")
-        self.logger.info("Webhook verification request: verify_token=%s", '***' if vt else 'None')
+        self.logger.info("Webhook verification request: verify_token=%s", "***" if vt else "None")
 
         response_text, status_code = self.wa.webhook_challenge_handler(vt=vt, ch=ch)
         return web.Response(
@@ -134,10 +135,7 @@ class WhatsAppAgentWrapper:
         # This is synchronous — pywa calls _on_message synchronously
         loop = asyncio.get_event_loop()
         response_text, status_code = await loop.run_in_executor(
-            _executor,
-            lambda: self.wa.webhook_update_handler(
-                update=body, hmac_header=hmac_header
-            )
+            _executor, lambda: self.wa.webhook_update_handler(update=body, hmac_header=hmac_header)
         )
         return web.Response(
             text=response_text,
@@ -166,9 +164,7 @@ class WhatsAppAgentWrapper:
     # Async Message Processing
     # =========================================================================
 
-    async def _process_message(
-        self, client: WhatsApp, message: WhatsAppMessage
-    ) -> None:
+    async def _process_message(self, client: WhatsApp, message: WhatsAppMessage) -> None:
         """
         Process an incoming WhatsApp message through the AI-Parrot agent.
 
@@ -200,9 +196,7 @@ class WhatsAppAgentWrapper:
 
         # Mark message as read (shows blue checkmarks to user)
         try:
-            await asyncio.get_event_loop().run_in_executor(
-                _executor, message.mark_as_read
-            )
+            await asyncio.get_event_loop().run_in_executor(_executor, message.mark_as_read)
         except Exception as e:
             self.logger.debug("Failed to mark message as read: %s", e)
 
@@ -225,17 +219,14 @@ class WhatsAppAgentWrapper:
             await self._send_parsed_response(sender, parsed, client)
 
         except Exception as e:
-            self.logger.error(
-                f"Error processing message from {sender}: {e}",
-                exc_info=True
-            )
+            self.logger.error(f"Error processing message from {sender}: {e}", exc_info=True)
             try:
                 await asyncio.get_event_loop().run_in_executor(
                     _executor,
                     lambda: client.send_message(
                         to=sender,
                         text="Sorry, I encountered an error processing your request. Please try again.",
-                    )
+                    ),
                 )
             except Exception:
                 self.logger.error("Failed to send error message", exc_info=True)
@@ -244,9 +235,7 @@ class WhatsAppAgentWrapper:
     # Response Sending
     # =========================================================================
 
-    async def _send_parsed_response(
-        self, to: str, parsed: ParsedResponse, client: WhatsApp
-    ) -> None:
+    async def _send_parsed_response(self, to: str, parsed: ParsedResponse, client: WhatsApp) -> None:
         """
         Send a parsed response to a WhatsApp user.
 
@@ -277,39 +266,27 @@ class WhatsAppAgentWrapper:
 
             for chunk in split_message(wa_text, self.config.max_message_length):
                 try:
-                    await loop.run_in_executor(
-                        _executor,
-                        lambda c=chunk: client.send_message(to=to, text=c)
-                    )
+                    await loop.run_in_executor(_executor, lambda c=chunk: client.send_message(to=to, text=c))
                 except Exception as e:
                     self.logger.error("Failed to send text message to %s: %s", to, e)
 
         # Send images
         for image_path in parsed.images:
             try:
-                await loop.run_in_executor(
-                    _executor,
-                    lambda p=image_path: client.send_image(
-                        to=to, image=str(p)
-                    )
-                )
+                await loop.run_in_executor(_executor, lambda p=image_path: client.send_image(to=to, image=str(p)))
             except Exception as e:
                 self.logger.error("Failed to send image to %s: %s", to, e)
 
         # Remote image URLs (FEAT-601 M12): direct URL first, bounded download on provider rejection
         for url in getattr(parsed, "image_urls", []) or []:
             try:
-                await loop.run_in_executor(
-                    _executor, lambda u=url: client.send_image(to=to, image=u)
-                )
+                await loop.run_in_executor(_executor, lambda u=url: client.send_image(to=to, image=u))
                 continue
             except Exception as exc:  # noqa: BLE001 — provider rejection triggers the fallback
                 self.logger.warning("WhatsApp rejected image URL %s (%s); downloading", url, exc)
             try:
                 async with temp_download(url, allowed_hosts=allowed_media_hosts()) as path:
-                    await loop.run_in_executor(
-                        _executor, lambda p=path: client.send_image(to=to, image=str(p))
-                    )
+                    await loop.run_in_executor(_executor, lambda p=path: client.send_image(to=to, image=str(p)))
             except MediaDownloadRefused as exc:
                 self.logger.warning("Refused image URL %s: %s", url, exc)
             except Exception as exc:  # noqa: BLE001
@@ -327,7 +304,7 @@ class WhatsAppAgentWrapper:
                             to=to,
                             image=src,
                             caption=chart.title or None,
-                        )
+                        ),
                     )
                 except Exception as e:
                     self.logger.error("Failed to send chart to %s: %s", to, e)
@@ -341,7 +318,7 @@ class WhatsAppAgentWrapper:
                         to=to,
                         document=str(p),
                         filename=p.name,
-                    )
+                    ),
                 )
             except Exception as e:
                 self.logger.error("Failed to send document to %s: %s", to, e)
@@ -363,14 +340,13 @@ class WhatsAppAgentWrapper:
         if self.config.allowed_numbers is None:
             return True
         cleaned = sanitize_phone_number(wa_id)
-        return cleaned in [
-            sanitize_phone_number(n) for n in self.config.allowed_numbers
-        ]
+        return cleaned in [sanitize_phone_number(n) for n in self.config.allowed_numbers]
 
     def _get_or_create_session(self, phone_number: str) -> WhatsAppUserSession:
         """Get or create a user session with conversation memory."""
         if phone_number not in self.sessions:
             from ...memory import InMemoryConversation
+
             self.sessions[phone_number] = WhatsAppUserSession(
                 phone_number=phone_number,
                 conversation_memory=InMemoryConversation(),
