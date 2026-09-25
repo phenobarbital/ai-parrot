@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-25T16:45:51+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-25T21:37:27+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -443,7 +443,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -458,8 +458,9 @@
       "parallelism_notes": "final guard: scans graph.py/batch.py (TASK-3754), sharepoint/onedrive managers (TASK-3756/3757), filemanager.py (TASK-3760) and the refactored tool modules (TASK-3762/3764)",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3768-feature-guards.md"
+      "completed_at": "2026-09-25T21:37:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3768-feature-guards.md",
+      "verification": "verified"
     }
   ]
 }
