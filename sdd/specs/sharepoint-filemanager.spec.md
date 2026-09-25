@@ -590,8 +590,10 @@ FileManagerToolkit(manager_type="onedrive", user="me", auth_mode="cached")  # fs
           (``index`` = input position); retries RETRYABLE_STATUS honouring Retry-After up to max_retries; never
           raises for an item. A 401/403 on any item marks it ``failed`` (error_code="auth") and every not-yet-started
           item ``skipped`` (attempts=0). The same BinaryIO object appearing twice in ``items`` is rejected up front
-          with ValueError (a stream cannot be read twice, S10). Cancellation of the outer task propagates to
-          in-flight items; already-finished results are still returned by the toolkit summary as ``aborted``."""
+          with ValueError (a stream cannot be read twice, S10). Cancellation of the outer task propagates
+          immediately as ``asyncio.CancelledError`` — it is never caught to synthesize a partial summary; a
+          caller that needs the results already produced before cancellation must capture them itself before
+          cancelling (this matches AC8's literal "propagate outer cancellation" and standard asyncio practice)."""
       async def download_files(self, items: Sequence[Tuple[str, Union[Path, BinaryIO]]]) -> List[BatchItemResult]: ...
 
       # ---- HTTP serving (parity with s3.py:613-660) ----------------------
@@ -899,7 +901,8 @@ Test locations: `packages/ai-parrot/tests/interfaces/test_graph_filemanager.py`
 (M1), `test_onedrive_client_user_drive.py` (M2), `test_sharepoint_filemanager.py`
 (M3), `test_onedrive_filemanager.py` (M4), `test_file_shim.py` (M5, extended),
 `packages/ai-parrot/tests/tools/test_filemanager_batch_ops.py` (M6),
-`packages/ai-parrot-tools/tests/test_o365_file_tools_refactor.py` (M7/M8),
+`packages/ai-parrot-tools/tests/test_o365_sharepoint_file_tools.py` (M7),
+`packages/ai-parrot-tools/tests/test_o365_onedrive_file_tools.py` (M8),
 `packages/ai-parrot/tests/test_msgraph_extra.py` (M9).
 
 ### Integration Tests
@@ -939,7 +942,7 @@ def sp_manager(fake_graph, monkeypatch):
 > This feature is complete when ALL of the following are true:
 
 - [ ] AC1. `GraphDriveFileManager` implements every abstract method of `FileManagerInterface` with the exact signatures at `navigator/utils/file/abstract.py:53-155`, plus `create_folder`/`remove_folder`/`rename_folder`/`rename_file` (:170-212) and a server-side `find_files` override (:265); `issubclass` and `inspect.signature` parity tests pass.
-- [ ] AC2. `SharePointFileManager` and `OneDriveFileManager` differ from the base **only** by `manager_name`, `__init__`, `_build_client` and `_resolve_drive_id` (test asserts no other overridden attributes).
+- [ ] AC2. `SharePointFileManager` and `OneDriveFileManager` differ from the base **only** by `manager_name`, `client_class`, `__init__`, `_build_client` and `_resolve_drive_id` (test asserts no other overridden attributes). `client_class` is load-bearing for `adopt_client`'s `isinstance` check and is a legitimate per-subclass override, not scope creep.
 - [ ] AC3. All four auth modes (`direct`, `on_behalf_of`, `delegated`, `cached`) and username/password credentials reach the corresponding `O365Client` calls, with **one** token acquisition per manager (`test_connect_auth_mode_branches`).
 - [ ] AC4. `OneDriveClient._resolve_user_drive` resolves `me/drive` and `users/{id}/drive`, rejects `me` under app-only auth, and its error names `Files.ReadWrite.All`; `OneDriveClient._resolve_drive()` behaviour unchanged. `SharepointClient` has no source change (`git diff --stat` on the file is empty).
 - [ ] AC5. Uploads route by `SMALL_FILE_THRESHOLD` (single PUT vs. upload session with `CHUNK_SIZE` chunks and `Content-Range`), default `conflict_behavior="replace"`, and honour `fail` / `rename`.
@@ -959,7 +962,7 @@ def sp_manager(fake_graph, monkeypatch):
 - [ ] AC14. `packages/ai-parrot/pyproject.toml` has an `msgraph` extra with the three pins and `all` includes it; `uv pip install -e "packages/ai-parrot[msgraph]"` resolves in the dev venv (recorded in `artifacts/logs/`).
 - [ ] AC15. No `httpx`, `requests`, `langchain*` or `print(` in any new or modified module (`ruff check` TID251 clean; AST test for httpx in the three new modules).
 - [ ] AC16. Docs: `docs/interfaces/graph-filemanager.md` exists and `docs/integrations/office365-oauth2.md` lists the application/delegated permissions the managers need.
-- [ ] AC17. All new unit tests pass under `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src pytest packages/ai-parrot/tests/interfaces packages/ai-parrot/tests/tools/test_filemanager_batch_ops.py packages/ai-parrot-tools/tests/test_o365_file_tools_refactor.py -v`; existing `packages/ai-parrot/tests/interfaces/test_file_shim.py` and `tests/tools/test_filemanager_toolkit.py` still pass.
+- [ ] AC17. All new unit tests pass under `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src pytest packages/ai-parrot/tests/interfaces packages/ai-parrot/tests/tools/test_filemanager_batch_ops.py packages/ai-parrot-tools/tests/test_o365_sharepoint_file_tools.py packages/ai-parrot-tools/tests/test_o365_onedrive_file_tools.py -v`; existing `packages/ai-parrot/tests/interfaces/test_file_shim.py` and `tests/tools/test_filemanager_toolkit.py` still pass (their tool-count/tool-names assertions are updated to account for the 3 new `_OP_TO_METHOD` entries from AC12).
 - [ ] AC18. The live suite (M10) is run once manually by the owner against the tenant knobs above before `/sdd-done` and its output is saved under `artifacts/logs/FEAT-603-live.log`; a skipped live suite is recorded as such in the task's Completion Note, never as a pass.
 - [ ] AC19. No breaking change: every existing public method of `SharepointClient`, `OneDriveClient`, `O365Client`, `FileManagerTool`, `FileManagerToolkit`, and the O365 toolkits keeps its signature (a signature-snapshot test compares against the base commit).
 
@@ -1220,7 +1223,8 @@ Verified against: `42029db04` (dev, 2026-09-25)
 | `packages/ai-parrot/tests/interfaces/test_onedrive_filemanager.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/interfaces/test_graph_filemanager_live.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/tools/test_filemanager_batch_ops.py` | CREATE | — | — | — |
-| `packages/ai-parrot-tools/tests/test_o365_file_tools_refactor.py` | CREATE | — | — | — |
+| `packages/ai-parrot-tools/tests/test_o365_sharepoint_file_tools.py` | CREATE | — | — | — |
+| `packages/ai-parrot-tools/tests/test_o365_onedrive_file_tools.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/test_msgraph_extra.py` | CREATE | — | — | — |
 | `docs/interfaces/graph-filemanager.md` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/interfaces/onedrive.py` | MODIFY | `        self._drive_info: Optional[DriveItem] = None` | `onedrive.py:62` | 1 |
