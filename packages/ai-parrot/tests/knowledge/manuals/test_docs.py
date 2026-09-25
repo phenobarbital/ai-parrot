@@ -1,4 +1,5 @@
 """FEAT-601 M13 — operator guide structure (TASK-3729)."""
+
 from __future__ import annotations
 
 from pathlib import Path
