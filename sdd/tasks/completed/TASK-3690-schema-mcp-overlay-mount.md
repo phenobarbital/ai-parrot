@@ -229,10 +229,9 @@ async def test_two_overlays_cross_kind(tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-luna, backend: codex, attempt_uid a20b7e2f2b114726b49266bb8b3f5443)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `3765667b0` + engine lint-autofix commit `28a6c5cb6` (merge `15872b331`). Mount the `schema` overlay namespace and register `wiki_schema_*` tools in `create_wiki_mcp_server`. Engine-side merge fidelity check passed (`unexpected_files: []`).
+**Merge validation**: merge-tier (root scope) — same 4 pre-existing/environmental failures as prior chunks (see `issue:33fe54e65d2d`), unrelated to this task's files. Reviewed via `coder-review:5845d8cd59848f2d81f10682`, zero fix commits needed.
 
 **Deviations from spec**: none

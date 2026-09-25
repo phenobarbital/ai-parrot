@@ -229,10 +229,9 @@ async def test_repair_noop_without_plane():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: sonnet, backend: native, attempt_uid b7d1fc4b12214f28b4f29996c62f2e52)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `167407d62` + engine lint-autofix commit `bd3bf02db` (merge `85a5e4653`). `SQLToolkit`: error-driven read-repair (`_repair_from_error`), warm from plane (`_warm_table_cache` consults `cache_partition.get` first), plane-aware `validate_query` (message toggles "schema plane or cache" vs "cache") and `generate_query` (appends bounded "JOIN PATHS:" lines from FK metadata when a plane is present). Coder's own pre-merge run: 32 passed (15 new + 17 parity, `test_sql_toolkit_methods.py` + `test_retry_wiring.py`). Engine-side merge fidelity check passed (`unexpected_files: []`).
+**Merge validation**: merge-tier (root scope) — same 4 pre-existing/environmental failures as prior chunks (see `issue:33fe54e65d2d`), unrelated to this task's files. Reviewed via `coder-review:7cd1b3f7350b583a153932dc`, zero fix commits needed.
 
 **Deviations from spec**: none
