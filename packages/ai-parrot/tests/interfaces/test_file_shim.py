@@ -11,7 +11,7 @@ import pytest
 import parrot.interfaces.file as shim
 import navigator.utils.file as upstream
 from parrot.interfaces.file import LocalFileManager
-from parrot.tools.filemanager import FileManagerFactory, FileManagerTool
+from parrot.tools.filemanager import FileManagerFactory, FileManagerTool, FileManagerToolkit
 from navigator.utils.file.local import LocalFileManager as UpstreamLocal
 from navigator.utils.file.tmp import TempFileManager as UpstreamTemp
 
@@ -37,6 +37,15 @@ def test_no_cloud_sdk_leak_on_import():
     importlib.reload(shim)
     assert "aioboto3" not in sys.modules
     assert "google.cloud.storage" not in sys.modules
+
+
+def test_no_msgraph_leak_on_import():
+    """Importing parrot.interfaces.file does not load msgraph or the Graph managers (FEAT-603 AC10)."""
+    if "msgraph" in sys.modules or "parrot.interfaces.file.graph" in sys.modules:
+        pytest.skip("msgraph already loaded by a prior test")
+    importlib.reload(shim)
+    assert "msgraph" not in sys.modules
+    assert "parrot.interfaces.file.graph" not in sys.modules
 
 
 def test_lazy_identity():
@@ -119,3 +128,69 @@ async def test_filemanager_tool_create_uses_get_metadata(tmp_path: Path):
     # rather than hardcoding tmp_path / "hello.txt".
     actual_path = tmp_path / body["path"]
     assert actual_path.read_bytes() == b"hi"
+
+
+# ── FEAT-603 — SharePoint / OneDrive lazy exports and native factory ────
+
+def test_shim_exports_new_managers_lazily():
+    """SharePointFileManager / OneDriveFileManager are the classes from their submodules and are in __all__."""
+    from parrot.interfaces.file.sharepoint import SharePointFileManager as _SP_Direct
+    from parrot.interfaces.file.onedrive import OneDriveFileManager as _OD_Direct
+
+    assert shim.SharePointFileManager is _SP_Direct
+    assert shim.OneDriveFileManager is _OD_Direct
+    assert "SharePointFileManager" in shim.__all__
+    assert "OneDriveFileManager" in shim.__all__
+
+
+def test_parrot_tools_file_shim_parity():
+    """parrot_tools.file re-exports the same SharePoint/OneDrive classes as the core shim."""
+    import parrot_tools.file as tools_shim
+
+    assert tools_shim.SharePointFileManager is shim.SharePointFileManager
+    assert tools_shim.OneDriveFileManager is shim.OneDriveFileManager
+
+
+def test_factory_sharepoint_and_onedrive_native(monkeypatch):
+    """FileManagerFactory.create resolves sharepoint/onedrive locally, without I/O at construction time.
+
+    SharePointFileManager / OneDriveFileManager stay abstract (missing copy_file/create_file/download_file/
+    get_file_url/upload_file) until the Graph write-ops land (TASK-3752/3753/3754 — out of this task's
+    dependency chain, TASK-3758 depends only on TASK-3756/TASK-3757). __abstractmethods__ is cleared for the
+    duration of this test only, so the assertion below verifies the factory dispatch itself (module/class
+    resolved, kwargs forwarded, no network I/O) without depending on those sibling tasks.
+    """
+    from parrot.interfaces.file.sharepoint import SharePointFileManager
+    from parrot.interfaces.file.onedrive import OneDriveFileManager
+
+    monkeypatch.setattr(SharePointFileManager, "__abstractmethods__", frozenset())
+    monkeypatch.setattr(OneDriveFileManager, "__abstractmethods__", frozenset())
+
+    sp = FileManagerFactory.create("sharepoint", site="TeamSite")
+    assert isinstance(sp, SharePointFileManager)
+
+    od = FileManagerFactory.create("onedrive", user="me")
+    assert isinstance(od, OneDriveFileManager)
+
+
+def test_factory_unknown_lists_all_keys():
+    """The ValueError for an unrecognised manager_type lists all six valid keys."""
+    with pytest.raises(ValueError) as ei:
+        FileManagerFactory.create("xyz")  # type: ignore[arg-type]
+    msg = str(ei.value)
+    for key in ("fs", "temp", "s3", "gcs", "sharepoint", "onedrive"):
+        assert key in msg
+
+
+def test_toolkit_literal_accepts_new_types(monkeypatch):
+    """FileManagerToolkit accepts the new manager_type literals and builds its tools without network I/O.
+
+    See test_factory_sharepoint_and_onedrive_native for why __abstractmethods__ is cleared here too.
+    """
+    from parrot.interfaces.file.sharepoint import SharePointFileManager
+
+    monkeypatch.setattr(SharePointFileManager, "__abstractmethods__", frozenset())
+
+    toolkit = FileManagerToolkit(manager_type="sharepoint", site="TeamSite")
+    tools = toolkit.get_tools()
+    assert len(tools) == 9

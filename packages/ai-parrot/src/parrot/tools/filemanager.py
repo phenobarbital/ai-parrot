@@ -10,6 +10,7 @@ Legacy API: ``FileManagerTool`` — single tool with an ``operation`` dispatch f
 from typing import Literal, Optional, Dict, Any, Union, Set
 from pathlib import Path
 from io import BytesIO
+import importlib
 import logging
 from pydantic import Field
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
@@ -18,13 +19,20 @@ from parrot.conf import OUTPUT_DIR
 from parrot.interfaces.file import FileManagerInterface
 from navigator.utils.file import FileManagerFactory as _UpstreamFileManagerFactory
 
+#: Storage backends accepted by :class:`FileManagerFactory` / ``FileManagerTool`` /
+#: ``FileManagerToolkit`` — upstream navigator-native (``"fs"``, ``"temp"``, ``"s3"``, ``"gcs"``) plus
+#: parrot-native Microsoft Graph managers (``"sharepoint"``, ``"onedrive"``) (FEAT-603).
+ManagerType = Literal["fs", "temp", "s3", "gcs", "sharepoint", "onedrive"]
+
 
 class FileManagerFactory:
     """Factory for creating file managers.
 
     Thin delegate over ``navigator.utils.file.FileManagerFactory``.
     Maps the historical parrot-side key ``"fs"`` to the upstream
-    ``"local"`` key; forwards all other keys verbatim.
+    ``"local"`` key; forwards all other keys verbatim. Parrot-native
+    managers (``"sharepoint"``, ``"onedrive"``) are resolved locally and
+    never forwarded upstream, which does not know them (FEAT-603).
     """
 
     _PARROT_TO_UPSTREAM = {
@@ -34,31 +42,36 @@ class FileManagerFactory:
         "gcs": "gcs",
     }
 
+    # Parrot-native managers resolved locally (never forwarded upstream, which does not know them) — FEAT-603.
+    _PARROT_NATIVE = {
+        "sharepoint": ("parrot.interfaces.file.sharepoint", "SharePointFileManager"),
+        "onedrive": ("parrot.interfaces.file.onedrive", "OneDriveFileManager"),
+    }
+
     @staticmethod
-    def create(
-        manager_type: Literal["fs", "temp", "s3", "gcs"],
-        **kwargs: Any,
-    ) -> FileManagerInterface:
-        """Create a file manager instance via the upstream factory.
+    def create(manager_type: ManagerType, **kwargs: Any) -> FileManagerInterface:
+        """Create a file manager instance.
 
         Args:
-            manager_type: One of ``"fs"`` (local disk), ``"temp"``,
-                ``"s3"``, ``"gcs"``.
-            **kwargs: Forwarded to the upstream manager constructor.
+            manager_type: ``"fs"``, ``"temp"``, ``"s3"``, ``"gcs"`` (upstream navigator managers) or ``"sharepoint"``,
+                ``"onedrive"`` (parrot-native Microsoft Graph managers, lazily imported).
+            **kwargs: Forwarded to the manager constructor.
 
         Returns:
             A FileManagerInterface instance.
 
         Raises:
-            ValueError: If ``manager_type`` is not recognised.
+            ValueError: If ``manager_type`` is not recognised (the message lists every valid key).
         """
+        native = FileManagerFactory._PARROT_NATIVE.get(manager_type)
+        if native is not None:
+            module_path, class_name = native
+            return getattr(importlib.import_module(module_path), class_name)(**kwargs)
         try:
             upstream_key = FileManagerFactory._PARROT_TO_UPSTREAM[manager_type]
         except KeyError:
-            raise ValueError(
-                f"Unknown manager type: {manager_type}. "
-                f"Available: {sorted(FileManagerFactory._PARROT_TO_UPSTREAM)}"
-            )
+            available = sorted({**FileManagerFactory._PARROT_TO_UPSTREAM, **FileManagerFactory._PARROT_NATIVE})
+            raise ValueError(f"Unknown manager type: {manager_type}. Available: {available}") from None
         return _UpstreamFileManagerFactory.create(upstream_key, **kwargs)
 
 
@@ -166,12 +179,12 @@ class FileManagerTool(AbstractTool):
     """
 
     name: str = "file_manager"
-    description: str = "Manage files across different storage backends (local, S3, GCS, temp)"
+    description: str = "Manage files across different storage backends (local, S3, GCS, SharePoint, OneDrive, temp)"
     args_schema: type[AbstractToolArgsSchema] = FileManagerToolArgs
 
     def __init__(
         self,
-        manager_type: Literal["fs", "temp", "s3", "gcs"] = "fs",
+        manager_type: ManagerType = "fs",
         default_output_dir: str = None,
         allowed_operations: Optional[set] = None,
         max_file_size: int = 100 * 1024 * 1024,  # 100MB
@@ -181,7 +194,7 @@ class FileManagerTool(AbstractTool):
         """Initialize file manager tool.
 
         Args:
-            manager_type: Type of file manager ("fs", "temp", "s3", "gcs").
+            manager_type: Type of file manager ("fs", "temp", "s3", "gcs", "sharepoint", "onedrive").
             default_output_dir: Default directory for file operations.
             allowed_operations: Set of allowed operations (None = all allowed).
             max_file_size: Maximum file size in bytes.
@@ -535,6 +548,8 @@ class FileManagerToolkit(AbstractToolkit):
       - ``"temp"`` — temporary storage (auto-cleaned on exit)
       - ``"s3"``   — AWS S3 (requires aioboto3)
       - ``"gcs"``  — Google Cloud Storage (requires google-cloud-storage)
+      - ``"sharepoint"`` — SharePoint document library (requires ai-parrot[msgraph])
+      - ``"onedrive"`` — a user's OneDrive (requires ai-parrot[msgraph])
 
     Example::
 
@@ -548,7 +563,7 @@ class FileManagerToolkit(AbstractToolkit):
 
     def __init__(
         self,
-        manager_type: Literal["fs", "temp", "s3", "gcs"] = "fs",
+        manager_type: ManagerType = "fs",
         default_output_dir: Optional[str] = None,
         allowed_operations: Optional[Set[str]] = None,
         max_file_size: int = 100 * 1024 * 1024,  # 100 MB
@@ -559,7 +574,7 @@ class FileManagerToolkit(AbstractToolkit):
 
         Args:
             manager_type: Storage backend — one of ``"fs"``, ``"temp"``,
-                ``"s3"``, ``"gcs"``.
+                ``"s3"``, ``"gcs"``, ``"sharepoint"``, ``"onedrive"``.
             default_output_dir: Default directory for resolving relative paths.
                 Defaults to ``parrot.conf.OUTPUT_DIR``.
             allowed_operations: Restrict which operations are exposed as tools.
