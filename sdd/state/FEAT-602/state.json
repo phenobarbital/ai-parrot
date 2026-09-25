@@ -1,0 +1,113 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-602",
+  "feature_slug": "hooba-toolkit",
+  "started_at": "2026-09-25T11:05:53Z",
+  "updated_at": "2026-09-25T11:54:54Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-602/source.md",
+    "fetched_at": "2026-09-25T11:05:53Z",
+    "summary_oneline": "HoobaToolkit \u2014 OpenAPI (api.hooba.com) + Playwright hybrid toolkit: draft invoices, draft expenses/purchases, BBVA bank Excel \u2192 expense drafts for Spanish aut\u00f3nomos"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-09-25T11:05:53Z",
+      "completed_at": "2026-09-25T11:05:53Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-09-25T11:34:29Z",
+      "completed_at": "2026-09-25T11:34:29Z",
+      "duration_seconds": 0,
+      "queries_total": 38,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-602/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-09-25T11:34:29Z",
+      "completed_at": "2026-09-25T11:47:07Z",
+      "duration_seconds": 1500,
+      "queries_executed": 41,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 24,
+      "grep_calls": 21,
+      "git_calls": 4,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-09-25T11:47:07Z",
+      "completed_at": "2026-09-25T11:47:07Z",
+      "duration_seconds": 0,
+      "synthesis_path": "sdd/state/FEAT-602/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 13,
+      "claims_high_conf": 8,
+      "claims_medium_conf": 5,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-09-25T11:52:16Z",
+      "completed_at": "2026-09-25T11:52:16Z",
+      "duration_seconds": 0,
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-09-25T11:54:46Z",
+      "completed_at": "2026-09-25T11:54:54Z",
+      "duration_seconds": 0,
+      "proposal_path": "sdd/proposals/hooba-toolkit.proposal.md",
+      "commit_sha": "7c4a89bb56419b56a990fe486a837a1eb36eca7a",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "localization high-confidence; engine and transport exist; U1-U5 decided in Q&A"
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 24,
+    "grep_calls": 21,
+    "git_calls": 4,
+    "wall_seconds": 2400
+  },
+  "errors": [
+    {
+      "phase": "research",
+      "at": "2026-09-25T11:47:07Z",
+      "message": "max_wall_seconds (300) exceeded: wall clock included the interactive plan gate; all planned queries executed, run not truncated",
+      "recoverable": true
+    }
+  ],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "run /sdd-spec FEAT-602"
+  },
+  "wiki_available": true,
+  "detected_mode": "enrichment"
+}
