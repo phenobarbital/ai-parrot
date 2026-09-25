@@ -141,7 +141,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -151,8 +151,9 @@
       "parallelism_notes": "TASK-3753: same file graph.py; batch engine wraps upload_file/download_file and appends after _move_or_rename",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3754-graph-batch-serving.md"
+      "completed_at": "2026-09-25T20:53:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3754-graph-batch-serving.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3755",
