@@ -1,0 +1,32 @@
+{
+  "feature": "fixgroup-1a7f930d81a4",
+  "feature_id": "FEAT-606",
+  "spec": "sdd/specs/fixgroup-1a7f930d81a4.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-25T00:00:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3803",
+      "slug": "agy-schema-in-cwd",
+      "title": "Materialize the agy --json-schema file inside the sandbox-readable cwd",
+      "feature_id": "FEAT-606",
+      "feature": "fixgroup-1a7f930d81a4",
+      "spec": "sdd/specs/fixgroup-1a7f930d81a4.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; touches only google_coding.py and its test file",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:e7bdce192812",
+      "file": "sdd/tasks/active/TASK-3803-agy-schema-in-cwd.md"
+    }
+  ]
+}
