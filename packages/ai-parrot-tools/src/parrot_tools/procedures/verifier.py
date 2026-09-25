@@ -3,6 +3,7 @@
 Unlike the contracts ``CitationVerifier`` (which drops unsupported claims), a missing required step,
 an unsupported critical field or an unresolvable citation BLOCKS release: ``answer_kind="incomplete"``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -127,6 +128,7 @@ class ProcedureVerifier:
 
     async def _resolve(self, citation: ProcedureCitation) -> Optional[RejectedCitation]:
         """Return ``None`` when the citation resolves verbatim, else the rejection in the archived section."""
+
         def reject(reason: str) -> RejectedCitation:
             return RejectedCitation(manual_id=citation.manual_id, node_id=citation.node_id, reason=reason)
 

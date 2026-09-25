@@ -40,7 +40,9 @@ def _step_view(order: int, *, torque: str | None = None, duration_minutes: int |
 
 def _citation(node_id: str, quote: str, *, version_n: int = 1, source_sha256: str = "") -> ProcedureCitation:
     """Build a released citation for one node."""
-    return ProcedureCitation(manual_id="manual-1", node_id=node_id, quote=quote, version_n=version_n, source_sha256=source_sha256)
+    return ProcedureCitation(
+        manual_id="manual-1", node_id=node_id, quote=quote, version_n=version_n, source_sha256=source_sha256
+    )
 
 
 def _assembled(
@@ -118,9 +120,7 @@ async def test_verifier_releases_complete_procedure():
     evidence = FakeEvidence(sections)
     verifier = ProcedureVerifier(catalog=None, evidence=evidence, allowed_revision=_revision())
 
-    outcome = await verifier.verify(
-        assembled, draft_prose="Follow step 3 at 30 N·m.", kind="procedure", pattern=None
-    )
+    outcome = await verifier.verify(assembled, draft_prose="Follow step 3 at 30 N·m.", kind="procedure", pattern=None)
 
     assert outcome.answer.answer_kind == "procedure"
     assert len(outcome.answer.steps) == 5
