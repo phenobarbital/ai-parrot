@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import fnmatch
 import io
 import logging
@@ -11,7 +12,20 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, AsyncIterator, Awaitable, BinaryIO, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 from urllib.parse import quote, urlsplit
 
 import aiohttp
@@ -31,9 +45,6 @@ from msgraph.generated.models.drive_item_uploadable_properties import DriveItemU
 from msgraph.generated.models.folder import Folder
 from msgraph.generated.models.item_reference import ItemReference
 
-import contextvars
-from typing import Sequence
-
 from aiohttp import web
 from navigator.utils.file import FileManagerInterface, FileMetadata
 from navigator.utils.file.web import FileServingExtension
@@ -41,12 +52,12 @@ from pydantic import BaseModel, ConfigDict
 
 from parrot.interfaces.o365 import O365Client
 
+from .batch import BatchErrorCode, BatchItemResult, BatchState, BatchSummary
+
 # Incremented by GraphDriveFileManager._retrying on every retry; set per batch item (TASK-3754).
 _RETRY_COUNTER: contextvars.ContextVar[Optional[List[int]]] = contextvars.ContextVar(
     "_graph_retry_counter", default=None
 )
-
-from .batch import BatchErrorCode, BatchItemResult, BatchState, BatchSummary
 
 __all__ = (
     "BatchErrorCode",
