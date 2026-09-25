@@ -16,6 +16,7 @@ from .base import O365Tool, O365ToolArgsSchema
 from .delta import DEFAULT_MAX_PAGES, DriveDeltaHelper
 from parrot.interfaces.o365 import O365Client
 from parrot.interfaces.sharepoint import SharepointClient
+from parrot.interfaces.file.sharepoint import SharePointFileManager
 
 # ============================================================================
 # LIST SHAREPOINT FILES TOOL
@@ -69,76 +70,21 @@ class ListSharePointFilesTool(O365Tool):
     )
     args_schema: Type[BaseModel] = ListSharePointFilesArgs
 
-    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
-        """
-        List SharePoint files using the SharepointClient.
-
-        Args:
-            client: Authenticated SharepointClient instance
-            **kwargs: Tool parameters
-
-        Returns:
-            Dict with file listing
-        """
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """List SharePoint files through SharePointFileManager (one authentication, all pages)."""
         site = kwargs.get("site")
         library = kwargs.get("library", "Documents")
         folder_path = kwargs.get("folder_path", "")
         recursive = kwargs.get("recursive", False)
-
+        manager = SharePointFileManager(site=site, library=library, credentials=dict(self.credentials or {}))
+        manager.adopt_client(client)
         try:
-            # Configure client
-            client.site = site
-            client.credentials["tenant"] = site
-
-            # Build full path
-            full_path = f"{library}/{folder_path}".strip("/") if folder_path else library
-
-            self.logger.info(f"Listing files in: {site}/{full_path}")
-
-            # Resolve site and drive
-            await client.verify_sharepoint_access()
-            drive_info = await client._resolve_drive(library)
-
-            # Get folder contents
-            if folder_path:
-                folder_item = (
-                    await client.graph_client.drives.by_drive_id(drive_info.id)
-                    .items.by_drive_item_id(f"root:/{folder_path}:")
-                    .get()
-                )
-            else:
-                folder_item = await client.graph_client.drives.by_drive_id(drive_info.id).root.get()
-
-            files = []
-
+            self.logger.info(f"Listing files in: {site}/{library}/{folder_path}".rstrip("/"))
             if recursive:
-                # Recursive listing
-                files = await self._list_recursive(client, drive_info.id, folder_item.id, folder_path)
+                files = await self._list_recursive(manager, folder_path)
             else:
-                # Single level listing
-                children = (
-                    await client.graph_client.drives.by_drive_id(drive_info.id)
-                    .items.by_drive_item_id(folder_item.id)
-                    .children.get()
-                )
-
-                if children and children.value:
-                    for item in children.value:
-                        file_info = {
-                            "name": item.name,
-                            "path": f"{folder_path}/{item.name}".strip("/"),
-                            "is_folder": item.folder is not None,
-                            "size": item.size or 0,
-                            "modified": (
-                                item.last_modified_date_time.isoformat() if item.last_modified_date_time else None
-                            ),
-                            "web_url": item.web_url,
-                            "id": item.id,
-                        }
-                        files.append(file_info)
-
+                files = [self._entry_dict(e) for e in await manager.list_entries(folder_path)]
             self.logger.info(f"Found {len(files)} items")
-
             return {
                 "site": site,
                 "library": library,
@@ -147,42 +93,36 @@ class ListSharePointFilesTool(O365Tool):
                 "files": files,
                 "recursive": recursive,
             }
-
         except Exception as e:
             self.logger.error(f"Failed to list SharePoint files: {e}")
             raise
+        finally:
+            await manager.close()
 
-    async def _list_recursive(
-        self, client: SharepointClient, drive_id: str, folder_id: str, base_path: str
-    ) -> List[Dict[str, Any]]:
-        """Recursively list all files in a folder."""
-        files = []
-
-        children = (
-            await client.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(folder_id).children.get()
-        )
-
-        if children and children.value:
-            for item in children.value:
-                item_path = f"{base_path}/{item.name}".strip("/")
-
-                file_info = {
-                    "name": item.name,
-                    "path": item_path,
-                    "is_folder": item.folder is not None,
-                    "size": item.size or 0,
-                    "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None,
-                    "web_url": item.web_url,
-                    "id": item.id,
-                }
-                files.append(file_info)
-
-                # Recurse into folders
-                if item.folder:
-                    subfolder_files = await self._list_recursive(client, drive_id, item.id, item_path)
-                    files.extend(subfolder_files)
-
+    async def _list_recursive(self, manager: SharePointFileManager, base_path: str) -> List[Dict[str, Any]]:
+        """Breadth-first listing of ``base_path`` and every sub-folder (folders included, all pages)."""
+        files: List[Dict[str, Any]] = []
+        queue: List[str] = [base_path]
+        while queue:
+            current_path = queue.pop(0)
+            for entry in await manager.list_entries(current_path):
+                files.append(self._entry_dict(entry))
+                if entry.is_folder:
+                    queue.append(entry.path)
         return files
+
+    @staticmethod
+    def _entry_dict(entry: Any) -> Dict[str, Any]:
+        """Map a ``DriveEntry`` into the tool's list-response file dict."""
+        return {
+            "name": entry.name,
+            "path": entry.path,
+            "is_folder": entry.is_folder,
+            "size": entry.size or 0,
+            "modified": entry.modified_at.isoformat() if entry.modified_at else None,
+            "web_url": entry.web_url,
+            "id": entry.id,
+        }
 
 
 # ============================================================================
@@ -236,60 +176,33 @@ class SearchSharePointFilesTool(O365Tool):
     )
     args_schema: Type[BaseModel] = SearchSharePointFilesArgs
 
-    async def _execute_graph_operation(self, client: SharepointClient, **kwargs) -> Dict[str, Any]:
-        """
-        Search SharePoint files using the SharepointClient.
-
-        Args:
-            client: Authenticated SharepointClient instance
-            **kwargs: Tool parameters
-
-        Returns:
-            Dict with search results
-        """
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """Search SharePoint files through SharePointFileManager.find_entries (all pages; max_results after filtering)."""
         site = kwargs.get("site")
         query = kwargs.get("query")
         library = kwargs.get("library", "Documents")
         folder_path = kwargs.get("folder_path", "")
         file_extension = kwargs.get("file_extension")
         max_results = min(kwargs.get("max_results", 20), 100)
-
+        manager = SharePointFileManager(site=site, library=library, credentials=dict(self.credentials or {}))
+        manager.adopt_client(client)
         try:
-            # Configure client
-            client.site = site
-            client.credentials["tenant"] = site
-
             self.logger.info(f"Searching SharePoint for: {query}")
-
-            # Configure search spec
-            client._srcfiles = [
-                {"directory": f"{library}/{folder_path}".strip("/"), "pattern": query, "extension": file_extension}
+            extension = f".{file_extension.lstrip('.')}" if file_extension else None
+            entries = await manager.find_entries(keywords=query, extension=extension, prefix=folder_path or None)
+            entries = entries[:max_results]
+            files = [
+                {
+                    "name": entry.name,
+                    "path": entry.path,
+                    "size": entry.size or 0,
+                    "modified": entry.modified_at.isoformat() if entry.modified_at else None,
+                    "web_url": entry.web_url,
+                    "id": entry.id,
+                }
+                for entry in entries
             ]
-
-            # Verify access and perform search
-            await client.verify_sharepoint_access()
-            search_results = await client.file_search()
-
-            # Limit results
-            if len(search_results) > max_results:
-                search_results = search_results[:max_results]
-
-            # Format results
-            files = []
-            for result in search_results:
-                if item := result.get("item"):
-                    file_info = {
-                        "name": item.name,
-                        "path": result.get("path", ""),
-                        "size": item.size or 0,
-                        "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None,
-                        "web_url": item.web_url,
-                        "id": item.id,
-                    }
-                    files.append(file_info)
-
             self.logger.info(f"Found {len(files)} matching files")
-
             return {
                 "site": site,
                 "query": query,
@@ -299,10 +212,11 @@ class SearchSharePointFilesTool(O365Tool):
                 "total_results": len(files),
                 "files": files,
             }
-
         except Exception as e:
             self.logger.error(f"Failed to search SharePoint: {e}")
             raise
+        finally:
+            await manager.close()
 
 
 # ============================================================================
