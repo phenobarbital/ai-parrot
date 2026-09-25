@@ -338,10 +338,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3761
+- Feature: sharepoint-filemanager
+- Implementation SHA: b7306d448c7331a785cf85b9ab680ec4e9f8c3db
+- Closed at (UTC): 2026-09-25T20:50:32+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| validation_note | Own declared tests: test_o365_sharepoint_file_tools.py 4/4 passed, test_o365_delta_tools.py 63/63 passed (no regression to untouched Delta blocks). The 37 failures in the merge-tier validation run are entirely inside packages/parrot-formdesigner/tests (unrelated distribution) -- pre-existing, consistent with this repo's known baseline breakage (see ledger issue:71cbc792726c). |
