@@ -384,10 +384,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3734
+- Feature: hooba-toolkit
+- Implementation SHA: 14d664c083de7a73e6a9a7cfb3308fba5d986353
+- Closed at (UTC): 2026-09-25T17:48:43+00:00
+- Fix commits: 14d664c083de7a73e6a9a7cfb3308fba5d986353
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| merge_tier_engine_outcome | failed (workspace-wide import-impact sweep; pre-existing unrelated failures across ai-parrot-integrations/voice, ai-parrot-loaders, etc.) |
+| orchestrator_targeted_verification | Found and fixed 2 confirmed defects during review (see fix commit): empty-identity fail-closed bypass in make_login_hook, and the test's 3rd required S7 scenario not actually testing 'bad secret shape'. Post-fix: packages/ai-parrot-tools/tests/hooba/ 14/14 passed. ruff/black clean. |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 180.7s · Tokens: n/a |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions temporarily copied in from the main checkout since worktrees have no compiled .so; removed afterward (never committed). |
