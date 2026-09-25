@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 
@@ -90,23 +90,59 @@ def read_ledger(worktree: Path) -> dict[str, LedgerEntry]:
         if not isinstance(distribution, str) or not isinstance(entry, dict):
             return {}
         core_blobs = entry.get("core_blobs")
-        if not isinstance(core_blobs, dict) or set(entry.keys()) != {"core_blobs"}:
+        if not isinstance(core_blobs, dict) or not set(entry.keys()) <= {"core_blobs", "impact_blobs", "impacted_hash"}:
             return {}
+        impact_blobs = entry.get("impact_blobs", {})
+        impacted_hash = entry.get("impacted_hash", "")
         if not all(isinstance(k, str) and isinstance(v, str) for k, v in core_blobs.items()):
             return {}
-        ledger[distribution] = LedgerEntry(distribution=distribution, core_blobs=dict(core_blobs))
+        if not isinstance(impact_blobs, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in impact_blobs.items()
+        ):
+            return {}
+        if not isinstance(impacted_hash, str):
+            return {}
+        ledger[distribution] = LedgerEntry(
+            distribution=distribution,
+            core_blobs=dict(core_blobs),
+            impact_blobs=dict(impact_blobs),
+            impacted_hash=impacted_hash,
+        )
     return ledger
 
 
-def record_green_escalation(worktree: Path, hit_dists: Sequence[str], core_files: Sequence[str]) -> None:
-    """Store current blob hashes of core_files for each distribution after a green run."""
+def _entry_payload(entry: LedgerEntry) -> dict[str, object]:
+    """Serialize a ledger entry while retaining older-reader compatibility for core-only records."""
+    payload: dict[str, object] = {"core_blobs": dict(entry.core_blobs)}
+    if entry.impact_blobs:
+        payload["impact_blobs"] = dict(entry.impact_blobs)
+    if entry.impacted_hash:
+        payload["impacted_hash"] = entry.impacted_hash
+    return payload
+
+
+def record_green_escalation(
+    worktree: Path,
+    hit_dists: Sequence[str],
+    core_files: Sequence[str],
+    impact_files: Sequence[str] = (),
+    impacted_hashes: Mapping[str, str] = {},
+) -> None:
+    """Store blob hashes of core and impact files for each distribution after a green run."""
     git_dir = worktree_git_dir(worktree)
     if git_dir is None:
         return
-    blobs = {p: b for p in core_files if (b := _blob(worktree, p))}
-    current = {d: {"core_blobs": dict(e.core_blobs)} for d, e in read_ledger(worktree).items()}
+    core_blobs = {p: b for p in core_files if (b := _blob(worktree, p))}
+    impact_blobs = {p: b for p in impact_files if (b := _blob(worktree, p))}
+    current = {d: _entry_payload(e) for d, e in read_ledger(worktree).items()}
     for dist in hit_dists:
-        current[dist] = {"core_blobs": blobs}
+        entry = LedgerEntry(
+            distribution=dist,
+            core_blobs=core_blobs,
+            impact_blobs=impact_blobs,
+            impacted_hash=impacted_hashes.get(dist, ""),
+        )
+        current[dist] = _entry_payload(entry)
     _atomic_write_json(git_dir / LEDGER_FILENAME, current)
     return None
 
@@ -121,7 +157,7 @@ def record_red_run(worktree: Path, hit_dists: Sequence[str]) -> None:
     git_dir = worktree_git_dir(worktree)
     if git_dir is None:
         return
-    current = {d: {"core_blobs": dict(e.core_blobs)} for d, e in read_ledger(worktree).items()}
+    current = {d: _entry_payload(e) for d, e in read_ledger(worktree).items()}
     changed = False
     for dist in hit_dists:
         if current.pop(dist, None) is not None:
@@ -131,17 +167,30 @@ def record_red_run(worktree: Path, hit_dists: Sequence[str]) -> None:
     return None
 
 
-def pending_escalations(worktree: Path, hits: Sequence[CoreHit]) -> tuple[list[str], list[str]]:
-    """(distributions to run, distributions skipped because ledger blobs match current content)."""
+def pending_escalations(
+    worktree: Path,
+    hits: Sequence[CoreHit],
+    cap_hits: Mapping[str, Sequence[str]] = {},
+    cap_impacted: Mapping[str, str] = {},
+) -> tuple[list[str], list[str]]:
+    """Return distributions to run and those whose core and cap records still match."""
     ledger = read_ledger(worktree)
     to_run: list[str] = []
     skipped: list[str] = []
-    for dist in sorted({d for h in hits for d in h.distributions}):
+    for dist in sorted({d for h in hits for d in h.distributions} | set(cap_hits)):
         relevant = [h.path for h in hits if dist in h.distributions]
         entry = ledger.get(dist)
-        if entry is not None and all(
+        core_matches = not relevant or (entry is not None and all(
             (blob := _blob(worktree, path)) is not None and blob == entry.core_blobs.get(path) for path in relevant
-        ):
+        ))
+        cap_files = cap_hits.get(dist)
+        cap_matches = cap_files is None or (
+            entry is not None
+            and entry.impacted_hash != ""
+            and cap_impacted.get(dist) == entry.impacted_hash
+            and all((blob := _blob(worktree, path)) is not None and blob == entry.impact_blobs.get(path) for path in cap_files)
+        )
+        if core_matches and cap_matches:
             skipped.append(dist)
         else:
             to_run.append(dist)
