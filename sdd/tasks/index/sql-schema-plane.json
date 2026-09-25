@@ -291,7 +291,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -302,8 +302,9 @@
       "parallelism_notes": "sets partition.plane/plane_write/origin attributes added by TASK-3691 (cache.py) and lazily imports SchemaPlaneService.from_dir from TASK-3684 (schema/service.py); modifies bots/database/agent.py (only this task touches it)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3693-database-agent-schema-plane.md"
+      "completed_at": "2026-09-25T02:03:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3693-database-agent-schema-plane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3694",
@@ -331,7 +332,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -342,8 +343,9 @@
       "parallelism_notes": "documents the six CLI verbs from TASK-3687 (cli.py) and the four tool names from TASK-3689 (schema/tools.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3695-schema-plane-docs.md"
+      "completed_at": "2026-09-25T02:03:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3695-schema-plane-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3696",

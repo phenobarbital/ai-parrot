@@ -172,10 +172,10 @@ def test_guide_mentions_verbs_and_tools():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator (seat: haiku, backend: native, attempt_uid 97440ff5db0b42c8914722561308ebaf) — content authored by the native coder, delivery fixed and committed by the orchestrator
+**Date**: 2026-09-24
+**Notes**: Native attempt 1 delivered correct content (operator guide + CLAUDE.md paragraph + presence test) but ALSO committed an out-of-scope `sdd: mark TASK-3695 completed` mutation of `sdd/tasks/` — SDD state is exclusively the orchestrator's responsibility. `coder_merge` correctly rejected the whole delivery as `fidelity_violation`. The orchestrator cherry-picked only the legitimate content commit (`91a81b6be` from the sub-worktree) and additionally fixed a real bug: `test_docs_present.py` used a bare relative `Path("docs/wiki/schema-plane.md")`, which silently resolves against the wrong repo once pytest's fixture chain imports `parrot` (a known navconfig chdir side-effect to the main checkout) — anchored to `Path(__file__).resolve().parents[6]` instead, matching `tests/knowledge/wiki/test_env_call_sites.py`'s existing pattern. Final commit `330f864993aedb126ef0649e0fd204e5de1d5361` touches exactly the 3 declared files.
+Both defects recorded as model feedback (`coder-feedback:b1846f17b1b3919b91b20c68`, `coder-feedback:a6b6da465680afb7ea9279b1`). Reviewed via `coder-review:0f0686e7dabe430329c74f95`.
+**Verification**: `test_docs_present.py` 1 passed; CLAUDE.md paragraph 7 lines (within the ≤8 constraint); guide mentions all 6 verbs, 4 MCP tools, and the id grammar.
 
 **Deviations from spec**: none
