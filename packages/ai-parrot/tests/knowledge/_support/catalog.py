@@ -139,9 +139,12 @@ class InMemoryManualCatalog(ManualCatalogStore):
                 ("caption", " ".join(figure.caption or "" for figure in card.figures)),
             ]
             ranked = [
-                (matched, float(sum(text.casefold().count(term) for term in terms)) / len(terms)) for matched, text in fields
+                (matched, float(sum(text.casefold().count(term) for term in terms)) / len(terms))
+                for matched, text in fields
             ]
-            matched, rank = max(ranked, key=lambda row: (row[1], -["manual", "procedure", "equipment", "caption"].index(row[0])))
+            matched, rank = max(
+                ranked, key=lambda row: (row[1], -["manual", "procedure", "equipment", "caption"].index(row[0]))
+            )
             if rank:
                 hits.append(SearchHit(card=card, rank=rank, matched=matched))
         hits.sort(key=lambda hit: (-hit.rank, hit.card.manual_id))
@@ -181,14 +184,18 @@ class InMemoryManualCatalog(ManualCatalogStore):
         """Mark pending rows in flight and increment their attempts."""
         claimed: list[PublicationRecord] = []
         for record in await self.pending_publications(limit=limit):
-            updated = record.model_copy(update={"state": "in_flight", "attempts": record.attempts + 1, "updated_at": self._now()})
+            updated = record.model_copy(
+                update={"state": "in_flight", "attempts": record.attempts + 1, "updated_at": self._now()}
+            )
             self.outbox[record.key] = updated
             claimed.append(updated)
         return claimed
 
     async def complete_publication(self, record: PublicationRecord, *, receipt: str) -> PublicationRecord:
         """Mark a publication record as published."""
-        updated = record.model_copy(update={"state": "published", "receipt": receipt, "last_error": None, "updated_at": self._now()})
+        updated = record.model_copy(
+            update={"state": "published", "receipt": receipt, "last_error": None, "updated_at": self._now()}
+        )
         self.outbox[record.key] = updated
         return updated
 

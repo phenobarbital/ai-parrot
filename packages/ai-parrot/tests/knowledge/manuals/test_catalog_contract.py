@@ -25,7 +25,9 @@ def make_card(manual_id: str = "model-x", **overrides: object) -> ManualCard:
     step = Step(
         identity=StepIdentity(step_id=f"{manual_id}:install:one", content_hash="a" * 64),
         order=1,
-        text=Extracted(value="Install the filter.", evidence=Evidence(node_id="n1", quote="Install the filter."), confidence=0.9),
+        text=Extracted(
+            value="Install the filter.", evidence=Evidence(node_id="n1", quote="Install the filter."), confidence=0.9
+        ),
     )
     payload: dict[str, object] = {
         "manual_id": manual_id,
@@ -42,7 +44,15 @@ def make_card(manual_id: str = "model-x", **overrides: object) -> ManualCard:
                 steps=[step],
             )
         ],
-        "figures": [MediaRef(media_id=f"{manual_id}:fig-1", kind="figure", storage_key="figures/one.png", label="Fig 1", caption="Filter view")],
+        "figures": [
+            MediaRef(
+                media_id=f"{manual_id}:fig-1",
+                kind="figure",
+                storage_key="figures/one.png",
+                label="Fig 1",
+                caption="Filter view",
+            )
+        ],
     }
     payload.update(overrides)
     return ManualCard(**payload)
@@ -106,12 +116,24 @@ async def test_queue_ordering(catalog: InMemoryManualCatalog) -> None:
         text=Extracted(value="Install", evidence=Evidence(node_id="n2", quote="Install"), confidence=0.5),
     )
     low = make_card("a-low", procedures=[make_card().procedures[0].model_copy(update={"steps": [low_step]})])
-    unpaired = make_card("c-figure", procedures=[make_card().procedures[0].model_copy(update={"steps": [low_step.model_copy(update={"figure_refs": ["Missing"]})]})])
+    unpaired = make_card(
+        "c-figure",
+        procedures=[
+            make_card()
+            .procedures[0]
+            .model_copy(update={"steps": [low_step.model_copy(update={"figure_refs": ["Missing"]})]})
+        ],
+    )
     stale = make_card("d-stale", verification="stale")
     for card in (missing, low, unpaired, stale):
         await catalog.upsert(card)
     entries = await catalog.verification_queue()
-    assert [entry.reason for entry in entries] == ["missing_evidence", "low_confidence_step", "unpaired_figure", "stale"]
+    assert [entry.reason for entry in entries] == [
+        "missing_evidence",
+        "low_confidence_step",
+        "unpaired_figure",
+        "stale",
+    ]
     assert entries[0].items == ["revision"]
     assert queue_entries_for(stale)[0].reason == "stale"
 

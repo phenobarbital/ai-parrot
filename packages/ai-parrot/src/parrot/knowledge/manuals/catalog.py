@@ -38,7 +38,9 @@ class CatalogConflictError(CatalogError):
 
     def __init__(self, manual_id: str, expected: Optional[int], actual: Optional[int]) -> None:
         """Initialize the conflict with optimistic-revision details."""
-        super().__init__(f"manual {manual_id!r} was modified concurrently (expected revision {expected}, found {actual})")
+        super().__init__(
+            f"manual {manual_id!r} was modified concurrently (expected revision {expected}, found {actual})"
+        )
         self.manual_id = manual_id
         self.expected = expected
         self.actual = actual
@@ -165,7 +167,9 @@ def queue_entries_for(card: ManualCard) -> list[VerificationQueueEntry]:
     """
     entries: list[VerificationQueueEntry] = []
     missing = sorted(
-        path for path, provenance in card.field_provenance.items() if provenance.origin == "llm" and not provenance.substantiates
+        path
+        for path, provenance in card.field_provenance.items()
+        if provenance.origin == "llm" and not provenance.substantiates
     )
     if missing:
         entries.append(VerificationQueueEntry(card=card, reason="missing_evidence", items=missing))
@@ -197,7 +201,9 @@ def queue_entries_for(card: ManualCard) -> list[VerificationQueueEntry]:
     return entries
 
 
-def rank_equipment(query: str, equipment: Sequence[EquipmentRef], *, limit: int = 5) -> list[tuple[EquipmentRef, float]]:
+def rank_equipment(
+    query: str, equipment: Sequence[EquipmentRef], *, limit: int = 5
+) -> list[tuple[EquipmentRef, float]]:
     """Resolve equipment by exact or fuzzy model and alias matching.
 
     Args:
@@ -217,16 +223,27 @@ def rank_equipment(query: str, equipment: Sequence[EquipmentRef], *, limit: int 
     candidates = [(reference, [reference.model, *reference.aliases]) for reference in equipment]
     if any(normalized == value.strip().casefold() for _, values in candidates for value in values if value.strip()):
         scored = [
-            (reference, 1.0 if any(normalized == value.strip().casefold() for value in values if value.strip()) else 0.0)
+            (
+                reference,
+                1.0 if any(normalized == value.strip().casefold() for value in values if value.strip()) else 0.0,
+            )
             for reference, values in candidates
         ]
     else:
         try:
             from rapidfuzz import fuzz  # noqa: PLC0415 - optional graphindex dependency
         except ImportError as exc:  # pragma: no cover - depends on optional install
-            raise RuntimeError("Equipment resolution requires rapidfuzz. Install it with `pip install 'ai-parrot[graphindex]'`.") from exc
+            raise RuntimeError(
+                "Equipment resolution requires rapidfuzz. Install it with `pip install 'ai-parrot[graphindex]'`."
+            ) from exc
         scored = [
-            (reference, max((float(fuzz.token_sort_ratio(query, value)) / 100.0 for value in values if value.strip()), default=0.0))
+            (
+                reference,
+                max(
+                    (float(fuzz.token_sort_ratio(query, value)) / 100.0 for value in values if value.strip()),
+                    default=0.0,
+                ),
+            )
             for reference, values in candidates
         ]
     return sorted(scored, key=lambda row: (-row[1], row[0].equipment_id))[:limit]
