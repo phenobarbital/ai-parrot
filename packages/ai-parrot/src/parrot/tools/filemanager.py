@@ -7,9 +7,11 @@ Implementations live in parrot.interfaces.file:
 Preferred API: ``FileManagerToolkit`` — each file operation is a separate, focused tool.
 Legacy API: ``FileManagerTool`` — single tool with an ``operation`` dispatch field (deprecated).
 """
+
 from typing import Literal, Optional, Dict, Any, Union, Set
 from pathlib import Path
 from io import BytesIO
+import importlib
 import logging
 from pydantic import Field
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
@@ -18,13 +20,20 @@ from parrot.conf import OUTPUT_DIR
 from parrot.interfaces.file import FileManagerInterface
 from navigator.utils.file import FileManagerFactory as _UpstreamFileManagerFactory
 
+#: Storage backends accepted by :class:`FileManagerFactory` / ``FileManagerTool`` /
+#: ``FileManagerToolkit`` — upstream navigator-native (``"fs"``, ``"temp"``, ``"s3"``, ``"gcs"``) plus
+#: parrot-native Microsoft Graph managers (``"sharepoint"``, ``"onedrive"``) (FEAT-603).
+ManagerType = Literal["fs", "temp", "s3", "gcs", "sharepoint", "onedrive"]
+
 
 class FileManagerFactory:
     """Factory for creating file managers.
 
     Thin delegate over ``navigator.utils.file.FileManagerFactory``.
     Maps the historical parrot-side key ``"fs"`` to the upstream
-    ``"local"`` key; forwards all other keys verbatim.
+    ``"local"`` key; forwards all other keys verbatim. Parrot-native
+    managers (``"sharepoint"``, ``"onedrive"``) are resolved locally and
+    never forwarded upstream, which does not know them (FEAT-603).
     """
 
     _PARROT_TO_UPSTREAM = {
@@ -34,31 +43,36 @@ class FileManagerFactory:
         "gcs": "gcs",
     }
 
+    # Parrot-native managers resolved locally (never forwarded upstream, which does not know them) — FEAT-603.
+    _PARROT_NATIVE = {
+        "sharepoint": ("parrot.interfaces.file.sharepoint", "SharePointFileManager"),
+        "onedrive": ("parrot.interfaces.file.onedrive", "OneDriveFileManager"),
+    }
+
     @staticmethod
-    def create(
-        manager_type: Literal["fs", "temp", "s3", "gcs"],
-        **kwargs: Any,
-    ) -> FileManagerInterface:
-        """Create a file manager instance via the upstream factory.
+    def create(manager_type: ManagerType, **kwargs: Any) -> FileManagerInterface:
+        """Create a file manager instance.
 
         Args:
-            manager_type: One of ``"fs"`` (local disk), ``"temp"``,
-                ``"s3"``, ``"gcs"``.
-            **kwargs: Forwarded to the upstream manager constructor.
+            manager_type: ``"fs"``, ``"temp"``, ``"s3"``, ``"gcs"`` (upstream navigator managers) or ``"sharepoint"``,
+                ``"onedrive"`` (parrot-native Microsoft Graph managers, lazily imported).
+            **kwargs: Forwarded to the manager constructor.
 
         Returns:
             A FileManagerInterface instance.
 
         Raises:
-            ValueError: If ``manager_type`` is not recognised.
+            ValueError: If ``manager_type`` is not recognised (the message lists every valid key).
         """
+        native = FileManagerFactory._PARROT_NATIVE.get(manager_type)
+        if native is not None:
+            module_path, class_name = native
+            return getattr(importlib.import_module(module_path), class_name)(**kwargs)
         try:
             upstream_key = FileManagerFactory._PARROT_TO_UPSTREAM[manager_type]
         except KeyError:
-            raise ValueError(
-                f"Unknown manager type: {manager_type}. "
-                f"Available: {sorted(FileManagerFactory._PARROT_TO_UPSTREAM)}"
-            )
+            available = sorted({**FileManagerFactory._PARROT_TO_UPSTREAM, **FileManagerFactory._PARROT_NATIVE})
+            raise ValueError(f"Unknown manager type: {manager_type}. Available: {available}") from None
         return _UpstreamFileManagerFactory.create(upstream_key, **kwargs)
 
 
@@ -70,8 +84,7 @@ class FileManagerToolArgs(AbstractToolArgsSchema):
     """
 
     operation: Literal[
-        "list", "upload", "download", "copy", "delete",
-        "exists", "get_url", "get_metadata", "create"
+        "list", "upload", "download", "copy", "delete", "exists", "get_url", "get_metadata", "create"
     ] = Field(
         ...,
         description=(
@@ -85,56 +98,31 @@ class FileManagerToolArgs(AbstractToolArgsSchema):
             "- 'get_url': Get a URL to access a file\n"
             "- 'get_metadata': Get detailed file metadata\n"
             "- 'create': Create a new file with content"
-        )
+        ),
     )
 
     # Common fields
-    path: Optional[Union[str, Path]] = Field(
-        None,
-        description="File or directory path. Used by most operations."
-    )
+    path: Optional[Union[str, Path]] = Field(None, description="File or directory path. Used by most operations.")
 
     # List operation
-    pattern: Optional[str] = Field(
-        "*",
-        description="Filename pattern for list operation (e.g., '*.txt', '*.pdf')"
-    )
+    pattern: Optional[str] = Field("*", description="Filename pattern for list operation (e.g., '*.txt', '*.pdf')")
 
     # Upload operation
-    source_path: Optional[str] = Field(
-        None,
-        description="Source file path for upload operation"
-    )
-    destination: Optional[str] = Field(
-        None,
-        description="Destination path or directory"
-    )
+    source_path: Optional[str] = Field(None, description="Source file path for upload operation")
+    destination: Optional[str] = Field(None, description="Destination path or directory")
     destination_name: Optional[str] = Field(
-        None,
-        description="Custom name for uploaded file (uses source name if not provided)"
+        None, description="Custom name for uploaded file (uses source name if not provided)"
     )
 
     # Copy operation
-    source: Optional[str] = Field(
-        None,
-        description="Source file path for copy operation"
-    )
+    source: Optional[str] = Field(None, description="Source file path for copy operation")
 
     # Create operation
-    content: Optional[str] = Field(
-        None,
-        description="Text content for create operation"
-    )
-    encoding: Optional[str] = Field(
-        "utf-8",
-        description="Text encoding for create operation"
-    )
+    content: Optional[str] = Field(None, description="Text content for create operation")
+    encoding: Optional[str] = Field("utf-8", description="Text encoding for create operation")
 
     # URL operation
-    expiry_seconds: Optional[int] = Field(
-        3600,
-        description="URL expiry time in seconds (default: 3600 = 1 hour)"
-    )
+    expiry_seconds: Optional[int] = Field(3600, description="URL expiry time in seconds (default: 3600 = 1 hour)")
 
 
 class FileManagerTool(AbstractTool):
@@ -166,22 +154,22 @@ class FileManagerTool(AbstractTool):
     """
 
     name: str = "file_manager"
-    description: str = "Manage files across different storage backends (local, S3, GCS, temp)"
+    description: str = "Manage files across different storage backends (local, S3, GCS, SharePoint, OneDrive, temp)"
     args_schema: type[AbstractToolArgsSchema] = FileManagerToolArgs
 
     def __init__(
         self,
-        manager_type: Literal["fs", "temp", "s3", "gcs"] = "fs",
+        manager_type: ManagerType = "fs",
         default_output_dir: str = None,
         allowed_operations: Optional[set] = None,
         max_file_size: int = 100 * 1024 * 1024,  # 100MB
         auto_create_dirs: bool = True,
-        **manager_kwargs
+        **manager_kwargs,
     ):
         """Initialize file manager tool.
 
         Args:
-            manager_type: Type of file manager ("fs", "temp", "s3", "gcs").
+            manager_type: Type of file manager ("fs", "temp", "s3", "gcs", "sharepoint", "onedrive").
             default_output_dir: Default directory for file operations.
             allowed_operations: Set of allowed operations (None = all allowed).
             max_file_size: Maximum file size in bytes.
@@ -194,11 +182,18 @@ class FileManagerTool(AbstractTool):
         self.default_output_dir = default_output_dir or str(OUTPUT_DIR)
         self.max_file_size = max_file_size
         self.auto_create_dirs = auto_create_dirs
-        self.logger = logging.getLogger('ai_parrot.tools.FileManager')
+        self.logger = logging.getLogger("ai_parrot.tools.FileManager")
 
         self.allowed_operations = allowed_operations or {
-            "list", "upload", "download", "copy", "delete",
-            "exists", "get_url", "get_metadata", "create"
+            "list",
+            "upload",
+            "download",
+            "copy",
+            "delete",
+            "exists",
+            "get_url",
+            "get_metadata",
+            "create",
         }
 
         self.manager = self._create_manager(manager_type, **manager_kwargs)
@@ -211,28 +206,23 @@ class FileManagerTool(AbstractTool):
         )
 
         self.logger.info(
-            f"FileManagerTool initialized with {manager_type} manager, "
-            f"output dir: {self.default_output_dir}"
+            f"FileManagerTool initialized with {manager_type} manager, " f"output dir: {self.default_output_dir}"
         )
 
-    def _create_manager(
-        self,
-        manager_type: str,
-        **kwargs
-    ) -> FileManagerInterface:
+    def _create_manager(self, manager_type: str, **kwargs) -> FileManagerInterface:
         """Create file manager with type-specific defaults."""
         if manager_type == "fs":
             return FileManagerFactory.create(
                 manager_type,
-                base_path=kwargs.get('base_path', Path.cwd()),
-                sandboxed=kwargs.get('sandboxed', True),
-                **{k: v for k, v in kwargs.items() if k not in ['base_path', 'sandboxed']}
+                base_path=kwargs.get("base_path", Path.cwd()),
+                sandboxed=kwargs.get("sandboxed", True),
+                **{k: v for k, v in kwargs.items() if k not in ["base_path", "sandboxed"]},
             )
         elif manager_type == "temp":
             return FileManagerFactory.create(
                 manager_type,
-                cleanup_on_exit=kwargs.get('cleanup_on_exit', True),
-                **{k: v for k, v in kwargs.items() if k != 'cleanup_on_exit'}
+                cleanup_on_exit=kwargs.get("cleanup_on_exit", True),
+                **{k: v for k, v in kwargs.items() if k != "cleanup_on_exit"},
             )
         else:  # s3 or gcs
             return FileManagerFactory.create(manager_type, **kwargs)
@@ -240,18 +230,12 @@ class FileManagerTool(AbstractTool):
     def _check_operation(self, operation: str):
         """Check if operation is allowed."""
         if operation not in self.allowed_operations:
-            raise PermissionError(
-                f"Operation '{operation}' not allowed. "
-                f"Allowed: {self.allowed_operations}"
-            )
+            raise PermissionError(f"Operation '{operation}' not allowed. " f"Allowed: {self.allowed_operations}")
 
     def _check_file_size(self, size: int):
         """Check if file size is within limits."""
         if size > self.max_file_size:
-            raise ValueError(
-                f"File size ({size} bytes) exceeds maximum "
-                f"allowed size ({self.max_file_size} bytes)"
-            )
+            raise ValueError(f"File size ({size} bytes) exceeds maximum " f"allowed size ({self.max_file_size} bytes)")
 
     def _resolve_output_path(self, path: Optional[str] = None) -> str:
         """Resolve path relative to default output directory."""
@@ -291,30 +275,16 @@ class FileManagerTool(AbstractTool):
             elif operation == "create":
                 result = await self._create_file(args)
             else:
-                return ToolResult(
-                    success=False,
-                    result=None,
-                    error=f"Unknown operation: {operation}"
-                )
+                return ToolResult(success=False, result=None, error=f"Unknown operation: {operation}")
 
             return ToolResult(
-                success=True,
-                result=result,
-                metadata={
-                    "operation": operation,
-                    "manager_type": self.manager_type
-                }
+                success=True, result=result, metadata={"operation": operation, "manager_type": self.manager_type}
             )
 
         except Exception as e:
             self.logger.error(f"Operation {operation} failed: {str(e)}", exc_info=True)
             return ToolResult(
-                success=False,
-                error=str(e),
-                metadata={
-                    "operation": operation,
-                    "manager_type": self.manager_type
-                }
+                success=False, error=str(e), metadata={"operation": operation, "manager_type": self.manager_type}
             )
 
     async def _list_files(self, args: FileManagerToolArgs) -> Dict[str, Any]:
@@ -333,13 +303,13 @@ class FileManagerTool(AbstractTool):
                     "size": f.size,
                     "content_type": f.content_type,
                     "modified_at": f.modified_at.isoformat() if f.modified_at else None,
-                    "url": f.url
+                    "url": f.url,
                 }
                 for f in files
             ],
             "count": len(files),
             "directory": path,
-            "pattern": pattern
+            "pattern": pattern,
         }
 
     async def _upload_file(self, args: FileManagerToolArgs) -> Dict[str, Any]:
@@ -368,7 +338,7 @@ class FileManagerTool(AbstractTool):
             "path": metadata.path,
             "size": metadata.size,
             "content_type": metadata.content_type,
-            "url": metadata.url
+            "url": metadata.url,
         }
 
     async def _download_file(self, args: FileManagerToolArgs) -> Dict[str, Any]:
@@ -389,7 +359,7 @@ class FileManagerTool(AbstractTool):
             "downloaded": True,
             "source": args.path,
             "destination": str(result),
-            "size": dest_path.stat().st_size if dest_path.exists() else 0
+            "size": dest_path.stat().st_size if dest_path.exists() else 0,
         }
 
     async def _copy_file(self, args: FileManagerToolArgs) -> Dict[str, Any]:
@@ -408,7 +378,7 @@ class FileManagerTool(AbstractTool):
             "destination": args.destination,
             "name": metadata.name,
             "size": metadata.size,
-            "url": metadata.url
+            "url": metadata.url,
         }
 
     async def _delete_file(self, args: FileManagerToolArgs) -> Dict[str, Any]:
@@ -419,10 +389,7 @@ class FileManagerTool(AbstractTool):
         self.logger.info(f"Deleting file '{args.path}'")
         deleted = await self.manager.delete_file(args.path)
 
-        return {
-            "deleted": deleted,
-            "path": args.path
-        }
+        return {"deleted": deleted, "path": args.path}
 
     async def _exists(self, args: FileManagerToolArgs) -> Dict[str, Any]:
         """Check if a file exists."""
@@ -430,10 +397,7 @@ class FileManagerTool(AbstractTool):
             raise ValueError("path is required for exists operation")
 
         exists = await self.manager.exists(args.path)
-        return {
-            "exists": exists,
-            "path": args.path
-        }
+        return {"exists": exists, "path": args.path}
 
     async def _get_file_url(self, args: FileManagerToolArgs) -> Dict[str, Any]:
         """Get a URL to access the file."""
@@ -443,11 +407,7 @@ class FileManagerTool(AbstractTool):
         expiry = args.expiry_seconds or 3600
         url = await self.manager.get_file_url(args.path, expiry)
 
-        return {
-            "url": url,
-            "path": args.path,
-            "expiry_seconds": expiry
-        }
+        return {"url": url, "path": args.path, "expiry_seconds": expiry}
 
     async def _get_file_metadata(self, args: FileManagerToolArgs) -> Dict[str, Any]:
         """Get detailed metadata about a file."""
@@ -462,7 +422,7 @@ class FileManagerTool(AbstractTool):
             "size": metadata.size,
             "content_type": metadata.content_type,
             "modified_at": metadata.modified_at.isoformat() if metadata.modified_at else None,
-            "url": metadata.url
+            "url": metadata.url,
         }
 
     async def _create_file(self, args: FileManagerToolArgs) -> Dict[str, Any]:
@@ -472,7 +432,7 @@ class FileManagerTool(AbstractTool):
         if not args.content:
             raise ValueError("content is required for create operation")
 
-        encoding = args.encoding or 'utf-8'
+        encoding = args.encoding or "utf-8"
         content_bytes = args.content.encode(encoding)
         self._check_file_size(len(content_bytes))
 
@@ -535,6 +495,8 @@ class FileManagerToolkit(AbstractToolkit):
       - ``"temp"`` — temporary storage (auto-cleaned on exit)
       - ``"s3"``   — AWS S3 (requires aioboto3)
       - ``"gcs"``  — Google Cloud Storage (requires google-cloud-storage)
+      - ``"sharepoint"`` — SharePoint document library (requires ai-parrot[msgraph])
+      - ``"onedrive"`` — a user's OneDrive (requires ai-parrot[msgraph])
 
     Example::
 
@@ -548,7 +510,7 @@ class FileManagerToolkit(AbstractToolkit):
 
     def __init__(
         self,
-        manager_type: Literal["fs", "temp", "s3", "gcs"] = "fs",
+        manager_type: ManagerType = "fs",
         default_output_dir: Optional[str] = None,
         allowed_operations: Optional[Set[str]] = None,
         max_file_size: int = 100 * 1024 * 1024,  # 100 MB
@@ -559,7 +521,7 @@ class FileManagerToolkit(AbstractToolkit):
 
         Args:
             manager_type: Storage backend — one of ``"fs"``, ``"temp"``,
-                ``"s3"``, ``"gcs"``.
+                ``"s3"``, ``"gcs"``, ``"sharepoint"``, ``"onedrive"``.
             default_output_dir: Default directory for resolving relative paths.
                 Defaults to ``parrot.conf.OUTPUT_DIR``.
             allowed_operations: Restrict which operations are exposed as tools.
@@ -585,11 +547,7 @@ class FileManagerToolkit(AbstractToolkit):
         # Compute exclude_tools BEFORE super().__init__ so that
         # _generate_tools() sees the instance-level override.
         if allowed_operations is not None:
-            self.exclude_tools = tuple(
-                method
-                for op, method in _OP_TO_METHOD.items()
-                if op not in allowed_operations
-            )
+            self.exclude_tools = tuple(method for op, method in _OP_TO_METHOD.items() if op not in allowed_operations)
 
         super().__init__()
 
@@ -597,13 +555,9 @@ class FileManagerToolkit(AbstractToolkit):
         self.default_output_dir = default_output_dir or str(OUTPUT_DIR)
         self.max_file_size = max_file_size
         self.auto_create_dirs = auto_create_dirs
-        self.allowed_operations: Set[str] = (
-            allowed_operations if allowed_operations is not None else set(_ALL_OPS)
-        )
+        self.allowed_operations: Set[str] = allowed_operations if allowed_operations is not None else set(_ALL_OPS)
 
-        self.manager: FileManagerInterface = self._create_manager(
-            manager_type, **manager_kwargs
-        )
+        self.manager: FileManagerInterface = self._create_manager(manager_type, **manager_kwargs)
 
         self.logger.info(
             "FileManagerToolkit initialised — backend=%s output_dir=%s ops=%s",
@@ -654,10 +608,7 @@ class FileManagerToolkit(AbstractToolkit):
             ValueError: If *size* is larger than ``self.max_file_size``.
         """
         if size > self.max_file_size:
-            raise ValueError(
-                f"File size ({size} bytes) exceeds maximum allowed size "
-                f"({self.max_file_size} bytes)"
-            )
+            raise ValueError(f"File size ({size} bytes) exceeds maximum allowed size " f"({self.max_file_size} bytes)")
 
     def _resolve_output_path(self, path: Optional[str] = None) -> str:
         """Resolve *path* relative to the default output directory.
