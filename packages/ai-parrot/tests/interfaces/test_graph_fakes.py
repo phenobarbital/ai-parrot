@@ -1,4 +1,5 @@
 """FEAT-603 TASK-3748 — the Graph test harness behaves as manager tests assume."""
+
 from abc import ABC, abstractmethod
 from types import SimpleNamespace
 
@@ -45,7 +46,9 @@ async def test_children_paginate_with_next_link(fake: FakeGraphClient) -> None:
     first = await children.get()
     second = await children.with_url(first.odata_next_link).get()
     third = await children.with_url(second.odata_next_link).get()
-    assert [item.name for page in (first, second, third) for item in page.value] == [f"{index}.txt" for index in range(5)]
+    assert [item.name for page in (first, second, third) for item in page.value] == [
+        f"{index}.txt" for index in range(5)
+    ]
     assert third.odata_next_link is None
 
 
@@ -80,7 +83,9 @@ async def test_upload_session_assembles_chunks(fake: FakeGraphClient) -> None:
     """Upload sessions append chunks and create their completed file."""
     parent = fake.drives.by_drive_id("drive-1").items.by_drive_item_id("root")
     session_info = await parent.create_upload_session.post(
-        SimpleNamespace(item=SimpleNamespace(name="upload.bin", additional_data={"@microsoft.graph.conflictBehavior": "replace"}))
+        SimpleNamespace(
+            item=SimpleNamespace(name="upload.bin", additional_data={"@microsoft.graph.conflictBehavior": "replace"})
+        )
     )
     session = FakeAiohttpSession(fake)
     first = session.put(session_info.upload_url, data=b"abc", headers={"Content-Range": "bytes 0-2/6"})
@@ -110,6 +115,7 @@ def test_factories_return_real_client_classes_without_init(fake: FakeGraphClient
 
 def test_make_probe_stubs_remaining_abstract_methods() -> None:
     """Probe construction fills unrelated abstract methods with explicit test stubs."""
+
     class Example(ABC):
         @abstractmethod
         def _build_client(self) -> object:
@@ -127,4 +133,5 @@ def test_make_probe_stubs_remaining_abstract_methods() -> None:
     assert probe.__class__.__name__ == "Probe"
     with pytest.raises(AssertionError, match="unimplemented abstract method: list_files"):
         import asyncio
+
         asyncio.run(probe.list_files())

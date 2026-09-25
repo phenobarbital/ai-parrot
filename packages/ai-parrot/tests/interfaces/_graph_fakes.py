@@ -2,6 +2,7 @@
 
 Import these directly from test modules; there is intentionally no conftest.py.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -132,7 +133,8 @@ class FakeDrive:
             [
                 item
                 for child_id, item in self.by_id.items()
-                if child_id != item_id and self.path_of[child_id].startswith(prefix)
+                if child_id != item_id
+                and self.path_of[child_id].startswith(prefix)
                 and self.path_of[child_id].count("/") + 1 == depth
             ],
             key=lambda item: item.name,
@@ -160,7 +162,11 @@ class FakeDrive:
         old_parent = self.by_id.get(item.parent_reference.id) if item.parent_reference else None
         item.name = name or item.name
         new_path = "/".join(value for value in (self.path_of[parent.id], item.name) if value)
-        updates = {key: value.replace(old_path, new_path, 1) for key, value in self.path_of.items() if value == old_path or value.startswith(f"{old_path}/")}
+        updates = {
+            key: value.replace(old_path, new_path, 1)
+            for key, value in self.path_of.items()
+            if value == old_path or value.startswith(f"{old_path}/")
+        }
         self.path_of.update(updates)
         item.parent_reference = self._parent_reference(parent)
         if old_parent is not None:
@@ -197,7 +203,9 @@ class FakeGraphClient:
             by_user_id=lambda user: SimpleNamespace(drive=SimpleNamespace(get=lambda: self._user_drive(user)))
         )
 
-    def fail_next(self, status: int, *, retry_after: Optional[float] = None, times: int = 1, op: Optional[str] = None) -> None:
+    def fail_next(
+        self, status: int, *, retry_after: Optional[float] = None, times: int = 1, op: Optional[str] = None
+    ) -> None:
         """Make the next matching builder calls raise ``FakeAPIError``."""
         self._failures.extend([(op, status, retry_after)] * times)
 
@@ -316,7 +324,9 @@ class _ItemBuilder:
         self.fake.calls.append(("create_link", self.drive_id, self.ref, body))
         self.fake.link_bodies.append(body)
         item = self._item()
-        return SimpleNamespace(link=SimpleNamespace(web_url=item.web_url or f"https://contoso.sharepoint.com/{item.name}"))
+        return SimpleNamespace(
+            link=SimpleNamespace(web_url=item.web_url or f"https://contoso.sharepoint.com/{item.name}")
+        )
 
     async def _copy(self, body: Any, request_configuration: Any = None) -> Any:
         self.fake._check_fail("copy")
@@ -362,7 +372,14 @@ class _ChildrenBuilder:
 
     def _paged(self) -> "_PagedBuilder":
         item = _ItemBuilder(self.fake, self.drive_id, self.ref)._item()
-        return _PagedBuilder(self.fake, self.drive_id, self.ref, None, self.fake.drives_by_id[self.drive_id].children(item.id), "children")
+        return _PagedBuilder(
+            self.fake,
+            self.drive_id,
+            self.ref,
+            None,
+            self.fake.drives_by_id[self.drive_id].children(item.id),
+            "children",
+        )
 
     async def get(self) -> Any:
         return await self._paged().get()
@@ -401,7 +418,9 @@ class _ContentBuilder:
         drive = item_builder._drive()
         try:
             item = item_builder._item()
-            return drive.put_file(drive.path_of[item.id], data, mime=item.file.mime_type if item.file else "application/octet-stream")
+            return drive.put_file(
+                drive.path_of[item.id], data, mime=item.file.mime_type if item.file else "application/octet-stream"
+            )
         except FakeAPIError as error:
             if error.response_status_code != 404 or ":/" not in self.ref:
                 raise
@@ -420,7 +439,9 @@ class _ContentBuilder:
 class _PagedBuilder:
     """Implement collection pagination and fake next-link resumption."""
 
-    def __init__(self, fake: FakeGraphClient, drive_id: str, ref: str, extra: Any, values: List[Any], op: str, offset: int = 0) -> None:
+    def __init__(
+        self, fake: FakeGraphClient, drive_id: str, ref: str, extra: Any, values: List[Any], op: str, offset: int = 0
+    ) -> None:
         self.fake = fake
         self.drive_id = drive_id
         self.ref = ref
@@ -515,10 +536,20 @@ class FakeAiohttpSession:
                 return FakeResponse(status, headers=headers)
         return None
 
-    def _record(self, method: str, url: str, headers: Optional[Dict[str, str]], allow_redirects: Optional[bool]) -> None:
+    def _record(
+        self, method: str, url: str, headers: Optional[Dict[str, str]], allow_redirects: Optional[bool]
+    ) -> None:
         self.requests.append((method, url, headers or {}, allow_redirects))
 
-    def put(self, url: str, *, data: bytes = b"", headers: Optional[Dict[str, str]] = None, allow_redirects: Optional[bool] = None, **_: Any) -> FakeResponse:
+    def put(
+        self,
+        url: str,
+        *,
+        data: bytes = b"",
+        headers: Optional[Dict[str, str]] = None,
+        allow_redirects: Optional[bool] = None,
+        **_: Any,
+    ) -> FakeResponse:
         """Accept an upload-session chunk and assemble it in the in-memory drive."""
         self._record("PUT", url, headers, allow_redirects)
         scripted = self._scripted("upload")
@@ -551,7 +582,9 @@ class FakeAiohttpSession:
         body = json.dumps({"id": item.id, "name": item.name, "size": item.size, "webUrl": item.web_url}).encode()
         return FakeResponse(201, body=body)
 
-    def get(self, url: str, *, headers: Optional[Dict[str, str]] = None, allow_redirects: Optional[bool] = None, **_: Any) -> FakeResponse:
+    def get(
+        self, url: str, *, headers: Optional[Dict[str, str]] = None, allow_redirects: Optional[bool] = None, **_: Any
+    ) -> FakeResponse:
         """Poll a copy monitor or download an in-memory file."""
         self._record("GET", url, headers, allow_redirects)
         kind = "monitor" if url.startswith(FAKE_MONITOR) else "download" if url.startswith(FAKE_DOWNLOAD) else "unknown"
@@ -568,7 +601,11 @@ class FakeAiohttpSession:
             source: FakeDriveItem = job["source"]
             drive = self.fake.drives_by_id[job["drive_id"]]
             parent_path = drive.path_of[job["parent_id"]]
-            copied = drive.put_file("/".join(value for value in (parent_path, job["name"]) if value), source.data, mime=source.file.mime_type)
+            copied = drive.put_file(
+                "/".join(value for value in (parent_path, job["name"]) if value),
+                source.data,
+                mime=source.file.mime_type,
+            )
             return FakeResponse(200, body=json.dumps({"status": "completed", "resourceId": copied.id}).encode())
         if kind == "download":
             item_id = url.removeprefix(FAKE_DOWNLOAD)
@@ -584,8 +621,17 @@ def _bare(cls: type, fake: FakeGraphClient, **attrs: Any) -> Any:
     client = cls.__new__(cls)
     client.__dict__.update(
         dict(
-            credentials={}, tenant="contoso", tenant_id="t-1", site=None, auth_mode="direct", _credential=object(),
-            _graph_client=fake, _access_token=None, _executor=None, _drive_id=None, _drive_info=None,
+            credentials={},
+            tenant="contoso",
+            tenant_id="t-1",
+            site=None,
+            auth_mode="direct",
+            _credential=object(),
+            _graph_client=fake,
+            _access_token=None,
+            _executor=None,
+            _drive_id=None,
+            _drive_info=None,
             logger=logging.getLogger("fake"),
         )
     )
@@ -595,6 +641,7 @@ def _bare(cls: type, fake: FakeGraphClient, **attrs: Any) -> Any:
 
 def make_sharepoint_client(fake: FakeGraphClient, *, drive_id: str, app_only: bool = True) -> SharepointClient:
     """Return a real SharepointClient instance without running ``__init__``."""
+
     async def _verify() -> None:
         return None
 
@@ -602,8 +649,15 @@ def make_sharepoint_client(fake: FakeGraphClient, *, drive_id: str, app_only: bo
         return SimpleNamespace(id=drive_id, name=library_name or "Documents")
 
     return _bare(
-        SharepointClient, fake, _srcfiles=[], _destination=[], _site_id=None, _site_info=None,
-        verify_sharepoint_access=_verify, _resolve_drive=_resolve_drive, auth_mode="direct" if app_only else "delegated",
+        SharepointClient,
+        fake,
+        _srcfiles=[],
+        _destination=[],
+        _site_id=None,
+        _site_info=None,
+        verify_sharepoint_access=_verify,
+        _resolve_drive=_resolve_drive,
+        auth_mode="direct" if app_only else "delegated",
     )
 
 
@@ -614,6 +668,7 @@ def make_onedrive_client(fake: FakeGraphClient, *, app_only: bool = True) -> One
 
 def make_probe(base_cls: type, *, drive_id: str = "drive-1", **kwargs: Any) -> Any:
     """Create a concrete test subclass for a partially abstract manager base."""
+
     async def _resolve_drive_id(self: Any) -> str:
         return drive_id
 
@@ -623,6 +678,7 @@ def make_probe(base_cls: type, *, drive_id: str = "drive-1", **kwargs: Any) -> A
     def _stub(name: str) -> Any:
         async def method(self: Any, *args: Any, **stub_kwargs: Any) -> Any:
             raise AssertionError(f"unimplemented abstract method: {name}")
+
         return method
 
     namespace: Dict[str, Any] = {"_build_client": _build_client, "_resolve_drive_id": _resolve_drive_id}
