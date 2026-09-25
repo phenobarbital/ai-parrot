@@ -334,7 +334,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -345,8 +345,9 @@
       "parallelism_notes": "TASK-3757: builds OneDriveFileManager; TASK-3751: calls list_entries / find_entries; first of the o365/onedrive.py chain 3763→3764",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3763-od-tools-list-search.md"
+      "completed_at": "2026-09-25T21:11:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3763-od-tools-list-search.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3764",
