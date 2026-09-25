@@ -61,6 +61,9 @@ class OneDriveClient(O365Client):
         self._drive_id: Optional[str] = None
         self._drive_info: Optional[DriveItem] = None
 
+        # Per-user OneDrive cache for _resolve_user_drive (FEAT-603, S9) — never shares _drive_id/_drive_info.
+        self._user_drives: Dict[str, DriveItem] = {}
+
     def connection(self):
         """
         Establish OneDrive connection using the migrated O365Client.
@@ -104,6 +107,48 @@ class OneDriveClient(O365Client):
 
         except Exception as e:
             raise RuntimeError(f"Failed to resolve OneDrive: {e}") from e
+
+    async def _resolve_user_drive(self, user: str) -> DriveItem:
+        """Resolve a user's personal OneDrive, cached per user (FEAT-603; ported from flowtask).
+
+        Never touches ``_drive_id`` / ``_drive_info`` (owned by :meth:`_resolve_drive`), so one client can resolve
+        several users safely.
+
+        Args:
+            user: UPN, Entra object id, or the literal ``"me"`` (delegated authentication only).
+
+        Returns:
+            The user's OneDrive ``DriveItem``.
+
+        Raises:
+            RuntimeError: ``"me"`` under app-only auth; Graph failure (hint: ``Files.ReadWrite.All``); empty result.
+        """
+        key = (user or "").strip().lower()
+        if not key:
+            raise RuntimeError("OneDrive user is required (UPN, object id, or 'me')")
+        cached = self._user_drives.get(key)
+        if cached is not None:
+            return cached
+        if key == "me" and self.is_app_only:
+            raise RuntimeError(
+                "OneDrive user 'me' requires delegated authentication; pass a UPN or object id for app-only access"
+            )
+        try:
+            if key == "me":
+                drive = await self.graph_client.me.drive.get()
+            else:
+                drive = await self.graph_client.users.by_user_id(user).drive.get()
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to resolve OneDrive for '{user}': {e}. "
+                "For app-only auth this requires the application permission "
+                "'Files.ReadWrite.All' (admin-consented)."
+            ) from e
+        if not drive or not getattr(drive, "id", None):
+            raise RuntimeError(f"Could not resolve OneDrive for user '{user}'")
+        self._user_drives[key] = drive
+        self.logger.info(f"OneDrive resolved for user '{user}': {drive.name or drive.id}")
+        return drive
 
     async def _ensure_folder(self, folder_path: str, create: bool = True) -> DriveItem:
         """Ensure folder exists in OneDrive using Graph API."""
