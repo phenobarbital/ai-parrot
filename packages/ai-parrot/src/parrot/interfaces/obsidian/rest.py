@@ -13,8 +13,7 @@ The plugin serves HTTPS with a self-signed certificate on
 default for this localhost-only integration. Listings carry no
 size/mtime, so :meth:`stat` degrades to existence + name (``mtime=None``).
 """
-import asyncio
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 import aiohttp
 
@@ -37,6 +36,7 @@ class RestVaultBackend(ObsidianVaultInterface):
         vault_name: Optional[str] = None,
         verify_ssl: bool = False,
         timeout: float = 30.0,
+        extra_skip_patterns: Optional[Iterable[str]] = None,
     ) -> None:
         """Initialize the backend.
 
@@ -47,8 +47,11 @@ class RestVaultBackend(ObsidianVaultInterface):
             verify_ssl: Verify the plugin's TLS certificate (it ships
                 self-signed, so this defaults to False; localhost only).
             timeout: Total request timeout in seconds.
+            extra_skip_patterns: Extra directory names to exclude from
+                discovery, unioned with the defaults (see
+                :class:`~parrot.interfaces.obsidian.abstract.ObsidianVaultInterface`).
         """
-        super().__init__(vault_name=vault_name)
+        super().__init__(vault_name=vault_name, extra_skip_patterns=extra_skip_patterns)
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.verify_ssl = verify_ssl
