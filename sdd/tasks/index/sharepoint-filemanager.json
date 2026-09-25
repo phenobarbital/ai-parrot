@@ -99,7 +99,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -109,8 +109,9 @@
       "parallelism_notes": "TASK-3751: same file graph.py; uses _get_item / _get_item_by_id / _drive it adds",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3752-graph-write-ops.md"
+      "completed_at": "2026-09-25T19:48:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3752-graph-write-ops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3753",
