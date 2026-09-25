@@ -377,10 +377,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (resumed session, execution_id=85c083ec-56b6-42fe-8884-e686fbcf7a61)
+**Date**: 2026-09-26
+**Notes**: Code was implemented, merged, AND already review-fixed in a PRIOR sdd-worker
+session (commits `cbf1c284d` feat, `5d4c74eed` engine lint autofix, `8a3c8f1d4` merge,
+`b536c36cf` review fixes) but that session was interrupted before SDD state was closed —
+the task remained in `sdd/tasks/active/` with index status `in-progress` despite the code
+(and its review) already being on the branch. This session verified and closed it:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- File fidelity confirmed exact match against the Codebase Contract (`hooba/toolkit.py`
+  CREATE, `hooba/__init__.py` MODIFY, `tests/hooba/test_toolkit_core.py` CREATE — no other
+  files touched).
+- The prior session's review-fix commit (`b536c36cf`) already documents two confirmed
+  defects fixed and verified: `operation_kinds()` forward-referencing TASK-3743's
+  not-yet-implemented draft tools (removed), and a `test_open_does_not_start_browser` mock
+  assertion that could never fail regardless of implementation (fixed), with a stated
+  verification of "packages/ai-parrot-tools/tests/hooba/ 42/42 passed. ruff clean".
+- `coder_run_validation` (tier=merge, both a 900s and a 7200s attempt) could not produce a
+  usable verdict for the same reason documented in TASK-3740's Completion Note: its
+  declared selector's import-impact expansion pulls in ~30 unrelated distributions, and the
+  eventual `outcome=failed` traced entirely to pre-existing breakage on `origin/dev`
+  unrelated to this task (confirmed via zero-diff `git diff --stat origin/dev...HEAD` on the
+  failing files) — the exact scope/cost problem FEAT-604 exists to fix. The sweep never
+  reached `packages/ai-parrot-tools/tests/hooba/` before an unrelated pytest
+  collection-error interruption aborted that whole distribution's run.
+- Independently re-ran `pytest packages/ai-parrot-tools/tests/hooba/` directly →
+  **42 passed** (matches the prior session's own reported count) and
+  `ruff check --select E9,F63,F7,F82` on the delivered files → clean.
+- `scripts.sdd.finalize_task` could not be invoked from inside this worktree for the same
+  pre-existing, documented sandbox reason as TASK-3740 (missing Cython `parrot.utils.types`
+  `.so` in the worktree tree, unrelated to FEAT-602). Closed state instead via
+  `scripts/sdd/close_task.sh TASK-3742 hooba-toolkit verified` (pure git/jq).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — code and its review were delivered to spec by the prior
+session; this session only verified and closed SDD state.

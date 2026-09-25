@@ -202,7 +202,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -212,8 +212,9 @@
       "parallelism_notes": "needs BankExpenseRow/DeductibilityVerdict/HoobaMapping from TASK-3733 (hooba/models.py) and its tests/hooba package",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3740-autonomo-rule-engine.md"
+      "completed_at": "2026-09-25T22:37:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3740-autonomo-rule-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3741",
@@ -243,7 +244,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -254,8 +255,9 @@
       "parallelism_notes": "needs HoobaOpenAPIToolkit/classify_operation from TASK-3737 (hooba/openapi.py) and HoobaWebAdapter from TASK-3738 (hooba/web.py); modifies hooba/__init__.py created by TASK-3733 (reached through TASK-3737 → TASK-3734 → TASK-3733)",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3742-hooba-toolkit-core.md"
+      "completed_at": "2026-09-25T22:37:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3742-hooba-toolkit-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3743",

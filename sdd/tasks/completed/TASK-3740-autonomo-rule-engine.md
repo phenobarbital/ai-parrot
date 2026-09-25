@@ -340,10 +340,41 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (resumed session, execution_id=85c083ec-56b6-42fe-8884-e686fbcf7a61)
+**Date**: 2026-09-26
+**Notes**: Code was implemented and merged onto the feature branch in a PRIOR sdd-worker
+session (commits `26de8561c` feat, `ac4e02772` engine lint autofix, `7f88b718b` merge) but
+that session was interrupted before SDD state was closed — the task remained in
+`sdd/tasks/active/` with index status `in-progress` despite the code already being on the
+branch. This session verified and closed it:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- File fidelity confirmed exact match against the Codebase Contract
+  (`hooba/rules/__init__.py`, `hooba/rules/engine.py`, `hooba/rules/autonomo_es_v1.yaml`,
+  `tests/hooba/test_rules.py` — no other files touched).
+- `coder_run_validation` (tier=merge) was attempted twice (900s then 7200s budget) but its
+  declared selector expands scope via import-impact analysis to nearly the entire
+  monorepo test suite (~30 distributions) — it eventually completed with `outcome=failed`,
+  but every failure traced to pre-existing, unrelated breakage already present on
+  `origin/dev` (confirmed via `git diff --stat origin/dev...HEAD` showing zero changes to
+  the failing files: `packages/ai-parrot-tools/tests/{shell_tool,test_alpaca.py,
+  test_zoom_interface.py}`, `ai-parrot-integrations` voice/browser tests, `ai-parrot-client-google`).
+  This is the exact cost/scope problem FEAT-604 (merge-tier-validation-cost) exists to fix
+  and is not yet resolved. The broad sweep never actually reached and ran
+  `packages/ai-parrot-tools/tests/hooba/` before pytest's collection-error interruption
+  aborted the whole `ai-parrot-tools` distribution run (triggered by the SAME unrelated
+  pre-existing import errors, not by anything in this task's files).
+- Ran the hooba test suite directly instead:
+  `pytest packages/ai-parrot-tools/tests/hooba/` → **42 passed** (includes this task's
+  `test_rules.py`).
+  `ruff check --select E9,F63,F7,F82` on the delivered files → clean, no errors.
+- `scripts.sdd.finalize_task` could not be invoked from inside this worktree: the harness's
+  auto-injected `PYTHONPATH` (worktree-management.md §4, intentional — prioritizes worktree
+  source over the main checkout) causes `parrot.utils.types` (a Cython `.so` compiled only
+  in the main checkout, never present in a worktree's git tree) to fail to import once the
+  `parrot.flows.dev_loop` chain is pulled in. This is a pre-existing, documented sandbox
+  limitation (see project memory "Worktree tests run main-checkout code"), unrelated to
+  FEAT-602. Closed state instead via `scripts/sdd/close_task.sh TASK-3740 hooba-toolkit
+  verified` (pure git/jq, no parrot import chain).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — code itself was delivered to spec by the prior session;
+this session only verified and closed SDD state.
