@@ -370,10 +370,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3752
+- Feature: sharepoint-filemanager
+- Implementation SHA: 25a81c5098d2cbedaf00a735a87176d004ffece3
+- Closed at (UTC): 2026-09-25T19:48:06+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_tier_gate_note | This merge-tier run escalated far wider than earlier chunks (shared shim files touched by the sibling TASK-3758 merged alongside), sweeping most workspace distributions. All failures found are pre-existing and unrelated to this feature: the same 18 known ai-parrot collection errors, plus unrelated failures in parrot-formdesigner, ai-parrot-client-grok and ai-parrot-integrations. None touch sharepoint/onedrive/graph/filemanager code. |
+| real_code_commits | 4a3efb1db (feat) and 39c6bde3f (lint autofix); implementation_sha above is an empty anchor commit because HEAD advanced past this task's own merge (TASK-3758 merged after it in the same chunk) before finalize_task ran for it. |
+| scoped_test_result | packages/ai-parrot/tests/interfaces/test_graph_filemanager.py: 40 passed, 0 failed (run directly, 2026-09-25T19:36 UTC) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 248.683s · Tokens: n/a |

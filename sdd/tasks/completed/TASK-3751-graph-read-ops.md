@@ -377,10 +377,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3751
+- Feature: sharepoint-filemanager
+- Implementation SHA: 06cd008cbe1bfc7cd0ef37148ab3503bfbeb7c95
+- Closed at (UTC): 2026-09-25T19:22:51+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| known_deviation | Delivery adjusted the pre-existing helper _item_path (graph.py, same file this task modifies) to strip a leading colon left over by the test fake's parent_reference.path format (_graph_fakes.py from TASK-3748), which was silently breaking find_entries's search-path resolution. Verified compatible with the real single-colon Graph shape via the existing test_make_metadata_maps_driveitem. A prior attempt on a different seat delivered no file changes for this task and was recorded as failed before this successful retry. |
+| merge_tier_gate_note | Full ai-parrot distribution escalation (core-path rule, tracked as FEAT-604 draft) collects 18 test files that fail to import for reasons unrelated to this task (existing on origin/dev prior to this feature). This task's own declared test file is the acceptance evidence above. |
+| scoped_test_result | packages/ai-parrot/tests/interfaces/test_graph_filemanager.py: 31 passed, 0 failed (run directly, 2026-09-25T19:19 UTC) |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |

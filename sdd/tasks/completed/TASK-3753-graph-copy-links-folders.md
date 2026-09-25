@@ -352,10 +352,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3753
+- Feature: sharepoint-filemanager
+- Implementation SHA: b534138ff23651b9baaf1d793cf6448bbdfd8048
+- Closed at (UTC): 2026-09-25T20:08:07+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 326.5s · Tokens: n/a |
+| validation_note | Directory-wide merge-tier run (packages/ai-parrot/tests/interfaces) reported outcome=failed, but the collection error is in tests/interfaces/test_file_shim.py (pre-existing ImportError on 'FileManagerTool', unrelated to this task's files) and is reproducible identically at the pre-TASK-3753 commit (f7fbb4ec5) in an isolated worktree, before this task's changes existed. TASK-3753's own declared test file was run in isolation as manual verification: `pytest packages/ai-parrot/tests/interfaces/test_graph_filemanager.py` -> 48 passed, 8 warnings. Filed as a ledger issue for separate remediation; not attributable to this task's diff. |

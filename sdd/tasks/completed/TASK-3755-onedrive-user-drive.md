@@ -303,10 +303,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3755
+- Feature: sharepoint-filemanager
+- Implementation SHA: 2c2c5433bc481eab951a8d610651f4670cac0ab5
+- Closed at (UTC): 2026-09-25T18:48:23+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_tier_gate_note | Full ai-parrot distribution escalation (core-path rule, tracked as FEAT-604 draft) collects 18 test files that fail to import for reasons unrelated to this task (existing on origin/dev prior to this feature). This task's own declared test file is the acceptance evidence above. |
+| real_code_commits | 091374b3bd58569054c5d9a3babbff092f705b02 (feat) and 27e6c4d7c52aa781766bd8752f58a5cf322098ea (lint autofix); implementation_sha above is an empty anchor commit because HEAD advanced past this task's own merge before finalize_task ran for it. |
+| scoped_test_result | packages/ai-parrot/tests/interfaces/test_onedrive_client_user_drive.py: 5 passed, 0 failed (run directly, 2026-09-25T18:30 UTC) |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |

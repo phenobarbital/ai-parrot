@@ -293,10 +293,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3766
+- Feature: sharepoint-filemanager
+- Implementation SHA: f2c2482ed5fd3b9a480e1959d6975d36999a5d7f
+- Closed at (UTC): 2026-09-25T21:12:31+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 453.6s · Tokens: 1313957/6105 |
+| validation_note | Own declared test: pytest test_graph_filemanager_docs.py -q -> 3 passed (confirmed directly in the merge-tier validation log's distribution=ai-parrot segment). |

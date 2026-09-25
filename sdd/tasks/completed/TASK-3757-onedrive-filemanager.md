@@ -259,10 +259,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3757
+- Feature: sharepoint-filemanager
+- Implementation SHA: 04fbf7d63c66fd7fcfcec910a3132fa2288287d4
+- Closed at (UTC): 2026-09-25T19:23:23+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_tier_gate_note | Full ai-parrot distribution escalation (core-path rule, tracked as FEAT-604 draft) collects 18 test files that fail to import for reasons unrelated to this task (existing on origin/dev prior to this feature). This task's own declared test file is the acceptance evidence above. |
+| real_code_commits | 5baff6006 (feat) and e72bf716b (lint autofix); implementation_sha above is an empty anchor commit because HEAD advanced past this task's own merge (TASK-3751 merged after it in the same chunk) before finalize_task ran for it. |
+| scoped_test_result | packages/ai-parrot/tests/interfaces/test_onedrive_filemanager.py: 5 passed, 0 failed (run directly, 2026-09-25T19:19 UTC) |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 168.136s · Tokens: n/a |

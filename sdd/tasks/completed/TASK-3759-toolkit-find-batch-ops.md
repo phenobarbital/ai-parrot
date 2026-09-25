@@ -343,10 +343,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3759
+- Feature: sharepoint-filemanager
+- Implementation SHA: 9c2d2cd6e4aea23a3d1656ba97c9202fbf10356b
+- Closed at (UTC): 2026-09-25T20:19:39+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet (native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| validation_note | Directory-wide merge-tier run (packages/ai-parrot/tests + ai-parrot-server + ai-parrot-loaders import-impact scope) reported outcome=failed. 3 attributable failures in tests/tools/test_filemanager_toolkit.py are expected structural fallout of this task's own declared scope (default op/tool count legitimately grows 9->12); tests/tools/test_filemanager_toolkit.py was correctly out of THIS task's Files to Create/Modify because TASK-3760's own AC already claimed responsibility for it -- TASK-3760's task file was corrected (commit 97c1be15c) to add that file to its own scope. The remaining failures/collection-errors are unrelated pre-existing repo breakage across unrelated subsystems (agents, scheduler, notification, botmanager, cryptoquant, obsidian aiohttp API, ai-parrot-loaders webscraping) -- see artifacts/logs/sdd-coder-usage/executions/890f8a7f-c24e-491f-8efc-b4e70247dff0/review/TASK-3759-review.txt for the full analysis. This task's own declared test file (test_filemanager_batch_ops.py) passed 6/6 in isolation. |

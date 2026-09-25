@@ -396,6 +396,13 @@ tokenizer = [
 # ---------------------------------------------------------------------------
 # Pre-existing extras groups (preserved as-is)
 # ---------------------------------------------------------------------------
+# Microsoft Graph file managers (SharePoint / OneDrive) — FEAT-603. Pins mirror the `agents` extra.
+msgraph = [
+    "azure-identity>=1.18.0",
+    "msgraph-sdk>=1.8.0",
+    "microsoft-kiota-authentication-azure>=1.2.0",
+]
+
 agents = [
     "sentence_transformers>=5.3.0",
     "yfinance==0.2.54",
@@ -877,7 +884,7 @@ rust = [
 # Note: chart/infographic/visualization renderers moved to ai-parrot-visualizations in FEAT-200.
 # Note: scheduler extra and server layer moved to ai-parrot-server in FEAT-203.
 all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations,rust]",
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations,rust,msgraph]",
     "ai-parrot-embeddings[all]",
     "ai-parrot-integrations[all]",
     "ai-parrot-server[all]",
