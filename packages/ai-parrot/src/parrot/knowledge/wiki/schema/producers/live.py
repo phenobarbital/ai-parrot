@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from parrot.bots.database.toolkits.bigquery import BigQueryToolkit
 from parrot.bots.database.toolkits.postgres import PostgresToolkit
@@ -31,14 +32,22 @@ def toolkit_for(cfg: SchemaSourceConfig, dsn: str) -> SQLToolkit:
         A toolkit configured for the source dialect and allowed schemas.
     """
     toolkit_class = _TOOLKITS.get(cfg.dialect, SQLToolkit)
-    return toolkit_class(
-        dsn=dsn,
-        allowed_schemas=list(cfg.allowed_schemas),
-        primary_schema=cfg.allowed_schemas[0],
-        tables=cfg.tables,
-        read_only=True,
-        database_type=cfg.dialect,
-    )
+    kwargs: dict[str, Any] = {
+        "dsn": dsn,
+        "allowed_schemas": list(cfg.allowed_schemas),
+        "primary_schema": cfg.allowed_schemas[0],
+        "tables": cfg.tables,
+        "read_only": True,
+    }
+    if toolkit_class is SQLToolkit:
+        # Dialect-specific subclasses (PostgresToolkit, BigQueryToolkit)
+        # already hardcode `database_type` in their own __init__ and pass
+        # it explicitly to super().__init__(); accepting it again here
+        # would collide via **kwargs (TypeError: multiple values for
+        # keyword argument 'database_type'). Only the generic fallback
+        # needs it supplied.
+        kwargs["database_type"] = cfg.dialect
+    return toolkit_class(**kwargs)
 
 
 def _targets(cfg: SchemaSourceConfig, tables: list[str] | None) -> list[tuple[str, str]]:

@@ -38,14 +38,15 @@ table:<origin>/<schema>.<table>   — e.g., table:bigquery/epson.sales
 ```
 
 An **origin** is a declared source alias that defaults to the SQL dialect (Postgres, BigQuery,
-MySQL, etc.). If you have two Postgres databases, the second must have its own origin name:
+MySQL, etc.) when no alias is given. If you have two Postgres databases, the second must have
+its own alias:
 
 ```bash
-# First Postgres database: origin is "postgres" (the dialect)
-wikitoolkit schema add-source postgres "postgresql://prod.internal/main"
+# First Postgres database: alias defaults to the dialect ("postgres")
+wikitoolkit schema add-source --dialect postgres --dsn-env DATABASE_URL
 
-# Second Postgres database: must have a custom origin name
-wikitoolkit schema add-source datalake-prod "postgresql://datalake.internal/analytics" --origin datalake
+# Second Postgres database: pass an explicit alias
+wikitoolkit schema add-source datalake-prod --dialect postgres --dsn-env DATALAKE_URL
 ```
 
 **Normalization**: All lookups and tools accept the provider's native reference format and normalize
@@ -64,31 +65,26 @@ table:bigquery/epson.sales         (explicit page id)
 Every source that gets ingested (either live or from DDL) must be declared:
 
 ```bash
-wikitoolkit schema add-source <origin> <dsn_or_connection_string> [OPTIONS]
+wikitoolkit schema add-source [ALIAS] --dialect <name> --dsn-env <ENV_VAR_NAME> [OPTIONS]
 ```
 
 **Options:**
-- `--dialect <name>` — SQL dialect (`postgres`, `bigquery`, `mysql`, `duckdb`, …).
-  Defaults to the origin if the origin is a valid dialect name.
-- `--description <text>` — Human-readable label (e.g., "Production Postgres, US region").
-- `--origin <name>` — Custom alias (only needed if dialect is used by multiple sources).
+- `--dialect <name>` — SQL dialect (`postgres`, `bigquery`, `mysql`, `duckdb`, …). Required.
+- `--dsn-env <name>` — Environment variable **name** holding the DSN (never the value). Required.
+- `--schemas <csv>` — Comma-separated allowed schemas. Defaults to `public`.
+- `--tables <csv>` — Comma-separated `schema.table` allowlist. Optional.
+
+`ALIAS` is an optional positional argument; when omitted it defaults to `--dialect`'s value.
 
 **Example:**
 
 ```bash
-wikitoolkit schema add-source postgres "postgresql://prod.internal:5432/main" \
-  --dialect postgres \
-  --description "Production database, US"
+export DATABASE_URL="postgresql://prod.internal:5432/main"
+wikitoolkit schema add-source --dialect postgres --dsn-env DATABASE_URL --schemas public,analytics
 ```
 
 Sources are stored as `source:<origin>` pages in the schema plane. The DSN is **never** stored
-directly; only the environment variable **name** is kept (FEAT-600 Goal G7):
-
-```bash
-# Pass the DSN via an environment variable
-export DATABASE_URL="postgresql://prod.internal:5432/main"
-wikitoolkit schema add-source postgres ENV:DATABASE_URL
-```
+directly; only the environment variable **name** is kept (FEAT-600 Goal G7).
 
 ---
 
@@ -102,11 +98,15 @@ wikitoolkit schema sync <origin> [OPTIONS]
 ```
 
 **Options:**
-- `--changed` — Only re-introspect tables where the stored DDL hash has drifted (e.g., after a
-  migration). Saves time on large databases.
-- `--include-views` — Include views. Default is tables only.
-- `--sample-data` — Fetch row counts and column statistics. Off by default (FEAT-600 Goal G7).
-- `--force` — Re-introspect every table, even if unchanged.
+- `--tables <csv>` — Comma-separated `schema.table` subset to sync (defaults to the source's
+  declared `tables` allowlist, or every table discovered in the allowed schemas).
+- `--changed` — Only re-introspect tables where the stored content hash has drifted (e.g., after
+  a migration). Saves time on large databases.
+- `--json` — Machine-readable report output.
+
+Row-level sample data is controlled per source via the `include_samples` allowlist in
+`.parrot/wiki.json` (`schema.sources.<alias>.include_samples`), not a CLI flag — empty (off) by
+default (FEAT-600 Goal G7).
 
 **What happens:**
 1. Connect to the source using the DSN from the `source:` page.
@@ -127,8 +127,8 @@ wikitoolkit schema sync postgres
 # Incremental sync — only tables with schema drift
 wikitoolkit schema sync postgres --changed
 
-# Sync live but also fetch row counts (slower)
-wikitoolkit schema sync postgres --sample-data
+# Sync an explicit table subset
+wikitoolkit schema sync postgres --tables public.orders,public.customers
 ```
 
 ---
@@ -145,13 +145,18 @@ wikitoolkit schema ingest-ddl <paths> [OPTIONS]
 **Options:**
 - `--origin <name>` — Source alias. Required.
 - `--dialect <name>` — SQL dialect. Required.
-- `--upsert-only` — Do not create new tables; only update existing ones. Use this to merge DDL
-  into a schema already populated by live sync.
+- `--changed` — With no `<paths>` given, ingest only the `.sql` files that changed in the most
+  recent commit (used by the post-merge hook). Ignored when explicit paths are passed.
+- `--json` — Machine-readable report output.
+- `--quiet` — Suppress the summary line (used by the git hook, which redirects output).
 
 **What happens:**
-1. Parse each `.sql` file (or directory of `.sql` files) with sqlglot.
-2. Extract every `CREATE TABLE` / `CREATE VIEW` statement.
-3. Write each as a `table:<origin>/<schema>.<table>` page with `source="ddl"`.
+1. Parse each `.sql` file (or every `.sql` file under a given directory, recursively) with
+   sqlglot, isolating parse errors per statement so one bad statement never aborts the whole file.
+2. Extract every `CREATE TABLE` statement.
+3. Write each as a `table:<origin>/<schema>.<table>` page with `source="ddl"` — unless a live
+   page already exists for that table, in which case only a `defined_in` edge is added (see the
+   merge rule below).
 4. Record `defined_in` edges linking each table to the `.sql` file that defined it.
 
 **Merge rule** (FEAT-600 Goal G3): If a table already exists (from live sync), the live version
@@ -161,15 +166,10 @@ wins. DDL only creates new pages and always contributes `defined_in` edges.
 
 ```bash
 # Ingest all DDL from a repo
-wikitoolkit schema ingest-ddl migrations/ \
-  --origin bigquery \
-  --dialect bigquery
+wikitoolkit schema ingest-ddl migrations/ --origin bigquery --dialect bigquery
 
-# Merge DDL into an existing source (only update, no new tables)
-wikitoolkit schema ingest-ddl archive/schemas.sql \
-  --origin postgres \
-  --dialect postgres \
-  --upsert-only
+# Ingest a single archived schema file
+wikitoolkit schema ingest-ddl archive/schemas.sql --origin postgres --dialect postgres
 ```
 
 ---
@@ -203,15 +203,17 @@ Four tools are exposed via the MCP server:
 
 ### Join Paths
 
-```bash
-wikitoolkit schema lookup "table:bigquery/epson.sales" --neighbors
+There is no CLI `neighbors` verb — join-path traversal is exposed as the MCP tool
+`wiki_schema_neighbors(table_id, depth=1)` (see MCP Tools above), used by agents when planning a
+text-to-SQL join:
+
+```python
+hops = await wiki_schema_neighbors("table:bigquery/epson.sales", depth=1)
 ```
 
-Shows all tables joined to `epson.sales` via foreign keys:
-- **Incoming** (tables that reference `sales`): `store`, `region`, `salesperson`
-- **Outgoing** (tables that `sales` references): `customer`, `product`
-
-This is the single most useful piece of information for text-to-SQL agents.
+Each hop reports the neighboring `concept_id`, the join direction, and the FK column pairs —
+covering both tables that reference `sales` (incoming) and tables `sales` itself references
+(outgoing). This is the single most useful piece of information for text-to-SQL agents.
 
 ---
 
@@ -235,19 +237,19 @@ Annotations survive schema syncs (FEAT-600 Goal G6): `schema sync` never rewrite
 Compare the stored schema against the live database:
 
 ```bash
-wikitoolkit schema diff <origin> [OPTIONS]
+wikitoolkit schema diff <origin> [--ledger]
 ```
 
-**What it reports:**
-- **New tables**: tables in the database not in the schema plane.
-- **Dropped tables**: tables in the schema plane not in the database.
-- **Columns added/removed**: per table.
-- **Type changes**: column type mismatches.
-- **Constraint changes**: PRIMARY KEY, FOREIGN KEY, NOT NULL differences.
+**Options:**
+- `--ledger` — File each divergence as a `tech_debt` SDD ledger issue (refuses to run in a
+  linked worktree, like the other write verbs).
+
+**What it reports:** per-table, per-field divergences between the live and DDL-derived values
+already stored in the plane (columns, types, constraints — whatever the two sources disagree on).
 
 ```bash
 wikitoolkit schema diff postgres
-wikitoolkit schema diff postgres --json   # machine-readable output
+wikitoolkit schema diff postgres --ledger   # also files each divergence to the SDD ledger
 ```
 
 Use this after a migration to understand what changed before deciding to re-sync.
@@ -287,13 +289,14 @@ A table is considered **stale** when `age_days > stale_after_days`.
 
 - **No credentials on pages**: Sources store only the **environment variable name**, not the DSN itself.
   ```bash
-  # Correct: source page contains "ENV:DATABASE_URL"
   export DATABASE_URL="postgresql://user:pass@host/db"
-  wikitoolkit schema add-source postgres ENV:DATABASE_URL
+  wikitoolkit schema add-source --dialect postgres --dsn-env DATABASE_URL
+  # the source page stores dsn_env="DATABASE_URL" — never the resolved value
   ```
 
-- **Sample data is off by default**: Row counts and column statistics are only fetched with
-  `--sample-data`. Avoids sending large result sets over the wire.
+- **Sample data is off by default**: Row counts and column statistics are only fetched for tables
+  listed in a source's `include_samples` allowlist (`.parrot/wiki.json`); empty by default.
+  Avoids sending large result sets over the wire.
 
 - **Write verbs refuse to run in linked worktrees**: `schema add-source`, `schema sync`, `schema
   ingest-ddl` refuse to execute in a git-linked worktree (e.g., inside `/sdd-done`). This prevents
@@ -303,23 +306,24 @@ A table is considered **stale** when `age_days > stale_after_days`.
 
 ## 11. Runtime: DatabaseAgent with Schema Plane
 
-A `DatabaseAgent` can be configured to warm its table cache from the schema plane:
+A `DatabaseAgent` can be configured to warm its table cache from the schema plane by passing a
+plane directory (or an already-open `SchemaPlaneService`):
 
 ```python
-from parrot.bots import DatabaseAgent
+from parrot.bots.database.agent import DatabaseAgent
 
 agent = DatabaseAgent(
-    schema_plane=SchemaPlaneConfig(
-        root=".parrot",
-        origin="postgres"  # which source to warm from
-    )
+    ...,
+    schema_plane=".parrot/schema",   # str/Path -> opened via SchemaPlaneService.from_dir(read_only=False)
 )
 
-# The agent now:
-# 1. Checks the schema plane first (read-only).
-# 2. Falls back to Redis cache (if configured).
-# 3. Falls back to live introspection only if neither has a hit.
+# Each toolkit's CachePartition then gets `plane`, `plane_write=True`, and `origin` set from the
+# toolkit's own `origin` (defaults to its `database_type`).
 ```
+
+`CachePartition.get()`'s resolution order is **LRU → schema cache → Redis → schema plane →
+vector store** — the plane is a durable, never-introspecting tier that sits *after* Redis, not
+before it.
 
 Behavior is **byte-identical** when no plane is configured (FEAT-600 Goal G5).
 
@@ -347,7 +351,8 @@ Behavior is **byte-identical** when no plane is configured (FEAT-600 Goal G5).
 first, or use `wikitoolkit schema ingest-ddl` if you have DDL files.
 
 **"Stale schema (3 days old)"** → Run `wikitoolkit schema sync <origin> --changed` to refresh only
-tables with schema drift, or `--force` to re-introspect everything.
+tables with schema drift, or `wikitoolkit schema sync <origin>` (no flags) to re-introspect
+everything.
 
 **Annotations disappeared after sync** → This should not happen. Annotations are preserved by
 design (FEAT-600 Goal G6). If they vanish, open an issue.
