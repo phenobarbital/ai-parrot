@@ -16,14 +16,14 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates parrot/outputs/a2ui/linked/{__init__,models}.py consumed by every linked task",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3769-linked-descriptor-models.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "imports SourceRequest from TASK-3769 (linked/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3770-derive-conditions.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "exports LinkedSources from TASK-3769 (linked/models.py) as JSON Schema",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3771-linked-json-schema.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml, packages/ai-parrot-tools/pyproject.toml and uv.lock (shared manifests/lockfile); its package-data test imports parrot.outputs.a2ui.linked from TASK-3769 to locate contract/",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3772-pyproject-package-data-qs-floor.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "imports TransformSpec/TransformOp op models from TASK-3769 (linked/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3773-dsl-core-ops.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,7 +123,7 @@
       "parallel": true,
       "parallelism_notes": "modifies linked/dsl.py created by TASK-3773 (apply_transform dispatch table)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3774-dsl-relational-ops.md"
     },
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -143,7 +143,7 @@
       "parallel": true,
       "parallelism_notes": "returns TransformRef from TASK-3769 (linked/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3775-transform-manifest-core.md"
     },
@@ -154,7 +154,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -163,7 +163,7 @@
       "parallel": true,
       "parallelism_notes": "builds TransformManifest and reuses the HMAC canonicalisation from TASK-3775 (linked/manifest.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3776-transforms-publish-helper.md"
     },
@@ -174,7 +174,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -185,7 +185,7 @@
       "parallel": true,
       "parallelism_notes": "parses LinkedSources from TASK-3769; calls derive_conditions from TASK-3770 (linked/conditions.py); load_manifest from TASK-3775 (linked/manifest.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3777-surface-validation-pass.md"
     },
@@ -196,7 +196,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -206,7 +206,7 @@
       "parallel": true,
       "parallelism_notes": "takes LinkedDataSource from TASK-3769; its envelopes must pass the surface pass of TASK-3777 (catalog/__init__.py _validate_linked_sources)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3778-builders-linked-surface.md"
     },
@@ -217,14 +217,14 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: only modifies parrot/tools/dataset_manager/sources/query_slug.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3779-query-slug-tenant-principal.md"
     },
@@ -235,7 +235,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -247,7 +247,7 @@
       "parallel": true,
       "parallelism_notes": "LinkedDataSource from TASK-3769; derive_conditions from TASK-3770; apply_transform from TASK-3773 (linked/dsl.py); QuerySlugSource(tenant=, principal=) + to_qs_principal from TASK-3779",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3780-linked-executor.md"
     },
@@ -258,7 +258,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -268,7 +268,7 @@
       "parallel": true,
       "parallelism_notes": "calls validate_envelope surface pass from TASK-3777; execute_sources/map_query_error from TASK-3780 (linked/executor.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3781-linked-surface-service.md"
     },
@@ -279,14 +279,14 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: only parrot_tools/querysource/models.py + dialect.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3782-qs-placeholder-info-variable-rejection.md"
     },
@@ -297,7 +297,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -306,7 +306,7 @@
       "parallel": true,
       "parallelism_notes": "uses _qs.get_tenants / _qs.get_definition_repository lazy accessors from TASK-3782 (parrot_tools/querysource/_qs.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3783-slugcatalog-tenant-aware.md"
     },
@@ -317,7 +317,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -327,7 +327,7 @@
       "parallel": true,
       "parallelism_notes": "fills PlaceholderInfo.required/accepts_keywords from TASK-3782 (models.py); calls SlugCatalog.get_allowed(tenant=)/list(tenant=) from TASK-3783 (catalog.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3784-toolkit-tenant-plumbing.md"
     },
@@ -338,7 +338,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -350,7 +350,7 @@
       "parallel": true,
       "parallelism_notes": "modifies toolkit.py after TASK-3784; calls derive_conditions (TASK-3770), build_linked_surface (TASK-3778, builders.py), execute_sources (TASK-3780, linked/executor.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3785-toolkit-build-linked-surface.md"
     },
@@ -361,7 +361,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -370,7 +370,7 @@
       "parallel": true,
       "parallelism_notes": "refreshable calls has_data_sources from TASK-3769 (parrot/outputs/a2ui/linked/__init__.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3786-ui-surface-record-refreshable-cas.md"
     },
@@ -381,7 +381,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -391,7 +391,7 @@
       "parallel": true,
       "parallelism_notes": "delegates to LinkedSurfaceService from TASK-3781 (linked/service.py); uses update_envelope(expected_updated_at=) + refreshable from TASK-3786 (handlers/models/ui_surfaces.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3787-ui-surfaces-handler-linked.md"
     },
@@ -402,7 +402,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -412,7 +412,7 @@
       "parallel": true,
       "parallelism_notes": "calls LinkedSurfaceService.validate_for_persistence/ensure_snapshot from TASK-3781; returns record.refreshable from TASK-3786",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3788-publish-paths-linked.md"
     },
@@ -423,14 +423,14 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: only catalog/parrot/filterbar.py + a new golden",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3789-filterbar-parrot-param.md"
     },
@@ -441,7 +441,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -451,7 +451,7 @@
       "parallel": true,
       "parallelism_notes": "registers build_linked_surface from TASK-3778 (builders.py) in test_all_emitters.py; adds envelopes next to TASK-3778's contract/fixtures/envelopes/; validates them against contract/schema.json from TASK-3771",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3790-linked-conformance-fixtures.md"
     },
@@ -462,7 +462,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -473,7 +473,7 @@
       "parallel": true,
       "parallelism_notes": "drives qs_build_linked_surface from TASK-3785, UISurfacesHandler _pin_save/_refresh from TASK-3787 and PublishSurfaceTool from TASK-3788",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3791-linked-surfaces-e2e.md"
     },
@@ -484,7 +484,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -493,7 +493,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: runs pnpm generate into ui/src/lib/types/generated/ (shared generated code); consumes contract/schema.json from TASK-3771",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3792-ui-linked-types.md"
     },
@@ -504,7 +504,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -515,7 +515,7 @@
       "parallel": true,
       "parallelism_notes": "imports linked/types.ts from TASK-3792; passes conditions fixtures from TASK-3770 and the full dsl fixture set completed by TASK-3774",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3793-ui-linked-dsl-conditions.md"
     },
@@ -526,7 +526,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -536,7 +536,7 @@
       "parallel": true,
       "parallelism_notes": "imports linked/types.ts from TASK-3792; loadRef reads the manifest.json shape fixed by TASK-3775 (linked/manifest.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3794-ui-linked-fetch-scheduler-ref.md"
     },
@@ -547,7 +547,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -558,7 +558,7 @@
       "parallel": true,
       "parallelism_notes": "wires applyTransform/deriveConditions from TASK-3793 and fetchSource/RefreshScheduler/loadRef from TASK-3794; reads the lowered parrot_param shape from TASK-3789",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3795-ui-linked-surface-lane.md"
     },
@@ -569,7 +569,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -584,7 +584,7 @@
       "parallel": true,
       "parallelism_notes": "documents the shipped behaviour of TASK-3785 (tool), TASK-3787/TASK-3788 (persistence), TASK-3795 (UI lane), TASK-3776 (manifest publish), TASK-3789 (parrot_param)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3796-linked-surfaces-docs.md"
     },
@@ -595,14 +595,14 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent of all FEAT-598 code tasks (guard/setup_pbac pre-date the feature); touches pbac.py/conf.py/manager.py which no other FEAT-598 task modifies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-25T23:46:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3805-dataplane-guard-wiring.md"
     }
