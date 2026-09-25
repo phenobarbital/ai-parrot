@@ -202,7 +202,7 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     schema_service = None
     with contextlib.redirect_stdout(sys.stderr):
         shared_root = find_shared_root(root)
-        if shared_root is not None and config.schema.enabled and config.schema_path(shared_root).exists():
+        if shared_root is not None and config.schema_plane.enabled and config.schema_path(shared_root).exists():
             try:
                 from parrot.knowledge.wiki.schema.service import SchemaPlaneService
 

@@ -413,7 +413,11 @@ class WikiProjectConfig(BaseModel):
         decisions: ADR decision-plane settings (FEAT-578): discovery
             globs, inventory bound, and the opt-in candidate-generation
             budget. Generation is disabled by default.
+        schema_plane: SQL schema plane settings (FEAT-600); read from and
+            written to the ``"schema"`` key of ``wiki.json``.
     """
+
+    model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, serialize_by_alias=True)
 
     wiki_name: str = Field(default="codebase")
     storage_dir: str = Field(default=f"{PARROT_DIR}/wiki")
@@ -484,8 +488,11 @@ class WikiProjectConfig(BaseModel):
             "Generation is disabled by default."
         ),
     )
-    schema: SchemaPlaneConfig = Field(
+    # Serialized as ``"schema"`` in ``wiki.json``; the attribute is named
+    # ``schema_plane`` because ``schema`` shadows ``BaseModel.schema``.
+    schema_plane: SchemaPlaneConfig = Field(
         default_factory=SchemaPlaneConfig,
+        alias="schema",
         description="SQL schema plane settings (FEAT-600): declared sources (env NAMES only), staleness policy.",
     )
     sqlite_busy_timeout: float = Field(

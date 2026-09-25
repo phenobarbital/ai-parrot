@@ -65,7 +65,7 @@ class SchemaPlaneService:
         store = SchemaStore(
             plane_dir / "schema.db", wiki_name="schema", sqlite_policy=sqlite_policy_from_config(config)
         )
-        return cls(store, config.schema, plane_dir, shared_root)
+        return cls(store, config.schema_plane, plane_dir, shared_root)
 
     @classmethod
     def from_dir(

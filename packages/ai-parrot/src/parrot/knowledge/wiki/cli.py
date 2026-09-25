@@ -3104,7 +3104,7 @@ def _schema_service() -> "SchemaPlaneService":
 def _changed_ddl_paths(root: Path, origin: str) -> list[Path]:
     """Return configured DDL files touched by the merge leading to ``HEAD``."""
     config = load_effective_config(root).config
-    source = config.schema.sources.get(origin)
+    source = config.schema_plane.sources.get(origin)
     if source is None:
         raise click.UsageError(f"Unknown schema source {origin!r}.")
     if not source.ddl_paths:
@@ -3155,11 +3155,11 @@ def schema_add_source(alias: str | None, dialect: str, dsn_env: str, schemas: st
     root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
     config = load_project_config(root)
     alias = alias or dialect
-    if alias in config.schema.sources:
+    if alias in config.schema_plane.sources:
         raise click.ClickException(
-            f"Schema source alias {alias!r} already exists; existing aliases: {', '.join(config.schema.sources)}"
+            f"Schema source alias {alias!r} already exists; existing aliases: {', '.join(config.schema_plane.sources)}"
         )
-    config.schema.sources[alias] = SchemaSourceConfig(
+    config.schema_plane.sources[alias] = SchemaSourceConfig(
         alias=alias,
         dialect=dialect,
         dsn_env=dsn_env,
@@ -3211,7 +3211,7 @@ def schema_ingest_ddl(
     """
     _refuse_in_linked_worktree(Path.cwd())
     root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
-    sources = load_effective_config(root).config.schema.sources
+    sources = load_effective_config(root).config.schema_plane.sources
     if origin is None:
         if paths or not changed:
             raise click.UsageError("--origin is required unless --changed is given without PATHS.")
