@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import difflib
-import logging
 import os
 import unicodedata
 from pathlib import Path
@@ -92,8 +91,8 @@ class HoobaToolkit(AbstractToolkit):
 
     def operation_kinds(self) -> Dict[str, OperationKind]:
         """Map every composite and generated tool name to its operation kind."""
-        kinds = {name: OperationKind.READ for name in _READ_TOOLS}
-        kinds.update({name: OperationKind.DRAFT for name in _DRAFT_TOOLS})
+        kinds = dict.fromkeys(_READ_TOOLS, OperationKind.READ)
+        kinds.update(dict.fromkeys(_DRAFT_TOOLS, OperationKind.DRAFT))
         kinds.update(self._api.operation_kinds())
         return kinds
 
@@ -229,7 +228,10 @@ class HoobaToolkit(AbstractToolkit):
                     ),
                 ]
                 score = max(
-                    (difflib.SequenceMatcher(None, folded_query, self._fold(candidate)).ratio() for candidate in candidates),
+                    (
+                        difflib.SequenceMatcher(None, folded_query, self._fold(candidate)).ratio()
+                        for candidate in candidates
+                    ),
                     default=0.0,
                 )
                 if score >= 0.85:
@@ -257,7 +259,9 @@ class HoobaToolkit(AbstractToolkit):
             records = await self._call("GET", path)
             if isinstance(records, dict):
                 records = records.get("items", records.get("content", records.get("data", [])))
-            drafts = [record for record in (records or []) if isinstance(record, dict) and record.get("state") == "draft"]
+            drafts = [
+                record for record in (records or []) if isinstance(record, dict) and record.get("state") == "draft"
+            ]
             drafts.sort(key=lambda record: str(record.get("date", record.get("createdAt", ""))), reverse=True)
             return self._ok(drafts[: max(0, limit)], OperationKind.READ)
         except Exception as exc:  # noqa: BLE001
