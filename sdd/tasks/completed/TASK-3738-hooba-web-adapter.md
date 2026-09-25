@@ -327,10 +327,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3738
+- Feature: hooba-toolkit
+- Implementation SHA: 86bd07185cfafa8f19666145e0463c6da44eccb9
+- Closed at (UTC): 2026-09-25T18:16:40+00:00
+- Fix commits: 065273f70b8e35801d11318b0a291012efb66729
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| merge_tier_engine_outcome | failed (workspace-wide import-impact sweep; 105 pre-existing unrelated failures across other distributions, same as chunk0/chunk1) |
+| orchestrator_targeted_verification | Found and fixed a test-only defect (fragile substring match on pretty-printed JSON; implementation was correct). Post-fix: packages/ai-parrot-tools/tests/hooba/ 25/25 passed (excluding TASK-3739's not-yet-merged tests at the time), later 30/30 with the full suite. ruff/black clean. |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 190.1s · Tokens: n/a |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions temporarily copied in from the main checkout since worktrees have no compiled .so; removed afterward (never committed). Note: the parrot-sdd-coder MCP server's execution state was lost mid-wave (server restart); this validation log was recovered from durable disk storage by content hash. |

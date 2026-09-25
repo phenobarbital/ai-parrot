@@ -158,7 +158,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -169,8 +169,9 @@
       "parallelism_notes": "needs HoobaSettings from TASK-3734 (hooba/settings.py) and PlaywrightDriver/AbstractDriver.get_cookies from TASK-3736 (scraping/drivers/*.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3738-hooba-web-adapter.md"
+      "completed_at": "2026-09-25T18:16:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3738-hooba-web-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3739",
