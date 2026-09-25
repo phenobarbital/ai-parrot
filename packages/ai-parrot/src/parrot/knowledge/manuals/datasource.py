@@ -49,14 +49,40 @@ ENTITY_FIELDS: dict[str, frozenset[str]] = {
     "Equipment": frozenset({"equipment_id", "model", "family", "revision", "aliases"}),
     "Procedure": frozenset(
         {
-            "procedure_id", "kind", "title", "estimated_minutes", "skill_level", "active", "verification", "versions",
-            "manual_id", "equipment_ids", "step_ids", "overview_media_ids", "supersedes",
+            "procedure_id",
+            "kind",
+            "title",
+            "estimated_minutes",
+            "skill_level",
+            "active",
+            "verification",
+            "versions",
+            "manual_id",
+            "equipment_ids",
+            "step_ids",
+            "overview_media_ids",
+            "supersedes",
         }
     ),
     "Step": frozenset(
         {
-            "step_id", "order", "source_identity", "content_hash", "text", "torque", "duration_minutes", "applies_models",
-            "applies_serial_ranges", "node_id", "page", "active", "procedure_id", "parts", "tool_ids", "hazard_ids", "media",
+            "step_id",
+            "order",
+            "source_identity",
+            "content_hash",
+            "text",
+            "torque",
+            "duration_minutes",
+            "applies_models",
+            "applies_serial_ranges",
+            "node_id",
+            "page",
+            "active",
+            "procedure_id",
+            "parts",
+            "tool_ids",
+            "hazard_ids",
+            "media",
             "precedes",
         }
     ),
@@ -99,7 +125,9 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
 
     def __init__(self, name: str = SOURCE_NAME, config: Optional[dict[str, Any]] = None) -> None:
         if not _LOADERS_AVAILABLE:  # pragma: no cover - depends on install extras
-            raise RuntimeError("The manuals ontology datasource requires ai-parrot-loaders (pip install ai-parrot-loaders).")
+            raise RuntimeError(
+                "The manuals ontology datasource requires ai-parrot-loaders (pip install ai-parrot-loaders)."
+            )
         super().__init__(name=name, config=config or {})
         catalog = self.config.get("catalog")
         if not isinstance(catalog, ManualCatalogStore):
@@ -193,7 +221,8 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
                         "manual_id": card.manual_id,
                         "equipment_ids": equipment_ids,
                         "step_ids": [
-                            {"step_id": step.identity.step_id, "order": step.order} for step in sorted(procedure.steps, key=lambda step: step.order)
+                            {"step_id": step.identity.step_id, "order": step.order}
+                            for step in sorted(procedure.steps, key=lambda step: step.order)
                         ],
                         "overview_media_ids": overview_media_ids,
                         "supersedes": procedure.supersedes,
@@ -208,7 +237,11 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
             for procedure in self._procedures(card):
                 steps = sorted(procedure.steps, key=lambda step: step.order)
                 for index, step in enumerate(steps):
-                    next_steps = [] if index + 1 == len(steps) else [{"step_id": steps[index + 1].identity.step_id, "kind": "order"}]
+                    next_steps = (
+                        []
+                        if index + 1 == len(steps)
+                        else [{"step_id": steps[index + 1].identity.step_id, "kind": "order"}]
+                    )
                     evidence = step.text.evidence
                     records.append(
                         {
@@ -220,18 +253,27 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
                             "torque": step.torque.value if step.torque else None,
                             "duration_minutes": step.duration_minutes.value if step.duration_minutes else None,
                             "applies_models": list(step.applicability.models),
-                            "applies_serial_ranges": [serial_range.model_dump(mode="json") for serial_range in step.applicability.serial_ranges],
+                            "applies_serial_ranges": [
+                                serial_range.model_dump(mode="json")
+                                for serial_range in step.applicability.serial_ranges
+                            ],
                             "node_id": evidence.node_id if evidence else None,
                             "page": evidence.page if evidence else None,
                             "active": procedure.active,
                             "procedure_id": procedure.procedure_id,
                             "parts": [
-                                {"part_id": part.part_id, "quantity": part.quantity, "context": None} for part in step.parts
+                                {"part_id": part.part_id, "quantity": part.quantity, "context": None}
+                                for part in step.parts
                             ],
                             "tool_ids": [tool.tool_id for tool in step.tools],
                             "hazard_ids": [hazard.hazard_id for hazard in step.hazards],
                             "media": [
-                                {"media_id": media.media_id, "role": media.role, "confidence": media.confidence, "origin": media.origin}
+                                {
+                                    "media_id": media.media_id,
+                                    "role": media.role,
+                                    "confidence": media.confidence,
+                                    "origin": media.origin,
+                                }
                                 for media in step.media
                             ],
                             "precedes": next_steps,
@@ -244,7 +286,9 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
         records: dict[str, dict[str, Any]] = {}
         for card in cards:
             parts = list(card.global_parts)
-            parts.extend(part for procedure in self._procedures(card) for step in procedure.steps for part in step.parts)
+            parts.extend(
+                part for procedure in self._procedures(card) for step in procedure.steps for part in step.parts
+            )
             for part in parts:
                 records.setdefault(
                     part.part_id,
@@ -257,7 +301,9 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
         records: dict[str, dict[str, Any]] = {}
         for card in cards:
             tools = list(card.global_tools)
-            tools.extend(tool for procedure in self._procedures(card) for step in procedure.steps for tool in step.tools)
+            tools.extend(
+                tool for procedure in self._procedures(card) for step in procedure.steps for tool in step.tools
+            )
             for tool in tools:
                 records.setdefault(tool.tool_id, {"tool_id": tool.tool_id, "name": tool.name.value, "spec": tool.spec})
         return [records[key] for key in sorted(records)]
@@ -267,7 +313,9 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
         records: dict[str, dict[str, Any]] = {}
         for card in cards:
             hazards = list(card.global_hazards)
-            hazards.extend(hazard for procedure in self._procedures(card) for step in procedure.steps for hazard in step.hazards)
+            hazards.extend(
+                hazard for procedure in self._procedures(card) for step in procedure.steps for hazard in step.hazards
+            )
             for hazard in hazards:
                 records.setdefault(
                     hazard.hazard_id,
@@ -335,10 +383,14 @@ class ManualCardDataSource(ExtractDataSource):  # type: ignore[misc]
         entity = self.infer_entity(fields)
         records = await self.records_for(entity, filters=filters)
         requested = set(fields or [])
-        payloads = [{key: value for key, value in record.items() if not requested or key in requested} for record in records]
+        payloads = [
+            {key: value for key, value in record.items() if not requested or key in requested} for record in records
+        ]
         self.logger.debug("Projected %d %s records for %s", len(payloads), entity, self.name)
         return ExtractionResult(
-            records=[ExtractedRecord(data=payload, metadata={"entity": entity, "source": self.name}) for payload in payloads],
+            records=[
+                ExtractedRecord(data=payload, metadata={"entity": entity, "source": self.name}) for payload in payloads
+            ],
             total=len(payloads),
             source_name=self.name,
             extracted_at=datetime.now(tz=timezone.utc),
