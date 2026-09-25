@@ -1,4 +1,5 @@
 """Build a SYNTHETIC BBVA-like movements workbook (no real data)."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -36,16 +37,23 @@ def build_bbva_workbook(path: Path, *, extra_rows: int = 0) -> Path:
 
     # 2 synthetic credits (skipped by the parser).
     ws.append(
-        [dt.date(2026, 9, 6), dt.date(2026, 9, 6), "NOMINA TEST EMPRESA", "TRANSFERENCIA", 1500.00, "EUR", 2375.60,
-         ""]
+        [dt.date(2026, 9, 6), dt.date(2026, 9, 6), "NOMINA TEST EMPRESA", "TRANSFERENCIA", 1500.00, "EUR", 2375.60, ""]
     )
     ws.append([dt.date(2026, 9, 7), dt.date(2026, 9, 7), "DEVOLUCION COMPRA", "ABONO", 25.00, "EUR", 2400.60, ""])
 
     for offset in range(extra_rows):
         day = 8 + offset
         ws.append(
-            [dt.date(2026, 9, day), dt.date(2026, 9, day), f"EXTRA GASTO {offset}", "COMPRA TARJETA",
-             -10.00 - offset, "EUR", 2400.60 - (10.00 + offset), ""]
+            [
+                dt.date(2026, 9, day),
+                dt.date(2026, 9, day),
+                f"EXTRA GASTO {offset}",
+                "COMPRA TARJETA",
+                -10.00 - offset,
+                "EUR",
+                2400.60 - (10.00 + offset),
+                "",
+            ]
         )
 
     wb.save(path)

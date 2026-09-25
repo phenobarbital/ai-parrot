@@ -1,4 +1,5 @@
 """Per-statement import manifest for resume and reconciliation (FEAT-602 M8)."""
+
 from __future__ import annotations
 
 import datetime as dt

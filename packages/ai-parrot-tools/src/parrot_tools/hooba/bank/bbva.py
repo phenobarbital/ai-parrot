@@ -1,4 +1,5 @@
 """BBVA movements export → :class:`BbvaStatement` (FEAT-602 M8)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,8 +18,17 @@ from ..models import BankExpenseRow, BbvaStatement
 
 logger = logging.getLogger(__name__)
 
-HEADER_TOKENS = {"fecha", "f.valor", "fecha valor", "concepto", "movimiento", "importe", "divisa", "disponible",
-                 "observaciones"}
+HEADER_TOKENS = {
+    "fecha",
+    "f.valor",
+    "fecha valor",
+    "concepto",
+    "movimiento",
+    "importe",
+    "divisa",
+    "disponible",
+    "observaciones",
+}
 
 #: Minimum number of matching tokens for a scanned row to be considered the header row.
 _MIN_HEADER_MATCHES = 3

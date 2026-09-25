@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3739 — BBVA parser and manifest."""
+
 import asyncio
 import stat
 from datetime import date, datetime, timezone
@@ -9,7 +10,13 @@ import openpyxl
 import pytest
 
 from parrot_tools.hooba.bank import (
-    ImportManifest, load_manifest, parse_bbva_statement, parse_es_amount, parse_es_date, reconcile, write_manifest,
+    ImportManifest,
+    load_manifest,
+    parse_bbva_statement,
+    parse_es_amount,
+    parse_es_date,
+    reconcile,
+    write_manifest,
 )
 from parrot_tools.hooba.bank.bbva import _parse_bbva_sync
 from .fixtures.make_bbva_fixture import build_bbva_workbook
@@ -62,9 +69,7 @@ async def test_parse_bbva_runs_off_event_loop(tmp_path):
         assert func is _parse_bbva_sync
         return await original_to_thread(func, *args, **kwargs)
 
-    with patch(
-        "parrot_tools.hooba.bank.bbva.asyncio.to_thread", side_effect=_passthrough
-    ) as mock_to_thread:
+    with patch("parrot_tools.hooba.bank.bbva.asyncio.to_thread", side_effect=_passthrough) as mock_to_thread:
         await parse_bbva_statement(path)
 
     mock_to_thread.assert_called_once()
