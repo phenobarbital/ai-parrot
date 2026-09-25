@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3746 — the operator page stays in sync with the toolkit."""
+
 from pathlib import Path
 
 DOC = Path(__file__).resolve().parents[4] / "docs" / "hooba-toolkit.md"
