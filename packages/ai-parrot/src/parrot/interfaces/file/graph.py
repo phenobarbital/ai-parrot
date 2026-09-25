@@ -8,7 +8,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, BinaryIO, Callable, Dict, List, Literal, Optional, Tuple, Union
@@ -16,12 +16,20 @@ from urllib.parse import quote, urlsplit
 
 import aiohttp
 import aiofiles
+from kiota_abstractions.base_request_configuration import RequestConfiguration
+from kiota_abstractions.native_response_handler import NativeResponseHandler
+from kiota_http.middleware.options.response_handler_option import ResponseHandlerOption
+from msgraph.generated.drives.item.items.item.copy.copy_post_request_body import CopyPostRequestBody
+from msgraph.generated.drives.item.items.item.create_link.create_link_post_request_body import (
+    CreateLinkPostRequestBody,
+)
 from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
     CreateUploadSessionPostRequestBody,
 )
 from msgraph.generated.models.drive_item import DriveItem
 from msgraph.generated.models.drive_item_uploadable_properties import DriveItemUploadableProperties
 from msgraph.generated.models.folder import Folder
+from msgraph.generated.models.item_reference import ItemReference
 
 from navigator.utils.file import FileManagerInterface, FileMetadata
 from pydantic import BaseModel, ConfigDict
@@ -773,3 +781,151 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
             raise
         except Exception as exc:
             raise self._map_error(exc, path=source) from exc
+
+    async def copy_file(self, source: str, destination: str) -> FileMetadata:
+        """POST copy (202 + Location; never retried), then poll the validated monitor (AC6, AC21)."""
+        await self._ready()
+        src_full, dest_full = self._prefixed(source), self._prefixed(destination)
+        try:
+            src = await self._get_item(src_full)
+            parent = await self._ensure_parent(dest_full)
+            body = CopyPostRequestBody(
+                name=dest_full.rsplit("/", 1)[-1],
+                parent_reference=ItemReference(drive_id=self.drive_id, id=parent.id),
+            )
+            config = RequestConfiguration(options=[ResponseHandlerOption(NativeResponseHandler())])
+            response, _ = await self._retrying(
+                lambda: self._drive().items.by_drive_item_id(src.id).copy.post(body, request_configuration=config),
+                label="copy",
+                idempotent=False,
+            )
+            location = getattr(response, "headers", {}).get("Location")
+            if getattr(response, "status_code", None) != 202 or not location:
+                raise GraphFileManagerError("Graph copy did not return a 202 monitor location")
+            new_id = await self._poll_copy_monitor(location, source=source)
+            return self._make_metadata(await self._get_item_by_id(new_id), full_path=dest_full)
+        except TimeoutError:
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=source) from exc
+
+    async def _poll_copy_monitor(self, url: str, *, source: str) -> str:
+        """Poll the copy monitor until completed; return the new item id (TimeoutError after COPY_TIMEOUT_S)."""
+        monitor_url = self._validate_graph_url(url, purpose="copy monitor")
+        started_at = asyncio.get_running_loop().time()
+        attempt = 0
+        async with self._http_session() as session:
+            while True:
+                if asyncio.get_running_loop().time() - started_at >= self.COPY_TIMEOUT_S:
+                    raise TimeoutError(f"Graph copy timed out for {source}")
+
+                async def poll() -> Dict[str, Any]:
+                    async with session.get(monitor_url, headers={}, allow_redirects=False) as response:
+                        if response.status not in {200, 202}:
+                            raise _RawHTTPError(response.status, dict(response.headers))
+                        return await response.json()
+
+                result, _ = await self._retrying(poll, label="copy-monitor")
+                status = result.get("status")
+                if status == "completed":
+                    resource_id = result.get("resourceId")
+                    if resource_id:
+                        return resource_id
+                    raise GraphFileManagerError("Graph copy completed without a resource id")
+                if status == "failed":
+                    raise GraphFileManagerError("Graph copy monitor reported failure")
+                await self._sleep(min(1.0 * 2**attempt, 5.0))
+                attempt += 1
+
+    async def create_sharing_link(
+        self, path: str, *, link_type: LinkType = "view", scope: LinkScope = "organization", expiry: int = 3600
+    ) -> str:
+        """POST createLink; creates a sharing permission (S3)."""
+        await self._ready()
+        full_path = self._prefixed(path)
+
+        def body_with_expiry(include_expiry: bool) -> CreateLinkPostRequestBody:
+            return CreateLinkPostRequestBody(
+                type=link_type,
+                scope=scope,
+                expiration_date_time=datetime.now(timezone.utc) + timedelta(seconds=expiry)
+                if include_expiry and expiry > 0
+                else None,
+            )
+
+        try:
+            item = await self._get_item(full_path)
+            body = body_with_expiry(True)
+            try:
+                permission, _ = await self._retrying(
+                    lambda: self._drive().items.by_drive_item_id(item.id).create_link.post(body),
+                    label="create-link",
+                    idempotent=False,
+                )
+            except Exception as exc:
+                status = self._status_code_of(exc)
+                if status == 403 or (status == 400 and scope in str(exc).lower()):
+                    raise PermissionError("Graph sharing scope was denied") from exc
+                if status != 400 or body.expiration_date_time is None:
+                    raise
+                self.logger.warning("tenant rejected link expiration; creating a non-expiring link")
+                permission, _ = await self._retrying(
+                    lambda: self._drive().items.by_drive_item_id(item.id).create_link.post(body_with_expiry(False)),
+                    label="create-link",
+                    idempotent=False,
+                )
+            url = getattr(getattr(permission, "link", None), "web_url", None)
+            if not url:
+                raise GraphFileManagerError("Graph createLink returned no sharing URL")
+            return url
+        except PermissionError:
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def get_file_url(self, path: str, expiry: int = 3600) -> str:
+        """Exact FileManagerInterface signature (abstract.py:67); wraps create_sharing_link with the defaults."""
+        return await self.create_sharing_link(path, link_type=self.link_type, scope=self.link_scope, expiry=expiry)
+
+    async def create_folder(self, folder_name: str) -> None:
+        """Create ``folder_name`` (and missing parents); an existing folder is not an error."""
+        await self._ready()
+        full_path = self._prefixed(folder_name)
+        try:
+            await self._ensure_parent(f"{full_path}/.")
+        except Exception as exc:
+            raise self._map_error(exc, path=folder_name) from exc
+
+    async def remove_folder(self, folder_name: str) -> None:
+        """Delete a folder and its contents (recycle bin); FileNotFoundError when missing."""
+        await self._ready()
+        full_path = self._prefixed(folder_name)
+        try:
+            item = await self._get_item(full_path)
+            await self._retrying(lambda: self._drive().items.by_drive_item_id(item.id).delete(), label="delete")
+        except Exception as exc:
+            raise self._map_error(exc, path=folder_name) from exc
+
+    async def rename_file(self, old_file_name: str, new_file_name: str) -> None:
+        """Rename and/or move a file within the drive (single PATCH)."""
+        await self._move_or_rename(old_file_name, new_file_name)
+
+    async def rename_folder(self, old_folder_name: str, new_folder_name: str) -> None:
+        """Rename and/or move a folder within the drive (single PATCH; task-time deviation, see Context)."""
+        await self._move_or_rename(old_folder_name, new_folder_name)
+
+    async def _move_or_rename(self, old: str, new: str) -> None:
+        """Rename an item, moving it with the same PATCH when its parent changes."""
+        await self._ready()
+        old_full, new_full = self._prefixed(old), self._prefixed(new)
+        try:
+            item = await self._get_item(old_full)
+            old_parent = old_full.rpartition("/")[0]
+            new_parent = new_full.rpartition("/")[0]
+            body = DriveItem(name=new_full.rsplit("/", 1)[-1])
+            if old_parent != new_parent:
+                parent = await self._ensure_parent(new_full)
+                body.parent_reference = ItemReference(id=parent.id)
+            await self._retrying(lambda: self._drive().items.by_drive_item_id(item.id).patch(body), label="patch")
+        except Exception as exc:
+            raise self._map_error(exc, path=old) from exc

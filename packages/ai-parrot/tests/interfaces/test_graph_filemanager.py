@@ -2,6 +2,7 @@
 
 import datetime as dt
 import asyncio
+import inspect
 import io
 import os
 import subprocess
@@ -33,6 +34,7 @@ from ._graph_fakes import (
     make_sharepoint_client,
 )
 from parrot.interfaces.sharepoint import SharepointClient
+from navigator.utils.file import FileManagerInterface
 
 
 def test_prefix_is_normalised():
@@ -506,3 +508,117 @@ async def test_download_folder_raises_isadirectory(xfer_manager):
 
     with pytest.raises(IsADirectoryError):
         await manager.download_file("folder", io.BytesIO())
+
+
+def _shape(fn):
+    """Return a callable's parameter names, kinds, and defaults."""
+    return [(parameter.name, parameter.kind, parameter.default) for parameter in inspect.signature(fn).parameters.values()]
+
+
+def test_all_interface_methods_implemented_with_exact_signatures():
+    """AC1: no abstract interface method left; parameter shapes equal navigator's."""
+    names = {name for name in FileManagerInterface.__abstractmethods__}
+    assert not (names & GraphDriveFileManager.__abstractmethods__)
+    for name in names | {"create_folder", "remove_folder", "rename_folder", "rename_file", "find_files"}:
+        assert _shape(getattr(GraphDriveFileManager, name)) == _shape(getattr(FileManagerInterface, name)), name
+
+
+async def test_copy_polls_monitor_until_completed(xfer_manager):
+    """Copy waits for the monitor and returns the destination metadata."""
+    manager, fake, session = xfer_manager
+    fake.copy_polls_before_done = 2
+    fake.drives_by_id["drive-1"].put_file("source.txt", b"copy")
+
+    metadata = await manager.copy_file("source.txt", "nested/destination.txt")
+
+    assert metadata.path == "nested/destination.txt"
+    assert len([call for call in fake.calls if call[0] == "copy"]) == 1
+    assert len([request for request in session.requests if request[0] == "GET"]) == 3
+    assert all(headers == {} and redirects is False for _, _, headers, redirects in session.requests)
+
+
+async def test_copy_post_never_retried(xfer_manager):
+    """A retryable copy POST error is exposed after its single attempt."""
+    manager, fake, _session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("source.txt", b"copy")
+    fake.fail_next(503, op="copy")
+    original_retrying = manager._retrying
+    attempts = 0
+
+    async def counted_retrying(operation, *, label, idempotent=True):
+        nonlocal attempts
+        if label == "copy":
+            attempts += 1
+        return await original_retrying(operation, label=label, idempotent=idempotent)
+
+    manager._retrying = counted_retrying
+
+    with pytest.raises(GraphFileManagerError):
+        await manager.copy_file("source.txt", "destination.txt")
+    assert attempts == 1
+
+
+async def test_copy_timeout(xfer_manager):
+    """Copy timeout does not disclose the pre-authenticated monitor URL."""
+    manager, fake, _session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("source.txt", b"copy")
+    fake.copy_polls_before_done = 99
+    manager.COPY_TIMEOUT_S = 0.001
+
+    with pytest.raises(TimeoutError) as exc_info:
+        await manager.copy_file("source.txt", "destination.txt")
+    assert "source.txt" in str(exc_info.value)
+    assert "https://" not in str(exc_info.value)
+
+
+async def test_get_file_url_createlink_defaults_and_expiry(xfer_manager):
+    """The interface wrapper uses configured defaults and follows expiry rules."""
+    manager, fake, _session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("file.txt", b"link")
+
+    assert await manager.get_file_url("file.txt", expiry=5)
+    assert fake.link_bodies[-1].type == "view"
+    assert fake.link_bodies[-1].scope == "organization"
+    assert fake.link_bodies[-1].expiration_date_time is not None
+    assert await manager.get_file_url("file.txt", expiry=0)
+    assert fake.link_bodies[-1].expiration_date_time is None
+
+
+async def test_create_sharing_link_expiry_rejected_falls_back_and_anonymous_forbidden(xfer_manager, caplog):
+    """Expiration fallback is once-only and tenant scope denials map to PermissionError."""
+    manager, fake, _session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("file.txt", b"link")
+    fake.fail_next(400, op="create_link")
+
+    assert await manager.create_sharing_link("file.txt", expiry=5)
+    assert len(fake.link_bodies) == 1
+    assert "tenant rejected link expiration" in caplog.text
+    assert fake.link_bodies[-1].expiration_date_time is None
+    fake.fail_next(403, op="create_link")
+    with pytest.raises(PermissionError):
+        await manager.create_sharing_link("file.txt", scope="anonymous")
+
+
+async def test_folders_create_remove(xfer_manager):
+    """Folder creation is recursive and idempotent; removal recycles the subtree."""
+    manager, _fake, _session = xfer_manager
+
+    await manager.create_folder("one/two")
+    await manager.create_folder("one/two")
+    assert await manager.exists("one/two")
+    await manager.remove_folder("one")
+    assert not await manager.exists("one/two")
+    with pytest.raises(FileNotFoundError):
+        await manager.remove_folder("one")
+
+
+async def test_rename_same_parent_and_move(xfer_manager):
+    """Both same-parent rename and move use one PATCH each."""
+    manager, fake, _session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("old.txt", b"rename")
+
+    await manager.rename_file("old.txt", "renamed.txt")
+    await manager.rename_file("renamed.txt", "folder/moved.txt")
+
+    assert len([call for call in fake.calls if call[0] == "patch"]) == 2
+    assert await manager.exists("folder/moved.txt")
