@@ -1,4 +1,5 @@
 """Data-driven deductibility rules for Spanish autónomos (FEAT-602 M9). Pure after ``load``."""
+
 from __future__ import annotations
 
 import logging
@@ -112,9 +113,7 @@ class RuleEngine:
             capped_amount = min(abs(row.amount), *caps)
 
         matched_pattern = rule.matcher.concept_regex if rule.rule_id in self._compiled_patterns else None
-        hooba = rule.hooba.model_copy(
-            update={"simplified": abs(row.amount) <= self.table.simplified_invoice_limit_eur}
-        )
+        hooba = rule.hooba.model_copy(update={"simplified": abs(row.amount) <= self.table.simplified_invoice_limit_eur})
         return DeductibilityVerdict(
             draft_id=f"{row.row_id}:{rule.rule_id}",
             txn_id=row.row_id,

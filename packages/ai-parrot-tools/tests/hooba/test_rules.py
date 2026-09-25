@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3740 — rule engine."""
+
 import datetime as dt
 from decimal import Decimal
 
@@ -60,11 +61,7 @@ def test_rule_engine_matches_and_skips():
 def test_same_priority_ambiguity_falls_back(tmp_path):
     """Two matching rules at the same priority are rejected as ambiguous."""
     table = RuleEngine.load().table.model_dump(mode="json")
-    table["rules"] = [
-        rule
-        for rule in table["rules"]
-        if rule["rule_id"] in {"unclassified", "reta"}
-    ]
+    table["rules"] = [rule for rule in table["rules"] if rule["rule_id"] in {"unclassified", "reta"}]
     table["rules"].append({**table["rules"][0], "rule_id": "other_reta"})
     path = tmp_path / "ambiguous.yaml"
     path.write_text(yaml.safe_dump(table), encoding="utf-8")
