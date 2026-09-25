@@ -330,7 +330,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -342,8 +342,9 @@
       "parallelism_notes": "reads OWNED_*/resolve_context from TASK-3701 (manuals/domain.py); calls relink_tips/RelinkReport from TASK-3710 (manuals/tips.py); snapshots via ManualCardDataSource from TASK-3711 (manuals/datasource.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3712-manual-graph-loader.md"
+      "completed_at": "2026-09-25T14:22:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3712-manual-graph-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3713",
@@ -436,7 +437,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -446,8 +447,9 @@
       "parallelism_notes": "reads ParsedResponse.image_urls from TASK-3716 (integrations/parser.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3717-teams-slack-image-urls.md"
+      "completed_at": "2026-09-25T14:16:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3717-teams-slack-image-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3718",

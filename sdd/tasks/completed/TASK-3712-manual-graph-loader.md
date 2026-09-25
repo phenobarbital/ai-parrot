@@ -437,10 +437,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3712
+- Feature: training-agent
+- Implementation SHA: 95d133982e19426b826c229bbc03b5cf2666e367
+- Closed at (UTC): 2026-09-25T14:22:00+00:00
+- Fix commits: 95d133982e19426b826c229bbc03b5cf2666e367
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 275.9s · Tokens: n/a |
+| supplementary_test_evidence | 104 passed, 1 skipped, 0 failed (scoped direct pytest over knowledge/manuals/, after fix commit 9b68a53a9) |

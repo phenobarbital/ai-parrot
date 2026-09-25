@@ -273,10 +273,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3717
+- Feature: training-agent
+- Implementation SHA: b377a2c68d8392568dbf6fc816b02079ca58a69b
+- Closed at (UTC): 2026-09-25T14:16:50+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| supplementary_test_evidence | 6 passed, 0 failed (scoped direct pytest over test_media_urls_teams_slack.py) |
