@@ -29,9 +29,7 @@ def task_steps_for(procedure: AssembledProcedure) -> list[dict[str, Any]]:
     return steps
 
 
-async def record_completion(
-    episodic: Any, *, namespace: Any, procedure: AssembledProcedure, user_id: str
-) -> None:
+async def record_completion(episodic: Any, *, namespace: Any, procedure: AssembledProcedure, user_id: str) -> None:
     """Record one workflow-pattern episode after a guided procedure completes."""
     if episodic is None:
         return

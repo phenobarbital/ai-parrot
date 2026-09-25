@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
 from typing import Any, Optional
 
 from parrot.knowledge.manuals.models import ManualVersion, Prerequisites, normalize_serial
@@ -85,7 +84,9 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
         """Find a procedure without guessing when multiple candidates match."""
         try:
             self._gate(pattern="procedures_for_equipment")
-            context = self.request_context.model_copy(update={"equipment_model": equipment or self.request_context.equipment_model})
+            context = self.request_context.model_copy(
+                update={"equipment_model": equipment or self.request_context.equipment_model}
+            )
             resolved_equipment = await self.service.retrieval.resolve_equipment(equipment or query, context)
             if isinstance(resolved_equipment, Clarification):
                 return {"status": "clarification", **resolved_equipment.model_dump(mode="json")}
@@ -139,7 +140,13 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
             rows = await self.service.retrieval.execute_graph(
                 PatternPlan(pattern="tips_for_procedure", bind_vars={"step_id": step_id}), self.request_context
             )
-            tips = [row["tip"] for row in rows if row.get("step_id") == step_id and row.get("tip", {}).get("active", True) and not row.get("tip", {}).get("orphaned", False)]
+            tips = [
+                row["tip"]
+                for row in rows
+                if row.get("step_id") == step_id
+                and row.get("tip", {}).get("active", True)
+                and not row.get("tip", {}).get("orphaned", False)
+            ]
             return {"status": "ok", "tips": tips[:MAX_ROWS]}
         except AuthorizationDenied as exc:
             return self._denied(exc)
@@ -149,7 +156,8 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
         try:
             self._gate(pattern="equipment_sharing_module")
             rows = await self.service.retrieval.execute_graph(
-                PatternPlan(pattern="equipment_sharing_module", bind_vars={"equipment_id": equipment_id}), self.request_context
+                PatternPlan(pattern="equipment_sharing_module", bind_vars={"equipment_id": equipment_id}),
+                self.request_context,
             )
             return {"status": "ok", "equipment": rows[:MAX_ROWS]}
         except AuthorizationDenied as exc:
@@ -212,7 +220,12 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
         """Retire a tip as a curator-only action."""
         try:
             self._gate(curator_only=True)
-            await _retire_tip(self.service.retrieval.graph_store, self.service.retrieval.tenant_context, tip_id=tip_id, by=self.request_context.user_id)
+            await _retire_tip(
+                self.service.retrieval.graph_store,
+                self.service.retrieval.tenant_context,
+                tip_id=tip_id,
+                by=self.request_context.user_id,
+            )
             return {"status": "ok", "tip_id": tip_id}
         except AuthorizationDenied as exc:
             return self._denied(exc)
@@ -235,7 +248,9 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
             card = await self._card_for_procedure(procedure_id)
             if card is None:
                 return {"status": "not_found"}
-            verified = await self.library.verify_procedure(card.manual_id, procedure_id, user=self.request_context.user_id)
+            verified = await self.library.verify_procedure(
+                card.manual_id, procedure_id, user=self.request_context.user_id
+            )
             return {"status": "ok", "procedure": procedure_id, "manual_id": verified.manual_id}
         except AuthorizationDenied as exc:
             return self._denied(exc)
@@ -251,23 +266,40 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
                 return answer_data
             card = await self._card_for_procedure(procedure_id)
             assert card is not None
-            revision = next((item for item in card.versions if item.revision == answer_data.get("manual_revision")), None)
+            revision = next(
+                (item for item in card.versions if item.revision == answer_data.get("manual_revision")), None
+            )
             revision = revision or ManualVersion(n=1, revision=answer_data.get("manual_revision") or card.revision)
             assembled = AssembledProcedure(
-                procedure=answer_data["procedure"], steps=answer_data["steps"], prerequisites=answer_data.get("prerequisites") or Prerequisites(),
-                hazards=answer_data.get("hazards", []), media=answer_data.get("media", []), tips=answer_data.get("tips", []), citations=answer_data.get("citations", []), revision=revision,
+                procedure=answer_data["procedure"],
+                steps=answer_data["steps"],
+                prerequisites=answer_data.get("prerequisites") or Prerequisites(),
+                hazards=answer_data.get("hazards", []),
+                media=answer_data.get("media", []),
+                tips=answer_data.get("tips", []),
+                citations=answer_data.get("citations", []),
+                revision=revision,
             )
-            result = await self.begin_task(goal=assembled.procedure.title, steps=task_steps_for(assembled), plan_complete=True)
+            result = await self.begin_task(
+                goal=assembled.procedure.title, steps=task_steps_for(assembled), plan_complete=True
+            )
             if result.get("status") != "started":
                 return result
-            labels = {view.step_id: item["step_id"] for view, item in zip(assembled.steps, result["steps"], strict=True)}
+            labels = {
+                view.step_id: item["step_id"] for view, item in zip(assembled.steps, result["steps"], strict=True)
+            }
             self._guided[result["task_id"]] = {
                 "procedure": assembled,
                 "labels": labels,
                 "completed": set(),
                 "recorded": False,
             }
-            return {"status": "started", "task_id": result["task_id"], "revision": result["revision"], "steps": assembled.steps and [item.model_dump(mode="json") for item in assembled.steps]}
+            return {
+                "status": "started",
+                "task_id": result["task_id"],
+                "revision": result["revision"],
+                "steps": assembled.steps and [item.model_dump(mode="json") for item in assembled.steps],
+            }
         except AuthorizationDenied as exc:
             return self._denied(exc)
 
@@ -283,7 +315,11 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
             if pending is None:
                 return {"status": "complete"}
             procedure = self._guided.get(task_id, {}).get("procedure")
-            step = next((item for item in procedure.steps if item.step_id == pending["step_id"]), None) if procedure else None
+            step = (
+                next((item for item in procedure.steps if item.step_id == pending["step_id"]), None)
+                if procedure
+                else None
+            )
             await self.set_resume_hint(task_id, "complete the next procedure step", step_id=pending["step_id"])
             return {"status": "ok", "step": step.model_dump(mode="json") if step else pending}
         except AuthorizationDenied as exc:
@@ -301,12 +337,24 @@ class ProceduresToolkit(TaskMemoryToolsMixin, AbstractToolkit):
                 return recalled
             revision = recalled["snapshot"]["revision"]
             procedure = guided["procedure"]
-            result = await self.update_step(task_id, guided["labels"][step_id], expected_revision=revision, status="completed", evidence_refs=[f"procedure:{procedure.procedure.procedure_id}@{procedure.revision.revision}"], note=note or "completed by technician")
+            result = await self.update_step(
+                task_id,
+                guided["labels"][step_id],
+                expected_revision=revision,
+                status="completed",
+                evidence_refs=[f"procedure:{procedure.procedure.procedure_id}@{procedure.revision.revision}"],
+                note=note or "completed by technician",
+            )
             if result.get("status") != "updated":
                 return result
             guided["completed"].add(step_id)
             if len(guided["completed"]) == len(procedure.steps) and not guided["recorded"]:
-                await record_completion(self.episodic, namespace=self._task_memory.scope, procedure=procedure, user_id=self.request_context.user_id)
+                await record_completion(
+                    self.episodic,
+                    namespace=self._task_memory.scope,
+                    procedure=procedure,
+                    user_id=self.request_context.user_id,
+                )
                 guided["recorded"] = True
             return result
         except AuthorizationDenied as exc:
