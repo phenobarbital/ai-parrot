@@ -357,10 +357,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (resumed session, execution 981de749-8a38-47ed-a033-752eb90afb12)
+**Date**: 2026-09-25
+**Notes**: Code was implemented and merged into `feat-FEAT-601-training-agent` by an earlier
+orchestrator run (merge commit `9f6a16e0f`, engine lint-autofix `f30817609`), but the SDD
+close (index status + active→completed move) never happened before that session ended,
+leaving the index stuck at `in-progress` and blocking every downstream task
+(TASK-3722..3725/3727..3730). This session verified the delivered
+`packages/ai-parrot-tools/src/parrot_tools/procedures/assembly.py` +
+`packages/ai-parrot-tools/tests/procedures/test_assembly.py` (387/108 lines) against the task's
+own Validation Command directly: `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src:packages/ai-parrot-integrations/src pytest packages/ai-parrot-tools/tests/procedures/test_assembly.py -q` → `3 passed` (`artifacts/logs/verify-TASK-3721.log`).
+The declared `coder_run_validation(tier="merge")` sweep was also run but FAILED overall —
+not from this task's code: it aborted the whole `ai-parrot-tools` distribution before
+`test_assembly.py` could even run ("Interrupted: 5 errors during collection" — unrelated
+`shell_tool.security` import drift and missing `parrot.tools.alpaca`/`parrot.integrations.zoom`
+modules), plus unrelated pre-existing failures elsewhere. Filed as `issue:1e9c207bd223`
+(ledger) rather than blocking this task's closure on infrastructure outside its scope.
+Closed via `scripts/sdd/close_task.sh` directly (the primitive `finalize_task` wraps),
+since no execution-owned attempt branch remained for this new execution to run
+`coder_merge`/`finalize_task` against (the merge had already happened in the prior session).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none beyond the documented `context` keyword-only parameter
+addition already noted in the Codebase Contract above.

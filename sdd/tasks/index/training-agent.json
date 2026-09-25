@@ -523,7 +523,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -534,8 +534,9 @@
       "parallelism_notes": "consumes RetrievalResult/RequestContext from TASK-3720 (parrot_tools/procedures/retrieval.py); builds StepView/ProcedureCitation from TASK-3700 (manuals/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3721-procedures-assembly.md"
+      "completed_at": "2026-09-25T18:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3721-procedures-assembly.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3722",
@@ -627,7 +628,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -640,8 +641,9 @@
       "parallelism_notes": "spike_figures/video drive ManualLibrary from TASK-3713 (manuals/library.py); spike_media drives the channel senders from TASK-3717/3718/3719 (msteams, telegram, whatsapp wrappers)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3726-manuals-spikes.md"
+      "completed_at": "2026-09-25T18:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3726-manuals-spikes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3727",

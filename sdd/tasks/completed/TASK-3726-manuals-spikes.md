@@ -347,10 +347,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (resumed session, execution 981de749-8a38-47ed-a033-752eb90afb12)
+**Date**: 2026-09-25
+**Notes**: Code was implemented and merged into `feat-FEAT-601-training-agent` by an earlier
+orchestrator run (merge commit `3b6ba4ce5`, engine lint-autofix `aa8a30701`), but the SDD
+close (index status + active→completed move) never happened before that session ended,
+leaving the index stuck at `in-progress` and blocking every downstream task
+(TASK-3727..3730 depend transitively on this one). This session verified the delivered
+`packages/ai-parrot/src/parrot/knowledge/manuals/spikes.py` (543 lines) +
+`packages/ai-parrot/tests/knowledge/manuals/test_spikes.py` against the task's own
+Validation Command directly:
+`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src:packages/ai-parrot-integrations/src pytest packages/ai-parrot/tests/knowledge/manuals/test_spikes.py -q` → `5 passed`
+(`artifacts/logs/verify-TASK-3726.log`). AC1 sign-off on the real owner corpus remains
+human-in-the-loop per spec (unchanged — this task only ships the harness).
+The declared `coder_run_validation(tier="merge")` sweep was also run but FAILED overall —
+not from this task's code: it aborted the whole `ai-parrot` distribution before
+`test_spikes.py` could even run ("Interrupted: 26 errors during collection" — unrelated
+pre-existing fixture/module issues in test_notification.py, test_chat_storage.py,
+test_expense_approval.py, etc.), plus unrelated pre-existing failures elsewhere. Filed as
+`issue:1e9c207bd223` (ledger) rather than blocking this task's closure on infrastructure
+outside its scope. Closed via `scripts/sdd/close_task.sh` directly (the primitive
+`finalize_task` wraps), since no execution-owned attempt branch remained for this new
+execution to run `coder_merge`/`finalize_task` against (the merge had already happened in
+the prior session).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
