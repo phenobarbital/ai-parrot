@@ -1,4 +1,5 @@
 """FileManagerInterface over Microsoft Graph drives (SharePoint and OneDrive)."""
+
 from __future__ import annotations
 
 import logging

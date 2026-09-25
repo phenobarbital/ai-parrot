@@ -3,6 +3,7 @@
 This module deliberately has no Microsoft Graph dependency so generic file-manager
 batch operations can use it with every supported storage backend.
 """
+
 from __future__ import annotations
 
 from typing import List, Literal, Optional

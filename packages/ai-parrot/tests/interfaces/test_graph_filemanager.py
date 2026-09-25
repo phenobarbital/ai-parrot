@@ -1,4 +1,5 @@
 """FEAT-603 GraphDriveFileManager unit tests (TASK-3749)."""
+
 import datetime as dt
 import os
 import subprocess
@@ -74,7 +75,9 @@ def test_make_metadata_maps_driveitem():
 
 def test_make_entry_includes_folders():
     manager = make_probe(GraphDriveFileManager)
-    folder = FakeDriveItem(id="folder-1", name="reports", folder=SimpleNamespace(), web_url="https://example.test/reports")
+    folder = FakeDriveItem(
+        id="folder-1", name="reports", folder=SimpleNamespace(), web_url="https://example.test/reports"
+    )
     file_item = FakeDriveItem(id="file-1", name="q3.xlsx", file=SimpleNamespace(mime_type="application/xlsx"))
     folder_entry = manager._make_entry(folder, full_path="reports")
     file_entry = manager._make_entry(file_item, full_path="reports/q3.xlsx")
@@ -90,7 +93,9 @@ def test_models_validate():
     with pytest.raises(ValueError):
         BatchItemResult(index=0, source="source", destination="destination", state="succeeded", ok=True, attempts=-1)
     with pytest.raises(ValueError):
-        BatchItemResult(index=0, source="source", destination="destination", state="succeeded", ok=True, unexpected=True)
+        BatchItemResult(
+            index=0, source="source", destination="destination", state="succeeded", ok=True, unexpected=True
+        )
     summary = BatchSummary(total=1, succeeded=1, failed=0, skipped=0, items=[item])
     assert BatchSummary.model_validate(summary.model_dump()).items == [item]
     assert DriveEntry(id="entry", name="name", path="name", is_folder=False).size == 0
