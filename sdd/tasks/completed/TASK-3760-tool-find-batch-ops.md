@@ -317,10 +317,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3760
+- Feature: sharepoint-filemanager
+- Implementation SHA: baae59ffb5e8f65c3cf59fe69defb288c7d041f3
+- Closed at (UTC): 2026-09-25T20:49:38+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 227.9s · Tokens: n/a |
+| validation_note | Delivered commit initially omitted tests/tools/test_filemanager_toolkit.py despite it being explicitly added to this task's own Files to Create/Modify; fixed and squashed into this commit (recorded as coder-feedback:015b5e46e09665a7c296e443). Scoped merge-tier selection tests/tools/test_filemanager_toolkit.py + tests/tools/test_office365_toolkit.py -> 54 passed. The 37 other failures in that validation run are entirely inside packages/parrot-formdesigner/tests (unrelated distribution: form versioning/venue service/UI imports) -- pre-existing, consistent with this repo's known baseline breakage (see ledger issue:71cbc792726c). |
