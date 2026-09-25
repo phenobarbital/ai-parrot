@@ -16,17 +16,17 @@
       "feature_id": "FEAT-606",
       "feature": "fixgroup-1a7f930d81a4",
       "spec": "sdd/specs/fixgroup-1a7f930d81a4.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; touches only google_coding.py and its test file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-09-25T20:15:00Z",
+      "completed_at": "2026-09-25T20:25:00Z",
       "discovered_from": "issue:e7bdce192812",
-      "file": "sdd/tasks/active/TASK-3803-agy-schema-in-cwd.md"
+      "file": "sdd/tasks/completed/TASK-3803-agy-schema-in-cwd.md"
     }
   ]
 }

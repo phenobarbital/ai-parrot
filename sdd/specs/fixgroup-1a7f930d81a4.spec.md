@@ -46,15 +46,14 @@ fails (observed replaying TASK-3549 through a new `google_coding` strong seat).
 
 ### Overview
 
-`_materialize_json_schema(output_model, cwd)` creates a private, self-ignoring
-directory `<cwd>/.dev_loop_agy/` (module constant `_SCHEMA_DIR_NAME`) containing a
-`.gitignore` whose sole line is `*` — git ignores the directory's entire content,
-including that `.gitignore` — and writes the schema there via
-`tempfile.mkstemp(dir=<that dir>, prefix="dev_loop_agy_schema_", suffix=".json")`.
-The `finally` in `dispatch()` unlinks the schema file and then removes the
-directory only if nothing else is left in it besides the `.gitignore` (concurrent
-dispatches in the same `cwd` share the directory; the last one out removes it).
-Cleanup failures are swallowed (`OSError`), as today.
+`_materialize_json_schema(output_model, cwd)` creates a unique per-dispatch
+directory with `tempfile.mkdtemp(prefix=".dev_loop_agy_", dir=cwd)` (module
+constant `_SCHEMA_DIR_PREFIX`), writes a `.gitignore` whose sole line is `*` into
+it — git ignores the directory's entire content, including that `.gitignore` —
+and writes the schema there. `_cleanup_json_schema(path)` removes the whole
+directory in `dispatch()`'s `finally`. Because each dispatch owns its directory,
+concurrent dispatches in the same `cwd` never share or race on removing it.
+Cleanup failures are swallowed, as today.
 
 ### Integration Points
 | Existing component | Change |
@@ -147,3 +146,4 @@ Status: skipped (ledger-driven single-module bugfix via `/sdd-fix`; no brainstor
 | Date | Change |
 |---|---|
 | 2026-09-25 | Initial spec from ledger issue `issue:e7bdce192812` |
+| 2026-09-25 | Shared `.dev_loop_agy/` dir → per-dispatch `mkdtemp` dir (removes an rmdir/mkstemp race between concurrent dispatches) |
