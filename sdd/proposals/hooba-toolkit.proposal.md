@@ -4,7 +4,7 @@ title: HoobaToolkit — cookie-session OpenAPI toolkit over api.hooba.com (draft
 slug: hooba-toolkit
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
