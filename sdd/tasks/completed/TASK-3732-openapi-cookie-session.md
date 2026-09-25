@@ -355,10 +355,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3732
+- Feature: hooba-toolkit
+- Implementation SHA: b99fdc187526ec7d23692fdb150ec2895502569d
+- Closed at (UTC): 2026-09-25T17:49:08+00:00
+- Fix commits: a4f8b324ef04ffa51aac0b5233e08d739c3a6636
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| merge_tier_engine_outcome | failed (workspace-wide import-impact sweep; pre-existing unrelated failures across ai-parrot-integrations/voice, ai-parrot-loaders, etc.) |
+| orchestrator_targeted_verification | Found and fixed a confirmed AC-4 regression during review (see fix commit): set_cookies() was unconditionally auto-exposed as an LLM tool, changing default tool count 5->6. Post-fix: test_openapi_cookie_session.py 8/8, test_openapi_filters.py 8/8, test_openapi.py+test_openapi_toolkit.py back to the exact 11 pre-existing baseline failures (verified identical against unmodified origin/dev). ruff/black clean. |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 227.0s · Tokens: n/a |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions temporarily copied in from the main checkout since worktrees have no compiled .so; removed afterward (never committed). |
