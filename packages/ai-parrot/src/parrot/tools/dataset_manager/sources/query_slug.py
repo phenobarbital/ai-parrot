@@ -5,6 +5,7 @@ Wraps the QuerySource (QS) and MultiQS patterns as proper DataSource
 implementations, replacing the inline _call_qs() / _call_multiquery()
 logic that previously lived in DatasetManager.
 """
+
 from __future__ import annotations
 import hashlib
 import json
@@ -122,9 +123,7 @@ class QuerySlugSource(DataSource):
         """
         base = f"qs:{self.slug}"
         if self._permanent_filter:
-            suffix = hashlib.md5(
-                json.dumps(self._permanent_filter, sort_keys=True).encode()
-            ).hexdigest()[:8]
+            suffix = hashlib.md5(json.dumps(self._permanent_filter, sort_keys=True).encode()).hexdigest()[:8]
             base = f"{base}:f={suffix}"
         if self.tenant:
             base = f"{base}:t={self.tenant}"
@@ -162,7 +161,7 @@ class QuerySlugSource(DataSource):
             conditions = {"querylimit": 1, **self._permanent_filter}
             qy = qs_cls(slug=self.slug, conditions=conditions, **self._qs_kwargs())
             try:
-                df, error = await qy.query(output_format='pandas')
+                df, error = await qy.query(output_format="pandas")
             finally:
                 try:
                     await qy.close()
@@ -198,9 +197,9 @@ class QuerySlugSource(DataSource):
         Raises:
             RuntimeError: If QS/MultiQS fails or returns no DataFrame.
         """
-        force_refresh = params.pop('force_refresh', False)
+        force_refresh = params.pop("force_refresh", False)
         if force_refresh:
-            params['refresh'] = True
+            params["refresh"] = True
         # Merge: permanent filter overwrites runtime params
         merged = {**params, **self._permanent_filter}
         self.logger.info("EXECUTING QUERY SOURCE: %s", self.slug)
@@ -210,8 +209,7 @@ class QuerySlugSource(DataSource):
             qs_cls = _get_qs()
         if qs_cls is None:
             raise RuntimeError(
-                "querysource package is required for QuerySlugSource. "
-                "Install it with: pip install querysource"
+                "querysource package is required for QuerySlugSource. " "Install it with: pip install querysource"
             )
         qy = qs_cls(slug=self.slug, conditions=merged, **self._qs_kwargs())
         try:
@@ -220,7 +218,7 @@ class QuerySlugSource(DataSource):
                 df = self._select_multi_frame(result)
                 error = None
             else:
-                df, error = await qy.query(output_format='pandas')
+                df, error = await qy.query(output_format="pandas")
         finally:
             try:
                 await qy.close()
@@ -233,9 +231,7 @@ class QuerySlugSource(DataSource):
             raise RuntimeError(f"QuerySource slug '{self.slug}' failed: {error}")
 
         if not isinstance(df, pd.DataFrame):
-            raise RuntimeError(
-                f"QuerySource slug '{self.slug}' did not return a DataFrame"
-            )
+            raise RuntimeError(f"QuerySource slug '{self.slug}' did not return a DataFrame")
 
         return df
 
@@ -335,7 +331,7 @@ class MultiQuerySlugSource(DataSource):
                 if qs_cls is None:
                     continue
                 qy = qs_cls(slug=slug, conditions={"querylimit": 1})
-                df, error = await qy.query(output_format='pandas')
+                df, error = await qy.query(output_format="pandas")
 
                 if error or not isinstance(df, pd.DataFrame) or df.empty:
                     continue
@@ -343,9 +339,7 @@ class MultiQuerySlugSource(DataSource):
                 schema.update({col: str(dtype) for col, dtype in df.dtypes.items()})
 
             except Exception as e:
-                self.logger.debug(
-                    "prefetch_schema failed for slug '%s': %s", slug, e
-                )
+                self.logger.debug("prefetch_schema failed for slug '%s': %s", slug, e)
 
         return schema
 
@@ -366,9 +360,9 @@ class MultiQuerySlugSource(DataSource):
         Raises:
             RuntimeError: If no slug returns a valid DataFrame.
         """
-        force_refresh = params.pop('force_refresh', False)
+        force_refresh = params.pop("force_refresh", False)
         if force_refresh:
-            params['refresh'] = True
+            params["refresh"] = True
         frames: List[pd.DataFrame] = []
 
         for slug in self.slugs:
@@ -381,16 +375,14 @@ class MultiQuerySlugSource(DataSource):
                         "Install it with: pip install querysource"
                     )
                 qy = qs_cls(slug=slug, conditions=params)
-                df, error = await qy.query(output_format='pandas')
+                df, error = await qy.query(output_format="pandas")
 
                 if error:
                     self.logger.error("QuerySource slug '%s' failed: %s", slug, error)
                     continue
 
                 if not isinstance(df, pd.DataFrame):
-                    self.logger.error(
-                        "QuerySource slug '%s' did not return a DataFrame", slug
-                    )
+                    self.logger.error("QuerySource slug '%s' did not return a DataFrame", slug)
                     continue
 
                 frames.append(df)
@@ -399,9 +391,7 @@ class MultiQuerySlugSource(DataSource):
                 self.logger.error("Failed to load query slug '%s': %s", slug, e)
 
         if not frames:
-            raise RuntimeError(
-                f"MultiQuerySlugSource: no slug returned data for slugs: {self.slugs}"
-            )
+            raise RuntimeError(f"MultiQuerySlugSource: no slug returned data for slugs: {self.slugs}")
 
         return pd.concat(frames, ignore_index=True)
 

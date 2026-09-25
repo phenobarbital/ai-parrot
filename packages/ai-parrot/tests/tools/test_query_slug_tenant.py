@@ -1,4 +1,5 @@
 """FEAT-598 M6 — QuerySlugSource tenant/principal/MultiQS pass-through (spec §4)."""
+
 from __future__ import annotations
 
 import sys
@@ -77,9 +78,7 @@ async def test_multiquery_output_selection(fake_qs):
         "main": pd.DataFrame({"a": [1]}),
         "extra": pd.DataFrame({"b": [2]}),
     }
-    source = QuerySlugSource(
-        "pipeline_slug", prefetch_schema_enabled=False, is_multiquery=True, multi_output="extra"
-    )
+    source = QuerySlugSource("pipeline_slug", prefetch_schema_enabled=False, is_multiquery=True, multi_output="extra")
     df = await source.fetch()
     assert list(df.columns) == ["b"]
 
