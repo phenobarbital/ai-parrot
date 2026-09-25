@@ -123,9 +123,6 @@ async def test_create_draft_rejects_non_draft_state():
             ("GET", "/accounts/{accountId}/invoices"): [],
             ("GET", "/accounts/{accountId}/invoice-series"): [{"id": 7, "default": True}],
             ("POST", "/accounts/{accountId}/invoices"): {"id": 502},
-            ("GET", "/accounts/{accountId}/invoices/502/invoice-lines"): [],
-            ("GET", "/taxes"): [{"id": 55, "operationType": "sale", "percentage": 21}],
-            ("POST", "/accounts/{accountId}/invoices/502/invoice-lines"): {"invoiceLine": {"id": 901}},
             ("GET", "/accounts/{accountId}/invoices/502"): {"id": 502, "state": "issued"},
         }
     )
@@ -136,6 +133,42 @@ async def test_create_draft_rejects_non_draft_state():
 
     assert result["status"] == "error"
     assert "issued" in result["error"]
+    # State is verified BEFORE any line write: an "issued" entity must never receive a POST.
+    line_posts = [call for call in fake.calls if call[0] == "POST" and call[1].endswith("invoice-lines")]
+    assert line_posts == []
+
+
+async def test_create_draft_reuse_rejects_already_issued_without_writing_lines():
+    """Regression: a retried correlation_key whose matched record was since issued by a human
+
+    MUST fail closed before writing any new line — writing a line onto an already-finalized,
+    legally-issued document is exactly the harm the DRAFT_OPERATIONS allowlist exists to
+    prevent, reached here via the idempotent-reuse path rather than the generated write surface.
+    """
+    key = "corr-issued"
+    fake = FakeHooba(
+        {
+            ("GET", "/accounts/{accountId}/invoices"): [
+                {"id": 600, "notes": f"prior note [parrot:{key}]", "number": "F-2"}
+            ],
+            ("GET", "/accounts/{accountId}/invoices/600"): {"id": 600, "state": "issued", "number": "F-2"},
+        }
+    )
+    toolkit = _make_toolkit(fake)
+    draft = InvoiceDraft(
+        contact_id=10,
+        correlation_key=key,
+        lines=[InvoiceLineDraft(name="Line A", price=Decimal("10.00"))],
+    )
+
+    result = await toolkit.hooba_create_invoice_draft(draft)
+
+    assert result["status"] == "error"
+    assert "issued" in result["error"]
+    line_posts = [call for call in fake.calls if call[0] == "POST" and call[1].endswith("invoice-lines")]
+    assert line_posts == []
+    line_gets = [call for call in fake.calls if call[0] == "GET" and call[1].endswith("invoice-lines")]
+    assert line_gets == []
 
 
 async def test_create_draft_reuses_existing_by_correlation_key():
@@ -234,6 +267,7 @@ async def test_unresolvable_tax_is_error_not_guess():
             ("GET", "/accounts/{accountId}/invoices"): [],
             ("GET", "/accounts/{accountId}/invoice-series"): [{"id": 7, "default": True}],
             ("POST", "/accounts/{accountId}/invoices"): {"id": 503},
+            ("GET", "/accounts/{accountId}/invoices/503"): {"id": 503, "state": "draft"},
             ("GET", "/accounts/{accountId}/invoices/503/invoice-lines"): [],
             ("GET", "/taxes"): [{"id": 55, "operationType": "sale", "percentage": 10}],
         }

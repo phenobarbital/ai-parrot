@@ -98,3 +98,26 @@ def test_manifest_permissions_and_reconcile(tmp_path, monkeypatch):
 
     result = reconcile(manifest, planned_rows=7)
     assert result == {"rows_in": 7, "drafts_out": 2, "skipped": 1, "delta": 4, "reconciled": False}
+
+
+def test_reconcile_uses_manifest_row_count_not_this_runs_planned_rows():
+    """Regression: a resumed/re-run must reconcile against the WHOLE statement, not just
+
+    the remainder this particular run had left to plan. ``manifest.completed``/``.skipped``
+    are cumulative across every run, but ``planned_rows`` reflects only this run's remainder
+    (often 0 once everything is done) — using it for ``rows_in`` would make a fully and
+    correctly completed resume falsely report ``reconciled=False``.
+    """
+    manifest = ImportManifest(
+        statement_digest="resumed-run",
+        period="2026-09",
+        started_at=datetime.now(timezone.utc),
+        row_count=3,  # the whole statement, set once when the manifest was first created
+        completed={"resumed-run:0": 1, "resumed-run:1": 2, "resumed-run:2": 3},  # all 3 done, across prior runs
+        skipped={},
+    )
+
+    # This run had nothing left to plan (everything was already completed by prior runs).
+    result = reconcile(manifest, planned_rows=0)
+
+    assert result == {"rows_in": 3, "drafts_out": 3, "skipped": 0, "delta": 0, "reconciled": True}

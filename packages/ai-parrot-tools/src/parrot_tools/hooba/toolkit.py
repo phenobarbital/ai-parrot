@@ -313,19 +313,22 @@ class HoobaToolkit(AbstractToolkit):
         """Download an invoice PDF into the state directory with owner-only permissions."""
         try:
             content = await self._call_raw("GET", f"/accounts/{{accountId}}/invoices/{invoice_id}:download")
-            directory = (
-                Path(dest_dir)
-                if dest_dir is not None
-                else Path(os.environ.get("PARROT_STATE_DIR", "~/.parrot_state")).expanduser() / "hooba" / "pdf"
-            )
-            path = directory.expanduser() / f"invoice-{invoice_id}.pdf"
 
-            def write_pdf() -> None:
+            def resolve_and_write_pdf() -> Path:
+                # Path.expanduser() can hit a pwd-database lookup, and mkdir/write_bytes/chmod
+                # are real disk I/O — all of it belongs off the event loop (ASYNC240).
+                directory = (
+                    Path(dest_dir)
+                    if dest_dir is not None
+                    else Path(os.environ.get("PARROT_STATE_DIR", "~/.parrot_state")).expanduser() / "hooba" / "pdf"
+                )
+                path = directory.expanduser() / f"invoice-{invoice_id}.pdf"
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
                 path.chmod(0o600)
+                return path
 
-            await asyncio.to_thread(write_pdf)
+            path = await asyncio.to_thread(resolve_and_write_pdf)
             return self._ok({"path": str(path), "size": len(content)}, OperationKind.READ)
         except Exception as exc:  # noqa: BLE001
             return self._err(str(exc), OperationKind.READ, "hooba_recover_web_session")
@@ -517,7 +520,19 @@ class HoobaToolkit(AbstractToolkit):
         *,
         reused: bool,
     ) -> DraftReceipt:
-        """Post lines not already present (matched by name+price), then verify draft state (AC-7, S11)."""
+        """Verify draft state FIRST (AC-7, S11), then post lines not already present (matched by name+price).
+
+        The state check MUST happen before any line write: on the ``reused=True`` path the matched
+        record may have been issued/confirmed by a human since a prior attempt, and writing a new
+        line onto an already-finalized document is exactly the class of harm the DRAFT_OPERATIONS
+        allowlist exists to prevent, reached via a different path than the generated write surface.
+        """
+        entity = await self._call("GET", self._entity_path(kind, entity_id))
+        entity = entity if isinstance(entity, dict) else {}
+        state = entity.get("state")
+        if state != "draft":
+            raise HoobaStateError(f"{kind} {entity_id} came back in state {state!r}, expected 'draft'")
+
         wrapper_key = _LINE_WRAPPER[kind]
         existing_raw = await self._call("GET", self._lines_path(kind, entity_id))
         existing = [self._unwrap(item, wrapper_key) for item in (existing_raw or [])]
@@ -536,12 +551,6 @@ class HoobaToolkit(AbstractToolkit):
             if created_entity.get("id") is not None:
                 line_ids.append(created_entity["id"])
             existing_signatures.add(signature)
-
-        entity = await self._call("GET", self._entity_path(kind, entity_id))
-        entity = entity if isinstance(entity, dict) else {}
-        state = entity.get("state")
-        if state != "draft":
-            raise HoobaStateError(f"{kind} {entity_id} came back in state {state!r}, expected 'draft'")
 
         return DraftReceipt(
             kind=kind,
