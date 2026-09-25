@@ -13,7 +13,7 @@ tags: [a2ui, querysource, linked-surfaces, ui-surfaces, transform-dsl, widgets]
 **Feature ID**: FEAT-598
 **Date**: 2026-09-24 (rev 0.2: 2026-09-25, re-verified against QuerySource 5.1.1)
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot 1.1.0 (ai-parrot / ai-parrot-tools / ai-parrot-server, next minor)
 **Brainstorm**: `sdd/proposals/a2ui-linked-surfaces.brainstorm.md` (accepted 2026-09-24 after three revisions: FEAT-558 re-verification, FEAT-147/FEAT-148 cross-check, QuerySource 5.1.0 gate)
 
