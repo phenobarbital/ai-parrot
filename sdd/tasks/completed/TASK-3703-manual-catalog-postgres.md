@@ -328,10 +328,16 @@ async def test_live_upsert_search_queue():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3703
+- Feature: training-agent
+- Implementation SHA: ef184d50cf4455898672136d4973bf9747971ebb
+- Closed at (UTC): 2026-09-25T09:14:02+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 274.52s · Tokens: n/a |
+| supplementary_test_evidence | 103 passed, 1 skipped, 0 failed (scoped direct pytest over manuals+catalog+figures+contracts/test_ontology_domain) |

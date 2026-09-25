@@ -139,7 +139,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -149,8 +149,9 @@
       "parallelism_notes": "subclasses ManualCatalogStore and reuses SearchHit/UpsertResult/AnswerRecord from TASK-3702 (manuals/catalog.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3703-manual-catalog-postgres.md"
+      "completed_at": "2026-09-25T09:14:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3703-manual-catalog-postgres.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3704",
@@ -200,7 +201,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -210,8 +211,9 @@
       "parallelism_notes": "modifies manuals/figures.py created by TASK-3705 (same file — serialized); reuses its FigureCandidate and capability rule",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3706-manual-callouts.md"
+      "completed_at": "2026-09-25T09:14:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3706-manual-callouts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3707",
