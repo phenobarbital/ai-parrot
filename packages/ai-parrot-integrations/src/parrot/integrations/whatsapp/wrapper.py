@@ -291,7 +291,14 @@ class WhatsAppAgentWrapper:
                 self.logger.warning("Refused image URL %s: %s", url, exc)
             except Exception as exc:  # noqa: BLE001
                 self.logger.error("Failed to send image URL to %s: %s", to, exc)
-        # FILL IN: parsed.media_urls → send as a text message with the links (client.send_message) — bounded by spec §3 M12
+        # Remote media URLs (FEAT-601 M12) — send_video is out of scope; deliver as text links instead
+        media_urls = getattr(parsed, "media_urls", []) or []
+        if media_urls:
+            links_text = "\n".join(f"🎬 {url}" for url in media_urls)
+            try:
+                await loop.run_in_executor(_executor, lambda t=links_text: client.send_message(to=to, text=t))
+            except Exception as e:  # noqa: BLE001 — a failed attachment must not abort the reply
+                self.logger.error("Failed to send media URL links to %s: %s", to, e)
 
         # Send charts as images
         if parsed.has_charts:

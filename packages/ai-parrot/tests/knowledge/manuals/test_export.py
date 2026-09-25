@@ -280,3 +280,46 @@ async def test_export_excludes_orphaned_tips(tmp_path, fake_file_manager) -> Non
     # Verify counters
     assert report1.tips == 1
     assert report2.tips == 0
+
+
+async def test_export_includes_tips_attached_to_any_step(tmp_path, fake_file_manager) -> None:
+    """A tip attached to a NON-LAST step of a multi-step procedure must still be exported.
+
+    Regression test: ``render_procedures`` previously filtered ``attached_tips`` against a
+    loop variable leaked from the steps ``for`` loop, so only tips attached to the highest-
+    ``order`` step survived — any tip on an earlier step was silently dropped.
+    """
+    card = ManualCard(
+        manual_id="model-x",
+        revision="A",
+        source_sha256="abc123",
+        procedures=[
+            _procedure(
+                "p1",
+                "repair",
+                "maintenance",
+                steps=[
+                    _step("m:p:1", 1, "Remove the cover."),
+                    _step("m:p:2", 2, "Torque the bolt to 12 Nm."),
+                ],
+            ),
+        ],
+    )
+    tips = [
+        _tip("t1", "Tip on first step", attached_step_id="m:p:1"),
+        _tip("t2", "Tip on last step", attached_step_id="m:p:2"),
+    ]
+
+    report = await ex.export_bundle(
+        card,
+        file_manager=fake_file_manager,
+        out_dir=tmp_path / "out",
+        include_tips=True,
+        tips=tips,
+        zip_bundle=False,
+    )
+
+    procedures = json.loads((report.bundle_dir / "procedures.json").read_text())
+    tip_ids = {tip["tip_id"] for tip in procedures["procedures"]["repair"]["tips"]}
+    assert tip_ids == {"t1", "t2"}
+    assert report.tips == 2

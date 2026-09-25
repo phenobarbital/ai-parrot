@@ -80,3 +80,30 @@ async def test_whatsapp_refused_fallback_is_logged(monkeypatch: pytest.MonkeyPat
     client.send_image.assert_called_once()
     w.logger.warning.assert_called()
     w.logger.error.assert_not_called()
+
+
+async def test_whatsapp_media_urls_sent_as_text_links() -> None:
+    """``parsed.media_urls`` (video deep links) are delivered as a text message, not silently dropped.
+
+    Regression test: this path was previously a ``# FILL IN`` stub — ``media_urls`` were
+    parsed but never sent through any channel, unlike Teams/Slack/Telegram which all render
+    them as text/markdown links.
+    """
+    w = _wrapper()
+    client = MagicMock()
+
+    parsed = ParsedResponse(
+        media_urls=[
+            "https://example.com/clip1.mp4?t=5s",
+            "https://example.com/clip2.mp4?t=30s",
+        ]
+    )
+
+    await w._send_parsed_response("15551234567", parsed, client)
+
+    client.send_message.assert_called_once()
+    call = client.send_message.call_args
+    assert call.kwargs["to"] == "15551234567"
+    assert "https://example.com/clip1.mp4?t=5s" in call.kwargs["text"]
+    assert "https://example.com/clip2.mp4?t=30s" in call.kwargs["text"]
+    w.logger.error.assert_not_called()

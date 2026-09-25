@@ -107,6 +107,7 @@ def render_procedures(card: ManualCard, tips: Sequence[Tip]) -> dict[str, Any]:
 
         # Tips attached to this procedure (key omitted entirely when tips are disabled)
         if tips:
+            procedure_step_ids = {step_data["step_id"] for step_data in steps_data}
             attached_tips = [
                 {
                     "tip_id": t.tip_id,
@@ -114,7 +115,7 @@ def render_procedures(card: ManualCard, tips: Sequence[Tip]) -> dict[str, Any]:
                     "created_at": t.created_at.isoformat(),
                 }
                 for t in live_tips
-                if t.attached_step_id == step.identity.step_id
+                if t.attached_step_id in procedure_step_ids
             ]
             procedure_data["tips"] = attached_tips
 
