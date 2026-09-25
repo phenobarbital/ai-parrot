@@ -87,6 +87,7 @@ async def test_cookie_mode_logs_in_lazily_once():
 
 async def test_cookie_mode_sends_jar_and_extra_headers():
     """Cookie requests include the session jar and configured static headers."""
+
     async def login_hook(_service) -> dict[str, str]:
         return {"sid": "session"}
 
@@ -152,6 +153,7 @@ async def test_cookie_mode_concurrent_first_use_logs_in_once():
 
 async def test_cookie_mode_no_transport_retries_on_writes():
     """Cookie writes disable transport retries, while reads retain the default."""
+
     async def login_hook(_service) -> dict[str, str]:
         return {"sid": "session"}
 
@@ -168,6 +170,7 @@ async def test_cookie_mode_no_transport_retries_on_writes():
 
 async def test_set_and_get_cookies_copy():
     """Cookie accessors replace and expose detached jar copies."""
+
     async def login_hook(_service) -> dict[str, str]:
         return {"sid": "unused"}
 

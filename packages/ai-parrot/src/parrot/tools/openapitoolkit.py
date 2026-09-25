@@ -44,7 +44,6 @@ from ..interfaces.http import HTTPService
 from .toolkit import AbstractToolkit
 from .abstract import ToolResult
 
-
 #: Async hook performing a login and returning the session cookies to send on every request.
 LoginHook = Callable[[HTTPService], Awaitable[Dict[str, str]]]
 
