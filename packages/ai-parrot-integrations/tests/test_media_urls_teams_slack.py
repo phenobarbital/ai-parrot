@@ -1,4 +1,5 @@
 """FEAT-601 M12 — Teams/Slack render ParsedResponse.image_urls (TASK-3717)."""
+
 from __future__ import annotations
 
 import logging
@@ -67,9 +68,7 @@ def test_teams_renders_image_urls_cap3_with_overflow_links() -> None:
     assert len(image_sections[0].images) == 3
     assert [img.url for img in image_sections[0].images] == URLS[:3]
 
-    overflow_sections = [
-        s for s in spec.sections if isinstance(s, TextSection) and "[Figure 4]" in s.text
-    ]
+    overflow_sections = [s for s in spec.sections if isinstance(s, TextSection) and "[Figure 4]" in s.text]
     assert len(overflow_sections) == 1
     assert f"[Figure 4]({URLS[3]})" in overflow_sections[0].text
 
