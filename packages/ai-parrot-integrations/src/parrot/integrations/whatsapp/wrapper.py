@@ -305,12 +305,13 @@ class WhatsAppAgentWrapper:
             for chart in parsed.charts:
                 try:
                     chart_source = chart.public_url or str(chart.path)
+                    chart_title = chart.title or None
                     await loop.run_in_executor(
                         _executor,
-                        lambda src=chart_source: client.send_image(
+                        lambda src=chart_source, caption=chart_title: client.send_image(
                             to=to,
                             image=src,
-                            caption=chart.title or None,
+                            caption=caption,
                         ),
                     )
                 except Exception as e:

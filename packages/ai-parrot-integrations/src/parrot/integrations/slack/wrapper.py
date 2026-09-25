@@ -551,7 +551,7 @@ class SlackAgentWrapper:
 
         for img in parsed.images:
             image_url = str(img)
-            if image_url.startswith("http://") or image_url.startswith("https://"):
+            if image_url.startswith(("http://", "https://")):
                 blocks.append(
                     {
                         "type": "image",

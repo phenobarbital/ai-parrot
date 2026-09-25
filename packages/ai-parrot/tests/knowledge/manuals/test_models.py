@@ -88,4 +88,4 @@ def test_lazy_facade_resolves_models_and_rejects_unknown() -> None:
 
     assert manuals.ManualCard.__name__ == "ManualCard"
     with pytest.raises(AttributeError):
-        manuals.DoesNotExist
+        _ = manuals.DoesNotExist

@@ -50,7 +50,8 @@ def _agent(service: Any, factory: Any) -> ProceduresAgent:
     agent = ProceduresAgent.__new__(ProceduresAgent)
     agent.service = service
     agent.context_factory = factory
-    agent._request_context = ContextVar("test_procedures_request_context", default=make_context())
+    agent._request_context = ContextVar("test_procedures_request_context", default=None)
+    agent._request_context.set(make_context())
     agent._serials = {}
     agent.toolkit = SimpleNamespace(bind_context=lambda context: None)
     agent.logger = logging.getLogger(__name__)

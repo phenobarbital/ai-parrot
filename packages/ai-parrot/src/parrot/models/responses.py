@@ -1251,7 +1251,7 @@ class AgentResponse(BaseModel):
             (self.document_path, self.documents, "document"),
         ]
 
-        for path, collection, path_type in path_mappings:
+        for path, collection, _path_type in path_mappings:
             if path and path not in collection:
                 collection.append(path)
 

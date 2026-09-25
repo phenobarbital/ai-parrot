@@ -62,9 +62,9 @@ def test_extract_page_images_bbox(tmp_path: Path) -> None:
     assert len(images) == 2
 
     expected_bboxes = [(50.0, 50.0, 250.0, 250.0), (300.0, 300.0, 500.0, 500.0)]
-    for image, expected_bbox in zip(images, expected_bboxes):
+    for image, expected_bbox in zip(images, expected_bboxes, strict=True):
         assert image.page == 1
-        for actual, expected in zip(image.bbox, expected_bbox):
+        for actual, expected in zip(image.bbox, expected_bbox, strict=True):
             assert actual == pytest.approx(expected, abs=1.0)
         assert len(image.sha256) == 64
         assert all(c in "0123456789abcdef" for c in image.sha256)
