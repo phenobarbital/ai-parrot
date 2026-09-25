@@ -792,11 +792,7 @@ def _resolve_parts(mentions: Sequence[str], globals_: Sequence[PartRef], warning
         candidate = exact
         if candidate is None:
             candidate = next(
-                (
-                    part
-                    for part in globals_
-                    if _similarity(literal, part.name.value or "") >= PART_SIMILARITY_THRESHOLD
-                ),
+                (part for part in globals_ if _similarity(literal, part.name.value or "") >= PART_SIMILARITY_THRESHOLD),
                 None,
             )
         if candidate is not None:
@@ -864,7 +860,7 @@ def assemble_card(
         for step_index, link in pair_figures(
             procedure_draft.steps,
             source.figure_candidates,
-            page_of_step={index: page for index in range(len(procedure_draft.steps))},
+            page_of_step=dict.fromkeys(range(len(procedure_draft.steps)), page),
         ):
             if link.media_id in media_by_id:
                 links_by_step.setdefault(step_index, []).append(link)
@@ -919,12 +915,18 @@ def assemble_card(
                     tools=[
                         tool
                         for tool in global_tools
-                        if any((tool.name.value or "").casefold() == mention.casefold() for mention in step_draft.tool_mentions)
+                        if any(
+                            (tool.name.value or "").casefold() == mention.casefold()
+                            for mention in step_draft.tool_mentions
+                        )
                     ],
                     hazards=[
                         hazard
                         for hazard in global_hazards
-                        if any((hazard.text.value or "").casefold() == text.value.casefold() for text in step_draft.hazard_texts)
+                        if any(
+                            (hazard.text.value or "").casefold() == text.value.casefold()
+                            for text in step_draft.hazard_texts
+                        )
                     ],
                     media=links_by_step.get(step_index, []),
                     cross_refs=list(step_draft.cross_refs),
