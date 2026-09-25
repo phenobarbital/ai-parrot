@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
-from urllib.parse import quote
+import asyncio
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple
+from urllib.parse import quote, urlsplit
+
+import aiohttp
 
 from navigator.utils.file import FileManagerInterface, FileMetadata
 from pydantic import BaseModel, ConfigDict
@@ -44,6 +48,15 @@ class DriveEntry(BaseModel):
     modified_at: Optional[datetime] = None
     web_url: Optional[str] = None
     content_type: Optional[str] = None
+
+
+class _RawHTTPError(Exception):
+    """Non-2xx aiohttp response shaped like a kiota API error for retry handling."""
+
+    def __init__(self, status: int, headers: Optional[Dict[str, str]] = None) -> None:
+        super().__init__(f"HTTP {status}")
+        self.response_status_code = status
+        self.response_headers = dict(headers or {})
 
 
 class GraphFileManagerError(RuntimeError):
@@ -224,3 +237,172 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
             web_url=getattr(item, "web_url", None),
             content_type=None if is_folder or file_info is None else getattr(file_info, "mime_type", None),
         )
+
+    async def connect(self) -> "GraphDriveFileManager":
+        """Build, authenticate, and resolve the drive id once."""
+        async with self._get_lock():
+            if self._client is None:
+                client = self._build_client()
+                client.processing_credentials()
+                client.set_auth_mode(self.auth_mode)
+                loop = asyncio.get_running_loop()
+                if self.auth_mode == "direct":
+                    username = self.credentials.get("username")
+                    password = self.credentials.get("password")
+                    if username is not None and password is not None:
+                        await loop.run_in_executor(None, client.user_auth, username, password, self.scopes)
+                    else:
+                        await loop.run_in_executor(None, client.acquire_token, self.scopes)
+                elif self.auth_mode == "on_behalf_of":
+                    if self.user_assertion is None:
+                        raise ValueError("user_assertion is required for on_behalf_of authentication")
+                    await loop.run_in_executor(
+                        None, client.acquire_token_on_behalf_of, self.user_assertion, self.scopes
+                    )
+                elif self.auth_mode == "delegated":
+                    await client.interactive_login(scopes=self.scopes)
+                elif self.auth_mode == "cached":
+                    await client.ensure_interactive_session(scopes=self.scopes)
+                else:
+                    raise ValueError(f"Unknown authentication mode: {self.auth_mode}")
+                self._client, self._owns_client = client, True
+            if self._drive_id is None:
+                self._drive_id = await self._resolve_drive_id()
+        return self
+
+    def adopt_client(self, client: O365Client) -> None:
+        """Reuse an authenticated client without acquiring another token."""
+        if isinstance(client, self.client_class):
+            self._client = client
+            self._owns_client = False
+        else:
+            wrapper = self._build_client()
+            wrapper.processing_credentials()
+            for attribute in ("_credential", "_graph_client", "_access_token", "auth_mode"):
+                setattr(wrapper, attribute, getattr(client, attribute))
+            self._client = wrapper
+            self._owns_client = True
+        self._adopted = client
+        self._drive_id = None
+
+    async def _ready(self) -> str:
+        """Return the drive id, connecting or resolving it on an adopted client."""
+        if self._drive_id is None:
+            if self._client is None:
+                await self.connect()
+            else:
+                async with self._get_lock():
+                    if self._drive_id is None:
+                        self._drive_id = await self._resolve_drive_id()
+        return self._drive_id
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Return the lazily-created lifecycle lock."""
+        lock = self.__dict__.get("_lock_obj")
+        if lock is None:
+            lock = self.__dict__["_lock_obj"] = asyncio.Lock()
+        return lock
+
+    async def close(self) -> None:
+        """Close only a client owned by this manager and clear cached state."""
+        client = self._client
+        if client is not None and self._owns_client:
+            await client.close()
+        self._client = None
+        self._drive_id = None
+        self._owns_client = False
+        self._adopted = None
+
+    async def __aenter__(self) -> "GraphDriveFileManager":
+        """Connect the manager for asynchronous context-manager use."""
+        return await self.connect()
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        """Release manager-owned resources at context exit."""
+        await self.close()
+
+    def _http_session(self) -> aiohttp.ClientSession:
+        """Return a session for pre-authenticated raw Graph URLs."""
+        return aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=None, sock_read=300))
+
+    async def _sleep(self, seconds: float) -> None:
+        """Sleep for retry backoff; separated for deterministic tests."""
+        await asyncio.sleep(seconds)
+
+    @staticmethod
+    def _status_code_of(error: BaseException) -> Optional[int]:
+        """Extract an HTTP status code from Graph or raw HTTP errors."""
+        code = getattr(error, "response_status_code", None)
+        if isinstance(code, int) and code:
+            return code
+        for attribute in ("status_code", "status", "code"):
+            code = getattr(error, attribute, None)
+            if isinstance(code, int) and code:
+                return code
+        return None
+
+    @staticmethod
+    def _retry_after_seconds(error: BaseException) -> Optional[float]:
+        """Extract a non-negative Retry-After delay from an HTTP error."""
+        headers = getattr(error, "response_headers", None)
+        getter = getattr(headers, "get", None)
+        if not callable(getter):
+            return None
+        try:
+            raw = getter("Retry-After") or getter("retry-after")
+        except TypeError:
+            return None
+        if isinstance(raw, (set, frozenset, list, tuple)):
+            raw = next(iter(sorted(str(value) for value in raw)), None)
+        if raw is None:
+            return None
+        try:
+            value = float(str(raw).strip())
+        except (TypeError, ValueError):
+            try:
+                when = parsedate_to_datetime(str(raw).strip())
+            except (TypeError, ValueError):
+                return None
+            if when is None:
+                return None
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            value = (when - datetime.now(timezone.utc)).total_seconds()
+        return value if value >= 0 else None
+
+    def _map_error(self, exc: BaseException, *, path: str) -> BaseException:
+        """Map a Graph error to the public file-manager exception contract."""
+        status = self._status_code_of(exc)
+        if status == 404:
+            return FileNotFoundError(path)
+        if status in {401, 403}:
+            return PermissionError("Graph access was denied")
+        if status == 409:
+            return FileExistsError(path)
+        return GraphFileManagerError(str(exc), status_code=status)
+
+    async def _retrying(
+        self, op: Callable[[], Awaitable[Any]], *, label: str, idempotent: bool = True
+    ) -> Tuple[Any, int]:
+        """Run an operation with the single bounded Graph retry policy."""
+        attempts = 1
+        while True:
+            try:
+                return await op(), attempts
+            except Exception as exc:
+                status = self._status_code_of(exc)
+                if not idempotent or status not in self.RETRYABLE_STATUS or attempts > self.max_retries:
+                    raise
+                delay = min(self._retry_after_seconds(exc) or 2 ** (attempts - 1), 60)
+                self.logger.warning("Retrying Graph operation %s after status %s (attempt %s)", label, status, attempts)
+                await self._sleep(delay)
+                attempts += 1
+
+    def _validate_graph_url(self, url: str, *, purpose: str) -> str:
+        """Accept only approved HTTPS Graph, SharePoint, and OneDrive URLs."""
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        allowed = f"https://{host}" in self.ALLOWED_ORIGINS or host.endswith(self.ALLOWED_HOST_SUFFIXES)
+        if parts.scheme != "https" or not host or not allowed:
+            raise GraphFileManagerError(f"Invalid {purpose} URL")
+        return url
