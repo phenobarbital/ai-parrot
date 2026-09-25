@@ -139,7 +139,8 @@ def test_no_real_data_committed():
             if result.returncode == 0:
                 # Filter out test fixtures and comments
                 matches = [
-                    line for line in result.stdout.splitlines()
+                    line
+                    for line in result.stdout.splitlines()
                     if "test" not in line.lower() and "fixture" not in line.lower()
                 ]
                 if matches:
