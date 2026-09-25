@@ -566,7 +566,7 @@ class FileManagerTool(AbstractTool):
                 continue
 
             source_path = Path(source)
-            if not source_path.exists():
+            if not await asyncio.to_thread(source_path.exists):
                 results[index] = BatchItemResult(
                     index=index,
                     source=source,
@@ -579,7 +579,7 @@ class FileManagerTool(AbstractTool):
                 continue
 
             try:
-                self._check_file_size(source_path.stat().st_size)
+                self._check_file_size((await asyncio.to_thread(source_path.stat)).st_size)
             except ValueError as exc:
                 results[index] = BatchItemResult(
                     index=index,
@@ -964,10 +964,10 @@ class FileManagerToolkit(AbstractToolkit):
             FileNotFoundError: If the source file does not exist on disk.
         """
         source = Path(source_path)
-        if not source.exists():
+        if not await asyncio.to_thread(source.exists):
             raise FileNotFoundError(f"Source file not found: {source_path}")
 
-        file_size = source.stat().st_size
+        file_size = (await asyncio.to_thread(source.stat)).st_size
         self._check_file_size(file_size)
 
         dest = destination_name or source.name
@@ -1014,11 +1014,12 @@ class FileManagerToolkit(AbstractToolkit):
         dest_path = Path(destination)
         self.logger.info("Downloading '%s' to '%s'", path, destination)
         result = await self.manager.download_file(path, dest_path)
+        dest_exists = await asyncio.to_thread(dest_path.exists)
         return {
             "downloaded": True,
             "source": path,
             "destination": str(result),
-            "size": dest_path.stat().st_size if dest_path.exists() else 0,
+            "size": (await asyncio.to_thread(dest_path.stat)).st_size if dest_exists else 0,
         }
 
     async def copy_file(
@@ -1279,7 +1280,7 @@ class FileManagerToolkit(AbstractToolkit):
                 continue
 
             source_path = Path(source)
-            if not source_path.exists():
+            if not await asyncio.to_thread(source_path.exists):
                 results[index] = BatchItemResult(
                     index=index,
                     source=source,
@@ -1292,7 +1293,7 @@ class FileManagerToolkit(AbstractToolkit):
                 continue
 
             try:
-                self._check_file_size(source_path.stat().st_size)
+                self._check_file_size((await asyncio.to_thread(source_path.stat)).st_size)
             except ValueError as exc:
                 results[index] = BatchItemResult(
                     index=index,
