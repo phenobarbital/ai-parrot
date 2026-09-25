@@ -386,10 +386,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3710
+- Feature: training-agent
+- Implementation SHA: 3366a79b3411b73844020e6f7e47c0f92f135987
+- Closed at (UTC): 2026-09-25T13:35:51+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| supplementary_test_evidence | 120 passed, 1 skipped, 0 failed (scoped direct pytest over manuals+catalog+figures+carding+video+tips+contracts/test_ontology_domain, after review-fix commits) |

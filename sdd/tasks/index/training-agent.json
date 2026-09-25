@@ -244,7 +244,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -255,8 +255,9 @@
       "parallelism_notes": "modifies manuals/carding.py created by TASK-3707 (same file — serialized) and consumes its CardingDraft; calls pair_figures from TASK-3705 (manuals/figures.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3708-manual-carding-assemble.md"
+      "completed_at": "2026-09-25T13:35:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3708-manual-carding-assemble.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3709",
@@ -286,7 +287,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -297,8 +298,9 @@
       "parallelism_notes": "uses Tip/Step/StepIdentity from TASK-3699 (manuals/models.py) and TECHNICIAN_COLLECTIONS/resolve_context from TASK-3701 (manuals/domain.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3710-manual-tips-relink.md"
+      "completed_at": "2026-09-25T13:35:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3710-manual-tips-relink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3711",
