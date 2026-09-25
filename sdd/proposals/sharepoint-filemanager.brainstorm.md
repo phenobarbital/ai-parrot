@@ -16,7 +16,7 @@ tags: [filemanager, sharepoint, onedrive, microsoft-graph, o365, storage]
 
 **Date**: 2026-09-25
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: B
 
 ---
