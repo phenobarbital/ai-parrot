@@ -19,7 +19,7 @@ Example:
     tools = toolkit.get_tools()
     # Creates tools like: petstore_get_pet, petstore_post_pet, etc.
 """
-from typing import Dict, List, Any, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 import contextlib
 import re
 import json
@@ -73,6 +73,13 @@ class OpenAPIToolkit(AbstractToolkit):
         use_proxy: bool = False,
         timeout: int = 30,
         debug: bool = False,
+        *,
+        path_defaults: Optional[Dict[str, Any]] = None,
+        include_tags: Optional[Sequence[str]] = None,
+        exclude_paths: Optional[Sequence[str]] = None,
+        exclude_methods: Optional[Sequence[str]] = None,
+        operation_filter: Optional[Callable[[str, str], bool]] = None,
+        max_tools: Optional[int] = None,
         **kwargs
     ):
         """
@@ -91,6 +98,12 @@ class OpenAPIToolkit(AbstractToolkit):
             use_proxy: Enable proxy usage
             timeout: Request timeout in seconds
             debug: Enable debug logging
+            path_defaults: Toolkit-supplied path parameter values hidden from tool schemas
+            include_tags: Operation tags to include, based on each operation's first tag
+            exclude_paths: Regular expression patterns for paths to exclude
+            exclude_methods: HTTP methods to exclude
+            operation_filter: Callable deciding whether a method and raw path are kept
+            max_tools: Maximum number of generated operations
             **kwargs: Additional toolkit configuration
         """
         super().__init__(**kwargs)
@@ -158,8 +171,21 @@ class OpenAPIToolkit(AbstractToolkit):
             **kwargs
         )
 
+        # Operation filters and path defaults (FEAT-602) — read by _parse_operations,
+        # _create_pydantic_schema and _build_operation_url.
+        self._path_defaults: Dict[str, Any] = dict(path_defaults or {})
+        self._include_tags = frozenset(include_tags) if include_tags else None
+        self._exclude_paths = [re.compile(pattern) for pattern in (exclude_paths or ())]
+        self._exclude_methods = frozenset(method.upper() for method in (exclude_methods or ()))
+        self._operation_filter = operation_filter
+
         # Parse operations from spec
         self.operations = self._parse_operations()
+
+        if max_tools is not None and len(self.operations) > max_tools:
+            raise ValueError(
+                f"OpenAPIToolkit '{service}': {len(self.operations)} operations exceed max_tools={max_tools}"
+            )
 
         # OPTIMIZATION 3: Detect if this is a single-operation spec
         self.is_single_operation = len(self.operations) == 1
@@ -384,6 +410,9 @@ class OpenAPIToolkit(AbstractToolkit):
                     continue
 
                 operation_spec = path_item[method]
+                tags = list(operation_spec.get('tags') or [])
+                if not self._keep_operation(method.upper(), path, tags):
+                    continue
 
                 # Generate operation ID if not present
                 operation_id = operation_spec.get(
@@ -441,9 +470,33 @@ class OpenAPIToolkit(AbstractToolkit):
                     'request_body': request_body,
                     'summary': operation_spec.get('summary', ''),
                     'description': operation_spec.get('description', ''),
+                    'tags': tags,
                 })
 
         return operations
+
+    def _keep_operation(self, method: str, path: str, tags: List[str]) -> bool:
+        """Return True when an operation survives the configured filters.
+
+        Order: include_tags (first tag) → exclude_methods → exclude_paths → operation_filter.
+
+        Args:
+            method: Upper-case HTTP method.
+            path: Raw OpenAPI path, braces included.
+            tags: The operation's tags as declared in the spec.
+
+        Returns:
+            True to generate a tool for this operation.
+        """
+        if self._include_tags is not None and (not tags or tags[0] not in self._include_tags):
+            return False
+        if method in self._exclude_methods:
+            return False
+        if any(pattern.search(path) for pattern in self._exclude_paths):
+            return False
+        if self._operation_filter is not None and not self._operation_filter(method, path):
+            return False
+        return True
 
     def _normalize_path_for_method_name(self, path: str) -> str:
         """
@@ -512,8 +565,10 @@ class OpenAPIToolkit(AbstractToolkit):
         # OPTIMIZATION: Skip path/method fields for single-operation specs
         skip_meta_fields = self.is_single_operation
 
-        # Add path parameters (always required)
+        # Add path parameters (always required) — except toolkit-supplied defaults (FEAT-602)
         for param in operation['parameters'].get('path', []):
+            if param['name'] in self._path_defaults:
+                continue
             param_schema = param.get('schema', param)  # Fallback for Swagger 2.0 where type is directly on param
             field_type = self._openapi_type_to_python(param_schema)
             field_info = Field(
@@ -825,6 +880,12 @@ class OpenAPIToolkit(AbstractToolkit):
             Complete URL with path params substituted
         """
         path = operation['path']
+
+        # Toolkit-supplied path defaults win over caller values (FEAT-602, S4)
+        for name, value in self._path_defaults.items():
+            if name in params:
+                self.logger.warning("Ignoring caller value for defaulted path parameter %s", name)
+            path = path.replace(f"{{{name}}}", str(value))
 
         # Substitute path parameters
         for param in operation['parameters'].get('path', []):
