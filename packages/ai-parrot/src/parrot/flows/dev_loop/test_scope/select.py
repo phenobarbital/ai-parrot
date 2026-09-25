@@ -198,7 +198,14 @@ def plan_tests(
                 dist: hashlib.sha256("\n".join(sorted(paths)).encode("utf-8")).hexdigest()
                 for dist, paths in cap_candidates.items()
             }
-            escalated.extend(cap_candidates)
+            # NOTE: `escalated` is populated below, once we know which of these
+            # cap candidates the ledger actually skipped -- a distribution whose
+            # cap escalation was proven unchanged and ran zero invocations must
+            # NOT appear in `escalated` too (that would put it in both
+            # `escalated` and `skipped_escalations` for the same zero-invocation
+            # outcome, inconsistent with how a ledger-skipped core escalation is
+            # handled below). Extending `escalated` unconditionally here, before
+            # the ledger is even consulted, was the previous (inconsistent) behavior.
 
         if index is not None and tier in ("merge", "feature"):
             hits = detect_core(index, list(changed_files), policy=policy)
@@ -213,14 +220,18 @@ def plan_tests(
                 reason = "core" if dist in core_dists else "escalated"
                 if suite:
                     targets.append(TestTarget(path=suite, distribution=dist, reason=reason))
-                    if reason == "core":
-                        # FEAT-563 review (I1): `escalated` used to be impact-cap-only, so a
-                        # core-only escalation was invisible to the plain-text CLI ("# escalated:
-                        # <dist>") and to the spec's own datatypes.py contract ("distributions
-                        # escalated (core or cap)"). Both escalation kinds are visible here now;
-                        # `core_hits`/`reason=="core"` targets remain the authoritative source
-                        # every real consumer (the ledger, QANode) already reads.
-                        escalated.append(dist)
+                    # FEAT-563 review (I1): `escalated` used to be impact-cap-only, so a
+                    # core-only escalation was invisible to the plain-text CLI ("# escalated:
+                    # <dist>") and to the spec's own datatypes.py contract ("distributions
+                    # escalated (core or cap)"). Both escalation kinds are visible here now.
+                    # FEAT-604 review: append for BOTH reasons ("core" and "escalated"/cap),
+                    # and only once we know this distribution actually got a real
+                    # invocation added (this loop only runs over `to_run`, never over a
+                    # ledger-skipped distribution) -- a cap escalation the ledger proved
+                    # unchanged must not appear in `escalated` while also appearing in
+                    # `skipped_escalations`, symmetric with how a ledger-skipped core
+                    # escalation was already excluded from `escalated`.
+                    escalated.append(dist)
                 else:
                     notes.append(f"{dist}: {reason} escalation target suite does not exist, skipped")
             skipped_cap_dists = {dist for dist in ledger_skipped if dist in cap_candidates}

@@ -187,8 +187,15 @@ def pending_escalations(
             )
         )
         cap_files = cap_hits.get(dist)
+        # A present-but-EMPTY cap_files tuple (an unattributed cap escalation: the
+        # policy flagged it but no changed file could be traced to it) must never
+        # match vacuously via `all(...)` over an empty sequence -- there is nothing
+        # to prove "unchanged" from, so it must run. Only a genuinely absent key
+        # (cap_files is None, i.e. this distribution has no cap escalation at all)
+        # skips the cap check entirely.
         cap_matches = cap_files is None or (
-            entry is not None
+            len(cap_files) > 0
+            and entry is not None
             and entry.impacted_hash != ""
             and cap_impacted.get(dist) == entry.impacted_hash
             and all(

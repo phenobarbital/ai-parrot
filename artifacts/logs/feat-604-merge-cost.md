@@ -73,6 +73,16 @@ which excludes `ai-parrot`. This was traced by instrumenting `context
 .pending_escalations` in place and re-running `plan_tests` twice reproducibly; it is
 not a defect.
 
+**Post-review addendum (2026-09-25)**: the code-review pass on this feature confirmed the
+`escalated`/`skipped_escalations` asymmetry noted above WAS a real inconsistency (cap
+escalations were added to `escalated` unconditionally at detection time, before the ledger
+was consulted, while core escalations were only added once known to actually run) and fixed
+it in `select.py` — a ledger-skipped cap escalation is no longer added to `escalated` at all,
+symmetric with core. Re-running this same measurement against the fixed code would now show
+`ai-parrot` in run 2's `skipped_escalations` ONLY, not in both lists. The invocation counts
+above (27 -> 11) are unaffected by this fix — `escalated` bookkeeping does not influence which
+invocations are planned, only how the selection is reported — so AC8's verdict stands.
+
 **AC8 verdict: YES — run 2 plans strictly fewer invocations: 11 < 27.**
 Skipped distributions (26) appear in run 2's `skipped_escalations`, as required.
 
