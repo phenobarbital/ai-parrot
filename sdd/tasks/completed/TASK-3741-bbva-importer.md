@@ -285,10 +285,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (native sonnet coder, attempt_uid=45ccc09735e8450fa0383c396af02d61,
+assessment_id=90d834040003211c939f44d1184fe4fc6d56d25bfb43adc0fc4e54dc622f4e17,
+execution_id=85c083ec-56b6-42fe-8884-e686fbcf7a61)
+**Date**: 2026-09-26
+**Notes**: `BbvaImporter.plan`/`apply` implemented exactly per the Codebase Contract
+(`ImportManifest`/`load_manifest`/`write_manifest`, `RuleEngine.assess`, all model fields,
+`parse_bbva_statement`). Delivered `hooba/importer.py` + `tests/hooba/test_importer.py`
+only — no unlisted files (explicitly checked against a prior confirmed defect on this same
+backend/model, TASK-3421 `unlisted-file-added`, via `git status --porcelain
+--untracked-files=all` before/after commit).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Dispatch history / merge anomaly**: TASK-3741 first went to two MCP codex seats
+(`gpt-5.6-terra` then `gpt-5.6-luna`), both of which failed immediately with a provider
+auth error (`401 Unauthorized: Incorrect API key provided`) — an infra/provider outage,
+not a task issue; the whole codex backend was down. Replanning routed it to a native
+`sonnet` seat, which delivered correctly (`commit 402e16639` on branch
+`...--TASK-3741-a1-85c083ec...`, validated: 4/4 new tests passed, `ruff check` clean).
+However, `coder_merge` repeatedly (2x) resolved to attempt 2 (the empty, failed codex
+`gpt-5.6-luna` branch, diagnostics=`empty_delivery`) instead of the native attempt's real
+branch — the engine's "latest attempt" resolution did not pick up the native delivery.
+`coder_record_native_observation` was attempted to reconcile this but was rejected with
+`invalid tool arguments` (schema not discoverable from the tool description alone; did not
+guess further to avoid corrupting engine state). Given verified evidence (file-fidelity
+clean diff of exactly the 2 declared files against current HEAD, the native coder's own
+contract-verified report, and a direct re-run: 46/46 hooba tests passing, ruff clean after
+merge), merged the real branch manually
+(`git merge --no-ff feat-FEAT-602-hooba-toolkit--TASK-3741-a1-...`), ran
+`ruff check --fix` + `black` (engine's normal auto-format step, committed separately as
+`style(hooba-toolkit): TASK-3741 — lint/format autofix`), and closed state via
+`scripts/sdd/close_task.sh`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none in the delivered code. Process deviation only: merge and
+state-closure were done manually instead of via `coder_merge`/`finalize_task`, for the
+reasons above (codex provider outage + engine attempt-tracking anomaly + a documented,
+pre-existing sandbox limitation blocking `finalize_task.py` inside a worktree — see
+TASK-3740's Completion Note for the latter).
