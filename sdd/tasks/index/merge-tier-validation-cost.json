@@ -56,7 +56,7 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -67,8 +67,9 @@
       "parallelism_notes": "Calls record_green_escalation's new impact_files/impacted_hashes params from TASK-3797 (context.py) and reads plan.cap_hits/cap_impacted populated by TASK-3798 (select.py); owns scripts/sdd/select_tests.py and nodes/qa.py exclusively.",
       "assigned_to": null,
       "started_at": "2026-09-25T18:28:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3799-cli-qa-cap-writers.md"
+      "completed_at": "2026-09-25T19:34:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3799-cli-qa-cap-writers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3800",
@@ -77,7 +78,7 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -88,8 +89,9 @@
       "parallelism_notes": "Imports record_green_escalation/record_red_run from TASK-3797 (context.py) and reads plan.cap_hits/cap_impacted from TASK-3798 (select.py) inside _record_invocation_outcome; owns sdd_coder/background.py exclusively. Runs concurrently with TASK-3799 (disjoint files).",
       "assigned_to": null,
       "started_at": "2026-09-25T18:28:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3800-supervisor-ledger-writer.md"
+      "completed_at": "2026-09-25T19:34:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3800-supervisor-ledger-writer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3801",
