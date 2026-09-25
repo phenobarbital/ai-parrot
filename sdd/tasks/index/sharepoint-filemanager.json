@@ -16,7 +16,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "foundation: creates tests/interfaces/_graph_fakes.py used by every FEAT-603 test; no dependency; no conftest.py (keeps it non-exclusive)",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3748-graph-test-harness.md"
+      "completed_at": "2026-09-25T18:33:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3748-graph-test-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3749",
