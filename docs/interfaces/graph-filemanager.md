@@ -83,7 +83,7 @@ sp = SharePointFileManager(
 
 ## Uploads and downloads
 
-- **Threshold routing**: files smaller than `small_file_threshold` (default 4 MiB) are uploaded in a single request. Larger files use a resumable upload session.
+- **Threshold routing**: files smaller than `small_file_threshold` (default 4 MiB) are uploaded in a single request, but **only when `conflict_behavior == "replace"`** — Graph's simple content-PUT endpoint has no `conflictBehavior` parameter, so `"fail"`/`"rename"` always go through the resumable upload session regardless of size, even for a tiny file.
 - **Conflict behavior**: `conflict_behavior` defaults to `"replace"`. Set to `"fail"` to raise on collision, or `"rename"` to append a suffix.
 - **MIME type**: derived from the file name (`content_type` is not sent to Graph).
 - **Bytes uploads**: `upload_file_from_bytes(data, path, content_type)` returns a sharing link (organization, view) for the uploaded item.

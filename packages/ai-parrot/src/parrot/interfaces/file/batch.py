@@ -12,9 +12,10 @@ from navigator.utils.file import FileMetadata
 from pydantic import BaseModel, ConfigDict, Field
 
 BatchState = Literal["succeeded", "failed", "skipped"]
-BatchErrorCode = Literal[
-    "not_found", "permission_denied", "throttled", "timeout", "auth", "conflict", "invalid_path", "io", "unknown"
-]
+# "permission_denied" was intentionally removed (FEAT-603 review): AC8 is explicit that a
+# 401 *or* 403 both classify as "auth" (GraphDriveFileManager._classify never distinguishes
+# them), so a separate "permission_denied" code was dead and unreachable.
+BatchErrorCode = Literal["not_found", "throttled", "timeout", "auth", "conflict", "invalid_path", "io", "unknown"]
 
 
 class BatchItemResult(BaseModel):
