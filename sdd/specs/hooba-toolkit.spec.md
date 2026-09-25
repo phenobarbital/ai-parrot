@@ -18,7 +18,7 @@ research_state: sdd/state/FEAT-602/
 **Feature ID**: FEAT-602
 **Date**: 2026-09-25
 **Author**: Jesús Lara (proposal: `/sdd-proposal`, research state `sdd/state/FEAT-602/`)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot-tools` (core `ai-parrot` bumps with it — Module 1 is a core change)
 **Proposal**: `sdd/proposals/hooba-toolkit.proposal.md` (accepted 2026-09-25; U1–U5 resolved in Q&A)
 
