@@ -152,7 +152,8 @@ def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
     monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
     monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
     monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess", SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0))
+        "scripts.sdd.select_tests.subprocess",
+        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
     )
 
     assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 0
@@ -195,7 +196,8 @@ def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
     monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
     monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
     monkeypatch.setattr(
-        "scripts.sdd.select_tests.subprocess", SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=1))
+        "scripts.sdd.select_tests.subprocess",
+        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=1)),
     )
 
     assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 1

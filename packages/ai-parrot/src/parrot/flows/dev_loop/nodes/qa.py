@@ -629,9 +629,7 @@ class QANode(DevLoopNode):
                 dist = result.name[len("pytest[") : result.name.index("]")]
                 core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
                 impact_files = list(getattr(plan, "cap_hits", {}).get(dist, ()))
-                impacted_hashes = (
-                    {dist: plan.cap_impacted[dist]} if dist in getattr(plan, "cap_impacted", {}) else {}
-                )
+                impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in getattr(plan, "cap_impacted", {}) else {}
                 if not core_files and not impact_files:
                     continue
                 await asyncio.to_thread(
