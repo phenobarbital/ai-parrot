@@ -68,7 +68,9 @@ async def test_importer_contact_threshold(tmp_path):
     below_planned, _, _ = await BbvaImporter(RuleEngine.load(), below_threshold, create_draft).plan(
         statement, period="2026-09"
     )
-    at_planned, _, _ = await BbvaImporter(RuleEngine.load(), at_threshold, create_draft).plan(statement, period="2026-09")
+    at_planned, _, _ = await BbvaImporter(RuleEngine.load(), at_threshold, create_draft).plan(
+        statement, period="2026-09"
+    )
 
     assert all(item.draft.contact_id is None for item in below_planned)
     assert all("contact: none (no match ≥ 0.85)" in item.draft.notes for item in below_planned)

@@ -71,7 +71,11 @@ class BbvaImporter:
                 continue
 
             contact = next(
-                (candidate for candidate in await self._find_contact(row.concept) if candidate.score >= CONTACT_THRESHOLD),
+                (
+                    candidate
+                    for candidate in await self._find_contact(row.concept)
+                    if candidate.score >= CONTACT_THRESHOLD
+                ),
                 None,
             )
             notes = (
