@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,8 @@ class ScopePlan:
     core_hits: tuple[CoreHit, ...]
     skipped_escalations: tuple[str, ...]
     notes: tuple[str, ...]
+    cap_hits: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    cap_impacted: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,8 @@ class LedgerEntry:
 
     distribution: str
     core_blobs: dict[str, str]  # core file path -> git blob hash
+    impact_blobs: dict[str, str] = field(default_factory=dict)
+    impacted_hash: str = ""
 
 
 @dataclass(frozen=True)

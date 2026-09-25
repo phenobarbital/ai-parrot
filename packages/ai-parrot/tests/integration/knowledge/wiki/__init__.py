@@ -1,0 +1,1 @@
+"""Knowledge wiki integration tests."""
