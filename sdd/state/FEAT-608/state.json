@@ -3,7 +3,7 @@
   "feat_id": "FEAT-608",
   "feature_slug": "google-drive-interface",
   "started_at": "2026-09-25T22:51:43Z",
-  "updated_at": "2026-09-25T22:57:30Z",
+  "updated_at": "2026-09-25T23:05:00Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -15,7 +15,7 @@
   },
   "mode": "auto",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "completed",
@@ -65,19 +65,22 @@
       "lint_iterations": 1
     },
     "qa": {
-      "status": "pending",
+      "status": "completed",
+      "started_at": "2026-09-25T23:00:00Z",
+      "completed_at": "2026-09-25T23:04:00Z",
+      "duration_seconds": 240,
       "questions_total": 4,
-      "questions_answered": 0,
+      "questions_answered": 4,
       "skipped_reason": null,
-      "note": "U5 defaulted (promote get_drive_client); U1-U4 asked after commit"
+      "note": "U1-U4 answered interactively (all recommended options); U5 defaulted"
     },
     "output": {
-      "status": "running",
+      "status": "completed",
       "started_at": "2026-09-25T22:57:00Z",
-      "completed_at": null,
-      "duration_seconds": null,
+      "completed_at": "2026-09-25T23:05:00Z",
+      "duration_seconds": 480,
       "proposal_path": "sdd/proposals/google-drive-interface.proposal.md",
-      "commit_sha": null,
+      "commit_sha": "337c4a3de",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization is high-confidence and the architecture is fixed by the FEAT-603 precedent; unknowns are parameter choices. Sequence after FEAT-603 merges to dev."
     }
@@ -98,7 +101,7 @@
   },
   "errors": [],
   "resume_hint": {
-    "next_phase": "committed",
-    "next_action": "Commit proposal + state on dev, then answer U1-U4 and re-render §5"
+    "next_phase": "done",
+    "next_action": "Set status: accepted, then /sdd-spec FEAT-608 after FEAT-603 merges to dev"
   }
 }

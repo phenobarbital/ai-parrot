@@ -4,7 +4,7 @@ title: Google Drive FileManager — FileManagerInterface over Drive v3, register
 slug: google-drive-interface
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: inline
   jira_key: null
@@ -327,48 +327,61 @@ Distribution: **12** high, **2** medium, **1** low.
 
 ### Resolved (during proposal phase)
 
-- [x] **Should `GoogleClient.get_drive_client()` be promoted to return a live `DriveClient`
-  (hard cut of the config-dict return, as FEAT-453 did for Calendar)?** — *Resolved by
-  default*: yes, promote — no callers exist (F006) and internal hard cuts need no shims.
-  Override at spec time if disagreed.
+- [x] **U1 — Which Drive targets must v1 support?** — *Resolved* (2026-09-25):
+  **My Drive + shared drives** — the principal's My Drive by default, plus an optional
+  `shared_drive_id` (Drive `driveId` + `supportsAllDrives=True` /
+  `includeItemsFromAllDrives=True` on every call). Domain-wide delegation (`subject=`)
+  is **out of scope** for v1 (future constructor kwarg, no design impact).
+  *Resolves claims*: C15 (mitigated: uploads can target a shared drive)
+
+- [x] **U2 — How should paths map onto Drive's id-addressed model?** — *Resolved*
+  (2026-09-25): **path-based, like S3/Graph** — a segment-walk resolver over `files.list`
+  (`'<parent>' in parents and name = '<seg>' and trashed = false`) with a per-manager
+  path→id cache, deterministic first match (newest `modifiedTime`, then `id`), and an
+  upload `conflict_behavior` of `replace` (default) | `fail` | `rename`, mirroring
+  FEAT-603. `FileManagerToolkit` semantics stay identical across backends.
+  *Resolves claims*: C12
+
+- [x] **U3 — What should `get_file_url()` return by default?** — *Resolved*
+  (2026-09-25): **`webViewLink` with no permission change** — `get_file_url(path,
+  expiry)` never widens access (`expiry` is accepted for signature parity and ignored
+  with a debug log); explicit sharing goes through the extension
+  `create_sharing_link(path, *, scope="user"|"domain"|"anyone", role="reader"|"writer",
+  expiry, email_address=None)` which calls `permissions.create` and returns
+  `webViewLink`. `expirationTime` is only applied for `user`/`group` permissions (Drive
+  does not support it on `anyone`/`domain`).
+  *Resolves claims*: — (policy decision)
+
+- [x] **U4 — Which agent-facing surface is in scope?** — *Resolved* (2026-09-25):
+  **`FileManagerToolkit` + `GoogleDriveToolkit`** — `manager_type="gdrive"` in
+  `FileManagerToolkit` / `FileManagerTool` / `FileManagerFactory`, plus a net-new
+  `GoogleDriveToolkit(AbstractToolkit)` under `parrot_tools.google` (list / search /
+  download / upload / share) delegating to the manager, in the `GoogleCalendarToolkit`
+  mould. Workspace `files.export` is **out of scope** for v1.
+  *Resolves claims*: — (scope decision)
+
+- [x] **U5 — Should `GoogleClient.get_drive_client()` be promoted to return a live
+  `DriveClient`?** — *Resolved by default*: yes, promote — no callers exist (F006) and
+  internal hard cuts need no shims. Override at spec time if disagreed.
   *Resolves claims*: C14
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **U1 — Which Drive targets must v1 support?** — *Owner*: Jesus
-  *Blocks claims*: C15
-  *Plausible answers*: a) My Drive of the principal only (simplest; SA uploads may hit
-  quota limits) · b) My Drive + shared drives via an optional `shared_drive_id`
-  (**recommended**) · c) all three incl. domain-wide delegation (`subject=`)
-
-- [ ] **U2 — How should paths map onto Drive's id-addressed model with duplicate names
-  allowed?** — *Owner*: Jesus
-  *Blocks claims*: C12
-  *Plausible answers*: a) path-based like S3/Graph: segment resolver + cache, first match,
-  upload `conflict_behavior` replace | fail | rename (**recommended**) · b) id-based only:
-  keys are Drive file ids, root is a folder id · c) hybrid: paths by default, `id:<fileId>`
-  accepted anywhere a path is
-
-- [ ] **U3 — What should `get_file_url()` return by default on Drive?** — *Owner*: Jesus
-  *Plausible answers*: a) `webViewLink` without touching permissions (only existing
-  viewers can open it) · b) create a `domain` reader permission then `webViewLink`
-  (organization-wide, mirrors FEAT-603's default) · c) create an `anyone` reader
-  permission (public link — riskiest)
-
-- [ ] **U4 — Which agent-facing surface is in scope?** — *Owner*: Jesus
-  *Plausible answers*: a) only `FileManagerToolkit(manager_type="gdrive")` /
-  `FileManagerTool` · b) also a `GoogleDriveToolkit` under `parrot_tools.google`
-  (list/search/download/upload/share) like `GoogleCalendarToolkit` (**recommended**) ·
-  c) b) plus Workspace export (Docs/Sheets/Slides → PDF/DOCX/XLSX via `files.export`)
+- [ ] **Resumable uploads above ~5 MB** — *Owner*: spec author
+  *Blocks claims*: C8
+  *Plausible answers*: a) aiogoogle's `MediaUpload(resumable=…)` branch works end to end
+  → use it · b) it does not → direct aiohttp resumable session (`uploadType=resumable`,
+  validated `Location` URL, no token in logs) as FEAT-603 did for Graph upload sessions.
+  Decide with a spec-time spike, not a user question.
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-608`** (after U1–U4 are answered and **after FEAT-603 merges to
-`dev`**) — *Rationale*: localization is high-confidence and the architecture is fixed by
-the FEAT-603 precedent (sibling manager + the same six registration seams); the unknowns
-are parameter choices, not architectural forks. The spec should carry the FEAT-603 AC
+**`/sdd-spec FEAT-608`** (**after FEAT-603 merges to `dev`**) — *Rationale*:
+localization is high-confidence, the architecture is fixed by the FEAT-603 precedent
+(sibling manager + the same six registration seams), and U1–U5 are now resolved (§5),
+so the spec has no open parameter choices left. The spec should carry the FEAT-603 AC
 list adapted to Drive (interface parity, subclass minimality, one credential load, lazy
 shim / no SDK leak, factory keys, batch semantics, pagination to exhaustion via
 `nextPageToken`, no-httpx lint, live gate) and add Drive-specific ACs for the path
@@ -405,9 +418,10 @@ resolver, conflict policy, sharing-link policy and resumable uploads.
 **Mode determination**: `auto` → resolved to `enrichment` (additive request: "interface",
 "integration with toolkit"; no negation).
 
-**Gates**: this run executed unattended — the plan gate was auto-approved (recorded as
-`approved_by_user: false`); the review gate and Q&A are folded into §5 for the user to
-answer.
+**Gates**: the plan gate was auto-approved (unattended start, recorded as
+`approved_by_user: false`); the Q&A (U1–U4) was answered interactively on 2026-09-25 and
+folded into §5. The synthesis itself has not been separately validated — set
+`status: accepted` when you agree with §1–§4.
 
 ---
 
