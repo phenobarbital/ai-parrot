@@ -1,4 +1,5 @@
 """FEAT-603 TASK-3768 — cross-cutting invariants (AC4, AC13, AC15, AC19, AC23)."""
+
 import ast
 import hashlib
 import json
@@ -25,12 +26,26 @@ FILE_HASHES = {
     "packages/ai-parrot/src/parrot/interfaces/o365.py": "2a1c94ea77fb8f26bb655b90e173b95359f33cb49087dd1c43a42f8ead480aef",
 }
 CLASS_HASHES = {
-    ("packages/ai-parrot-tools/src/parrot_tools/o365/sharepoint.py", "DeltaSharePointFilesArgs"): "ad0ee3f2822201677f421527d9e9a56daaeb149e2911b79af8a1ce488e3f752c",
-    ("packages/ai-parrot-tools/src/parrot_tools/o365/sharepoint.py", "DeltaSharePointFilesTool"): "41f6aa8e58cdcf5d3c6f5973c1940c93a106c6334b3e4982d9c862387f54b704",
-    ("packages/ai-parrot-tools/src/parrot_tools/o365/onedrive.py", "DeltaOneDriveFilesArgs"): "d5d71031daa34a37622c0f1c81f66af9fb729fe949d680a5921c0b22e570baa0",
-    ("packages/ai-parrot-tools/src/parrot_tools/o365/onedrive.py", "DeltaOneDriveFilesTool"): "433525bb7d5c177b22bb1af208d2073d21de3b938474aa6f3b22c4c2893ae005",
+    (
+        "packages/ai-parrot-tools/src/parrot_tools/o365/sharepoint.py",
+        "DeltaSharePointFilesArgs",
+    ): "ad0ee3f2822201677f421527d9e9a56daaeb149e2911b79af8a1ce488e3f752c",
+    (
+        "packages/ai-parrot-tools/src/parrot_tools/o365/sharepoint.py",
+        "DeltaSharePointFilesTool",
+    ): "41f6aa8e58cdcf5d3c6f5973c1940c93a106c6334b3e4982d9c862387f54b704",
+    (
+        "packages/ai-parrot-tools/src/parrot_tools/o365/onedrive.py",
+        "DeltaOneDriveFilesArgs",
+    ): "d5d71031daa34a37622c0f1c81f66af9fb729fe949d680a5921c0b22e570baa0",
+    (
+        "packages/ai-parrot-tools/src/parrot_tools/o365/onedrive.py",
+        "DeltaOneDriveFilesTool",
+    ): "433525bb7d5c177b22bb1af208d2073d21de3b938474aa6f3b22c4c2893ae005",
 }
-BANNED_MODULES = frozenset({"httpx", "requests", "langchain", "langchain_core", "langchain_community", "langgraph", "langsmith"})
+BANNED_MODULES = frozenset(
+    {"httpx", "requests", "langchain", "langchain_core", "langchain_community", "langgraph", "langsmith"}
+)
 
 
 @pytest.mark.parametrize("rel,digest", sorted(FILE_HASHES.items()))
@@ -58,9 +73,7 @@ def test_no_banned_imports_or_print_in_new_modules():
             # Check for banned imports
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name in BANNED_MODULES or any(
-                        alias.name.startswith(f"{b}.") for b in BANNED_MODULES
-                    ):
+                    if alias.name in BANNED_MODULES or any(alias.name.startswith(f"{b}.") for b in BANNED_MODULES):
                         pytest.fail(f"{module.name}: banned import {alias.name}")
             elif isinstance(node, ast.ImportFrom):
                 if node.module in BANNED_MODULES or any(
@@ -102,8 +115,16 @@ def test_public_signatures_unchanged():
         "packages/ai-parrot/src/parrot/interfaces/sharepoint.py": ["SharepointClient"],
         "packages/ai-parrot/src/parrot/interfaces/onedrive.py": ["OneDriveClient"],
         "packages/ai-parrot/src/parrot/interfaces/o365.py": ["O365Client"],
-        "packages/ai-parrot/src/parrot/tools/filemanager.py": ["FileManagerFactory", "FileManagerTool", "FileManagerToolkit"],
-        "packages/ai-parrot-tools/src/parrot_tools/o365/bundle.py": ["SharePointToolkit", "OneDriveToolkit", "Office365FileManagementToolkit"],
+        "packages/ai-parrot/src/parrot/tools/filemanager.py": [
+            "FileManagerFactory",
+            "FileManagerTool",
+            "FileManagerToolkit",
+        ],
+        "packages/ai-parrot-tools/src/parrot_tools/o365/bundle.py": [
+            "SharePointToolkit",
+            "OneDriveToolkit",
+            "Office365FileManagementToolkit",
+        ],
     }
 
     for path, classes in TARGETS.items():
