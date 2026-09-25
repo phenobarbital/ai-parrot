@@ -62,9 +62,13 @@ async def test_sync_then_unchanged_and_lookup(
     second = await schema_service.sync("bigquery", dsn_resolver=lambda _: "dsn", toolkit=toolkit, changed_only=True)
     assert first.created == ["table:bigquery/epson.sales"]
     assert second.unchanged == ["table:bigquery/epson.sales"]
-    assert await schema_service.lookup("bigquery:epson.sales") == await schema_service.lookup(
-        "table:bigquery/epson.sales"
-    )
+    # `age_days` is computed live from `datetime.now()` on every lookup() call, so two
+    # calls microseconds apart will almost never produce bit-identical floats — compare
+    # everything else for exact equality and only assert `age_days` is close.
+    by_normalized_ref = await schema_service.lookup("bigquery:epson.sales")
+    by_explicit_id = await schema_service.lookup("table:bigquery/epson.sales")
+    assert by_normalized_ref.model_dump(exclude={"age_days"}) == by_explicit_id.model_dump(exclude={"age_days"})
+    assert by_normalized_ref.age_days == pytest.approx(by_explicit_id.age_days, abs=1.0)
 
 
 async def test_read_only_service_refuses_put(tmp_path: Path, sales_metadata: TableMetadata) -> None:

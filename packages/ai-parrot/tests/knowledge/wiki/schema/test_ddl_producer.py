@@ -60,7 +60,11 @@ def test_fold_ddl_task_memory_corpus() -> None:
     assert errors == {}
     assert len(records) == 6
     assert sum(len(record.metadata.columns) for record in records) == 70
-    assert sum(len(record.metadata.foreign_keys) for record in records) == 3
+    # 3 SQL-level FOREIGN KEY constraints in the corpus, but foreign_keys is a
+    # per-column model (matching the live-introspection convention in
+    # producers/live.py): the composite (artifact_id, version) constraint on
+    # artifact_evidence decomposes into 2 entries, so 1 + 1 + 2 = 4.
+    assert sum(len(record.metadata.foreign_keys) for record in records) == 4
     assert all(record.metadata.source == "ddl" for record in records)
     assert all(
         record.defined_in
