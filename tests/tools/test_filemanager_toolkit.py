@@ -7,6 +7,7 @@ the missing symbols into ``sys.modules`` BEFORE importing the filemanager
 module, so the entire test suite runs without requiring a newer navigator
 version.
 """
+
 from __future__ import annotations
 
 import sys
@@ -19,10 +20,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Bootstrap: inject mock navigator symbols before parrot imports them
 # ---------------------------------------------------------------------------
+
 
 def _make_navigator_mock() -> types.ModuleType:
     """Return a fake ``navigator.utils.file`` module with the expected API."""
@@ -38,22 +39,31 @@ def _make_navigator_mock() -> types.ModuleType:
 
     class _FileManagerInterface:
         """Minimal async interface that the real upstream exposes."""
+
         async def list_files(self, path: str, pattern: str) -> list:
             return []
+
         async def upload_file(self, source: Path, destination: str) -> _FileMetadata:
             raise NotImplementedError
+
         async def download_file(self, path: str, dest: Path) -> Path:
             raise NotImplementedError
+
         async def copy_file(self, source: str, destination: str) -> _FileMetadata:
             raise NotImplementedError
+
         async def delete_file(self, path: str) -> bool:
             raise NotImplementedError
+
         async def exists(self, path: str) -> bool:
             raise NotImplementedError
+
         async def get_file_url(self, path: str, expiry: int) -> str:
             raise NotImplementedError
+
         async def get_file_metadata(self, path: str) -> _FileMetadata:
             raise NotImplementedError
+
         async def create_from_bytes(self, path: str, data: BytesIO) -> bool:
             raise NotImplementedError
 
@@ -77,11 +87,13 @@ def _make_navigator_mock() -> types.ModuleType:
     # Re-expose the real cloud managers if they are already loaded
     try:
         from navigator.utils.file import GCSFileManager
+
         nav_mod.GCSFileManager = GCSFileManager
     except ImportError:
         nav_mod.GCSFileManager = MagicMock()
     try:
         from navigator.utils.file import S3FileManager
+
         nav_mod.S3FileManager = S3FileManager
     except ImportError:
         nav_mod.S3FileManager = MagicMock()
@@ -120,10 +132,10 @@ from parrot.tools.filemanager import (  # noqa: E402
 from parrot.tools import FileManagerToolkit as FileManagerToolkitFromInit  # noqa: E402
 from parrot.tools.toolkit import AbstractToolkit  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # sys.modules cleanup — restore original navigator module after the session
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _restore_navigator_module_after_session():
@@ -144,6 +156,7 @@ def _restore_navigator_module_after_session():
 # ---------------------------------------------------------------------------
 # Helpers — in-memory file manager for operation tests
 # ---------------------------------------------------------------------------
+
 
 class _FileMeta:
     """Simple file metadata object returned by _InMemoryFileManager."""
@@ -168,11 +181,11 @@ class _InMemoryFileManager:
 
     async def list_files(self, path: str, pattern: str) -> list:
         import fnmatch
+
         return [
             self._meta(p)
             for p in self._files
-            if fnmatch.fnmatch(Path(p).name, pattern)
-            and (not path or p.startswith(path))
+            if fnmatch.fnmatch(Path(p).name, pattern) and (not path or p.startswith(path))
         ]
 
     async def upload_file(self, source: Path, destination: str) -> Any:
@@ -252,8 +265,18 @@ class TestToolkitInit:
     def test_all_operations_allowed_by_default(self):
         tk = FileManagerToolkit(manager_type="temp")
         expected = {
-            "list", "upload", "download", "copy", "delete", "exists", "get_url", "get_metadata", "create",
-            "find", "batch_upload", "batch_download",
+            "list",
+            "upload",
+            "download",
+            "copy",
+            "delete",
+            "exists",
+            "get_url",
+            "get_metadata",
+            "create",
+            "find",
+            "batch_upload",
+            "batch_download",
         }
         assert tk.allowed_operations == expected
 
@@ -269,10 +292,18 @@ class TestToolGeneration:
         tk = _make_toolkit(tmp_path)
         names = set(tk.list_tool_names())
         expected = {
-            "fs_list_files", "fs_upload_file", "fs_download_file",
-            "fs_copy_file", "fs_delete_file", "fs_file_exists",
-            "fs_get_file_url", "fs_get_file_metadata", "fs_create_file",
-            "fs_find_files", "fs_batch_upload", "fs_batch_download",
+            "fs_list_files",
+            "fs_upload_file",
+            "fs_download_file",
+            "fs_copy_file",
+            "fs_delete_file",
+            "fs_file_exists",
+            "fs_get_file_url",
+            "fs_get_file_metadata",
+            "fs_create_file",
+            "fs_find_files",
+            "fs_batch_upload",
+            "fs_batch_download",
         }
         assert names == expected
 
@@ -565,6 +596,7 @@ class TestBackwardCompat:
     def test_toolkit_is_not_abstracttool(self):
         """FileManagerToolkit should NOT be an AbstractTool subclass."""
         from parrot.tools.abstract import AbstractTool
+
         assert not issubclass(FileManagerToolkit, AbstractTool)
 
 
@@ -573,10 +605,12 @@ class TestRegistryEntry:
 
     def test_registry_has_toolkit(self):
         from parrot_tools import TOOL_REGISTRY
+
         assert "file_manager_toolkit" in TOOL_REGISTRY
         assert TOOL_REGISTRY["file_manager_toolkit"] == "parrot.tools.filemanager.FileManagerToolkit"
 
     def test_registry_has_legacy_tool(self):
         from parrot_tools import TOOL_REGISTRY
+
         assert "file_manager" in TOOL_REGISTRY
         assert TOOL_REGISTRY["file_manager"] == "parrot.tools.filemanager.FileManagerTool"

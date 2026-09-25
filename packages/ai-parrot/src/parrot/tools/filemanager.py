@@ -11,6 +11,7 @@ Legacy API: ``FileManagerTool`` — single tool with an ``operation`` dispatch f
 from typing import Literal, Optional, Dict, Any, List, Tuple, Union, Set
 from pathlib import Path
 from io import BytesIO
+import asyncio
 import importlib
 import logging
 from pydantic import Field
@@ -371,10 +372,10 @@ class FileManagerTool(AbstractTool):
             raise ValueError("source_path is required for upload operation")
 
         source = Path(args.source_path)
-        if not source.exists():
+        if not await asyncio.to_thread(source.exists):
             raise FileNotFoundError(f"Source file not found: {args.source_path}")
 
-        file_size = source.stat().st_size
+        file_size = (await asyncio.to_thread(source.stat)).st_size
         self._check_file_size(file_size)
 
         dest = args.destination_name or source.name
@@ -408,11 +409,12 @@ class FileManagerTool(AbstractTool):
         self.logger.info(f"Downloading '{args.path}' to '{destination}'")
         result = await self.manager.download_file(args.path, dest_path)
 
+        dest_exists = await asyncio.to_thread(dest_path.exists)
         return {
             "downloaded": True,
             "source": args.path,
             "destination": str(result),
-            "size": dest_path.stat().st_size if dest_path.exists() else 0,
+            "size": (await asyncio.to_thread(dest_path.stat)).st_size if dest_exists else 0,
         }
 
     async def _copy_file(self, args: FileManagerToolArgs) -> Dict[str, Any]:
