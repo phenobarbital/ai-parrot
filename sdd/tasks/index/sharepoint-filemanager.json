@@ -416,7 +416,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -428,8 +428,9 @@
       "parallelism_notes": "exclusive: live runs share one real tenant; exercises SharePointFileManager (TASK-3756), OneDriveFileManager (TASK-3757) and the full graph.py API (TASK-3754)",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3767-graph-live-suite.md"
+      "completed_at": "2026-09-25T20:59:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3767-graph-live-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3768",
