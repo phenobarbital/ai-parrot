@@ -7,6 +7,7 @@ Running these spikes against the real owner-supplied corpus (and signing off
 AC1 on the resulting numbers) is a human-in-the-loop step — this module only
 builds the repeatable, testable measurement harness (spec §3 Module 0).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -145,7 +146,9 @@ class _EphemeralCatalog(ManualCatalogStore):
         version_n = version.n if version is not None else len(history) + 1
         written = card.model_copy(update={"versions": []})
         recorded = version or ManualVersion(
-            n=version_n, revision=card.revision, source_sha256=card.source_sha256,
+            n=version_n,
+            revision=card.revision,
+            source_sha256=card.source_sha256,
             card_snapshot=manual_snapshot_payload(written),
         )
         history.append(recorded)
@@ -327,9 +330,7 @@ async def spike_figures(
             if not path.is_file():
                 notes.append(f"{filename}: not found under corpus_dir")
                 continue
-            result = await library.add_manual(
-                path, equipment=[Path(filename).stem], revision="spike", force=True
-            )
+            result = await library.add_manual(path, equipment=[Path(filename).stem], revision="spike", force=True)
             if result.card is None:
                 notes.append(f"{filename}: ingest refused ({'; '.join(result.warnings)})")
                 continue
@@ -416,7 +417,10 @@ async def spike_video(corpus_dir: Path, *, adapter: Any, expected: dict[str, Any
                     det_total += 1
                 precise_total += 1
                 overlaps = (
-                    ref.t_start is not None and ref.t_end is not None and ref.t_start < window[1] and window[0] < ref.t_end
+                    ref.t_start is not None
+                    and ref.t_end is not None
+                    and ref.t_start < window[1]
+                    and window[0] < ref.t_end
                 )
                 if overlaps:
                     covered += 1
@@ -497,7 +501,9 @@ async def spike_tips(graph_store: Any, catalog: ManualCatalogStore, *, revisions
         notes.append("no tips were relinked by the publish; the previous revision's steps may be unreachable")
         return _evaluate("tips", {"expected_outcomes_matched": 0.0}, notes)
 
-    outcomes_by_tip_id = {outcome.tip_id: outcome for outcome in (relink.relinked + relink.orphaned + relink.candidates)}
+    outcomes_by_tip_id = {
+        outcome.tip_id: outcome for outcome in (relink.relinked + relink.orphaned + relink.candidates)
+    }
     matched = 0
     for label, (_step, accepted) in picks.items():
         tip_id = tip_ids[label]

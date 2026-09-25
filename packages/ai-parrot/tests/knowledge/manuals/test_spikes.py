@@ -1,4 +1,5 @@
 """Spike harness over fakes (FEAT-601 M0)."""
+
 from __future__ import annotations
 
 import json
