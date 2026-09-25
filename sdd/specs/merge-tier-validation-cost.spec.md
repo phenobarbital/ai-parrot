@@ -10,7 +10,7 @@ tags: [test-scope, sdd-coder, validation, ledger, xdist]
 **Feature ID**: FEAT-604
 **Date**: 2026-09-25
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.7
 
 ---
@@ -104,13 +104,20 @@ never reports.
 
 **M2 — the ledger learns cap escalations.** `LedgerEntry` gains a second,
 optional record kind alongside `core_blobs`: `impact_blobs`, the blob hashes of
-the *changed files that produced* the impacted set for that distribution. A cap
-escalation is skipped only when every one of those files still hashes to the
-recorded value, which is the same fail-open-to-running rule the core path uses —
-an unreadable blob, a missing entry or a malformed ledger means run it.
-`plan_tests` records, per escalated distribution, which changed files drove the
-escalation so the writer has something to hash; `pending_escalations` answers for
-both kinds in one pass.
+the *changed files that produced* the impacted set for that distribution, plus
+`impacted_hash`, a sha256 over that distribution's sorted impacted-test set
+(resolved Open Question 1: the driving blobs alone leave the graph-staleness
+hole open; the full index fingerprint — the cache is keyed by `HEAD^{tree}`,
+`impact.py:187` — would make the skip fire only at a byte-identical tree, i.e.
+never across merges). A cap escalation is skipped only when every driving file
+still hashes to the recorded value AND the freshly computed impacted set hashes
+to the recorded `impacted_hash` — `plan_tests` already holds that set at the cap
+branch (`select.py:177`), so the fingerprint costs nothing to produce. Same
+fail-open-to-running rule as the core path: an unreadable blob, a missing entry,
+an empty `impacted_hash` or a malformed ledger means run it. `plan_tests`
+records, per escalated distribution, which changed files drove the escalation
+and the set hash so the writer has something to store; `pending_escalations`
+answers for both kinds in one pass.
 
 **M3 — xdist evidence.** Re-run the S3 comparison as a bounded, resumable
 per-distribution job (serial baseline, then two `-n auto` runs, comparing
@@ -118,6 +125,19 @@ per-test outcomes, not just the summary line), smallest distributions first, and
 add only the distributions that pass twice. Distributions that cannot complete
 within the budget stay out and are recorded as such, with their measured wall
 time, so the exclusion is evidence rather than silence.
+
+Resolved Open Question 2 — budget and scope: **~2h total wall time**, covering
+every distribution EXCEPT three pre-excluded ones whose exclusion is recorded
+from existing evidence, not re-measured: `ai-parrot` (≈2.3h for ONE serial pass,
+`artifacts/logs/feat-563-s3-xdist.md` — it stays serial and its cost is bought
+down by M1/M2's dedupe instead), `ai-parrot-integrations` (deterministic hang in
+`test_handle_web_app_data_routes_to_strategy`, ledger `1dbb2aac09ba` — not
+comparable until fixed) and `ai-parrot-server` (~18 intermittent contention
+failures when its e2e directory runs together, ledger `e21ec87c6aba` — xdist
+would amplify, not settle, the comparison). Everything in scope is ≤ ~310 test
+files (`ai-parrot-tools` 310, `parrot-formdesigner` 226, root `tests/` 520 —
+included, it is the second-largest cost driver — then a long tail of 1–34-file
+distributions), i.e. minutes per 3-run protocol.
 
 ### Component Diagram
 
@@ -130,7 +150,7 @@ ValidationSupervisor._supervise ──(per invocation outcome)──→ context.
         │                                                              ▲
         └──(escalation → driving changed files)───────────────────────┘
                                                               LedgerEntry
-                                                        core_blobs + impact_blobs
+                                            core_blobs + impact_blobs + impacted_hash
 policy.XDIST_SAFE_DISTRIBUTIONS ──→ planner._invocation ──→ ("-n", "auto")
 ```
 
@@ -160,12 +180,19 @@ class LedgerEntry:
     # changed file path -> git blob hash, for the cap escalation that produced
     # this distribution's impacted set. Empty for a pre-FEAT-604 record, which
     # therefore never skips a cap escalation (fail-open to running).
+    impacted_hash: str = ""
+    # sha256 over the sorted impacted-test paths that blew the cap for this
+    # distribution. A cap skip requires the freshly computed set to hash to
+    # this value too (Open Question 1: catches an import-graph change that
+    # alters the impacted set without touching a driving file). "" (legacy or
+    # core-only record) never skips a cap escalation.
 ```
 
 The on-disk ledger (`parrot-test-scope-escalations.json`) keeps its current
 shape for `core_blobs`; `read_ledger`'s strict validator
 (`set(entry.keys()) != {"core_blobs"}` → entry dropped, `context.py:93`) is
-widened to accept the new optional key and still drop anything else. A record
+widened to accept the new optional keys (`impact_blobs`, `impacted_hash`) and
+still drop anything else. A record
 written by an older parrot is read as `impact_blobs={}`; a record written by a
 newer parrot and read by an older one fails that validator and is dropped, which
 re-runs the escalation — degraded, never wrong.
@@ -179,16 +206,21 @@ def record_green_escalation(
     hit_dists: Sequence[str],
     core_files: Sequence[str],
     impact_files: Sequence[str] = (),
+    impacted_hashes: Mapping[str, str] = {},
 ) -> None:
-    """Store current blob hashes of core_files (and impact_files) per distribution after a green run."""
+    """Store current blob hashes of core_files (and impact_files, plus the per-distribution
+    impacted-set hash from `impacted_hashes`) per distribution after a green run."""
 
 
 def pending_escalations(
     worktree: Path,
     hits: Sequence[CoreHit],
     cap_hits: Mapping[str, Sequence[str]] = {},
+    cap_impacted: Mapping[str, str] = {},
 ) -> tuple[list[str], list[str]]:
-    """(distributions to run, distributions skipped because every recorded blob still matches)."""
+    """(distributions to run, distributions skipped). A cap-escalated distribution is skipped
+    only when every recorded driving-file blob matches AND `cap_impacted[dist]` (the sha256 of
+    the freshly computed sorted impacted set) equals the recorded `impacted_hash`."""
 ```
 
 ---
@@ -201,13 +233,20 @@ def pending_escalations(
 |---|---|---|---|
 | M1: supervisor records escalations | yes | reuse `record_green_escalation`/`record_red_run`; attribution is per invocation, mirroring `select_tests.py:88-102`; a ledger failure is logged and swallowed, never a failed validation | — |
 | M2: cap-escalation dedupe | yes | `LedgerEntry.impact_blobs`; skip only when every blob matches; missing/malformed ⇒ run; `ScopePlan` carries `cap_hits: dict[str, tuple[str, ...]]` | — |
-| M3: xdist evidence | no | the pass/fail criterion per distribution is a measurement judgement, and which distributions are worth their wall time is a scope decision | budget and stopping rule decided during the spike |
+| M3: xdist evidence | no | the pass/fail criterion per distribution is a measurement judgement; budget and scope are resolved (Open Question 2): ~2h, smallest-first, `ai-parrot`/`ai-parrot-integrations`/`ai-parrot-server` pre-excluded with recorded reasons | executing the measurement is still a judgement call, not a delegable contract |
 
 ### Module 1: Supervisor records its own escalations
 - **Path**: `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/background.py`
 - **Responsibility**: attribute a per-invocation exit code to that invocation's
   escalated distribution and write the green/red ledger record, so the
-  content-keyed skip works for `sdd-coder`-launched validations.
+  content-keyed skip works for `sdd-coder`-launched validations. Additionally
+  (resolved Open Question 3): `start()` writes a selection-summary header into
+  the supervised log before the first invocation —
+  `# selection tier=<tier> escalated=[...] skipped_escalations=[...]` plus one
+  `# note: ...` line per `plan.notes` entry — so `coder_bg_status`'s existing
+  bounded log tail shows WHY a validation was cheap, with no status-schema
+  change. The `# no applicable pytest invocations` message gains the same
+  header, so an all-skipped empty plan is distinguishable from an empty diff.
 - **Depends on**: existing `test_scope.context`; PR #1494 (merged first).
 - **Interface Skeleton**:
   ```python
@@ -243,23 +282,30 @@ def pending_escalations(
       distribution: str
       core_blobs: dict[str, str]
       impact_blobs: dict[str, str]   # changed file -> blob hash for a cap escalation; {} when none
+      impacted_hash: str             # sha256 of the sorted impacted-test set; "" when none/legacy
 
   @dataclass(frozen=True)
   class ScopePlan:               # modifies datatypes.py:40
       """The per-tier selection result."""
       cap_hits: dict[str, tuple[str, ...]]
       """Escalated distribution -> the changed files whose impacted set blew the cap."""
+      cap_impacted: dict[str, str]
+      """Escalated distribution -> sha256 of its sorted impacted-test set (computed at select.py:177)."""
 
   # packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/context.py  (modifies context.py:101, :134)
   def record_green_escalation(
-      worktree: Path, hit_dists: Sequence[str], core_files: Sequence[str], impact_files: Sequence[str] = ()
+      worktree: Path, hit_dists: Sequence[str], core_files: Sequence[str],
+      impact_files: Sequence[str] = (), impacted_hashes: Mapping[str, str] = {}
   ) -> None:
-      """Store current blob hashes of core_files and impact_files per distribution after a green run."""
+      """Store current blob hashes of core_files and impact_files (plus the impacted-set hash)
+      per distribution after a green run."""
 
   def pending_escalations(
-      worktree: Path, hits: Sequence[CoreHit], cap_hits: Mapping[str, Sequence[str]] = {}
+      worktree: Path, hits: Sequence[CoreHit],
+      cap_hits: Mapping[str, Sequence[str]] = {}, cap_impacted: Mapping[str, str] = {}
   ) -> tuple[list[str], list[str]]:
-      """(to run, skipped): a distribution is skipped only when EVERY recorded blob still matches."""
+      """(to run, skipped): a cap-escalated distribution is skipped only when EVERY recorded
+      driving blob still matches AND the fresh impacted-set hash equals `impacted_hash`."""
   ```
 
 ### Module 3: xdist safety evidence
@@ -268,6 +314,12 @@ def pending_escalations(
 - **Responsibility**: produce reproducible per-distribution evidence that
   `-n auto` yields the same per-test outcomes as a serial run, twice, and
   populate `XDIST_SAFE_DISTRIBUTIONS` with exactly the distributions that pass.
+  Budget and scope per resolved Open Question 2: ~2h total, smallest-first,
+  everything EXCEPT `ai-parrot` (≈2.3h per serial pass — excluded on the S3
+  evidence), `ai-parrot-integrations` (deterministic hang, ledger
+  `1dbb2aac09ba`) and `ai-parrot-server` (contention flakiness, ledger
+  `e21ec87c6aba`); the three exclusions are RECORDED in the evidence file with
+  those citations, not re-measured.
 - **Depends on**: nothing (parallel with M1/M2).
 - **Interface Skeleton**:
   ```python
@@ -293,8 +345,10 @@ def pending_escalations(
 | `test_supervisor_rearms_on_red_escalation` | M1 | a red escalated invocation drops the record (`record_red_run`) |
 | `test_supervisor_records_nothing_without_escalation` | M1 | a mirror/import-only invocation writes no ledger entry |
 | `test_supervisor_ledger_failure_never_fails_validation` | M1 | an unwritable ledger is logged and swallowed; the receipt stays green |
+| `test_start_logs_selection_summary` | M1 | `start()` writes the `# selection …` header (escalated + skipped_escalations + notes) into the log; an all-skipped empty plan is distinguishable from an empty diff |
 | `test_cap_escalation_skipped_when_blobs_match` | M2 | second selection over identical content skips the cap-escalated suite |
 | `test_cap_escalation_rearmed_by_any_content_change` | M2 | touching one driving file re-runs the suite |
+| `test_cap_escalation_rearmed_by_impacted_set_change` | M2 | a graph change that alters the impacted set (e.g. a new test file importing a changed module) re-runs the suite even with all driving blobs unchanged |
 | `test_legacy_ledger_record_never_skips_cap` | M2 | a `core_blobs`-only record yields `impact_blobs={}` ⇒ cap escalation runs |
 | `test_read_ledger_drops_unknown_keys` | M2 | an entry with an unexpected key is still dropped (fail-open to running) |
 | `test_plan_reports_cap_driving_files` | M2 | `ScopePlan.cap_hits` names the changed files per escalated distribution |
@@ -326,13 +380,21 @@ def pending_escalations(
 - [ ] A second merge-tier selection over unchanged content reports those
       distributions in `skipped_escalations` and omits their invocations.
 - [ ] Any change to a file that drove a cap escalation re-arms that distribution.
+- [ ] An import-graph change that alters a cap escalation's impacted set re-arms
+      that distribution even when no driving file changed (`impacted_hash` mismatch).
+- [ ] The supervised log for every `coder_run_validation` launch begins with a
+      selection-summary header naming `escalated`, `skipped_escalations` and the
+      plan notes, visible through `coder_bg_status`'s log tail.
 - [ ] A red escalated run re-arms its distribution even when content is unchanged.
 - [ ] A ledger that is absent, malformed, unreadable or written by an older
       version causes the escalation to RUN, never to be skipped.
 - [ ] A ledger write failure never changes a validation's own outcome.
 - [ ] `XDIST_SAFE_DISTRIBUTIONS` contains only distributions with a recorded
       two-run comparison in `artifacts/logs/feat-604-xdist.md`; every excluded
-      distribution has a recorded reason and wall time.
+      distribution has a recorded reason and wall time (for the three
+      pre-excluded ones — `ai-parrot`, `ai-parrot-integrations`,
+      `ai-parrot-server` — the recorded reason cites the existing evidence:
+      S3 log, ledger `1dbb2aac09ba`, ledger `e21ec87c6aba`).
 - [ ] Measured on a FEAT-601-shaped worktree: the second consecutive merge-tier
       selection over unchanged content plans strictly fewer pytest invocations
       than the first, with the before/after numbers recorded in the PR.
@@ -440,8 +502,8 @@ async def _record_green_escalations(...) -> None: ...   # line 618
   defect, not an oversight to route around.
 - ~~a per-invocation outcome record in `BackgroundStatus`~~ — the supervisor
   reports ONE terminal outcome per handle; per-invocation attribution is M1's job.
-- ~~`ScopePlan.cap_hits`~~ — does not exist yet (M2 adds it).
-- ~~`LedgerEntry.impact_blobs`~~ — does not exist yet (M2 adds it).
+- ~~`ScopePlan.cap_hits` / `ScopePlan.cap_impacted`~~ — do not exist yet (M2 adds them).
+- ~~`LedgerEntry.impact_blobs` / `LedgerEntry.impacted_hash`~~ — do not exist yet (M2 adds them).
 - ~~`ScopePolicy.xdist_cap` / any per-distribution worker count~~ — not a field;
   `-n auto` is the only xdist form (`planner.py:40`).
 - ~~a ledger entry for a `mirror`/`import` target~~ — the ledger records
@@ -455,6 +517,7 @@ Verified against: `f39a2ddc7`
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
 | `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/background.py` | MODIFY | `        remaining_invocations: list["PytestInvocation"],` | `background.py:664` | 1 |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/background.py` | MODIFY | `                self._append_log, log_path, f"# $ {shlex.join(first.argv)} (distribution={first.distribution})\n"` | `background.py:589` | 1 |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/context.py` | MODIFY | `def record_green_escalation(worktree: Path, hit_dists: Sequence[str], core_files: Sequence[str]) -> None:` | `context.py:101` | 1 |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/context.py` | MODIFY | `def pending_escalations(worktree: Path, hits: Sequence[CoreHit]) -> tuple[list[str], list[str]]:` | `context.py:134` | 1 |
 | `packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/datatypes.py` | MODIFY | `class LedgerEntry:` | `datatypes.py:52` | 1 |
@@ -490,10 +553,12 @@ Verified against: `f39a2ddc7`
   and the impacted set is derived from an import index that can itself go stale.
   Keying the skip on the driving changed files' blobs is narrower than keying it
   on the whole index; a change that alters the import graph without touching a
-  driving file could in principle be skipped. Mitigation: the merge-tier base
-  after PR #1494 is the chunk's own diff, so a graph-altering change IS a
-  driving file for the distribution it lands in; plus the feature-tier gate at
-  `/sdd-done` never dedupes.
+  driving file could in principle be skipped. Mitigation (resolved Open
+  Question 1): the skip ALSO requires `impacted_hash` — the sha256 of the
+  freshly recomputed sorted impacted set — to match the recorded one, so a
+  graph change that matters (one that alters the impacted set) always re-arms;
+  plus the merge-tier base after PR #1494 is the chunk's own diff, and the
+  feature-tier gate at `/sdd-done` never dedupes.
 - **`-n auto` hides ordering bugs both ways.** A suite that only passes serially
   is a real defect, but adding it to the safe set on one lucky comparison
   converts a flaky suite into a silently flaky gate. Two independent comparisons
@@ -515,12 +580,29 @@ Verified against: `f39a2ddc7`
 
 ## 8. Open Questions
 
-- [ ] Should a cap-escalation skip also require the import index's own fingerprint
+- [x] Should a cap-escalation skip also require the import index's own fingerprint
       to be unchanged, rather than only the driving files' blobs? — *Owner: Jesus Lara*
-- [ ] M3 budget: how much wall time is the xdist comparison worth, and which
+      **Resolved 2026-09-25**: neither extreme. The index's own fingerprint is the
+      `HEAD^{tree}` cache key (`impact.py:187`), which changes on every commit and
+      would make the skip fire only at a byte-identical tree. Instead the skip
+      additionally requires `impacted_hash` — sha256 of the sorted impacted-test
+      set, already in hand at the cap branch (`select.py:177`) — to match. Folded
+      into M2 (`LedgerEntry.impacted_hash`, `ScopePlan.cap_impacted`).
+- [x] M3 budget: how much wall time is the xdist comparison worth, and which
       distributions are in scope if the full set cannot finish? — *Owner: Jesus Lara*
-- [ ] Should `skipped_escalations` be surfaced in the `coder_bg_status` log tail,
+      **Resolved 2026-09-25**: ~2h total, smallest-first, cheap-first scope: every
+      distribution EXCEPT `ai-parrot` (≈2.3h per serial pass, S3 evidence — stays
+      serial; M1/M2 dedupe buys down its cost), `ai-parrot-integrations`
+      (deterministic hang, ledger `1dbb2aac09ba`) and `ai-parrot-server`
+      (contention flakiness, ledger `e21ec87c6aba`). The three exclusions are
+      recorded in the evidence file with citations, not re-measured.
+- [x] Should `skipped_escalations` be surfaced in the `coder_bg_status` log tail,
       so an operator can see WHY a validation was cheap? — *Owner: Jesus Lara*
+      **Resolved 2026-09-25**: yes, as log header lines written by `start()`
+      (`# selection tier=… escalated=[…] skipped_escalations=[…]` + one line per
+      plan note) — no status-schema change; the existing bounded tail surfaces it,
+      and an all-skipped empty plan becomes distinguishable from an empty diff.
+      Folded into M1.
 
 ---
 
@@ -562,3 +644,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-25 | Jesus Lara | Initial draft — split from the merge-tier cost investigation; items 3+4 of that report (PR #1494 covers 1+2) |
+| 0.2 | 2026-09-25 | Jesus Lara | Status → approved. §8 Open Questions resolved: M2 gains `impacted_hash`/`cap_impacted` (impacted-set fingerprint on cap skips); M3 budget ~2h cheap-first with ai-parrot/integrations/server pre-excluded on cited evidence; M1 gains the `start()` selection-summary log header for `coder_bg_status` |
