@@ -222,7 +222,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -233,8 +233,9 @@
       "parallelism_notes": "calls quote_supported/validate_extracted/load_bodies from TASK-3697 (knowledge/common/validation.py); drafts use Extracted and ProcedureKind from TASK-3699 (manuals/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3707-manual-carding-drafts.md"
+      "completed_at": "2026-09-25T09:39:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3707-manual-carding-drafts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3708",
@@ -264,7 +265,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -274,8 +275,9 @@
       "parallelism_notes": "produces MediaRef/MediaLink(video_segment) and reads Step/ManualCard from TASK-3699 (manuals/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3709-manual-video-alignment.md"
+      "completed_at": "2026-09-25T09:39:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3709-manual-video-alignment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3710",
