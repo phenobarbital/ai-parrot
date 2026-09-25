@@ -910,7 +910,20 @@ def request_context() -> RequestContext: ...   # authenticated technician, tenan
 - [ ] **AC20** Serial applicability (Q7): `Applicability` with evidence on every serial-qualified step; `applies()` matrix passes; answers never show a step that does not apply, never hide an undecidable one, and ask for the serial once when needed.
 - [ ] **AC21** Callouts (Q8): exploded views get one structured vision call; resolved callouts become `depicts` edges; unresolved ones enter the verification queue; `proc_find_part` answers by label; the pass is disabled until spike 1 passes.
 - [ ] **AC22** Export (Q9): `parrot manuals export` produces a deterministic bundle with a sha256 manifest, figures as files, captions, applicability, hazards, active tips and video deep links; no presigned URLs or graph internals; curator-only.
-- [ ] **AC19** `pytest packages/ai-parrot/tests/knowledge/manuals packages/ai-parrot/tests/knowledge/common packages/ai-parrot-tools/tests/procedures packages/ai-parrot-integrations/tests -q` passes; live Arango/Postgres tests skip cleanly without credentials.
+- [ ] **AC19** Each of the following three invocations passes on its own (a single composite command across distributions cannot collect — same-named top-level `tests` packages under `packages/*/tests/` collide even under `--import-mode=importlib`, per `packages/ai-parrot/tests/conftest.py` vs `packages/ai-parrot-integrations/tests/conftest.py`); live Arango/Postgres tests skip cleanly without credentials:
+  ```bash
+  PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-integrations/src \
+    pytest packages/ai-parrot/tests/knowledge/manuals packages/ai-parrot/tests/knowledge/common -q
+  PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src:packages/ai-parrot-integrations/src \
+    pytest packages/ai-parrot-tools/tests/procedures -q
+  PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-integrations/src \
+    pytest packages/ai-parrot-integrations/tests/test_channel_delivery_matrix.py \
+           packages/ai-parrot-integrations/tests/test_media_download.py \
+           packages/ai-parrot-integrations/tests/test_media_urls.py \
+           packages/ai-parrot-integrations/tests/test_media_urls_teams_slack.py \
+           packages/ai-parrot-integrations/tests/test_media_urls_telegram.py \
+           packages/ai-parrot-integrations/tests/test_media_urls_whatsapp.py -q
+  ```
 
 ---
 
