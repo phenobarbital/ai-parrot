@@ -96,7 +96,7 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [],
@@ -104,8 +104,9 @@
       "parallelism_notes": "Exclusive: wall-clock full-suite measurement runs (serial + 2x -n auto per distribution) must not share the machine with any other task's test runs or the timings are meaningless (spec Worktree Strategy). Orchestrator-run measurement task, not delegation-eligible. Owns policy.py exclusively; no code dependency on M1/M2.",
       "assigned_to": null,
       "started_at": "2026-09-25T18:28:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3801-xdist-evidence-spike.md"
+      "completed_at": "2026-09-25T18:55:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3801-xdist-evidence-spike.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3802",
