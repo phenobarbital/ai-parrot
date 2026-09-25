@@ -398,8 +398,8 @@ class OneDriveClient(O365Client):
         """
         Recursively download a folder's contents using Microsoft Graph API.
         """
-        if not local_path.exists():
-            local_path.mkdir(parents=True, exist_ok=True)
+        if not await asyncio.to_thread(local_path.exists):
+            await asyncio.to_thread(local_path.mkdir, parents=True, exist_ok=True)
 
         # Get children
         children = (
@@ -512,7 +512,7 @@ class OneDriveClient(O365Client):
         """
         try:
             local_path = Path(local_folder)
-            if not local_path.exists() or not local_path.is_dir():
+            if not await asyncio.to_thread(local_path.exists) or not await asyncio.to_thread(local_path.is_dir):
                 raise FileNotFoundError(f"Local folder does not exist or is not a directory: {local_folder}")
 
             uploaded_items = []
@@ -673,7 +673,7 @@ class OneDriveClient(O365Client):
 
     async def _upload_large_file(self, upload_session: UploadSession, local_path: Union[str, Path]) -> DriveItem:
         """Upload large file using resumable upload session."""
-        file_size = os.path.getsize(local_path)
+        file_size = await asyncio.to_thread(os.path.getsize, local_path)
         uploaded = 0
 
         async with aiohttp.ClientSession() as session:

@@ -129,6 +129,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "power_bi_table_info": "parrot_tools.powerbi.PowerBITableInfoTool",
     "power_point": "parrot_tools.powerpoint.PowerPointTool",
     "prices": "parrot_tools.pricestool.PricesTool",
+    "procedures": "parrot_tools.procedures.toolkit.ProceduresToolkit",
     "prophet_forecast": "parrot_tools.prophetforecast.ProphetForecastTool",
     "pulumi": "parrot_tools.pulumi.toolkit.PulumiToolkit",
     "quant": "parrot_tools.quant.toolkit.QuantToolkit",
