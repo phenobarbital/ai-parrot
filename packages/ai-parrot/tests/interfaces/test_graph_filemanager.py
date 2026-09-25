@@ -295,3 +295,104 @@ def test_validate_graph_url_rejects_http_and_foreign_hosts():
         with pytest.raises(GraphFileManagerError) as exc_info:
             manager._validate_graph_url(url, purpose="test")
         assert url not in str(exc_info.value)
+
+
+@pytest.fixture
+def paged_manager():
+    drive = FakeDrive("drive-1")
+    drive.put_file("reports/file1.csv", b"data1")
+    drive.put_file("reports/file2.csv", b"data2")
+    drive.put_file("reports/file3.csv", b"data3")
+    drive.put_file("reports/file4.txt", b"data4")
+    drive.put_file("reports/file5.txt", b"data5")
+    drive.put_folder("reports/archive")
+    fake = FakeGraphClient({"drive-1": drive}, page_size=2)
+    manager = make_probe(GraphDriveFileManager, prefix="reports/")
+    manager.client_class = SharepointClient
+    manager.adopt_client(make_sharepoint_client(fake, drive_id="drive-1"))
+    return manager, fake, drive
+
+
+async def test_list_files_follows_next_link(paged_manager):
+    manager, fake, _drive = paged_manager
+    files = await manager.list_files()
+    assert sorted(f.name for f in files) == ["file1.csv", "file2.csv", "file3.csv", "file4.txt", "file5.txt"]
+    assert all(f.path == f"{f.name}" for f in files)
+    children_calls = [call for call in fake.calls if call[0] == "children"]
+    assert len(children_calls) == 3
+
+
+async def test_list_files_pattern_excludes_folders(paged_manager):
+    manager, _fake, _drive = paged_manager
+    files = await manager.list_files(pattern="*.csv")
+    assert sorted(f.name for f in files) == ["file1.csv", "file2.csv", "file3.csv"]
+    assert all(name.endswith(".csv") for name in (f.name for f in files))
+
+
+async def test_list_entries_includes_folders_all_pages(paged_manager):
+    manager, _fake, _drive = paged_manager
+    entries = await manager.list_entries()
+    assert len(entries) == 6
+    folders = [entry for entry in entries if entry.is_folder]
+    assert len(folders) == 1
+    assert folders[0].name == "archive"
+
+
+async def test_exists_true_for_folder_and_false_when_missing(paged_manager):
+    manager, _fake, _drive = paged_manager
+    assert await manager.exists("archive") is True
+    assert await manager.exists("file1.csv") is True
+    assert await manager.exists("does-not-exist.csv") is False
+
+
+async def test_find_files_server_search_vs_recursive_fallback(paged_manager):
+    manager, fake, _drive = paged_manager
+    safe_hits = await manager.find_files(keywords="file1")
+    assert [entry.name for entry in safe_hits] == ["file1.csv"]
+    assert any(call[0] == "search" for call in fake.calls)
+
+    fake.calls.clear()
+    unsafe_hits = await manager.find_files(keywords="file*")
+    assert not any(call[0] == "search" for call in fake.calls)
+    assert any(call[0] == "children" for call in fake.calls)
+    assert unsafe_hits == []
+
+    fake.calls.clear()
+    filtered = await manager.find_files(extension=".csv")
+    assert sorted(entry.name for entry in filtered) == ["file1.csv", "file2.csv", "file3.csv"]
+    assert not any(call[0] == "search" for call in fake.calls)
+
+
+async def test_search_paginates_then_applies_filters(paged_manager):
+    manager, fake, drive = paged_manager
+    drive.put_file("reports/keyword1.csv", b"a")
+    drive.put_file("reports/keyword2.csv", b"b")
+    drive.put_file("reports/keyword3.txt", b"c")
+    hidden = FakeDriveItem(id="hidden-1", name="keyword-hidden.csv")
+    drive.by_id[hidden.id] = hidden
+    drive.path_of[hidden.id] = "reports/keyword-hidden.csv"
+
+    fake.calls.clear()
+    hits = await manager.find_entries(keywords="keyword", extension=".csv")
+    assert {entry.name for entry in hits} == {"keyword1.csv", "keyword2.csv"}
+    assert any(call == ("get", "drive-1", "hidden-1", None) for call in fake.calls)
+    search_calls = [call for call in fake.calls if call[0] == "search"]
+    assert len(search_calls) >= 2
+
+
+async def test_delete_recycle_bin_and_missing_returns_false(paged_manager):
+    manager, fake, _drive = paged_manager
+    assert await manager.delete_file("file5.txt") is True
+    assert any(call[0] == "delete" for call in fake.calls)
+    assert await manager.exists("file5.txt") is False
+    assert await manager.delete_file("does-not-exist.csv") is False
+
+
+async def test_public_errors_are_mapped(paged_manager):
+    manager, fake, _drive = paged_manager
+    fake.fail_next(500, op="get")
+    with pytest.raises(GraphFileManagerError):
+        await manager.exists("file1.csv")
+
+    with pytest.raises(FileNotFoundError):
+        await manager.get_file_metadata("does-not-exist.csv")

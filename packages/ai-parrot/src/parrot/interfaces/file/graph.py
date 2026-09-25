@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import fnmatch
 import logging
+import re
 from abc import ABC, abstractmethod
 import asyncio
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union
 from urllib.parse import quote, urlsplit
 
 import aiohttp
@@ -205,7 +207,7 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
         parent_path = getattr(parent_reference, "path", None)
         if not parent_path or "root:" not in parent_path:
             return None
-        parent = parent_path.split("root:", 1)[1].strip("/")
+        parent = parent_path.split("root:", 1)[1].strip(":/")
         return "/".join(part for part in (parent, item.name) if part)
 
     def _make_metadata(self, item: Any, *, full_path: Optional[str] = None) -> FileMetadata:
@@ -406,3 +408,196 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
         if parts.scheme != "https" or not host or not allowed:
             raise GraphFileManagerError(f"Invalid {purpose} URL")
         return url
+
+    def _drive(self) -> Any:
+        """``graph_client.drives.by_drive_id(<resolved drive>)`` request builder."""
+        return self.client.graph_client.drives.by_drive_id(self.drive_id)
+
+    async def _get_item(self, full_path: str) -> Any:
+        """GET the DriveItem at a prefixed drive path (retried; raw errors propagate to the caller's mapping)."""
+        item, _ = await self._retrying(
+            lambda: self._drive().items.by_drive_item_id(self._item_ref(full_path)).get(), label="get"
+        )
+        if item is None:
+            raise FileNotFoundError(full_path)
+        return item
+
+    async def _get_item_by_id(self, item_id: str) -> Any:
+        """GET by stable item id (search hits without a path; the OneDrive download-by-id tool)."""
+        item, _ = await self._retrying(lambda: self._drive().items.by_drive_item_id(item_id).get(), label="get")
+        if item is None:
+            raise FileNotFoundError(item_id)
+        return item
+
+    async def _iter_children(self, item_id: str) -> AsyncIterator[Any]:
+        """Yield every child of ``item_id`` across all pages (S4)."""
+        builder = self._drive().items.by_drive_item_id(item_id).children
+        resp, _ = await self._retrying(lambda: builder.get(), label="children")
+        while resp is not None:
+            for child in resp.value or []:
+                yield child
+            nxt = getattr(resp, "odata_next_link", None)
+            if not nxt:
+                break
+            resp, _ = await self._retrying(lambda: builder.with_url(nxt).get(), label="children-next")
+
+    async def _iter_search(self, q: str) -> AsyncIterator[Any]:
+        """Yield every ``search(q)`` hit on the drive across all pages (S4)."""
+        builder = self._drive().search_with_q(q)
+        resp, _ = await self._retrying(lambda: builder.get(), label="search")
+        while resp is not None:
+            for hit in resp.value or []:
+                yield hit
+            nxt = getattr(resp, "odata_next_link", None)
+            if not nxt:
+                break
+            resp, _ = await self._retrying(lambda: builder.with_url(nxt).get(), label="search-next")
+
+    @staticmethod
+    def _query_is_api_safe(query: str) -> bool:
+        """True when ``query`` has no wildcard/regex metacharacters (rule of sharepoint.py:867-873)."""
+        return not re.search(r"[*?\[\]\{\}\(\)\^\$|\\]", query or "")
+
+    async def list_files(self, path: str = "", pattern: str = "*") -> List[FileMetadata]:
+        """Non-recursive listing of ``path``: files only, fnmatch ``pattern``, all pages (S4/S8)."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            folder = await self._get_item(full)
+            out: List[FileMetadata] = []
+            async for child in self._iter_children(folder.id):
+                if getattr(child, "folder", None) is not None:
+                    continue
+                if not fnmatch.fnmatch(child.name, pattern):
+                    continue
+                child_path = f"{full}/{child.name}" if full else child.name
+                out.append(self._make_metadata(child, full_path=child_path))
+            return out
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def list_entries(self, path: str = "") -> List[DriveEntry]:
+        """Non-recursive listing INCLUDING folders, all pages; used by the O365 List tools (S8)."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            folder = await self._get_item(full)
+            out: List[DriveEntry] = []
+            async for child in self._iter_children(folder.id):
+                child_path = f"{full}/{child.name}" if full else child.name
+                out.append(self._make_entry(child, full_path=child_path))
+            return out
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def exists(self, path: str) -> bool:
+        """True for files AND folders that resolve; False on 404."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            await self._get_item(full)
+            return True
+        except Exception as exc:
+            mapped = self._map_error(exc, path=path)
+            if isinstance(mapped, FileNotFoundError):
+                return False
+            raise mapped from exc
+
+    async def get_file_metadata(self, path: str) -> FileMetadata:
+        """Metadata of one item; FileNotFoundError on 404."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            item = await self._get_item(full)
+            return self._make_metadata(item, full_path=full)
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def find_entries(
+        self,
+        keywords: Optional[Union[str, List[str]]] = None,
+        extension: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> List[DriveEntry]:
+        """Graph search when the keyword is API-safe, else a recursive walk under ``prefix``; files only, all pages (AC20)."""
+        await self._ready()
+        full_prefix = self._prefixed(prefix if prefix is not None else "")
+        prefix_check = f"{full_prefix}/" if full_prefix else ""
+        keyword_list = [keywords] if isinstance(keywords, str) else list(keywords or [])
+        keywords_lower = [keyword.lower() for keyword in keyword_list if keyword]
+        out: List[DriveEntry] = []
+        try:
+            if keyword_list and keyword_list[0] and self._query_is_api_safe(keyword_list[0]):
+                async for hit in self._iter_search(keyword_list[0]):
+                    if getattr(hit, "folder", None) is not None:
+                        continue
+                    item_path = self._item_path(hit)
+                    if item_path is None:
+                        resolved = await self._get_item_by_id(hit.id)
+                        item_path = self._item_path(resolved)
+                        if item_path is not None:
+                            hit = resolved
+                    if item_path is None:
+                        continue
+                    if prefix_check and not item_path.startswith(prefix_check):
+                        continue
+                    if keywords_lower and not all(keyword in item_path.lower() for keyword in keywords_lower):
+                        continue
+                    if extension and not item_path.endswith(extension):
+                        continue
+                    out.append(self._make_entry(hit, full_path=item_path))
+            else:
+                root_item = await self._get_item(full_prefix)
+                queue: List[Tuple[str, str]] = [(root_item.id, full_prefix)]
+                while queue:
+                    current_id, current_path = queue.pop(0)
+                    async for child in self._iter_children(current_id):
+                        child_path = f"{current_path}/{child.name}" if current_path else child.name
+                        if getattr(child, "folder", None) is not None:
+                            queue.append((child.id, child_path))
+                            continue
+                        if keywords_lower and not all(keyword in child_path.lower() for keyword in keywords_lower):
+                            continue
+                        if extension and not child_path.endswith(extension):
+                            continue
+                        out.append(self._make_entry(child, full_path=child_path))
+            return out
+        except Exception as exc:
+            raise self._map_error(exc, path=full_prefix) from exc
+
+    async def find_files(
+        self,
+        keywords: Optional[Union[str, List[str]]] = None,
+        extension: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> List[FileMetadata]:
+        """FileManagerInterface override (abstract.py:265): ``find_entries`` mapped to FileMetadata."""
+        entries = await self.find_entries(keywords=keywords, extension=extension, prefix=prefix)
+        return [
+            FileMetadata(
+                name=entry.name,
+                path=entry.path,
+                size=entry.size,
+                content_type=entry.content_type,
+                modified_at=entry.modified_at,
+                url=entry.web_url,
+            )
+            for entry in entries
+        ]
+
+    async def delete_file(self, path: str) -> bool:
+        """DELETE the item (goes to the recycle bin). False when it does not exist."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            item = await self._get_item(full)
+        except Exception as exc:
+            mapped = self._map_error(exc, path=path)
+            if isinstance(mapped, FileNotFoundError):
+                return False
+            raise mapped from exc
+        try:
+            await self._retrying(lambda: self._drive().items.by_drive_item_id(item.id).delete(), label="delete")
+            return True
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
