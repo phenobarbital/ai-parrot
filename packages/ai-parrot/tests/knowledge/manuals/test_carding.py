@@ -9,7 +9,10 @@ from parrot.knowledge.manuals import carding as cd
 
 def test_select_procedure_nodes_density() -> None:
     toc = [TocEntry(node_id="0001", title="Introduction", depth=1), TocEntry(node_id="0002", title="Notes", depth=1)]
-    bodies = {"0001": "This manual describes the unit.", "0002": "1. Insert the shaft.\n2. Tighten the bolt.\n3. Align."}
+    bodies = {
+        "0001": "This manual describes the unit.",
+        "0002": "1. Insert the shaft.\n2. Tighten the bolt.\n3. Align.",
+    }
     assert cd.select_procedure_nodes(toc, bodies)[0] == "0002"
 
 
