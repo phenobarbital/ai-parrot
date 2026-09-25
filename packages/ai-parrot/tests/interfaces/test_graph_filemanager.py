@@ -2,6 +2,7 @@
 
 import datetime as dt
 import asyncio
+import io
 import os
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from parrot.interfaces.file.graph import (
 )
 
 from ._graph_fakes import (
+    FakeAiohttpSession,
     FakeAPIError,
     FakeDrive,
     FakeDriveItem,
@@ -396,3 +398,108 @@ async def test_public_errors_are_mapped(paged_manager):
 
     with pytest.raises(FileNotFoundError):
         await manager.get_file_metadata("does-not-exist.csv")
+
+
+@pytest.fixture
+def xfer_manager():
+    fake = FakeGraphClient({"drive-1": FakeDrive()})
+    manager = make_probe(GraphDriveFileManager, small_file_threshold=16, chunk_size=8)
+    manager.client_class = SharepointClient
+    manager.adopt_client(make_sharepoint_client(fake, drive_id="drive-1"))
+    session = FakeAiohttpSession(fake)
+    manager._http_session = lambda: session
+    return manager, fake, session
+
+
+async def test_upload_small_uses_content_put(xfer_manager):
+    manager, fake, session = xfer_manager
+
+    metadata = await manager.upload_file(io.BytesIO(b"0123456789"), "nested/small.txt")
+
+    assert metadata.path == "nested/small.txt"
+    assert any(call[0] == "content_put" for call in fake.calls)
+    assert session.requests == []
+
+
+async def test_upload_large_uses_session_chunks(xfer_manager):
+    manager, fake, session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("nested/large.txt", b"")
+
+    await manager.upload_file(io.BytesIO(b"0123456789abcdefghij"), "nested/large.txt")
+
+    assert any(call[0] == "create_upload_session" for call in fake.calls)
+    assert [request[2]["Content-Range"] for request in session.requests] == [
+        "bytes 0-7/20",
+        "bytes 8-15/20",
+        "bytes 16-19/20",
+    ]
+
+
+@pytest.mark.parametrize("conflict_behavior", ["fail", "rename"])
+async def test_upload_conflict_behavior_replace_fail_rename(xfer_manager, conflict_behavior):
+    manager, fake, session = xfer_manager
+    manager.conflict_behavior = conflict_behavior
+    fake.drives_by_id["drive-1"].put_file(f"{conflict_behavior}.txt", b"")
+
+    await manager.upload_file(io.BytesIO(b"small-data"), f"{conflict_behavior}.txt")
+
+    body = next(call[3] for call in fake.calls if call[0] == "create_upload_session")
+    assert body.item.additional_data["@microsoft.graph.conflictBehavior"] == conflict_behavior
+    assert len(session.requests) == 2
+    assert not any(call[0] == "content_put" for call in fake.calls)
+
+
+async def test_outbound_calls_have_no_auth_header_and_no_redirects(xfer_manager):
+    manager, fake, session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("upload.txt", b"")
+    await manager.upload_file(io.BytesIO(b"0123456789abcdefghij"), "upload.txt")
+    fake.drives_by_id["drive-1"].put_file("download.txt", b"download")
+
+    await manager.download_file("download.txt", io.BytesIO())
+
+    assert session.requests
+    assert all("Authorization" not in headers and allow_redirects is False for _, _, headers, allow_redirects in session.requests)
+
+
+async def test_upload_session_rejects_foreign_upload_url(xfer_manager):
+    manager, fake, session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("bad.txt", b"")
+    original_create = manager._create_session
+
+    async def foreign_session(parent_id, name):
+        await original_create(parent_id, name)
+        return "https://evil.example/upload"
+
+    manager._create_session = foreign_session
+    with pytest.raises(GraphFileManagerError):
+        await manager.upload_file(io.BytesIO(b"0123456789abcdefghij"), "bad.txt")
+    assert session.requests == []
+
+
+async def test_create_file_and_upload_file_from_bytes(xfer_manager):
+    manager, _fake, _session = xfer_manager
+
+    assert await manager.create_file("created.txt", b"created") is True
+    url = await manager.upload_file_from_bytes(b"from-bytes", "bytes.txt")
+
+    assert url == "https://contoso.sharepoint.com/bytes.txt"
+
+
+async def test_download_streams_to_path_and_binaryio(xfer_manager, tmp_path):
+    manager, fake, _session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("download.txt", b"download-data")
+
+    target = tmp_path / "nested" / "download.txt"
+    assert await manager.download_file("download.txt", target) == target
+    assert target.read_bytes() == b"download-data"
+    stream = io.BytesIO()
+    assert await manager.download_file("download.txt", stream) == Path("download.txt")
+    assert stream.getvalue() == b"download-data"
+
+
+async def test_download_folder_raises_isadirectory(xfer_manager):
+    manager, fake, _session = xfer_manager
+    fake.drives_by_id["drive-1"].put_folder("folder")
+
+    with pytest.raises(IsADirectoryError):
+        await manager.download_file("folder", io.BytesIO())
