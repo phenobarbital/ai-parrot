@@ -118,7 +118,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -128,8 +128,9 @@
       "parallelism_notes": "ABC signatures take ManualCard/ManualVersion/VerificationState from TASK-3699 (manuals/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3702-manual-catalog-abc.md"
+      "completed_at": "2026-09-25T07:51:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3702-manual-catalog-abc.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3703",
@@ -177,7 +178,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -188,8 +189,9 @@
       "parallelism_notes": "calls extract_page_images/PageImage from TASK-3704 (pageindex/pdf_to_markdown.py); builds MediaRef/MediaLink from TASK-3699 (manuals/models.py) ; references manuals/carding.py (TASK-3707) only as a TYPE_CHECKING import of StepDraft — pair_figures duck-types `.figure_refs`, so no runtime dependency (spec §Worktree Strategy M6 note)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3705-manual-figures.md"
+      "completed_at": "2026-09-25T07:51:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3705-manual-figures.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3706",

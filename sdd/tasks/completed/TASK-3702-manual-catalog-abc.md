@@ -397,10 +397,16 @@ async def test_record_answer_failure_propagates(catalog):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3702
+- Feature: training-agent
+- Implementation SHA: fb81905650957992e0b2d3069e21575f98d47470
+- Closed at (UTC): 2026-09-25T07:51:19+00:00
+- Fix commits: e4ae9b217de47d4ce9ccdab2de172fba877ae01f
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 313.38s · Tokens: n/a |
+| supplementary_test_evidence | 97 passed, 0 failed (scoped direct pytest over manuals+catalog+figures+contracts/test_ontology_domain, after review-fix commit) |
