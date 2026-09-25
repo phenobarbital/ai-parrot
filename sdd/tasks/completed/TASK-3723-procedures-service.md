@@ -377,10 +377,28 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3723
+- Feature: training-agent
+- Implementation SHA: b6ec6259f72c5449f66814feb311dd5591c62899
+- Closed at (UTC): 2026-09-25T18:50:42+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet(native, retry_native attempt 2) - Backend: native - Model: sonnet - Attempts: 2 (attempt 1 gpt-5.6-terra empty_delivery, attempt 2 native sonnet succeeded) - Duration: ~565s - Tokens: n/a |
+
+**Reviewer notes (verified, no defects):**
+- The task's scope text said to presign `MediaView.storage_key`, but `MediaView` (models.py:489-499)
+  carries no `storage_key`/`uri` — only the raw `MediaRef` (models.py:141-159, via `ManualCard.figures`)
+  does. The coder extended the two PRIVATE helpers `_release`/`_presign_media` with a `figures:
+  Sequence[MediaRef]` lookup-by-`media_id` parameter (same pattern `assembly._media()` already uses);
+  every task-fixed public name (`AnswerProducer`, `ServiceUnavailable`, `AnswerOutcome`,
+  `ProceduresAnswerService.answer`/`stream_answer`) is unchanged. Verified against the actual model
+  definitions — correct and well-documented in the module docstring.
+- The `kind=="lookup"` / empty-rows `fallback_lookup` branch (service.py `_lookup_answer` +
+  its two call sites in `answer()`) is implemented but not exercised by any of the task's 4 mandated
+  tests. Not a defect, but flagged for follow-up test coverage — not filed as a ledger issue since it's
+  in-scope code with no confirmed bug, just a coverage gap the task's own Test Specification didn't cover.

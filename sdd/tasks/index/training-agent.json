@@ -566,7 +566,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -577,8 +577,9 @@
       "parallelism_notes": "wraps ProcedureVerifier from TASK-3722 (parrot_tools/procedures/verifier.py); presigns via figures.presign from TASK-3705 (manuals/figures.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3723-procedures-service.md"
+      "completed_at": "2026-09-25T18:50:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3723-procedures-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3724",
