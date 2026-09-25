@@ -20,7 +20,8 @@ Example:
     # Creates tools like: petstore_get_pet, petstore_post_pet, etc.
 """
 
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Union
+import asyncio
 import contextlib
 import re
 import json
@@ -42,6 +43,10 @@ except ImportError:
 from ..interfaces.http import HTTPService
 from .toolkit import AbstractToolkit
 from .abstract import ToolResult
+
+
+#: Async hook performing a login and returning the session cookies to send on every request.
+LoginHook = Callable[[HTTPService], Awaitable[Dict[str, str]]]
 
 
 class OpenAPIToolkit(AbstractToolkit):
@@ -82,6 +87,8 @@ class OpenAPIToolkit(AbstractToolkit):
         exclude_methods: Optional[Sequence[str]] = None,
         operation_filter: Optional[Callable[[str, str], bool]] = None,
         max_tools: Optional[int] = None,
+        login_hook: Optional[LoginHook] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
         """
@@ -106,6 +113,8 @@ class OpenAPIToolkit(AbstractToolkit):
             exclude_methods: HTTP methods to exclude
             operation_filter: Callable deciding whether a method and raw path are kept
             max_tools: Maximum number of generated operations
+            login_hook: Async callback that logs in and returns session cookies for cookie authentication
+            extra_headers: Headers included on every request, including cookie-session requests
             **kwargs: Additional toolkit configuration
         """
         super().__init__(**kwargs)
@@ -161,6 +170,15 @@ class OpenAPIToolkit(AbstractToolkit):
                 # For query params, we'll add it per request
                 else:
                     creds["apikey"] = api_key
+
+        # Cookie-session mode (FEAT-602): the toolkit owns the jar; HTTPService is stateless per call.
+        if auth_type == "cookie" and login_hook is None:
+            raise ValueError("auth_type='cookie' requires a login_hook")
+        self._login_hook = login_hook
+        self._cookies: Dict[str, str] = {}
+        self._session_lock = asyncio.Lock()
+        if extra_headers:
+            headers.update(extra_headers)
 
         # Initialize HTTPService
         self.http_service = HTTPService(
@@ -494,6 +512,83 @@ class OpenAPIToolkit(AbstractToolkit):
             return False
         return True
 
+    async def _ensure_session(self, force: bool = False) -> None:
+        """Log in through ``login_hook`` when the jar is empty (or ``force``); cookie mode only.
+
+        Lock-serialized and double-checked so concurrent first calls trigger exactly one login.
+
+        Args:
+            force: Whether to refresh an existing session.
+        """
+        if self.auth_type != "cookie":
+            return
+
+        async with self._session_lock:
+            if force or not self._cookies:
+                self._cookies = dict(await self._login_hook(self.http_service))
+
+    async def set_cookies(self, cookies: Dict[str, str]) -> None:
+        """Replace the jar with externally obtained cookies (e.g. exported from a browser).
+
+        Args:
+            cookies: Session cookies to retain for future cookie-mode requests.
+        """
+        async with self._session_lock:
+            self._cookies = dict(cookies)
+
+    def get_cookies(self) -> Dict[str, str]:
+        """Return a copy of the cookie jar. Callers must never log the values.
+
+        Returns:
+            A detached copy of the current cookie jar.
+        """
+        return dict(self._cookies)
+
+    async def _cookie_request(self, method: str, url: str, request_kwargs: Dict[str, Any]) -> tuple:
+        """Send one request in cookie mode; re-login once on 401; never transport-retry writes.
+
+        Args:
+            method: HTTP method for the request.
+            url: Fully resolved operation URL.
+            request_kwargs: Generated operation request arguments.
+
+        Returns:
+            ``(result, error)`` like ``HTTPService._request``; ``error`` carries ``status`` on HTTP errors.
+        """
+        await self._ensure_session()
+        is_write = method.upper() in {"POST", "PUT", "PATCH", "DELETE"}
+
+        for attempt in range(2):
+            cookie_request_kwargs = dict(request_kwargs)
+            cookie_request_kwargs["headers"] = {
+                **self.http_service.headers,
+                **request_kwargs.get("headers", {}),
+            }
+            cookie_request_kwargs["cookies"] = dict(self._cookies)
+            if is_write:
+                cookie_request_kwargs["num_retries"] = 0
+
+            response, error = await self.http_service._request(
+                **cookie_request_kwargs,
+                full_response=True,
+                use_proxy=False,
+                raise_for_status=False,
+            )
+            if error:
+                return response, error
+
+            status = response.status_code
+            if status == 401 and attempt == 0:
+                await self._ensure_session(force=True)
+                continue
+
+            try:
+                return await self.http_service.process_response(response, url)
+            except ConnectionError as exc:
+                return None, {"status": status, "message": str(exc)[:500]}
+
+        return None, {"status": 401, "message": "Unauthorized after session refresh"}
+
     def _normalize_path_for_method_name(self, path: str) -> str:
         """
         Normalize path for method name.
@@ -790,12 +885,15 @@ class OpenAPIToolkit(AbstractToolkit):
                     request_kwargs["data"] = body_data
 
                 # Execute request via HTTPService
-                result, error = await self_ref.http_service._request(
-                    **request_kwargs,
-                    full_response=False,
-                    use_proxy=False,
-                    raise_for_status=False,
-                )
+                if self_ref.auth_type == "cookie":
+                    result, error = await self_ref._cookie_request(method, url, request_kwargs)
+                else:
+                    result, error = await self_ref.http_service._request(
+                        **request_kwargs,
+                        full_response=False,
+                        use_proxy=False,
+                        raise_for_status=False,
+                    )
 
                 if error:
                     return ToolResult(
