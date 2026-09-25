@@ -1,0 +1,8 @@
+- [ ] Upload conflict default: `replace` (S3 parity) vs `fail`/`rename`, and should it be a constructor kwarg (`conflict_behavior=`)? — *Owner: Jesus* (assumed `replace`, kwarg exposed).
+- [ ] Sharing-link defaults: `type="view"` vs `"edit"`, and should `expiry=0` mean "no expiration"? — *Owner: Jesus* (assumed `view`, `expiry<=0` → no expiration).
+- [ ] Batch concurrency default (5) and per-item retry budget (3) — confirm against the tenant's throttling profile. — *Owner: Jesus*.
+- [ ] Should `manager_name` values be `"sharepointfile"` / `"onedrivefile"` (S3 convention `"s3file"`) or `"sharepoint"` / `"onedrive"`? — *Owner: Jesus*.
+- [ ] Should `FileManagerToolArgs.operation` gain `find`/`batch_upload`/`batch_download` so agents can reach the extension methods, or is v1 limited to the nine interface ops? — *Owner: Jesus* (assumed: nine ops only; batch/find via direct manager use).
+- [ ] Add a dedicated `ai-parrot[msgraph]` extra (msgraph-sdk + azure-identity + kiota auth) so `FileManagerFactory.create("sharepoint")` has a documented install path outside `[agents]`? — *Owner: Jesus*.
+- [ ] Live-gate tenant: which site/library and which user's OneDrive are safe to write to, and under which env var names (`SHAREPOINT_*` exist in conf; a `PARROT_LIVE_SHAREPOINT_SITE`-style test knob does not)? — *Owner: Jesus*.
+- [ ] After this feature, should flowtask's `SharepointClient` drop its `drive.type=onedrive` shim in favour of `OneDriveFileManager` (separate repo follow-up)? — *Owner: Jesus*.
