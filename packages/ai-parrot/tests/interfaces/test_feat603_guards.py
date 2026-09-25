@@ -144,58 +144,44 @@ def test_public_signatures_unchanged():
 
 async def test_sharepoint_manager_never_populates_srcfiles_across_operations():
     """AC23: _srcfiles stays empty across every SharePoint manager operation."""
-    # Import the fakes and the manager
+    import io
+
     from parrot.interfaces.file.sharepoint import SharePointFileManager
-    from tests.interfaces._graph_fakes import FakeAiohttpSession, make_sharepoint_client
 
-    # Create a fake client
-    client = make_sharepoint_client()
+    from ._graph_fakes import FakeAiohttpSession, FakeDrive, FakeGraphClient, make_sharepoint_client
 
-    # Install the fake session
-    original_session = client.session
-    client.session = FakeAiohttpSession()
+    fake = FakeGraphClient({"drive-1": FakeDrive()})
+    client = make_sharepoint_client(fake, drive_id="drive-1")
+    fake.drives_by_id["drive-1"].put_file("test.txt", b"hello world")
 
-    # Create the manager and adopt the client
-    manager = SharePointFileManager(
-        site_id="fake-site-id",
-        library="Documents",
-        client=client,
-    )
+    manager = SharePointFileManager("TeamSite")
+    manager.adopt_client(client)
+    session = FakeAiohttpSession(fake)
+    manager._http_session = lambda: session
 
     # Verify _srcfiles is empty initially
     assert client._srcfiles == [], "Initial _srcfiles should be empty"
 
-    # Test list_files
-    await manager.list_files(path="/")
+    await manager.list_files()
     assert client._srcfiles == [], "_srcfiles should be empty after list_files"
 
-    # Test list_entries
-    await manager.list_entries(path="/")
+    await manager.list_entries()
     assert client._srcfiles == [], "_srcfiles should be empty after list_entries"
 
-    # Test find_files
-    await manager.find_files(path="/", pattern="*.txt")
+    await manager.find_files(keywords="test")
     assert client._srcfiles == [], "_srcfiles should be empty after find_files"
 
-    # Test upload_file (need a small file to avoid upload session)
-    await manager.upload_file(path="/test.txt", content=b"hello world")
+    await manager.upload_file(io.BytesIO(b"hello world"), "upload.txt")
     assert client._srcfiles == [], "_srcfiles should be empty after upload_file"
 
-    # Test download_file
-    await manager.download_file(path="/test.txt")
+    await manager.download_file("test.txt", io.BytesIO())
     assert client._srcfiles == [], "_srcfiles should be empty after download_file"
 
-    # Test copy_file
-    await manager.copy_file(source="/test.txt", destination="/test_copy.txt")
+    await manager.copy_file("test.txt", "test_copy.txt")
     assert client._srcfiles == [], "_srcfiles should be empty after copy_file"
 
-    # Test rename_file
-    await manager.rename_file(source="/test.txt", new_name="renamed.txt")
+    await manager.rename_file("test_copy.txt", "renamed.txt")
     assert client._srcfiles == [], "_srcfiles should be empty after rename_file"
 
-    # Test delete_file
-    await manager.delete_file(path="/test.txt")
+    await manager.delete_file("renamed.txt")
     assert client._srcfiles == [], "_srcfiles should be empty after delete_file"
-
-    # Restore original session
-    client.session = original_session
