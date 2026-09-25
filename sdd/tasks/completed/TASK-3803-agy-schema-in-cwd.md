@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-606 — google_coding dispatcher — sandbox-readable JSON schema
 **Spec**: `sdd/specs/fixgroup-1a7f930d81a4.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -153,4 +153,13 @@ async def test_schema_cleaned_up_after_dispatch(dispatcher, brief, monkeypatch):
 ---
 
 ## Completion Note
-(Agent fills this in when done)
+Implemented in `google_coding.py`: `_materialize_json_schema(output_model, cwd)`
+now writes the schema into a per-dispatch `mkdtemp(prefix=".dev_loop_agy_", dir=cwd)`
+directory carrying a `.gitignore` of `*`; new `_cleanup_json_schema(path)` removes
+that directory in `dispatch()`'s `finally`. Deviation from the blueprint: a unique
+per-dispatch dir instead of a shared `.dev_loop_agy/` — the shared dir had a race
+between the "only .gitignore left" check + rmdir and a concurrent dispatch's
+mkstemp (spec §2 updated). Tests: 3 new cases (schema inside cwd + cleanup on
+success and on non-zero exit, `git status` clean in a `git init` repo, distinct
+dirs for concurrent schemas); `test_google_coding_dispatcher.py` 18 passed; ruff
+and black clean. Resolves ledger `issue:e7bdce192812`.

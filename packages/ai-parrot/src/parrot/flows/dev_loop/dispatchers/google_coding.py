@@ -48,6 +48,13 @@ from parrot.flows.dev_loop.models import (
 )
 from parrot.flows.dev_loop.session_state import SessionHost
 
+# agy's ``--sandbox`` can only read its workspace (the dispatch ``cwd``), so the
+# ``--json-schema`` file must live inside it. The directory carries its own
+# ``.gitignore`` (``*``) so the file never shows up in — or gets committed from —
+# the worktree, whatever repository it belongs to.
+_SCHEMA_DIR_PREFIX = ".dev_loop_agy_"
+_SCHEMA_DIR_GITIGNORE = ".gitignore"
+
 
 class GoogleCodingDispatcher:
     """Thin orchestration class over ``agy --print ... --output-format stream-json``.
@@ -171,7 +178,7 @@ class GoogleCodingDispatcher:
 
         async with self._semaphore:
             try:
-                schema_path = self._materialize_json_schema(output_model)
+                schema_path = self._materialize_json_schema(output_model, cwd)
                 prompt = self._build_agy_prompt(profile, brief, output_model, cwd=cwd)
                 command = self._build_command(
                     profile=profile,
@@ -282,10 +289,7 @@ class GoogleCodingDispatcher:
                 _SESSION_HOST_CTX.reset(_host_token)
                 _DISPATCH_LABELS_CTX.reset(_labels_token)
                 if schema_path:
-                    try:
-                        os.unlink(schema_path)
-                    except OSError:
-                        pass
+                    self._cleanup_json_schema(schema_path)
 
     def _build_command(
         self,
@@ -358,20 +362,46 @@ class GoogleCodingDispatcher:
         if common != base:
             raise DispatchExecutionError(f"cwd {cwd!r} is not under WORKTREE_BASE_PATH={base!r}")
 
-    def _materialize_json_schema(self, output_model: Type[BaseModel]) -> str:
+    def _materialize_json_schema(self, output_model: Type[BaseModel], cwd: str) -> str:
+        """Write the output-model JSON schema to a sandbox-readable file.
+
+        The file is created inside ``cwd`` (the only tree ``agy --sandbox`` can
+        read), in a per-dispatch private directory whose own ``.gitignore``
+        hides it from git. The directory is unique, so concurrent dispatches in
+        the same ``cwd`` never share (or race on removing) it.
+
+        Args:
+            output_model: Pydantic model whose schema agy must conform to.
+            cwd: The dispatch working directory (the task worktree).
+
+        Returns:
+            The absolute path of the written schema file.
+        """
         schema = output_model.model_json_schema()
-        fd, path = tempfile.mkstemp(prefix="dev_loop_agy_schema_", suffix=".json")
+        schema_dir = tempfile.mkdtemp(prefix=_SCHEMA_DIR_PREFIX, dir=os.path.abspath(cwd))
+        path = os.path.join(schema_dir, "dev_loop_agy_schema.json")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            with open(os.path.join(schema_dir, _SCHEMA_DIR_GITIGNORE), "w", encoding="utf-8") as fh:
+                fh.write("*\n")
+            with open(path, "w", encoding="utf-8") as fh:
                 json.dump(schema, fh)
         except Exception:
-            os.close(fd)
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+            shutil.rmtree(schema_dir, ignore_errors=True)
             raise
         return path
+
+    @staticmethod
+    def _cleanup_json_schema(path: str) -> None:
+        """Remove the per-dispatch schema directory created for ``path``.
+
+        Failures are ignored, as for the previous temp-file cleanup.
+
+        Args:
+            path: The schema file returned by :meth:`_materialize_json_schema`.
+        """
+        schema_dir = os.path.dirname(path)
+        if os.path.basename(schema_dir).startswith(_SCHEMA_DIR_PREFIX):
+            shutil.rmtree(schema_dir, ignore_errors=True)
 
     async def _create_process(self, command: Sequence[str], cwd: str) -> Any:
         return await asyncio.create_subprocess_exec(
