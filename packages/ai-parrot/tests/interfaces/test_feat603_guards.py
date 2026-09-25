@@ -127,6 +127,7 @@ def test_public_signatures_unchanged():
         ],
     }
 
+    current_keys = set()
     for path, classes in TARGETS.items():
         src = (ROOT / path).read_text(encoding="utf-8")
         for node in ast.parse(src).body:
@@ -136,10 +137,21 @@ def test_public_signatures_unchanged():
                         not item.name.startswith("_") or item.name == "__init__"
                     ):
                         key = f"{path}::{node.name}.{item.name}"
+                        current_keys.add(key)
                         if key in signatures:
                             current_shape = _shape(item)
                             expected_shape = signatures[key]
                             assert current_shape == expected_shape, f"Signature mismatch for {key}"
+
+    # AC19 gap fix: the loop above only catches a *changed* signature for a method that
+    # still exists. It silently misses a *removed* or *renamed* public method, because it
+    # only ever looks up `signatures[key]` for a `key` derived from *current* source. Assert
+    # the reverse direction too: every snapshotted key for one of these target files must
+    # still be present in current source.
+    target_paths = set(TARGETS)
+    snapshotted_target_keys = {k for k in signatures if k.split("::", 1)[0] in target_paths}
+    missing = snapshotted_target_keys - current_keys
+    assert not missing, f"Public method(s) removed or renamed since the snapshot: {sorted(missing)}"
 
 
 async def test_sharepoint_manager_never_populates_srcfiles_across_operations():

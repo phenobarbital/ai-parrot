@@ -1,5 +1,5 @@
 {
- "base_commit": "a6971f381",
+ "base_commit": "8b5c42b3a4769145cc35ad491fe35a858a6e336b",
  "signatures": {
   "packages/ai-parrot-tools/src/parrot_tools/o365/bundle.py::Office365FileManagementToolkit.__init__": [
    [
