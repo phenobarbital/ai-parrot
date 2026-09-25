@@ -1,4 +1,5 @@
 """relink_tips matrix (FEAT-601 AC6)."""
+
 from __future__ import annotations
 
 import pytest
@@ -53,9 +54,15 @@ async def test_relink_tips_matrix() -> None:
     current = [
         _step(manual_id, "c1", source_identity="A1", text="Remove the cover plate", order=3),  # renumbered
         _step(manual_id, "c2", source_identity="B2", text="  Torque  BOLT to 20 nm  ", order=1),  # reworded, same hash
-        _step(manual_id, "c3", source_identity="B3", text="Torque the wheel nut to 110 Nm exactly", order=2),  # changed torque
-        _step(manual_id, "c5a", source_identity="B5a", text="Remove access screw", order=6),  # duplicate hash, higher order
-        _step(manual_id, "c5b", source_identity="B5b", text="Remove access screw", order=4),  # duplicate hash, lower order (wins)
+        _step(
+            manual_id, "c3", source_identity="B3", text="Torque the wheel nut to 110 Nm exactly", order=2
+        ),  # changed torque
+        _step(
+            manual_id, "c5a", source_identity="B5a", text="Remove access screw", order=6
+        ),  # duplicate hash, higher order
+        _step(
+            manual_id, "c5b", source_identity="B5b", text="Remove access screw", order=4
+        ),  # duplicate hash, lower order (wins)
         _step(manual_id, "c_new", source_identity="B_new", text="A brand new unrelated step", order=5),  # insert
     ]
 
@@ -132,11 +139,19 @@ async def test_relink_is_idempotent() -> None:
         _step(manual_id, "c2", source_identity="X2", text="Replace filter", order=2),
     ]
     tip1 = await add_tip(
-        store, None, step_id=previous[0].identity.step_id, text="tip1", author_employee_id="tech-1",
+        store,
+        None,
+        step_id=previous[0].identity.step_id,
+        text="tip1",
+        author_employee_id="tech-1",
         source_revision="rev-a",
     )
     tip2 = await add_tip(
-        store, None, step_id=previous[1].identity.step_id, text="tip2", author_employee_id="tech-1",
+        store,
+        None,
+        step_id=previous[1].identity.step_id,
+        text="tip2",
+        author_employee_id="tech-1",
         source_revision="rev-a",
     )
 
@@ -174,11 +189,19 @@ async def test_relink_collects_failures() -> None:
     ]
     setup_store = FakeGraphStore()
     tip_a = await add_tip(
-        setup_store, None, step_id=previous[0].identity.step_id, text="tip-a", author_employee_id="tech-1",
+        setup_store,
+        None,
+        step_id=previous[0].identity.step_id,
+        text="tip-a",
+        author_employee_id="tech-1",
         source_revision="rev-a",
     )
     tip_b = await add_tip(
-        setup_store, None, step_id=previous[1].identity.step_id, text="tip-b", author_employee_id="tech-1",
+        setup_store,
+        None,
+        step_id=previous[1].identity.step_id,
+        text="tip-b",
+        author_employee_id="tech-1",
         source_revision="rev-a",
     )
 
@@ -210,7 +233,11 @@ async def test_relink_never_crosses_manuals() -> None:
     current = [_step("manual-b", "s1", source_identity=None, text=text, order=1)]  # same hash, wrong manual
 
     tip = await add_tip(
-        store, None, step_id=previous[0].identity.step_id, text="cross-manual tip", author_employee_id="tech-1",
+        store,
+        None,
+        step_id=previous[0].identity.step_id,
+        text="cross-manual tip",
+        author_employee_id="tech-1",
         source_revision="rev-a",
     )
 
@@ -227,7 +254,11 @@ async def test_add_and_retire_tip() -> None:
     """add_tip writes tech_tip + tech_tip_on with origin=technician; retire flips active and appends history."""
     store = FakeGraphStore()
     tip = await add_tip(
-        store, None, step_id="manual-x:s1", text="Grease the bearing first", author_employee_id="tech-7",
+        store,
+        None,
+        step_id="manual-x:s1",
+        text="Grease the bearing first",
+        author_employee_id="tech-7",
         source_revision="rev-a",
     )
 

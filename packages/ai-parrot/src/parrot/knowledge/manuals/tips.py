@@ -4,6 +4,7 @@ Tips live in technician-owned collections the graph loader never reconciles.
 Re-linking follows R1 strictly: source identity, then exact content-hash
 equality; text similarity only ever yields curator candidates.
 """
+
 from __future__ import annotations
 
 import logging
@@ -63,7 +64,9 @@ def _text_similarity(left: str, right: str) -> float:
     return float(fuzz.token_sort_ratio(left, right)) / 100.0
 
 
-def _match(previous: Step, current: Sequence[Step], *, manual_id: str) -> tuple[str, str | None, list[tuple[str, float]]]:
+def _match(
+    previous: Step, current: Sequence[Step], *, manual_id: str
+) -> tuple[str, str | None, list[tuple[str, float]]]:
     """Return (method, new_step_id, candidates) following the fixed R1 order."""
     manual_prefix = f"{manual_id}:"
     scoped = [step for step in current if step.identity.step_id.startswith(manual_prefix)]
@@ -149,9 +152,7 @@ async def relink_tips(
                 break
             except Exception as exc:  # noqa: BLE001 - collected, never raised
                 last_error = exc
-                logger.warning(
-                    "relink_tips %s: tip %s failed on attempt %d: %s", manual_id, tip_id, attempt + 1, exc
-                )
+                logger.warning("relink_tips %s: tip %s failed on attempt %d: %s", manual_id, tip_id, attempt + 1, exc)
         if outcome is None:
             report.failed.append(tip_id)
             logger.warning("relink_tips %s: tip %s failed after retry: %s", manual_id, tip_id, last_error)
@@ -252,8 +253,14 @@ async def add_tip(
 ) -> Tip:
     """Write a technician tip + its ``tech_tip_on`` edge; author comes from the trusted context, never the model."""
     tip = Tip(
-        tip_id=f"tip-{uuid.uuid4().hex[:16]}", text=text, origin="technician", author_employee_id=author_employee_id,
-        created_at=now(), source_revision=source_revision, attached_step_id=step_id, history=[],
+        tip_id=f"tip-{uuid.uuid4().hex[:16]}",
+        text=text,
+        origin="technician",
+        author_employee_id=author_employee_id,
+        created_at=now(),
+        source_revision=source_revision,
+        attached_step_id=step_id,
+        history=[],
     )
     await graph_store.upsert_document(ctx, TIP_COLLECTION, {"_key": tip.tip_id, **tip.model_dump(mode="json")})
     linked_at = now().isoformat()
