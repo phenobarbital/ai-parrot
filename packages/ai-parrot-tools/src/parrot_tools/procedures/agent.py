@@ -150,7 +150,9 @@ class ProceduresAgent(Agent):
         """
         if isinstance(outcome, Clarification):
             lines = [outcome.reason]
-            lines.extend(f"{index}. {_candidate_label(candidate)}" for index, candidate in enumerate(outcome.candidates, 1))
+            lines.extend(
+                f"{index}. {_candidate_label(candidate)}" for index, candidate in enumerate(outcome.candidates, 1)
+            )
             return "\n".join(lines)
 
         answer = outcome.answer
