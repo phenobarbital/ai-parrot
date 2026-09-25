@@ -82,9 +82,7 @@ async def test_ddl_ingest_then_tool_lookup(svc: SchemaPlaneService) -> None:
     assert not report.parse_errors
 
     tools = {tool.name: tool for tool in create_schema_tools(svc.store, None, WikiProjectConfig(), service=svc)}
-    result = await tools["wiki_schema_lookup"]._execute(
-        ref=report.created[0].replace("table:taskmem/", "taskmem:")
-    )
+    result = await tools["wiki_schema_lookup"]._execute(ref=report.created[0].replace("table:taskmem/", "taskmem:"))
 
     assert result.success
     assert result.result["ddl"].startswith("CREATE TABLE")
