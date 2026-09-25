@@ -407,10 +407,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3739
+- Feature: hooba-toolkit
+- Implementation SHA: c925ad9da3ac989650dcb04e454686aae13f5abd
+- Closed at (UTC): 2026-09-25T18:16:21+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_tier_engine_outcome | failed (workspace-wide import-impact sweep; 105 pre-existing unrelated failures across other distributions, same as chunk0/chunk1) |
+| orchestrator_targeted_verification | packages/ai-parrot-tools/tests/hooba/ full directory (30 tests across all TASK-3733/3734/3735/3737/3738/3739 test files): 30/30 passed. ruff clean on all 6 new bank/fixture files. |
+| seat_summary | Seat: haiku(native)->sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~359.8s · Tokens: ~117458 total (in/out breakdown n/a) |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions temporarily copied in from the main checkout since worktrees have no compiled .so; removed afterward (never committed). Note: the parrot-sdd-coder MCP server's execution state was lost mid-wave (server restart); this validation log was recovered from durable disk storage by content hash, independent of the lost execution_id. |
