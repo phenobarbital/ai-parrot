@@ -1,0 +1,40 @@
+The original request, preserved (session cookie and personal data redacted).
+The full source is at `sdd/state/FEAT-602/source.md`.
+
+> Hooba (https://app.hooba.com/) es un software contable de gestión exigido por
+> un convenio "Red.es", posee un API openAPI: https://api.hooba.com/api/doc
+>
+> Propiedades a registrar en `.env`: `HOOBA_ACCOUNT_ID`, `HOOBA_MEMBER_ID`,
+> `HOOBA_USER_ID`, `HOOBA_SUBSCRIPTION_ID`; URLs como
+> `https://api.hooba.com/accounts/{accountId}/member`, con headers
+> `cookie: sid=…`, `origin: https://app.hooba.com`, `x-hooba-language: es`,
+> `ngsw-bypass: true`. Authentication: `POST /auth/login {username, password}`
+> con `HOOBA_USERNAME` / `HOOBA_PASSWORD`.
+>
+> **Task**: Construir una interfaz HTTP openAPI para interactuar con Hooba tanto
+> via http (API REST openAPI) como vía web con playwright (operativa disponible
+> previamente), construir una HoobaToolkit que combine ambas operativas (usar la
+> API cuando se deba, via web para automatizar operaciones disponibles vía web).
+> El Toolkit le debe permitir a un agente de ai-parrot:
+> - crear facturas en modo borrador
+> - declarar gastos y compras en modo borrador
+> - subir un excel de relación de gastos del banco (BBVA) para convertirlos en
+>   declaraciones de gastos, según la normativa vigente del Reino de España
+>   para autónomos
+
+Hooba publishes a real OpenAPI 3.0 document at `https://api.hooba.com/api/doc.json`
+(version 2026.6.17, 656 paths), and creating an invoice or a purchase invoice
+through it yields `state=draft` while issuing and confirming are separate calls —
+so all three requested capabilities are API-first, and the Playwright half is a
+fallback for session recovery, PDF downloads and gaps, not the data-entry path.
+The repo already ships the pieces: `OpenAPIToolkit` generates tools from a spec
+but only knows bearer/apikey/basic auth (Hooba needs a cookie session, and the
+spec declares no security scheme), FEAT-453's `BusinessAutomationToolkit`
+provides the draft/submit gate, plans directory, checkpoints and broker-backed
+credentials, and `WebBrowsingToolkit` runs the existing — untracked,
+navigation-only — Hooba catalog on Playwright. What does not exist is a BBVA
+layout parser or any AEAT deductibility rule (Spec A, FEAT-478, was never
+decomposed). The recommendation is a new `parrot_tools/hooba/` package built as
+a cookie-authenticated, tag-allowlisted `OpenAPIToolkit` subclass plus composite
+draft tools, a private-catalog web adapter, a BBVA parser and a v1 rule table,
+with every legal-effect operation excluded from v1. Next step: `/sdd-spec`.
