@@ -7,6 +7,7 @@ updates to the coordinator.
 
 Uses composition (NOT inheritance) from TelegramAgentWrapper.
 """
+
 import asyncio
 import logging
 from typing import TYPE_CHECKING, Optional
@@ -22,6 +23,7 @@ from .payload import DataPayload
 from ..filters import BotMentionedFilter
 from ..utils import extract_query_from_mention
 from ...parser import parse_response, ParsedResponse
+from ...media_download import MediaDownloadRefused, allowed_media_hosts, temp_download
 from ....models.outputs import OutputMode
 
 if TYPE_CHECKING:
@@ -119,9 +121,7 @@ class CrewAgentWrapper:
         self.config = config or {}
         self.payload = payload
         self.router = Router()
-        self.logger = logging.getLogger(
-            f"{__name__}.{card.telegram_username}"
-        )
+        self.logger = logging.getLogger(f"{__name__}.{card.telegram_username}")
         self._register_handlers()
 
     # ------------------------------------------------------------------
@@ -167,9 +167,7 @@ class CrewAgentWrapper:
         chat_id = message.chat.id
 
         # Start typing indicator
-        typing_task = asyncio.create_task(
-            self._typing_indicator(chat_id)
-        )
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
             # Notify coordinator: busy
@@ -192,15 +190,14 @@ class CrewAgentWrapper:
             typing_task.cancel()
 
             # Send text response with sender mention prefix
-            await self._send_response(
-                chat_id, parsed, sender_mention, message.message_id
-            )
+            await self._send_response(chat_id, parsed, sender_mention, message.message_id)
 
         except Exception as e:
             typing_task.cancel()
             self.logger.error(
                 "Error processing mention from %s: %s",
-                sender_mention, e,
+                sender_mention,
+                e,
                 exc_info=True,
             )
             error_text = format_reply(
@@ -216,9 +213,7 @@ class CrewAgentWrapper:
             typing_task.cancel()
             # Notify coordinator: ready
             try:
-                await self.coordinator.on_agent_status_change(
-                    self.card.telegram_username, "ready"
-                )
+                await self.coordinator.on_agent_status_change(self.card.telegram_username, "ready")
             except Exception:
                 pass  # Best effort
 
@@ -239,9 +234,7 @@ class CrewAgentWrapper:
         chat_id = message.chat.id
         caption = message.caption or "Analyze this document"
 
-        typing_task = asyncio.create_task(
-            self._typing_indicator(chat_id)
-        )
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
             # Notify coordinator: busy
@@ -252,9 +245,7 @@ class CrewAgentWrapper:
             )
 
             # Download the document
-            file_path = await self.payload.download_document(
-                self.bot, message
-            )
+            file_path = await self.payload.download_document(self.bot, message)
             if file_path is None:
                 typing_task.cancel()
                 await self.bot.send_message(
@@ -277,18 +268,14 @@ class CrewAgentWrapper:
             parsed = parse_response(response)
             typing_task.cancel()
 
-            await self._send_response(
-                chat_id, parsed, sender_mention, message.message_id
-            )
+            await self._send_response(chat_id, parsed, sender_mention, message.message_id)
 
             # Cleanup the downloaded file
             self.payload.cleanup_file(file_path)
 
         except Exception as e:
             typing_task.cancel()
-            self.logger.error(
-                "Error processing document: %s", e, exc_info=True
-            )
+            self.logger.error("Error processing document: %s", e, exc_info=True)
             error_text = format_reply(
                 sender_mention,
                 "Sorry, I couldn't process that document.",
@@ -301,9 +288,7 @@ class CrewAgentWrapper:
         finally:
             typing_task.cancel()
             try:
-                await self.coordinator.on_agent_status_change(
-                    self.card.telegram_username, "ready"
-                )
+                await self.coordinator.on_agent_status_change(self.card.telegram_username, "ready")
             except Exception:
                 pass
 
@@ -346,6 +331,17 @@ class CrewAgentWrapper:
             )
             if i < len(chunks) - 1:
                 await asyncio.sleep(_SEND_DELAY)
+
+        # Remote image URLs (FEAT-601 M12) — bounded download, then the same send_photo path
+        for url in getattr(parsed, "image_urls", []) or []:
+            try:
+                async with temp_download(url, allowed_hosts=allowed_media_hosts()) as path:
+                    await self.bot.send_photo(chat_id=chat_id, photo=FSInputFile(path))
+                await asyncio.sleep(_SEND_DELAY)
+            except MediaDownloadRefused as exc:
+                self.logger.warning("Refused image URL %s: %s", url, exc)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("Failed to send image URL %s: %s", url, exc)
 
         # Send attachments (images)
         for image_path in parsed.images:
@@ -409,9 +405,7 @@ class CrewAgentWrapper:
         """Background task that sends typing indicator every 4 seconds."""
         try:
             while True:
-                await self.bot.send_chat_action(
-                    chat_id=chat_id, action=ChatAction.TYPING
-                )
+                await self.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
                 await asyncio.sleep(4)
         except asyncio.CancelledError:
             pass
