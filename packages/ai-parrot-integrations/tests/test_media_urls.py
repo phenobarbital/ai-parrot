@@ -1,4 +1,5 @@
 """FEAT-601 M12 — parse_response carries URL media separately (TASK-3716)."""
+
 from __future__ import annotations
 
 from pathlib import Path

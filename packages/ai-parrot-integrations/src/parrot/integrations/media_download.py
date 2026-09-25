@@ -3,6 +3,7 @@
 Used by channels that cannot send a remote URL directly (Telegram ``send_photo``) and as the WhatsApp
 fallback. Default deny: only hosts in the allowlist are fetched, on every redirect hop.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -90,9 +91,7 @@ async def download_to_temp(
                     if resp.status in _REDIRECT_STATUSES:
                         location = resp.headers.get("Location")
                         if not location:
-                            raise MediaDownloadRefused(
-                                f"Redirect from {current_url!r} has no Location header"
-                            )
+                            raise MediaDownloadRefused(f"Redirect from {current_url!r} has no Location header")
                         current_url = urljoin(current_url, location)
                         _check_host(current_url, allowed_hosts)
                         continue

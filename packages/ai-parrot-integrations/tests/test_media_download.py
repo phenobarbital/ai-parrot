@@ -1,4 +1,5 @@
 """FEAT-601 M12 — bounded media download (TASK-3716)."""
+
 from __future__ import annotations
 
 import asyncio
