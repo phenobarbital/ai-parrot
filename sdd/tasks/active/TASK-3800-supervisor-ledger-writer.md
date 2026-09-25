@@ -354,10 +354,17 @@ See the CREATE block above — eight named tests with docstrings; bodies FILL IN
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
+**Completed by**: sdd-worker (native seat `sonnet` via `sdd-coder` Agent)
+**Date**: 2026-09-25
+**Notes**: `ValidationSupervisor._supervise` now threads `first_invocation`/`plan` and calls
+the new `_record_invocation_outcome` (green -> `record_green_escalation` with core+cap
+blobs, red/timed-out -> `record_red_run`, no-op for non-escalated targets, never raises —
+logged and swallowed) after every invocation. `start()` writes the resolved Open
+Question 3 selection-summary header (`# selection tier=... escalated=[...]
+skipped_escalations=[...]` + one `# note:` per plan note) before the first invocation
+line in both the empty-plan and non-empty-plan branches. New
+`test_supervisor_ledger.py` (8 tests): 4 M1 unit tests plus a ledger-failure-swallowed
+test, the OQ3 selection-header test, and both spec §4 integration tests using the real
+selector against real cap-escalation git fixtures. Clean delivery, no corrections needed.
+Feature's own declared test scope now 630 passed (up from 621). ruff + black clean.
 **Deviations from spec**: none

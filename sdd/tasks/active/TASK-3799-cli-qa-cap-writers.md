@@ -258,10 +258,19 @@ See the test MODIFY blocks above — three tests with docstrings; bodies FILL IN
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
+**Completed by**: sdd-worker (seat `gpt-5.6-terra` via parrot-sdd-coder MCP; 1 review fix
+by orchestrator, commit `8acd189f9`)
+**Date**: 2026-09-25
+**Notes**: `scripts/sdd/select_tests.py --run` and `nodes/qa.py::_record_green_escalations`
+now record cap escalations (green blobs + impacted hash) using the same
+`record_green_escalation`/`record_red_run` contract as core escalations. Delivery had one
+confirmed defect (caught manually): a pre-existing mock assertion in
+`test_qanode_feature_tier.py` was not updated to match the extended (5-positional-arg)
+`record_green_escalation` call the SAME task introduced, so it failed on the added
+trailing `impact_files=[]`/`impacted_hashes={}` args. Fixed (commit `8acd189f9`). Recorded
+as `coder-feedback:db0c8e94a2019c2f1e9ea847` / `coder-review:a63e717afa5d91a64ff51384`.
+Own declared scope (`tests/sdd_scripts/test_select_tests.py` 8 passed,
+`test_qanode_feature_tier.py` 4 passed) green after fix; ruff clean. Merge-tier gate red
+confirmed unrelated pre-existing failure (`AttributeError: dispatchers.nova has no
+attribute NovaClient`, different subsystem entirely).
 **Deviations from spec**: none
