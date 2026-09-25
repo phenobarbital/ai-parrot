@@ -1,4 +1,5 @@
 """FEAT-602 TASK-3747 — the example's --smoke path against the fake server."""
+
 from __future__ import annotations
 
 import importlib.util

@@ -5,6 +5,7 @@ Usage::
     python examples/agents/finance/hooba_agent.py --smoke          # no LLM: whoami + draft invoices
     python examples/agents/finance/hooba_agent.py "crea un borrador de factura para ACME por 100 €"
 """
+
 import argparse
 import asyncio
 import json
