@@ -545,7 +545,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -555,8 +555,9 @@
       "parallelism_notes": "verifies AssembledProcedure from TASK-3721 (parrot_tools/procedures/assembly.py) ; references manuals/library.py (TASK-3713) only as the documented implementer of the local EvidenceReader protocol — verifier imports nothing from it, tests use a fake reader",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3722-procedures-verifier.md"
+      "completed_at": "2026-09-25T18:37:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3722-procedures-verifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3723",

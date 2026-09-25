@@ -358,10 +358,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3722
+- Feature: training-agent
+- Implementation SHA: 85344b93651a6213b6bb4cec05fc9041dec7c97b
+- Closed at (UTC): 2026-09-25T18:37:54+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet(native, retry_native attempt 2) - Backend: native - Model: sonnet - Attempts: 2 (attempt 1 gpt-5.6-terra empty_delivery x3, attempt 2 native sonnet succeeded) - Duration: ~273s - Tokens: n/a |
