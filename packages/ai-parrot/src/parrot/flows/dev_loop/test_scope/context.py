@@ -180,15 +180,21 @@ def pending_escalations(
     for dist in sorted({d for h in hits for d in h.distributions} | set(cap_hits)):
         relevant = [h.path for h in hits if dist in h.distributions]
         entry = ledger.get(dist)
-        core_matches = not relevant or (entry is not None and all(
-            (blob := _blob(worktree, path)) is not None and blob == entry.core_blobs.get(path) for path in relevant
-        ))
+        core_matches = not relevant or (
+            entry is not None
+            and all(
+                (blob := _blob(worktree, path)) is not None and blob == entry.core_blobs.get(path) for path in relevant
+            )
+        )
         cap_files = cap_hits.get(dist)
         cap_matches = cap_files is None or (
             entry is not None
             and entry.impacted_hash != ""
             and cap_impacted.get(dist) == entry.impacted_hash
-            and all((blob := _blob(worktree, path)) is not None and blob == entry.impact_blobs.get(path) for path in cap_files)
+            and all(
+                (blob := _blob(worktree, path)) is not None and blob == entry.impact_blobs.get(path)
+                for path in cap_files
+            )
         )
         if core_matches and cap_matches:
             skipped.append(dist)
