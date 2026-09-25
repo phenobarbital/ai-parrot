@@ -4,6 +4,7 @@ Inherits from ``AbstractToolkit`` (auto-generates tools from public async
 methods) and adds the database-specific lifecycle: connect, search schema,
 execute queries, cache integration.
 """
+
 from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
@@ -14,19 +15,18 @@ from ....tools.toolkit import AbstractToolkit
 from ..cache import CachePartition
 from ..models import (
     QueryExecutionResponse,
-    SchemaMetadata,
     TableMetadata,
 )
 from ..retries import QueryRetryConfig
 
-
 #: Regex for safe SQL identifiers (letters, digits, underscores).
-_SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 # ---------------------------------------------------------------------------
 # Configuration model
 # ---------------------------------------------------------------------------
+
 
 class DatabaseToolkitConfig(BaseModel):
     """Configuration passed to toolkit constructors."""
@@ -53,6 +53,9 @@ class DatabaseToolkitConfig(BaseModel):
         ),
     )
     database_type: str = Field(default="postgresql")
+    origin: Optional[str] = Field(
+        default=None, description="Schema-plane origin alias (FEAT-600); defaults to database_type"
+    )
     use_pool: bool = Field(
         default=False,
         description=(
@@ -74,6 +77,7 @@ class DatabaseToolkitConfig(BaseModel):
 # ---------------------------------------------------------------------------
 # DatabaseToolkit base
 # ---------------------------------------------------------------------------
+
 
 class DatabaseToolkit(AbstractToolkit, ABC):
     """Abstract base class for all database toolkits.
@@ -110,6 +114,7 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         read_only: bool = True,
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
+        origin: Optional[str] = None,
         database_type: str = "postgresql",
         use_pool: bool = False,
         pool_params: Optional[Dict[str, Any]] = None,
@@ -128,12 +133,11 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         # Connection config (lazy — no I/O in __init__)
         self.dsn = dsn
         self.allowed_schemas = allowed_schemas or ["public"]
-        self.primary_schema = primary_schema or (
-            self.allowed_schemas[0] if self.allowed_schemas else "public"
-        )
+        self.primary_schema = primary_schema or (self.allowed_schemas[0] if self.allowed_schemas else "public")
         self.tables = tables
         self.read_only = read_only
         self.database_type = database_type
+        self.origin = origin or database_type  # FEAT-600: plane alias; tk_id (agent.py:206) is NOT derived from this
         self.use_pool = use_pool
         self.pool_params = pool_params or {}
 
@@ -339,12 +343,12 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         params: Dict[str, Any] = {}
         if self.use_pool:
             from asyncdb import AsyncPool
-            self._connection = AsyncPool(
-                driver, dsn=self.dsn, params=params, **self.pool_params
-            )
+
+            self._connection = AsyncPool(driver, dsn=self.dsn, params=params, **self.pool_params)
             await self._connection.connect()
         else:
             from asyncdb import AsyncDB
+
             self._connection = AsyncDB(driver, dsn=self.dsn, params=params)
             await self._connection.connection()  # pylint: disable=no-member
 
@@ -374,9 +378,7 @@ class DatabaseToolkit(AbstractToolkit, ABC):
                 try:
                     await self._connection.release(wrapper)  # release the WRAPPER
                 except Exception as exc:  # pylint: disable=broad-except
-                    self.logger.warning(
-                        "Pool release failed — possible connection leak: %s", exc
-                    )
+                    self.logger.warning("Pool release failed — possible connection leak: %s", exc)
         else:
             async with await self._connection.connection() as wrapper:
                 yield wrapper.engine()  # raw asyncpg.Connection (or dialect equiv.)

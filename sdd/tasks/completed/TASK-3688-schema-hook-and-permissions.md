@@ -183,10 +183,10 @@ def test_permissions_present():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-luna, backend: codex, attempt_uid b999a311112548aea21a81c4c3382dd5)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `8bca6de70a62e8916d08bf1bfe7574888ee2b90f` (merge `7e06261d6`). Added the `schema ingest-ddl --changed --quiet` line inside the existing `if [ ! -f .git ]` guard in `git_hook_block()`, right after the `upsert` line, and appended the four `mcp__wikitoolkit__wiki_schema_*` permission strings to `PERMISSION_RULES`. Engine-side merge fidelity check passed (`unexpected_files: []`). Merge-tier validation (root scope): 4 failed, 1132 passed — all 4 failures confirmed pre-existing on origin/dev / a known worktree environment limitation, unrelated to this task's two files (see `issue:33fe54e65d2d`). Reviewed via `coder-review:d1493a7b30b18b201c51139a`, zero fix commits needed.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Post-merge review fix (issue:f5e3ca89e393, via /sdd-fix)**: the hook line added here, `schema ingest-ddl --changed --quiet`, always failed at Click parse time because `schema_ingest_ddl` (cli.py) required `--origin`/`--dialect`; the hook's `|| true` masked it, so merge-time DDL capture never ran. Fixed in cli.py: both options are optional, `--dialect` defaults to the source's configured dialect, and `--changed` with no PATHS/`--origin` loops over every declared `schema.sources` entry. Fix commit `7ec29c916`. New tests in `schema/test_cli_schema.py` run the hook's exact argv through CliRunner. Verified: `tests/knowledge/wiki/schema/` + `test_schema_hook_assets.py` 50 passed; `ruff check`/`black --check` clean.
 
 **Deviations from spec**: none

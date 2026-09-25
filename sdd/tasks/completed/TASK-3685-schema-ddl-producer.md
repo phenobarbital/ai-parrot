@@ -307,10 +307,12 @@ def test_corpus_counts():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-luna, backend: codex, attempt_uid 5e8d6fdc3a5f477498a02f3a7b718fcd)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `6f08ea151` + engine lint-autofix commit `635962183` (merge `32317b732`). DDL producer: statement splitting and sqlglot folding of `.sql` files into TableRecords. Engine-side merge fidelity check passed (`unexpected_files: []`).
+**Merge validation**: merge-tier (root scope) 4 failed, 1132 passed, 7 skipped, 20 warnings in 68.45s — same 4 pre-existing/environmental failures as prior chunks (see `issue:33fe54e65d2d`), unrelated to this task's files. Reviewed via `coder-review:e1f8d029a5016bdb6d45d288`, zero fix commits needed.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Post-merge adversarial review fix**: an independent code-review pass reported `test_fold_ddl_task_memory_corpus` expecting `3` total `foreign_keys` on the reference DDL corpus while the implementation returns `4`, disagreeing on which side is the bug. I directly re-derived ground truth (not trusting either report): the corpus has 3 SQL `FOREIGN KEY` constraints, one of which (`artifact_evidence_artifact_fk`) is composite over 2 columns; `producers/ddl.py::_add_fk` (`for column, ref_column in zip(fk.expressions, target.expressions, ...)`) intentionally decomposes every FK constraint into one `foreign_keys` entry per column — the same per-column convention `producers/live.py`'s live introspection already uses — so the correct total is `1 + 1 + 2 = 4`, confirmed by directly invoking `fold_ddl()` and inspecting the per-table output. The implementation was correct; the test's `== 3` assertion was the actual bug. Fixed the assertion (not the implementation) to `== 4` with an explanatory comment. Fix commit: see `git log -1 -- packages/ai-parrot/tests/knowledge/wiki/schema/test_ddl_producer.py`. Verified: full `tests/knowledge/wiki/schema/` suite green (46 passed); `ruff check`/`black --check` clean.
+**Model feedback NOT recorded**: `coder_record_feedback` requires the execution's `execution_id`, not preserved through a context-compaction boundary before this review fix landed. This is a test-authoring correction, not an implementation defect, so no model-behavior pattern applies to `producers/ddl.py` itself.
 
 **Deviations from spec**: none

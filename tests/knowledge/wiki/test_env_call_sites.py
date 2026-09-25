@@ -166,15 +166,17 @@ class TestGuard:
     hot) file. Only the specific base-config WRITE paths named by the
     spec's own acceptance criterion ("raw base access remains only for
     save paths / `ns add`") are allowed:
-      - ``cli.py``'s ``build`` (persists ``--name``/``--backend`` to base)
-        and ``ns_add`` (mutates + re-persists base ``namespaces``).
+      - ``cli.py``'s ``build`` (persists ``--name``/``--backend`` to base),
+        ``ns_add`` (mutates + re-persists base ``namespaces``), and
+        ``schema_add_source`` (FEAT-600: mutates + re-persists base
+        ``schema.sources``, same write-path shape as ``ns_add``).
       - ``project.py``'s own ``load_effective_config`` — the DEFINER
         loading the base as the first step of building the merged view;
         not a bypassing consumer.
     """
 
     _ALLOWED_CALL_SITES: ClassVar[dict[str, frozenset[str]]] = {
-        "cli.py": frozenset({"build", "ns_add"}),
+        "cli.py": frozenset({"build", "ns_add", "schema_add_source"}),
         "project.py": frozenset({"load_effective_config"}),
     }
     _DEF_RE = re.compile(r"^def (\w+)\(")

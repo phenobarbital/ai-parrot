@@ -139,15 +139,24 @@ class DevLoopWikiSearch:
             # Try to append ledger context (best-effort)
             ledger_context = await self._get_ledger_context(query, budget_tokens // 2)
 
+            # Try to append schema context (best-effort, FEAT-600)
+            schema_context = await self._get_schema_context(query, budget_tokens // 4)
+
             # Combine contexts
             if wiki_context and ledger_context:
-                return f"{wiki_context}\n\n## Related Issues\n{ledger_context}"
+                combined = f"{wiki_context}\n\n## Related Issues\n{ledger_context}"
             elif wiki_context:
-                return wiki_context
+                combined = wiki_context
             elif ledger_context:
-                return f"## Related Issues\n{ledger_context}"
+                combined = f"## Related Issues\n{ledger_context}"
             else:
-                return None
+                combined = None
+
+            if schema_context:
+                schema_block = f"## Related Tables\n{schema_context}"
+                combined = f"{combined}\n\n{schema_block}" if combined else schema_block
+
+            return combined
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
                 "DevLoopWikiSearch.build_research_context failed: %s",
@@ -182,6 +191,35 @@ class DevLoopWikiSearch:
         except Exception as exc:  # noqa: BLE001
             self.logger.debug("Ledger context lookup failed (continuing): %s", exc)
             return None
+
+    async def _get_schema_context(self, query: str, max_tokens: int) -> Optional[str]:
+        """Get relevant `table:` schema context for the query (best-effort).
+
+        Mirrors :meth:`_get_ledger_context`: searches the federated wiki
+        store for ``category="table"`` pages matching ``query`` and returns
+        a token-budgeted summary. Never raises — any failure (including an
+        absent schema plane) degrades to ``None``.
+
+        Args:
+            query: The research query to scope schema context to.
+            max_tokens: Token budget for the schema context block.
+
+        Returns:
+            Formatted schema context or ``None`` if unavailable.
+        """
+        try:
+            rows = await self._store.search_fts(query, category="table", limit=8)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("schema context skipped: %s", exc)
+            return None
+        if not rows:
+            return None
+
+        from parrot.knowledge.wiki.context import truncate_to_tokens
+
+        lines = [f"- {r['concept_id']} — {r.get('summary') or r.get('title', '')}" for r in rows]
+        text, _truncated = truncate_to_tokens("\n".join(lines), max_tokens)
+        return text
 
     def _extract_file_paths_from_query(self, query: str) -> list[str]:
         """Extract likely file paths from a query string.

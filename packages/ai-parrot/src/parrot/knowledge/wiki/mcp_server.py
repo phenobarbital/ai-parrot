@@ -197,6 +197,40 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
                 )
             )
 
+    # FEAT-600: mount the SQL schema plane as a read-only overlay (same shape as the ledger block above).
+    # Mount only when a plane already exists — never grow `.parrot/schema/` from a bare directory (tool counts, AC11).
+    schema_service = None
+    with contextlib.redirect_stdout(sys.stderr):
+        shared_root = find_shared_root(root)
+        if shared_root is not None and config.schema.enabled and config.schema_path(shared_root).exists():
+            try:
+                from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+
+                schema_service = SchemaPlaneService.from_root(root)
+            except Exception as exc:  # noqa: BLE001 — the plane is optional
+                logging.getLogger(__name__).warning("Could not initialize schema plane: %s", exc)
+    if schema_service is not None:
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.knowledge.wiki.federation import NamespaceHandle
+            from parrot.knowledge.wiki.project import WikiNamespaceConfig
+
+            schema_dir = schema_service.plane_dir
+            schema_config = WikiNamespaceConfig(
+                store=str(schema_dir),
+                description="SQL schema plane (sources, schemas, tables)",
+                weight=0.5,
+                overlay_prefixes=["source", "schema", "table"],
+            )
+            handles.append(
+                NamespaceHandle(
+                    name="schema",
+                    store=schema_service.store,
+                    config=schema_config,
+                    storage_dir=schema_dir,
+                    read_only=True,
+                )
+            )
+
     if handles or skipped:
         read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
     tools = create_wiki_tools(read_store, root=root, config=config, ledger_service=ledger_service)
@@ -224,6 +258,13 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
 
         decision_tools = create_decision_tools(read_store, root, config)
     tools = tools + decision_tools
+
+    # FEAT-600: schema-plane tools share read_store; [] when no plane is mounted (AC11).
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.knowledge.wiki.schema.tools import create_schema_tools
+
+        schema_tools = create_schema_tools(read_store, root, config, schema_service)
+    tools = tools + schema_tools
 
     # Obsidian vault exposure: when the project has a vault (explicit
     # `vault_dir` in wiki.json, or the root itself is a vault), register

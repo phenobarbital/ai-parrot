@@ -492,10 +492,19 @@ def test_normalize_ambiguous_returns_candidates():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-terra, backend: codex, attempt_uid 52e92c89743a49858c0b4acbe2dd3402)
+**Notes**: Implementation commit `784ac5ee2` + engine lint-autofix commit `27c9e8289` (merge `9cf7f3c6b`). Created `schema/models.py`, `schema/ids.py`, `schema/producers/__init__.py`, `schema/__init__.py` (lazy `__getattr__`), the `tests/knowledge/wiki/schema/` package, added `schema: SchemaPlaneConfig` + `schema_path()` to `project.py`, and `"ddl"` to `MetadataSource`. Engine-side merge fidelity check passed (`unexpected_files: []`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3680
+- Feature: sql-schema-plane
+- Implementation SHA: 784ac5ee2 (+ lint-autofix 27c9e8289)
+- Closed at (UTC): 2026-09-24T21:58:59+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_validation | merge-tier (root scope) 4 failed, 1132 passed, 7 skipped, 20 warnings in 66.36s — all 4 failures confirmed pre-existing on origin/dev / known worktree environment limitation, unrelated to this task (see issue:33fe54e65d2d) |
+| review_feedback_id | coder-review:fe5418549d936fb9cf76badf |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 191.72s · Tokens: n/a |

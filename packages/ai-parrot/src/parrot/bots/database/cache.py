@@ -8,6 +8,7 @@ creates ``CachePartition`` instances per database.  Each partition has its own
 LRU sizing and TTL while optionally sharing a Redis connection pool and a
 vector store for similarity search.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,13 +23,15 @@ from navconfig.logging import logging
 from pydantic import BaseModel, Field
 from .models import Completeness, SchemaMetadata, TableMetadata
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # FEAT-600 — typing only; bots/database must not import the wiki at runtime (AC13)
     from ...stores.abstract import AbstractStore
+    from parrot.knowledge.wiki.schema.service import SchemaPlaneReader
 
 
 # ---------------------------------------------------------------------------
 # Configuration model
 # ---------------------------------------------------------------------------
+
 
 class CachePartitionConfig(BaseModel):
     """Configuration for a single cache partition."""
@@ -51,6 +54,7 @@ class CachePartitionConfig(BaseModel):
 # CachePartition — drop-in replacement for SchemaMetadataCache
 # ---------------------------------------------------------------------------
 
+
 class CachePartition:
     """Namespaced cache partition with the same API as ``SchemaMetadataCache``.
 
@@ -72,6 +76,10 @@ class CachePartition:
         redis_pool: Any = None,
         vector_store: Optional["AbstractStore"] = None,
         ttl_by_completeness: Optional[Dict[int, int]] = None,
+        plane: Optional["SchemaPlaneReader"] = None,
+        plane_write: bool = False,
+        origin: Optional[str] = None,
+        dialect: Optional[str] = None,
     ):
         self.namespace = namespace
         self.redis_ttl = redis_ttl
@@ -90,6 +98,12 @@ class CachePartition:
         # Tier 3: Vector store (optional, shared)
         self.vector_store = vector_store
         self.vector_enabled = vector_store is not None
+
+        # FEAT-600: optional durable schema-plane tier (after Redis, before the vector store). None ⇒ behaviour unchanged.
+        self.plane = plane
+        self.plane_write = plane_write and plane is not None
+        self.origin = origin
+        self.dialect = dialect
 
         # Schema-level caches
         self.schema_cache: Dict[str, SchemaMetadata] = {}
@@ -146,6 +160,16 @@ class CachePartition:
             if metadata is not None:
                 self.hot_cache[cache_key] = metadata
 
+        # Tier 2b: schema plane (FEAT-600) — durable, never introspects
+        if metadata is None and self.plane is not None and self.origin:
+            try:
+                metadata = await self.plane.get_table(self.origin, schema_name, table_name)
+            except Exception as exc:  # noqa: BLE001 — the plane is a best-effort tier
+                self.logger.warning("schema plane lookup failed for %s.%s: %s", schema_name, table_name, exc)
+                metadata = None
+            if metadata is not None:
+                self.hot_cache[cache_key] = metadata
+
         # Tier 3: Vector store (point lookup)
         if metadata is None and self.vector_enabled:
             metadata = await self._search_vector_store(schema_name, table_name)
@@ -160,8 +184,10 @@ class CachePartition:
             return None
 
         # Age gate
-        effective_max_age = max_age if max_age is not None else timedelta(
-            seconds=self.ttl_by_completeness.get(int(metadata.completeness), self.redis_ttl)
+        effective_max_age = (
+            max_age
+            if max_age is not None
+            else timedelta(seconds=self.ttl_by_completeness.get(int(metadata.completeness), self.redis_ttl))
         )
         if datetime.utcnow() - metadata.loaded_at > effective_max_age:
             return None
@@ -212,6 +238,13 @@ class CachePartition:
         if self.vector_enabled:
             await self._store_in_vector_store(metadata)
 
+        # Tier 2b: schema plane write-through (FEAT-600)
+        if self.plane_write and self.origin:
+            try:
+                await self.plane.put_table(self.origin, self.dialect or self.origin, metadata)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("schema plane write-through failed for %s: %s", metadata.full_name, exc)
+
     async def list(
         self,
         schema_names: List[str],
@@ -229,8 +262,10 @@ class CachePartition:
             for meta in self.schema_cache[schema_name].get_all_objects().values():
                 if not meta.satisfies(completeness_min):
                     continue
-                effective_max_age = max_age if max_age is not None else timedelta(
-                    seconds=self.ttl_by_completeness.get(int(meta.completeness), self.redis_ttl)
+                effective_max_age = (
+                    max_age
+                    if max_age is not None
+                    else timedelta(seconds=self.ttl_by_completeness.get(int(meta.completeness), self.redis_ttl))
                 )
                 if now - meta.loaded_at > effective_max_age:
                     continue
@@ -265,8 +300,10 @@ class CachePartition:
                 filtered: List[TableMetadata] = []
                 for meta in converted:
                     validated = await self.get(
-                        meta.schema, meta.tablename,
-                        required=completeness_min, max_age=max_age,
+                        meta.schema,
+                        meta.tablename,
+                        required=completeness_min,
+                        max_age=max_age,
                     )
                     if validated is not None:
                         filtered.append(validated)
@@ -282,8 +319,10 @@ class CachePartition:
         for meta in candidates:
             if not meta.satisfies(completeness_min):
                 continue
-            effective_max_age = max_age if max_age is not None else timedelta(
-                seconds=self.ttl_by_completeness.get(int(meta.completeness), self.redis_ttl)
+            effective_max_age = (
+                max_age
+                if max_age is not None
+                else timedelta(seconds=self.ttl_by_completeness.get(int(meta.completeness), self.redis_ttl))
             )
             if now - meta.loaded_at > effective_max_age:
                 continue
@@ -334,9 +373,27 @@ class CachePartition:
     def _extract_search_keywords(self, query: str) -> List[str]:
         """Extract meaningful keywords from a natural language query."""
         stop_words = {
-            "get", "show", "find", "list", "select", "by", "from", "the",
-            "a", "an", "and", "or", "of", "to", "in", "on", "at", "for",
-            "with", "top", "all",
+            "get",
+            "show",
+            "find",
+            "list",
+            "select",
+            "by",
+            "from",
+            "the",
+            "a",
+            "an",
+            "and",
+            "or",
+            "of",
+            "to",
+            "in",
+            "on",
+            "at",
+            "for",
+            "with",
+            "top",
+            "all",
         }
         words = re.findall(r"\b[a-zA-Z]+\b", query.lower())
         return [w for w in words if w not in stop_words and len(w) > 2]
@@ -369,9 +426,7 @@ class CachePartition:
     # Match qualified ``schema.table`` references. ASCII identifiers only —
     # Postgres identifiers can include other chars when quoted, but every
     # cached table we see in practice uses snake_case ASCII.
-    _QUALIFIED_REF_RE = re.compile(
-        r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b"
-    )
+    _QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b")
 
     def _search_cache_only(
         self,
@@ -439,9 +494,7 @@ class CachePartition:
         if not scored:
             stem_keywords = self._stem_keywords(keywords)
             if stem_keywords:
-                stem_scored = self._score_against_cache(
-                    schema_names, stem_keywords, seen, limit - len(results)
-                )
+                stem_scored = self._score_against_cache(schema_names, stem_keywords, seen, limit - len(results))
                 for meta in stem_scored:
                     key = (meta.schema, meta.tablename)
                     results.append(meta)
@@ -449,7 +502,8 @@ class CachePartition:
                 if stem_scored:
                     self.logger.debug(
                         "cache stem-aware hit: keywords=%s stems=%s",
-                        keywords, stem_keywords,
+                        keywords,
+                        stem_keywords,
                     )
 
         return results[:limit]
@@ -509,9 +563,7 @@ class CachePartition:
 
     # -- Redis helpers ------------------------------------------------------
 
-    async def _get_from_redis(
-        self, schema_name: str, table_name: str
-    ) -> Optional[TableMetadata]:
+    async def _get_from_redis(self, schema_name: str, table_name: str) -> Optional[TableMetadata]:
         """Retrieve metadata from Redis if available."""
         if self._redis is None:
             return None
@@ -540,9 +592,7 @@ class CachePartition:
 
     # -- Vector store helpers -----------------------------------------------
 
-    async def _search_vector_store(
-        self, schema_name: str, table_name: str
-    ) -> Optional[TableMetadata]:
+    async def _search_vector_store(self, schema_name: str, table_name: str) -> Optional[TableMetadata]:
         """Search vector store for a specific table."""
         if not self.vector_enabled:
             return None
@@ -580,6 +630,7 @@ class CachePartition:
 # Backward-compatible wrapper
 # ---------------------------------------------------------------------------
 
+
 class SchemaMetadataCache(CachePartition):
     """Backward-compatible wrapper around ``CachePartition``.
 
@@ -608,6 +659,7 @@ class SchemaMetadataCache(CachePartition):
 # ---------------------------------------------------------------------------
 # CacheManager — orchestrates partitions
 # ---------------------------------------------------------------------------
+
 
 class CacheManager:
     """Manages namespaced cache partitions with shared Redis + vector store.
@@ -643,9 +695,7 @@ class CacheManager:
         try:
             import redis.asyncio as aioredis  # noqa: F811
 
-            self._redis_pool = aioredis.from_url(
-                redis_url, decode_responses=True
-            )
+            self._redis_pool = aioredis.from_url(redis_url, decode_responses=True)
             self.logger.info("Redis pool initialised: %s", redis_url)
         except Exception as exc:
             self.logger.warning("Redis unavailable (%s) — LRU-only mode", exc)
@@ -666,9 +716,7 @@ class CacheManager:
             ValueError: If a partition with the same namespace already exists.
         """
         if config.namespace in self._partitions:
-            raise ValueError(
-                f"Partition '{config.namespace}' already exists"
-            )
+            raise ValueError(f"Partition '{config.namespace}' already exists")
         partition = CachePartition(
             namespace=config.namespace,
             lru_maxsize=config.lru_maxsize,
@@ -736,9 +784,7 @@ class CacheManager:
             self._redis_pool = None
         self._partitions.clear()
         if self._owns_vector_store and self.vector_store is not None:
-            disconnect = getattr(self.vector_store, "disconnect", None) or getattr(
-                self.vector_store, "close", None
-            )
+            disconnect = getattr(self.vector_store, "disconnect", None) or getattr(self.vector_store, "close", None)
             if callable(disconnect):
                 try:
                     result = disconnect()

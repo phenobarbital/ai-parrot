@@ -280,10 +280,15 @@ def test_sync_refuses_linked_worktree(tmp_path, monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-terra, backend: codex, attempt_uid bd6bcdc3251542699c5ef2d790b320a9)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `bcd16242b` + engine lint-autofix commit `5df0215be` (merge `c7b79134b`). `wikitoolkit schema` CLI group: sources, add-source, sync, ingest-ddl, diff, lookup. Engine-side merge fidelity check passed (`unexpected_files: []`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Review fixes (2, orchestrator-applied after merge-tier validation caught them)**:
+1. F821 undefined name `SchemaPlaneService` in `_schema_service()`'s return annotation (engine lint.errors gate) — fixed with a `TYPE_CHECKING`-guarded import (fix commit `d498442ae`). Recorded as model feedback `coder-feedback:c056f7e8ae798036da8fb03e`.
+2. The new `schema_add_source` command is a legitimate base-config write path (mirrors `ns_add`) but wasn't in `tests/knowledge/wiki/test_env_call_sites.py`'s `TestGuard._ALLOWED_CALL_SITES` allowlist — a top-level guard test outside this task's Codebase Contract, not a coder defect. Added `"schema_add_source"` to the allowlist (fix commit `919c089d5`).
+
+Both verified: `ruff check --select F821` clean, `test_cli_schema.py` 4 passed, `test_env_call_sites.py` 7 passed. Reviewed via `coder-review:f682a9065831d4e225cded8d`.
+**Merge validation**: merge-tier (root scope) — 4 pre-existing/environmental failures (see `issue:33fe54e65d2d`) + the now-fixed guard-test failure above; all unrelated defects resolved.
 
 **Deviations from spec**: none
