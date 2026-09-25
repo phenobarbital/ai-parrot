@@ -4,7 +4,7 @@ title: Google Drive FileManager — FileManagerInterface over Drive v3, register
 slug: google-drive-interface
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
