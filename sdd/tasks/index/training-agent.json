@@ -353,7 +353,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -366,8 +366,9 @@
       "parallelism_notes": "orchestrates draft_manual/assemble_card from TASK-3708 (manuals/carding.py), extract/caption/upload/map_callouts from TASK-3706 (manuals/figures.py), align_video from TASK-3709 (manuals/video.py) and ManualGraphLoader from TASK-3712 (manuals/graph_loader.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3713-manual-library.md"
+      "completed_at": "2026-09-25T16:16:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3713-manual-library.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3714",
@@ -458,7 +459,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -468,8 +469,9 @@
       "parallelism_notes": "reads ParsedResponse.image_urls and calls download_to_temp from TASK-3716 (integrations/parser.py, integrations/media_download.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3718-telegram-image-urls.md"
+      "completed_at": "2026-09-25T16:16:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3718-telegram-image-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3719",
@@ -478,7 +480,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -488,8 +490,9 @@
       "parallelism_notes": "reads ParsedResponse.image_urls and falls back to download_to_temp from TASK-3716 (integrations/media_download.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3719-whatsapp-image-urls.md"
+      "completed_at": "2026-09-25T16:16:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3719-whatsapp-image-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3720",
@@ -498,7 +501,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -509,8 +512,9 @@
       "parallelism_notes": "binds pattern names/READ roles to TASK-3701 (procedures.ontology.yaml, manuals/domain.py); queries ManualCatalogStore from TASK-3702 (manuals/catalog.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3720-procedures-retrieval.md"
+      "completed_at": "2026-09-25T16:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3720-procedures-retrieval.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3721",

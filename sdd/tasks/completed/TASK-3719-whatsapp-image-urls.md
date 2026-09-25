@@ -244,10 +244,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3719
+- Feature: training-agent
+- Implementation SHA: bee063ebb124f7c073c639dc455887463f539203
+- Closed at (UTC): 2026-09-25T16:16:05+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| supplementary_test_evidence | 2 passed, 0 failed (scoped direct pytest over test_media_urls_whatsapp.py; full-sweep failure confirmed as test-pollution, not a regression) |

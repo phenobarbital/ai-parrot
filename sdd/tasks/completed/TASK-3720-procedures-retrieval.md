@@ -718,10 +718,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3720
+- Feature: training-agent
+- Implementation SHA: bee063ebb124f7c073c639dc455887463f539203
+- Closed at (UTC): 2026-09-25T16:16:08+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 295.99s · Tokens: n/a |
+| supplementary_test_evidence | 8 passed, 0 failed (scoped direct pytest over ai-parrot-tools/tests/procedures/) |
