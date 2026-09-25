@@ -372,10 +372,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3731
+- Feature: hooba-toolkit
+- Implementation SHA: ef067d53dbe25b4945748e70f975dd7fd1780d6b
+- Closed at (UTC): 2026-09-25T17:13:05+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 2 |
+| fix_commits | 0 |
+| merge_tier_engine_outcome | failed (workspace-wide import-impact sweep hit ~90 pre-existing unrelated failures/collection-errors across ai-parrot-client-google/grok, ai-parrot-embeddings, ai-parrot-integrations, ai-parrot-loaders, ai-parrot-pipelines, parrot-formdesigner, ai-parrot/tests collection errors in unrelated modules alpaca/zoom/shell_tool/cmc_fear_greed/coingecko/notification/aiohttp-symbols) |
+| orchestrator_targeted_verification | packages/ai-parrot/tests/tools/test_openapi_filters.py: 8/8 passed (worktree). packages/ai-parrot/tests/test_openapi.py + test_openapi_toolkit.py: 11 failed/43 passed IDENTICAL on worktree and on unmodified origin/dev baseline (pre-existing prance-library drift, not caused by this task). packages/ai-parrot/tests/tools/: 53 failed both on worktree (2109 passed) and on dev baseline (2101 passed) -- the +8 delta is exactly this task's new tests; zero regressions attributable to this diff. |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 200.3s · Tokens: n/a |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions (parrot.utils.types, parrot.utils.parsers.toml) temporarily copied in from the identical-source main checkout (types.pyx/toml.pyx diffed byte-identical) since worktrees have no compiled .so per project's known limitation; removed both temp .so copies afterward (never committed, git status clean). |
