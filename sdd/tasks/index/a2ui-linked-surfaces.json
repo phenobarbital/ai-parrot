@@ -578,7 +578,8 @@
         "TASK-3787",
         "TASK-3788",
         "TASK-3789",
-        "TASK-3795"
+        "TASK-3795",
+        "TASK-3805"
       ],
       "parallel": true,
       "parallelism_notes": "documents the shipped behaviour of TASK-3785 (tool), TASK-3787/TASK-3788 (persistence), TASK-3795 (UI lane), TASK-3776 (manifest publish), TASK-3789 (parrot_param)",
@@ -586,6 +587,24 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3796-linked-surfaces-docs.md"
+    },
+    {
+      "id": "TASK-3805",
+      "slug": "dataplane-guard-wiring",
+      "title": "Default data-plane guard wiring (app[\"dataplane_guard\"] + bot._dataplane_guard)",
+      "feature_id": "FEAT-598",
+      "feature": "a2ui-linked-surfaces",
+      "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent of all FEAT-598 code tasks (guard/setup_pbac pre-date the feature); touches pbac.py/conf.py/manager.py which no other FEAT-598 task modifies",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3805-dataplane-guard-wiring.md"
     }
   ]
 }

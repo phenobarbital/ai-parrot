@@ -101,6 +101,7 @@ class DataPlanePolicyGuard:                                               # L45
 
 ### Does NOT Exist
 - ~~a `slug:execute` check anywhere in parrot~~ — `DataPlanePolicyGuard` gates `driver:connect` / `table:read` / `source:read` only, and `resolve_physical_resources(QuerySlugSource)` returns EMPTY resources (resolver.py:163-166). This task's owner check therefore uses `authorize_source` with an explicit `PhysicalResources(source_type=…, source_id=…)` (see FILL IN) — do not invent a guard method.
+  **Resource naming CONFIRMED by owner (2026-09-26)**: `source_type="query_slug"`, `source_id=f"{tenant or 'public'}:{slug}"` — PBAC policies key on `query_slug:<tenant|public>:<slug>` under the existing `source:read` gate, matching the opaque source_type convention (`mongo`/`iceberg`/`delta`, opaque.py). Not `dataset:<slug>` (no tenant dimension, separate guard) and no new `slug:execute` action. The Scope § Decision (AC14 vs AC11: validate + guard only when `has_data_sources`) is also owner-CONFIRMED. Default guard wiring is TASK-3805 — this task still treats `guard=None` as fail-closed.
 - ~~`LinkedSurfaceService`, `LinkedGuardRequired`, `SnapshotError`, `RefreshOutcome`~~ — created here.
 - ~~`validate_envelope` returning issues~~ — it raises `CatalogValidationError`; it never returns a list.
 - ~~`UISurfaceRecord` / `PgUISurfaceStore` in core~~ — server-only; this service takes and returns envelope DICTS and never touches the store (one-way import rule).

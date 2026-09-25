@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-3785, TASK-3787, TASK-3788, TASK-3795, TASK-3776, TASK-3789
+**Depends-on**: TASK-3785, TASK-3787, TASK-3788, TASK-3795, TASK-3776, TASK-3789, TASK-3805
 **Assigned-to**: unassigned
 
 ---
@@ -108,7 +108,7 @@ docs/tools/querysource-toolkit.md
 5. DSL v1 (ten ops, spec §7 semantics) and `transform.ref` (opaque `name@version`, manifest + SRI, `deprecated` never deleted).
 6. **Security statements (AC13, exact phrases the test asserts)**:
    - "`locked` is not security" — it is a UX hint; security is QuerySource PBAC + slug design. Tenant is routing, not security.
-   - "server lanes run as a trusted service behind a mandatory guard" — `LinkedSurfaceService` fails closed without a guard (`LinkedGuardRequired` → 403); owner `principal=` is defense in depth (PBAC can no-op when QuerySource's bootstrap is absent).
+   - "server lanes run as a trusted service behind a mandatory guard" — `LinkedSurfaceService` fails closed without a guard (`LinkedGuardRequired` → 403); owner `principal=` is defense in depth (PBAC can no-op when QuerySource's bootstrap is absent). Document the default wiring (TASK-3805): `BotManager.setup` builds `app["dataplane_guard"]` / injects `bot._dataplane_guard` via `setup_dataplane_guard()` when PBAC initializes (navigator-auth + `PARROT_PBAC_POLICY_DIR`); otherwise linked saves answer 403 until an operator configures PBAC. Owner-check resource naming (confirmed 2026-09-26): `source:read` on `query_slug:<tenant|public>:<slug>`.
    - "`ref` module CSP is the host page's responsibility" — SRI authenticates bytes, not behaviour.
 7. Share-token viewers: last snapshot + "data as of `snapshot_at`" + server-side refresh button.
 

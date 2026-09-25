@@ -1194,9 +1194,37 @@ Summary: **11** confirmed (S6 partially — its deferral half rejected) · **0**
 
 ---
 
+## Errata (task-time verification, 2026-09-26)
+
+Eight prose errors were found while decomposing this spec into TASK-3769..3796 and are corrected
+**in the task files, which are authoritative where they disagree with the prose above**:
+
+1. `Filter`'s comparison field is `operator` — `op` is the node-type discriminator, not the comparator.
+2. `derive_conditions` never emits `limit`; every lane sends `querylimit = min(request.limit or cap, cap)`.
+3. `ExecutionOutcome.frames` carries the executed DataFrames so the toolkit never rebuilds dtypes from rows.
+4. `DataTable` columns use `name`, not `key`.
+5. `ValidationIssue` does not exist — `validate_envelope` raises `CatalogValidationError(issues=[…])`.
+6. `check_version_compatibility` only WARNS; §7's "fails at toolkit init" is false.
+7. `get_definition_repository()` lives on `Connection`, not on `QuerySource()`.
+8. `contract/schema.json` ships at `linked/contract/` (package data), not `docs/outputs/schemas/`.
+
+Owner decisions recorded the same day (details in the task files):
+- **Owner-check resource naming (TASK-3781)** — CONFIRMED: `authorize_source` with
+  `PhysicalResources(source_type="query_slug", source_id="<tenant|public>:<slug>")`, i.e. PBAC
+  `source:read` on `query_slug:<tenant|public>:<slug>`. No new `slug:execute` action.
+- **AC14 vs AC11 (TASK-3781)** — CONFIRMED: every save path calls `validate_for_persistence`, but
+  TOOL-origin validation + guard run only when `has_data_sources(envelope)`; baked envelopes keep
+  today's behaviour.
+- **Guard wiring** — new TASK-3805 ships default wiring (`setup_dataplane_guard()` →
+  `app["dataplane_guard"]` + `bot._dataplane_guard` when PBAC initializes); un-wired/bare installs
+  keep answering 403 for linked saves (fail closed).
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-24 | Jesus Lara / Claude | Initial draft from the accepted brainstorm (three revisions, incl. FEAT-147/FEAT-148 cross-check) |
 | 0.2 | 2026-09-25 | Jesus Lara / Claude | Re-verified against QuerySource 5.1.1 (`989193d`): floor `>=5.1.1`, runtime tenant-MultiQuery gate dropped (AC5/AC12/M7); FEAT-150 `QSPrincipal` adopted on owner-context lanes (`to_qs_principal`, M5/M6/M8, new AC18, `QueryAccessDenied`→404); M7 `DefinitionRepository` open question resolved (singleton accessor + optional `definition=` preload); contract anchors refreshed |
+| 0.3 | 2026-09-26 | Jesus Lara / Claude | Errata section (eight task-time prose corrections; tasks authoritative); owner confirmed `query_slug:<tenant\|public>:<slug>` resource naming and the AC14/AC11 resolution; TASK-3805 (default data-plane guard wiring) added |
