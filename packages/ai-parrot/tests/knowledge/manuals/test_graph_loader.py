@@ -30,6 +30,21 @@ from .._support.catalog import InMemoryManualCatalog  # noqa: E402
 from .._support.graph import FakeGraphStore, FakeTenantManager  # noqa: E402
 
 
+class _TenantManagerWithRelations(FakeTenantManager):
+    """FakeTenantManager whose ontology stub also carries ``.relations``.
+
+    The shared double's dynamic ``Ontology`` stub only sets ``.entities``, but a
+    real ``MergedOntology`` always declares ``.relations`` too, and
+    ``resolve_context()``'s debug log unconditionally reads it (``logger.debug(...)``
+    arguments are evaluated eagerly regardless of the configured log level).
+    """
+
+    def resolve(self, tenant_id: str, domain: str | None = None) -> Any:
+        ctx = super().resolve(tenant_id, domain)
+        ctx.ontology.relations = {}
+        return ctx
+
+
 def _extracted(value: str) -> Extracted[str]:
     """Create a minimally substantiated text value."""
     return Extracted(value=value, evidence=Evidence(node_id="node-1", quote=value, page=1), confidence=1.0)
@@ -109,7 +124,7 @@ async def test_publish_all_never_touches_technician_collections() -> None:
         deepcopy(graph.edges["tech_tip_on"]),
         deepcopy(graph.edges["tech_tip_by"]),
     )
-    loader = ManualGraphLoader(catalog=catalog, graph_store=graph, tenant_manager=FakeTenantManager())
+    loader = ManualGraphLoader(catalog=catalog, graph_store=graph, tenant_manager=_TenantManagerWithRelations())
     await loader.publish_all()
     await loader.retract("manual-1")
     assert (graph.nodes["tech_tip"], graph.edges["tech_tip_on"], graph.edges["tech_tip_by"]) == original
@@ -120,7 +135,7 @@ async def test_edges_carry_origin_and_triple() -> None:
     """Every owned edge document carries the generic triple and manual origin."""
     catalog = await _catalog(_card())
     graph = FakeGraphStore()
-    loader = ManualGraphLoader(catalog=catalog, graph_store=graph, tenant_manager=FakeTenantManager())
+    loader = ManualGraphLoader(catalog=catalog, graph_store=graph, tenant_manager=_TenantManagerWithRelations())
     report = await loader.publish_all()
     assert report.published
     for edges in graph.edges.values():
@@ -134,7 +149,7 @@ async def test_startup_check_foreign_manager_raises() -> None:
     """A manager lacking the procedures entities fails the domain check."""
     catalog = await _catalog(_card())
     loader = ManualGraphLoader(
-        catalog=catalog, graph_store=FakeGraphStore(), tenant_manager=FakeTenantManager(("Contract",))
+        catalog=catalog, graph_store=FakeGraphStore(), tenant_manager=_TenantManagerWithRelations(("Contract",))
     )
     from parrot.knowledge.manuals.domain import ProceduresDomainNotLoaded
 
@@ -168,7 +183,7 @@ async def test_relink_failure_makes_report_incomplete(monkeypatch: pytest.Monkey
         return RelinkReport(manual_id="manual-1", failed=["tip-1"])
 
     monkeypatch.setattr("parrot.knowledge.manuals.graph_loader.relink_tips", failed_relink)
-    loader = ManualGraphLoader(catalog=catalog, graph_store=graph, tenant_manager=FakeTenantManager())
+    loader = ManualGraphLoader(catalog=catalog, graph_store=graph, tenant_manager=_TenantManagerWithRelations())
     report = await loader.publish_all()
     assert report.tip_relink is not None
     assert report.tip_relink.failed == ["tip-1"]
