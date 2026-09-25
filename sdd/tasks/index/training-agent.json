@@ -309,7 +309,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -319,8 +319,9 @@
       "parallelism_notes": "config['catalog'] is a ManualCatalogStore and tests use InMemoryManualCatalog from TASK-3702 (manuals/catalog.py, tests/knowledge/_support/catalog.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3711-manual-datasource.md"
+      "completed_at": "2026-09-25T13:54:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3711-manual-datasource.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3712",
@@ -374,7 +375,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -384,8 +385,9 @@
       "parallelism_notes": "renders ManualCard/Tip/Applicability from TASK-3699 (manuals/models.py); FakeFileManager comes transitively from TASK-3698",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3714-manual-export-bundle.md"
+      "completed_at": "2026-09-25T13:54:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3714-manual-export-bundle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3715",
@@ -413,7 +415,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -423,8 +425,9 @@
       "parallelism_notes": "parse_response reads AIMessage.image_urls/media_urls added by TASK-3715 (models/responses.py); tests construct AIMessage with them",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3716-parser-media-urls.md"
+      "completed_at": "2026-09-25T13:54:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3716-parser-media-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3717",

@@ -372,10 +372,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3711
+- Feature: training-agent
+- Implementation SHA: 808ddbab234992cfec13bcd30488c0203aa9afac
+- Closed at (UTC): 2026-09-25T13:54:47+00:00
+- Fix commits: 3d40163dd675064cb993f04ff18691760d8cb7e9
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 250.6s · Tokens: n/a |
+| supplementary_test_evidence | 127 passed, 1 skipped, 0 failed (scoped direct pytest over knowledge/manuals/ + contracts/test_ontology_domain.py, after fix commit 3d40163dd) |

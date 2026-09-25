@@ -383,10 +383,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3716
+- Feature: training-agent
+- Implementation SHA: 808ddbab234992cfec13bcd30488c0203aa9afac
+- Closed at (UTC): 2026-09-25T13:54:53+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet(native) · Backend: native · Model: sonnet · Attempts: 1 · Duration: n/a · Tokens: n/a |
+| supplementary_test_evidence | 6 passed, 0 failed (scoped direct pytest over test_media_urls.py + test_media_download.py); coder_record_review NOT recorded: this native attempt's attempt_uid (returned only by the original coder_prepare_native call) was lost across a mid-session context compaction and is unrecoverable — a repeat coder_prepare_native call now returns complexity_plan_stale with no attempt_uid, since the task has since merged. The review itself was performed and is durably documented in the referenced review_evidence artifact (verdict: clean, no findings). |

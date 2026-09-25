@@ -281,10 +281,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3714
+- Feature: training-agent
+- Implementation SHA: 808ddbab234992cfec13bcd30488c0203aa9afac
+- Closed at (UTC): 2026-09-25T13:54:50+00:00
+- Fix commits: 0b6527c4b224e82ba536ed0c67dde339a572e64a
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: glm (retry after codex-spark infra failure) · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 2 (1 infra failure + 1 completed) · Duration: 166.3s · Tokens: 1490456/8447 |
+| supplementary_test_evidence | 127 passed, 1 skipped, 0 failed (scoped direct pytest over knowledge/manuals/ + contracts/test_ontology_domain.py, after fix commit 0b6527c4b) |
