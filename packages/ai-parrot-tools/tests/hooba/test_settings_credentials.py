@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 from parrot.auth.broker import CredentialBroker
-from parrot.auth.credentials import NeedsAuth, ResolvedCredential
+from parrot.auth.credentials import CredentialResolver, NeedsAuth, ResolvedCredential
 from parrot_tools.hooba.credentials import (
     EnvCredentialResolver,
     HoobaAuthError,
@@ -15,6 +15,16 @@ from parrot_tools.hooba.credentials import (
 from parrot_tools.hooba.settings import HoobaSettings
 
 ENV = {"HOOBA_ACCOUNT_ID": "23549", "HOOBA_USERNAME": "user@example.test", "HOOBA_PASSWORD": "s3cret"}
+
+
+class _BadShapeResolver(CredentialResolver):
+    """Resolver stub that always returns a malformed secret (missing password)."""
+
+    async def resolve(self, channel: str, user_id: str) -> dict:
+        return {"username": "only-a-username"}
+
+    async def get_auth_url(self, channel: str, user_id: str) -> str:
+        return ""
 
 
 class FakeHTTP:
@@ -120,7 +130,8 @@ async def test_login_hook_fails_closed_before_network():
         await make_login_hook(settings, broker, user_id="")(http)
     assert not http.calls
 
-    register_hooba_provider(broker, resolver=EnvCredentialResolver(env={"HOOBA_USERNAME": "u", "HOOBA_PASSWORD": "p"}))
+    bad_shape_broker = CredentialBroker()
+    register_hooba_provider(bad_shape_broker, resolver=_BadShapeResolver())
     with pytest.raises(HoobaAuthError):
-        await make_login_hook(settings, broker)(http)
+        await make_login_hook(settings, bad_shape_broker)(http)
     assert not http.calls

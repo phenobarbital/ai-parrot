@@ -66,7 +66,9 @@ def make_login_hook(
     """Return the async hook ``OpenAPIToolkit(auth_type="cookie")`` uses for a session cookie."""
 
     async def _login(http_service: HTTPService) -> Dict[str, str]:
-        identity = user_id or settings.credential_user_id
+        # An explicit "" must fail closed (S7), never silently fall back to
+        # the default identity -- only an omitted (None) user_id defaults.
+        identity = user_id if user_id is not None else settings.credential_user_id
         try:
             resolved = await broker.resolve(settings.credential_provider, _BROKER_CHANNEL, identity)
         except (KeyError, ValueError, TypeError) as exc:
