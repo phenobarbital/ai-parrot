@@ -1,4 +1,5 @@
 """FEAT-603 TASK-3759/3760 — find / batch operations on FileManagerToolkit and FileManagerTool."""
+
 import json
 import sys
 from pathlib import Path
@@ -159,9 +160,7 @@ async def test_toolkit_find_uses_backend_override():
 
     result = await tk.find_files(keywords=["a", "b"], extension=".csv", prefix="folder")
 
-    assert fake_manager.calls == [
-        {"keywords": ["a", "b"], "extension": ".csv", "prefix": tk._storage_path("folder")}
-    ]
+    assert fake_manager.calls == [{"keywords": ["a", "b"], "extension": ".csv", "prefix": tk._storage_path("folder")}]
     assert result == {"files": [], "count": 0}
 
 

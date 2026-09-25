@@ -991,9 +991,7 @@ class FileManagerToolkit(AbstractToolkit):
             Dict with ``files`` (list of file info dicts, same shape as ``list_files``) and ``count``.
         """
         resolved_prefix = self._storage_path(prefix) if prefix else None
-        self.logger.info(
-            "Finding files under '%s' (keywords=%s, extension=%s)", resolved_prefix, keywords, extension
-        )
+        self.logger.info("Finding files under '%s' (keywords=%s, extension=%s)", resolved_prefix, keywords, extension)
         files = await self.manager.find_files(keywords=keywords, extension=extension, prefix=resolved_prefix)
         return {
             "files": [
