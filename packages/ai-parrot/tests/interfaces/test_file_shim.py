@@ -1,6 +1,7 @@
 """Regression tests for the parrot.interfaces.file shim over
 navigator.utils.file (FEAT-123 — fileinterface-migration).
 """
+
 import importlib
 import sys
 from io import BytesIO
@@ -15,8 +16,8 @@ from parrot.tools.filemanager import FileManagerFactory, FileManagerTool, FileMa
 from navigator.utils.file.local import LocalFileManager as UpstreamLocal
 from navigator.utils.file.tmp import TempFileManager as UpstreamTemp
 
-
 # ── Identity / shim wiring ──────────────────────────────────────
+
 
 def test_root_identity():
     """Eagerly-exported symbols are upstream classes."""
@@ -75,6 +76,7 @@ def test_submodule_paths_resolve():
 
 # ── Behaviour change — create_from_bytes now returns bool ───────
 
+
 @pytest.mark.asyncio
 async def test_create_from_bytes_returns_bool(tmp_path: Path):
     """Upstream contract: bool return, not FileMetadata."""
@@ -85,6 +87,7 @@ async def test_create_from_bytes_returns_bool(tmp_path: Path):
 
 
 # ── Parrot-level FileManagerFactory delegates to upstream ───────
+
 
 def test_factory_fs_returns_upstream_localfilemanager(tmp_path: Path):
     fm = FileManagerFactory.create("fs", base_path=str(tmp_path))
@@ -104,6 +107,7 @@ def test_factory_unknown_type_raises_valueerror():
 
 
 # ── FileManagerTool.create flow uses get_file_metadata adapter ──
+
 
 @pytest.mark.asyncio
 async def test_filemanager_tool_create_uses_get_metadata(tmp_path: Path):
@@ -131,6 +135,7 @@ async def test_filemanager_tool_create_uses_get_metadata(tmp_path: Path):
 
 
 # ── FEAT-603 — SharePoint / OneDrive lazy exports and native factory ────
+
 
 def test_shim_exports_new_managers_lazily():
     """SharePointFileManager / OneDriveFileManager are the classes from their submodules and are in __all__."""
