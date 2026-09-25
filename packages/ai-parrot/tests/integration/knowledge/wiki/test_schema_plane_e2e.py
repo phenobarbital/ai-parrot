@@ -117,7 +117,7 @@ async def test_live_sqlite_sync_and_plane_warmed_partition(tmp_path: Path, svc: 
 
     assert set(report.created) == {"table:sqlite/main.stores", "table:sqlite/main.sales"}
     hops = await svc.neighbors("sqlite:main.sales", depth=1)
-    assert hops and hops[0]["target"] == "table:sqlite/main.stores"
+    assert hops and hops[0]["concept_id"] == "table:sqlite/main.stores"
 
     db.unlink()
     from parrot.bots.database.cache import CachePartition
