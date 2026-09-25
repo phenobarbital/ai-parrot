@@ -1,4 +1,5 @@
 """Video segment alignment: whisper blocks to steps (FEAT-601 M7)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -159,7 +160,9 @@ def align_deterministic(
             if block.start_seconds != merged[-1].end_seconds or score_by_id.get(block.id, 0.0) < threshold:
                 break
             merged.append(block)
-        method: Literal["bm25", "ordinal", "judged"] = "ordinal" if _ordinal_match(selected.text, step.order) else "bm25"
+        method: Literal["bm25", "ordinal", "judged"] = (
+            "ordinal" if _ordinal_match(selected.text, step.order) else "bm25"
+        )
         alignments.append(
             SegmentAlignment(
                 step_id=step.identity.step_id,
@@ -291,7 +294,9 @@ async def judge_alignment(
     return [
         judgement.model_copy(update={"model": judgement.model or model_name, "judged_at": judgement.judged_at or now})
         for judgement in draft.judgements
-        if judgement.step_id in valid_step_ids and bool(judgement.block_ids) and set(judgement.block_ids) <= valid_block_ids
+        if judgement.step_id in valid_step_ids
+        and bool(judgement.block_ids)
+        and set(judgement.block_ids) <= valid_block_ids
     ]
 
 

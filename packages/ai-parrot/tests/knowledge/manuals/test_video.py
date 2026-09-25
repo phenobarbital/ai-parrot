@@ -1,4 +1,5 @@
 """FEAT-601 M7 — video alignment."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -20,7 +21,9 @@ from parrot.knowledge.manuals.models import (  # noqa: E402
 
 def _transcript(texts: list[str]) -> dict[str, list[dict[str, object]]]:
     """Build evenly timestamped Whisper chunks for tests."""
-    return {"chunks": [{"timestamp": (index * 10.0, index * 10.0 + 9.0), "text": text} for index, text in enumerate(texts)]}
+    return {
+        "chunks": [{"timestamp": (index * 10.0, index * 10.0 + 9.0), "text": text} for index, text in enumerate(texts)]
+    }
 
 
 def _step(order: int, text: str) -> Step:
@@ -72,7 +75,9 @@ class _ScriptedAdapter:
         self.payload = payload
         self.calls = 0
 
-    async def ask_structured(self, prompt: str, schema: type[vd.JudgementDraft], *, temperature: float) -> dict[str, object]:
+    async def ask_structured(
+        self, prompt: str, schema: type[vd.JudgementDraft], *, temperature: float
+    ) -> dict[str, object]:
         """Return the scripted structured response."""
         assert "UNTRUSTED TRANSCRIPT DATA" in prompt
         assert schema is vd.JudgementDraft
