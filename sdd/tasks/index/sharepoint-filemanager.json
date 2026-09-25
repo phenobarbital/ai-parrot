@@ -78,7 +78,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -88,8 +88,9 @@
       "parallelism_notes": "TASK-3750: same file graph.py; calls _ready / _retrying / _map_error it adds",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3751-graph-read-ops.md"
+      "completed_at": "2026-09-25T19:22:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3751-graph-read-ops.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3752",
