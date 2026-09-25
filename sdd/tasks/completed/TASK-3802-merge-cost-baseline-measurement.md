@@ -195,10 +195,20 @@ Commands re-run the suites that pin the mechanisms this measurement exercises.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
+**Completed by**: sdd-worker (native seat `sonnet`, retry attempt 2 — attempt 1 on
+`gpt-5.6-terra` delivered no file change and was auto-classified `empty_delivery` by
+the engine)
+**Date**: 2026-09-25
+**Notes**: AC8 measured on the still-present `feat-FEAT-601-training-agent` worktree
+(128 changed files vs origin/dev — the actual baseline worktree, no stand-in needed).
+Run 1 (cold ledger): 27 invocations / 26 escalated / 0 skipped, matching spec §1's
+baseline exactly. Ledger seeded honestly between runs via the public
+`record_green_escalation` API using each run's own `core_hits`/`cap_hits`/
+`cap_impacted` attribution (same inputs `select_tests.py --run` itself would pass) —
+the 26 full package suites were not actually executed (task's own Implementation Notes
+allow API-seeding since AC8 measures selection, not suite runtime). Run 2 (unchanged
+content, green ledger): 11 invocations, 26 distributions in `skipped_escalations`.
+**AC8 verdict: PASS (11 < 27, strictly fewer)**. `artifacts/logs/feat-604-merge-cost.md`
+committed (git-ignored path, `git add -f`), no production code touched — diff scoped to
+that single file. No corrections needed on review.
 **Deviations from spec**: none

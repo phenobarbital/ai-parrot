@@ -294,10 +294,18 @@ are FILL IN. Reuse the real-git fixture from TASK-3797's file.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
+**Completed by**: sdd-worker (seat `gpt-5.6-terra` via parrot-sdd-coder MCP; 1 review fix
+by orchestrator, commit `03faa084f`)
+**Date**: 2026-09-25
+**Notes**: `plan_tests`' cap branch now attributes driving changed files, fingerprints the
+impacted set, and routes through `pending_escalations` for both core and cap kinds.
+Delivery had one confirmed defect (caught by the task's own
+`test_second_selection_skips_unchanged_cap_suite`): a leftover "mirror" TestTarget for
+the changed file driving a ledger-skipped cap escalation, producing an invocation for a
+distribution the plan claimed to skip. Fixed by filtering mirror-reason targets for
+ledger-skipped cap distributions (commit `03faa084f`). Recorded as
+`coder-feedback:00af3a8032feb00447605757` / `coder-review:f3f9d5027204e62081f9e4e2`.
+Feature's own declared test scope now 621 passed (was 620 passed/1 failed pre-fix). ruff
++ black clean. Merge-tier gate red is the same confirmed pre-existing environmental cause
+documented in TASK-3801/TASK-3797 (playwright + unrelated ai-parrot-integrations flakiness).
 **Deviations from spec**: none

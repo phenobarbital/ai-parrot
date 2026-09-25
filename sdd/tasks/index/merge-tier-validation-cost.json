@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-25T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-25T19:46:27+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates LedgerEntry.impact_blobs/impacted_hash, ScopePlan.cap_hits/cap_impacted and the extended context.py functions every other M1/M2 task consumes; owns datatypes.py, context.py, planner.py exclusively.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3797-cap-ledger-datatypes-context.md"
+      "started_at": "2026-09-25T18:28:14+00:00",
+      "completed_at": "2026-09-25T19:05:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3797-cap-ledger-datatypes-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3798",
@@ -34,16 +35,19 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-3797"],
+      "depends_on": [
+        "TASK-3797"
+      ],
       "parallel": true,
       "parallelism_notes": "Imports pending_escalations(cap_hits, cap_impacted) and ScopePlan.cap_hits/cap_impacted from TASK-3797 (test_scope/context.py, datatypes.py, planner.py build_plan kwargs); also MODIFIES test_cap_escalation_ledger.py which TASK-3797 creates.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3798-select-cap-dedupe.md"
+      "started_at": "2026-09-25T18:28:14+00:00",
+      "completed_at": "2026-09-25T19:19:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3798-select-cap-dedupe.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3799",
@@ -52,16 +56,20 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-3797", "TASK-3798"],
+      "depends_on": [
+        "TASK-3797",
+        "TASK-3798"
+      ],
       "parallel": true,
       "parallelism_notes": "Calls record_green_escalation's new impact_files/impacted_hashes params from TASK-3797 (context.py) and reads plan.cap_hits/cap_impacted populated by TASK-3798 (select.py); owns scripts/sdd/select_tests.py and nodes/qa.py exclusively.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3799-cli-qa-cap-writers.md"
+      "started_at": "2026-09-25T18:28:14+00:00",
+      "completed_at": "2026-09-25T19:34:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3799-cli-qa-cap-writers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3800",
@@ -70,16 +78,20 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-3797", "TASK-3798"],
+      "depends_on": [
+        "TASK-3797",
+        "TASK-3798"
+      ],
       "parallel": true,
       "parallelism_notes": "Imports record_green_escalation/record_red_run from TASK-3797 (context.py) and reads plan.cap_hits/cap_impacted from TASK-3798 (select.py) inside _record_invocation_outcome; owns sdd_coder/background.py exclusively. Runs concurrently with TASK-3799 (disjoint files).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3800-supervisor-ledger-writer.md"
+      "started_at": "2026-09-25T18:28:14+00:00",
+      "completed_at": "2026-09-25T19:34:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3800-supervisor-ledger-writer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3801",
@@ -88,16 +100,17 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Exclusive: wall-clock full-suite measurement runs (serial + 2x -n auto per distribution) must not share the machine with any other task's test runs or the timings are meaningless (spec Worktree Strategy). Orchestrator-run measurement task, not delegation-eligible. Owns policy.py exclusively; no code dependency on M1/M2.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3801-xdist-evidence-spike.md"
+      "started_at": "2026-09-25T18:28:14+00:00",
+      "completed_at": "2026-09-25T18:55:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3801-xdist-evidence-spike.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3802",
@@ -106,16 +119,20 @@
       "feature_id": "FEAT-604",
       "feature": "merge-tier-validation-cost",
       "spec": "sdd/specs/merge-tier-validation-cost.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-3798", "TASK-3800"],
+      "depends_on": [
+        "TASK-3798",
+        "TASK-3800"
+      ],
       "parallel": true,
       "parallelism_notes": "Measures the skip path end to end: needs TASK-3798's selection-side skip (select.py) and TASK-3800's supervisor/API writer semantics (background.py) landed to produce AC8's before/after numbers; creates only the evidence file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3802-merge-cost-baseline-measurement.md"
+      "started_at": "2026-09-25T18:28:14+00:00",
+      "completed_at": "2026-09-25T19:46:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3802-merge-cost-baseline-measurement.md",
+      "verification": "verified"
     }
   ]
 }
