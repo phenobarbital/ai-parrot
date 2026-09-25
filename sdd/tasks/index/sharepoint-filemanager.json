@@ -35,7 +35,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "TASK-3748: tests import make_probe / FakeDriveItem from _graph_fakes.py; creates graph.py + batch.py (first of the graph.py chain 3749→3754)",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3749-graph-core-models-paths.md"
+      "completed_at": "2026-09-25T18:47:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3749-graph-core-models-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3750",
