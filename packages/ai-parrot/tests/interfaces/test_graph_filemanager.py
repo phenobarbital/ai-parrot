@@ -1,6 +1,7 @@
 """FEAT-603 GraphDriveFileManager unit tests (TASK-3749)."""
 
 import datetime as dt
+import asyncio
 import os
 import subprocess
 import sys
@@ -20,7 +21,8 @@ from parrot.interfaces.file.graph import (
     GraphFileManagerError,
 )
 
-from ._graph_fakes import FakeDriveItem, make_probe
+from ._graph_fakes import FakeAPIError, FakeDrive, FakeDriveItem, FakeGraphClient, make_onedrive_client, make_probe, make_sharepoint_client
+from parrot.interfaces.sharepoint import SharepointClient
 
 
 def test_prefix_is_normalised():
@@ -125,3 +127,163 @@ def test_batch_summary_from_items():
 def test_client_before_connect_raises():
     with pytest.raises(GraphFileManagerError):
         _ = make_probe(GraphDriveFileManager).client
+
+
+@pytest.mark.parametrize(
+    ("auth_mode", "credentials", "user_assertion", "expected"),
+    [
+        ("direct", {}, None, "acquire_token"),
+        ("direct", {"username": "user", "password": "secret"}, None, "user_auth"),
+        ("on_behalf_of", {}, "assertion", "acquire_token_on_behalf_of"),
+        ("delegated", {}, None, "interactive_login"),
+        ("cached", {}, None, "ensure_interactive_session"),
+    ],
+)
+async def test_connect_auth_mode_branches(auth_mode, credentials, user_assertion, expected):
+    fake = FakeGraphClient({"drive-1": FakeDrive()})
+    client = make_sharepoint_client(fake, drive_id="drive-1")
+    calls = []
+    client.processing_credentials = lambda: calls.append("processing_credentials")
+    client.set_auth_mode = lambda mode: calls.append(("set_auth_mode", mode))
+    client.acquire_token = lambda scopes: calls.append("acquire_token")
+    client.user_auth = lambda username, password, scopes: calls.append("user_auth")
+    client.acquire_token_on_behalf_of = lambda assertion, scopes: calls.append("acquire_token_on_behalf_of")
+
+    async def interactive_login(*, scopes=None):
+        calls.append("interactive_login")
+
+    async def ensure_interactive_session(*, scopes=None):
+        calls.append("ensure_interactive_session")
+
+    client.interactive_login = interactive_login
+    client.ensure_interactive_session = ensure_interactive_session
+    manager = make_probe(
+        GraphDriveFileManager, credentials=credentials, auth_mode=auth_mode, user_assertion=user_assertion
+    )
+    manager._build_client = lambda: client
+    await manager.connect()
+    await manager.connect()
+    assert calls.count(expected) == 1
+
+
+async def test_adopt_client_same_class_is_used_as_is():
+    fake = FakeGraphClient({"drive-1": FakeDrive()})
+    client = make_sharepoint_client(fake, drive_id="drive-1")
+    closed = []
+
+    async def close():
+        closed.append(True)
+
+    client.close = close
+    manager = make_probe(GraphDriveFileManager)
+    manager.client_class = SharepointClient
+    manager.adopt_client(client)
+    assert manager.client is client
+    await manager.close()
+    assert closed == []
+
+
+async def test_adopt_client_generic_builds_wrapper_and_copies_auth_state_only():
+    fake = FakeGraphClient({"drive-1": FakeDrive()})
+    adopted = make_onedrive_client(fake)
+    adopted._credential = "credential"
+    adopted._access_token = "token"
+    adopted.auth_mode = "cached"
+    wrapper = make_sharepoint_client(fake, drive_id="drive-1")
+    wrapper.site = "own-site"
+    closed = []
+    wrapper.processing_credentials = lambda: None
+
+    async def close():
+        closed.append(True)
+
+    wrapper.close = close
+    manager = make_probe(GraphDriveFileManager)
+    manager.client_class = SharepointClient
+    manager._build_client = lambda: wrapper
+    manager.adopt_client(adopted)
+    assert manager.client is wrapper
+    assert (wrapper._credential, wrapper._graph_client, wrapper._access_token, wrapper.auth_mode) == (
+        adopted._credential,
+        adopted._graph_client,
+        adopted._access_token,
+        adopted.auth_mode,
+    )
+    assert wrapper.site == "own-site"
+    await manager.close()
+    assert closed == [True]
+
+
+async def test_ready_resolves_drive_once():
+    manager = make_probe(GraphDriveFileManager)
+    manager.adopt_client(make_sharepoint_client(FakeGraphClient({"drive-1": FakeDrive()}), drive_id="drive-1"))
+    calls = 0
+
+    async def resolve_drive_id():
+        nonlocal calls
+        calls += 1
+        return "drive-1"
+
+    manager._resolve_drive_id = resolve_drive_id
+    assert await asyncio.gather(manager._ready(), manager._ready()) == ["drive-1", "drive-1"]
+    assert calls == 1
+
+
+async def test_retrying_honours_retry_after_and_caps_at_60():
+    manager = make_probe(GraphDriveFileManager)
+    sleeps = []
+    attempts = 0
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    async def operation():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise FakeAPIError(429, retry_after=90)
+        return "done"
+
+    manager._sleep = sleep
+    assert await manager._retrying(operation, label="test") == ("done", 2)
+    assert sleeps == [60]
+
+
+async def test_retrying_non_idempotent_never_retries():
+    manager = make_probe(GraphDriveFileManager)
+
+    async def operation():
+        raise FakeAPIError(429)
+
+    with pytest.raises(FakeAPIError):
+        await manager._retrying(operation, label="test", idempotent=False)
+
+
+def test_map_error_types():
+    manager = make_probe(GraphDriveFileManager)
+    assert isinstance(manager._map_error(FakeAPIError(404), path="file"), FileNotFoundError)
+    assert isinstance(manager._map_error(FakeAPIError(401), path="file"), PermissionError)
+    assert isinstance(manager._map_error(FakeAPIError(403), path="file"), PermissionError)
+    assert isinstance(manager._map_error(FakeAPIError(409), path="file"), FileExistsError)
+    error = manager._map_error(FakeAPIError(500), path="file")
+    assert isinstance(error, GraphFileManagerError)
+    assert error.status_code == 500
+
+
+def test_validate_graph_url_accepts_graph_and_sharepoint_hosts():
+    manager = make_probe(GraphDriveFileManager)
+    for url in (
+        "https://graph.microsoft.com/v1.0/me",
+        "https://contoso.sharepoint.com/path",
+        "https://contoso-my.sharepoint.com/path",
+        "https://x.files.1drv.com/path",
+    ):
+        assert manager._validate_graph_url(url, purpose="test") == url
+
+
+def test_validate_graph_url_rejects_http_and_foreign_hosts():
+    manager = make_probe(GraphDriveFileManager)
+    for url in ("http://contoso.sharepoint.com", "https://evil.example", "https://sharepoint.com.evil.example"):
+        with pytest.raises(GraphFileManagerError) as exc_info:
+            manager._validate_graph_url(url, purpose="test")
+        assert url not in str(exc_info.value)
