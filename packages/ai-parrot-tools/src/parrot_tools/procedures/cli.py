@@ -70,7 +70,10 @@ def _run(obj: dict[str, Any], body: Callable[[Any], Awaitable[Any]]) -> None:
 
     async def _main() -> Any:
         library = factory(
-            dsn=obj["dsn"], tenant=obj["tenant"], storage_root=obj["storage_root"], evidence_root=obj["evidence_root"],
+            dsn=obj["dsn"],
+            tenant=obj["tenant"],
+            storage_root=obj["storage_root"],
+            evidence_root=obj["evidence_root"],
             adapter=None,
         )
         try:
@@ -92,12 +95,19 @@ def _run(obj: dict[str, Any], body: Callable[[Any], Awaitable[Any]]) -> None:
 @click.option("--evidence-root", type=click.Path(path_type=Path), default=Path("manuals_evidence"))
 @click.pass_context
 def manuals(
-    ctx: click.Context, tenant: str, user: str, roles: tuple[str, ...], dsn: str, storage_root: Path,
+    ctx: click.Context,
+    tenant: str,
+    user: str,
+    roles: tuple[str, ...],
+    dsn: str,
+    storage_root: Path,
     evidence_root: Path,
 ) -> None:
     """Manuals: ingest assembly manuals, align videos, curate procedures."""
     ctx.ensure_object(dict)
-    ctx.obj.update(tenant=tenant, user=user, roles=roles, dsn=dsn, storage_root=storage_root, evidence_root=evidence_root)
+    ctx.obj.update(
+        tenant=tenant, user=user, roles=roles, dsn=dsn, storage_root=storage_root, evidence_root=evidence_root
+    )
 
 
 @manuals.command("add")
@@ -227,10 +237,16 @@ def export(obj: dict[str, Any], manual_id: str, out_dir: Path, zip_bundle: bool,
             ctx = library.graph_loader.context()
             docs = await library.graph_loader.graph_store.query_documents(ctx, TIP_COLLECTION, filters={"active": True})
             tip_fields = set(Tip.model_fields)
-            tips = tuple(Tip.model_validate({key: value for key, value in doc.items() if key in tip_fields}) for doc in docs)
+            tips = tuple(
+                Tip.model_validate({key: value for key, value in doc.items() if key in tip_fields}) for doc in docs
+            )
 
         return await export_bundle(
-            card, file_manager=library.file_manager, out_dir=out_dir, include_tips=include_tips, zip_bundle=zip_bundle,
+            card,
+            file_manager=library.file_manager,
+            out_dir=out_dir,
+            include_tips=include_tips,
+            zip_bundle=zip_bundle,
             tips=tips,
         )
 
