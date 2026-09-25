@@ -1,5 +1,6 @@
 """FEAT-602 TASK-3738 — web adapter and catalog seeding (no real browser)."""
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -85,4 +86,4 @@ async def test_seed_catalog_writes_login_and_sections_without_secrets(tmp_path: 
     assert '"credential_provider": "hooba"' in login
     for path in files:
         if path.name not in {"_site.json", "hooba-login.json"}:
-            assert '"requires": ["hooba-login"]' in path.read_text()
+            assert json.loads(path.read_text())["requires"] == ["hooba-login"]
