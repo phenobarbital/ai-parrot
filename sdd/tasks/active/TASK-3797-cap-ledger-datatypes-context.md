@@ -403,10 +403,16 @@ bodies are FILL IN. Reuse `test_context.py`'s real-git tmp fixture pattern.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
+**Completed by**: sdd-worker (seat `gpt-5.6-terra` via parrot-sdd-coder MCP)
+**Date**: 2026-09-25
+**Notes**: `LedgerEntry.impact_blobs`/`.impacted_hash`, `ScopePlan.cap_hits`/`.cap_impacted`,
+`read_ledger`'s widened validator, and the extended `record_green_escalation`/
+`pending_escalations` signatures landed in `datatypes.py`/`context.py`/`planner.py`.
+New `test_cap_escalation_ledger.py` adds 6 context-level tests. Feature's own declared
+test scope (`test_scope` + `sdd_coder`) now 618 passed (was 612 before this task). ruff
+clean on all 4 touched/created files. The merge-tier validation gate for this chunk
+again went red (24 failed / 28 errors, `ai-parrot-integrations`) — same confirmed
+environmental cause as TASK-3801 (missing playwright chromium binary + pre-existing,
+unrelated Telegram/Slack/Matrix flakiness; failed-count dropped 31→24 between runs with
+no code change in between, consistent with flakiness, not a regression from this diff).
 **Deviations from spec**: none
