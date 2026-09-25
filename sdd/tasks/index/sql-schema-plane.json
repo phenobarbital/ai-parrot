@@ -167,7 +167,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -177,8 +177,9 @@
       "parallelism_notes": "calls SchemaPlaneService.sync/lookup (TASK-3684) and ingest_ddl/diff (TASK-3686, which extends service.py); modifies knowledge/wiki/cli.py (only this task touches cli.py)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3687-schema-cli-group.md"
+      "completed_at": "2026-09-24T22:52:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3687-schema-cli-group.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3688",
@@ -227,7 +228,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -237,8 +238,9 @@
       "parallelism_notes": "imports create_schema_tools from TASK-3689 (schema/tools.py) and SchemaPlaneService from TASK-3684 (transitive); modifies knowledge/wiki/mcp_server.py (only this task touches it). Sequence after FEAT-569 TASK-3358 if it merges first (same file).",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3690-schema-mcp-overlay-mount.md"
+      "completed_at": "2026-09-24T22:52:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3690-schema-mcp-overlay-mount.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3691",
@@ -268,7 +270,7 @@
       "feature_id": "FEAT-600",
       "feature": "sql-schema-plane",
       "spec": "sdd/specs/sql-schema-plane.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -278,8 +280,9 @@
       "parallelism_notes": "reads cache_partition.plane / plane_write attributes added by TASK-3691 (cache.py); modifies bots/database/toolkits/sql.py (only this task touches it)",
       "assigned_to": null,
       "started_at": "2026-09-24T21:44:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3692-sqltoolkit-plane-repair.md"
+      "completed_at": "2026-09-24T22:52:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3692-sqltoolkit-plane-repair.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3693",
