@@ -177,7 +177,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -188,8 +188,9 @@
       "parallelism_notes": "TASK-3750: subclasses GraphDriveFileManager and relies on adopt_client/_ready/client_class; TASK-3748: tests adopt make_sharepoint_client",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3756-sharepoint-filemanager.md"
+      "completed_at": "2026-09-25T19:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3756-sharepoint-filemanager.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3757",
