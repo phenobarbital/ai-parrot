@@ -56,7 +56,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -67,8 +67,9 @@
       "parallelism_notes": "TASK-3749: modifies graph.py it creates (same file, serialized) and extends GraphDriveFileManager; TASK-3748: tests use make_sharepoint_client / FakeAPIError",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3750-graph-lifecycle-retry-urls.md"
+      "completed_at": "2026-09-25T18:55:40+00:00",
+      "file": "sdd/tasks/completed/TASK-3750-graph-lifecycle-retry-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3751",
