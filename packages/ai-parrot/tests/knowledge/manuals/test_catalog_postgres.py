@@ -109,7 +109,13 @@ async def test_record_answer_failure_raises() -> None:
         raise RuntimeError("audit unavailable")
 
     pool.connection.execute = fail_execute  # type: ignore[method-assign]
-    record = AnswerRecord(answer_id="answer-1", asked_at=datetime(2026, 9, 25, tzinfo=timezone.utc), user="tech@example.test", question="How do I install it?", answer_kind="procedure")
+    record = AnswerRecord(
+        answer_id="answer-1",
+        asked_at=datetime(2026, 9, 25, tzinfo=timezone.utc),
+        user="tech@example.test",
+        question="How do I install it?",
+        answer_kind="procedure",
+    )
     with pytest.raises(RuntimeError, match="audit unavailable"):
         await catalog.record_answer(record)
 
