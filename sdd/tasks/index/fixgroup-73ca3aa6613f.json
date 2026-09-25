@@ -13,12 +13,12 @@
       "feature": "fixgroup-73ca3aa6613f",
       "slug": "fix-ac19-test-command",
       "title": "Correct FEAT-601 AC19's declared multi-distribution pytest command",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "depends_on": [],
       "assigned_to": null,
       "file": "sdd/tasks/active/TASK-3804-fix-ac19-test-command.md",
-      "started_at": null,
+      "started_at": "2026-09-25T22:47:07+00:00",
       "completed_at": null,
       "verification": null
     }
