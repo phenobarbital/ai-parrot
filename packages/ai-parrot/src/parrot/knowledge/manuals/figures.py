@@ -20,7 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-CAPTION_RE = re.compile(r"^\s*(?:Fig\.?|Figure|Figura)\s*([\dA-Z][\dA-Z\-\.]*)\s*[:.\-–]?\s*(.*)$", re.I | re.M)
+CAPTION_RE = re.compile(r"^\s*(?:Figure|Figura|Fig\.?)\s*([\dA-Z][\dA-Z\-\.]*)\s*[:.\-–]?\s*(.*)$", re.I | re.M)
 CAPTION_PROMPT = "Describe this technical figure in one or two factual sentences. Context: {context}"
 
 
