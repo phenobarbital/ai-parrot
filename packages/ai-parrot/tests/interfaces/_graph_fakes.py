@@ -128,7 +128,8 @@ class FakeDrive:
         if parent_path is None:
             return []
         prefix = f"{parent_path}/" if parent_path else ""
-        depth = parent_path.count("/") + 1 if parent_path else 1
+        parent_segments = parent_path.count("/") + 1 if parent_path else 0
+        depth = parent_segments + 1
         return sorted(
             [
                 item
