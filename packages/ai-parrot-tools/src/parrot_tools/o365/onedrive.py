@@ -16,6 +16,7 @@ from .base import O365Tool, O365ToolArgsSchema
 from .delta import DEFAULT_MAX_PAGES, DriveDeltaHelper
 from parrot.interfaces.o365 import O365Client
 from parrot.interfaces.onedrive import OneDriveClient
+from parrot.interfaces.file.onedrive import OneDriveFileManager
 
 # ============================================================================
 # LIST ONEDRIVE FILES TOOL
@@ -58,35 +59,19 @@ class ListOneDriveFilesTool(O365Tool):
     description: str = "List files in OneDrive folder. " "Returns file names, paths, sizes, and modification dates."
     args_schema: Type[BaseModel] = ListOneDriveFilesArgs
 
-    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
-        """
-        List OneDrive files using the OneDriveClient.
-
-        Args:
-            client: Authenticated OneDriveClient instance
-            **kwargs: Tool parameters
-
-        Returns:
-            Dict with file listing
-        """
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """List OneDrive files through OneDriveFileManager (user_id or "me"; all pages)."""
         folder_path = kwargs.get("folder_path", "")
         recursive = kwargs.get("recursive", False)
-
+        manager = OneDriveFileManager(user=kwargs.get("user_id") or "me", credentials=dict(self.credentials or {}))
+        manager.adopt_client(client)
         try:
             self.logger.info(f"Listing OneDrive files in: {folder_path or 'root'}")
-
-            # Verify access
-            await client.verify_onedrive_access()
-
             if recursive:
-                # Recursive listing
-                files = await self._list_recursive(client, folder_path)
+                files = await self._list_recursive(manager, folder_path)
             else:
-                # Single level listing using the client's file_list method
-                files = await client.file_list(folder_path)
-
+                files = [self._entry_dict(entry) for entry in await manager.list_entries(folder_path)]
             self.logger.info(f"Found {len(files)} items")
-
             return {
                 "folder_path": folder_path or "root",
                 "total_items": len(files),
@@ -97,25 +82,33 @@ class ListOneDriveFilesTool(O365Tool):
         except Exception as e:
             self.logger.error(f"Failed to list OneDrive files: {e}")
             raise
+        finally:
+            await manager.close()
 
-    async def _list_recursive(self, client: OneDriveClient, folder_path: str) -> List[Dict[str, Any]]:
-        """Recursively list all files in a folder."""
-        all_files = []
+    async def _list_recursive(self, manager: OneDriveFileManager, folder_path: str) -> List[Dict[str, Any]]:
+        """Breadth-first listing of ``folder_path`` and every sub-folder (folders included, all pages)."""
+        files: List[Dict[str, Any]] = []
+        queue: List[str] = [folder_path]
+        while queue:
+            current_path = queue.pop(0)
+            for entry in await manager.list_entries(current_path):
+                files.append(self._entry_dict(entry))
+                if entry.is_folder:
+                    queue.append(entry.path)
+        return files
 
-        # Get items in current folder
-        items = await client.file_list(folder_path)
-
-        for item in items:
-            all_files.append(item)
-
-            # Recurse into subfolders
-            if item.get("isFolder"):
-                subfolder_path = item.get("path", "")
-                if subfolder_path:
-                    subfolder_files = await self._list_recursive(client, subfolder_path)
-                    all_files.extend(subfolder_files)
-
-        return all_files
+    @staticmethod
+    def _entry_dict(entry: Any) -> Dict[str, Any]:
+        """Map a ``DriveEntry`` into the legacy OneDrive response shape."""
+        return {
+            "name": entry.name,
+            "id": entry.id,
+            "webUrl": entry.web_url,
+            "path": entry.path,
+            "isFolder": entry.is_folder,
+            "size": entry.size or 0,
+            "modified": entry.modified_at.isoformat() if entry.modified_at else None,
+        }
 
 
 # ============================================================================
@@ -155,40 +148,23 @@ class SearchOneDriveFilesTool(O365Tool):
     )
     args_schema: Type[BaseModel] = SearchOneDriveFilesArgs
 
-    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
-        """
-        Search OneDrive files using the OneDriveClient.
-
-        Args:
-            client: Authenticated OneDriveClient instance
-            **kwargs: Tool parameters
-
-        Returns:
-            Dict with search results
-        """
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """Search OneDrive through OneDriveFileManager.find_entries (all pages; max_results after filtering)."""
         query = kwargs.get("query")
         max_results = min(kwargs.get("max_results", 20), 100)
-
+        manager = OneDriveFileManager(user=kwargs.get("user_id") or "me", credentials=dict(self.credentials or {}))
+        manager.adopt_client(client)
         try:
             self.logger.info(f"Searching OneDrive for: {query}")
-
-            # Verify access
-            await client.verify_onedrive_access()
-
-            # Perform search
-            search_results = await client.file_search(query)
-
-            # Limit results
-            if len(search_results) > max_results:
-                search_results = search_results[:max_results]
-
-            self.logger.info(f"Found {len(search_results)} matching files")
-
-            return {"query": query, "total_results": len(search_results), "files": search_results}
-
+            entries = await manager.find_entries(keywords=query)
+            files = [ListOneDriveFilesTool._entry_dict(entry) for entry in entries[:max_results]]
+            self.logger.info(f"Found {len(files)} matching files")
+            return {"query": query, "total_results": len(files), "files": files}
         except Exception as e:
             self.logger.error(f"Failed to search OneDrive: {e}")
             raise
+        finally:
+            await manager.close()
 
 
 # ============================================================================
