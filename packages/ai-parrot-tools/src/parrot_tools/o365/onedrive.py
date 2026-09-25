@@ -8,15 +8,16 @@ Tools for interacting with OneDrive:
 - Upload files
 """
 
-from typing import Dict, Any, Optional, List, Type
 from pathlib import Path
-import shutil
+from typing import Any, Dict, List, Optional, Type
+
 from pydantic import BaseModel, Field
+
+from parrot.interfaces.file.onedrive import OneDriveFileManager
+from parrot.interfaces.o365 import O365Client
+
 from .base import O365Tool, O365ToolArgsSchema
 from .delta import DEFAULT_MAX_PAGES, DriveDeltaHelper
-from parrot.interfaces.o365 import O365Client
-from parrot.interfaces.onedrive import OneDriveClient
-from parrot.interfaces.file.onedrive import OneDriveFileManager
 
 # ============================================================================
 # LIST ONEDRIVE FILES TOOL
@@ -223,87 +224,47 @@ class DownloadOneDriveFileTool(O365Tool):
     )
     args_schema: Type[BaseModel] = DownloadOneDriveFileArgs
 
-    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
-        """
-        Download OneDrive file using the OneDriveClient.
-
-        Args:
-            client: Authenticated OneDriveClient instance
-            **kwargs: Tool parameters
-
-        Returns:
-            Dict with download details
-        """
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """Download a OneDrive file by path or id through OneDriveFileManager (streamed to disk)."""
         file_path = kwargs.get("file_path")
         file_id = kwargs.get("file_id")
         local_destination = kwargs.get("local_destination")
         rename_as = kwargs.get("rename_as")
-
+        if not file_path and not file_id:
+            raise ValueError("Either file_path or file_id must be provided")
+        dest_dir = Path(local_destination) if local_destination else Path.cwd()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        manager = OneDriveFileManager(user=kwargs.get("user_id") or "me", credentials=dict(self.credentials or {}))
+        manager.adopt_client(client)
         try:
-            if not file_path and not file_id:
-                raise ValueError("Either file_path or file_id must be provided")
-
-            # Set up download destination
-            if local_destination:
-                dest_dir = Path(local_destination)
-            else:
-                dest_dir = Path.cwd()
-
-            dest_dir.mkdir(parents=True, exist_ok=True)
-
-            # Verify access
-            await client.verify_onedrive_access()
-
             if file_id:
-                # Download by ID
-                self.logger.info(f"Downloading OneDrive file ID: {file_id}")
-
-                # Get file info first
-                drive_info = await client._resolve_drive()
-                item = await client.graph_client.drives.by_drive_id(drive_info.id).items.by_drive_item_id(file_id).get()
-
-                filename = rename_as or item.name
-                destination = dest_dir / filename
-
-                downloaded_path = await client.file_download(file_id, destination)
-
+                await manager._ready()
+                item = await manager._get_item_by_id(file_id)
+                file_path = manager._item_path(item) or item.name
             else:
-                # Download by path
-                self.logger.info(f"Downloading OneDrive file: {file_path}")
+                local = dest_dir / (rename_as or file_path.rsplit("/", 1)[-1])
+                await manager.download_file(file_path, local)
+                file_id = (await manager._get_item(manager._prefixed(file_path))).id
+                return {
+                    "file_path": file_path,
+                    "file_id": file_id,
+                    "local_path": str(local),
+                    "size": local.stat().st_size if local.exists() else 0,
+                }
 
-                # Search for the file
-                search_results = await client.file_search(file_path.split("/")[-1])
-
-                # Find exact match
-                matching_file = None
-                for result in search_results:
-                    if result.get("path", "").endswith(file_path):
-                        matching_file = result
-                        break
-
-                if not matching_file:
-                    raise FileNotFoundError(f"File not found: {file_path}")
-
-                file_id = matching_file["id"]
-                filename = rename_as or matching_file["name"]
-                destination = dest_dir / filename
-
-                downloaded_path = await client.file_download(file_id, destination)
-
-            local_path = Path(downloaded_path)
-
-            self.logger.info(f"Downloaded to: {local_path}")
-
+            local = dest_dir / (rename_as or Path(file_path).name)
+            await manager.download_file(file_path, local)
             return {
                 "file_path": file_path,
                 "file_id": file_id,
-                "local_path": str(local_path),
-                "size": local_path.stat().st_size if local_path.exists() else 0,
+                "local_path": str(local),
+                "size": local.stat().st_size if local.exists() else 0,
             }
-
         except Exception as e:
             self.logger.error(f"Failed to download OneDrive file: {e}")
             raise
+        finally:
+            await manager.close()
 
 
 # ============================================================================
@@ -352,64 +313,32 @@ class UploadOneDriveFileTool(O365Tool):
     description: str = "Upload a file to OneDrive. " "Creates folders as needed and supports file renaming."
     args_schema: Type[BaseModel] = UploadOneDriveFileArgs
 
-    async def _execute_graph_operation(self, client: OneDriveClient, **kwargs) -> Dict[str, Any]:
-        """
-        Upload file to OneDrive using the OneDriveClient.
-
-        Args:
-            client: Authenticated OneDriveClient instance
-            **kwargs: Tool parameters
-
-        Returns:
-            Dict with upload details
-        """
+    async def _execute_graph_operation(self, client: O365Client, **kwargs) -> Dict[str, Any]:
+        """Upload a local file to OneDrive through OneDriveFileManager (rename = destination name)."""
         local_file_path = kwargs.get("local_file_path")
         folder_path = kwargs.get("folder_path", "")
         rename_as = kwargs.get("rename_as")
-
+        local_path = Path(local_file_path)
+        if not local_path.exists():
+            raise FileNotFoundError(f"Local file not found: {local_file_path}")
+        manager = OneDriveFileManager(user=kwargs.get("user_id") or "me", credentials=dict(self.credentials or {}))
+        manager.adopt_client(client)
         try:
-            # Validate local file
-            local_path = Path(local_file_path)
-            if not local_path.exists():
-                raise FileNotFoundError(f"Local file not found: {local_file_path}")
-
-            self.logger.info(f"Uploading {local_path.name} to OneDrive:{folder_path or 'root'}")
-
-            # Verify access
-            await client.verify_onedrive_access()
-
-            # If rename requested, we need to temporarily copy/rename
-            if rename_as:
-                # Create temporary renamed file
-                temp_path = local_path.parent / rename_as
-                shutil.copy2(local_path, temp_path)
-                upload_path = temp_path
-                cleanup_temp = True
-            else:
-                upload_path = local_path
-                cleanup_temp = False
-
-            try:
-                # Upload file
-                upload_result = await client.upload_file(upload_path, folder_path if folder_path else None)
-            finally:
-                # Clean up temporary file if created
-                if cleanup_temp and temp_path.exists():
-                    temp_path.unlink()
-
-            self.logger.info(f"Uploaded successfully: {upload_result['name']}")
-
+            dest = f"{folder_path}/{rename_as or local_path.name}".strip("/")
+            meta = await manager.upload_file(local_path, dest)
+            item_id = (await manager._get_item(manager._prefixed(dest))).id
             return {
                 "folder_path": folder_path or "root",
-                "uploaded_file": upload_result["name"],
-                "file_id": upload_result["id"],
-                "size": upload_result["size"],
-                "web_url": upload_result.get("webUrl", ""),
+                "uploaded_file": meta.name,
+                "file_id": item_id,
+                "size": meta.size,
+                "web_url": meta.url or "",
             }
-
         except Exception as e:
             self.logger.error(f"Failed to upload to OneDrive: {e}")
             raise
+        finally:
+            await manager.close()
 
 
 # ============================================================================
