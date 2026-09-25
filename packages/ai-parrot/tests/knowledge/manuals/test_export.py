@@ -1,4 +1,5 @@
 """FEAT-601 M14 — export bundle (AC22)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -25,7 +26,6 @@ from parrot.knowledge.manuals.models import (
     ToolRef,
     content_hash,
 )
-
 
 FROZEN = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
 

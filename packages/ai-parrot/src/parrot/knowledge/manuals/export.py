@@ -1,4 +1,5 @@
 """Offline export bundle for one manual revision (FEAT-601 M14, Q9)."""
+
 from __future__ import annotations
 
 import hashlib
@@ -95,13 +96,8 @@ def render_procedures(card: ManualCard, tips: Sequence[Tip]) -> dict[str, Any]:
                         for sr in step.applicability.serial_ranges
                     ],
                 },
-                "hazards": [
-                    {"severity": h.severity, "text": h.text.value} for h in step.hazards
-                ],
-                "media": [
-                    {"media_id": m.media_id, "role": m.role, "confidence": m.confidence}
-                    for m in step.media
-                ],
+                "hazards": [{"severity": h.severity, "text": h.text.value} for h in step.hazards],
+                "media": [{"media_id": m.media_id, "role": m.role, "confidence": m.confidence} for m in step.media],
                 "cross_refs": step.cross_refs,
             }
             steps_data.append(step_data)
@@ -244,9 +240,7 @@ async def export_bundle(
     # Optional zip bundle
     if zip_bundle:
         zip_path = bundle.with_suffix(".zip")
-        with zipfile.ZipFile(
-            zip_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
-        ) as zf:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
             for filepath in bundle.rglob("*"):
                 if filepath.is_file():
                     arcname = filepath.relative_to(bundle)
