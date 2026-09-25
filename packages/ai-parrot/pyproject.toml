@@ -344,6 +344,10 @@ bookstore = [
     "pymupdf4llm>=0.0.27",
 ]
 
+# Procedure Graph — field-training agent over assembly manuals (FEAT-601).
+# Self-reference so rapidfuzz stays declared only in `graphindex` (test_dependency_boundary.py).
+manuals = ["ai-parrot[graphindex,bookstore]"]
+
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203.
 # FEAT-453 (Decision D1) deliberately, partially REVERSES that move: an
 # agent process needs to schedule reminders (e.g. the Spanish tax-calendar
