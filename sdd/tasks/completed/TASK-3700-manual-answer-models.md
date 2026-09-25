@@ -299,10 +299,16 @@ def test_citation_rejects_blank_quote():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3700
+- Feature: training-agent
+- Implementation SHA: d30ff0a9e5aee11dd2a796fd8994194655668acf
+- Closed at (UTC): 2026-09-25T00:04:10+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sdd-worker-orchestrator (fallback after empty_delivery) · Backend: native · Model: sonnet-orchestrator · Attempts: 2 (1 MCP empty_delivery + 1 manual) · Duration: n/a · Tokens: n/a |
+| supplementary_test_evidence | 84 passed, 0 failed (scoped direct pytest over manuals+contracts/test_ontology_domain) |

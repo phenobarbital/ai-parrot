@@ -76,7 +76,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -86,8 +86,9 @@
       "parallelism_notes": "modifies manuals/models.py created by TASK-3699 (same file — serialized) and uses its Step/MediaRef/Tip",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3700-manual-answer-models.md"
+      "completed_at": "2026-09-25T00:04:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3700-manual-answer-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3701",
@@ -96,7 +97,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -106,8 +107,9 @@
       "parallelism_notes": "domain.py lives in the parrot.knowledge.manuals package whose __init__.py TASK-3699 creates; YAML property names are checked against TASK-3699 model fields in test_domain.py",
       "assigned_to": null,
       "started_at": "2026-09-24T22:55:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3701-procedures-ontology-domain.md"
+      "completed_at": "2026-09-25T00:04:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3701-procedures-ontology-domain.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3702",
