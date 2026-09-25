@@ -5,7 +5,7 @@ drivers (Selenium, Playwright, etc.) must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence
 
 
 class AbstractDriver(ABC):
@@ -238,6 +238,20 @@ class AbstractDriver(ABC):
         Returns:
             The expression result.
         """
+
+    async def get_cookies(self, urls: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+        """Return browser-context cookies, HttpOnly included.
+
+        Args:
+            urls: Restrict to cookies that would be sent to these URLs; ``None`` = all.
+
+        Returns:
+            Cookie dicts (``name``, ``value``, ``domain``, ``path``, ``httpOnly``, ``secure``, ...).
+
+        Raises:
+            NotImplementedError: The driver cannot read context-level cookies.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support get_cookies(); use PlaywrightDriver")
 
     # ── Property ─────────────────────────────────────────────────
 
