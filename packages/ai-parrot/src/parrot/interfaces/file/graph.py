@@ -848,9 +848,9 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
             return CreateLinkPostRequestBody(
                 type=link_type,
                 scope=scope,
-                expiration_date_time=datetime.now(timezone.utc) + timedelta(seconds=expiry)
-                if include_expiry and expiry > 0
-                else None,
+                expiration_date_time=(
+                    datetime.now(timezone.utc) + timedelta(seconds=expiry) if include_expiry and expiry > 0 else None
+                ),
             )
 
         try:

@@ -512,7 +512,9 @@ async def test_download_folder_raises_isadirectory(xfer_manager):
 
 def _shape(fn):
     """Return a callable's parameter names, kinds, and defaults."""
-    return [(parameter.name, parameter.kind, parameter.default) for parameter in inspect.signature(fn).parameters.values()]
+    return [
+        (parameter.name, parameter.kind, parameter.default) for parameter in inspect.signature(fn).parameters.values()
+    ]
 
 
 def test_all_interface_methods_implemented_with_exact_signatures():
