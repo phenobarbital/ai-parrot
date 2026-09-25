@@ -351,10 +351,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3737
+- Feature: hooba-toolkit
+- Implementation SHA: f297ac39c203a15f67b9f82a27bd1c168aa8e15d
+- Closed at (UTC): 2026-09-25T18:16:59+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| merge_tier_engine_outcome | failed (workspace-wide import-impact sweep; 105 pre-existing unrelated failures across other distributions, same as chunk0/chunk1) |
+| orchestrator_targeted_verification | packages/ai-parrot-tools/tests/hooba/ full directory (30 tests including test_hooba_openapi.py): 30/30 passed. No lint errors reported by the engine. |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 187.5s · Tokens: n/a |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions temporarily copied in from the main checkout since worktrees have no compiled .so; removed afterward (never committed). Note: the parrot-sdd-coder MCP server's execution state was lost mid-wave (server restart); this validation log was recovered from durable disk storage by content hash. |
