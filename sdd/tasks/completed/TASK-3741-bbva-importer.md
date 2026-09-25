@@ -321,3 +321,6 @@ state-closure were done manually instead of via `coder_merge`/`finalize_task`, f
 reasons above (codex provider outage + engine attempt-tracking anomaly + a documented,
 pre-existing sandbox limitation blocking `finalize_task.py` inside a worktree — see
 TASK-3740's Completion Note for the latter).
+
+Review recorded via `coder_record_review` (feedback_id=coder-review:9ea69330752edd9e890ab1ad),
+zero corrections needed.
