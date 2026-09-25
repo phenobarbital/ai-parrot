@@ -235,7 +235,7 @@ parrot manuals spike tips --corpus /path/to/corpus
 - **OCR:** no OCR for scanned / image-only manuals — refused with a clear message in v1 (`PDFLoader.is_image_only` semantics kept). Image-only PDFs are skipped with an explicit reason.
 - **Callouts:** exploded-view callouts are gated on spike 1 passing. Until then, callouts are disabled.
 - **Serial applicability semantics:** unknown applicability ⇒ the step is shown with an explicit applicability note (not hidden, not dropped).
-- **Offline viewer:** the per-device viewer that consumes the export bundle (G12) is not included in v1. The bundle format is in scope, the app is not.
+- **Offline viewer:** the per-device offline viewer that consumes the export bundle (G12) is not included in v1. The bundle format is in scope, the app is not.
 
 ---
 
