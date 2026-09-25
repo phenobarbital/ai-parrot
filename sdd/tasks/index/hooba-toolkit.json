@@ -55,7 +55,7 @@
       "feature_id": "FEAT-602",
       "feature": "hooba-toolkit",
       "spec": "sdd/specs/hooba-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -63,8 +63,9 @@
       "parallelism_notes": "foundation: no dependency; creates parrot_tools/hooba/__init__.py and tests/hooba/__init__.py that every other hooba task builds on",
       "assigned_to": null,
       "started_at": "2026-09-25T15:25:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3733-hooba-models.md"
+      "completed_at": "2026-09-25T17:14:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3733-hooba-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3734",

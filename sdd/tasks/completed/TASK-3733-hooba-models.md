@@ -362,10 +362,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3733
+- Feature: hooba-toolkit
+- Implementation SHA: fee95232f0ba86a834506cd68cba1a4d46a64299
+- Closed at (UTC): 2026-09-25T17:14:47+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 2 |
+| fix_commits | 0 |
+| merge_tier_engine_outcome | failed (same workspace-wide sweep as TASK-3731/TASK-3736; ai-parrot-tools distribution itself never completed collection due to 5 pre-existing unrelated ImportErrors in shell_tool/alpaca/zoom test modules, none touching hooba/) |
+| orchestrator_targeted_verification | packages/ai-parrot-tools/tests/hooba/test_models.py run together with test_driver_get_cookies.py: 8/8 passed (worktree, new package -- no baseline comparison possible since it did not exist before this task). |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 186.3s · Tokens: n/a |
+| verification_method | Ran pytest directly (PYTHONPATH override) with the two compiled Cython extensions (parrot.utils.types, parrot.utils.parsers.toml) temporarily copied in from the identical-source main checkout since worktrees have no compiled .so per project's known limitation; removed both temp .so copies afterward (never committed, git status clean). |
