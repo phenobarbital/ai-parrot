@@ -1,4 +1,5 @@
 """FEAT-603 TASK-3755 — OneDriveClient._resolve_user_drive."""
+
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -10,7 +11,9 @@ from parrot.interfaces.onedrive import OneDriveClient
 
 def _client(*, auth_mode: str = "direct", credentials: dict | None = None) -> OneDriveClient:
     c = OneDriveClient.__new__(OneDriveClient)
-    me = SimpleNamespace(drive=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id="me-drive", name="OneDrive"))))
+    me = SimpleNamespace(
+        drive=SimpleNamespace(get=AsyncMock(return_value=SimpleNamespace(id="me-drive", name="OneDrive")))
+    )
     # Stable per-user request builders (same object on repeated by_user_id(u) calls) so tests can assert
     # on a specific user's `get` mock without it being silently replaced by a fresh AsyncMock each call.
     user_builders: dict = {}
@@ -23,8 +26,15 @@ def _client(*, auth_mode: str = "direct", credentials: dict | None = None) -> On
         return user_builders[u]
 
     users = SimpleNamespace(by_user_id=_by_user_id)
-    c.__dict__.update(credentials=credentials or {}, auth_mode=auth_mode, _graph_client=SimpleNamespace(me=me, users=users),
-                      _user_drives={}, _drive_id=None, _drive_info=None, logger=logging.getLogger("t"))
+    c.__dict__.update(
+        credentials=credentials or {},
+        auth_mode=auth_mode,
+        _graph_client=SimpleNamespace(me=me, users=users),
+        _user_drives={},
+        _drive_id=None,
+        _drive_info=None,
+        logger=logging.getLogger("t"),
+    )
     return c
 
 
