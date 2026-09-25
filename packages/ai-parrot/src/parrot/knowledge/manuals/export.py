@@ -42,6 +42,7 @@ class ExportReport(BaseModel):
     figures_missing: list[str] = Field(default_factory=list)
     tips: int = 0
     bytes: int = 0
+    files: dict[str, str] = Field(default_factory=dict)
 
 
 def _dump(obj: Any) -> bytes:
@@ -104,17 +105,18 @@ def render_procedures(card: ManualCard, tips: Sequence[Tip]) -> dict[str, Any]:
 
         procedure_data["steps"] = steps_data
 
-        # Tips attached to this procedure
-        attached_tips = [
-            {
-                "tip_id": t.tip_id,
-                "text": t.text,
-                "created_at": t.created_at.isoformat(),
-            }
-            for t in live_tips
-            if t.attached_step_id == step.identity.step_id
-        ]
-        procedure_data["tips"] = attached_tips
+        # Tips attached to this procedure (key omitted entirely when tips are disabled)
+        if tips:
+            attached_tips = [
+                {
+                    "tip_id": t.tip_id,
+                    "text": t.text,
+                    "created_at": t.created_at.isoformat(),
+                }
+                for t in live_tips
+                if t.attached_step_id == step.identity.step_id
+            ]
+            procedure_data["tips"] = attached_tips
 
         procedures_dict[procedure.slug] = procedure_data
 
@@ -160,7 +162,10 @@ async def export_bundle(
     procedures_json = _dump(render_procedures(card, tips_to_use))
     report.procedures = len(card.procedures)
     report.steps = sum(len(p.steps) for p in card.procedures)
-    report.tips = len(tips_to_use)
+    # Count only tips actually included in the bundle: active, non-orphaned, and
+    # attached to a step that exists on this card — not the raw input count.
+    step_ids = {step.identity.step_id for procedure in card.procedures for step in procedure.steps}
+    report.tips = sum(1 for t in tips_to_use if t.active and not t.orphaned and t.attached_step_id in step_ids)
 
     # Collect all files to write
     files_to_write: dict[str, bytes] = {

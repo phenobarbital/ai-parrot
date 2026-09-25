@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from parrot.knowledge.common.provenance import Evidence, Extracted
 from parrot.knowledge.manuals import export as ex
 from parrot.knowledge.manuals.models import (
     Applicability,
@@ -30,23 +31,28 @@ from parrot.knowledge.manuals.models import (
 FROZEN = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
 
 
-def _text(quote: str = "Torque the bolt to 12 Nm.") -> str:
-    return quote
+def _text(quote: str = "Torque the bolt to 12 Nm.", node_id: str = "node-1") -> Extracted[str]:
+    """Build one independently evidenced string value (``Step.text``/``Procedure.title`` are ``Extracted[str]``)."""
+    return Extracted(value=quote, evidence=Evidence(node_id=node_id, quote=quote), confidence=0.9)
 
 
 def _step(
     step_id: str,
     order: int,
-    text: str = _text(),
+    text: str = "Torque the bolt to 12 Nm.",
     torque: str | None = None,
     duration_minutes: int | None = None,
 ) -> Step:
     return Step(
         identity=StepIdentity(step_id=step_id, content_hash=content_hash(text)),
         order=order,
-        text=text,
-        torque=torque,
-        duration_minutes=duration_minutes,
+        text=_text(text),
+        torque=_text(torque) if torque is not None else None,
+        duration_minutes=(
+            Extracted(value=duration_minutes, evidence=Evidence(node_id="node-1", quote=str(duration_minutes)))
+            if duration_minutes is not None
+            else None
+        ),
     )
 
 
@@ -54,14 +60,14 @@ def _procedure(
     procedure_id: str,
     slug: str,
     kind: str,
-    title: str = _text(),
+    title: str = "Torque the bolt to 12 Nm.",
     steps: list[Step] | None = None,
 ) -> Procedure:
     return Procedure(
         procedure_id=procedure_id,
         slug=slug,
         kind=kind,
-        title=title,
+        title=_text(title),
         steps=steps or [],
     )
 
