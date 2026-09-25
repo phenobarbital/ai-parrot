@@ -445,6 +445,18 @@ def _foreign_key_set(metadata: TableMetadata) -> list[list[str]]:
     ]
 
 
+def _type_differs(live_column: dict[str, Any], ddl_column: dict[str, Any]) -> bool:
+    """Return whether two columns' SQL types genuinely diverge.
+
+    Compared case-insensitively: live introspection and sqlglot's DDL
+    rendering canonicalize SQL type names differently (e.g. live "text" vs
+    DDL-rendered "TEXT"), and that alone is not a real divergence.
+    """
+    live_type = str(live_column.get("type", ""))
+    ddl_type = str(ddl_column.get("type", ""))
+    return live_type.upper() != ddl_type.upper()
+
+
 def _metadata_differences(
     table_id: str,
     live: TableMetadata,
@@ -462,13 +474,26 @@ def _metadata_differences(
                 {"table_id": table_id, "field": f"column:{name}", "live": live_column, "ddl": ddl_column}
             )
             continue
-        for field in ("type", "nullable"):
-            live_value = str(live_column.get(field, "")) if field == "type" else bool(live_column.get(field, True))
-            ddl_value = str(ddl_column.get(field, "")) if field == "type" else bool(ddl_column.get(field, True))
-            if live_value != ddl_value:
-                differences.append(
-                    {"table_id": table_id, "field": f"column:{name}.{field}", "live": live_value, "ddl": ddl_value}
-                )
+        if _type_differs(live_column, ddl_column):
+            differences.append(
+                {
+                    "table_id": table_id,
+                    "field": f"column:{name}.type",
+                    "live": str(live_column.get("type", "")),
+                    "ddl": str(ddl_column.get("type", "")),
+                }
+            )
+        live_nullable = bool(live_column.get("nullable", True))
+        ddl_nullable = bool(ddl_column.get("nullable", True))
+        if live_nullable != ddl_nullable:
+            differences.append(
+                {
+                    "table_id": table_id,
+                    "field": f"column:{name}.nullable",
+                    "live": live_nullable,
+                    "ddl": ddl_nullable,
+                }
+            )
     for field, live_value, ddl_value in (
         ("primary_keys", sorted(live.primary_keys), sorted(ddl.primary_keys)),
         ("foreign_keys", _foreign_key_set(live), _foreign_key_set(ddl)),
