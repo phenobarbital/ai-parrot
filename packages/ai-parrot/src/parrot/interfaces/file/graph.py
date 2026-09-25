@@ -72,8 +72,15 @@ class _GuardedFileServingExtension(FileServingExtension):
             meta = await self.manager.get_file_metadata(filepath)
             if meta.size > self.max_bytes:
                 return web.Response(status=413, text=f"File exceeds the serving limit of {self.max_bytes} bytes")
-        except Exception:
+        except FileNotFoundError:
+            # Expected: let the base extension's own 404 handling take over.
             pass
+        except Exception as exc:
+            # Unexpected (auth failure, transient Graph error, ...): the size guard degrades
+            # fail-open by design (never blocks serving on a metadata-lookup error), but a
+            # silent `except Exception: pass` here previously hid genuine problems. Log and
+            # still fall through to the base extension.
+            self.logger.warning("Size-guard metadata lookup failed for %r, serving unguarded: %s", filepath, exc)
         return await super().handle_file(request)
 
 
