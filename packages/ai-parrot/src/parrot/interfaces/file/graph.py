@@ -31,10 +31,20 @@ from msgraph.generated.models.drive_item_uploadable_properties import DriveItemU
 from msgraph.generated.models.folder import Folder
 from msgraph.generated.models.item_reference import ItemReference
 
+import contextvars
+from typing import Sequence
+
+from aiohttp import web
 from navigator.utils.file import FileManagerInterface, FileMetadata
+from navigator.utils.file.web import FileServingExtension
 from pydantic import BaseModel, ConfigDict
 
 from parrot.interfaces.o365 import O365Client
+
+# Incremented by GraphDriveFileManager._retrying on every retry; set per batch item (TASK-3754).
+_RETRY_COUNTER: contextvars.ContextVar[Optional[List[int]]] = contextvars.ContextVar(
+    "_graph_retry_counter", default=None
+)
 
 from .batch import BatchErrorCode, BatchItemResult, BatchState, BatchSummary
 
@@ -47,6 +57,25 @@ __all__ = (
     "GraphDriveFileManager",
     "GraphFileManagerError",
 )
+
+
+class _GuardedFileServingExtension(FileServingExtension):
+    """FileServingExtension that refuses (413) files larger than ``max_bytes`` before buffering them (S7, AC22)."""
+
+    def __init__(self, *args: Any, max_bytes: int, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.max_bytes = max_bytes
+
+    async def handle_file(self, request: web.Request) -> web.StreamResponse:
+        filepath = request.match_info.get("filepath", "")
+        try:
+            meta = await self.manager.get_file_metadata(filepath)
+            if meta.size > self.max_bytes:
+                return web.Response(status=413, text=f"File exceeds the serving limit of {self.max_bytes} bytes")
+        except Exception:
+            pass
+        return await super().handle_file(request)
+
 
 ConflictBehavior = Literal["replace", "fail", "rename"]
 LinkType = Literal["view", "edit"]
@@ -414,6 +443,9 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
                     raise
                 delay = min(self._retry_after_seconds(exc) or 2 ** (attempts - 1), 60)
                 self.logger.warning("Retrying Graph operation %s after status %s (attempt %s)", label, status, attempts)
+                counter = _RETRY_COUNTER.get()
+                if counter is not None:
+                    counter[0] += 1
                 await self._sleep(delay)
                 attempts += 1
 
@@ -929,3 +961,143 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
             await self._retrying(lambda: self._drive().items.by_drive_item_id(item.id).patch(body), label="patch")
         except Exception as exc:
             raise self._map_error(exc, path=old) from exc
+
+    async def upload_files(self, items: Sequence[Tuple[Union[Path, BinaryIO, bytes], str]]) -> List[BatchItemResult]:
+        """Batch upload (AC8): bounded concurrency, per-item results in input order, never raises for an item."""
+        self._reject_shared_streams([src for src, _ in items])
+
+        async def run_one(index: int, src: Any, dst: str) -> FileMetadata:
+            source = io.BytesIO(src) if isinstance(src, (bytes, bytearray)) else src
+            return await self.upload_file(source, dst)
+
+        return await self._run_batch(list(items), run_one)
+
+    async def download_files(self, items: Sequence[Tuple[str, Union[Path, BinaryIO]]]) -> List[BatchItemResult]:
+        """Batch download with the same semantics as ``upload_files``."""
+        self._reject_shared_streams([dst for _, dst in items])
+
+        async def run_one(index: int, src: str, dst: Any) -> FileMetadata:
+            await self.download_file(src, dst)
+            return await self.get_file_metadata(src)
+
+        return await self._run_batch(list(items), run_one)
+
+    def _reject_shared_streams(self, objs: List[Any]) -> None:
+        seen = set()
+        for obj in objs:
+            if isinstance(obj, (Path, str, bytes)):
+                continue
+            obj_id = id(obj)
+            if obj_id in seen:
+                raise ValueError("the same stream object appears more than once in the batch")
+            seen.add(obj_id)
+
+    async def _run_batch(
+        self, items: List[Tuple[Any, Any]], run_one: Callable[[int, Any, Any], Awaitable[FileMetadata]]
+    ) -> List[BatchItemResult]:
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+        abort = asyncio.Event()
+        results: List[Optional[BatchItemResult]] = [None] * len(items)
+
+        async def worker(index: int, src: Any, dst: Any) -> None:
+            async with semaphore:
+                if abort.is_set():
+                    results[index] = BatchItemResult(
+                        index=index,
+                        source=(
+                            str(src)
+                            if isinstance(src, (Path, str))
+                            else ("<bytes>" if isinstance(src, bytes) else "<stream>")
+                        ),
+                        destination=str(dst) if isinstance(dst, (Path, str)) else "<stream>",
+                        state="skipped",
+                        ok=False,
+                        error="aborted after authentication failure",
+                        error_code="auth",
+                        status_code=None,
+                        attempts=0,
+                    )
+                    return
+
+                _RETRY_COUNTER.set([0])
+                try:
+                    metadata = await run_one(index, src, dst)
+                    results[index] = BatchItemResult(
+                        index=index,
+                        source=(
+                            str(src)
+                            if isinstance(src, (Path, str))
+                            else ("<bytes>" if isinstance(src, bytes) else "<stream>")
+                        ),
+                        destination=str(dst) if isinstance(dst, (Path, str)) else "<stream>",
+                        state="succeeded",
+                        ok=True,
+                        metadata=metadata,
+                        error=None,
+                        error_code=None,
+                        status_code=None,
+                        attempts=1 + _RETRY_COUNTER.get()[0],
+                    )
+                except Exception as exc:
+                    error_code, status_code = self._classify(exc)
+                    if error_code == "auth":
+                        abort.set()
+                    results[index] = BatchItemResult(
+                        index=index,
+                        source=(
+                            str(src)
+                            if isinstance(src, (Path, str))
+                            else ("<bytes>" if isinstance(src, bytes) else "<stream>")
+                        ),
+                        destination=str(dst) if isinstance(dst, (Path, str)) else "<stream>",
+                        state="failed",
+                        ok=False,
+                        metadata=None,
+                        error=str(exc),
+                        error_code=error_code,
+                        status_code=status_code,
+                        attempts=1 + _RETRY_COUNTER.get()[0],
+                    )
+
+        tasks = [asyncio.create_task(worker(index, src, dst)) for index, (src, dst) in enumerate(items)]
+        await asyncio.gather(*tasks)
+        return [result for result in results if result is not None]
+
+    def _classify(self, exc: BaseException) -> Tuple[str, Optional[int]]:
+        status = self._status_code_of(exc)
+        if isinstance(exc, PermissionError):
+            return "auth", status
+        if isinstance(exc, FileNotFoundError):
+            return "not_found", status
+        if isinstance(exc, FileExistsError):
+            return "conflict", status
+        if isinstance(exc, TimeoutError):
+            return "timeout", status
+        if isinstance(exc, ValueError) and "path" in str(exc).lower():
+            return "invalid_path", status
+        if isinstance(exc, GraphFileManagerError) and status in {429, 503, 504}:
+            return "throttled", status
+        if isinstance(exc, OSError):
+            return "io", status
+        return "unknown", status
+
+    def setup(
+        self, app: Any, route: str = "/data", base_url: Optional[str] = None, *, serving_max_bytes: Optional[int] = None
+    ) -> FileServingExtension:
+        """Mount a size-guarded FileServingExtension (buffers whole objects — S7; guard AC22). Returns the extension."""
+        ext = _GuardedFileServingExtension(
+            manager=self,
+            route=route,
+            manager_name=self.manager_name,
+            max_bytes=serving_max_bytes or self.SERVING_MAX_BYTES,
+        )
+        ext.setup(app)
+        self._serving_ext = ext
+        return ext
+
+    async def handle_file(self, request: Any) -> Any:
+        """Size guard then the extension's buffered handler (S3 parity with s3.py:635)."""
+        ext = getattr(self, "_serving_ext", None) or _GuardedFileServingExtension(
+            manager=self, manager_name=self.manager_name, max_bytes=self.SERVING_MAX_BYTES
+        )
+        return await ext.handle_file(request)

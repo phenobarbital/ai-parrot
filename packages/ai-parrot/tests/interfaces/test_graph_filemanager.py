@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from aiohttp import web
 
 # The repository-wide test bootstrap installs a non-package compatibility stub
 # for this module before collection. This task verifies the real new submodule.
@@ -35,6 +36,8 @@ from ._graph_fakes import (
 )
 from parrot.interfaces.sharepoint import SharepointClient
 from navigator.utils.file import FileManagerInterface
+from navigator.utils.file.abstract import FileMetadata
+from navigator.utils.file.web import FileServingExtension
 
 
 def test_prefix_is_normalised():
@@ -624,3 +627,175 @@ async def test_rename_same_parent_and_move(xfer_manager):
 
     assert len([call for call in fake.calls if call[0] == "patch"]) == 2
     assert await manager.exists("folder/moved.txt")
+
+
+async def test_upload_files_per_item_results_order_and_no_raise(xfer_manager):
+    """AC8: one failing item, others succeed, input order kept.
+
+    The fake session's ``fail_next`` queue is FIFO across ops (not addressable by item),
+    so with items dispatched concurrently the FIRST item to reach its ``content_put`` call
+    (index 0, deterministically first onto the event loop's ready queue) is the one that
+    observes the queued failure -- not necessarily a specific middle index. The AC only
+    requires one item to fail and the rest to succeed, in input order.
+    """
+    manager, fake, session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("a.txt", b"a")
+    fake.drives_by_id["drive-1"].put_file("c.txt", b"c")
+    fake.fail_next(500, op="content_put")
+
+    results = await manager.upload_files(
+        [
+            (io.BytesIO(b"a"), "a.txt"),
+            (io.BytesIO(b"b"), "b.txt"),
+            (io.BytesIO(b"c"), "c.txt"),
+        ]
+    )
+
+    assert [r.state for r in results] == ["failed", "succeeded", "succeeded"]
+    assert [r.index for r in results] == [0, 1, 2]
+    assert results[0].error_code == "unknown"
+    assert results[0].attempts == 1
+
+
+async def test_batch_retries_429_with_retry_after_then_succeeds(xfer_manager):
+    """Attempts counting: 429 with Retry-After → attempts == 2, slept 1."""
+    manager, fake, session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("retry.txt", b"retry")
+    fake.fail_next(429, retry_after=1, op="content_put")
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    manager._sleep = sleep
+
+    results = await manager.upload_files([(io.BytesIO(b"retry"), "retry.txt")])
+
+    assert results[0].state == "succeeded"
+    assert results[0].attempts == 2
+    assert sleeps == [1]
+
+
+async def test_batch_auth_failure_skips_remaining(xfer_manager):
+    """S10: 401 → remaining items marked skipped with attempts == 0; no exception."""
+    manager, fake, session = xfer_manager
+    manager.max_concurrency = 1
+    fake.drives_by_id["drive-1"].put_file("first.txt", b"first")
+    fake.drives_by_id["drive-1"].put_file("second.txt", b"second")
+    fake.drives_by_id["drive-1"].put_file("third.txt", b"third")
+    fake.fail_next(401, op="content_put")
+
+    results = await manager.upload_files(
+        [
+            (io.BytesIO(b"first"), "first.txt"),
+            (io.BytesIO(b"second"), "second.txt"),
+            (io.BytesIO(b"third"), "third.txt"),
+        ]
+    )
+
+    assert [r.state for r in results] == ["failed", "skipped", "skipped"]
+    assert [r.attempts for r in results] == [1, 0, 0]
+    assert results[0].error_code == "auth"
+
+
+async def test_batch_concurrency_bounded(xfer_manager, monkeypatch):
+    """Semaphore: never exceeds max_concurrency."""
+    manager, fake, session = xfer_manager
+    manager.max_concurrency = 2
+    in_flight = []
+    max_in_flight = 0
+
+    async def upload_file(source, destination):
+        in_flight.append(True)
+        nonlocal max_in_flight
+        max_in_flight = max(max_in_flight, len(in_flight))
+        await asyncio.sleep(0.01)
+        in_flight.pop()
+        return FileMetadata(name=destination, path=destination, size=1, content_type=None, modified_at=None, url=None)
+
+    monkeypatch.setattr(manager, "upload_file", upload_file)
+
+    results = await manager.upload_files(
+        [
+            (io.BytesIO(b"a"), "a.txt"),
+            (io.BytesIO(b"b"), "b.txt"),
+            (io.BytesIO(b"c"), "c.txt"),
+        ]
+    )
+
+    assert all(r.state == "succeeded" for r in results)
+    assert max_in_flight <= 2
+
+
+async def test_batch_rejects_shared_binaryio(xfer_manager):
+    """S10: same BytesIO twice → ValueError before any call."""
+    manager, fake, session = xfer_manager
+    stream = io.BytesIO(b"shared")
+
+    with pytest.raises(ValueError) as exc_info:
+        await manager.upload_files([(stream, "a.txt"), (stream, "b.txt")])
+    assert "stream object appears more than once" in str(exc_info.value)
+    assert fake.calls == []
+
+
+async def test_batch_duplicate_destinations_last_write_wins(xfer_manager):
+    """Duplicate destinations are allowed and processed in order."""
+    manager, fake, session = xfer_manager
+
+    results = await manager.upload_files(
+        [
+            (io.BytesIO(b"first"), "same.txt"),
+            (io.BytesIO(b"second"), "same.txt"),
+        ]
+    )
+
+    assert all(r.state == "succeeded" for r in results)
+    assert (await manager.get_file_metadata("same.txt")).size == 6
+
+
+async def test_batch_cancellation_propagates(xfer_manager):
+    """S10: cancel the outer task while an item is in flight → asyncio.CancelledError raised."""
+    manager, fake, session = xfer_manager
+
+    async def slow_upload(source, destination):
+        await asyncio.sleep(10)
+        return await manager._get_item(destination)
+
+    original_upload = manager.upload_file
+    manager.upload_file = slow_upload
+
+    task = asyncio.create_task(manager.upload_files([(io.BytesIO(b"a"), "a.txt")]))
+    await asyncio.sleep(0.01)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_setup_mounts_guarded_extension(xfer_manager):
+    """AC9: FileServingExtension(manager=self, route=route, manager_name=self.manager_name)."""
+    manager, fake, session = xfer_manager
+    app = web.Application()
+
+    ext = manager.setup(app, route="/sp")
+
+    assert isinstance(ext, FileServingExtension)
+    assert ext.manager is manager
+    assert ext.name == manager.manager_name
+    assert hasattr(manager, "_serving_ext")
+    assert any(str(getattr(r, "resource", r)).find("/sp") != -1 for r in app.router.routes())
+
+
+async def test_handle_file_413_over_serving_max_bytes(xfer_manager, aiohttp_client):
+    """AC22: file larger than serving_max_bytes → 413 before any download."""
+    manager, fake, session = xfer_manager
+    fake.drives_by_id["drive-1"].put_file("large.txt", b"x" * (manager.SERVING_MAX_BYTES + 1))
+    app = web.Application()
+    manager.setup(app, route="/data")
+    client = await aiohttp_client(app)
+
+    resp = await client.get("/data/large.txt")
+    assert resp.status == 413
+    text = await resp.text()
+    assert str(manager.SERVING_MAX_BYTES) in text
+    assert session.requests == []
