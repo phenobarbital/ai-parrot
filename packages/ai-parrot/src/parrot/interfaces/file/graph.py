@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import fnmatch
+import io
 import logging
 import re
 from abc import ABC, abstractmethod
 import asyncio
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union
+from pathlib import Path
+from typing import Any, AsyncIterator, Awaitable, BinaryIO, Callable, Dict, List, Literal, Optional, Tuple, Union
 from urllib.parse import quote, urlsplit
 
 import aiohttp
+import aiofiles
+from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
+    CreateUploadSessionPostRequestBody,
+)
+from msgraph.generated.models.drive_item import DriveItem
+from msgraph.generated.models.drive_item_uploadable_properties import DriveItemUploadableProperties
+from msgraph.generated.models.folder import Folder
 
 from navigator.utils.file import FileManagerInterface, FileMetadata
 from pydantic import BaseModel, ConfigDict
@@ -601,3 +610,166 @@ class GraphDriveFileManager(FileManagerInterface, ABC):
             return True
         except Exception as exc:
             raise self._map_error(exc, path=path) from exc
+
+    async def _ensure_parent(self, full_path: str) -> Any:
+        """Ensure the parent folder chain of ``full_path`` exists and return its final item."""
+        parent = await self._get_item("")
+        segments = [segment for segment in full_path.strip("/").split("/") if segment][:-1]
+        current_path = ""
+        for segment in segments:
+            current_path = f"{current_path}/{segment}".strip("/")
+            try:
+                parent = await self._get_item(current_path)
+            except Exception as exc:
+                if self._status_code_of(exc) != 404:
+                    raise
+                folder = DriveItem(
+                    name=segment,
+                    folder=Folder(),
+                    additional_data={"@microsoft.graph.conflictBehavior": "fail"},
+                )
+                try:
+                    parent, _ = await self._retrying(
+                        lambda: self._drive().items.by_drive_item_id(parent.id).children.post(folder),
+                        label="create-folder",
+                    )
+                except Exception as create_error:
+                    if self._status_code_of(create_error) != 409:
+                        raise
+                    parent = await self._get_item(current_path)
+        return parent
+
+    async def _put_small(self, parent_id: str, name: str, data: bytes) -> Any:
+        """Single PUT for replace-conflict uploads below the configured threshold."""
+        ref = f"{parent_id}:/{quote(name, safe='')}:"
+        item, _ = await self._retrying(
+            lambda: self._drive().items.by_drive_item_id(ref).content.put(data), label="content-put"
+        )
+        return item
+
+    async def _create_session(self, parent_id: str, name: str) -> str:
+        """Create a configurable-conflict upload session and return its pre-authenticated URL."""
+        body = CreateUploadSessionPostRequestBody()
+        body.item = DriveItemUploadableProperties()
+        body.item.name = name
+        body.item.additional_data = {"@microsoft.graph.conflictBehavior": self.conflict_behavior}
+        ref = f"{parent_id}:/{quote(name, safe='')}:"
+        session, _ = await self._retrying(
+            lambda: self._drive().items.by_drive_item_id(ref).create_upload_session.post(body),
+            label="create-upload-session",
+            idempotent=False,
+        )
+        return session.upload_url
+
+    async def _put_session(self, upload_url: str, read: Callable[[int], Awaitable[bytes]], size: int) -> Dict[str, Any]:
+        """Upload chunks to a validated pre-authenticated session URL."""
+        url = self._validate_graph_url(upload_url, purpose="upload session")
+        offset = 0
+        async with self._http_session() as session:
+            while offset < size:
+                chunk = await read(min(self.chunk_size, size - offset))
+                if not chunk:
+                    break
+                end = offset + len(chunk) - 1
+                headers = {
+                    "Content-Length": str(len(chunk)),
+                    "Content-Range": f"bytes {offset}-{end}/{size}",
+                }
+
+                async def put_chunk() -> Tuple[int, Dict[str, Any]]:
+                    async with session.put(url, data=chunk, headers=headers, allow_redirects=False) as response:
+                        if response.status not in {200, 201, 202}:
+                            raise _RawHTTPError(response.status, dict(response.headers))
+                        return response.status, await response.json()
+
+                (status, result), _ = await self._retrying(put_chunk, label="upload-chunk")
+                if status in {200, 201}:
+                    return result
+                offset += len(chunk)
+        raise GraphFileManagerError(f"upload session ended at byte {offset} of {size} without a final item")
+
+    async def upload_file(self, source: Union[BinaryIO, Path], destination: str) -> FileMetadata:
+        """Upload a local file or binary stream and return Graph metadata."""
+        await self._ready()
+        dest_full = self._prefixed(destination)
+        try:
+            parent = await self._ensure_parent(dest_full)
+            name = dest_full.rsplit("/", 1)[-1]
+
+            if isinstance(source, (str, Path)):
+                local_path = Path(source)
+                size = (await asyncio.to_thread(local_path.stat)).st_size
+                if size < self.small_file_threshold and self.conflict_behavior == "replace":
+                    async with aiofiles.open(local_path, "rb") as handle:
+                        item = await self._put_small(parent.id, name, await handle.read())
+                else:
+                    async with aiofiles.open(local_path, "rb") as handle:
+                        upload_url = await self._create_session(parent.id, name)
+                        result = await self._put_session(upload_url, handle.read, size)
+                    item = await self._get_item_by_id(result["id"])
+            else:
+                try:
+                    position = await asyncio.to_thread(source.tell)
+                    await asyncio.to_thread(source.seek, 0, 2)
+                    size = await asyncio.to_thread(source.tell)
+                    await asyncio.to_thread(source.seek, position)
+                except (AttributeError, OSError, io.UnsupportedOperation):
+                    source = io.BytesIO(await asyncio.to_thread(source.read))
+                    size = len(source.getvalue())
+                if size < self.small_file_threshold and self.conflict_behavior == "replace":
+                    item = await self._put_small(parent.id, name, await asyncio.to_thread(source.read))
+                else:
+                    upload_url = await self._create_session(parent.id, name)
+
+                    async def read_stream(length: int) -> bytes:
+                        return await asyncio.to_thread(source.read, length)
+
+                    result = await self._put_session(upload_url, read_stream, size)
+                    item = await self._get_item_by_id(result["id"])
+            return self._make_metadata(item, full_path=dest_full)
+        except Exception as exc:
+            raise self._map_error(exc, path=destination) from exc
+
+    async def create_file(self, path: str, content: bytes) -> bool:
+        """Upload raw bytes to ``path`` and report completion."""
+        await self.upload_file(io.BytesIO(content), path)
+        return True
+
+    async def upload_file_from_bytes(
+        self, file_obj: bytes, destination_key: str, content_type: str = "application/octet-stream"
+    ) -> str:
+        """Upload bytes with S3-compatible arguments and return the Graph web URL."""
+        self.logger.debug("upload_file_from_bytes: content_type=%s (Graph infers MIME from the name)", content_type)
+        metadata = await self.upload_file(io.BytesIO(file_obj), destination_key)
+        return metadata.url or ""
+
+    async def download_file(self, source: str, destination: Union[Path, BinaryIO]) -> Path:
+        """Stream a Graph download URL into a local path or writable binary stream."""
+        await self._ready()
+        full_path = self._prefixed(source)
+        try:
+            item = await self._get_item(full_path)
+            if getattr(item, "folder", None) is not None:
+                raise IsADirectoryError(source)
+            url = getattr(item, "additional_data", {}).get("@microsoft.graph.downloadUrl")
+            if not url:
+                raise GraphFileManagerError("Graph item has no download URL")
+            url = self._validate_graph_url(url, purpose="download")
+            async with self._http_session() as session:
+                async with session.get(url, headers={}, allow_redirects=False) as response:
+                    if response.status != 200:
+                        raise _RawHTTPError(response.status, dict(response.headers))
+                    if isinstance(destination, (str, Path)):
+                        target = Path(destination)
+                        await asyncio.to_thread(target.parent.mkdir, parents=True, exist_ok=True)
+                        async with aiofiles.open(target, "wb") as handle:
+                            async for chunk in response.content.iter_chunked(1024 * 1024):
+                                await handle.write(chunk)
+                        return target
+                    async for chunk in response.content.iter_chunked(1024 * 1024):
+                        await asyncio.to_thread(destination.write, chunk)
+            return Path(source)
+        except IsADirectoryError:
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=source) from exc
