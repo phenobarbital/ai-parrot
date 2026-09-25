@@ -77,7 +77,7 @@
       "completed_at": "2026-09-25T11:54:54Z",
       "duration_seconds": 0,
       "proposal_path": "sdd/proposals/hooba-toolkit.proposal.md",
-      "commit_sha": "7c4a89bb56419b56a990fe486a837a1eb36eca7a",
+      "commit_sha": "de2c54d9dbd04b92bb2315c20349397a3cfe08ef",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "localization high-confidence; engine and transport exist; U1-U5 decided in Q&A"
     }
