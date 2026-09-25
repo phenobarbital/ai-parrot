@@ -396,7 +396,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -407,8 +407,9 @@
       "parallelism_notes": "TASK-3754: documents batch/serving API it finishes (serving limit); TASK-3760: documents the agent-facing find/batch operations",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3766-graph-filemanager-docs.md"
+      "completed_at": "2026-09-25T21:12:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3766-graph-filemanager-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3767",
