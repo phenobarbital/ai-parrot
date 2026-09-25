@@ -251,10 +251,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (execution 981de749-8a38-47ed-a033-752eb90afb12), seat gpt-5.6-terra (codex)
+**Date**: 2026-09-25
+**Notes**: Delivered and merged cleanly (attempt 1, no retries): `"manuals"` added to
+`cli._lazy_commands`/`cli._lazy_extras`, and the `manuals` optional extra added right after
+`bookstore` in `packages/ai-parrot/pyproject.toml`. Reviewed the diff directly against the
+task's Codebase Contract — matches exactly (line-for-line placement, no unrelated changes).
+Own Validation Command run directly: `pytest packages/ai-parrot/tests/knowledge/manuals/test_packaging.py -q`
+→ `3 passed`. The declared `coder_run_validation(tier="merge")` sweep also failed overall, but
+for the same pre-existing, unrelated reason already filed as `issue:1e9c207bd223` (26 collection
+errors abort the whole `ai-parrot` distribution before this task's own tests can run) plus one
+unrelated pre-existing failure (`test_codex_integration.py::test_install_writes_mcp_skill_...`,
+a wikitoolkit codex-install action-count assertion, nothing to do with the CLI/manuals plane).
+Closed via `close_task.sh` directly for the same reason TASK-3721/TASK-3726 were.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
