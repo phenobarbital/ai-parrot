@@ -1,4 +1,5 @@
 """In-process FEAT-601 round trip and technician-tip relinking."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -37,20 +38,31 @@ class ProjectingGraphStore:
     async def query_documents(self, ctx: Any, collection: str, filters: dict[str, Any]) -> list[dict[str, Any]]:
         """Return documents matching all requested fields."""
         del ctx
-        return [doc for doc in self.nodes.get(collection, {}).values() if all(doc.get(key) == value for key, value in filters.items())]
+        return [
+            doc
+            for doc in self.nodes.get(collection, {}).values()
+            if all(doc.get(key) == value for key, value in filters.items())
+        ]
 
     async def create_edges(self, ctx: Any, collection: str, edges: list[dict[str, Any]]) -> None:
         """Insert each edge once by its endpoint triple."""
         del ctx
         existing = self.edges.setdefault(collection, [])
         for edge in edges:
-            if not any((item["_from"], item["_to"], item["kind"]) == (edge["_from"], edge["_to"], edge["kind"]) for item in existing):
+            if not any(
+                (item["_from"], item["_to"], item["kind"]) == (edge["_from"], edge["_to"], edge["kind"])
+                for item in existing
+            ):
                 existing.append(dict(edge))
 
     async def remove_edge_by_triple(self, ctx: Any, collection: str, source: str, target: str, kind: str) -> None:
         """Remove the matching relinked edge."""
         del ctx
-        self.edges[collection] = [item for item in self.edges.get(collection, []) if (item["_from"], item["_to"], item["kind"]) != (source, target, kind)]
+        self.edges[collection] = [
+            item
+            for item in self.edges.get(collection, [])
+            if (item["_from"], item["_to"], item["kind"]) != (source, target, kind)
+        ]
 
     async def execute_traversal(
         self,
@@ -66,7 +78,11 @@ class ProjectingGraphStore:
         procedure_id = (bind_vars or {}).get("procedure_id")
         procedure = next(item for item in self.card.procedures if item.procedure_id == procedure_id)
         return [
-            {"procedure": {"procedure_id": procedure.procedure_id}, "step": {"step_id": step.identity.step_id}, "order": step.order}
+            {
+                "procedure": {"procedure_id": procedure.procedure_id},
+                "step": {"step_id": step.identity.step_id},
+                "order": step.order,
+            }
             for step in procedure.steps
         ]
 
@@ -106,7 +122,9 @@ def _service(card: Any) -> ProceduresAnswerService:
     )
     return ProceduresAnswerService(
         retrieval=retrieval,
-        verifier_factory=lambda selected: ProcedureVerifier(catalog=catalog, evidence=_Evidence(card), allowed_revision=selected),
+        verifier_factory=lambda selected: ProcedureVerifier(
+            catalog=catalog, evidence=_Evidence(card), allowed_revision=selected
+        ),
         catalog=catalog,
         file_manager=_Files(),
     )
@@ -128,14 +146,45 @@ async def test_tip_survives_revision() -> None:
     """Identity relinks, unchanged text hashes relink, and removed steps orphan tips."""
     store = ProjectingGraphStore()
     previous = [
-        Step(identity=StepIdentity(step_id="m:s3", source_identity="3", content_hash=content_hash("Three")), order=3, text=Extracted(value="Three", evidence=Evidence(node_id="3", quote="Three", page=3))),
-        Step(identity=StepIdentity(step_id="m:s4", source_identity="4", content_hash=content_hash("Four")), order=4, text=Extracted(value="Four", evidence=Evidence(node_id="4", quote="Four", page=4))),
-        Step(identity=StepIdentity(step_id="m:s5", source_identity="5", content_hash=content_hash("Five")), order=5, text=Extracted(value="Five", evidence=Evidence(node_id="5", quote="Five", page=5))),
+        Step(
+            identity=StepIdentity(step_id="m:s3", source_identity="3", content_hash=content_hash("Three")),
+            order=3,
+            text=Extracted(value="Three", evidence=Evidence(node_id="3", quote="Three", page=3)),
+        ),
+        Step(
+            identity=StepIdentity(step_id="m:s4", source_identity="4", content_hash=content_hash("Four")),
+            order=4,
+            text=Extracted(value="Four", evidence=Evidence(node_id="4", quote="Four", page=4)),
+        ),
+        Step(
+            identity=StepIdentity(step_id="m:s5", source_identity="5", content_hash=content_hash("Five")),
+            order=5,
+            text=Extracted(value="Five", evidence=Evidence(node_id="5", quote="Five", page=5)),
+        ),
     ]
-    tips = [await add_tip(store, None, step_id=step.identity.step_id, text="tip", author_employee_id="e1", source_revision="A") for step in previous]
+    tips = [
+        await add_tip(
+            store, None, step_id=step.identity.step_id, text="tip", author_employee_id="e1", source_revision="A"
+        )
+        for step in previous
+    ]
     current = [
-        previous[0].model_copy(update={"identity": StepIdentity(step_id="m:renumbered", source_identity="3", content_hash=content_hash("Three")), "order": 1}),
-        previous[1].model_copy(update={"identity": StepIdentity(step_id="m:moved", source_identity="changed", content_hash=content_hash("Four")), "order": 2}),
+        previous[0].model_copy(
+            update={
+                "identity": StepIdentity(
+                    step_id="m:renumbered", source_identity="3", content_hash=content_hash("Three")
+                ),
+                "order": 1,
+            }
+        ),
+        previous[1].model_copy(
+            update={
+                "identity": StepIdentity(
+                    step_id="m:moved", source_identity="changed", content_hash=content_hash("Four")
+                ),
+                "order": 2,
+            }
+        ),
     ]
     report = await relink_tips(store, None, manual_id="m", previous_steps=previous, current_steps=current)
     assert {item.method for item in report.relinked} == {"source_identity", "content_hash"}

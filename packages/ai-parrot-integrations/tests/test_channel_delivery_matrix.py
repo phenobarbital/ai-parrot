@@ -1,4 +1,5 @@
 """One presigned figure delivered through each FEAT-601 channel seam."""
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -32,7 +33,9 @@ def test_channel_delivery_matrix_teams() -> None:
     wrapper = MSTeamsAgentWrapper.__new__(MSTeamsAgentWrapper)
     wrapper.logger = MagicMock()
     spec = wrapper._parsed_to_card_spec(parse_response(_released()))
-    assert any(getattr(entry, "url", None) == URL for section in spec.sections for entry in getattr(section, "images", []))
+    assert any(
+        getattr(entry, "url", None) == URL for section in spec.sections for entry in getattr(section, "images", [])
+    )
 
 
 def test_channel_delivery_matrix_slack() -> None:
