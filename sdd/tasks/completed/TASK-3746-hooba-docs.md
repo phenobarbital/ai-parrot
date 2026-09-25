@@ -236,10 +236,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat=glm, backend=nova, model=zai.glm-4.7-flash,
+attempt_uid=0b85a1fd220f48af999a85dd9c03e088, execution_id=85c083ec-56b6-42fe-8884-e686fbcf7a61)
+**Date**: 2026-09-26
+**Notes**: `docs/hooba-toolkit.md` + business-automation runbook §8 (env, spec pin, private
+catalog, dry-run import). Attempt 1 on `zai.glm-5` timed out
+(`APITimeoutError: Request timed out`, an infra/provider issue unrelated to the task) and
+retried automatically on `zai.glm-4.7-flash`, which completed cleanly (0 lint residuals).
+Full hooba suite green post-merge.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none.
 
 **Deviations from spec**: none | describe if any

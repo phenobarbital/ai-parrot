@@ -288,10 +288,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (seat=minimax, backend=nova, model=minimax.minimax-m2.5,
+attempt_uid=6e3411dbe46242699b77fe85edfee4f9, execution_id=85c083ec-56b6-42fe-8884-e686fbcf7a61)
+**Date**: 2026-09-26
+**Notes**: `fake_server.py` (aiohttp fake Hooba + request recorder), `test_integration_e2e.py`
+(full-stack tests against the fake server), `test_live_smoke.py` (opt-in live Hooba +
+real-browser tests, skipped without `HOOBA_LIVE`/`PARROT_TEST_REAL_BROWSER`). Delivered in
+1 attempt, 0 retries. Full `packages/ai-parrot-tools/tests/hooba/` suite post-merge:
+61 passed, 2 skipped (the opt-in live/browser tests, as designed). 1 residual lint finding
+(`F402`: loop variable `field` shadows an import in `fake_server.py`) — style-only,
+deferred to `/sdd-done` per policy (not fixed here).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
