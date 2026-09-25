@@ -222,10 +222,12 @@ def test_bots_database_suite_with_plane_on():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (seat: gpt-5.6-luna, backend: codex, attempt_uid d2614ad0912f42fdb59990d72c773acc; attempt 1 gpt-5.6-terra failed with `empty_delivery`, engine auto-retried onto attempt 2)
+**Date**: 2026-09-24
+**Notes**: Implementation commit `90abc4dbf` + engine lint-autofix commit `226155763` (merge `5b1671841`). Three end-to-end scenarios: (1) DDL ingest of `001_task_memory.sql` → `create_wiki_mcp_server` tool lookup, (2) live SQLite `sync` → `neighbors` → DB removal → plane-warmed `CachePartition` read, (3) opt-in `tests/bots/database` suite with the plane on (`PARROT_TEST_SCHEMA_PLANE=1`). Engine-side merge fidelity check passed (`unexpected_files: []`).
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Review fix (orchestrator-applied)**: `test_live_sqlite_sync_and_plane_warmed_partition` asserted `hops[0]["target"]`, a key `SchemaPlaneService.neighbors()` never returns — `BaseWikiStore.neighbors()` keys the adjacent page as `concept_id`, and `service.py`'s `neighbors()` spreads that dict verbatim. This file lives under `tests/integration/`, so it's excluded from the merge-tier sweep by its `-m 'not integration'` marker filter and only surfaced when run directly. Fixed to `hops[0]["concept_id"]` (fix commit `8d31f3390b`). Recorded as model feedback `coder-feedback:00da490a0816550f0789078c`.
+**Verification**: all 3 scenarios pass — 2 direct (`2 passed, 1 skipped`) + scenario 3 separately with `PARROT_TEST_SCHEMA_PLANE=1` (`1 passed`, 53.5s). Reviewed via `coder-review:eaa58f5b7ec2e9e1e8749e04`.
+**Merge validation**: merge-tier (root scope) — same 4 pre-existing/environmental failures as prior chunks (see `issue:33fe54e65d2d`), unrelated to this task's files.
 
 **Deviations from spec**: none
