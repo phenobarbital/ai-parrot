@@ -74,7 +74,7 @@ class TestInstaller:
         # FEAT-556: approve_mcp defaults to True, adding one MCP-approval action.
         # FEAT-570 TASK-3377: an empty/absent toolkit config appends a hint
         # naming `parrot toolkits install` as the replacement seeding surface.
-        assert len(actions) == 10
+        assert len(actions) == 11
         assert any("parrot toolkits install" in action for action in actions)
 
         assert (repo / ".parrot" / "wiki.json").exists()
