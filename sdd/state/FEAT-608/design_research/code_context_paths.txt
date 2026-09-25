@@ -1,0 +1,17 @@
+packages/ai-parrot/src/parrot/interfaces/google.py
+packages/ai-parrot-tools/src/parrot_tools/google/base.py
+.venv/lib/python3.12/site-packages/navigator/utils/file/abstract.py
+.venv/lib/python3.12/site-packages/navigator/utils/file/gcs.py
+packages/ai-parrot/src/parrot/interfaces/file/graph.py
+packages/ai-parrot/src/parrot/interfaces/file/sharepoint.py
+packages/ai-parrot/src/parrot/interfaces/file/batch.py
+packages/ai-parrot/src/parrot/interfaces/file/__init__.py
+packages/ai-parrot-tools/src/parrot_tools/file/__init__.py
+packages/ai-parrot/src/parrot/tools/filemanager.py
+packages/ai-parrot/pyproject.toml
+packages/ai-parrot/src/parrot/conf.py
+.venv/lib/python3.12/site-packages/aiogoogle/resource.py
+packages/ai-parrot-tools/src/parrot_tools/google/calendar.py
+packages/ai-parrot-tools/src/parrot_tools/google/__init__.py
+packages/ai-parrot/tests/interfaces/_graph_fakes.py
+sdd/specs/sharepoint-filemanager.spec.md
