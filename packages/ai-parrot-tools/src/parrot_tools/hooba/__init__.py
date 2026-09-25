@@ -18,6 +18,8 @@ from .models import (
     PurchaseInvoiceDraft,
     PurchaseInvoiceLineDraft,
 )
+from .settings import HoobaSettings
+from .toolkit import HoobaToolkit
 
 __all__ = [
     "BankExpenseRow",
@@ -33,4 +35,6 @@ __all__ = [
     "InvoiceLineDraft",
     "PurchaseInvoiceDraft",
     "PurchaseInvoiceLineDraft",
+    "HoobaSettings",
+    "HoobaToolkit",
 ]
