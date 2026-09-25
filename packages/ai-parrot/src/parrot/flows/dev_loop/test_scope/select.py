@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Sequence
@@ -9,7 +10,7 @@ from typing import Sequence
 from .context import pending_escalations
 from .contract import is_broad_pytest
 from .datatypes import CoreHit, ScopePlan, TestTarget
-from .impact import ImportIndex, detect_core, impacted_tests
+from .impact import ImportIndex, detect_core, impacted_tests, module_name_for
 from .mirror import distribution_of, pytest_targets
 from .planner import build_plan
 from .policy import TIERS, ScopePolicy
@@ -144,6 +145,8 @@ def plan_tests(
     escalated: list[str] = []
     hits: list[CoreHit] = []
     skipped: list[str] = []
+    cap_hits: dict[str, tuple[str, ...]] = {}
+    cap_impacted: dict[str, str] = {}
     if tier != "task":
         try:
             is_git = (
@@ -168,32 +171,49 @@ def plan_tests(
             except OSError:
                 notes.append("could not build the import index; skipping impact/core detection")
 
+        cap_candidates: dict[str, list[str]] = {}
         if index is not None and tier == "merge":
             impacted = impacted_tests(index, list(changed_files), worktree=worktree, depth=policy.impact_depth)
             by_dist: dict[str, list[str]] = {}
             for path in impacted:
                 by_dist.setdefault(_dist(path), []).append(path)
+            per_file_impact: dict[str, set[str]] = {
+                path: set(impacted_tests(index, [path], worktree=worktree, depth=policy.impact_depth))
+                for path in changed_files
+                if module_name_for(path) is not None
+            }
             for dist, paths in by_dist.items():
                 if len(paths) > policy.impact_cap:
-                    escalated.append(dist)
-                    suite = _suite_for(dist, worktree)
-                    if suite:
-                        targets.append(TestTarget(path=suite, distribution=dist, reason="escalated"))
+                    cap_candidates[dist] = paths
                     notes.append(
                         f"{dist}: {len(paths)} impacted tests exceed cap {policy.impact_cap}, escalated to suite"
                     )
                 else:
                     targets += [TestTarget(path=path, distribution=dist, reason="import") for path in paths]
+            cap_hits = {
+                dist: tuple(sorted(path for path, tests in per_file_impact.items() if tests & set(paths)))
+                for dist, paths in cap_candidates.items()
+            }
+            cap_impacted = {
+                dist: hashlib.sha256("\n".join(sorted(paths)).encode("utf-8")).hexdigest()
+                for dist, paths in cap_candidates.items()
+            }
+            escalated.extend(cap_candidates)
 
         if index is not None and tier in ("merge", "feature"):
             hits = detect_core(index, list(changed_files), policy=policy)
-            if hits:
-                to_run, ledger_skipped = pending_escalations(worktree, hits)
-                skipped = ledger_skipped
-                for dist in to_run:
-                    suite = _suite_for(dist, worktree)
-                    if suite:
-                        targets.append(TestTarget(path=suite, distribution=dist, reason="core"))
+            to_run, ledger_skipped = pending_escalations(worktree, hits, cap_hits, cap_impacted)
+            unattributed_caps = {dist for dist, paths in cap_hits.items() if not paths}
+            to_run = sorted(set(to_run) | unattributed_caps)
+            ledger_skipped = [dist for dist in ledger_skipped if dist not in unattributed_caps]
+            skipped = ledger_skipped
+            core_dists = {dist for hit in hits for dist in hit.distributions}
+            for dist in to_run:
+                suite = _suite_for(dist, worktree)
+                reason = "core" if dist in core_dists else "escalated"
+                if suite:
+                    targets.append(TestTarget(path=suite, distribution=dist, reason=reason))
+                    if reason == "core":
                         # FEAT-563 review (I1): `escalated` used to be impact-cap-only, so a
                         # core-only escalation was invisible to the plain-text CLI ("# escalated:
                         # <dist>") and to the spec's own datatypes.py contract ("distributions
@@ -201,8 +221,11 @@ def plan_tests(
                         # `core_hits`/`reason=="core"` targets remain the authoritative source
                         # every real consumer (the ledger, QANode) already reads.
                         escalated.append(dist)
-                    else:
-                        notes.append(f"{dist}: core escalation target suite does not exist, skipped")
+                else:
+                    notes.append(f"{dist}: {reason} escalation target suite does not exist, skipped")
+            for dist in ledger_skipped:
+                if dist in cap_candidates:
+                    notes.append(f"{dist}: cap escalation skipped — ledger blobs and impacted hash match")
 
     return build_plan(
         targets,
@@ -212,5 +235,7 @@ def plan_tests(
         escalated=escalated,
         core_hits=hits,
         skipped_escalations=skipped,
+        cap_hits=cap_hits,
+        cap_impacted=cap_impacted,
         notes=notes,
     )
