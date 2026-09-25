@@ -1,4 +1,5 @@
 """FEAT-603 TASK-3757 — OneDriveFileManager."""
+
 import sys
 
 import pytest
@@ -10,7 +11,6 @@ sys.modules.pop("parrot.interfaces.file", None)
 from parrot.interfaces.file.onedrive import OneDriveFileManager
 
 from ._graph_fakes import FakeDrive, FakeGraphClient, make_onedrive_client
-
 
 # TASK-3751..3754 supply GraphDriveFileManager's remaining FileManagerInterface
 # methods after this task's dependency boundary. Exercise this subclass's own
@@ -71,7 +71,18 @@ def test_constructor_rejects_empty_user():
 def test_subclass_overrides_only_allowed_members():
     """Keep OneDrive targeting limited to its permitted subclass hooks."""
     allowed = {
-        "manager_name", "client_class", "__init__", "_build_client", "_resolve_drive_id", "__doc__", "__module__",
-        "__qualname__", "__abstractmethods__", "_abc_impl", "__firstlineno__", "__static_attributes__", "__annotations__",
+        "manager_name",
+        "client_class",
+        "__init__",
+        "_build_client",
+        "_resolve_drive_id",
+        "__doc__",
+        "__module__",
+        "__qualname__",
+        "__abstractmethods__",
+        "_abc_impl",
+        "__firstlineno__",
+        "__static_attributes__",
+        "__annotations__",
     }
     assert set(vars(OneDriveFileManager)) - allowed == set()
