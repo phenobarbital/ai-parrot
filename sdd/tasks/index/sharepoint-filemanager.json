@@ -313,7 +313,7 @@
       "feature_id": "FEAT-603",
       "feature": "sharepoint-filemanager",
       "spec": "sdd/specs/sharepoint-filemanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -324,8 +324,9 @@
       "parallelism_notes": "TASK-3761: same files o365/sharepoint.py + test_o365_sharepoint_file_tools.py; TASK-3752: calls download_file / upload_file",
       "assigned_to": null,
       "started_at": "2026-09-25T16:54:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3762-sp-tools-download-upload.md"
+      "completed_at": "2026-09-25T21:13:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3762-sp-tools-download-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3763",
