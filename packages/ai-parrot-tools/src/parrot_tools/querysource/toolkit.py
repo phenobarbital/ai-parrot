@@ -1,16 +1,20 @@
 """QuerysourceToolkit — tenant-scoped QuerySource tools for agents (spec FEAT-558 §3 M5/M6).
 
 Generated tool names (tool_prefix 'qs'): qs_get_dialect_reference, qs_list_slugs, qs_describe_slug, qs_execute_slug,
-qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when allow_write=True — qs_save_multiquery.
+qs_build_linked_surface, qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when allow_write=True —
+qs_save_multiquery.
 """
 
 from __future__ import annotations
 
 import asyncio
 import copy
+import re
 import time
 from dataclasses import asdict
 from typing import Any
+
+import pandas as pd
 
 from parrot.tools.config_schema import ConfigOption
 from parrot.tools.toolkit import AbstractToolkit  # verified: packages/ai-parrot/src/parrot/tools/toolkit.py:206
@@ -29,10 +33,12 @@ from parrot_tools.querysource.dialect import (
     build_conditions,
     check_version_compatibility,
     load_variables,
+    reject_variable_values,
     validate_filter,
     validate_placeholders,
 )
 from parrot_tools.querysource.errors import (
+    InvalidConditionsError,
     QuerysourceToolkitError,
     RawSqlForbiddenError,
     SlugNotFoundError,
@@ -329,6 +335,124 @@ class QuerysourceToolkit(AbstractToolkit):
         return frame_to_result(
             frame, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started
         )
+
+    async def build_linked_surface(
+        self,
+        slug: str,
+        component: dict[str, Any],
+        request: dict[str, Any] | None = None,
+        tenant: str | None = None,
+        snapshot: bool = True,
+        surface_id: str | None = None,
+        target_key: str | None = None,
+        refresh: dict[str, Any] | None = None,
+        transform: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Emit a linked A2UI surface for a query slug.
+
+        ``component`` is a Chart, DataTable, or KPICard without its data binding;
+        the toolkit adds the binding. ``request`` accepts ``placeholders``,
+        ``filter``, ``fields``, ``ordering``, ``grouping``, ``limit``, and
+        ``offset`` in the ``qs_execute_slug`` grammar. Relative dates use UDF
+        keywords (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH,
+        LAST_YEAR); ``@variables`` are rejected. The slug always executes once
+        to validate columns. ``snapshot=True`` embeds up to 500 current rows.
+        ``refresh`` accepts ``policy`` (on_mount, manual, interval) and
+        ``interval_seconds``; ``transform`` accepts the linked transform DSL.
+        """
+        from parrot.outputs.a2ui.builders import build_linked_surface as _build
+        from parrot.outputs.a2ui.linked.conditions import derive_conditions
+        from parrot.outputs.a2ui.linked.executor import execute_sources
+        from parrot.outputs.a2ui.linked.models import LinkedDataSource, RefreshPolicy, SourceRequest, TransformSpec
+
+        detail = await self.describe_slug(slug, tenant=tenant)
+        req = SourceRequest.model_validate(request or {})
+        validate_placeholders(dict(req.placeholders), set(detail.placeholders))
+        validate_filter(dict(req.filter))
+        forced = dict(self.forced_conditions)
+        reject_variable_values({**req.placeholders, "filter": req.filter, **forced})
+        params, locked = self._linked_params(detail, forced)
+        key = target_key or self._default_target_key(slug)
+        source = LinkedDataSource(
+            slug=slug,
+            tenant=tenant,
+            is_multiquery=detail.is_multiquery,
+            conditions=derive_conditions(req, locked={name: forced[name] for name in locked}),
+            request=req,
+            params=params,
+            locked=locked,
+            transform=TransformSpec.model_validate(transform) if transform else None,
+            target=f"/{key}/rows",
+            refresh=RefreshPolicy.model_validate(refresh or {}),
+        )
+        self.logger.info("qs_build_linked_surface %s tenant=%s key=%s snapshot=%s", slug, tenant, key, snapshot)
+        execution = await execute_sources({key: source}, pctx=None, guard=None)
+        outcome = execution.outcomes[key]
+        if outcome.error:
+            raise QuerysourceToolkitError(f"query '{slug}' failed while building the linked surface: {outcome.error}")
+        frame: pd.DataFrame = execution.frames[key]
+        envelope = _build(
+            [self._bind_component(component, key)],
+            {key: source},
+            {key: frame},
+            surface_id=surface_id or f"linked-{key}",
+            snapshot=snapshot,
+        )
+        artifacts = [
+            {
+                "type": "a2ui_linked_surface",
+                "surface_id": envelope.surface_id,
+                "sources": [key],
+                "slug": slug,
+                "tenant": tenant,
+            }
+        ]
+        return {
+            "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
+            "artifacts": artifacts,
+        }
+
+    def _linked_params(self, detail: SlugDetail, forced: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """Build linked parameter metadata and map forced values to locked parameters."""
+        from parrot.outputs.a2ui.linked.models import ParamSpec
+
+        params: dict[str, ParamSpec] = {}
+        if detail.variables_supported:
+            for info in detail.placeholders_detail:
+                params[info.name] = ParamSpec(
+                    type=info.type,
+                    default=info.default,
+                    required=info.required,
+                    accepts_keywords=info.accepts_keywords,
+                )
+        for name, value in forced.items():
+            if name in params:
+                params[name] = params[name].model_copy(update={"default": value, "editable": False})
+            else:
+                params[name] = ParamSpec(default=value, editable=False)
+        return params, list(forced)
+
+    @staticmethod
+    def _default_target_key(slug: str) -> str:
+        """Return a JSON-pointer-safe data-model root key for ``slug``."""
+        key = re.sub(r"\W", "_", slug)
+        return f"s_{key}" if key[:1].isdigit() else key
+
+    @staticmethod
+    def _bind_component(component: dict[str, Any], key: str) -> dict[str, Any]:
+        """Bind one supported component to the source rows."""
+        comp = dict(component)
+        comp.setdefault("id", "root")
+        component_type = comp.get("component")
+        if component_type in {"Chart", "DataTable"}:
+            comp["data"] = {"path": f"/{key}/rows"}
+        elif component_type == "KPICard":
+            value = comp.get("value")
+            if isinstance(value, str):
+                comp["value"] = {"path": f"/{key}/rows/0/{value}"}
+        else:
+            raise InvalidConditionsError("component must be one of Chart, DataTable, or KPICard")
+        return comp
 
     async def _get_catalog(self) -> list[Any]:
         """ComponentRegistry.get_catalog() via to_thread, cached per instance (handlers/components.py:50)."""
