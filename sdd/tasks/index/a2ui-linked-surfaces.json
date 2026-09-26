@@ -182,7 +182,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -194,8 +194,9 @@
       "parallelism_notes": "parses LinkedSources from TASK-3769; calls derive_conditions from TASK-3770 (linked/conditions.py); load_manifest from TASK-3775 (linked/manifest.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3777-surface-validation-pass.md"
+      "completed_at": "2026-09-26T01:07:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3777-surface-validation-pass.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3778",
@@ -244,7 +245,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -257,8 +258,9 @@
       "parallelism_notes": "LinkedDataSource from TASK-3769; derive_conditions from TASK-3770; apply_transform from TASK-3773 (linked/dsl.py); QuerySlugSource(tenant=, principal=) + to_qs_principal from TASK-3779",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3780-linked-executor.md"
+      "completed_at": "2026-09-26T01:07:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3780-linked-executor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3781",

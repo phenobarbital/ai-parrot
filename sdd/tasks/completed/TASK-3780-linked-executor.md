@@ -394,10 +394,17 @@ See the CREATE test block above (spec §4: `test_execute_sources_querylimit_boun
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3780
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 40c4ac17921bb5f313063bdae6dc5cca0e40d4d9
+- Closed at (UTC): 2026-09-26T01:07:57+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: same systemic pre-existing failures already characterized (parrot-formdesigner version/schema drift, ai-parrot-embeddings wheel-layout conftest collision), unrelated to this task's diff. Task's own scoped tests: 84 passed (packages/ai-parrot/tests/outputs/a2ui/linked). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |

@@ -352,10 +352,17 @@ As in the test block; each named test is a spec §4 row (`test_validate_linked_l
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3777
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 40c4ac17921bb5f313063bdae6dc5cca0e40d4d9
+- Closed at (UTC): 2026-09-26T01:07:51+00:00
+- Fix commits: none
 
-**Deviations from spec**: `ValidationIssue` does not exist — issues typed as `list[dict[str, Any]]` (decided at task time).
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: same systemic pre-existing failures already characterized (parrot-formdesigner version/schema drift, ai-parrot-embeddings wheel-layout conftest collision), unrelated to this task's diff. See issue:181bd0c01bb4. |
+| seat_summary | Seat: gpt-5.6-terra - Backend: codex - Model: gpt-5.6-terra - Attempts: 1 - Duration: 267.5s - Tokens: n/a |
