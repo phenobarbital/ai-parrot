@@ -461,7 +461,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -472,8 +472,9 @@
       "parallelism_notes": "registers build_linked_surface from TASK-3778 (builders.py) in test_all_emitters.py; adds envelopes next to TASK-3778's contract/fixtures/envelopes/; validates them against contract/schema.json from TASK-3771",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3790-linked-conformance-fixtures.md"
+      "completed_at": "2026-09-26T02:30:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3790-linked-conformance-fixtures.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3791",
@@ -525,7 +526,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -537,8 +538,9 @@
       "parallelism_notes": "imports linked/types.ts from TASK-3792; passes conditions fixtures from TASK-3770 and the full dsl fixture set completed by TASK-3774",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3793-ui-linked-dsl-conditions.md"
+      "completed_at": "2026-09-26T02:30:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3793-ui-linked-dsl-conditions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3794",

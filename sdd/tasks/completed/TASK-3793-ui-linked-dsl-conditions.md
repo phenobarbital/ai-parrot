@@ -324,10 +324,17 @@ The two golden suites above ARE the test specification (parametrised over the sh
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3793
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: a6ef40064d908409996cc4cf7f0901ac028a5f74
+- Closed at (UTC): 2026-09-26T02:30:29+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: pre-existing collection errors unrelated to this task's diff (ai-parrot-server tests missing optional dependency 'fakeredis', already characterized). See issue:181bd0c01bb4. |
+| seat_summary | Seat: qwen - Backend: nova - Model: qwen.qwen3-coder-480b-a35b-instruct - Attempts: 1 - Duration: 497.6s - Tokens: 1022272 in / 17404 out |
