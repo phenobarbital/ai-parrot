@@ -3,6 +3,7 @@
 Files land in ``STATIC_DIR/a2ui/transforms/`` and are served anonymously by the existing
 ``add_static("/static/", …)`` route. Sync by design — call via ``run_in_executor`` from async code.
 """
+
 from __future__ import annotations
 
 import base64

@@ -1,4 +1,5 @@
 """Tests for publish_transforms (FEAT-598 M9)."""
+
 from __future__ import annotations
 
 import base64
@@ -35,7 +36,7 @@ def _transforms_dir(static_dir: Path) -> Path:
 
 def test_publish_writes_signed_manifest(static_dir: Path, source_dir: Path) -> None:
     published = publish_transforms(source_dir, key=KEY)
-    assert load_manifest() == published   # TASK-3775 loader verifies the same bytes
+    assert load_manifest() == published  # TASK-3775 loader verifies the same bytes
     copied = _transforms_dir(static_dir) / "group_by_day@1.0.0.js"
     assert copied.exists()
     entry = published.entries["group_by_day@1.0.0"]
@@ -64,9 +65,7 @@ def test_publish_keeps_existing_versions(static_dir: Path, source_dir: Path, tmp
 def test_publish_refuses_changed_version(static_dir: Path, source_dir: Path) -> None:
     publish_transforms(source_dir, key=KEY)
 
-    (source_dir / "group_by_day@1.0.0.js").write_text(
-        "export default (rows) => rows.slice();\n", encoding="utf-8"
-    )
+    (source_dir / "group_by_day@1.0.0.js").write_text("export default (rows) => rows.slice();\n", encoding="utf-8")
 
     with pytest.raises(ValueError):
         publish_transforms(source_dir, key=KEY)
