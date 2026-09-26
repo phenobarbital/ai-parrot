@@ -115,7 +115,9 @@ async def test_tenant_multiquery_builds(fake_core_qs, monkeypatch):
     """Tenant-scoped MultiQuery descriptors dispatch through MultiQS."""
     toolkit = QuerysourceToolkit(dsn="postgres://fake")
     detail = await toolkit.describe_slug("pokemon_all_fso_odoo_new")
-    monkeypatch.setattr(toolkit, "describe_slug", lambda *args, **kwargs: _return(detail.model_copy(update={"is_multiquery": True})))
+    monkeypatch.setattr(
+        toolkit, "describe_slug", lambda *args, **kwargs: _return(detail.model_copy(update={"is_multiquery": True}))
+    )
     result = await toolkit.build_linked_surface(
         "pokemon_all_fso_odoo_new",
         {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]},
