@@ -274,10 +274,17 @@ def test_compute_sri_format(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3776
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 9b0c4f57254408dd57392528f4fcb9b6fc686431
+- Closed at (UTC): 2026-09-26T00:47:55+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: 2/599 pre-existing failures unrelated to this task's diff (test_agent_a2ui_stream.py brittle source-string assertions, fail identically on clean origin/dev). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |
