@@ -601,8 +601,11 @@ def _linked_source(key: str, **extra):
 
     request = SourceRequest(placeholders={"firstdate": "YESTERDAY", "lastdate": "TODAY"})
     return LinkedDataSource(
-        slug="epson_field_activity", conditions=derive_conditions(request, locked={}), request=request,
-        target=f"/{key}/rows", **extra,
+        slug="epson_field_activity",
+        conditions=derive_conditions(request, locked={}),
+        request=request,
+        target=f"/{key}/rows",
+        **extra,
     )
 
 
@@ -617,17 +620,35 @@ class TestLinkedSurfaceConformance:
 
     def test_build_linked_surface_conformant_chart(self):
         envelope = build_linked_surface(
-            [{"id": "root", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"],
-              "data": {"path": "/activity/rows"}}],
-            {"activity": _linked_source("activity")}, {"activity": _activity_frame()}, surface_id="linked-chart",
+            [
+                {
+                    "id": "root",
+                    "component": "Chart",
+                    "type": "bar",
+                    "x": "day",
+                    "y": ["visits"],
+                    "data": {"path": "/activity/rows"},
+                }
+            ],
+            {"activity": _linked_source("activity")},
+            {"activity": _activity_frame()},
+            surface_id="linked-chart",
         )
         _assert_conformant(envelope, origin=ProducerOrigin.TOOL)
 
     def test_build_linked_surface_conformant_table(self):
         envelope = build_linked_surface(
-            [{"id": "root", "component": "DataTable", "columns": [{"name": "day"}, {"name": "visits"}],
-              "data": {"path": "/activity/rows"}}],
-            {"activity": _linked_source("activity")}, {"activity": _activity_frame()}, surface_id="linked-table",
+            [
+                {
+                    "id": "root",
+                    "component": "DataTable",
+                    "columns": [{"name": "day"}, {"name": "visits"}],
+                    "data": {"path": "/activity/rows"},
+                }
+            ],
+            {"activity": _linked_source("activity")},
+            {"activity": _activity_frame()},
+            surface_id="linked-table",
         )
         _assert_conformant(envelope, origin=ProducerOrigin.TOOL)
 
@@ -647,10 +668,20 @@ class TestLinkedSurfaceConformance:
         envelope = build_linked_surface(
             [
                 {"id": "root", "component": "Column", "children": ["chart", "table"]},
-                {"id": "chart", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"],
-                 "data": {"path": "/activity/rows"}},
-                {"id": "table", "component": "DataTable", "columns": [{"name": "program"}, {"name": "target"}],
-                 "data": {"path": "/targets/rows"}},
+                {
+                    "id": "chart",
+                    "component": "Chart",
+                    "type": "bar",
+                    "x": "day",
+                    "y": ["visits"],
+                    "data": {"path": "/activity/rows"},
+                },
+                {
+                    "id": "table",
+                    "component": "DataTable",
+                    "columns": [{"name": "program"}, {"name": "target"}],
+                    "data": {"path": "/targets/rows"},
+                },
             ],
             {"activity": activity, "targets": targets},
             {"activity": _activity_frame(), "targets": targets_frame},

@@ -24,7 +24,9 @@ FIXED_SNAPSHOT_AT = "2026-09-25T00:00:00+00:00"
 
 
 def _dump(envelope: CreateSurface) -> str:
-    return json.dumps(envelope.model_dump(mode="json", by_alias=True, exclude_none=True), sort_keys=True, indent=2) + "\n"
+    return (
+        json.dumps(envelope.model_dump(mode="json", by_alias=True, exclude_none=True), sort_keys=True, indent=2) + "\n"
+    )
 
 
 def _request() -> SourceRequest:
@@ -72,11 +74,17 @@ def _build_linked_dashboard_join() -> CreateSurface:
     components = [
         {"id": "root", "component": "Column", "children": ["chart", "table"]},
         {
-            "id": "chart", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"],
+            "id": "chart",
+            "component": "Chart",
+            "type": "bar",
+            "x": "day",
+            "y": ["visits"],
             "data": {"path": "/activity/rows"},
         },
         {
-            "id": "table", "component": "DataTable", "columns": [{"name": "program"}, {"name": "target"}],
+            "id": "table",
+            "component": "DataTable",
+            "columns": [{"name": "program"}, {"name": "target"}],
             "data": {"path": "/targets/rows"},
         },
     ]
@@ -103,24 +111,32 @@ def _build_linked_multiquery_public() -> CreateSurface:
     )
     components = [
         {
-            "id": "root", "component": "DataTable", "columns": [{"name": "result"}, {"name": "count"}],
+            "id": "root",
+            "component": "DataTable",
+            "columns": [{"name": "result"}, {"name": "count"}],
             "data": {"path": "/mq/rows"},
         },
     ]
     return build_linked_surface(components, {"mq": source}, {"mq": _mq_frame()}, surface_id="linked-multiquery-public")
 
 
-@pytest.mark.parametrize("name,builder", [
-    ("linked_dashboard_join.json", _build_linked_dashboard_join),
-    ("linked_multiquery_public.json", _build_linked_multiquery_public),
-])
+@pytest.mark.parametrize(
+    "name,builder",
+    [
+        ("linked_dashboard_join.json", _build_linked_dashboard_join),
+        ("linked_multiquery_public.json", _build_linked_multiquery_public),
+    ],
+)
 def test_envelope_fixture_is_regenerable(name, builder):
     assert (CONTRACT / "fixtures" / "envelopes" / name).read_text() == _dump(builder())
 
 
 def test_all_four_envelope_fixtures_present():
     assert {p.name for p in ENVELOPES} >= {
-        "linked_chart.json", "linked_no_snapshot.json", "linked_dashboard_join.json", "linked_multiquery_public.json",
+        "linked_chart.json",
+        "linked_no_snapshot.json",
+        "linked_dashboard_join.json",
+        "linked_multiquery_public.json",
     }
 
 
