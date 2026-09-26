@@ -21,6 +21,8 @@ from navconfig.logging import logging
 
 # FEAT-153: PBAC agent-access enforcement
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
+# FEAT-598: default data-plane guard wiring (TASK-3805)
+from ..auth.pbac import setup_dataplane_guard
 from asyncdb.exceptions import NoDataFound
 
 # FEAT-133: reranker + parent-searcher factories
@@ -99,6 +101,7 @@ from ..conf import (
     ENABLE_STRUCTURED_OUTPUT_TRANSPORT,
     ENABLE_REGISTRY_BOTS,
     ENABLE_SWAGGER,
+    PARROT_PBAC_POLICY_DIR,
     REDIS_URL,
 )
 
@@ -2292,6 +2295,12 @@ class BotManager:
         # Register OAuth2 providers after startup (FEAT-144)
         # Uses a deferred callback so app["jira_oauth_manager"] is available.
         self.app.on_startup.append(self._register_oauth2_providers)
+        # FEAT-598 (TASK-3805): default data-plane guard wiring. Deferred so
+        # it runs after self.on_startup (registered above) has completed
+        # load_bots(app) — on_startup callbacks run in append order, so the
+        # managed-bot collection is populated by the time this callback
+        # walks it to inject the app-level guard into bots without one.
+        self.app.on_startup.append(self._setup_dataplane_guard)
         ## Configure Routes
         router = self.app.router
         # Chat Information Router
@@ -2693,6 +2702,31 @@ Available documentation UIs:
             self.logger.exception(
                 "Failed to register OAuth2 providers — integrations endpoints " "will return empty provider lists."
             )
+
+    async def _setup_dataplane_guard(self, app: web.Application) -> None:
+        """Build the default FEAT-598 data-plane guard and inject it into bots.
+
+        Called as an ``on_startup`` callback (same deferred pattern as
+        :meth:`_register_oauth2_providers`), registered AFTER
+        :meth:`on_startup` (which runs ``load_bots``), so ``self._bots`` is
+        already populated when this callback walks it.
+
+        Uses :func:`parrot.auth.pbac.setup_dataplane_guard` to build (or
+        reuse) ``app["dataplane_guard"]``. When PBAC cannot initialize
+        (navigator-auth missing or no policy directory), no guard is built
+        and no bot is touched — linked A2UI surfaces keep answering 403
+        (fail-closed) until an operator configures PBAC.
+
+        Every managed bot that does not already carry its own
+        ``_dataplane_guard`` receives the app-level guard; a bot's own
+        pre-set guard is never overwritten.
+        """
+        guard = setup_dataplane_guard(app, policy_dir=PARROT_PBAC_POLICY_DIR)
+        if guard is None:
+            return
+        for bot in self._bots.values():
+            if getattr(bot, "_dataplane_guard", None) is None:
+                bot._dataplane_guard = guard  # noqa: SLF001
 
     async def on_startup(self, app: web.Application) -> None:
         """On startup."""
