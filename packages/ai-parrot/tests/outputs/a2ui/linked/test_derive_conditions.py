@@ -1,4 +1,5 @@
 """Golden tests for derive_conditions (FEAT-598 S5)."""
+
 from __future__ import annotations
 
 import json
