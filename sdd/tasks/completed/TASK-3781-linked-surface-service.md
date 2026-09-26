@@ -380,10 +380,18 @@ through the handler in TASK-3787).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3781
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 750c69256fb4a3c3150df754fe3a482f0bdc68af
+- Closed at (UTC): 2026-09-26T01:27:15+00:00
+- Fix commits: none
 
-**Deviations from spec**: validate_envelope/guard run only for linked envelopes (AC11 conflict — see Scope § Decision).
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| flagged_judgment_call | Coder followed the literal code skeleton: ensure_snapshot() does not re-call _assert_sources_allowed (only validate_for_persistence and refresh do), even though task prose said the owner check is 'shared by all three methods'. No test in the Test Specification exercises owner-denial via ensure_snapshot directly. Flagged for final feature review to confirm intent. |
+| merge_validation_outcome | failed: same systemic pre-existing failures already characterized (parrot-formdesigner version/schema drift, ai-parrot-embeddings wheel-layout conftest collision), unrelated to this task's diff. Task's own scoped tests: 103 passed (packages/ai-parrot/tests/outputs/a2ui/linked). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |

@@ -344,10 +344,17 @@ See the test block; rows map to spec §4 `test_build_surface_surface_metadata`,
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3778
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 750c69256fb4a3c3150df754fe3a482f0bdc68af
+- Closed at (UTC): 2026-09-26T01:27:08+00:00
+- Fix commits: none
 
-**Deviations from spec**: DataTable axis rule validates `columns[*].name` (spec §7 said `key`; the real schema field is `name`).
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: same systemic pre-existing failures already characterized (parrot-formdesigner version/schema drift, ai-parrot-embeddings wheel-layout conftest collision), unrelated to this task's diff. See issue:181bd0c01bb4. |
+| seat_summary | Seat: gpt-5.6-terra - Backend: codex - Model: gpt-5.6-terra - Attempts: 1 - Duration: 385.9s - Tokens: n/a |

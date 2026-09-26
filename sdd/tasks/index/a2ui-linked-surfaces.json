@@ -205,7 +205,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -216,8 +216,9 @@
       "parallelism_notes": "takes LinkedDataSource from TASK-3769; its envelopes must pass the surface pass of TASK-3777 (catalog/__init__.py _validate_linked_sources)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3778-builders-linked-surface.md"
+      "completed_at": "2026-09-26T01:27:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3778-builders-linked-surface.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3779",
@@ -269,7 +270,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -280,8 +281,9 @@
       "parallelism_notes": "calls validate_envelope surface pass from TASK-3777; execute_sources/map_query_error from TASK-3780 (linked/executor.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3781-linked-surface-service.md"
+      "completed_at": "2026-09-26T01:27:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3781-linked-surface-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3782",
