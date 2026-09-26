@@ -1,0 +1,6 @@
+{
+  "description": "rename maps declared columns while untouched columns retain order",
+  "input": [{"day": "2026-09-01", "visits": 3, "program": "epson"}, {"day": "2026-09-02", "visits": 5, "program": "hisense"}, {"day": "2026-09-03", "visits": 2, "program": "epson"}],
+  "ops": [{"op": "rename", "mapping": {"visits": "total"}}],
+  "expected": [{"day": "2026-09-01", "total": 3, "program": "epson"}, {"day": "2026-09-02", "total": 5, "program": "hisense"}, {"day": "2026-09-03", "total": 2, "program": "epson"}]
+}

@@ -1,0 +1,6 @@
+{
+  "description": "integer, float, and boolean values retain their JSON types through core operations",
+  "input": [{"count": 3, "rate": 1.5, "active": true}, {"count": 1, "rate": 2.0, "active": false}, {"count": 5, "rate": 0.5, "active": true}],
+  "ops": [{"op": "filter", "column": "count", "operator": "gt", "value": 1}, {"op": "select", "columns": ["count", "rate", "active"]}, {"op": "sort", "by": [{"column": "count", "direction": "asc"}]}],
+  "expected": [{"count": 3, "rate": 1.5, "active": true}, {"count": 5, "rate": 0.5, "active": true}]
+}
