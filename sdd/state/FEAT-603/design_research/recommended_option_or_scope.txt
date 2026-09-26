@@ -1,0 +1,96 @@
+**Option B** is recommended because:
+
+- It is the only option in which "two classes on a shared base" is a real
+  design rather than a naming convention: Graph treats a SharePoint library
+  and a OneDrive as the same `drive` resource, so a base that owns all
+  drive-item operations and delegates *only* drive resolution to subclasses
+  mirrors the API's own shape. Option A's base would be hollow because the
+  two existing clients share almost no methods.
+- It resolves the stateful-protocol problem (instance-attribute
+  `directory`/`filename`) that makes Option A unsafe for the decided
+  per-item concurrent batch semantics.
+- It pays for the O365 toolkit refactor the user put in scope: the four
+  List/Search/Download/Upload tools per drive already contain the drive-item
+  code Option B centralises, so the refactor is a net deletion.
+- The trade-off is more new code than a thin adapter and a temporary
+  coexistence of two request styles (`SharepointClient.upload_files` stays
+  for flowtask parity). That is acceptable: the clients' public surface is
+  untouched, additions are confined to `OneDriveClient._resolve_user_drive`,
+  and the base is the reusable asset every later Graph feature (group
+  drives, shared-with-me) will build on.
+- Option C's URL grammar is elegant but fights the decided ergonomics and
+  the split configuration defaults; Option D was ruled out by the home
+  decision.
+
+---
+
+### Recommended Option B
+Introduce `parrot/interfaces/file/graph.py::GraphDriveFileManager(FileManagerInterface)`
+— an abstract base whose only backend-specific hook is
+`async _resolve_drive_id() -> str` (plus a `client` factory). The base
+implements **all** `FileManagerInterface` methods once, directly against
+`client.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(
+"root:/<path>:")` builders (the same pattern `ListSharePointFilesTool` already
+uses at `parrot_tools/o365/sharepoint.py:100-125`), reusing the clients only
+for what they are good at:
+
+- `O365Client` — credential/auth-mode handling (`_create_credential`,
+  `set_auth_mode`, `is_app_only`, `acquire_token_on_behalf_of`, `user_auth`).
+- `SharepointClient` — `verify_sharepoint_access`, `_resolve_site`
+  (sub-site detection), `_resolve_drive(library)`, `_ensure_folder`,
+  `_create_upload_session` + `_upload_large_file` (chunked, aiohttp).
+- `OneDriveClient` — `_resolve_drive` (`me`) plus the newly ported
+  `_resolve_user_drive(user)`; `_upload_large_file_content` for bytes.
+
+`SharePointFileManager(site, library="Documents", prefix="", credentials=None,
+auth_mode="direct", ...)` and `OneDriveFileManager(user="me", prefix="",
+credentials=None, auth_mode=..., ...)` become ~60-line subclasses: constructor
++ `_resolve_drive_id` + `manager_name`. Extensions beyond the interface, on
+the base: `upload_files`, `download_files` (batch, per-item results),
+`upload_file_from_bytes` (S3 parity), `find_files` (Graph `search(q)` with
+local pattern fallback, lifted from `SharepointClient.file_search`'s
+`_pattern_is_api_safe` logic), `get_file_url(..., scope=, link_type=)`,
+`create_folder`/`remove_folder`/`rename_*`, and `setup(app, route)` via
+`navigator.utils.file.web.FileServingExtension`.
+
+✅ **Pros:**
+- One implementation of every drive-item operation; SharePoint vs OneDrive
+  differ **only** in how the drive id is found — which is exactly how Graph
+  models them (`/drives/{id}/...` is identical for both).
+- Stateless, path-argument API — safe for concurrent batches, satisfies
+  `BinaryIO` destinations, testable with a fake request-builder tree.
+- The O365 toolkit tools (`List*`, `Search*`, `Download*`, `Upload*` for both
+  drives) collapse to thin calls on the managers, deleting their duplicated
+  Graph walks; `Delta*` tools keep their own `DriveDeltaHelper` path.
+- Ports flowtask's `_resolve_user_drive` **once** into `OneDriveClient`,
+  closing the drift the user flagged.
+
+❌ **Cons:**
+- More new code than A (the base is the bulk of the feature).
+- Two Graph request styles coexist for a while (the clients' own
+  `upload_files`/`file_search` remain for flowtask compatibility).
+- `copy_file` on Graph is asynchronous (HTTP 202 + monitor URL) — the base
+  must poll with aiohttp; not a one-liner.
+
+📊 **Effort:** Medium-High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `msgraph-sdk` 1.63.0 | drive-item request builders, `createLink`, `createUploadSession`, `copy`, `search` | already a dependency; `CreateLinkPostRequestBody` verified importable |
+| `microsoft-kiota-http` 1.13.0 | ships `RetryHandler` middleware (429/503 with `Retry-After`) in the default Graph pipeline | verified `kiota_http.middleware.retry_handler.RetryHandler` |
+| `aiohttp` 3.14.3 | resumable-upload chunk PUTs, `copy` monitor polling, `@microsoft.graph.downloadUrl` streaming | codebase standard |
+| `aiofiles` | chunked local reads/writes | already imported by both clients |
+| `navigator-api` 4.0.0 | `FileManagerInterface`, `FileMetadata`, `FileServingExtension` | pinned `>=3.2.2` in `ai-parrot/pyproject.toml:124` |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/interfaces/o365.py:115-978` `O365Client` — all auth modes, `graph_client` property, `get_user_context`.
+- `packages/ai-parrot/src/parrot/interfaces/sharepoint.py:96-357` site/drive/folder resolution; `:390-470` upload session + chunked upload; `:867-873` `_pattern_is_api_safe`.
+- `packages/ai-parrot/src/parrot/interfaces/onedrive.py:88-165` drive/folder resolution; `:677-735` `_upload_large_file_content` (bytes → session).
+- `/home/jesuslara/proyectos/flowtask/flowtask/interfaces/Sharepoint.py:145-188` `_resolve_user_drive` — to port into `OneDriveClient`.
+- `packages/ai-parrot-tools/src/parrot_tools/o365/sharepoint.py:72-185` listing walk (`root:/{path}:` + `.children.get()`), to be moved into the base.
+- `packages/ai-parrot-tools/src/parrot_tools/o365/delta.py:487-539` `_status_code_of` / `_retry_after_seconds` — reuse for batch throttling.
+- `.venv/.../navigator/utils/file/s3.py:571` `upload_file_from_bytes`, `:613` `setup`, `:635` `handle_file` — API shape to mirror.
+- `.venv/.../navigator/utils/file/web.py:28` `FileServingExtension(manager, route, manager_name)`.
+
+---

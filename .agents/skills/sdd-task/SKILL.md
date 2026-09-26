@@ -5,6 +5,14 @@ description: Decompose an approved SDD spec into atomic task files, validate the
 
 # SDD Task
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-task procedure](../../../.claude/commands/sdd-task.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to run `sdd-task`, decompose an approved spec,
 or create SDD task artifacts.
 
@@ -58,9 +66,15 @@ them to the spec's base branch. This command creates no worktree (FEAT-552);
 5. Plan task decomposition:
    - one task per module, class, or distinct deliverable
    - target 1-4 hours per task
-   - dependencies explicit
-   - mark independent tasks with `parallel: true`
-   - document `parallelism_notes`
+   - `depends_on` is the only ordering: add an edge only for a consumed symbol,
+     file, fixture or configuration created by another task, or overlapping
+     modified files (serialize overlapping writers, lower ID first)
+   - shared modules, phases and per-spec isolation do not justify a dependency
+   - `parallel` defaults to `true`; `parallel: false` means exclusive execution
+     for mutations of shared state outside declared files, such as compiled
+     extensions, dependency manifests/lockfiles, shared DDL or loaded conftest.py
+   - write per-task `parallelism_notes` naming each dependency ID and the
+     consumed symbol/file, or the shared resource requiring exclusivity
 6. For every task, build a task-specific Codebase Contract:
    - copy relevant verified imports/signatures from the spec
    - re-read each referenced file to verify freshness
@@ -168,6 +182,8 @@ Example:
    - `Feature` header must include `FEAT-NNN - <title>` for features
 9. Create or update `sdd/tasks/index/<feature-slug>.json`:
    - preserve existing header if present
+   - new headers include `"parallel_semantics": "exclusive"`; do not retrofit
+     this onto legacy indexes whose `parallel: false` had different semantics
    - include `feature`, `feature_id`, `spec`, `type`, `base_branch`,
      `created_at`, `completed_at`, and `tasks[]`
    - each task entry includes id, slug, title, feature metadata, spec, status,
@@ -182,7 +198,7 @@ Example:
     - report the task count, wave count and maximum width; justify width 1
       for multi-task features
 11. Commit:
-   - clear staging with `git reset HEAD`
+   - preserve unrelated staging; stop before committing if it is outside this run's scope
    - stage only `sdd/tasks/index/<feature-slug>.json` and new active task
      files
    - verify cached names

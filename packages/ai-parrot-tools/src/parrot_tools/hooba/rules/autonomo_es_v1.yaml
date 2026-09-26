@@ -1,0 +1,133 @@
+# FEAT-602 v1 deductibility table for autónomos (Spain). Drafts only; every row requires human review
+# until a gestoría signs off (spec §8 Q3). Percentages and citations are data, not code.
+version: autonomo_es_v1
+simplified_invoice_limit_eur: 400
+fallback_rule_id: unclassified
+rules:
+  - rule_id: skip_transfers
+    priority: 1
+    matcher: {concept_regex: "TRASPASO|TRANSFERENCIA A CUENTA PROPIA|BIZUM.*(PROPI|MISMO)", category: traspaso}
+    deductible_pct: 0
+    vat_deductible_pct: 0
+    review_required: true
+    skip: true
+    legal_basis: "Movimiento entre cuentas propias; no constituye gasto"
+    hooba: {category: traspaso, tax_code: EXENTO, simplified: true}
+  - rule_id: skip_taxes
+    priority: 2
+    matcher: {concept_regex: "AEAT|TGSS.*(LIQUIDACION|LIQUIDACI)|MODELO[ ]?(130|303)", category: impuestos}
+    deductible_pct: 0
+    vat_deductible_pct: 0
+    review_required: true
+    skip: true
+    legal_basis: "Pago de impuestos; no constituye gasto deducible"
+    hooba: {category: impuestos, tax_code: EXENTO, simplified: true}
+  - rule_id: reta
+    priority: 10
+    matcher: {concept_regex: "RETA|CUOTA AUTONOMO|TGSS.*AUTONOM", category: cuota_autonomos}
+    deductible_pct: 100
+    vat_deductible_pct: 0
+    invoice_required: false
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 30.2.1ª"
+    hooba: {category: cuota_autonomos, tax_code: EXENTO, simplified: true}
+  - rule_id: telco
+    priority: 20
+    matcher: {concept_regex: "MOVISTAR|VODAFONE|ORANGE|DIGI|MASMOVIL|O2", category: telecomunicaciones}
+    deductible_pct: 100
+    vat_deductible_pct: 100
+    requires_exclusive_use: true
+    review_required: true
+    legal_basis: "LIRPF 35/2006 arts. 28-30; LIVA 37/1992 art. 95.Uno"
+    hooba: {category: telecomunicaciones, tax_code: IVA21, simplified: true}
+  - rule_id: software
+    priority: 20
+    matcher: {concept_regex: "GOOGLE|MICROSOFT|GITHUB|ADOBE|OPENAI|ANTHROPIC|JETBRAINS|AWS|HETZNER|OVH", category: software_suscripciones}
+    deductible_pct: 100
+    vat_deductible_pct: 100
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 28; LIVA 37/1992 art. 95"
+    hooba: {category: software_suscripciones, tax_code: IVA21, simplified: true}
+  - rule_id: gestoria
+    priority: 20
+    matcher: {concept_regex: "ASESOR|GESTOR|CONSULTOR", category: asesoria}
+    deductible_pct: 100
+    vat_deductible_pct: 100
+    review_required: true
+    legal_basis: "RIRPF RD 439/2007 art. 101"
+    hooba: {category: asesoria, tax_code: IVA21, subject_to_income_tax: true, income_tax_code: IRPF15, simplified: true}
+  - rule_id: office
+    priority: 20
+    matcher: {concept_regex: "AMAZON|PAPELERIA|CARLIN|STAPLES", category: material_oficina}
+    deductible_pct: 100
+    vat_deductible_pct: 100
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 28; RD 1619/2012 art. 4"
+    hooba: {category: material_oficina, tax_code: IVA21, simplified: true}
+  - rule_id: hardware
+    priority: 20
+    matcher: {concept_regex: "ORDENADOR|PORTATIL|LAPTOP|MONITOR|TECLADO|RATON|PERIFERICO", category: equipos}
+    deductible_pct: 0
+    vat_deductible_pct: 100
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 30.2; RIRPF RD 439/2007 art. 30"
+    hooba: {category: equipos, tax_code: IVA21, simplified: true}
+  - rule_id: fuel
+    priority: 20
+    matcher: {concept_regex: "REPSOL|CEPSA|BP|GALP|SHELL", category: combustible}
+    deductible_pct: 0
+    vat_deductible_pct: 50
+    review_required: true
+    legal_basis: "LIVA 37/1992 art. 95.Tres.2ª"
+    hooba: {category: combustible, tax_code: IVA21, simplified: true}
+  - rule_id: meals
+    priority: 20
+    matcher: {concept_regex: "RESTAURANTE|RESTAURANT|CAFETERIA|BAR |TAPERIA", category: dietas_manutencion}
+    deductible_pct: 100
+    vat_deductible_pct: 100
+    daily_cap: 26.67
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 30.2.5ª.c"
+    hooba: {category: dietas_manutencion, tax_code: IVA10, simplified: true}
+  - rule_id: home_utilities
+    priority: 20
+    matcher: {concept_regex: "IBERDROLA|ENDESA|NATURGY|REPSOL LUZ|AGUA", category: suministros_vivienda}
+    deductible_pct: 30
+    vat_deductible_pct: 0
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 30.2.5ª.b"
+    hooba: {category: suministros_vivienda, tax_code: IVA21, simplified: true}
+  - rule_id: training
+    priority: 20
+    matcher: {concept_regex: "CURSO|UDEMY|COURSERA|O.REILLY", category: formacion}
+    deductible_pct: 100
+    vat_deductible_pct: 100
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 28"
+    hooba: {category: formacion, tax_code: IVA21, simplified: true}
+  - rule_id: bank_fees
+    priority: 20
+    matcher: {concept_regex: "COMISION|COMISIONES", category: comisiones_bancarias}
+    deductible_pct: 100
+    vat_deductible_pct: 0
+    invoice_required: false
+    review_required: true
+    legal_basis: "LIVA 37/1992 art. 20.Uno.18º"
+    hooba: {category: comisiones_bancarias, tax_code: EXENTO, simplified: true}
+  - rule_id: insurance
+    priority: 20
+    matcher: {concept_regex: "SEGURO|INSURANCE", category: seguros}
+    deductible_pct: 100
+    vat_deductible_pct: 0
+    annual_cap: 500
+    review_required: true
+    legal_basis: "LIRPF 35/2006 art. 30.2.5ª.a"
+    hooba: {category: seguros, tax_code: EXENTO, simplified: true}
+  - rule_id: unclassified
+    priority: 1000
+    matcher: {category: sin_clasificar}
+    deductible_pct: 0
+    vat_deductible_pct: 0
+    review_required: true
+    legal_basis: "Clasificación pendiente de revisión humana"
+    hooba: {category: sin_clasificar, tax_code: IVA21, simplified: true}

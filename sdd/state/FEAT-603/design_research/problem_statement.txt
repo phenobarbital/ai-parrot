@@ -1,0 +1,44 @@
+AI-Parrot has a uniform storage contract — `FileManagerInterface` from
+`navigator.utils.file` (navigator-api 4.0.0), implemented by
+`LocalFileManager`, `TempFileManager`, `S3FileManager` and `GCSFileManager` —
+that agents, `FileManagerToolkit`, report persistence and artifact storage all
+program against. Microsoft SharePoint document libraries and OneDrive drives
+are **not** behind that contract. Instead the repo carries two parallel,
+non-conforming surfaces:
+
+- `parrot/interfaces/sharepoint.py::SharepointClient` and
+  `parrot/interfaces/onedrive.py::OneDriveClient` — Graph-SDK clients with
+  flowtask-style, stateful method sets (`upload_files`, `file_search`,
+  `download_found_files`, `file_lookup`) that configure the target via
+  instance attributes (`client.directory`, `client.site`) rather than
+  path arguments, and that share almost no method names with each other.
+- `parrot_tools/o365/{sharepoint,onedrive}.py` tools that re-implement
+  listing/searching/downloading **directly on the raw Graph client** because
+  the clients above do not expose those operations in a reusable shape.
+
+Consequences:
+
+1. Nothing that speaks `FileManagerInterface` (the `file_manager` tool,
+   `FileManagerToolkit`, `ReportPersistenceMixin`, artifact stores) can target
+   SharePoint or OneDrive. Every consumer needs bespoke O365 code.
+2. Bytes-in-memory uploads (agent-generated reports, charts, exports) have no
+   path to SharePoint at all — `SharepointClient.upload_files` only takes
+   local filenames.
+3. The flowtask sibling of `SharepointClient` (which the user pointed at as
+   the reference) has drifted ahead: it gained `drive: {type, user}` OneDrive
+   targeting (`_ensure_drive_config`, `_resolve_user_drive`) that ai-parrot's
+   copy lacks, while ai-parrot's `O365Client` gained `set_auth_mode`,
+   `is_app_only`, `get_user_context` and an async `close()` that flowtask
+   lacks. The two are diverging in both directions.
+4. Batch upload/download, sharing-link generation and server-side search
+   exist as fragments across the clients and tools but never as a single,
+   documented, testable API.
+
+**Who is affected**: agent authors (want `FileManagerToolkit(manager_type=
+"sharepoint")`), pipeline/flowtask users (need a stable, mockable client),
+and the O365 toolkit maintainers (currently duplicating drive-item logic in
+every tool).
+
+**Why now**: FEAT-539 just landed delta enumeration for both drives with a
+robust retry/validation helper (`parrot_tools/o365/delta.py`), so the Graph
+plumbing is mature; the missing piece is the uniform manager façade.

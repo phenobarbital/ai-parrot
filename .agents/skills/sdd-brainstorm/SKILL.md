@@ -5,6 +5,14 @@ description: Explore a feature idea through structured Q&A, codebase research, o
 
 # SDD Brainstorm
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-brainstorm procedure](../../../.claude/commands/sdd-brainstorm.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to run `sdd-brainstorm`, create a brainstorm,
 or explore a feature idea before writing a formal spec.
 
@@ -94,7 +102,7 @@ Validation:
    - Parallelism Assessment
 8. Save `sdd/proposals/<feature-slug>.brainstorm.md`.
 9. Commit only that brainstorm file:
-   - clear staging with `git reset HEAD`
+   - preserve unrelated staging; stop before committing if it is outside this run's scope
    - stage only the brainstorm
    - verify `git diff --cached --name-only`
    - commit `sdd: add brainstorm for <feature-slug>`
@@ -117,4 +125,3 @@ Next: $sdd-spec <feature-slug>
 - `sdd/templates/brainstorm.md`
 - `sdd/templates/spec.md`
 - `sdd/WORKFLOW.md`
-

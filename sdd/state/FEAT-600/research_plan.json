@@ -1,0 +1,208 @@
+{
+ "plan_version": "1.0",
+ "mode": "enrichment",
+ "wiki_available": true,
+ "queries": [
+  {
+   "id": "Q001",
+   "type": "wiki_query",
+   "intent": "Locate ledger overlay mount in mcp_server (NamespaceHandle + overlay_prefixes) \u2014 template for schema mount",
+   "query": "mcp_server ledger NamespaceHandle overlay_prefixes FederatedWikiStore mount",
+   "priority": 1
+  },
+  {
+   "id": "Q002",
+   "type": "wiki_query",
+   "intent": "Confirm FederatedWikiStore.neighbors cross-kind overlay hydration",
+   "query": "FederatedWikiStore neighbors overlay outgoing-to-code hydrated",
+   "priority": 1
+  },
+  {
+   "id": "Q003",
+   "type": "wiki_query",
+   "intent": "Edges schema: does an edge carry attributes beyond provenance? replace_source_slice, upsert_symbols side table",
+   "query": "SQLiteWikiStore edges table provenance add_edges replace_source_slice upsert_symbols",
+   "priority": 1
+  },
+  {
+   "id": "Q004",
+   "type": "wiki_query",
+   "intent": "WikiProjectConfig fields, ledger_path, backend Literal, find_shared_root, is_linked_worktree",
+   "query": "WikiProjectConfig ledger_path backend Literal find_shared_root is_linked_worktree",
+   "priority": 1
+  },
+  {
+   "id": "Q005",
+   "type": "wiki_query",
+   "intent": "TableMetadata / MetadataSource / Completeness record shape",
+   "query": "bots database models TableMetadata MetadataSource Completeness SchemaMetadata",
+   "priority": 1
+  },
+  {
+   "id": "Q006",
+   "type": "wiki_query",
+   "intent": "CachePartition tiers and store_table_metadata",
+   "query": "CachePartition get resolution order LRU schema cache Redis vector store store_table_metadata",
+   "priority": 1
+  },
+  {
+   "id": "Q007",
+   "type": "wiki_query",
+   "intent": "SQLToolkit introspection entrypoints and _SQLGLOT_DIALECT_MAP",
+   "query": "SQLToolkit describe_table search_schema validate_query _warm_table_cache _SQLGLOT_DIALECT_MAP",
+   "priority": 1
+  },
+  {
+   "id": "Q008",
+   "type": "wiki_query",
+   "intent": "DatabaseAgent partition key tk_id and query_router registration",
+   "query": "DatabaseAgent tk_id database_type primary_schema create_partition register_database",
+   "priority": 2
+  },
+  {
+   "id": "Q009",
+   "type": "wiki_query",
+   "intent": "Stale-signal classification in retries.py",
+   "query": "bots database retries column does not exist relation does not exist",
+   "priority": 2
+  },
+  {
+   "id": "Q010",
+   "type": "wiki_query",
+   "intent": "SQLQuerySource.prefetch_schema behaviour",
+   "query": "SQLQuerySource prefetch_schema dataset_manager sources sql",
+   "priority": 2
+  },
+  {
+   "id": "Q011",
+   "type": "wiki_query",
+   "intent": "Claude Code installer git hooks post-commit/post-merge and linked-worktree guard",
+   "query": "claude_code installer post-merge post-commit hook wikitoolkit upsert changed linked worktree",
+   "priority": 2
+  },
+  {
+   "id": "Q012",
+   "type": "wiki_query",
+   "intent": "LedgerStore / LedgerService.from_root \u2014 plane-in-own-dir template",
+   "query": "LedgerStore LedgerService from_root ledger.db SQLiteWikiStore specialisation",
+   "priority": 1
+  },
+  {
+   "id": "Q013",
+   "type": "wiki_query",
+   "intent": "sym id helpers as pattern for table ids",
+   "query": "symbols sym_concept_id parse_sym_id symbol_to_page_fields SymbolRecord",
+   "priority": 2
+  },
+  {
+   "id": "Q014",
+   "type": "wiki_query",
+   "intent": "StructuralService._ensure_fresh read-repair shape",
+   "query": "StructuralService _ensure_fresh page_hashes rescan read-repair",
+   "priority": 2
+  },
+  {
+   "id": "Q015",
+   "type": "wiki_query",
+   "intent": "WikiRememberTool inputs (link_page_id, rel)",
+   "query": "WikiRememberTool wiki_remember link_page_id rel category",
+   "priority": 2
+  },
+  {
+   "id": "Q016",
+   "type": "wiki_query",
+   "intent": "Decisions plane storage choice (same wiki.db by category)",
+   "query": "DecisionRepository ADR_CATEGORY decisions plane category pages",
+   "priority": 2
+  },
+  {
+   "id": "Q017",
+   "type": "wiki_query",
+   "intent": "file_suffixes includes .sql; repo_scan emits file: pages for migrations",
+   "query": "file_suffixes sql repo_scan file pages",
+   "priority": 2
+  },
+  {
+   "id": "Q018",
+   "type": "wiki_query",
+   "intent": "dev_loop wiki_search research context builder",
+   "query": "DevLoopWikiSearch build_research_context",
+   "priority": 3
+  },
+  {
+   "id": "Q019",
+   "type": "wiki_query",
+   "intent": "wikitoolkit CLI groups (ns, ledger, symbols, sync) \u2014 is `schema` free?",
+   "query": "wikitoolkit cli click group ledger symbols ns sync",
+   "priority": 2
+  },
+  {
+   "id": "Q020",
+   "type": "grep",
+   "intent": "Any existing sqlglot DDL handling (exp.Create) anywhere",
+   "pattern": "exp\\.Create|exp\\.ColumnDef|exp\\.ForeignKey",
+   "path": "packages/",
+   "priority": 1
+  },
+  {
+   "id": "Q021",
+   "type": "grep",
+   "intent": "Count .sql files in monorepo (DDL ingest corpus)",
+   "pattern": "*.sql",
+   "path": ".",
+   "priority": 2
+  },
+  {
+   "id": "Q022",
+   "type": "read",
+   "intent": "Edges DDL in SQLiteWikiStore \u2014 attribute slot?",
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+   "priority": 1
+  },
+  {
+   "id": "Q023",
+   "type": "read",
+   "intent": "Ledger mount block in mcp_server.py",
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py",
+   "priority": 1
+  },
+  {
+   "id": "Q024",
+   "type": "read",
+   "intent": "CachePartition.get tier order and store_table_metadata",
+   "path": "packages/ai-parrot/src/parrot/bots/database/cache.py",
+   "priority": 1
+  },
+  {
+   "id": "Q025",
+   "type": "read",
+   "intent": "TableMetadata dataclass + MetadataSource literal",
+   "path": "packages/ai-parrot/src/parrot/bots/database/models.py",
+   "priority": 1
+  },
+  {
+   "id": "Q026",
+   "type": "git_log",
+   "intent": "Recent activity on knowledge/wiki (contention with other planes)",
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/",
+   "since": "30 days",
+   "priority": 2
+  },
+  {
+   "id": "Q027",
+   "type": "git_log",
+   "intent": "Recent activity on bots/database",
+   "path": "packages/ai-parrot/src/parrot/bots/database/",
+   "since": "60 days",
+   "priority": 2
+  },
+  {
+   "id": "Q028",
+   "type": "grep",
+   "intent": "Existing table:/schema:/source: page kinds or wiki/schema package (anti-hallucination)",
+   "pattern": "knowledge/wiki/schema|\"table:\"|'table:'|wiki_schema_",
+   "path": "packages/",
+   "priority": 1
+  }
+ ]
+}

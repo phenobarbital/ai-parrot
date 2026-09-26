@@ -100,6 +100,9 @@ def test_every_state_changing_tool_is_exclusive() -> None:
         "coder_delivery_report",
         "coder_feedback_report",
         "coder_bg_status",
+        # Blocks on a handle's settlement; it changes nothing and must never
+        # hold the engine's exclusive lock while it waits.
+        "coder_bg_wait",
     }
     for name, member in inspect.getmembers(SddCoderToolkit, inspect.iscoroutinefunction):
         if not name.startswith("coder_"):

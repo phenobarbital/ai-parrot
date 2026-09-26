@@ -11,9 +11,9 @@ tags: [a2ui, querysource, linked-surfaces, ui-surfaces, transform-dsl, widgets]
 # Feature Specification: A2UI Linked Surfaces (data-source descriptors instead of baked data)
 
 **Feature ID**: FEAT-598
-**Date**: 2026-09-24
+**Date**: 2026-09-24 (rev 0.2: 2026-09-25, re-verified against QuerySource 5.1.1)
 **Author**: Jesus Lara (drafted with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot 1.1.0 (ai-parrot / ai-parrot-tools / ai-parrot-server, next minor)
 **Brainstorm**: `sdd/proposals/a2ui-linked-surfaces.brainstorm.md` (accepted 2026-09-24 after three revisions: FEAT-558 re-verification, FEAT-147/FEAT-148 cross-check, QuerySource 5.1.0 gate)
 
@@ -97,14 +97,20 @@ ui_surfaces plane (FEAT-492: refreshable by descriptor, not only by recipe).
   LLM-written); library input shapes (ECharts pie pairs, gauges) — renderer
   adapters' job.
 - A TypeScript executor shipped from this repo for third parties.
-- A tenant HTTP lane for stored MultiQuery slugs — QuerySource 5.1.0 (in
-  progress) fixes the FEAT-147 route; until the installed QuerySource is
-  `>= 5.1.0` the builder rejects `tenant != null ∧ is_multiquery`.
 - A DatasetManager-facing wrapper of the builder (follow-up).
 - Relative-date offsets beyond QuerySource's closed 7-keyword vocabulary; the
   FEAT-558 `@variables` are rejected on the wire (non-portable).
 - Tenant discovery, tenant-membership authorization, per-tenant credentials —
-  none exist in QuerySource 5.0.0 and this feature does not add them.
+  none exist in QuerySource 5.1.1 and this feature does not add them
+  (FEAT-150's `principal=` authorizes the *slug*, it adds no membership check
+  and credentials stay trusted-service).
+- `QSPrincipal` on the agent-tool lane (`qs_execute_slug`,
+  `qs_build_linked_surface`'s mandatory execution): the toolkit has no
+  per-user identity today; it stays behind the FEAT-558 `programs` allowlist +
+  `forced_conditions`. Threading an acting-user principal into toolkits is a
+  separate follow-up.
+- QuerySource's `residual=` (FEAT-152 qsurl) and the jsonb OR/AND filter
+  grammar — orthogonal 5.1.x additions, not consumed here.
 - Any change to `UISurfaceKind`, the frontend `inferSurfaceKind` heuristic,
   the ui_surfaces DDL, or `clients/base.py`.
 
@@ -147,9 +153,14 @@ Four additive pieces (brainstorm Option A, recommended and accepted):
    `RecipeRunner` and into the save path (`_pin_save`, `publish_surface`) to
    produce the snapshot when a linked envelope arrives without one; `GET`
    lanes never execute; `refreshable = recipe_name is not None or
-   has_data_sources`. Trust model: in-process QuerySource runs **no PBAC**
-   (service credentials); ai-parrot's `AuthorizingDataSource` guard is the
-   only gate; `TenantError.error_code` is mapped (404/503) before the generic
+   has_data_sources`. Trust model (revised for QuerySource 5.1.1 / FEAT-150):
+   credentials stay trusted-service, but every owner-context lane passes
+   `principal=to_qs_principal(owner_pctx)` so QuerySource evaluates the same
+   slug PBAC as its HTTP API **in-process**; ai-parrot's
+   `AuthorizingDataSource` guard remains mandatory (defense in depth —
+   QuerySource's PBAC is a no-op when its bootstrap is absent).
+   `QueryAccessDenied` (with a principal, "missing" and "denied" collapse)
+   maps to 404 like `TenantError.error_code` (404/503) before the generic
    502.
 4. **Published contract + bundled UI lane + `ref` transforms.** JSON Schema
    and golden fixtures under `tests/outputs/a2ui/golden/linked/`; a static,
@@ -170,7 +181,9 @@ persisted (save path executes once, owner context); share-token viewers denied
 by QuerySource keep the last snapshot with a "data as of `snapshot_at`" notice
 and a server-side refresh button; UDF keywords (`TODAY`, `YESTERDAY`, `FDOM`,
 `LDOM`, `CURRENT_YEAR`, `CURRENT_MONTH`, `LAST_YEAR`) as condition values;
-never raw SQL on the wire; QuerySource floor `>=5.0.0`.
+never raw SQL on the wire; QuerySource floor `>=5.1.1` (revised 2026-09-25:
+5.1.1 shipped the FEAT-151 tenant-MultiQuery dispatch and FEAT-150
+`principal=`, so the 5.0.0 floor + runtime `>=5.1.0` gate design is dropped).
 
 ### Component Diagram
 
@@ -181,9 +194,9 @@ never raw SQL on the wire; QuerySource floor `>=5.0.0`.
    ▼
  QuerysourceToolkit.build_linked_surface ──► SlugCatalog.get_allowed(slug, tenant)  [M7, tenant-aware via DefinitionRepository]
    │   describe_slug(+required/accepts_keywords) ─► params
-   │   build_conditions(forced=…) ─► conditions, locked ; reject '@' values ; version gate (tenant×multiquery)
+   │   build_conditions(forced=…) ─► conditions, locked ; reject '@' values
    ▼
- linked.executor.execute_sources ──► QuerySlugSource(slug, tenant=) ─► QS / MultiQS (tenant=)   [M5, M6]
+ linked.executor.execute_sources ──► QuerySlugSource(slug, tenant=, principal=) ─► QS / MultiQS (tenant=, principal=)   [M5, M6]
    │                                    └─► linked.dsl.apply_transform(frame, ops|ref)          [M2]
    ▼  frames (+ optional ≤500-row snapshot)
  builders.build_linked_surface ──► validate axes vs frames ─► CreateSurface(origin=TOOL,
@@ -207,12 +220,12 @@ never raw SQL on the wire; QuerySource floor `>=5.0.0`.
 | `parrot/outputs/a2ui/models.py` `CreateSurface.metadata` (L470) | uses | already exists; no model change |
 | `parrot/outputs/a2ui/baking.py` `bake_envelope` (L356) | none | a snapshot makes every binding resolvable; callers guarantee snapshot before `GET`/HTML |
 | `parrot/outputs/a2ui/catalog/parrot/filterbar.py` `FilterBarComponent` (L104) | extends | filters may carry `metadata.extensions.parrot_param = {source, name}`; lowering passes it through |
-| `parrot/tools/dataset_manager/sources/query_slug.py` `QuerySlugSource` (L36), `MultiQuerySlugSource` (L165) | extends | `tenant=` / `is_multiquery=` pass-through to `QS`/`MultiQS` |
+| `parrot/tools/dataset_manager/sources/query_slug.py` `QuerySlugSource` (L36), `MultiQuerySlugSource` (L165) | extends | `tenant=` / `is_multiquery=` / `principal=` (+ optional `definition=` preload) pass-through to `QS`/`MultiQS`; `to_qs_principal(pctx)` mapper |
 | `parrot_tools/querysource/toolkit.py` `QuerysourceToolkit` (L59) | extends | `build_linked_surface` tool; `tenant` on `describe_slug`/`execute_slug`/`list_slugs` |
 | `parrot_tools/querysource/catalog.py` `SlugCatalog` (L131), `TenantGuard` (L97) | modifies | lookups over `DefinitionRepository` + `QueryIdentity`; guard unchanged (runtime `program_slug` == schema) |
 | `parrot_tools/querysource/models.py` `PlaceholderInfo` (L24) | extends | `required: bool`, `accepts_keywords: bool` |
-| `parrot_tools/querysource/dialect.py` (`build_conditions` L165, `check_version_compatibility` L195) | uses / extends | `@`-value rejection helper; `>= 5.1.0` gate for tenant MultiQuery |
-| `packages/ai-parrot-tools/pyproject.toml` L77 | modifies | `querysource>=5.0.0` |
+| `parrot_tools/querysource/dialect.py` (`build_conditions` L165, `check_version_compatibility` L195) | uses / extends | `@`-value rejection helper (no version gate — floor `>=5.1.1` covers tenant MultiQuery) |
+| `packages/ai-parrot-tools/pyproject.toml` L77 | modifies | `querysource>=5.1.1` |
 | `handlers/models/ui_surfaces.py` `UISurfaceRecord.refreshable` (L84) | modifies | `recipe_name is not None or has_data_sources(envelope)` |
 | `handlers/ui_surfaces.py` `_refresh` (L577), `_pin_save` (L491), `post` (L385) | extends | descriptor refresh path; save-time snapshot; `TenantError` mapping; `GET` untouched |
 | `parrot_tools/ui_surfaces.py` `PublishSurfaceTool` (L149) | modifies | `refreshable` from the record |
@@ -220,7 +233,7 @@ never raw SQL on the wire; QuerySource floor `>=5.0.0`.
 | `handlers/infographic_render.py` `STATIC_DIR` precedent (L633-663) | reuses | `/static/a2ui/transforms/` served by the existing `add_static("/static/", …)` route |
 | `ui/…/a2ui/a2ui-types.ts` `CreateSurface` (L63), `A2UISurface.svelte`, `A2UINode.svelte` (L35), `lib/api/auth-headers.ts` | extends / new | bundled UI executor lane |
 | `tests/outputs/a2ui/conformance/test_all_emitters.py` `_assert_conformant` (L115) | extends | register `build_linked_surface` |
-| QuerySource 5.0.0 (FEAT-147 tenants, FEAT-148 describe) | depends on | in production; 5.1.0 lifts the tenant-MultiQuery gate |
+| QuerySource 5.1.1 (FEAT-147 tenants, FEAT-148 describe, FEAT-151 tenant MultiQuery dispatch + `definition=`, FEAT-150 `principal=`) | depends on | released; the floor — no runtime version gate |
 
 ### Data Models
 
@@ -321,7 +334,7 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
 | M4: Builders | yes | `build_surface(..., surface_metadata=None)`; `build_linked_surface(...)` signature fixed below; axis validation rules in §7 | — |
 | M5: Python executor + `LinkedSurfaceService` | yes | `execute_sources(...)` and service contracts below; `querylimit = max_fetch_rows`; `to_thread` for pandas; fail-closed guard rule; `TenantError` mapping table in §7 | — |
 | M6: `QuerySlugSource` tenant pass-through | yes | keyword-only `tenant`, `is_multiquery`; `MultiQS` via `_get_multiqs()` mirror of `_get_qs()` | — |
-| M7: FEAT-558 toolkit changes | **no** for the catalog swap; yes for `PlaceholderInfo`, `@`-rejection, tool method | the `DefinitionRepository` construction path (`get_definition_repository()` is a `QuerySource()` singleton method, `connections.py:438-456`) needs a design pass on connection ownership inside `SlugCatalog` |
+| M7: FEAT-558 toolkit changes | yes (resolved 2026-09-25) | `SlugCatalog` obtains the repository via the `QuerySource()` singleton accessor `get_definition_repository()` (`interfaces/connections.py:439-454`) — connection ownership stays inside querysource; `TenantQueryHandler._prepare` (`handlers/tenant.py:198-212`) is the reference read-once pattern, and the loaded definition MAY be forwarded as `QS/MultiQS(definition=)` to skip the second lookup | — |
 | M8: ui_surfaces integration | yes | all four call sites delegate to `LinkedSurfaceService`; recipe-first dispatch; `refreshable` rule; `update_envelope(expected_updated_at=)` → 409 | — |
 | M9: `ref` transforms static route + signed manifest | yes | opaque `name@version` ids; file layout, manifest JSON shape and HMAC rule fixed in §7 | — |
 | M10: FilterBar `parrot_param` | yes | schema extension + lowering pass-through only | — |
@@ -440,13 +453,17 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
                             max_snapshot_rows: int | None = None, max_fetch_rows: int = 5000) -> ExecutionOutcome:
       """For each source (join/union dependencies first): conditions = derive_conditions(request, locked) merged with
       overrides (locked keys ignored → ignored_params) + {'querylimit': max_fetch_rows} (S8: QuerySource caps the fetch
-      itself); fetch via QuerySlugSource(slug, tenant=source.tenant, is_multiquery=source.is_multiquery,
-      multi_output=source.multi_output) wrapped in AuthorizingDataSource when guard is given (sources/authorizing.py:41);
-      apply_transform runs in asyncio.to_thread (S8); records. A failing source yields SourceOutcome(error=…) and does
-      not fail the others. Never raises for data errors; raises only for programming errors."""
+      itself); principal = to_qs_principal(pctx) when pctx is not None (mapped ONCE, channel='ui_surfaces'); fetch via
+      QuerySlugSource(slug, tenant=source.tenant, is_multiquery=source.is_multiquery,
+      multi_output=source.multi_output, principal=principal) wrapped in AuthorizingDataSource when guard is given
+      (sources/authorizing.py:41); apply_transform runs in asyncio.to_thread (S8); records. A failing source yields
+      SourceOutcome(error=…) and does not fail the others. Never raises for data errors; raises only for programming
+      errors."""
 
   def map_query_error(exc: BaseException) -> tuple[int, str]:
-      """querysource TenantError.error_code → (404, 'tenant_not_available'|'query_not_found') | (503, 'tenant_store_unavailable');
+      """querysource QueryAccessDenied → (404, 'query_not_found') (FEAT-150: with a principal, missing and denied
+      collapse; exceptions.py:63 carries code 404, generic message — never surface 'denied');
+      TenantError.error_code → (404, 'tenant_not_available'|'query_not_found') | (503, 'tenant_store_unavailable');
       anything else → (502, 'data_stage')."""
 
   # parrot/outputs/a2ui/linked/service.py  (new) — the ONE entry point for save / publish / refresh (S1)
@@ -467,9 +484,9 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
           snapshot_at; the caller persists with update_envelope(expected_updated_at=…) (S11)."""
   ```
 
-### Module 6: `QuerySlugSource` tenant pass-through
+### Module 6: `QuerySlugSource` tenant + principal pass-through
 - **Path**: modifies `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/query_slug.py:36-162` and `:165-260`
-- **Responsibility**: carry `tenant` to `QS(..., tenant=)`; dispatch `MultiQS` for `is_multiquery`.
+- **Responsibility**: carry `tenant` and `principal` to `QS(..., tenant=, principal=)`; dispatch `MultiQS` for `is_multiquery`; map `PermissionContext` → `QSPrincipal` (FEAT-150's prescribed ai-parrot follow-up).
 - **Depends on**: —
 - **Interface Skeleton**:
   ```python
@@ -477,12 +494,25 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
   class QuerySlugSource(DataSource):   # verified: query_slug.py:36
       def __init__(self, slug: str, prefetch_schema_enabled: bool = True,
                    permanent_filter: Optional[Dict[str, Any]] = None, *,
-                   tenant: str | None = None, is_multiquery: bool = False, multi_output: str | None = None) -> None:
-          """tenant → QS/MultiQS keyword-only `tenant=` (querysource qs.py:42-51, multi/__init__.py:96-109);
-          is_multiquery selects MultiQS, whose DataFrame | dict[str, DataFrame] output is normalised to ONE frame:
-          the one named multi_output, else 'result', else the single frame (results.py:77-79 precedent) (S4).
-          cache_key gains ':t=<tenant>' when tenant is set (query_slug.py:67-80). fetch() closes the QS/MultiQS
-          instance in a `finally` (toolkit.py:231 precedent; today it never closes, query_slug.py:151-162) (S8)."""
+                   tenant: str | None = None, is_multiquery: bool = False, multi_output: str | None = None,
+                   principal: "QSPrincipal | None" = None, definition: "LoadedDefinition | None" = None) -> None:
+          """tenant/principal/definition → QS/MultiQS keyword-only kwargs (querysource 5.1.1 qs.py:56-68,
+          multi/__init__.py:106-121; `residual=` exists on QS but is never passed).
+          With a principal, QuerySource enforces slug PBAC in-process BEFORE store resolution and raises
+          QueryAccessDenied (qs.py:215-250); MultiQS pre-checks every stored child. definition= (optional,
+          FEAT-151) skips the second DefinitionRepository lookup when the caller already holds the
+          LoadedDefinition (tenants.py:54). is_multiquery selects MultiQS, whose DataFrame | dict[str, DataFrame]
+          output is normalised to ONE frame: the one named multi_output, else 'result', else the single frame
+          (results.py:77-79 precedent) (S4). cache_key gains ':t=<tenant>' when tenant is set (query_slug.py:67-80);
+          the principal is NEVER part of the cache_key (identical rows either way — PBAC gates execution, not
+          content). fetch() closes the QS/MultiQS instance in a `finally` (toolkit.py:231 precedent; today it never
+          closes, query_slug.py:151-162) (S8)."""
+
+  def to_qs_principal(pctx: "PermissionContext", *, channel: str = "ui_surfaces") -> "QSPrincipal":
+      """Map parrot.auth.permission.PermissionContext → querysource.auth.principal.QSPrincipal
+      (principal.py:21: user_id, username, groups, roles, programs, superuser, tenant_id, channel).
+      tenant_id is informational only (logs — it never selects a store; the descriptor's `tenant` does, AC4).
+      Lazy import mirroring _get_qs(); field mapping verified against permission.py:81 at task time."""
 
   def _get_multiqs():
       """Lazy import of querysource.queries.multi.MultiQS, mirroring _get_qs() (query_slug.py:23)."""
@@ -490,7 +520,7 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
 
 ### Module 7: FEAT-558 toolkit changes
 - **Path**: modifies `packages/ai-parrot-tools/src/parrot_tools/querysource/{toolkit,catalog,models,dialect,errors,__init__}.py`, `packages/ai-parrot-tools/pyproject.toml:77`
-- **Responsibility**: tenant-aware catalog; extended describe; the agent tool; `@`-rejection; version gate; floor bump.
+- **Responsibility**: tenant-aware catalog; extended describe; the agent tool; `@`-rejection; floor bump to `>=5.1.1` (no runtime version gate).
 - **Depends on**: M1, M4, M5, M6
 - **Interface Skeleton**:
   ```python
@@ -517,12 +547,9 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
   def reject_variable_values(conditions: Mapping[str, Any]) -> None:
       """Raise InvalidConditionsError when any scalar value starts with '@' (FEAT-558 deployment variables are not
       portable on the linked-surface wire)."""
-  def supports_tenant_multiquery(version: str) -> bool:
-      """True when installed querysource >= 5.1.0 (tenant {slug} route dispatches MultiQS)."""
-
-  # parrot_tools/querysource/errors.py  (modifies errors.py)
-  class TenantMultiQueryUnsupportedError(QuerysourceToolkitError):   # code TENANT_MULTIQUERY_UNSUPPORTED
-      """tenant != None and is_multiquery on querysource < 5.1.0."""
+  # NOTE (2026-09-25): no supports_tenant_multiquery() and no TenantMultiQueryUnsupportedError — the pyproject
+  # floor `querysource>=5.1.1` guarantees the tenant {slug} route dispatches MultiQS (handlers/tenant.py:194-212);
+  # check_version_compatibility (L195, existing) enforces the floor as before.
 
   # parrot_tools/querysource/toolkit.py  (modifies toolkit.py:3, :152-200; adds one tool)
   class QuerysourceToolkit(AbstractToolkit):   # verified: toolkit.py:59
@@ -539,7 +566,7 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
                                      target_key: str | None = None, refresh: dict[str, Any] | None = None,
                                      transform: dict[str, Any] | None = None) -> dict[str, Any]:
           """Emit a linked A2UI surface for a query-slug (tool name qs_build_linked_surface). Order: get_allowed(slug, tenant=)
-          → TenantMultiQueryUnsupportedError gate → describe_slug → params → validate_placeholders + build_conditions(
+          → describe_slug → params → validate_placeholders + build_conditions(
           forced=self.forced_conditions) → conditions; forced keys → locked; reject_variable_values → execute_sources
           (one mandatory run, uncapped) → build_linked_surface(snapshot=snapshot). Returns the FEAT-473 dual-emission
           shape: {'a2ui_envelope': …, 'artifacts': [...]}. `component` = {'component': 'Chart'|'DataTable'|'KPICard', …props}."""
@@ -547,7 +574,7 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
 
 ### Module 8: ui_surfaces integration (server)
 - **Path**: modifies `packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py:84,648`, `handlers/ui_surfaces.py:385-645`, `packages/ai-parrot-tools/src/parrot_tools/ui_surfaces.py:149,185`, `packages/ai-parrot/src/parrot/bots/mixins/infographic_authoring.py:440,501`
-- **Responsibility**: every persistence/refresh call site delegates to `LinkedSurfaceService` (S1); provenance + fail-closed guard at the boundary (S2); optimistic concurrency on refresh (S11); `refreshable` widening; `GET` never executes.
+- **Responsibility**: every persistence/refresh call site delegates to `LinkedSurfaceService` (S1); provenance + fail-closed guard at the boundary (S2); optimistic concurrency on refresh (S11); `refreshable` widening; `GET` never executes. Every lane hands `owner_pctx` to `execute_sources`, which maps it to `QSPrincipal` (M5/M6) — QuerySource then re-evaluates the owner's slug PBAC in-process on save, publish, refresh and scheduled runs. NOTE: FEAT-150 §8 suggested passing `record.tenant` as `tenant=`; superseded by this spec's descriptor-tenant rule (AC4) — each source's `tenant` comes from `parrot_data_sources`, never from `UISurfaceRecord.tenant`.
 - **Depends on**: M1, M5
 - **Interface Skeleton**:
   ```python
@@ -691,12 +718,14 @@ from parrot_tools.querysource import QuerysourceToolkit                # gains b
 | `test_execute_sources_tenant_passthrough` | M5/M6 | fake `QS` records `tenant=`; `is_multiquery` → fake `MultiQS` |
 | `test_execute_sources_locked_override_ignored` | M5 | override of a locked key → `ignored_params` |
 | `test_execute_sources_partial_failure` | M5 | one failing source does not fail siblings; `error` set |
-| `test_map_query_error_tenant_codes` | M5 | `tenant_not_available`→404, `query_not_found`→404, `tenant_store_unavailable`→503, other→502 |
-| `test_query_slug_source_cache_key_tenant` | M6 | `cache_key` differs per tenant |
+| `test_map_query_error_tenant_codes` | M5 | `QueryAccessDenied`→404 `query_not_found` (never "denied"), `tenant_not_available`→404, `query_not_found`→404, `tenant_store_unavailable`→503, other→502 |
+| `test_execute_sources_passes_principal` | M5/M6 | with `pctx`, every `QS`/`MultiQS` receives `principal=` (fake_qs asserts kwarg); `pctx=None` → no principal (trusted-service unchanged) |
+| `test_to_qs_principal_mapping` | M6 | `PermissionContext` → `QSPrincipal` field-for-field; `channel='ui_surfaces'`; `tenant_id` never routes the store |
+| `test_query_slug_source_cache_key_tenant` | M6 | `cache_key` differs per tenant; identical with/without principal |
 | `test_placeholder_info_required_accepts_keywords` | M7 | `firstdate` never required (IMPLICIT_DEFAULTS), untyped → `accepts_keywords=True` |
 | `test_catalog_get_tenant_uses_definition_repository` | M7 | fake repo asserts `QueryIdentity(store, slug)`; `program_slug == schema` |
 | `test_reject_variable_values` | M7 | `{"firstdate": "@today"}` → `InvalidConditionsError` |
-| `test_tenant_multiquery_gate` | M7 | `tenant="acme"`, `is_multiquery=True`, version `5.0.0` → `TenantMultiQueryUnsupportedError`; `5.1.0` → allowed |
+| `test_tenant_multiquery_builds` | M7 | `tenant="acme"`, `is_multiquery=True` → builds; `MultiQS` (not `QS`) dispatched with `tenant=` |
 | `test_build_linked_surface_tool_order` | M7 | get_allowed before describe; one execution; envelope `origin=TOOL`; forced keys → `locked` |
 | `test_refreshable_with_data_sources` | M8 | record without recipe but with sources → `refreshable=True` |
 | `test_refresh_descriptor_path` / `test_refresh_recipe_precedence` | M8 | executor called with descriptor tenant; recipe wins when both |
@@ -738,19 +767,20 @@ def manifest_file(tmp_path, monkeypatch):  # signed manifest with group_by_day@1
 - [ ] AC2 A `CreateSurface` with `metadata.extensions.parrot_data_sources` validates under `origin=TOOL` and fails with `DATA_SOURCES_NOT_ALLOWED_FOR_LLM` under `origin=LLM`; unbound `target`, `locked ⊄ params`, unknown `join.with`/`union.sources`, unknown `transform.ref` each produce `DATA_SOURCE_INVALID`/`TRANSFORM_REF_UNKNOWN`, reported together.
 - [ ] AC3 `qs_build_linked_surface` always executes the slug once, validates axes against the fetched columns/dtypes, embeds ≤500 rows only when `snapshot=True` (`snapshot_truncated` when cut), derives `conditions` from `request`, maps `forced_conditions` keys to `locked`, rejects any `@`-prefixed value, and emits `origin=TOOL`.
 - [ ] AC4 Every source carries `tenant: str | null`; the renderer lane and the Python executor both route `tenant` (URL `/api/v1/{tenant}/queries/{slug}` / `QS(..., tenant=)`); a `null` tenant runs against `public`; `tenant` is never inferred from session, JWT or `UISurfaceRecord.tenant`.
-- [ ] AC5 With installed QuerySource `< 5.1.0`, `tenant != null ∧ is_multiquery` is rejected with `TENANT_MULTIQUERY_UNSUPPORTED`; with `>= 5.1.0` it builds; public MultiQuery slugs build on any `>= 5.0.0`.
+- [ ] AC5 `tenant != null ∧ is_multiquery` builds and executes through `MultiQS(tenant=)` — no runtime version gate exists anywhere (`supports_tenant_multiquery` / `TENANT_MULTIQUERY_UNSUPPORTED` are never introduced); the `querysource>=5.1.1` floor (AC12) is the only guarantee.
 - [ ] AC6 `describe_slug` reports `required` and `accepts_keywords` exactly as QuerySource's `build_variables` does (static `required`, `IMPLICIT_DEFAULTS`, `or raw_type is None`); `SlugCatalog` resolves tenant slugs through `DefinitionRepository` and the `programs` allowlist applies unchanged.
 - [ ] AC7 The ten DSL operations behave per §7; `derive_conditions` is deterministic; the Python executor and the bundled UI's `dsl.ts`/`conditions.ts` both pass every fixture under `parrot/outputs/a2ui/linked/contract/fixtures/` (shipped as package data, incl. the mandatory null/timezone/dtype/ordering/join-collision/empty/`multi_output` cases); `contract/schema.json` is committed and deterministic.
 - [ ] AC8 `UISurfaceRecord.refreshable` is true for a surface with sources and no recipe; `POST …/refresh` runs the executor with the descriptor's tenant (recipe path wins when both exist); saving a linked envelope without a snapshot executes once with the owner's context and persists the snapshot, or answers 404/503/502 (per `map_query_error`) and persists nothing; `GET` (JSON and HTML) never executes.
 - [ ] AC9 `transform.ref` resolves only against a manifest whose HMAC verifies; deprecated entries still resolve with a warning; unknown refs fail validation; the bundled UI refuses to execute a module whose SRI does not match and falls back to the snapshot.
 - [ ] AC10 Bundled UI: `on_mount` fetch with the viewer's bearer, `interval` clamped to ≥30 s and paused while hidden, `manual` never auto-fetches; a 404 keeps the snapshot with an "unavailable" notice (never "denied"); `refresh` is sent as boolean `true`; a `FilterBar` filter with `parrot_param` re-fetches its source, others filter locally.
 - [ ] AC11 Baked surfaces, `bake_envelope`, `lower()`, all existing golden files and the six satellite renderers are byte-for-byte unaffected (existing tests unchanged and green).
-- [ ] AC12 `packages/ai-parrot-tools/pyproject.toml` declares `querysource>=5.0.0`; no new Python runtime dependency; `ruff check` (TID251) and `black --check` clean.
+- [ ] AC12 `packages/ai-parrot-tools/pyproject.toml` declares `querysource>=5.1.1`; no new Python runtime dependency; `ruff check` (TID251) and `black --check` clean.
 - [ ] AC13 Docs updated: `docs/outputs/a2ui-v1.md` extension table (`parrot_data_sources`, `parrot_param`), `docs/frontend/agentdashboard-a2ui-reference.md` §6.5 + §7.4 (Filter vs Refresh vs Reload), `docs/tools/querysource-toolkit.md` (new tool, `tenant`), new `docs/outputs/a2ui-linked-surfaces.md` stating that `locked` is not security, that server lanes run as a trusted service behind a mandatory guard, and that `ref` module CSP is the host page's responsibility.
 - [ ] AC14 **Persistence boundary (S2)**: every save path (`_pin_save`, `PublishSurfaceTool`, `publish_surface`) runs `LinkedSurfaceService.validate_for_persistence` — `validate_envelope(origin=TOOL)` plus, for linked envelopes, a **configured** data-plane guard asserting the owner's `slug:execute` on every `(tenant, slug)`; no guard ⇒ 403 `LinkedGuardRequired` (fail closed); a denied source ⇒ 403 and nothing persisted.
 - [ ] AC15 **Concurrency (S11)**: `store.update_envelope(..., expected_updated_at=)` is conditional; a refresh that lost the race answers 409 with the newer `snapshot_at`; no stale snapshot ever overwrites a newer one.
 - [ ] AC16 **No-snapshot contract (S9)**: a `snapshot=False` envelope always carries `dataModel[key] = {"rows": []}`; `bake_envelope` succeeds; JSON/HTML/chat renderers show a loading state while `snapshot_at` is null; persisted surfaces never lack a snapshot (AC8).
 - [ ] AC17 **Bounded fetch (S8)**: every executor lane sends `querylimit = max_fetch_rows` (default 5000); `QuerySlugSource.fetch` closes its `QS`/`MultiQS` in `finally`; `apply_transform` runs off the event loop; `TransformRef.name` is an opaque `name@version` id (S6) and `multi_output` selects the MultiQuery frame (S4).
+- [ ] AC18 **In-process PBAC (FEAT-150)**: every owner-context lane (`_pin_save` snapshot, `PublishSurfaceTool`, `publish_surface`, `_refresh`, scheduled delivery) passes `principal=to_qs_principal(owner_pctx)` to `QS`/`MultiQS`; `QueryAccessDenied` maps to 404 `query_not_found` (renderer notice stays "unavailable", never "denied"); `pctx=None` (agent-tool lane) keeps today's trusted-service path; the `AuthorizingDataSource` guard (AC14) remains mandatory regardless — principal is additive, not a replacement.
 
 ---
 
@@ -758,7 +788,9 @@ def manifest_file(tmp_path, monkeypatch):  # signed manifest with group_by_day@1
 
 > **CRITICAL — Anti-Hallucination Anchor**
 > Verified against `bc296148e` (dev, 2026-09-24; `origin/dev` `ccf5a2b6b` touches none of the files below).
-> QuerySource references are against `../querysource` tag `5.0.0` (`aebc55c`).
+> QuerySource references are against `../querysource` tag `5.1.1` (`989193d`), re-verified 2026-09-25
+> (originally drafted against `5.0.0` `aebc55c`; 5.1.1 ships FEAT-151 tenant-MultiQuery dispatch +
+> `definition=`, FEAT-150 `principal=`, FEAT-152 qsurl — the latter unused here).
 
 ### Verified Imports
 ```python
@@ -780,12 +812,14 @@ from parrot_tools.querysource.errors import QuerysourceToolkitError, SlugNotFoun
 from parrot_tools.ui_surfaces import PublishSurfaceTool                                              # parrot_tools/ui_surfaces.py:60
 from parrot.handlers.models.ui_surfaces import UISurfaceRecord, UISurfaceKind                        # ai-parrot-server
 from parrot.conf import STATIC_DIR                                                                   # infographic_render.py:649 (local import precedent)
-# ../querysource >= 5.0.0
-from querysource.queries.qs import QS                                                                # qs.py:36; __init__(slug, conditions, request, loop, *, tenant=None) L42-51
-from querysource.queries.multi import MultiQS                                                        # multi/__init__.py:56; tenant= kw L96-109
-from querysource.queries.describe import build_variables, KEYWORD_TYPES, IMPLICIT_DEFAULTS, DescribeVariable   # queries/describe.py:108,29,31,41
-from querysource.tenants import QueryIdentity, TenantError                                           # tenants.py:34-42, 422
-from querysource.repositories.definitions import DefinitionRepository                                # definitions.py:56 (get L161, list L175)
+# ../querysource >= 5.1.1
+from querysource.queries.qs import QS                                                                # qs.py:50; __init__(slug, conditions, request, loop, *, tenant=None, definition=None, principal=None, residual=None) L56-68
+from querysource.queries.multi import MultiQS                                                        # multi/__init__.py:100; __init__(…, *, tenant=None, definition=None, principal=None) L106-121
+from querysource.queries.describe import build_variables, KEYWORD_TYPES, IMPLICIT_DEFAULTS, DescribeVariable   # queries/describe.py:108,29,31,41 (unchanged in 5.1.1)
+from querysource.tenants import QueryIdentity, LoadedDefinition, TenantError                         # tenants.py:46,54; TenantError re-exported from tenant_errors.py:15 (tenants.py:14)
+from querysource.repositories.definitions import DefinitionRepository                                # definitions.py:56 (get L161, list L175 — unchanged in 5.1.1)
+from querysource.auth.principal import QSPrincipal                                                   # principal.py:21 (frozen dataclass; for_authz L67 NOT needed here)
+from querysource.exceptions import QueryAccessDenied                                                 # exceptions.py:63 (code 404, generic "Query not available.")
 ```
 
 ### Existing Class Signatures
@@ -878,23 +912,33 @@ export interface CreateSurface { surfaceId; catalogId?; components: WireComponen
 ```
 
 ```python
-# ../querysource (tag 5.0.0) — verified 2026-09-24
-# services.py: POST/GET /api/v3/queries/{slug}{meta} → handlers.multi.QueryHandler L243-255 (single + MultiQuery via MultiQS L335);
-#   POST /api/v1/{tenant}/queries/{slug} → TenantQueryHandler L387; describe routes L204-210 (+ tenant variants L215-219); v2 legacy L181-183
-# handlers/tenant.py: TenantQueryHandler L142; query(): tenant = match_info["tenant"] L230, request["qs_tenant"] = tenant L238,
-#   stored {slug} → QueryService (single-query) L240-245, slug-less POST → QueryHandler L246-249
-# queries/qs.py: QS.__init__(slug='', conditions=None, request=None, loop=None, *, tenant=None, **kw) L42-51; credentials L147-165 (request=None ⇒ service creds,
-#   no PBAC); lookup repo.registry.resolve(self._tenant_selector) + QueryIdentity + repo.get L173-177
-# tenants.py: QueryIdentity L34-42; TenantRegistry.resolve(None) → public.queries, literal "public" ok, unknown → TenantError(tenant_not_available) L402-425;
-#   discovery of "{schema}".queries tables L198-206; stores() L427 (scheduler only)
-# repositories/definitions.py: DefinitionRepository L56; _runtime_model program_slug = schema for tenant stores L111-119; _fetch_row L121-126;
-#   get(identity) L161 (TenantError query_not_found L165-169); list(store, params) -> DefinitionPage L175
-# handlers/abstract.py: PBAC on bare slug name L551-557; every denial → HTTPNotFound (no 403) L361-568
+# ../querysource (tag 5.1.1, 989193d) — re-verified 2026-09-25
+# services.py: POST/GET /api/v3/queries/{slug}{meta} → handlers.multi.QueryHandler (single + MultiQuery via MultiQS);
+#   POST /api/v1/{tenant}/queries/{slug} → TenantQueryHandler; describe routes + tenant variants; v2 legacy
+# handlers/tenant.py: TenantQueryHandler L147; FEAT-151 kind-aware dispatch: _prepare L198-212 loads the definition ONCE
+#   (repo.get(QueryIdentity)) → _is_multi L194 (runtime.provider == 'multi') → QueryService (single) | QueryHandler (multi),
+#   forwarding the pre-loaded definition — the reference pattern for M6/M7
+# queries/qs.py: QS L50; __init__(slug='', conditions=None, request=None, loop=None, *, tenant=None, definition=None,
+#   principal=None, residual=None, **kw) L56-68; FEAT-150: principal ⇒ enforce_principal(SLUG, slug, 'slug:execute')
+#   BEFORE store/definition/provider/cache L225-231; _COLLAPSED_OWNER_ERRORS = {query_not_found, tenant_not_available}
+#   → QueryAccessDenied L45-47, 249-250; request=None ∧ principal=None ⇒ service creds, no PBAC (unchanged);
+#   PBAC not bootstrapped ⇒ no-op with one warning per process (FEAT-150)
+# queries/multi/__init__.py: MultiQS L100; __init__(…, *, tenant=None, definition=None, principal=None) L106-121;
+#   with principal, every stored child (and the stored slug itself) is pre-checked before any child runs
+# auth/principal.py: QSPrincipal L21 (frozen: user_id, username, groups, roles, programs, superuser, tenant_id, channel,
+#   authz_backend; tenant_id/channel = logs only, never store routing); enforce_principal (auth/enforcement.py:134)
+# exceptions.py: QueryAccessDenied L63 — QueryException, code 404, generic message (never names the policy)
+# tenants.py: QueryIdentity L46; LoadedDefinition L54 (identity, runtime, revision); TenantRegistry.resolve(None) →
+#   public.queries, literal "public" ok, unknown → TenantError(tenant_not_available) L402+; TenantError moved to
+#   tenant_errors.py:15 (still importable from querysource.tenants)
+# interfaces/connections.py: get_definition_repository() singleton accessor L439-454 — SlugCatalog's construction path (M7)
+# repositories/definitions.py: DefinitionRepository L56; get(identity) L161; list(store, params) -> DefinitionPage L175 (unchanged)
+# handlers/abstract.py: PBAC on bare slug name; every denial → HTTPNotFound (no 403) (unchanged)
 # queries/describe.py: KEYWORD_TYPES L29; IMPLICIT_DEFAULTS L31-33; DescribeVariable L41-51; build_variables L108-111 (pure; DescribeVariable objects;
-#   required L154; accepts_keywords L163; variables_supported=False for JSON dialect L116-118)
-# cache_identity.py: key qs:r2:sha256(namespace, schema, table, slug, revision, provider_checksum) L65-94
-# providers/abstract.py: refresh = bool(conditions.pop('refresh')) L83-85; _udf_resolved_conditions L148-158
-# types/validators.pyx: UDF_LIST (7 keywords) L27-40; resolve_udf_conditions L185-209 (case-insensitive values)
+#   required L154; accepts_keywords L163; variables_supported=False for JSON dialect L116-118) — semantics unchanged in 5.1.1
+# cache_identity.py: key qs:r2:sha256(namespace, schema, table, slug, revision, provider_checksum)
+# providers/abstract.py: refresh = bool(conditions.pop('refresh')); _udf_resolved_conditions
+# types/validators.pyx + utils/vocabulary.py: UDF vocabulary still exactly 7 keywords, case-insensitive (unchanged)
 ```
 
 ### Integration Points
@@ -903,7 +947,7 @@ export interface CreateSurface { surfaceId; catalogId?; components: WireComponen
 | `_validate_linked_sources` (M3) | `validate_envelope` | call after the component loop | `catalog/__init__.py:499-682` |
 | `build_linked_surface` (M4) | `validate_envelope(origin=TOOL)` | same call as `build_surface` | `builders.py:112` |
 | `execute_sources` (M5) | `QuerySlugSource.fetch` / `AuthorizingDataSource.fetch` | await | `query_slug.py:122`, `authorizing.py:74` |
-| `QuerySlugSource(tenant=)` (M6) | `QS(slug=, conditions=, tenant=)` / `MultiQS(...)` | constructor kwarg | `query_slug.py:151`; `../querysource/queries/qs.py:42-51` |
+| `QuerySlugSource(tenant=, principal=)` (M6) | `QS(slug=, conditions=, tenant=, principal=, definition=)` / `MultiQS(...)` | constructor kwargs | `query_slug.py:151`; `../querysource/queries/qs.py:56-68`, `multi/__init__.py:106-121` |
 | `SlugCatalog.get(tenant=)` (M7) | `DefinitionRepository.get(QueryIdentity(store, slug))` | await | `../querysource/repositories/definitions.py:161`; `tenants.py:402` |
 | `describe_slug` (M7) | `querysource.queries.describe.build_variables` | call with `rec.query_raw, rec.conditions, rec.cond_definition` | `../querysource/queries/describe.py:108-111` |
 | `build_linked_surface` tool (M7) | `AbstractToolkit` tool generation (`tool_prefix="qs"`) | method on the toolkit | `toolkit.py:67`, `parrot/tools/toolkit.py:254` |
@@ -919,7 +963,8 @@ export interface CreateSurface { surfaceId; catalogId?; components: WireComponen
 - ~~`QuerySlugSource(tenant=…)`, `MultiQuerySlugSource(tenant=…)`, `_get_multiqs`~~ — no tenant parameter today (`query_slug.py:51-56, 175`); `QS` built without `tenant` (L151).
 - ~~`SlugCatalog` seeing tenant stores, `SlugCatalog.get(tenant=)`, `describe_slug(tenant=)`, `execute_slug(tenant=)`, `list_slugs(tenant=)`~~ — it reads `public.queries` via `QueryModel` only (`catalog.py:132-187`); FEAT-558's `TenantGuard` is a `program_slug` allowlist.
 - ~~`PlaceholderInfo.required`, `PlaceholderInfo.accepts_keywords`, `ExecutionResult.dtypes`~~ — absent (`models.py:24-59`).
-- ~~`qs_build_linked_surface`, `reject_variable_values`, `supports_tenant_multiquery`, `TenantMultiQueryUnsupportedError`~~ — net-new (M7).
+- ~~`qs_build_linked_surface`, `reject_variable_values`~~ — net-new (M7). (`supports_tenant_multiquery` / `TenantMultiQueryUnsupportedError` from rev 0.1 are NEVER built — dropped 2026-09-25 with the `>=5.1.1` floor.)
+- ~~`to_qs_principal`, any `principal=`/`definition=` kwarg on `QuerySlugSource`~~ — net-new (M6).
 - ~~`QSourceTool`, `parrot_tools/qsource.py`, `ToolResult.metadata["dtypes"]`, `qs_describe`, `qs_columns`, `qs_vocabulary`, `qs_run`, "FEAT-567"~~ — hard-cut / never existed; the toolkit is FEAT-558.
 - ~~`LinkedSurfaceToolkit`, `parrot_tools/linked_surfaces.py`~~ — NOT built (superseded 2026-09-24).
 - ~~`LinkedSurfaceService`, `LinkedGuardRequired`, `derive_conditions`, `linked/contract/`, `has_data_sources` in `refreshable`~~ — net-new (M1/M5/M8/M12); `refreshable` is `recipe_name is not None` (`models/ui_surfaces.py:84-86`).
@@ -930,8 +975,8 @@ export interface CreateSurface { surfaceId; catalogId?; components: WireComponen
 - ~~`/static/a2ui/transforms/`, `manifest.json`, `PARROT_A2UI_MANIFEST_KEY`, `handlers/a2ui_transforms.py`~~ — net-new (M9); only the generic `add_static("/static/", …)` route exists.
 - ~~`ui/src/lib/api/querysource.ts`, `a2ui/linked/`, `CreateSurface.metadata` in `a2ui-types.ts`, a `FilterBar` branch in `A2UINode.svelte`~~ — absent.
 - ~~Shared JSON fixtures between Python goldens and `ui/src/**/*.test.ts`, `golden/linked/`~~ — none today.
-- ~~`/api/v3/{tenant}/queries/{slug}`, tenant discovery endpoint, tenant in JWT/session, tenant-membership check on execution, 403 from QuerySource~~ — none in QuerySource 5.0.0.
-- ~~A tenant HTTP lane for stored MultiQuery slugs~~ — none in 5.0.0 (arrives in 5.1.0).
+- ~~`/api/v3/{tenant}/queries/{slug}`, tenant discovery endpoint, tenant in JWT/session, tenant-membership check on execution, 403 from QuerySource~~ — still none in QuerySource 5.1.1 (`QueryAccessDenied` carries code **404**; FEAT-150 adds no membership check).
+- ~~Per-user datasource credentials via `principal=`~~ — FEAT-150 authorizes only; credentials stay trusted-service (rejected in its brainstorm, FEAT-091).
 - ~~`LAST_WEEK` / offset keywords, invocable date helpers, `{today}` placeholder grammar~~ — vocabulary closed at 7 keywords.
 - ~~`QS.get_definition()`~~ — only `BaseProvider.get_definition()` in QuerySource.
 
@@ -966,7 +1011,6 @@ Verified against: `bc296148e` (2026-09-24). `/sdd-task` MUST re-run the `grep -c
 | `packages/ai-parrot-tools/src/parrot_tools/querysource/catalog.py` | MODIFY | `    async def get_allowed(` | `catalog.py:161` | 1 |
 | `packages/ai-parrot-tools/src/parrot_tools/querysource/catalog.py` | MODIFY | `    async def list(self, *, search: str \| None, program: str \| None, limit: int) -> list[SlugRecord]:` | `catalog.py:167` | 1 |
 | `packages/ai-parrot-tools/src/parrot_tools/querysource/dialect.py` | MODIFY | `def check_version_compatibility(` | `dialect.py:195` | 1 |
-| `packages/ai-parrot-tools/src/parrot_tools/querysource/errors.py` | MODIFY | `class QuerysourceToolkitError` | `errors.py:8` | 1 |
 | `packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py` | MODIFY | `Generated tool names (tool_prefix 'qs')` (module docstring) | `toolkit.py:3` | 1 |
 | `packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py` | MODIFY | `    async def list_slugs(` | `toolkit.py:152` | 1 |
 | `packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py` | MODIFY | `    async def describe_slug(self, slug: str, dry_run: bool = False) -> SlugDetail:` | `toolkit.py:160` | 1 |
@@ -1022,15 +1066,16 @@ Verified against: `bc296148e` (2026-09-24). `/sdd-task` MUST re-run the `grep -c
 
 ### Known Risks / Gotchas
 - **Tenant is routing, not security** (FEAT-147: no membership check, PBAC on the bare slug name). A user with `slug:execute` can run `x` under any registered tenant by editing the URL. Document next to `locked`.
-- **In-process QuerySource runs no PBAC** (`qs.py:147-165`): save/refresh/scheduled lanes execute as a trusted service; ai-parrot's guard (`AuthorizingDataSource`) is the only gate. Share-token viewers already see owner snapshots (FEAT-492), so this is consistent — but it must be stated in `docs/outputs/a2ui-linked-surfaces.md`.
+- **In-process PBAC is opt-in and can silently no-op** (FEAT-150): without `principal=`, in-process QuerySource still runs zero PBAC on trusted-service credentials; with it, PBAC runs — but when QuerySource's PBAC bootstrap is absent it degrades to a no-op with one warning per process. That is why ai-parrot's guard (`AuthorizingDataSource` / `LinkedSurfaceService`) stays MANDATORY and fail-closed (AC14) — the principal is defense in depth, never the only gate. Share-token viewers still see owner snapshots (FEAT-492). State all of this in `docs/outputs/a2ui-linked-surfaces.md`.
 - **Hand-crafted descriptor + trusted-service execution = exfiltration (S2)**: today every save path only runs `CreateSurface.model_validate`; a user could persist a descriptor for any `(tenant, slug)` and have the server fetch it at save time. `LinkedSurfaceService.validate_for_persistence` is therefore mandatory on all four call sites and **fails closed** without a guard (`LinkedGuardRequired` → 403) — deliberately unlike `RecipeRunner`'s fail-open on falsy `pctx` (`runner.py:262-264`).
 - **Concurrent refresh writers (S11)**: renderer interval + manual + server refresh can race; `update_envelope` is unconditional today. Refresh persists with `expected_updated_at`; losers get 409.
 - **Unbounded fetch before pandas (S8)**: the 500-row cap is a *snapshot* cap; the fetch itself is bounded by `querylimit = max_fetch_rows` (5000) on every lane, transforms run in `asyncio.to_thread`, and every `QS`/`MultiQS` is closed in `finally`.
 - **`ref` modules execute JavaScript in the host page (S6)**: SRI authenticates bytes, not behaviour. Mitigations: opaque `name@version` ids (no URLs on the wire), operator-published per-release catalogue, `deprecated` never `deleted`, and the host page's CSP (documented, not enforced by ai-parrot).
 - **`resolve(None)` silently falls back to `public.queries`** — a same-named public slug runs instead of the tenant's. Every lane must pass `tenant` explicitly; tests assert the kwarg.
-- **Tenant MultiQuery has no HTTP lane on QuerySource 5.0.0** — gate on `installed_version() >= 5.1.0`.
+- **Tenant MultiQuery needs querysource >= 5.1.1** — guaranteed by the pyproject floor (AC12), not by a runtime gate; an environment pinned below the floor fails `check_version_compatibility` at toolkit init, not per-call.
 - **`build_variables` returns `DescribeVariable` objects**, `.model_dump()` them; `required` is static and `firstdate/lastdate/filterdate` are never required (`IMPLICIT_DEFAULTS`); `accepts_keywords` is also true for untyped variables (`raw_type is None`); JSON-dialect slugs → `variables_supported=False` (empty `params`).
-- **Every QuerySource denial is 404** (no 403): renderer notices must say "unavailable"; server maps `TenantError.error_code` before 502.
+- **Every QuerySource denial is 404** (no 403): renderer notices must say "unavailable"; server maps `QueryAccessDenied` (code 404 — with a principal, "missing" and "denied" are indistinguishable by design) and `TenantError.error_code` before 502.
+- **FEAT-150 §8 vs AC4**: FEAT-150's follow-up note suggests `_refresh` pass `record.tenant` as `tenant=`; this spec's descriptor-tenant rule wins — `tenant` comes from each `parrot_data_sources` entry, never from `UISurfaceRecord.tenant` (AC4). Only the `PermissionContext → QSPrincipal` half of that note is adopted (M6).
 - **`refresh` is `bool(raw)`** on the QuerySource side (`providers/abstract.py:83-85`) — send boolean `true` or omit.
 - **Vocabulary is closed** (7 keywords, case-insensitive values) — no offsets; `@variables` rejected.
 - **Save-time execution is a write with a data-plane side effect** — bounded to `POST /api/v1/ui/surfaces` (no snapshot) and `POST …/refresh`; `GET` never executes (AC8).
@@ -1045,7 +1090,7 @@ Verified against: `bc296148e` (2026-09-24). `/sdd-task` MUST re-run the `grep -c
 |---|---|---|
 | `pydantic` | v2 (existing) | descriptor + DSL models, JSON Schema export |
 | `pandas` | existing | Python DSL executor |
-| `querysource` | `>=5.0.0` (floor bump; runtime gate `>=5.1.0` for tenant MultiQuery) | `QS`/`MultiQS(tenant=)`, `DefinitionRepository`, `queries.describe.build_variables` |
+| `querysource` | `>=5.1.1` (floor bump; no runtime gate) | `QS`/`MultiQS(tenant=, principal=, definition=)`, kind-aware tenant MultiQuery dispatch, `QSPrincipal`, `QueryAccessDenied`, `DefinitionRepository`, `queries.describe.build_variables` |
 | `jsonschema` | existing | validate `parrot_data_sources` in the conformance suite |
 | `aiohttp` | existing | static route (no new code path — navigator `add_static`) |
 | Svelte 5 + TypeScript + vitest | existing | bundled UI lane |
@@ -1101,7 +1146,12 @@ None open. Every question was resolved in the brainstorm and is carried forward 
 - [x] `accepts_keywords` / `required` / `build_variables` — *Resolved in brainstorm*: adopted as implemented. → M7, AC6.
 - [x] Error semantics — *Resolved in brainstorm*: 404 = "unavailable"; server maps `TenantError.error_code`. → M5, M11, AC8/AC10.
 - [x] `refresh` — *Resolved in brainstorm*: boolean `true` only. → AC10.
-- [x] Floor — *Resolved in brainstorm*: `querysource>=5.0.0`; `5.1.7` tag spurious. → AC12.
+- [x] Floor — *Resolved in brainstorm*: `querysource>=5.0.0`; `5.1.7` tag spurious. → AC12. *(Superseded 2026-09-25, see below.)*
+
+**Resolved 2026-09-25 (QuerySource 5.1.1 released — re-verification against `989193d`)**
+- [x] Tenant MultiQuery gate — *Resolved (Jesus Lara)*: 5.1.1 ships FEAT-151's kind-aware dispatch (`handlers/tenant.py:194-212`); floor bumped to `>=5.1.1` and the runtime gate (`supports_tenant_multiquery`, `TenantMultiQueryUnsupportedError`) is dropped entirely. Supersedes the two brainstorm rows above. → M7, AC5, AC12.
+- [x] In-process PBAC — *Resolved (Jesus Lara)*: adopt FEAT-150 `principal=` now on every owner-context lane (`to_qs_principal(owner_pctx)` in M6, threaded by M5/M8); the agent-tool lane stays trusted-service (allowlist + `forced_conditions`) as an explicit non-goal; `AuthorizingDataSource` guard remains mandatory. → M5, M6, M8, AC18.
+- [x] `DefinitionRepository` connection ownership (M7 delegation blocker) — *Resolved*: use the `QuerySource()` singleton accessor `get_definition_repository()` (`interfaces/connections.py:439-454`); `TenantQueryHandler._prepare` is the read-once reference; the `LoadedDefinition` MAY be forwarded as `definition=` to skip the execution-time re-read. M7 is now fully delegation-eligible. → M6, M7.
 
 ---
 
@@ -1140,7 +1190,34 @@ Summary: **11** confirmed (S6 partially — its deferral half rejected) · **0**
   - No edge between: M6 ‖ M1/M2/M3/M9/M10; M10 ‖ everything except M13; M9 ‖ M2/M4/M6; M11's `dsl.ts` can start as soon as M12's DSL fixtures exist. These run concurrently.
 - **Shared files** (tasks serialized): `catalog/__init__.py` (M3 only), `builders.py` (M4 only), `parrot_tools/querysource/toolkit.py` + `catalog.py` (M7 — split into two tasks that touch different files: catalog swap vs tool method), `handlers/ui_surfaces.py` (M8 refresh + save in ONE task), `a2ui/__init__.py` (M1 export + nothing else), golden files for `filterbar_lowered.json` (M10) vs `golden/linked/` (M12) — disjoint.
 - **Exclusive resources** (`parallel: false`): `packages/ai-parrot-tools/pyproject.toml` floor bump (M7; may touch `uv.lock`); `ui/src/lib/types/generated/` regeneration via `pnpm generate` (M11).
-- **Cross-feature dependencies**: none to merge first. FEAT-558 (merged), FEAT-492 (merged), FEAT-535 (merged). External: QuerySource 5.0.0 in production; 5.1.0 only lifts the runtime gate (no task blocks on it).
+- **Cross-feature dependencies**: none to merge first. FEAT-558 (merged), FEAT-492 (merged), FEAT-535 (merged). External: QuerySource 5.1.1 released (`989193d`) — the floor; no task blocks on anything unreleased.
+
+---
+
+## Errata (task-time verification, 2026-09-26)
+
+Eight prose errors were found while decomposing this spec into TASK-3769..3796 and are corrected
+**in the task files, which are authoritative where they disagree with the prose above**:
+
+1. `Filter`'s comparison field is `operator` — `op` is the node-type discriminator, not the comparator.
+2. `derive_conditions` never emits `limit`; every lane sends `querylimit = min(request.limit or cap, cap)`.
+3. `ExecutionOutcome.frames` carries the executed DataFrames so the toolkit never rebuilds dtypes from rows.
+4. `DataTable` columns use `name`, not `key`.
+5. `ValidationIssue` does not exist — `validate_envelope` raises `CatalogValidationError(issues=[…])`.
+6. `check_version_compatibility` only WARNS; §7's "fails at toolkit init" is false.
+7. `get_definition_repository()` lives on `Connection`, not on `QuerySource()`.
+8. `contract/schema.json` ships at `linked/contract/` (package data), not `docs/outputs/schemas/`.
+
+Owner decisions recorded the same day (details in the task files):
+- **Owner-check resource naming (TASK-3781)** — CONFIRMED: `authorize_source` with
+  `PhysicalResources(source_type="query_slug", source_id="<tenant|public>:<slug>")`, i.e. PBAC
+  `source:read` on `query_slug:<tenant|public>:<slug>`. No new `slug:execute` action.
+- **AC14 vs AC11 (TASK-3781)** — CONFIRMED: every save path calls `validate_for_persistence`, but
+  TOOL-origin validation + guard run only when `has_data_sources(envelope)`; baked envelopes keep
+  today's behaviour.
+- **Guard wiring** — new TASK-3805 ships default wiring (`setup_dataplane_guard()` →
+  `app["dataplane_guard"]` + `bot._dataplane_guard` when PBAC initializes); un-wired/bare installs
+  keep answering 403 for linked saves (fail closed).
 
 ---
 
@@ -1149,3 +1226,5 @@ Summary: **11** confirmed (S6 partially — its deferral half rejected) · **0**
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-24 | Jesus Lara / Claude | Initial draft from the accepted brainstorm (three revisions, incl. FEAT-147/FEAT-148 cross-check) |
+| 0.2 | 2026-09-25 | Jesus Lara / Claude | Re-verified against QuerySource 5.1.1 (`989193d`): floor `>=5.1.1`, runtime tenant-MultiQuery gate dropped (AC5/AC12/M7); FEAT-150 `QSPrincipal` adopted on owner-context lanes (`to_qs_principal`, M5/M6/M8, new AC18, `QueryAccessDenied`→404); M7 `DefinitionRepository` open question resolved (singleton accessor + optional `definition=` preload); contract anchors refreshed |
+| 0.3 | 2026-09-26 | Jesus Lara / Claude | Errata section (eight task-time prose corrections; tasks authoritative); owner confirmed `query_slug:<tenant\|public>:<slug>` resource naming and the AC14/AC11 resolution; TASK-3805 (default data-plane guard wiring) added |

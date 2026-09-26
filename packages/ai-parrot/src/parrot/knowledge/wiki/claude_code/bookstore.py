@@ -19,6 +19,10 @@ from .bookstore_assets import BOOKSTORE_SKILL
 
 SKILL_PATH = Path(".claude/skills/bookstore/SKILL.md")
 
+#: Action reported when no indexed library exists yet, so a premature
+#: ``parrot claude install`` no longer skips the Bookstore silently.
+BOOKSTORE_SKIPPED = "bookstore — skipped: no indexed library found (run `bookstore add <file>`, then re-run install)"
+
 #: Managed-entry detection rule (mirrors FEAT-485's
 #: ``_is_managed_toolkit_entry``): an entry is "ours" iff its ``args``
 #: match this exact shape. A ``bookstore`` key with different args is a
@@ -66,7 +70,7 @@ def _write_mcp_json(path: Path, data: dict, servers: dict) -> None:
 
 
 def install_bookstore(root: Path) -> list[str]:
-    """Install for an existing library; silently omit unavailable Bookstore."""
+    """Install for an existing library; report (not install) when none exists."""
     path = root / ".mcp.json"
     data = _load_mcp_json(path)
     servers = data.get("mcpServers")
@@ -76,10 +80,12 @@ def install_bookstore(root: Path) -> list[str]:
         # Reconcile an earlier managed registration if its library
         # disappeared. User-owned server settings and existing skills
         # remain untouched.
+        actions = [BOOKSTORE_SKIPPED]
         if "bookstore" in servers and _is_managed_entry(servers["bookstore"]):
             del servers["bookstore"]
             _write_mcp_json(path, data, servers)
-        return []
+            actions.append("bookstore MCP — removed (library no longer found)")
+        return actions
 
     actions: list[str] = []
     entry = mcp_json_entry(root)

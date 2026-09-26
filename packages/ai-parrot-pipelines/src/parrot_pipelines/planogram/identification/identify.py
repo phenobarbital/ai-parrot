@@ -40,6 +40,11 @@ _CallResult = Tuple[List[Identification], List[Shape], List[str]]
 _MARK_COLOUR = (0, 255, 0)
 _LABEL_BG = (0, 0, 0)
 _LABEL_FG = (255, 255, 255)
+#: Mark label height as a fraction of the labelled box height, clamped to [min, max] pixels.
+_MARK_LABEL_RATIO = 0.12
+_MARK_MIN_LABEL_PX = 11  # the pre-scaling size (font scale 0.5)
+_MARK_MAX_LABEL_PX = 64
+_HERSHEY_CAP_HEIGHT_PX = 22  # cv2.FONT_HERSHEY_SIMPLEX digit height at font scale 1.0
 _EMPTY_IDENTITY_TOKENS = frozenset({"", "none", "null", "unknown", "n/a", "na", "empty", "empty slot"})
 
 
@@ -87,11 +92,32 @@ def _plan_chunks(targets: Sequence[Any], substrip_max_slots: int) -> List[List[A
     return chunks
 
 
+def _mark_style(box_height: int) -> Tuple[float, int, int]:
+    """Scale the mark label with the box it labels so it survives the provider's downscaling.
+
+    A fixed 0.5 font scale (about 10 px on a 1400-px strip) was illegible to Nova 2 Lite, which then
+    permuted answers across neighbouring areas. The label is sized to a fraction of the box height,
+    clamped so small boxes keep the old size and huge boxes do not get billboards.
+
+    Args:
+        box_height: Height of the marked box, in strip pixels.
+
+    Returns:
+        ``(font_scale, text_thickness, outline_thickness)``.
+    """
+    target = max(_MARK_MIN_LABEL_PX, min(_MARK_MAX_LABEL_PX, round(box_height * _MARK_LABEL_RATIO)))
+    font_scale = target / _HERSHEY_CAP_HEIGHT_PX
+    text_thickness = max(1, round(font_scale * 2))
+    outline_thickness = max(2, round(font_scale * 2))
+    return font_scale, text_thickness, outline_thickness
+
+
 def render_marked_strip(image: np.ndarray, strip: PixelBox, marks: List[Tuple[int, PixelBox]]) -> bytes:
-    """Crop ``strip`` and draw a 2-px numbered outline per mark; PNG bytes. Picklable — runs in the CPU executor.
+    """Crop ``strip`` and draw a numbered outline per mark; PNG bytes. Picklable — runs in the CPU executor.
 
     An empty ``marks`` list yields the plain crop. Labels are drawn at the BOTTOM edge of each box so the
-    product face is never covered.
+    product face is never covered, and are sized relative to the box (see ``_mark_style``) so they stay
+    legible after the vision provider downscales the strip.
 
     Args:
         image: Full-resolution BGR image.
@@ -106,13 +132,16 @@ def render_marked_strip(image: np.ndarray, strip: PixelBox, marks: List[Tuple[in
     height = crop.shape[0]
     for number, (bx1, by1, bx2, by2) in marks:
         cx1, cy1, cx2, cy2 = bx1 - x1, by1 - y1, bx2 - x1, by2 - y1
-        cv2.rectangle(crop, (cx1, cy1), (cx2, cy2), _MARK_COLOUR, 2)
+        font_scale, text_thickness, outline = _mark_style(cy2 - cy1)
+        cv2.rectangle(crop, (cx1, cy1), (cx2, cy2), _MARK_COLOUR, outline)
         text = str(number)
-        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, text_thickness)
+        pad = max(2, th // 4)
         tx = cx1 + max(0, (cx2 - cx1 - tw) // 2)
-        ty = min(max(cy2 - 4, th + 2), height - 3)
-        cv2.rectangle(crop, (tx - 2, ty - th - 2), (tx + tw + 2, ty + 2), _LABEL_BG, -1)
-        cv2.putText(crop, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5, _LABEL_FG, 1, cv2.LINE_AA)
+        ty = min(max(cy2 - outline - pad, th + pad), height - pad - 1)
+        cv2.rectangle(crop, (tx - pad, ty - th - pad), (tx + tw + pad, ty + pad), _LABEL_BG, -1)
+        cv2.rectangle(crop, (tx - pad, ty - th - pad), (tx + tw + pad, ty + pad), _MARK_COLOUR, max(1, outline // 2))
+        cv2.putText(crop, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, _LABEL_FG, text_thickness, cv2.LINE_AA)
     return encode_png(crop)
 
 

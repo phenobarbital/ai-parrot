@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-608",
+  "feature_slug": "google-drive-interface",
+  "started_at": "2026-09-25T22:51:43Z",
+  "updated_at": "2026-09-25T23:05:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-608/source.md",
+    "fetched_at": "2026-09-25T22:51:43Z",
+    "summary_oneline": "Google Drive FileManager (FileManagerInterface over Drive v3) modeled on FEAT-603 SharePoint/OneDrive managers, wired into FileManagerToolkit"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-09-25T22:51:43Z",
+      "completed_at": "2026-09-25T22:51:43Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-09-25T22:51:50Z",
+      "completed_at": "2026-09-25T22:52:00Z",
+      "duration_seconds": 10,
+      "queries_total": 23,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-608/research_plan.json",
+      "note": "unattended session: plan gate auto-approved, recorded honestly as not user-approved"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-09-25T22:52:00Z",
+      "completed_at": "2026-09-25T22:55:00Z",
+      "duration_seconds": 180,
+      "queries_executed": 23,
+      "queries_skipped": 0,
+      "depth_reached": 0,
+      "files_read": 12,
+      "grep_calls": 16,
+      "git_calls": 4,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-09-25T22:55:00Z",
+      "completed_at": "2026-09-25T22:57:00Z",
+      "duration_seconds": 120,
+      "synthesis_path": "sdd/state/FEAT-608/synthesis.json",
+      "thinking_path": "sdd/state/FEAT-608/synthesis.thinking.log",
+      "overall_confidence": "medium",
+      "claims_total": 15,
+      "claims_high_conf": 12,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 1,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-09-25T23:00:00Z",
+      "completed_at": "2026-09-25T23:04:00Z",
+      "duration_seconds": 240,
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null,
+      "note": "U1-U4 answered interactively (all recommended options); U5 defaulted"
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-09-25T22:57:00Z",
+      "completed_at": "2026-09-25T23:05:00Z",
+      "duration_seconds": 480,
+      "proposal_path": "sdd/proposals/google-drive-interface.proposal.md",
+      "commit_sha": "337c4a3de",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence and the architecture is fixed by the FEAT-603 precedent; unknowns are parameter choices. Sequence after FEAT-603 merges to dev."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 12,
+    "grep_calls": 16,
+    "git_calls": 4,
+    "wall_seconds": 240
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Set status: accepted, then /sdd-spec FEAT-608 after FEAT-603 merges to dev"
+  }
+}

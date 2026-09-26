@@ -5,6 +5,14 @@ description: Suggest next unblocked SDD tasks to assign across per-spec indexes.
 
 # SDD Next
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-next procedure](../../../.claude/commands/sdd-next.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks what task to work on next, runs `sdd-next`, or needs unblocked SDD assignments.
 
 Invocation: `sdd-next`.

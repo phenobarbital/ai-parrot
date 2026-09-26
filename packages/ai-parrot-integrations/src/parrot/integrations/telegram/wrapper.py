@@ -55,6 +55,7 @@ from .operator_commands import OperatorCommandsMixin
 from parrot.integrations.core.auth.post_auth import PostAuthRegistry
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
+from ..media_download import MediaDownloadRefused, allowed_media_hosts, temp_download
 from ...auth.context import UserContext
 from ...models.outputs import OutputMode
 
@@ -2957,6 +2958,26 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         exc_info=True,
                     )
 
+    async def _send_url_photos(self, chat_id: int, urls: List[str]) -> None:
+        """Download each remote image URL (bounded, allowlisted) and send it as a photo.
+
+        Args:
+            chat_id: Target chat.
+            urls: http(s) image URLs from ``ParsedResponse.image_urls``.
+        """
+        hosts = allowed_media_hosts()
+        total = len(urls)
+        for idx, url in enumerate(urls, start=1):
+            try:
+                async with temp_download(url, allowed_hosts=hosts) as path:
+                    caption = f"Figure {idx}" if total > 1 else None
+                    await self.bot.send_photo(chat_id=chat_id, photo=FSInputFile(path), caption=caption)
+                await asyncio.sleep(0.3)
+            except MediaDownloadRefused as exc:
+                self.logger.warning("Refused image URL %s: %s", url, exc)
+            except Exception as exc:  # noqa: BLE001 — a failed attachment must not abort the reply
+                self.logger.error("Failed to send image URL %s: %s", url, exc)
+
     async def _send_attachments(self, chat_id: int, parsed: ParsedResponse) -> None:
         """Send attachments (images, documents, media, charts) to a chat."""
         # Send charts
@@ -2983,6 +3004,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                         await asyncio.sleep(0.3)
                 except Exception as e:
                     self.logger.error("Failed to send chart '%s': %s", chart.title, e)
+
+        # Remote image URLs (FEAT-601 M12)
+        await self._send_url_photos(chat_id, list(getattr(parsed, "image_urls", []) or []))
 
         # Send images
         for image_path in parsed.images:
@@ -3723,6 +3747,17 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                     self.logger.error("Failed to send chart '%s': %s", chart.title, e)
                     # Send error message instead
                     await message.answer(f"⚠️ Could not display chart: {chart.title}")
+
+        # Remote image URLs (FEAT-601 M12)
+        await self._send_url_photos(chat_id, list(getattr(parsed, "image_urls", []) or []))
+
+        # Remote media URLs (FEAT-601 M12) — send_video is out of scope; deliver as text links instead
+        media_urls = list(getattr(parsed, "media_urls", []) or [])
+        if media_urls:
+            try:
+                await message.answer("\n".join(f"🎬 {url}" for url in media_urls))
+            except Exception as e:  # noqa: BLE001 — a failed attachment must not abort the reply
+                self.logger.error("Failed to send media URL links: %s", e)
 
         # Send images as photos
         for image_path in parsed.images:

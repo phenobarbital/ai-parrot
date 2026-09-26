@@ -5,6 +5,14 @@ description: Explain how a subsystem, component, or symbol works in the current 
 
 # SDD Explain
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-explain procedure](../../../.claude/commands/sdd-explain.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to explain how a subsystem, component, or symbol works in the project, onboarding architecture explanations, or deep code traces.
 
 Invocation: `sdd-explain [--deep] <subsystem | component | symbol | question>`.

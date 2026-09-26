@@ -1,0 +1,531 @@
+{
+ "schema_version": "1.0",
+ "feat_id": "FEAT-600",
+ "summary_oneline": "SQL Schema Plane — sources/schemas/tables as a wikitoolkit overlay plane (own schema.db, ids table:<origin>/<schema>.<table>) fed by live SQLToolkit introspection and sqlglot DDL ingest, consumed by DatabaseAgent (CachePartition tier) and coders (MCP tools)",
+ "detected_mode": "enrichment",
+ "overall_confidence": "medium",
+ "localization": [
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py",
+   "symbol": "create_wiki_mcp_server (ledger mount block)",
+   "lines": "154-225",
+   "role": "template for the `schema` overlay mount + tool registration",
+   "evidence": [
+    "F001"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py",
+   "symbol": "FederatedWikiStore._route / _route_bare_overlay_id / neighbors",
+   "lines": "885-930, 976-1059, 1133-1197",
+   "role": "bare-id kind routing to overlays and cross-kind neighbor hydration — the read path the plane inherits",
+   "evidence": [
+    "F002"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+   "symbol": "edges DDL / add_edges / symbols table / replace_source_slice / page_hashes / compare_and_swap_page",
+   "lines": "112-131, 550-837, 1593-1614",
+   "role": "store primitives: no edge attribute slot; side-table precedent; slice replace + CAS",
+   "evidence": [
+    "F003"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/project.py",
+   "symbol": "WikiNamespaceConfig / WikiProjectConfig.backend / decisions / ledger_path / find_shared_root / is_linked_worktree",
+   "lines": "183-260, 419, 478-485, 520-532, 1185-1197",
+   "role": "config surface to extend with `schema: SchemaPlaneConfig` and `schema_path`",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/store.py",
+   "symbol": "LedgerStore",
+   "lines": "24-123",
+   "role": "SQLiteWikiStore specialisation to mirror as SchemaStore",
+   "evidence": [
+    "F005"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py",
+   "symbol": "LedgerService.from_root",
+   "lines": "116-143",
+   "role": "plane-in-own-dir constructor to mirror as SchemaPlaneService.from_root (+ from_dir, F023)",
+   "evidence": [
+    "F005",
+    "F023"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/bots/database/models.py",
+   "symbol": "TableMetadata / MetadataSource / Completeness",
+   "lines": "97-155",
+   "role": "canonical record the plane stores; needs `ddl` source value and origin/dialect carrier",
+   "evidence": [
+    "F006"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/bots/database/cache.py",
+   "symbol": "CachePartition.get / store_table_metadata",
+   "lines": "33-40, 54-92, 104, 112-185, 321",
+   "role": "insert the plane tier + write-through; Redis keys already use `table:` prefix",
+   "evidence": [
+    "F007"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/bots/database/toolkits/sql.py",
+   "symbol": "SQLToolkit.describe_table / validate_query / _warm_table_cache / _SQLGLOT_DIALECT_MAP",
+   "lines": "45, 80-214, 509-576, 636-714",
+   "role": "live producer + error-driven repair + warm-from-plane",
+   "evidence": [
+    "F008"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/bots/database/toolkits/postgres.py",
+   "symbol": "PostgresToolkit",
+   "lines": "28-123",
+   "role": "pg_catalog producer (also overrides _get_information_schema_query)",
+   "evidence": [
+    "F008"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/bots/database/toolkits/bigquery.py",
+   "symbol": "BigQueryToolkit",
+   "lines": "19-60",
+   "role": "BigQuery producer",
+   "evidence": [
+    "F008"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/bots/database/agent.py",
+   "symbol": "DatabaseAgent (toolkit start loop)",
+   "lines": "206-224",
+   "role": "tk_id → origin mapping and schema_plane wiring",
+   "evidence": [
+    "F009"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/bots/database/retries.py",
+   "symbol": "SQLRetryHandler",
+   "lines": "56-57, 123-135",
+   "role": "proven-stale signal for read-repair",
+   "evidence": [
+    "F010"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py",
+   "symbol": "git_hook_block",
+   "lines": "166-190",
+   "role": "add `schema ingest-ddl --changed` inside the existing linked-worktree guard",
+   "evidence": [
+    "F012"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/structural/service.py",
+   "symbol": "StructuralService._ensure_fresh",
+   "lines": "431-479",
+   "role": "read-repair shape (non-blocking lock, stale flag)",
+   "evidence": [
+    "F014"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+   "symbol": "symbols / ns / ledger / sync groups",
+   "lines": "2277, 2479, 2765, 3958",
+   "role": "add `wikitoolkit schema` group",
+   "evidence": [
+    "F021"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/wiki/file_suffixes.py",
+   "symbol": "",
+   "lines": "38",
+   "role": "`.sql` already produces file: pages for `defined_in` edges",
+   "evidence": [
+    "F017"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/flows/dev_loop/wiki_search.py",
+   "symbol": "DevLoopWikiSearch.build_research_context",
+   "lines": "-",
+   "role": "include table: hits in dev-loop research context",
+   "evidence": [
+    "F020"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/database/models.py",
+   "symbol": "TableMetadata (duplicate, legacy)",
+   "lines": "12-45",
+   "role": "second TableMetadata without completeness/source — must NOT be the plane's input",
+   "evidence": [
+    "F022"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py",
+   "symbol": "DatabaseQueryToolkit.get_table_metadata",
+   "lines": "298-312",
+   "role": "second live introspection surface (dq_get_table_metadata) — candidate producer/consumer, out of v1",
+   "evidence": [
+    "F022"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/tools/dataset_manager/sources/sql.py",
+   "symbol": "SQLQuerySource.prefetch_schema",
+   "lines": "105-108",
+   "role": "returns {} today — plane-backed follow-up",
+   "evidence": [
+    "F011"
+   ]
+  }
+ ],
+ "constraints": [
+  {
+   "description": "Edges have no attribute slot: (src,dst,rel,provenance) with PK (src,dst,rel).",
+   "implication": "FK column pairs need either a rel encoding (`references:store_id->id`) or an `attrs` column schema bump on every backend.",
+   "evidence": [
+    "F003"
+   ]
+  },
+  {
+   "description": "Bare-id routing is by kind prefix: the first overlay whose overlay_prefixes contain the kind wins.",
+   "implication": "Kind must be the first segment of every id (`table:`, `schema:`, `source:`); the owner's origin:object form lives in the second segment.",
+   "evidence": [
+    "F002",
+    "F019"
+   ]
+  },
+  {
+   "description": "WikiProjectConfig.backend Literal is sqlite|memory|arangodb; create_wiki_store also accepts postgres.",
+   "implication": "A Postgres-hosted production plane needs a plane-specific backend field or a widened Literal.",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "description": "Ledger mount only happens when find_shared_root(root) is not None; FEAT-569 is adding from_dir()/read_repair=False rootless modes concurrently.",
+   "implication": "SchemaPlaneService must ship from_root AND from_dir, and its tools a read_repair switch; coordinate merge order with FEAT-569 on mcp_server.py, cli.py and the tool bundle; the tool-surface golden test will change.",
+   "evidence": [
+    "F001",
+    "F023"
+   ]
+  },
+  {
+   "description": "Two TableMetadata dataclasses exist (bots/database with completeness/source; parrot_tools/database legacy without).",
+   "implication": "The plane must import parrot.bots.database.models.TableMetadata explicitly and provide an adapter if databasequery ever feeds it.",
+   "evidence": [
+    "F006",
+    "F022"
+   ]
+  },
+  {
+   "description": "DatabaseAgent keys partitions/router by tk_id = f'{database_type}_{primary_schema}'.",
+   "implication": "origin alias must be mapped from tk_id (or declared on DatabaseToolkitConfig); do not rename tk_id.",
+   "evidence": [
+    "F009"
+   ]
+  },
+  {
+   "description": "CachePartition Redis keys already use the string prefix `table:{schema}:{table}`.",
+   "implication": "Not a functional conflict (Redis vs wiki) but grep/log ambiguity; document, or namespace plane ids in log lines.",
+   "evidence": [
+    "F007",
+    "F019"
+   ]
+  },
+  {
+   "description": "The managed git hook block is shared by post-commit and post-merge and guarded by `[ ! -f .git ]`.",
+   "implication": "DDL ingest goes inside the same guard as one more line — no new hook.",
+   "evidence": [
+    "F012"
+   ]
+  },
+  {
+   "description": "sqlglot.parse aborts a whole file on one ParseError; inline PRIMARY KEY is a column constraint, not exp.PrimaryKey.",
+   "implication": "ingest-ddl must split statements and isolate errors per statement, and fold column-level constraints; 6/32 in-repo files fail whole-file today.",
+   "evidence": [
+    "F025",
+    "F018"
+   ]
+  },
+  {
+   "description": "knowledge/wiki is a hot area (201 commits/30d) while bots/database is quiet (6/60d).",
+   "implication": "Land wiki-side lanes in small PRs rebased often; the database-side lane is low-conflict.",
+   "evidence": [
+    "F024"
+   ]
+  },
+  {
+   "description": "_internal.generate_create_table_statement takes YAML text, not TableMetadata.",
+   "implication": "A sqlglot-based DDL renderer is new code, not a replacement; keep _internal untouched.",
+   "evidence": [
+    "F008"
+   ]
+  }
+ ],
+ "scope": {
+  "what_is_new": [
+   "knowledge/wiki/schema/ package: models (SchemaSourceConfig, TableRecord, ColumnRecord), ids (table_concept_id/parse_table_id/normalize_ref), render (sqlglot DDL + page), SchemaStore(SQLiteWikiStore) with `columns` side table, producers/live.py, producers/ddl.py, service (SchemaPlaneService.from_root/from_dir; sync/ingest_ddl/diff/lookup/neighbors/search), tools (wiki_schema_lookup/search/neighbors/sources), SchemaPlaneToolkit",
+   "WikiProjectConfig.schema: SchemaPlaneConfig + schema_path(root) → <shared>/.parrot/schema/",
+   "`schema` overlay NamespaceHandle in mcp_server (overlay_prefixes=['source','schema','table'])",
+   "wikitoolkit schema {sources,add-source,sync,ingest-ddl,diff,lookup} CLI group (write verbs refuse linked worktrees)",
+   "MetadataSource += 'ddl'; optional origin/dialect carried by TableRecord (not by TableMetadata)",
+   "CachePartition plane tier (after Redis) + write-through; DatabaseAgent(schema_plane=…) wiring with tk_id→origin map",
+   "Error-driven read-repair in SQLToolkit on 'column/relation does not exist'"
+  ],
+  "what_changes": [
+   "packages/ai-parrot/src/parrot/knowledge/wiki/mcp_server.py — second overlay handle + create_schema_tools (F001)",
+   "packages/ai-parrot/src/parrot/knowledge/wiki/project.py — SchemaPlaneConfig, schema_path (F004)",
+   "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py — schema group (F021)",
+   "packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py — ingest-ddl line inside git_hook_block guard (F012)",
+   "packages/ai-parrot/src/parrot/bots/database/models.py — MetadataSource Literal gains 'ddl' (F006)",
+   "packages/ai-parrot/src/parrot/bots/database/cache.py — plane tier, behaviour-preserving when unset (F007)",
+   "packages/ai-parrot/src/parrot/bots/database/toolkits/sql.py — repair hook, validate_query wording, plane-aware generate_query context (F008, F010)",
+   "packages/ai-parrot/src/parrot/bots/database/agent.py — schema_plane argument, tk_id→origin (F009)",
+   "packages/ai-parrot/src/parrot/flows/dev_loop/wiki_search.py — include table: pages (F020)"
+  ],
+  "non_goals": [
+   "Columns as pages (side table only; col: pages can be added later without changing table ids)",
+   "maps_to (Python model → table) extraction — v2",
+   "Schema history / bitemporal archive of previous pages — v2 or Option D territory",
+   "DatasetManager SQLQuerySource.prefetch_schema plane implementation — follow-up (F011)",
+   "databasequery (`dq_get_table_metadata`) as a producer/consumer — follow-up (F022)",
+   "Retiring the legacy parrot_tools.database TableMetadata — out of scope, only avoided",
+   "Write tools over MCP (sync needs credentials the MCP has none of) — CLI-only in v1",
+   "sample_data ingestion by default — off, per-table allowlist only"
+  ],
+  "patterns_to_follow": [
+   "Ledger plane: own SQLite file, LedgerStore(SQLiteWikiStore), Service.from_root via find_shared_root + load_effective_config, read-only NamespaceHandle with overlay_prefixes (F001, F005)",
+   "symbols side table + sym: id grammar helpers for the `columns` table and table id helpers (F003, F013)",
+   "StructuralService._ensure_fresh non-blocking lock + stale flag for read-repair (F014)",
+   "DecisionConfig sub-model on WikiProjectConfig for SchemaPlaneConfig (F004)",
+   "git_hook_block single guarded block for both hooks (F012)",
+   "DevLoopWikiSearch ledger-context integration that degrades gracefully when the plane is absent (F020)",
+   "Rootless constructors and read_repair switch being introduced by FEAT-569 (F023)"
+  ],
+  "integration_risks": [
+   "FEAT-569 (17 in-progress tasks) refactors mcp_server tool bundling, CLI proxies and adds from_dir(); a schema lane merging first or second must rebase onto whichever lands — sequence Lane 4 (tools/mount) after FEAT-569 M2d/M6a or accept a merge (F023, F024)",
+   "Tool-surface golden test (FEAT-569 TASK-3367) will need the four wiki_schema_* tools added (F023)",
+   "sqlglot whole-file ParseError: without per-statement isolation 6/32 in-repo files yield nothing (F025)",
+   "Duplicate TableMetadata: an accidental import of parrot_tools.database.models silently loses completeness/source (F022)",
+   "Edge attribute decision affects every BaseWikiStore backend if an `attrs` column is chosen (F003)",
+   "CachePartition tier must be behaviour-identical when plane=None — existing bots/database suite is the regression gate (F007)"
+  ]
+ },
+ "confidence_map": [
+  {
+   "id": "C1",
+   "claim": "The ledger overlay mount in mcp_server.py is a copyable template for a `schema` overlay",
+   "evidence": [
+    "F001"
+   ],
+   "confidence": "high",
+   "reasoning": "block read directly (L154-201); test fixture mounts it the same way"
+  },
+  {
+   "id": "C2",
+   "claim": "FederatedWikiStore already supports a second overlay with its own prefixes and hydrates cross-kind neighbors",
+   "evidence": [
+    "F002"
+   ],
+   "confidence": "high",
+   "reasoning": "_route/_route_bare_overlay_id iterate all handles; M13 tests exist; two-overlay test not yet present"
+  },
+  {
+   "id": "C3",
+   "claim": "Edges cannot carry a FK column pair without rel encoding or a schema bump",
+   "evidence": [
+    "F003"
+   ],
+   "confidence": "high",
+   "reasoning": "edges DDL read directly"
+  },
+  {
+   "id": "C4",
+   "claim": "bots/database TableMetadata is the right canonical record and lacks only 'ddl' source + origin",
+   "evidence": [
+    "F006",
+    "F022"
+   ],
+   "confidence": "high",
+   "reasoning": "fields read; duplicate legacy record identified"
+  },
+  {
+   "id": "C5",
+   "claim": "CachePartition has no durable tier; plane tier after Redis is additive",
+   "evidence": [
+    "F007"
+   ],
+   "confidence": "high",
+   "reasoning": "get() docstring + code anchors read"
+  },
+  {
+   "id": "C6",
+   "claim": "SQLToolkit/PostgresToolkit/BigQueryToolkit expose the hooks needed for a live producer and error-driven repair",
+   "evidence": [
+    "F008",
+    "F010"
+   ],
+   "confidence": "high",
+   "reasoning": "method anchors read; retries strings read"
+  },
+  {
+   "id": "C7",
+   "claim": "The offline DDL path is feasible on Postgres with sqlglot 30.x but needs per-statement isolation and column-constraint folding",
+   "evidence": [
+    "F025",
+    "F018"
+   ],
+   "confidence": "medium",
+   "reasoning": "probe over 32 files: 26 parse, 6 fail whole-file; PK undercount observed; BigQuery/T-SQL untested"
+  },
+  {
+   "id": "C8",
+   "claim": "FEAT-569 (rootless/remote wikitoolkit) is in flight and overlaps the plane's mount/CLI/tool seams",
+   "evidence": [
+    "F023",
+    "F024"
+   ],
+   "confidence": "high",
+   "reasoning": "index read: 17 tasks in-progress; hot-file git history"
+  },
+  {
+   "id": "C9",
+   "claim": "No schema plane, table:/schema:/source: kinds or wiki_schema_* tools exist today",
+   "evidence": [
+    "F019"
+   ],
+   "confidence": "high",
+   "reasoning": "grep over all packages/*/src empty"
+  },
+  {
+   "id": "C10",
+   "claim": "The DDL-ingest hook is one line inside the existing guarded git_hook_block",
+   "evidence": [
+    "F012"
+   ],
+   "confidence": "high",
+   "reasoning": "block read"
+  },
+  {
+   "id": "C11",
+   "claim": "Option B (own schema.db overlay) is the right architecture over A/C/D",
+   "evidence": [
+    "F001",
+    "F005",
+    "F016",
+    "F023"
+   ],
+   "confidence": "medium",
+   "reasoning": "precedents confirmed; production placement and FEAT-569 remote mode may shift the backend choice"
+  },
+  {
+   "id": "C12",
+   "claim": "Annotations via wiki_remember survive `schema sync` slice replacement",
+   "evidence": [
+    "F015",
+    "F003"
+   ],
+   "confidence": "medium",
+   "reasoning": "memory pages have origin='memory' and no source slice — inferred from tool docs + replace_source_slice semantics, not executed"
+  },
+  {
+   "id": "C13",
+   "claim": "BigQuery INFORMATION_SCHEMA cost savings justify the feature for the Epson client",
+   "evidence": [],
+   "confidence": "low",
+   "reasoning": "asserted by the brainstorm; no measurement in repo (spike 3)"
+  }
+ ],
+ "unknowns": [
+  {
+   "id": "U1",
+   "question": "Final id grammar: kind-first `table:<origin>/<schema>.<table>` (routing-safe, recommended) vs bare `<origin>:<schema>.<table>` (owner's literal form, requires every origin alias in overlay_prefixes) vs one namespace per origin (`bigquery::table:epson.sales`)?",
+   "blocks_claims": [
+    "C2",
+    "C9"
+   ],
+   "plausible_answers": [
+    "a) kind-first table:<origin>/<schema>.<table>, with normalize_ref() accepting bare bigquery:epson.sales on input (recommended)",
+    "b) bare origin:object as concept id; add each alias to overlay_prefixes",
+    "c) one overlay namespace per origin"
+   ],
+   "user_answer": "kind-first table:<origin>/<schema>.<table>; normalize_ref accepts bare origin:object on input"
+  },
+  {
+   "id": "U2",
+   "question": "FK edge payload: encode the column pair in rel (`references:store_id->id`) or add an optional `attrs` JSON column to edges on every backend (schema bump; also benefits `calls` edges)?",
+   "blocks_claims": [
+    "C3"
+   ],
+   "plausible_answers": [
+    "a) attrs JSON column on edges (schema v3) — cleaner, touches sqlite/memory/arango/postgres stores",
+    "b) rel encoding — zero schema change, ugly, breaks rel filtering",
+    "c) store column pairs only in the table page body / columns side table; edge stays plain `references`"
+   ],
+   "user_answer": "no edge attribute in v1; plain references edge + column pair in columns side table (fk_target); attrs column deferred"
+  },
+  {
+   "id": "U3",
+   "question": "Merge rule when live sync and DDL ingest both produce a page for one origin?",
+   "blocks_claims": [
+    "C11"
+   ],
+   "plausible_answers": [
+    "a) newest introspected_at wins per table; defined_in edges always kept; conflicts reported by `schema diff` (recommended)",
+    "b) live always authoritative; DDL contributes only defined_in edges",
+    "c) separate origins (e.g. `formdesigner-ddl` vs `formdesigner`) — never merged"
+   ],
+   "user_answer": "live authoritative for facts; DDL fills live-absent tables and always adds defined_in; schema diff reports divergence"
+  },
+  {
+   "id": "U4",
+   "question": "Production placement: schema.db file shipped/mounted with the DatabaseAgent, or a shared postgres/arangodb-backed SchemaStore (needs backend widening) — and should v1 already depend on FEAT-569's from_dir()/remote mode?",
+   "blocks_claims": [
+    "C11",
+    "C8"
+   ],
+   "plausible_answers": [
+    "a) v1 = SQLite schema.db with from_root + from_dir; backend swap as a follow-up once FEAT-569 lands (recommended)",
+    "b) v1 includes create_wiki_store(backend=…) plane with widened Literal",
+    "c) v1 waits for FEAT-569 and mounts the plane in the remote server only"
+   ],
+   "user_answer": "v1 SQLite schema.db with from_root + from_dir; postgres/arangodb plane after FEAT-569"
+  },
+  {
+   "id": "U5",
+   "question": "Origin key: map tk_id → origin inside DatabaseAgent, or add an explicit `origin` field to DatabaseToolkitConfig (default = database_type)?",
+   "blocks_claims": [
+    "C5",
+    "C6"
+   ],
+   "plausible_answers": [
+    "a) explicit origin on DatabaseToolkitConfig defaulting to database_type; DatabaseAgent passes it to the partition (recommended)",
+    "b) derive origin from tk_id by convention",
+    "c) rename tk_id to the origin alias (breaks query_router registration)"
+   ],
+   "user_answer": "explicit origin on DatabaseToolkitConfig defaulting to database_type; tk_id unchanged"
+  }
+ ],
+ "recommended_next_command": {
+  "command": "sdd-spec",
+  "rationale": "Localization is high-confidence (C1–C6, C9, C10) and the brainstorm already selected Option B; the remaining unknowns are owner decisions (U1–U5) that the spec's Open Questions section captures, and the DDL probe (C7) replaces spike 1 with measured numbers. Sequence the spec's tool/mount module after FEAT-569 M2d/M6a or plan the rebase explicitly."
+ }
+}

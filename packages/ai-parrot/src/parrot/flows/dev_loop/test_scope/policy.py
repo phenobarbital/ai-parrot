@@ -736,12 +736,34 @@ CORE_PATHS: tuple[str, ...] = (  # measured by FEAT-563 S4 - artifacts/logs/feat
     "packages/parrot-formdesigner/src/parrot_formdesigner/services/submissions.py",  # fan-in 81 (ast) / 6 (text)
 )
 # Measured safe under `-n auto` (same per-test outcome as serial, twice) — evidence:
-# artifacts/logs/feat-563-s3-xdist.md (FEAT-563 S3). Add a distribution only with new evidence.
+# artifacts/logs/feat-604-xdist.md (FEAT-604 M3; supersedes the FEAT-563 S3 negative result).
+# A distribution is added ONLY with a two-run comparison of its own; excluded distributions
+# are listed in the evidence file with a recorded reason (and wall time when measured).
 XDIST_SAFE_DISTRIBUTIONS: frozenset[str] = frozenset(
     {
-        # S3: no distribution completed the full serial+2x-xdist comparison within the
-        # spike's time budget (ai-parrot alone extrapolates to ~2.3h for one serial pass);
-        # the fail-safe default (spec R7: "either proven or excluded") excludes all of them.
+        "ai-parrot-advisors",
+        "ai-parrot-client-amazon",
+        "ai-parrot-client-anthropic",
+        "ai-parrot-client-gemma4",
+        "ai-parrot-client-google",
+        "ai-parrot-client-grok",
+        "ai-parrot-client-groq",
+        "ai-parrot-client-hf",
+        "ai-parrot-client-jev",
+        "ai-parrot-client-local",
+        "ai-parrot-client-meta",
+        "ai-parrot-client-moonshot",
+        "ai-parrot-client-nvidia",
+        "ai-parrot-client-openai",
+        "ai-parrot-client-openrouter",
+        "ai-parrot-client-vllm",
+        "ai-parrot-client-zai",
+        "ai-parrot-embeddings",
+        "ai-parrot-loaders",
+        "ai-parrot-openlit-bridge",
+        "ai-parrot-pipelines",
+        "ai-parrot-visualizations",
+        "navrules",
     }
 )
 TIERS: tuple[str, ...] = ("task", "merge", "feature")

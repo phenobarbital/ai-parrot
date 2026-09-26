@@ -89,7 +89,8 @@ Per-task execution:
    when saving logs.
 6. If tests fail, make up to three focused attempts. Stop and report after that
    if the failure is not understood.
-7. Clear staging with git reset HEAD. Stage only task-scoped implementation
+7. Preserve unrelated staging; if it exists, stop before committing and report
+   the conflict without unstaging it. Stage only task-scoped implementation
    files, one explicit path at a time. If a declared file is git-ignored, use
    `git add -f <file>` for that exact file; never force-add a directory.
    Verify git diff --cached --name-only.

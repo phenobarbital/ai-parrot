@@ -105,8 +105,10 @@ research = [
 # together; a standalone `pip install ai-parrot-tools[...]` without this
 # extra would fail on `import parrot_tools.business_automation.ingest`).
 business_automation = ["pandas>=2.0", "ai-parrot-loaders"]
+# FEAT-602: HoobaToolkit — BBVA Excel parsing (excel, business_automation), Playwright fallback (scraping), rules YAML.
+hooba = ["ai-parrot-tools[business_automation,excel,scraping]", "pyyaml>=6.0"]
 all = [
-    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts,research,business_automation]"
+    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts,research,business_automation,hooba]"
 ]
 
 [project.urls]
@@ -130,6 +132,8 @@ include = ["parrot_tools*"]
 "parrot_tools.security.reports.mappings" = ["*.yaml"]
 "parrot_tools.scraping.extraction_plans._prebuilt" = ["*.json"]
 "parrot_tools.aws.policies" = ["*.json"]
+"parrot_tools.hooba.spec" = ["*.json"]
+"parrot_tools.hooba.rules" = ["*.yaml"]
 
 [tool.uv.sources]
 ai-parrot = { workspace = true }

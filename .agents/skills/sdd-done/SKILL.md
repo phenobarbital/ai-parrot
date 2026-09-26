@@ -5,6 +5,14 @@ description: Verify a completed SDD feature worktree, check for merge blockers, 
 
 # SDD Done
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-done procedure](../../../.claude/commands/sdd-done.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to run `sdd-done`, close a feature, push an
 SDD worktree, open the feature PR, or clean up a completed SDD worktree.
 
@@ -19,8 +27,8 @@ when safe.
 
 ## Guardrails
 
-- Run from the main repo, not inside `.claude/worktrees/`.
-- Must be on the spec's `base_branch`.
+- Run from the main repo on the spec's `base_branch`, or from the feature
+  worktree for the PR flow. `--merge` and `--sync-down` require the main repo.
 - Do not modify the spec.
 - Do not mark tasks done unless there is evidence in the worktree.
 - Always show a verification report before writing closeout state.
@@ -60,8 +68,14 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - match `feature_id`, numeric suffix, exact feature slug, or slug substring
    - read `feature`, `feature_id`, `spec`, `type`, and `base_branch`
 2. Verify branch and location:
-   - current path must not contain `.claude/worktrees/`
-   - current branch must equal `base_branch`
+   - resolve `MAIN_ROOT` from the absolute `git-common-dir` parent and
+     `WORKTREES_DIR` as `<MAIN_ROOT>/.claude/worktrees`
+   - compare absolute `git-dir` and `git-common-dir` to detect `IN_WORKTREE`
+   - in the main checkout, current branch must equal `base_branch`
+   - in a linked worktree, verify it is the selected feature's worktree;
+     refuse `--merge` and `--sync-down` (including `--sync-dev`)
+   - address primary-checkout paths through `MAIN_ROOT` / `WORKTREES_DIR`;
+     never change to the primary checkout to bypass worktree restrictions
 3. Locate worktree:
    - prefer `git worktree list` match for `feat-<FEAT-ID>` or hotfix branch
    - if missing, check remote/local branches and report next steps
@@ -71,7 +85,18 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      worktree
    - do not rerun the whole test suite here; tests should have run during task
      execution
-4.5. Verify E2E evidence (FEAT-581), before any stamp/push/merge-blocker/PR/
+4.5. Full lint pass, once per feature:
+   - resolve changed Python files with `git diff --name-only --diff-filter=ACMR
+     origin/<base_branch>...HEAD -- '*.py'` from the feature worktree
+   - `--dry-run`: run only `ruff check` and report; never fix or commit
+   - otherwise run Ruff fixes and the configured Black formatter on those
+     files, inspect the diff, commit only those paths, then run full `ruff check`
+   - keep fixes behavior-neutral; when behavior changes, run the feature-tier
+     selector from `scripts.sdd.select_tests` with this feature's task files
+     before committing; refresh checkpoint/review evidence after any change
+   - report unfixable findings under Lint residual; residual `E9`, `F63`, `F7`
+     or `F82` errors block normal closeout and enter the issues/confirmation path
+4.6. Verify E2E evidence (FEAT-581), before any stamp/push/merge-blocker/PR/
    merge/cleanup step below:
    - read `e2e.policy` from the spec's frontmatter: no `e2e` key defaults to
      `optional`; a present but malformed policy value is never coerced — treat
@@ -103,13 +128,15 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - commit count
    - task count by status
    - task-by-task evidence
-   - E2E policy/status/gate_satisfied recorded in step 4.5
+   - E2E policy/status/gate_satisfied recorded in step 4.6
+   - lint residuals and any missing review evidence
 7. Respect flags:
    - `--dry-run`: stop after the report
    - `--force`: allow forced closeout with partial/no evidence noted
    - otherwise ask before closing if any task is not verified
 8. Stamp verification in the worktree branch (closing any task the lane left open):
-   - clear staging first (the close step below stages its own moves)
+   - require staging to contain only this feature's owned changes before the
+     close step stages its moves; never reset unrelated staging
    - verified is not closed: for each task being closed whose file is still in
      `sdd/tasks/active/` or whose index status is not `done`/`done-with-issues`
      (lanes such as `/sdd-fix` commit code without closing), run
@@ -142,10 +169,11 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - Run `wikitoolkit ledger export` there; only when its output contains `(changed)`:
       `git add sdd/ledger/issues.jsonl`, commit `sdd: ledger snapshot for <FEAT-ID>`,
       and `git push origin HEAD:<BASE_BRANCH>`
-    - On a rejected push, `git fetch` + `git reset --hard origin/<BASE_BRANCH>` inside
-      the throwaway worktree only, re-export, commit, push again — up to 3 attempts,
-      then warn and continue without failing `/sdd-done`
-    - Always `git worktree remove --force` the throwaway worktree afterward
+    - On a rejected push, fetch and create a fresh throwaway worktree at the
+      updated remote base, re-export, commit and retry — up to 3 attempts,
+      then warn and continue without failing `$sdd-done`
+    - Remove only clean, owned, idle throwaway worktrees without force; report
+      any retained worktree requiring recovery instead of deleting its changes
     - Skip the snapshot entirely for hotfixes
 
 12. Integrate:
@@ -157,20 +185,22 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - If feature and `--merge`, merge into `base_branch`, run
       `scripts/sdd/heal_orphans.sh <feature-slug>`, commit any staged orphan
       cleanup, and push `base_branch`.
-11. Hotfix sync-down:
+13. Hotfix sync-down:
     - only with `--sync-down` or deprecated `--sync-dev`
     - verify feature branch is ancestor of `origin/main`
     - merge into `staging`, abort cleanly on conflict
     - merge into `dev`, abort cleanly on conflict
     - leave user on `main`
-12. Resolve Jira if requested:
+14. Resolve Jira if requested:
     - find Jira key in spec or proposal metadata
     - prefer Jira MCP tools if available
     - fallback to configured Jira environment variables
     - transition to Done, Resolved, Ready for UAT, Complete, or Close
     - report missing credentials or missing transitions without failing closeout
-13. Cleanup:
+15. Cleanup:
     - remove the worktree only after successful push/PR or merge path
+    - if running inside it, leave the feature worktree for an allowed directory
+      before removing it; if host restrictions prevent this, report cleanup pending
     - if uncommitted changes exist in the worktree, ask before force removal
     - prune stale metadata if the worktree was already removed
     - delete local feature branch only when safe and merged/pushed
@@ -198,4 +228,3 @@ Jira: <key> -> Done, when requested and successful
 - `sdd/WORKFLOW.md`
 - `sdd/state/<FEAT-ID>/e2e-plan.md` (E2E plan, FEAT-581); validator:
   `parrot e2e verify --plan <path>` (`ai-parrot-server`, optional install)
-

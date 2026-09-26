@@ -726,6 +726,18 @@ class CoderBgStatusArgs(_Args):
     _exec = field_validator("execution_id")(_check_uuid)
 
 
+class CoderBgWaitArgs(CoderBgStatusArgs):
+    """`coder_bg_wait` arguments: `coder_bg_status`'s read plus a bounded blocking budget.
+
+    Same opaque, execution-scoped handle contract as `CoderBgStatusArgs` (it is
+    subclassed so the two can never drift); `timeout_seconds` mirrors
+    `CoderWaitArgs`' own <=300s cap, so a blocking background wait is bounded
+    exactly like a job wait.
+    """
+
+    timeout_seconds: int = Field(default=120, ge=1, le=300)
+
+
 class CoderRunValidationArgs(_Args):
     """`coder_run_validation` arguments (FEAT-584 M8/R8): admits one protected, idempotent selection."""
 

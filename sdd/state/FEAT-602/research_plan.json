@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source is additive ('construir', 'combine', 'permitir'): a HoobaToolkit uniting an OpenAPI client and the existing Playwright operativa. Prior art is dense (FEAT-453 business_automation, OpenAPIToolkit, WebBrowsingToolkit, CredentialBroker, auto-finance spec's deferred 'Spec B'), so the plan front-loads wiki orientation, then reads contracts and greps for gaps (draft semantics, auth/cookie support, banned httpx, AEAT rules).",
+  "queries": [
+    {"id": "Q001", "intent": "Orient: locate OpenAPIToolkit and its registration path in the knowledge graph.", "type": "wiki_query", "priority": 0, "params": {"question": "OpenAPIToolkit dynamic toolkit from OpenAPI spec"}},
+    {"id": "Q002", "intent": "Orient: locate WebBrowsingToolkit (catalogued Playwright/Selenium site actions).", "type": "wiki_query", "priority": 0, "params": {"question": "WebBrowsingToolkit playwright catalogued site actions"}},
+    {"id": "Q003", "intent": "Orient: where Hooba credentials should be resolved from (CredentialBroker).", "type": "wiki_query", "priority": 0, "params": {"question": "CredentialBroker credential resolution vault"}},
+    {"id": "Q004", "intent": "Orient: existing bank-statement Excel ingestion machinery.", "type": "wiki_query", "priority": 0, "params": {"question": "ExcelLoader bank statement ingestion"}},
+    {"id": "Q005", "intent": "Orient: AutoFinanceToolkit spec and its AEAT deductibility rule table (Spec A / Spec B split).", "type": "wiki_query", "priority": 0, "params": {"question": "AutoFinanceToolkit DeductibilityVerdict AEAT rule table"}},
+    {"id": "Q006", "intent": "Read the business_automation package overview + ingest.py API outline (FEAT-453 deliverable).", "type": "wiki_page", "priority": 0, "params": {"page_id": "dir:packages/ai-parrot-tools/src/parrot_tools/business_automation"}},
+    {"id": "Q007", "intent": "Read API outlines of BusinessAutomationToolkit, its models, OpenAPIToolkit and WebBrowsingToolkit.", "type": "wiki_page", "priority": 0, "params": {"page_id": "file:packages/ai-parrot-tools/src/parrot_tools/business_automation/toolkit.py"}},
+    {"id": "Q008", "intent": "Orient: Playwright driver + session/authenticate actions in the scraping subsystem.", "type": "wiki_query", "priority": 0, "params": {"question": "playwright driver session actions authenticate credential resolver"}},
+    {"id": "Q009", "intent": "Orient: the aiohttp HTTP interface helper the conventions point to instead of httpx.", "type": "wiki_query", "priority": 0, "params": {"question": "parrot interfaces http aiohttp HTTPService client"}},
+    {"id": "Q010", "intent": "Follow typed edges from BusinessAutomationToolkit to find its callers/dependents.", "type": "wiki_related", "priority": 0, "params": {"page_id": "file:packages/ai-parrot-tools/src/parrot_tools/business_automation/toolkit.py"}},
+
+    {"id": "Q011", "intent": "Prove/disprove that public code holds zero Hooba identifiers and locate any private Hooba assets/catalogs.", "type": "grep", "priority": 1, "params": {"pattern": "hooba", "path": ".", "case_sensitive": false, "max_results": 60, "exclude": "sdd/state/FEAT-602"}},
+    {"id": "Q012", "intent": "FEAT-453 status: which modules landed, which were private/off-repo.", "type": "read", "priority": 1, "params": {"path": "sdd/tasks/index/web-automation-infra.json", "lines": null}},
+    {"id": "Q013", "intent": "FEAT-453 spec: module boundaries, goals G4-G8, decisions D2-D4 the new toolkit must respect.", "type": "read", "priority": 1, "params": {"path": "sdd/specs/web-automation-infra.spec.md", "lines": null}},
+    {"id": "Q014", "intent": "Auto-finance brainstorm: the deferred 'Spec B / hooba-service-toolkit' scope and its open question.", "type": "grep", "priority": 1, "params": {"pattern": "Spec B|hooba-service-toolkit|hooba_agent", "path": "sdd/proposals/auto-finance-agent.brainstorm.md", "case_sensitive": false, "max_results": 40}},
+    {"id": "Q015", "intent": "Auto-finance spec header: FEAT id, status, goals, DeductibilityVerdict contract Spec B consumes.", "type": "read", "priority": 1, "params": {"path": "sdd/specs/auto-finance-toolkit.spec.md", "lines": [1, 140]}},
+    {"id": "Q016", "intent": "OpenAPIToolkit constructor + auth handling: does it support cookie/session auth, custom headers, aiohttp?", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot/src/parrot/tools/openapitoolkit.py", "lines": [1, 260]}},
+    {"id": "Q017", "intent": "OpenAPIToolkit request execution: HTTP client used and how headers/cookies are sent.", "type": "grep", "priority": 1, "params": {"pattern": "httpx|aiohttp|cookies|headers\\[", "path": "packages/ai-parrot/src/parrot/tools/openapitoolkit.py", "case_sensitive": false, "max_results": 40}},
+    {"id": "Q018", "intent": "Banned-import policy: is httpx banned by ruff TID251 and where is the aiohttp helper?", "type": "grep", "priority": 1, "params": {"pattern": "banned-api|httpx", "path": "pyproject.toml", "case_sensitive": false, "max_results": 20}},
+    {"id": "Q019", "intent": "BusinessAutomationToolkit run_operation / DRAFT vs SUBMIT gating contract.", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/toolkit.py", "lines": [60, 260]}},
+    {"id": "Q020", "intent": "Domain models: OperationKind, BusinessOperation, ImportRun fields.", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/models.py", "lines": null}},
+    {"id": "Q021", "intent": "Excel ingest contract: build_import_plan signature, column mapping, per-row registration node.", "type": "read", "priority": 1, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/ingest.py", "lines": [110, 330]}},
+    {"id": "Q022", "intent": "PlanDirectoryStore: how private site plans are loaded (the Hooba plans dir contract).", "type": "read", "priority": 2, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/store.py", "lines": null}},
+    {"id": "Q023", "intent": "WebBrowsingToolkit README: catalog layout, Playwright selection, credential_resolver, confirm_runs.", "type": "read", "priority": 2, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/browsing/readme.md", "lines": null}},
+    {"id": "Q024", "intent": "Session actions: authenticate step + CredentialResolverFn contract for broker-backed login.", "type": "read", "priority": 2, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/scraping/session_actions.py", "lines": [1, 120]}},
+    {"id": "Q025", "intent": "aiohttp HTTP interface helper contract (the sanctioned client for the REST half).", "type": "read", "priority": 2, "params": {"path": "packages/ai-parrot/src/parrot/interfaces/http.py", "lines": [1, 160]}},
+    {"id": "Q026", "intent": "CredentialBroker.resolve signature and provider config (from FEAT-453 finding, already digested).", "type": "read", "priority": 2, "params": {"path": "sdd/state/FEAT-453/findings/F010-credential-broker-and-audit.md", "lines": null}},
+    {"id": "Q027", "intent": "Toolkit registration: TOOL_REGISTRY in parrot_tools and the openapi_register factory path.", "type": "grep", "priority": 2, "params": {"pattern": "TOOL_REGISTRY|business_automation|openapi", "path": "packages/ai-parrot-tools/src/parrot_tools/__init__.py", "case_sensitive": false, "max_results": 30}},
+    {"id": "Q028", "intent": "Optional-dependency extras in ai-parrot-tools (where playwright/openpyxl/prance live).", "type": "grep", "priority": 2, "params": {"pattern": "playwright|openpyxl|prance|business|finance", "path": "packages/ai-parrot-tools/pyproject.toml", "case_sensitive": false, "max_results": 30}},
+    {"id": "Q029", "intent": "Existing Spanish tax knowledge in the repo (AEAT, IVA, IRPF, deducible) to reuse for the BBVA→expense rules.", "type": "grep", "priority": 2, "params": {"pattern": "AEAT|deducib|IRPF|autónomo|autonomo", "path": "packages", "case_sensitive": false, "max_results": 40, "include": "*.py"}},
+    {"id": "Q030", "intent": "Any BBVA-specific parsing already present (column names, export format).", "type": "grep", "priority": 2, "params": {"pattern": "BBVA", "path": ".", "case_sensitive": false, "max_results": 20}},
+    {"id": "Q031", "intent": "Test coverage for business_automation (what contracts are pinned).", "type": "glob", "priority": 2, "params": {"pattern": "packages/ai-parrot-tools/tests/business_automation/**/*.py", "max_results": 40}},
+    {"id": "Q032", "intent": "Playwright driver availability and name in the scraping drivers package.", "type": "grep", "priority": 2, "params": {"pattern": "class .*Playwright|playwright", "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers", "case_sensitive": false, "max_results": 20}},
+    {"id": "Q033", "intent": "Auto-finance task index: was Spec A decomposed/implemented (Spec B depends on it)?", "type": "glob", "priority": 2, "params": {"pattern": "sdd/tasks/index/auto-finance*.json", "max_results": 5}},
+    {"id": "Q034", "intent": "Recent activity on business_automation (is FEAT-453 stable or in flux?).", "type": "git_log", "priority": 2, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/", "since": "120.days.ago", "max_results": 15}},
+    {"id": "Q035", "intent": "Recent activity on OpenAPIToolkit (httpx→aiohttp migration pending?).", "type": "git_log", "priority": 3, "params": {"path": "packages/ai-parrot/src/parrot/tools/openapitoolkit.py", "since": "365.days.ago", "max_results": 10}},
+    {"id": "Q036", "intent": "Recent activity on the browsing toolkit (catalog format stability).", "type": "git_log", "priority": 3, "params": {"path": "packages/ai-parrot-tools/src/parrot_tools/browsing/", "since": "90.days.ago", "max_results": 10}},
+    {"id": "Q037", "intent": "Example wiring of BusinessAutomationToolkit / browsing agent to copy for the Hooba agent.", "type": "grep", "priority": 3, "params": {"pattern": "BusinessAutomationToolkit|WebBrowsingToolkit\\(", "path": "examples", "case_sensitive": true, "max_results": 20}},
+    {"id": "Q038", "intent": "openapi_register factory: how an OpenAPI spec becomes a runtime toolkit (config shape).", "type": "read", "priority": 3, "params": {"path": "packages/ai-parrot/src/parrot/bots/factory/tools/openapi_register.py", "lines": [1, 120]}}
+  ],
+  "expected_findings": [
+    "Whether public code is Hooba-free by design (FEAT-453 D-rule) and where private Hooba plans/catalogs live",
+    "OpenAPIToolkit auth surface: cookie-session login (POST /auth/login → sid cookie) supported or not; httpx usage vs aiohttp convention",
+    "BusinessAutomationToolkit DRAFT/SUBMIT gating and the ExecutionPlan-based Excel ingest contract to reuse for BBVA",
+    "Where AEAT deductibility rules live (auto-finance Spec A) and whether Spec A shipped",
+    "CredentialBroker provider config for HOOBA_* env vars",
+    "Registration path (TOOL_REGISTRY, extras) and test conventions for a new parrot_tools subpackage"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["Hooba", "api.hooba.com/api/doc", "OpenAPI", "Playwright", "HoobaToolkit", "BBVA", "Excel", "facturas borrador", "gastos y compras", "HOOBA_ACCOUNT_ID", "HOOBA_MEMBER_ID", "HOOBA_USER_ID", "HOOBA_SUBSCRIPTION_ID", "HOOBA_USERNAME", "HOOBA_PASSWORD", "/auth/login", "Red.es", "AEAT autónomos"],
+      "verbs": ["construir", "combinar", "crear", "declarar", "subir", "convertir"],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {"wiki_queries": 10, "files_read": 13, "grep_calls": 15, "git_calls": 3}
+  }
+}

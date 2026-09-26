@@ -14,6 +14,7 @@ from parrot.tools.toolkit import AbstractToolkit  # verified: parrot/tools/toolk
 from parrot.flows.dev_loop.sdd_coder.engine import CoderFailure, SddCoderEngine
 from parrot.flows.dev_loop.sdd_coder.models import (
     CoderBgStatusArgs,
+    CoderBgWaitArgs,
     CoderCleanupArgs,
     CoderDeliveryReportArgs,
     CoderEndExecutionArgs,
@@ -97,6 +98,7 @@ class SddCoderToolkit(AbstractToolkit):
         "coder_suspend_model": SuspendModelArgs,
         # FEAT-584 M8/R8: deterministic background status + protected validation.
         "coder_bg_status": CoderBgStatusArgs,
+        "coder_bg_wait": CoderBgWaitArgs,
         "coder_run_validation": CoderRunValidationArgs,
     }
 
@@ -559,6 +561,42 @@ class SddCoderToolkit(AbstractToolkit):
         return await self._run(
             "coder_bg_status",
             self._engine.bg_status(execution_id, handle, since_revision=since_revision, tail_bytes=tail_bytes),
+        )
+
+    async def coder_bg_wait(
+        self,
+        execution_id: str,
+        handle: str,
+        timeout_seconds: int = 120,
+        since_revision: Optional[int] = None,
+        tail_bytes: int = 2048,
+    ) -> CoderResult:
+        """Block up to timeout_seconds (<= 300) until a background `handle` settles, then return its status.
+
+        The blocking counterpart of `coder_bg_status`, and the ONLY sanctioned
+        way to wait for a `coder_run_validation` handle: a background
+        validation raises no host task notification, so ending the turn to
+        "be woken" stalls the run. Loop this call instead -- never a
+        `ps`/`grep`/`tail`/`sleep` shell loop, and never in the same message as
+        another wait (the server runs tool calls concurrently, so a second call
+        is not blocked, only wasted).
+
+        Ownership and existence are checked before any waiting, so a foreign or
+        unknown handle fails immediately. An expired budget returns the last
+        known non-terminal snapshot and leaves the run untouched; it is never a
+        receipt. `state="finished"` still reports a receipt, not success --
+        check `outcome`/`exit_code` separately, exactly as with
+        `coder_bg_status`.
+        """
+        return await self._run(
+            "coder_bg_wait",
+            self._engine.bg_wait(
+                execution_id,
+                handle,
+                timeout_seconds=timeout_seconds,
+                since_revision=since_revision,
+                tail_bytes=tail_bytes,
+            ),
         )
 
     async def coder_run_validation(

@@ -1,0 +1,570 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-602",
+  "mode": "enrichment",
+  "summary_oneline": "HoobaToolkit: cookie-session aiohttp client over Hooba's public OpenAPI (draft invoices + draft purchase invoices) plus the catalogued Playwright operativa as fallback, and a BBVA-Excel→expense-draft pipeline — assembled from FEAT-453's shipped engine, not a new browser stack",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/openapitoolkit.py",
+      "symbol": "OpenAPIToolkit",
+      "lines": "62-160, 695-770",
+      "role": "dynamic OpenAPI→tools generator; aiohttp transport via HTTPService; auth limited to bearer/apikey/basic",
+      "evidence": [
+        "F001",
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/http.py",
+      "symbol": "HTTPService",
+      "lines": "140-191, 272-351",
+      "role": "sanctioned aiohttp client (TID251-exempt); accepts cookies/headers per session — the transport for the REST half",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/factory/tools/openapi_register.py",
+      "symbol": "_build_toolkit_subclass, register_openapi_toolkit",
+      "lines": "18-60",
+      "role": "pattern for binding a spec into a registrable OpenAPIToolkit subclass",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/browsing/toolkit.py",
+      "symbol": "WebBrowsingToolkit",
+      "lines": "1-30, __init__",
+      "role": "catalogued deterministic Playwright/Selenium site actions; execute_web_task; credential_resolver; confirm_runs",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/toolkit.py",
+      "symbol": "BusinessAutomationToolkit, _credential_resolver_from_broker",
+      "lines": "52-125, 128-260, 305-422",
+      "role": "domain-neutral operation engine: READ/DRAFT unattended, SUBMIT gated by ConfirmationGuard; run_operation/resume_operation; broker adapter",
+      "evidence": [
+        "F003",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/models.py",
+      "symbol": "OperationKind, BusinessOperation, ImportRun",
+      "lines": "28-70",
+      "role": "operation classification (read/draft/submit) and import discriminator",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/ingest.py",
+      "symbol": "build_import_plan, _load_expense_rows, compute_statement_digest, make_import_progress_listener, reconcile",
+      "lines": "111-151, 222-280",
+      "role": "per-row ExecutionPlan import with digest-keyed manifest/resume; currently two-column, browser-operation bound",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/business_automation/store.py",
+      "symbol": "PlanDirectoryStore",
+      "lines": "14-16, 41-62, 84-136",
+      "role": "loads *.operation.json / *.template.json / *.flow.json from a private plans dir",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/session_actions.py",
+      "symbol": "exec_authenticate, exec_get_cookies, exec_upload_file, CredentialResolverFn",
+      "lines": "65, 74-79, 288, 722",
+      "role": "fail-closed browser login, cookie export (bridge to REST session), file upload",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py",
+      "symbol": "PlaywrightDriver",
+      "lines": "15",
+      "role": "the Playwright driver the web half runs on",
+      "evidence": [
+        "F002",
+        "F010"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/auth/broker.py",
+      "symbol": "CredentialBroker",
+      "lines": "51, 276-326",
+      "role": "sanctioned secret source for HOOBA_USERNAME/HOOBA_PASSWORD (vault/static resolvers, signed ledger)",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": "examples/agents/web/services/hooba_agent.py",
+      "symbol": "build_toolkit, resolve_hooba_credentials, HoobaNavigatorAgent",
+      "lines": "1-25, 62-91",
+      "role": "UNTRACKED local Playwright operativa: WebBrowsingToolkit + navconfig credentials + 6-action catalog (login + 5 navigations, no data entry)",
+      "evidence": [
+        "F007",
+        "F014"
+      ]
+    },
+    {
+      "path": "examples/agents/web/services/catalog/hooba/hooba-login.json",
+      "symbol": "hooba-login",
+      "lines": "1-45",
+      "role": "working login script (email/password selectors, credential_provider 'hooba', waits for /dashboard)",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/__init__.py",
+      "symbol": "TOOL_REGISTRY",
+      "lines": "13, 35-36",
+      "role": "where the new 'hooba' toolkit gets registered",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/pyproject.toml",
+      "symbol": "optional-dependencies",
+      "lines": "37, 66, 73, 107-108",
+      "role": "extras to compose (excel, scraping/playwright, business_automation) into a new hooba extra",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "ruff.toml",
+      "symbol": "banned-api TID251",
+      "lines": "113, 125-127, 156, 161",
+      "role": "httpx banned; new code must use aiohttp/HTTPService",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "sdd/specs/auto-finance-toolkit.spec.md",
+      "symbol": "DeductibilityVerdict, AeatRule, parse_bank_excel",
+      "lines": "11, 41-62, 196-209, 265, 298-303",
+      "role": "FEAT-478 (unimplemented) contracts for BBVA parsing and AEAT deductibility that this feature must either reuse or provide a v1 of",
+      "evidence": [
+        "F005",
+        "F012"
+      ]
+    },
+    {
+      "path": "sdd/specs/web-automation-infra.spec.md",
+      "symbol": "Deliverable X, §8 public/private seam",
+      "lines": "392-403, 420-431, 968",
+      "role": "the five Hooba web operations that were deferred out-of-repo and never written",
+      "evidence": [
+        "F008",
+        "F016"
+      ]
+    },
+    {
+      "path": "sdd/state/FEAT-602/hooba-openapi-digest.json",
+      "symbol": "hooba API 2026.6.17 digest",
+      "lines": "1-1",
+      "role": "217 relevant operations (Authentication, Invoice, PurchaseInvoice, Contact, Document, InboxFile, ...) extracted from https://api.hooba.com/api/doc.json",
+      "evidence": [
+        "F015"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Hooba's OpenAPI declares no securitySchemes; the only documented auth is POST /auth/login → session cookie (sid), plus undeclared headers (origin, x-hooba-language, ngsw-bypass) seen in the captured request",
+      "evidence": [
+        "F015"
+      ],
+      "implication": "OpenAPIToolkit cannot be used as-is: it has no cookie/session auth mode. Either extend it with a login hook + cookie jar, or build a thin HoobaClient on HTTPService and hand-curate tools."
+    },
+    {
+      "statement": "httpx is banned repo-wide (TID251); openapitoolkit.py and interfaces/http.py are per-file exemptions",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "the new client uses aiohttp via HTTPService (or raw aiohttp); no new TID251 exemptions."
+    },
+    {
+      "statement": "Invoice and PurchaseInvoice creation endpoints yield state=draft; :issue and :confirm are separate POSTs",
+      "evidence": [
+        "F015"
+      ],
+      "implication": "'borrador' maps 1:1 to the API's create calls (DRAFT-kind, unattended per D2); :issue/:confirm/:cancel/:delete are SUBMIT-kind and must stay out of v1 or behind ConfirmationGuard."
+    },
+    {
+      "statement": "970 operations exist; generated tool names follow {service}_{method}_{path}",
+      "evidence": [
+        "F001",
+        "F015"
+      ],
+      "implication": "auto-exposing the whole spec would flood the LLM tool budget; the toolkit must expose a curated set (≈10-15 typed tools) and at most one generic escape hatch."
+    },
+    {
+      "statement": "BusinessAutomationToolkit/D2: READ and DRAFT operations never touch the guard; SUBMIT always does, before the browser opens",
+      "evidence": [
+        "F006",
+        "F016"
+      ],
+      "implication": "the same OperationKind vocabulary should classify API tools so a future submit path inherits the gate."
+    },
+    {
+      "statement": "FEAT-453 §8 resolved 'engine public / site plans private'; the brainstorm later placed HoobaServiceToolkit in parrot_tools/hooba/ with plans_dir out-of-repo",
+      "evidence": [
+        "F008",
+        "F013",
+        "F016"
+      ],
+      "implication": "an in-repo `parrot_tools/hooba/` package is already sanctioned; whether the Playwright catalog (selectors) may now be committed is an open decision (U1)."
+    },
+    {
+      "statement": "The existing web operativa is untracked and navigation-only (login + 5 navigations); no draft_invoice/register_expense web plan exists",
+      "evidence": [
+        "F007",
+        "F008"
+      ],
+      "implication": "'use web for operations available via web' has almost nothing to route to today; the web half's v1 value is login/session recovery, PDF download, and uploads the API lacks."
+    },
+    {
+      "statement": "Existing bank-Excel ingest maps only client+amount columns to a browser operation; Spec A's BBVA parser (parse_bank_excel), AeatRule table and DeductibilityVerdict were never implemented (no FEAT-478 task index)",
+      "evidence": [
+        "F004",
+        "F005",
+        "F012"
+      ],
+      "implication": "the BBVA→expense-drafts capability needs a real BBVA layout parser and a rule table; it cannot merely call build_import_plan. Reuse of Spec A's contracts is a decision (U4)."
+    },
+    {
+      "statement": "CredentialBroker + _credential_resolver_from_broker is the sanctioned credential path; the local example bypasses it with navconfig HOOBA_USERNAME/HOOBA_PASSWORD",
+      "evidence": [
+        "F003",
+        "F007"
+      ],
+      "implication": "HOOBA_* env vars should feed a static broker provider ('hooba') used by both halves; never literal secrets in catalog JSON."
+    },
+    {
+      "statement": "New parrot_tools subpackages register in TOOL_REGISTRY and declare an optional extra; tests live under packages/ai-parrot-tools/tests/<pkg>/",
+      "evidence": [
+        "F011"
+      ],
+      "implication": "add 'hooba' to TOOL_REGISTRY, a hooba extra composing excel+scraping+business_automation, and tests/hooba/."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      "packages/ai-parrot-tools/src/parrot_tools/hooba/ — new subpackage (already anticipated by the auto-finance brainstorm impact table, F013)",
+      "hooba/client.py — HoobaClient on HTTPService/aiohttp: settings from HOOBA_ACCOUNT_ID/MEMBER_ID/USER_ID/SUBSCRIPTION_ID, login via POST /auth/login with credentials from CredentialBroker provider 'hooba', cookie jar (sid), explicit origin/x-hooba-language/ngsw-bypass headers, re-login on 401, GET /auth/check probe, account-scoped URL helper (F015, F009, F003)",
+      "hooba/models.py — Pydantic: InvoiceDraft/InvoiceLineDraft, PurchaseInvoiceDraft/PurchaseInvoiceLineDraft (gastos y compras), ContactRef, BankExpenseRow, ExpenseDraftBatch + a DraftReceipt with hooba ids and state (draft) (F015)",
+      "hooba/toolkit.py — HoobaToolkit(AbstractToolkit, auto_open) exposing a curated tool set: hooba_whoami/member, list_invoice_series, find_or_create_contact, create_invoice_draft(+lines), create_purchase_invoice_draft(+lines), attach_document, list_drafts, import_bbva_statement → drafts; every tool tagged with OperationKind (all DRAFT/READ in v1); a routing policy 'API when the endpoint exists, web action otherwise' (F006, F015)",
+      "hooba/web.py — thin adapter wiring WebBrowsingToolkit/BusinessAutomationToolkit with catalog_dir + broker-backed credential_resolver; v1 web operations: login/session-recovery (export sid via exec_get_cookies), download invoice PDF, and any upload the API lacks (F002, F007, F010)",
+      "hooba/bank/bbva.py — BBVA Excel layout parser (preamble-row detection, date/concept/amount/balance columns, digest via compute_statement_digest) → BankExpenseRow list; skips credits; dedupe by digest+row (F004, F005, F012)",
+      "hooba/rules/ — data-driven v1 deductibility rule table for autónomos (IVA/IRPF deducibility, simplified-invoice threshold, categories) mapping BankExpenseRow → PurchaseInvoiceDraft(simplified=…, subjectToIncomeTax=…, taxId=…) with legal_basis text; shape compatible with Spec A's AeatRule/DeductibilityVerdict (F005, F012) — pending U4",
+      "TOOL_REGISTRY['hooba'] + hooba extra in ai-parrot-tools pyproject (F011)",
+      "tests/hooba/: aiohttp test-server fixtures replaying the spec digest, BBVA anonymized fixture, rule-table tests, no-SUBMIT guarantee test (F011)",
+      "docs: hooba runbook section (env vars, spec version pin 2026.6.17, catalog location)"
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/__init__.py",
+        "change": "add 'hooba': 'parrot_tools.hooba.toolkit.HoobaToolkit' to TOOL_REGISTRY",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/pyproject.toml",
+        "change": "add hooba extra = business_automation + excel + scraping deps; include in all",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/openapitoolkit.py",
+        "change": "OPTIONAL (decision U2): add auth_type='cookie' with a login_hook/cookie jar so a bound OpenAPIToolkit can serve as the generic escape hatch; otherwise untouched",
+        "evidence": [
+          "F009",
+          "F001"
+        ]
+      },
+      {
+        "path": "examples/agents/web/services/",
+        "change": "promote the catalog to the location decided in U1 and add data-entry-free web actions only where the API has gaps",
+        "evidence": [
+          "F007"
+        ]
+      }
+    ],
+    "untouched": [
+      "parrot/clients/base.py and every LLM client (no involvement)",
+      "BusinessAutomationToolkit engine, PlanDirectoryStore, ConfirmationGuard — consumed as-is (D2)",
+      "Invoice issuing (:issue), purchase-invoice confirmation (:confirm), cancel/delete, sending emails, remittances/payments — SUBMIT-kind, out of v1",
+      "Norma 43 ingestion, DuckDB analytics, ExpenseWiki, classifier — Spec A (FEAT-478) scope",
+      "Telegram/WhatsApp/Teams channels — CLI channel only for the example agent",
+      "Hooba-side configuration (invoice series, taxes, accounting accounts) — read via API, never created"
+    ],
+    "patterns_to_follow": [
+      "Bound-subclass pattern from openapi_register._build_toolkit_subclass for any generated tools (F001)",
+      "auto_open=True + _open/_close for the HTTP session and the lazy browser (F006)",
+      "OperationKind tagging + D2 gate semantics for anything with legal effect (F006, F016)",
+      "compute_statement_digest + manifest/resume + reconcile() for idempotent Excel imports (F004)",
+      "Broker-backed credentials via _credential_resolver_from_broker; never literal secrets in JSON (F003)",
+      "Catalog JSON DSL (navigate/conditional/authenticate/wait, requires: [login]) for new web actions (F007, F002)"
+    ],
+    "integration_risks": [
+      "Session semantics unknown at runtime (cookie TTL, CSRF, whether origin/ngsw-bypass headers are enforced): mitigate with GET /auth/check probe, re-login on 401, and an integration test behind HOOBA_LIVE=1 (F015)",
+      "Spec drift: version 2026.6.17, no servers block, Nelmio-generated — pin the digest, validate required fields at import, fail loudly on schema change (F015)",
+      "Tool-budget flood if the whole spec is exposed (970 ops) — curated surface (F001, F015)",
+      "invoice-lines body is a oneOf (product|title) and needs invoiceSerieId/contactId/taxId lookups first — tools must resolve ids (series, contact, tax) before creating drafts (F015)",
+      "BBVA layout parser is net-new; wrong column detection silently produces wrong drafts — row-count cross-check + reconcile + anonymized fixture (F004, F005)",
+      "Regulatory correctness of the deductibility table cannot be verified from the codebase — drafts only, legal_basis text on every draft, human review before :confirm (F012, F005)",
+      "Public/private seam: committing the Playwright catalog with real selectors conflicts with FEAT-453 §8 unless re-decided (F008, F016)"
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Hooba exposes a machine-readable OpenAPI 3.0.0 document at https://api.hooba.com/api/doc.json (656 paths, version 2026.6.17)",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "fetched and parsed directly; digest persisted"
+    },
+    {
+      "id": "C2",
+      "statement": "Invoice and purchase-invoice creation via the API produces drafts; issue/confirm are separate operations",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "InvoiceState/PurchaseInvoiceState enums and :issue/:confirm paths read from the spec"
+    },
+    {
+      "id": "C3",
+      "statement": "Authentication is a session cookie set by POST /auth/login; the spec declares no security scheme",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "medium",
+      "reasoning": "spec has no securitySchemes and the captured request carries sid; not exercised at runtime, token alternatives unknown"
+    },
+    {
+      "id": "C4",
+      "statement": "OpenAPIToolkit cannot authenticate to Hooba unmodified (bearer/apikey/basic only) but its HTTPService transport already accepts cookies",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "constructor and HTTPService read directly"
+    },
+    {
+      "id": "C5",
+      "statement": "A full FEAT-453 business-automation engine (draft/submit gate, plans dir, checkpoints, broker adapter) is shipped and stable",
+      "evidence": [
+        "F006",
+        "F008",
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "index shows 14/14 done; code read; git log quiet since 2026-08-24"
+    },
+    {
+      "id": "C6",
+      "statement": "The existing Playwright operativa is an untracked local example with login + 5 navigation actions and no data-entry actions",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "files read; git ls-files confirms untracked"
+    },
+    {
+      "id": "C7",
+      "statement": "No BBVA parser, AEAT rule table or deductibility model exists in code; Spec A (FEAT-478) defines them but was never decomposed",
+      "evidence": [
+        "F005",
+        "F012",
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "grep across packages empty; no task index for FEAT-478"
+    },
+    {
+      "id": "C8",
+      "statement": "The sanctioned home is a new parrot_tools/hooba/ subpackage registered in TOOL_REGISTRY with its own extra",
+      "evidence": [
+        "F013",
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "brainstorm impact table + registry/pyproject conventions"
+    },
+    {
+      "id": "C9",
+      "statement": "A curated, typed tool surface (not 970 auto-generated tools) is the right v1 shape",
+      "evidence": [
+        "F001",
+        "F015"
+      ],
+      "confidence": "medium",
+      "reasoning": "inferred from tool-naming scheme and operation count; user may prefer generic coverage (U2)"
+    },
+    {
+      "id": "C10",
+      "statement": "The web half's v1 value is session recovery, PDF download and API gaps rather than data entry",
+      "evidence": [
+        "F007",
+        "F015",
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "API covers the three requested capabilities; web catalog has no data-entry scripts; inferred"
+    },
+    {
+      "id": "C11",
+      "statement": "BBVA Excel rows can be mapped onto simplified purchase-invoice drafts (one draft per debit row) using the purchase-invoice + line endpoints",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "medium",
+      "reasoning": "endpoint fields support it (simplified, taxIncluded, subjectToIncomeTax); business mapping unconfirmed (U3)"
+    },
+    {
+      "id": "C12",
+      "statement": "httpx must not be used in the new client",
+      "evidence": [
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "ruff TID251 banned-api read directly"
+    },
+    {
+      "id": "C13",
+      "statement": "HOOBA_* credentials should flow through CredentialBroker rather than navconfig lookups",
+      "evidence": [
+        "F003",
+        "F007"
+      ],
+      "confidence": "medium",
+      "reasoning": "sanctioned path exists; example currently bypasses it, which shows it is tolerated for local runs"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Where should the Hooba Playwright catalog (real selectors/URLs) live now: committed under parrot_tools/hooba/catalog/ (public repo), or kept out-of-repo/private as FEAT-453 §8 decided, with the toolkit only taking a catalog_dir?",
+      "blocks_claims": [
+        "C8",
+        "C10"
+      ],
+      "plausible_answers": [
+        "commit it under parrot_tools/hooba/catalog/ — the selectors are not secrets and the API now carries the sensitive operations",
+        "keep it private; ship only a seed_catalog helper and take catalog_dir from HOOBA_CATALOG_DIR",
+        "commit an anonymized fixture catalog for tests, keep the real one private"
+      ],
+      "ask_user": true,
+      "user_answer": "Keep private, catalog_dir from env — honour FEAT-453 §8: ship only a seed helper, read HOOBA_CATALOG_DIR at runtime.",
+      "resolved_at": "2026-09-25T11:52:16Z"
+    },
+    {
+      "id": "U2",
+      "question": "Tool surface: a hand-curated set of ~10-15 typed tools only, curated tools plus one generic `hooba_api_call(method, path, body)` escape hatch, or a full auto-generated OpenAPIToolkit (extended with cookie auth) over the whole spec?",
+      "blocks_claims": [
+        "C9"
+      ],
+      "plausible_answers": [
+        "curated only (recommended for v1)",
+        "curated + generic escape hatch (gated to GET by default)",
+        "full OpenAPIToolkit generation, with a tag allowlist"
+      ],
+      "ask_user": true,
+      "user_answer": "Full OpenAPIToolkit generation — extend OpenAPIToolkit with cookie auth and expose the spec with a tag allowlist.",
+      "resolved_at": "2026-09-25T11:52:16Z"
+    },
+    {
+      "id": "U3",
+      "question": "How should a BBVA bank row become a Hooba expense draft: one purchase invoice per debit row (simplified=true for tickets), or grouped per supplier/month; and should unknown suppliers auto-create a contact or leave contactId null?",
+      "blocks_claims": [
+        "C11"
+      ],
+      "plausible_answers": [
+        "one draft per row, simplified=true, create contact only when a TIN is known",
+        "one draft per row, always create/match a contact by normalized merchant name",
+        "group by supplier+month into one draft with multiple lines"
+      ],
+      "ask_user": true,
+      "user_answer": "One draft per debit row, contact only if matched — purchase-invoice draft with simplified=true per row; contactId only when the merchant matches an existing contact, else null + note.",
+      "resolved_at": "2026-09-25T11:52:16Z"
+    },
+    {
+      "id": "U4",
+      "question": "Deductibility rules: ship a minimal v1 rule table inside parrot_tools/hooba/rules/ now (compatible with Spec A's AeatRule/DeductibilityVerdict shapes), or block this feature on FEAT-478 (auto-finance Spec A) being implemented first?",
+      "blocks_claims": [
+        "C7",
+        "C11"
+      ],
+      "plausible_answers": [
+        "v1 table inside hooba now, shaped for later extraction to parrot_tools/finance",
+        "block on FEAT-478 and consume its verdicts",
+        "hooba only maps categories→tax flags; deductibility % is left to the human"
+      ],
+      "ask_user": true,
+      "user_answer": "v1 rule table inside hooba now — data-driven YAML under parrot_tools/hooba/rules/, shaped like Spec A's AeatRule/DeductibilityVerdict for later extraction to parrot_tools/finance.",
+      "resolved_at": "2026-09-25T11:52:16Z"
+    },
+    {
+      "id": "U5",
+      "question": "Does Hooba offer any non-cookie API credential (API key/token in account settings, tied to subscriptionId) that we should prefer over replaying the web login, and should the toolkit ever run :issue/:confirm behind the confirmation gate in v1?",
+      "blocks_claims": [
+        "C3"
+      ],
+      "plausible_answers": [
+        "cookie session only; v1 never issues/confirms",
+        "cookie session only; add gated :confirm for purchase invoices in v1",
+        "an API token exists — prefer it (please share where it is configured)"
+      ],
+      "ask_user": true,
+      "user_answer": "Cookie session only; v1 never issues/confirms — login via POST /auth/login with broker credentials, sid cookie jar, re-login on 401; all tools stay DRAFT/READ.",
+      "resolved_at": "2026-09-25T11:52:16Z"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence, the engine and transport already exist, and the API removes the need for new browser data-entry; the remaining forks (U1-U5) are product decisions answerable in Q&A rather than architectural unknowns needing a brainstorm."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016"
+    ],
+    "findings_unused": [],
+    "notes": "Overall confidence capped at medium because C3 (session auth), C9-C11 (tool surface, web role, BBVA mapping) are inferred and the external API was never exercised with credentials. F015 is external evidence (public spec), not codebase evidence. Wall-clock budget was exceeded only because of the interactive plan gate; all 38 planned queries plus 3 depth-1 follow-ups executed, so the run is not truncated."
+  }
+}

@@ -42,6 +42,7 @@ from pydantic import BaseModel, ConfigDict
 
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus, EvidenceRef
+from parrot.flows.dev_loop.test_scope.context import record_green_escalation, record_red_run
 from parrot.flows.dev_loop.test_scope.select import changed_files, plan_tests
 from parrot.flows.dev_loop.worktree_environment import protected_argv
 
@@ -493,8 +494,26 @@ class ValidationSupervisor:
         tier: Literal["merge", "feature"],
         timeout_seconds: int,
         request_id: str,
+        base_ref: Optional[str] = None,
     ) -> BackgroundRegistration:
         """Admit only a declared, protected, idempotent selection; never await the suite.
+
+        `base_ref` is the diff base the tier-scoped selection is computed from.
+        The caller (`SddCoderEngine.run_validation`) resolves it deterministically
+        from the merged task branches themselves, so a merge-tier check covers
+        what THIS chunk introduced instead of the feature branch's whole
+        cumulative diff against `origin/dev` -- re-validating every previously
+        merged task on every merge made the selection grow with the feature and
+        escalated whole package suites (impact cap / core paths) long before the
+        feature was done. `None` keeps the historical `_DEFAULT_BASE_REF`
+        behaviour, which is also the deliberate fallback whenever the caller
+        cannot resolve a narrower base: slower, never less covered.
+
+        It is deliberately NOT part of `_payload_hash`: the base is derived
+        server-side from repository state, not declared by the caller, so
+        folding it in would turn a legitimate idempotent replay (same
+        `request_id`, same declared payload) into a `BackgroundConflictError`
+        as soon as another task merged in between.
 
         Raises:
             ValueError: a malformed request (bad ids, tier, timeout, paths).
@@ -521,6 +540,8 @@ class ValidationSupervisor:
                 raise ValueError(f"invalid task id {task_id!r}; expected TASK-<1-5 digits> (never a foreign id)")
         if not request_id:
             raise ValueError("request_id must be a non-empty string")
+        if base_ref is not None and not base_ref.strip():
+            raise ValueError("base_ref must be a non-empty string when supplied")
 
         handle = request_id
         launch_id = self._payload_hash(
@@ -550,13 +571,16 @@ class ValidationSupervisor:
             return registration
 
         try:
-            plan = await self._plan_selection(worktree=worktree, tier=tier)
+            plan = await self._plan_selection(worktree=worktree, tier=tier, base_ref=base_ref)
             log_path = self._log_path(execution_id, handle)
             await asyncio.to_thread(log_path.parent.mkdir, parents=True, exist_ok=True)
 
             if not plan.invocations:
+                await asyncio.to_thread(log_path.write_bytes, b"")
                 await asyncio.to_thread(
-                    log_path.write_bytes, b"# no applicable pytest invocations for this selection\n"
+                    self._append_log,
+                    log_path,
+                    self._selection_header(plan) + "# no applicable pytest invocations for this selection\n",
                 )
                 await self.registry._record_transition(
                     execution_id, handle, state="finished", outcome="completed", exit_code=0, log_path=log_path
@@ -564,6 +588,7 @@ class ValidationSupervisor:
                 return registration
 
             first, *rest = plan.invocations
+            await asyncio.to_thread(self._append_log, log_path, self._selection_header(plan))
             sandboxed_argv = protected_argv(worktree, list(first.argv))
             await asyncio.to_thread(
                 self._append_log, log_path, f"# $ {shlex.join(first.argv)} (distribution={first.distribution})\n"
@@ -596,11 +621,49 @@ class ValidationSupervisor:
                 log_path=log_path,
                 deadline=deadline,
                 remaining_invocations=list(rest),
+                first_invocation=first,
+                plan=plan,
                 worktree=worktree,
             )
         )
         self._background_tasks[(execution_id, handle)] = task
         return registration
+
+    async def wait(self, execution_id: str, handle: str, timeout_seconds: float) -> bool:
+        """Block up to *timeout_seconds* for this handle's OWN settlement task, without cancelling it.
+
+        Returns True when a settlement task for `(execution_id, handle)` is
+        owned by THIS supervisor instance and was awaited (whether it settled
+        within the budget or the wait expired), False when there is nothing to
+        await here -- a handle registered by another launch path, an already
+        drained entry, or a process this instance no longer owns. The caller
+        (`SddCoderEngine.bg_wait`) falls back to bounded polling on False, so a
+        `False` answer never means "finished" and never invents a receipt.
+
+        The task is `shield`-ed: a caller's expiring budget must never cancel
+        the supervision that owns the child process, its deadline and its
+        terminal receipt. A settlement failure is not re-raised either -- it is
+        already logged and recorded by `_supervise`; this method only ever
+        reports *whether it waited*, never an outcome. The authoritative state
+        stays `BackgroundRegistry.status()`.
+        """
+        task = self._background_tasks.get((execution_id, handle))
+        if task is None:
+            return False
+        if timeout_seconds > 0 and not task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout_seconds)
+            except asyncio.TimeoutError:
+                pass
+            except Exception:
+                # `_supervise` already logged and recorded whatever went wrong;
+                # the authoritative answer is the registry's, not this wait's.
+                # `CancelledError` is deliberately NOT swallowed: it means the
+                # CALLER was cancelled (the shielded task never is).
+                self.logger.debug(
+                    "background settlement raised while waiting on handle=%s; status stays authoritative", handle
+                )
+        return True
 
     # -- admission helpers ---------------------------------------------------
 
@@ -641,9 +704,16 @@ class ValidationSupervisor:
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
-    async def _plan_selection(self, *, worktree: Path, tier: Literal["merge", "feature"]) -> "ScopePlan":
-        """Build the tier-scoped selection from the existing selector -- never a free-form argv."""
-        changed = await asyncio.to_thread(changed_files, worktree, _DEFAULT_BASE_REF)
+    async def _plan_selection(
+        self, *, worktree: Path, tier: Literal["merge", "feature"], base_ref: Optional[str] = None
+    ) -> "ScopePlan":
+        """Build the tier-scoped selection from the existing selector -- never a free-form argv.
+
+        `base_ref` defaults to `_DEFAULT_BASE_REF` (`select_tests.py`'s own CLI
+        default) whenever the caller could not resolve a narrower, merge-scoped
+        base -- the selection is then the historical cumulative one.
+        """
+        changed = await asyncio.to_thread(changed_files, worktree, base_ref or _DEFAULT_BASE_REF)
         return await asyncio.to_thread(plan_tests, worktree=worktree, changed_files=changed, tier=tier)
 
     def _log_path(self, execution_id: str, handle: str) -> Path:
@@ -662,10 +732,15 @@ class ValidationSupervisor:
         log_path: Path,
         deadline: float,
         remaining_invocations: list["PytestInvocation"],
+        first_invocation: "PytestInvocation",
+        plan: "ScopePlan",
         worktree: Path,
     ) -> None:
         """Drain the admitted process to its own deadline, run any remaining invocations, settle."""
         outcome, exit_code = await self._await_one(process=process, log_path=log_path, deadline=deadline)
+        await self._record_invocation_outcome(
+            worktree=worktree, invocation=first_invocation, plan=plan, exit_code=exit_code
+        )
         for invocation in remaining_invocations:
             if outcome == "timed_out":
                 break
@@ -696,6 +771,9 @@ class ValidationSupervisor:
             next_outcome, next_exit_code = await self._await_one(
                 process=next_process, log_path=log_path, deadline=deadline
             )
+            await self._record_invocation_outcome(
+                worktree=worktree, invocation=invocation, plan=plan, exit_code=next_exit_code
+            )
             if next_outcome == "timed_out":
                 outcome, exit_code = "timed_out", next_exit_code
             elif next_outcome == "failed" and outcome != "timed_out":
@@ -704,6 +782,37 @@ class ValidationSupervisor:
         await self.registry._record_transition(
             execution_id, handle, state="finished", outcome=outcome, exit_code=exit_code, log_path=log_path
         )
+
+    async def _record_invocation_outcome(
+        self, *, worktree: Path, invocation: "PytestInvocation", plan: "ScopePlan", exit_code: int
+    ) -> None:
+        """Record this invocation's escalation verdict in the per-worktree ledger.
+
+        Green (exit 0) records the blobs that escalation covered; anything else
+        re-arms (`record_red_run`) — a timed-out suite proved nothing, so
+        re-running is the fail-open direction. An invocation with no escalated
+        target records nothing. Never raises: a ledger failure is logged and
+        swallowed — it degrades the NEXT selection, never THIS validation.
+        """
+        try:
+            is_core = any(t.reason == "core" for t in invocation.targets)
+            is_cap = any(t.reason == "escalated" for t in invocation.targets)
+            if not (is_core or is_cap):
+                return
+            dist = invocation.distribution
+            if exit_code != 0:
+                await asyncio.to_thread(record_red_run, worktree, [dist])
+                return
+            core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
+            impact_files = list(plan.cap_hits.get(dist, ()))
+            impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
+            if not core_files and not impact_files:
+                return
+            await asyncio.to_thread(
+                record_green_escalation, worktree, [dist], core_files, impact_files, impacted_hashes
+            )
+        except Exception:  # noqa: BLE001 — ledger writes must never fail a validation
+            self.logger.warning("could not record escalation outcome for %s", invocation.distribution, exc_info=True)
 
     async def _await_one(
         self, *, process: "asyncio.subprocess.Process", log_path: Path, deadline: float
@@ -766,6 +875,17 @@ class ValidationSupervisor:
         except asyncio.TimeoutError:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
+
+    @staticmethod
+    def _selection_header(plan: "ScopePlan") -> str:
+        """One `# selection …` line + one `# note: …` line per plan note (FEAT-604, OQ3)."""
+        lines = [
+            f"# selection tier={plan.tier}"
+            f" escalated=[{', '.join(plan.escalated)}]"
+            f" skipped_escalations=[{', '.join(plan.skipped_escalations)}]\n"
+        ]
+        lines += [f"# note: {note}\n" for note in plan.notes]
+        return "".join(lines)
 
     @staticmethod
     def _append_log(log_path: Path, text: str) -> None:

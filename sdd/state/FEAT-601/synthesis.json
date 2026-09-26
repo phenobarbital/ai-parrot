@@ -1,0 +1,1009 @@
+{
+ "schema_version": "1.0",
+ "feat_id": "FEAT-601",
+ "summary_oneline": "Procedure Graph — field-training agent over assembly manuals: ManualCard → procedures.ontology.yaml → ManualGraphLoader → ProceduresToolkit, with figures and video segments as Media nodes; copies knowledge/contracts + parrot_tools/contracts with six verified seam corrections",
+ "detected_mode": "enrichment",
+ "overall_confidence": "medium",
+ "localization": [
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/models.py",
+   "symbol": "Evidence / Extracted[T] / FieldProvenance / trim_quote / MAX_QUOTE_CHARS",
+   "lines": "88-111, 160-175, 205-311",
+   "role": "generic evidence primitives a ManualCard imports as-is",
+   "evidence": [
+    "F001"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/models.py",
+   "symbol": "ContractVersion / Citation / ContractAnswer._check_kind_invariants / derive_provenance",
+   "lines": "417-475, 701-818",
+   "role": "contract-bound models to COPY (contract_id field, AnswerKind literal) into manuals/models.py",
+   "evidence": [
+    "F001"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/carding.py",
+   "symbol": "select_header_nodes / select_obligation_nodes / deontic_density / _quote_supported / _validate_extracted / draft_contract / similarity",
+   "lines": "216-354, 456-483, 678-786, 868-892",
+   "role": "bounded 1+N structured-output carding pass with verbatim-quote validation — template for the three-pass manual carding",
+   "evidence": [
+    "F002"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/graph_loader.py",
+   "symbol": "EdgeSpec / ContractGraphLoader.publish_all / _reconcile_edges / publish / retract",
+   "lines": "106-154, 471-548, 594-675",
+   "role": "whole-catalog reconciliation loader — template for ManualGraphLoader; publish(card) only delegates to publish_all()",
+   "evidence": [
+    "F003"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/library.py",
+   "symbol": "TreeIndexer / ContractLibrary.add_contract / _to_markdown / _extract_pdf_pages / _ingest",
+   "lines": "96-115, 516-607, 910-970, 1000-1030",
+   "role": "sha-dedup → markdown → staged PageIndex tree → card → catalog upsert; PDF path is text-only",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/catalog.py",
+   "symbol": "ContractCatalogStore (ABC) / search / verification_queue",
+   "lines": "292-436, 631-681",
+   "role": "catalog protocol (40 abstract methods) to cut down to ManualCatalogStore",
+   "evidence": [
+    "F005"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/catalog_postgres.py",
+   "symbol": "PostgresContractCatalog.search / verification_queue / upsert",
+   "lines": "85-119, 531-560, 914-944, 998-1060",
+   "role": "jsonb card + generated English tsvector FTS; jsonb_each verification queue works for any card with field_provenance",
+   "evidence": [
+    "F005"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/datasource.py",
+   "symbol": "ContractCardDataSource.infer_entity / snapshot / extract / register",
+   "lines": "55-64, 144-192, 380-455",
+   "role": "ExtractDataSource that infers the entity from key fields (ENTITY_ROUTING_ORDER) — template for ManualCardDataSource",
+   "evidence": [
+    "F006",
+    "F012"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/contracts/evidence.py",
+   "symbol": "EvidenceRef / StagingArea / EvidenceArchive.resolve",
+   "lines": "78-95, 145-158, 462-497",
+   "role": "release-time verbatim/version/page check; EvidenceRef hardcodes contract_id",
+   "evidence": [
+    "F006"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/contracts.ontology.yaml",
+   "symbol": "entities.Party / relations.signed_by / relations.is_employee / traversal_patterns.contracts_requiring_standard / search_views",
+   "lines": "1-4, 141-167, 276-310, 444-508",
+   "role": "YAML shapes for procedures.ontology.yaml: edge properties, base-layer Employee link via field_match, per-pattern authorization",
+   "evidence": [
+    "F008"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+   "symbol": "PropertyDef / EntityDef / RelationDef / AuthorizationRule / TraversalPattern / OntologyDefinition",
+   "lines": "18-37, 40-77, 114-136, 176-226, 261-295, 419-446",
+   "role": "extra=forbid schema; list/dict props untyped; typed edge properties declarable; five rule kinds",
+   "evidence": [
+    "F009"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+   "symbol": "OntologyGraphStore.upsert_nodes / create_edges / soft_delete_nodes / query_documents / edges_incident / remove_edge_by_triple",
+   "lines": "311-486, 517-559, 697-736, 764-827",
+   "role": "write/read seams; create_edges upserts on (_from,_to) with UPDATE {}; soft-delete is key-list only",
+   "evidence": [
+    "F010"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/ontology/tenant.py",
+   "symbol": "TenantOntologyManager.__init__ / resolve",
+   "lines": "48-131",
+   "role": "domain YAML is looked up under ontology_dir/domains only; cache keyed by tenant_id",
+   "evidence": [
+    "F011"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py",
+   "symbol": "OntologyRefreshPipeline.run / _refresh_entity",
+   "lines": "94-143, 158-222",
+   "role": "generic refresh soft-deletes everything absent from an extraction — contracts bypasses it",
+   "evidence": [
+    "F012"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/pdf_to_markdown.py",
+   "symbol": "extract_markdown_per_page / build_node_markdown_map",
+   "lines": "35-94, 97-137",
+   "role": "single pymupdf4llm call (page_chunks=True, no image kwargs) — the seam for images_dir",
+   "evidence": [
+    "F013",
+    "F015"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/builder.py",
+   "symbol": "_extract_node_markdown / build_page_index",
+   "lines": "1545-1551, 1596, 1622-1639",
+   "role": "only caller of extract_markdown_per_page; returns {} for BytesIO input",
+   "evidence": [
+    "F013"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py",
+   "symbol": "PageIndexToolkit.import_pdf",
+   "lines": "803-845",
+   "role": "pops _node_markdown sidecars; where an images sidecar would be threaded",
+   "evidence": [
+    "F013"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/carding.py",
+   "symbol": "slugify / unique_slug / derive_toc / sample_sections / generate_card_fields",
+   "lines": "49-138, 157-215",
+   "role": "pure helpers reused as-is (slugify collapses non-Latin to 'book')",
+   "evidence": [
+    "F014"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/relations.py",
+   "symbol": "candidate_pairs / judge_relations",
+   "lines": "296-413",
+   "role": "one structured call per source, hallucinated ids dropped — pattern for the LLM-judged video-alignment tail",
+   "evidence": [
+    "F014"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/knowledge/bookstore/library.py",
+   "symbol": "Bookstore.relate_books",
+   "lines": "640-677",
+   "role": "`judged = set() if force else store.judged_pairs(...)` — the --force / judgement-log mechanics",
+   "evidence": [
+    "F014"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/contracts/retrieval.py",
+   "symbol": "PATTERNS / _TRIGGERS / classify / ContractRetrieval.plan / execute / execute_graph / _validate_projection",
+   "lines": "66-86, 142-243, 431-494, 535-629, 681-745",
+   "role": "deterministic substring-trigger planner (no LLM); projection validator is contract-shaped",
+   "evidence": [
+    "F016"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/contracts/toolkit.py",
+   "symbol": "ContractsToolkit / _gate / verify_card / retire_answer",
+   "lines": "39-107, 305-376",
+   "role": "tool_prefix, confirming_tools, per-tool authorize gate",
+   "evidence": [
+    "F017"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/contracts/agent.py",
+   "symbol": "ContractsAgent.__init__ / agent_tools / answer_question / _draft_reply / released_answer",
+   "lines": "232-353",
+   "role": "Agent subclass; draft via super().ask(), answer released by the service (no structured_output)",
+   "evidence": [
+    "F017"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/contracts/service.py",
+   "symbol": "ContractsAnswerService.answer",
+   "lines": "105-212",
+   "role": "producer → CitationVerifier → released ContractAnswer gate",
+   "evidence": [
+    "F018"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/contracts/verifier.py",
+   "symbol": "CitationVerifier.verify",
+   "lines": "102-206",
+   "role": "citation verification before release",
+   "evidence": [
+    "F018"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/contracts/cli.py",
+   "symbol": "build_parser / main",
+   "lines": "58-66, 362-391",
+   "role": "argparse `python -m parrot_tools.contracts`; not a `parrot` subcommand",
+   "evidence": [
+    "F018"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/cli/__init__.py",
+   "symbol": "cli._lazy_commands / cli._lazy_extras / LazyGroup.get_command",
+   "lines": "71-145",
+   "role": "registration point for a `parrot manuals` click group",
+   "evidence": [
+    "F018"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/models/responses.py",
+   "symbol": "AIMessage.images/media/files / AgentResponse",
+   "lines": "75-96, 1094-1170",
+   "role": "List[Path] typing; str→Path coercion mangles https://",
+   "evidence": [
+    "F019"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/parser.py",
+   "symbol": "parse_response / ParsedResponse / ChartData.public_url",
+   "lines": "21-38, 83-95, 519-565",
+   "role": "drops images/media/files whose path.exists() is False; data: strings survive only via documents",
+   "evidence": [
+    "F019"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/msteams/wrapper.py",
+   "symbol": "MSTeamsAgentWrapper._parse_response / _parsed_to_card_spec",
+   "lines": "1128-1157, 1259-1312",
+   "role": "http(s) images[:3] → ImageSection; data:image/ via documents[:5]",
+   "evidence": [
+    "F020"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/slack/wrapper.py",
+   "symbol": "SlackAgentWrapper._build_blocks",
+   "lines": "591-603",
+   "role": "image block per http(s) image, no cap, no data:",
+   "evidence": [
+    "F020"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py",
+   "symbol": "TelegramAgentWrapper._send_attachments",
+   "lines": "2960-2996",
+   "role": "send_photo(FSInputFile(path)) — local files only",
+   "evidence": [
+    "F020"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-integrations/src/parrot/integrations/whatsapp/wrapper.py",
+   "symbol": "WhatsAppAgentWrapper._send_parsed_response",
+   "lines": "286-310",
+   "role": "client.send_image(image=str(p)); charts use public_url",
+   "evidence": [
+    "F020"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/tools.py",
+   "symbol": "TASK_TOOL_METHODS / BeginTaskInput / UpdateStepInput / TaskMemoryToolsMixin.begin_task / update_step / set_resume_hint / recall_task",
+   "lines": "91-102, 237-286, 397-435, 529-538, 664, 772-782",
+   "role": "guided-mode primitives; step dict {label,title,description,required,depends_on_labels}",
+   "evidence": [
+    "F021"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/tool.py",
+   "symbol": "WorkingMemoryToolkit",
+   "lines": "47-89, 141-155",
+   "role": "(TaskMemoryToolsMixin, AbstractToolkit) composition, tool_prefix='wm', opt-in when task_memory passed",
+   "evidence": [
+    "F021"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/tools/working_memory/task_memory/models.py",
+   "symbol": "TaskScope",
+   "lines": "571-587",
+   "role": "(chatbot_id, user_id, session_id) scope — session-bound by default",
+   "evidence": [
+    "F021"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/memory/episodic/store.py",
+   "symbol": "EpisodicMemoryStore.record_episode / recall_similar",
+   "lines": "106-153, 377-385",
+   "role": "completion history; closed EpisodeCategory/EpisodeOutcome enums",
+   "evidence": [
+    "F022"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/memory/episodic/models.py",
+   "symbol": "EpisodeOutcome / EpisodeCategory",
+   "lines": "20-38",
+   "role": "closed str-Enums (7 categories); pgvector column is VARCHAR(32)",
+   "evidence": [
+    "F022"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-client-anthropic/src/parrot/clients/anthropic/client.py",
+   "symbol": "AnthropicClient.ask_to_image",
+   "lines": "1329-1342",
+   "role": "vision entry point (Path/bytes, system_prompt)",
+   "evidence": [
+    "F023"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py",
+   "symbol": "GoogleGenAIClient.ask_to_image",
+   "lines": "5160-5172",
+   "role": "vision entry point (Path/bytes only)",
+   "evidence": [
+    "F023"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-client-google/src/parrot/clients/google/analysis.py",
+   "symbol": "GoogleAnalysis.image_understanding / video_understanding",
+   "lines": "208-229, 272-273, 438-452",
+   "role": "detect_objects / structured_output; video offsets=(start,end) only on the client",
+   "evidence": [
+    "F023",
+    "F025"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-client-openai/src/parrot/clients/openai/client.py",
+   "symbol": "OpenAIClient.ask_to_image",
+   "lines": "1468-1479",
+   "role": "vision entry point",
+   "evidence": [
+    "F023"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/clients/base.py",
+   "symbol": "AbstractClient",
+   "lines": "254",
+   "role": "has no ask_to_image — capability check required",
+   "evidence": [
+    "F023"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/storage/overflow.py",
+   "symbol": "OverflowStore.generate_presigned_url",
+   "lines": "119-144",
+   "role": "expires_in capped at 604800 s; delegates to get_file_url(key, expiry=...)",
+   "evidence": [
+    "F024"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/interfaces/file/__init__.py",
+   "symbol": "re-exports / _LAZY_MANAGERS",
+   "lines": "1-47",
+   "role": "FileManagerInterface, Local/Temp eager; S3/GCS lazy — from navigator.utils.file (navigator-api 4.0.0)",
+   "evidence": [
+    "F024"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-loaders/src/parrot_loaders/basevideo.py",
+   "symbol": "BaseVideoLoader.transcript_to_blocks / get_whisper_transcript / get_whisperx_transcript",
+   "lines": "860-887, 1002-1209",
+   "role": "blocks with start_seconds/end_seconds; word timestamps only via whisperx",
+   "evidence": [
+    "F025"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-loaders/src/parrot_loaders/youtube.py",
+   "symbol": "YoutubeLoader.load_video",
+   "lines": "298-395",
+   "role": "video_dialog Documents per block with deeplink ?t=Ns (NOT in video.py)",
+   "evidence": [
+    "F025"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-loaders/src/parrot_loaders/videounderstanding.py",
+   "symbol": "extract_scenes_from_response / VideoUnderstandingLoader._analyze_video_with_ai",
+   "lines": "51-103, 163-187",
+   "role": "untimed 'Scene N' labels; no offsets, no model= passed",
+   "evidence": [
+    "F025"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-loaders/src/parrot_loaders/pdf.py",
+   "symbol": "PDFLoader.is_image_only / _load",
+   "lines": "54-61, 221-223, 263-264, 328-335",
+   "role": "image-only pages skipped; to_markdown called without image kwargs",
+   "evidence": [
+    "F031",
+    "F015"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-loaders/src/parrot_loaders/pdfmark.py",
+   "symbol": "PDFMarkdownLoader.__init__ / _convert_to_markdown_pymupdf4llm",
+   "lines": "54, 67, 117-123",
+   "role": "extract_images flag stored, never read",
+   "evidence": [
+    "F031"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/pyproject.toml",
+   "symbol": "[graphindex] / [bookstore] / agents extras",
+   "lines": "273-283, 338-345, 431-433",
+   "role": "rapidfuzz only in graphindex+scraping; bm25s/pymupdf/pymupdf4llm only in bookstore/agents/documents extras",
+   "evidence": [
+    "F026"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/models/infographic.py",
+   "symbol": "ChecklistBlock / StepsBlock",
+   "lines": "933, 962",
+   "role": "display-only models — name collision to avoid in parrot.models",
+   "evidence": [
+    "F030"
+   ]
+  },
+  {
+   "path": "sdd/tasks/index/contracts-card-ontology.json",
+   "symbol": "FEAT-539",
+   "lines": "1-9",
+   "role": "still open: TASK-3056 in-progress, TASK-3054 done-with-issues",
+   "evidence": [
+    "F029"
+   ]
+  },
+  {
+   "path": "sdd/specs/graphindex-core-seams.spec.md",
+   "symbol": "FEAT-540 lazy roots",
+   "lines": "141-146, 210",
+   "role": "pending refactor makes knowledge/ontology/__init__.py a PEP 562 lazy root",
+   "evidence": [
+    "F029"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/tests/knowledge/contracts/test_graph_loader.py",
+   "symbol": "FakeGraphStore / FakeTenantManager",
+   "lines": "41-60, 126",
+   "role": "in-memory graph store reproducing the create_edges no-update quirk — reuse for manuals tests",
+   "evidence": [
+    "F007"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/tests/knowledge/contracts/test_carding.py",
+   "symbol": "FakeAdapter",
+   "lines": "95-110",
+   "role": "scripted ask_structured double",
+   "evidence": [
+    "F007"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/tests/knowledge/contracts/test_ingestion.py",
+   "symbol": "FakeIndexer",
+   "lines": "46-60",
+   "role": "NodeContentStore-backed tree from markdown headings",
+   "evidence": [
+    "F007"
+   ]
+  }
+ ],
+ "constraints": [
+  {
+   "statement": "ContractGraphLoader.publish(card) delegates to publish_all(): step 2 soft-deletes every owned vertex absent from the snapshot and _reconcile_edges removes every edge in FEATURE_EDGE_COLLECTIONS not in desired_edges(); no `origin` property is read or written anywhere (docstring only).",
+   "implication": "Tip survival is NOT a filter to extend — it is new work: either keep Tip nodes and has_tip/authored_by edges in collections outside the loader's owned set (never touched), or stamp origin in desired_edges and skip origin=='technician' in the obsolete comprehension (L481-485), the edge-removal branch (L522-536) and retract (L656-664).",
+   "evidence": [
+    "F003",
+    "F010"
+   ]
+  },
+  {
+   "statement": "OntologyGraphStore.create_edges upserts on {_from,_to} with UPDATE {}: edge properties are never updated and a second edge between the same pair collapses; edges_incident/remove_edge_by_triple address edges by source_id/target_id/kind.",
+   "implication": "Every written edge must carry source_id/target_id/kind (EdgeSpec.document()) and changed properties go through remove+recreate (_reconcile_edges). A (Step, Media) pair with two roles, or a Step requiring the same Part twice, must become one edge with list-valued properties.",
+   "evidence": [
+    "F010",
+    "F003"
+   ]
+  },
+  {
+   "statement": "TenantOntologyManager.resolve() looks for domain YAMLs under ontology_dir/domains only (defaults fallback exists for base only), logs a missing domain at debug level, and caches by tenant_id ignoring domain.",
+   "implication": "procedures.ontology.yaml under defaults/domains/ is found only through a dedicated TenantOntologyManager(ontology_dir=OntologyParser.get_defaults_dir()); ManualGraphLoader must copy ContractGraphLoader.context's `missing entities` check (ProceduresDomainNotLoaded) and never share a manager with the contracts domain.",
+   "evidence": [
+    "F011",
+    "F003"
+   ]
+  },
+  {
+   "statement": "AIMessage.images/media/files are List[Path]; pydantic coerces 'https://cdn/x.png' to 'https:/cdn/x.png' and parse_response keeps only entries whose path.exists() is True. Teams renders http(s) images[:3] and data:image/ documents[:5]; Slack renders http(s) images only (no cap); Telegram uses FSInputFile (local); WhatsApp passes str(p).",
+   "implication": "Presigned figure URLs cannot travel through AIMessage.images today. The delivery change is in parser.py (keep http(s) strings) plus a URL-capable field, or a per-channel temp download; four duplicate send paths (telegram L3714-3760, telegram/crew, whatsapp/bridge_wrapper, slack/assistant) must change together.",
+   "evidence": [
+    "F019",
+    "F020"
+   ]
+  },
+  {
+   "statement": "ContractsAgent does not use structured_output=ContractAnswer; the model drafts via super().ask() and ContractsAnswerService.answer releases the ContractAnswer after CitationVerifier.",
+   "implication": "ProcedureAnswer needs an explicit release path: copy the producer → verifier → service gate (keeps citations/steps model-free) or use structured_output; the brainstorm's `structured_output=ProcedureAnswer` shortcut is not the shipped pattern.",
+   "evidence": [
+    "F017",
+    "F018"
+   ]
+  },
+  {
+   "statement": "There is no `parrot contracts` command; contracts/cli.py is argparse behind `python -m parrot_tools.contracts` with an injected factory. The `parrot` console script is a click LazyGroup fed by cli._lazy_commands / _lazy_extras.",
+   "implication": "`parrot manuals` = a click group in parrot_tools/procedures/cli.py + one entry in _lazy_commands and _lazy_extras (core file change); the argparse pattern cannot be mounted as-is.",
+   "evidence": [
+    "F018"
+   ]
+  },
+  {
+   "statement": "PropertyDef.type is a closed Literal (string,int,float,boolean,date,list,dict) with no item schema; RelationDef.properties has the same shape as entity properties; every schema model is extra='forbid'; no top-level authorization block; rule kinds are target_is_self|target_in_management_chain|has_role|same_department|always.",
+   "implication": "Edge props order:int, quantity:int, role:string, confidence:float, t_start/t_end:float are declarable (declaration only, not enforced). versions[]/steps[] are untyped lists — their validation lives in the Pydantic card, not the YAML. Authorization is per traversal pattern with has_role.",
+   "evidence": [
+    "F009",
+    "F008"
+   ]
+  },
+  {
+   "statement": "extract_markdown_per_page(pdf_path) has exactly one caller (builder._extract_node_markdown ← build_page_index ← PageIndexToolkit.import_pdf), returns list[tuple[int,str]], and must never pass pages=. ContractLibrary._to_markdown does NOT use it (raw pymupdf page.get_text()). No code anywhere writes or extracts PDF images; PDFMarkdownLoader.extract_images is dead.",
+   "implication": "Figure extraction is net-new. An images_dir kwarg on extract_markdown_per_page is additive but only reaches import_pdf after threading through build_page_index; a manuals library that copies ContractLibrary._to_markdown gets no images unless it calls pymupdf4llm itself. Image metadata needs a sibling structure, not a change to the (page,text) tuple.",
+   "evidence": [
+    "F013",
+    "F015",
+    "F031",
+    "F004"
+   ]
+  },
+  {
+   "statement": "pymupdf4llm==0.0.27 / pymupdf==1.27.1 expose write_images, image_path, image_format, image_size_limit, dpi, page_chunks; pymupdf.Page has get_image_bbox/get_image_info/get_image_rects. rapidfuzz (3.11) is declared only in the [graphindex] and tools [scraping] extras; bm25s (0.2.14) only in [bookstore].",
+   "implication": "No new heavy dependency, but a `manuals`/`procedures` extra (or reuse of graphindex+bookstore) must be declared so a bare install fails clearly (similarity() already raises with a pip hint).",
+   "evidence": [
+    "F026",
+    "F002"
+   ]
+  },
+  {
+   "statement": "transcript_to_blocks yields {id,start_time,end_time,start_seconds,end_seconds,text}; YoutubeLoader (youtube.py, not video.py) uses whisper with word_timestamps=False; VideoUnderstandingLoader produces untimed 'Scene N' labels, never passes offsets or model=; offsets/structured_output exist only on GoogleGenAIClient.video_understanding.",
+   "implication": "bm25s step↔block alignment has the timed input it needs from whisper blocks; the Gemini scene path is not usable for timecodes without calling the client directly with structured_output; the loader's model= omission is a latent bug to fix or avoid.",
+   "evidence": [
+    "F025"
+   ]
+  },
+  {
+   "statement": "ask_to_image exists on AnthropicClient, GoogleGenAIClient and OpenAIClient only (ClaudeAgentClient raises NotImplementedError); none accept a URL for image (Path/bytes); AbstractClient has none of these.",
+   "implication": "figures.py must resolve the captioning client by capability (hasattr) and feed local bytes/paths — never AbstractClient typing, never a presigned URL.",
+   "evidence": [
+    "F023"
+   ]
+  },
+  {
+   "statement": "FileManagerInterface.get_file_url(path, expiry=3600) (navigator-api 4.0.0) — not expiry_seconds; OverflowStore caps at 7 days; LocalFileManager returns a file:// URI.",
+   "implication": "Presign per answer with a short expiry; guard non-http(s) schemes before handing URLs to Teams/Slack; local dev needs a temp-download route.",
+   "evidence": [
+    "F024"
+   ]
+  },
+  {
+   "statement": "TaskMemoryToolsMixin step dicts are {label,title,description?,required?,depends_on_labels?}; update_step requires expected_revision and a status in a fixed set, and completing a step passes evidence validation; TaskScope includes session_id.",
+   "implication": "Guided mode maps cleanly onto begin_task/update_step/recall_task, but 'resume tomorrow' across sessions needs select_task/the durable association store, and 'listo' must satisfy the CompletionPolicy (evidence refs) — verify in the spec.",
+   "evidence": [
+    "F021"
+   ]
+  },
+  {
+   "statement": "EpisodicMemoryStore.record_episode takes closed EpisodeCategory/EpisodeOutcome enums (7/4 members) plus free-form metadata; the pgvector column is VARCHAR(32).",
+   "implication": "'procedure_completed' is either a new enum member (core change) or WORKFLOW_PATTERN + metadata={procedure_id, step_key}; the latter needs no core change.",
+   "evidence": [
+    "F022"
+   ]
+  },
+  {
+   "statement": "OntologyRefreshPipeline._refresh_entity soft-deletes every node missing from an extraction and passes only fields= (no entity); ContractCardDataSource infers the entity from key fields and contracts publishes through its own loader, not the pipeline.",
+   "implication": "ManualCardDataSource needs its own ENTITY_ROUTING_ORDER (step_id → Step, part_id → Part, …, manual_id → Manual) and the graph loader, not the refresh pipeline, is the write path.",
+   "evidence": [
+    "F012",
+    "F006"
+   ]
+  },
+  {
+   "statement": "ContractCatalogStore has 40 abstract methods (parties, answers, deltas, relations, outbox); Postgres FTS is 'english'-only; Citation/EvidenceRef hardcode contract_id; test doubles (FakeGraphStore, FakeAdapter, FakeIndexer, InMemoryContractCatalog) live inside test modules.",
+   "implication": "ManualCatalogStore is a cut-down protocol (cards, versions, search, queue, outbox) with a configurable regconfig; evidence/citation models are copied with manual_id unless the generic primitives move to a shared module; test doubles should move to a shared support module before a manuals suite imports them.",
+   "evidence": [
+    "F005",
+    "F001",
+    "F006",
+    "F007"
+   ]
+  },
+  {
+   "statement": "knowledge/contracts had a 20-commit FEAT-539 burst on 2026-09-09/10 and FEAT-539 is still open (TASK-3056); FEAT-540 (13 pending) will make knowledge/ontology/__init__.py a PEP 562 lazy root; FEAT-600 touches only knowledge/wiki; nothing on the FEAT-601 seams changed since the brainstorm's verification point d2244e5.",
+   "implication": "Import ontology symbols from submodules (schema/graph_store/tenant), not the package root; expect the contracts template to still move while FEAT-539 closes; no rebase risk from FEAT-600.",
+   "evidence": [
+    "F027",
+    "F028",
+    "F029"
+   ]
+  },
+  {
+   "statement": "StepsBlock/ChecklistBlock already exist as display-only infographic models re-exported from parrot.models; every ManualCard/Procedure/ProceduresToolkit/guided symbol is absent.",
+   "implication": "New procedure models must use distinct names (Step, ProcedureStep — not StepsBlock); everything else is greenfield inside existing packages.",
+   "evidence": [
+    "F030"
+   ]
+  }
+ ],
+ "investigation": null,
+ "enrichment": {
+  "what_is_new": [
+   "packages/ai-parrot/src/parrot/knowledge/manuals/: models.py (ManualCard, Procedure, Step, PartRef, ToolRef, Hazard, MediaRef, Tip, ManualVersion, ProcedureCitation, ProcedureAnswer — importing Evidence/Extracted/FieldProvenance/trim_quote; copying Citation/Version/Answer with manual_id), carding.py (header pass + procedure pass + deterministic assemble_card; imperative-verb/numbered-list density replaces deontic_density), figures.py (pymupdf4llm write_images + Page.get_image_bbox, caption regex pairing, capability-resolved ask_to_image captioning, FileManagerInterface upload), video.py (transcript_to_blocks → bm25s alignment → judged tail with judgement log/--force), library.py (ManualLibrary copying ContractLibrary's staged tree flow, calling pymupdf4llm directly for figures), catalog.py + catalog_postgres.py (ManualCatalogStore, cut-down protocol, configurable FTS regconfig), datasource.py (ManualCardDataSource with its own ENTITY_ROUTING_ORDER, registered as 'manualcard'), graph_loader.py (ManualGraphLoader: EdgeSpec with origin, owned collections exclude tip/has_tip/authored_by OR origin-filtered obsolete/reconcile/retract; Tip re-link by step_key → content-hash ≥0.9 → orphaned=true)",
+   "packages/ai-parrot/src/parrot/knowledge/ontology/defaults/domains/procedures.ontology.yaml (extends base; Equipment/Manual/Procedure/Step/Part/Tool/Hazard/Media/Tip; typed edge props; Tip→authored_by→Employee via field_match; per-pattern has_role authorization; procedure_steps / procedure_prerequisites / procedures_for_equipment / step_detail / equipment_sharing_module / procedure_in_force / tips_for_procedure patterns filtering active and _active)",
+   "packages/ai-parrot-tools/src/parrot_tools/procedures/: retrieval.py (ProcedureRetrieval with its own trigger table + hybrid equipment resolution + PageIndex fallback; procedures-shaped _validate_projection), toolkit.py (ProceduresToolkit(TaskMemoryToolsMixin?, AbstractToolkit), tool_prefix='proc', confirming_tools={add_tip, verify_procedure}), service.py + verifier.py (producer → citation/step verifier → released ProcedureAnswer), agent.py (ProceduresAgent(Agent) creating the toolkit before super().__init__), cli.py (click group `manuals` mounted via cli._lazy_commands)",
+   "Media delivery: URL-capable path through parse_response/ParsedResponse (or per-channel temp download) so presigned figure URLs reach Teams/Slack and files reach Telegram/WhatsApp — decided by spike 2 (U1)",
+   "Guided mode over begin_task/update_step/set_resume_hint/recall_task with cross-session resume via select_task/association store; completion episodes via record_episode(category=WORKFLOW_PATTERN or new member, metadata={procedure_id, step_key})",
+   "A `manuals` optional-dependency extra bundling pymupdf/pymupdf4llm/rapidfuzz/bm25s"
+  ],
+  "what_changes": [
+   "packages/ai-parrot/src/parrot/knowledge/pageindex/pdf_to_markdown.py — additive images_dir kwarg forwarding write_images/image_path/image_format/dpi; page-image metadata returned via a sibling structure, (page,text) contract untouched, never pages= (F013)",
+   "packages/ai-parrot/src/parrot/knowledge/pageindex/builder.py + toolkit.py — thread images through build_page_index/_extract_node_markdown/import_pdf only if the PageIndex path is used for manuals (F013)",
+   "packages/ai-parrot/src/parrot/models/responses.py — URL-capable media field (image_urls/media_urls) or Path|str widening, behaviour-preserving for Path (F019)",
+   "packages/ai-parrot-integrations/src/parrot/integrations/parser.py — keep http(s) strings in ParsedResponse.images/media; plus msteams/slack/telegram/whatsapp wrappers and their duplicate send paths (F019, F020)",
+   "packages/ai-parrot/src/parrot/cli/__init__.py — `manuals` entries in cli._lazy_commands and cli._lazy_extras (F018)",
+   "packages/ai-parrot/src/parrot/memory/episodic/models.py — optional new EpisodeCategory member (only if U-decision rejects metadata-only) (F022)",
+   "packages/ai-parrot/pyproject.toml — new extra (F026)",
+   "packages/ai-parrot/src/parrot/knowledge/contracts/models.py + carding.py — only if U2 moves the generic primitives (Evidence/Extracted/FieldProvenance/trim_quote/_quote_supported/_validate_extracted) into a shared module and re-exports them (F001, F002)"
+  ],
+  "non_goals": [
+   "OCR for scanned/image-only manuals (PDFLoader skips such pages; ImageLoader path is a follow-up)",
+   "Exploded-view callout → Part mapping via vision structured output (v2)",
+   "Serial-range applicability on Step (v2)",
+   "Offline/per-device viewer",
+   "Generic OntologyToolkit exposing traversal patterns to any agent",
+   "Re-hosting vendor video; keyframe extraction",
+   "Touching OntologyRefreshPipeline semantics (the loader is the write path, as contracts)",
+   "Admin UI curator view (follow-up, same shape as the contracts verification queue)"
+  ],
+  "patterns_to_follow": [
+   "Bounded 1+N carding: deterministic node selection → ask_structured(temperature=0.0, system_prompt) → verbatim-quote validation → fallback draft (F002)",
+   "EdgeSpec.document() carrying _from/_to + source_id/target_id/kind; remove+recreate on property change; verify read-back before published=True (F003, F010)",
+   "Dedicated TenantOntologyManager(ontology_dir=get_defaults_dir()) + DomainNotLoaded startup check (F011, F003)",
+   "Deterministic substring-trigger planner failing closed to Clarification; per-tool _gate() authorize; confirming_tools for writes (F016, F017)",
+   "producer → CitationVerifier → service.release gate; agent creates its toolkit before super().__init__ (F017, F018)",
+   "Bookstore judgement log + --force for the LLM-judged alignment tail; origin-tagged relations so re-judging replaces only LLM edges (F014)",
+   "Contracts test doubles: FakeGraphStore (create_edges no-update), FakeAdapter, FakeIndexer, corpus/text_pdf/image_only_pdf fixtures (F007)",
+   "ChartData.public_url as the existing URL-media precedent in the channel layer (F019)"
+  ],
+  "integration_risks": [
+   "Tip loss on re-publish if tips share the loader's owned collections without an origin guard (F003) — spike 4 exercises exactly this",
+   "Edge collapse on (_from,_to) for multi-role illustrated_by / multi-context requires_part (F010)",
+   "Silent base-only ontology if the manager is not built with the defaults dir (debug-level log) (F011)",
+   "Media never reaching channels through AIMessage.images (Path coercion + exists() filter); four duplicate send paths (F019, F020)",
+   "FEAT-540 lazy root refactor of knowledge/ontology/__init__.py and FEAT-539 still open on the contracts template (F027, F029)",
+   "Figure→step pairing fidelity unmeasured (brainstorm spike 1) — nothing in the repo constrains it either way",
+   "Presigned URL lifetime ≤7 days in chat history; LocalFileManager file:// in dev (F024)",
+   "Guided-mode completion policy may require evidence refs for 'done' (F021)"
+  ]
+ },
+ "confidence_map": [
+  {
+   "id": "C1",
+   "statement": "Evidence/Extracted/FieldProvenance/trim_quote are generic and importable as-is; Citation/ContractVersion/ContractAnswer/EvidenceRef are contract-bound and must be copied",
+   "evidence": [
+    "F001",
+    "F006"
+   ],
+   "confidence": "high",
+   "reasoning": "models read with line ranges; contract_id fields cited"
+  },
+  {
+   "id": "C2",
+   "statement": "ContractGraphLoader.publish is whole-catalog reconciliation with no origin filter; tip survival is new work in three places or via non-owned collections",
+   "evidence": [
+    "F003",
+    "F010"
+   ],
+   "confidence": "high",
+   "reasoning": "publish/publish_all/_reconcile_edges/retract read; origin appears only in a docstring"
+  },
+  {
+   "id": "C3",
+   "statement": "create_edges never updates properties and collapses duplicate (_from,_to) pairs",
+   "evidence": [
+    "F010",
+    "F007"
+   ],
+   "confidence": "high",
+   "reasoning": "AQL read; FakeGraphStore reproduces it"
+  },
+  {
+   "id": "C4",
+   "statement": "procedures.ontology.yaml in defaults/domains/ is only resolved through a manager built with ontology_dir=get_defaults_dir(); resolve cache ignores domain",
+   "evidence": [
+    "F011"
+   ],
+   "confidence": "high",
+   "reasoning": "resolve() chain read; contracts and legal both pass the defaults dir"
+  },
+  {
+   "id": "C5",
+   "statement": "Presigned figure URLs cannot be delivered via AIMessage.images today; Teams/Slack render http(s), Telegram/WhatsApp send local files",
+   "evidence": [
+    "F019",
+    "F020"
+   ],
+   "confidence": "high",
+   "reasoning": "Path coercion checked in venv; parse_response exists() filter and all four wrappers read"
+  },
+  {
+   "id": "C6",
+   "statement": "ContractsAgent releases answers through ContractsAnswerService + CitationVerifier, not structured_output",
+   "evidence": [
+    "F017",
+    "F018"
+   ],
+   "confidence": "high",
+   "reasoning": "agent.py/service.py/verifier.py read"
+  },
+  {
+   "id": "C7",
+   "statement": "No `parrot contracts` CLI exists; `parrot manuals` mounts through cli._lazy_commands/_lazy_extras",
+   "evidence": [
+    "F018"
+   ],
+   "confidence": "high",
+   "reasoning": "cli.py argparse + parrot/cli/__init__.py LazyGroup read"
+  },
+  {
+   "id": "C8",
+   "statement": "Typed edge properties are declarable in the ontology YAML; list/dict props are untyped; authorization is per pattern with has_role",
+   "evidence": [
+    "F009",
+    "F008"
+   ],
+   "confidence": "high",
+   "reasoning": "schema.py and contracts YAML read"
+  },
+  {
+   "id": "C9",
+   "statement": "No PDF image extraction exists anywhere; extract_markdown_per_page has one caller and ContractLibrary uses raw pymupdf text",
+   "evidence": [
+    "F013",
+    "F015",
+    "F031",
+    "F004"
+   ],
+   "confidence": "high",
+   "reasoning": "grep absence + call chain read"
+  },
+  {
+   "id": "C10",
+   "statement": "pymupdf4llm 0.0.27 exposes every kwarg the design needs; Page bbox APIs exist",
+   "evidence": [
+    "F026"
+   ],
+   "confidence": "high",
+   "reasoning": "read-only venv probe of the signature"
+  },
+  {
+   "id": "C11",
+   "statement": "Whisper blocks carry start/end seconds for bm25s alignment; Gemini video scenes are untimed at the loader level",
+   "evidence": [
+    "F025"
+   ],
+   "confidence": "high",
+   "reasoning": "basevideo/youtube/videounderstanding read"
+  },
+  {
+   "id": "C12",
+   "statement": "Vision captioning must be capability-resolved (Anthropic/Google/OpenAI only, Path/bytes input)",
+   "evidence": [
+    "F023"
+   ],
+   "confidence": "high",
+   "reasoning": "grep over clients + AbstractClient"
+  },
+  {
+   "id": "C13",
+   "statement": "Guided mode maps onto TaskMemoryToolsMixin; cross-session resume and completion policy need spec-level verification",
+   "evidence": [
+    "F021"
+   ],
+   "confidence": "medium",
+   "reasoning": "tool signatures read; CompletionPolicy and association store not inspected"
+  },
+  {
+   "id": "C14",
+   "statement": "Only FEAT-539 (closing) and FEAT-540 (lazy ontology root) overlap; drift since the brainstorm touches no FEAT-601 seam",
+   "evidence": [
+    "F027",
+    "F028",
+    "F029"
+   ],
+   "confidence": "high",
+   "reasoning": "index JSON tallied; git log d2244e5..HEAD listed"
+  },
+  {
+   "id": "C15",
+   "statement": "Option B (procedure graph copying contracts) remains the right architecture after re-grounding",
+   "evidence": [
+    "F002",
+    "F003",
+    "F016",
+    "F017",
+    "F014"
+   ],
+   "confidence": "medium",
+   "reasoning": "every template exists and is line-anchored, but six brainstorm claims about the template were wrong and figure pairing is unmeasured"
+  },
+  {
+   "id": "C16",
+   "statement": "Figure→step pairing reaches ≥80% correct primary figure on captioned figures",
+   "evidence": [],
+   "confidence": "low",
+   "reasoning": "asserted by the brainstorm spike gate; no measurement or corpus in the repo"
+  }
+ ],
+ "unknowns": [
+  {
+   "id": "U1",
+   "question": "Media delivery route: extend parse_response/ParsedResponse to keep http(s) strings plus an `image_urls`/`media_urls` field on AIMessage (Path fields untouched), or widen images/media to Path|str, or download each figure to a temp Path per answer (Telegram/WhatsApp only)?",
+   "blocks_claims": [
+    "C5"
+   ],
+   "plausible_answers": [
+    "a) new URL fields + parse_response keeps http(s) strings; wrappers render URLs (Teams/Slack) or download-then-send (Telegram/WhatsApp) — recommended",
+    "b) widen images/media to List[Path|str] and teach parse_response/the four wrappers",
+    "c) temp-download only; Teams/Slack get a caption line (no inline figure)"
+   ],
+   "ask_user": true,
+   "user_answer": "option a refined: image_urls/media_urls on AIMessage+AgentResponse, separate in ParsedResponse, Path fields untouched; Teams/Slack URLs, Telegram bounded temp download, WhatsApp direct URL first; sign after release from media ids",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
+  },
+  {
+   "id": "U2",
+   "question": "Shared evidence primitives: import Evidence/Extracted/FieldProvenance/trim_quote from knowledge/contracts/models.py, or move them (and promote _quote_supported/_validate_extracted) to a shared knowledge/common module now that there are two consumers, with Citation/EvidenceRef gaining a doc_id?",
+   "blocks_claims": [
+    "C1"
+   ],
+   "plausible_answers": [
+    "a) import from contracts in v1; move in a separate tiny PR (recommended)",
+    "b) move first (own PR), then build manuals on the shared module",
+    "c) copy the primitives into manuals/models.py"
+   ],
+   "ask_user": true,
+   "user_answer": "option b narrowed: knowledge/common/provenance.py for Evidence/Extracted/FieldProvenance/trim_quote + shared validation helpers with re-exports; no doc_id rename, no archive/version/answer move",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
+  },
+  {
+   "id": "U3",
+   "question": "Tip protection strategy: keep Tip nodes + has_tip/authored_by edges in collections outside ManualGraphLoader's owned set (never reconciled), or stamp origin on every node/edge and add origin guards in the obsolete/reconcile/retract steps?",
+   "blocks_claims": [
+    "C2"
+   ],
+   "plausible_answers": [
+    "a) non-owned collections for technician content + explicit re-link step by step_key (recommended, smallest loader delta)",
+    "b) origin-guarded loader over shared collections",
+    "c) both: non-owned collections and origin stamps for auditability"
+   ],
+   "ask_user": true,
+   "user_answer": "option c: exclusive technician collections + origin/author stamps; immutable step identity; relink by source identity then exact normalized content; fuzzy only proposes; orphaned kept; explicit idempotent relink op",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
+  },
+  {
+   "id": "U4",
+   "question": "ProcedureAnswer release path: copy the contracts producer → CitationVerifier → AnswerService gate (agent drafts prose only), or use structured_output=ProcedureAnswer with model validators copying steps/media/citations from RetrievalResult?",
+   "blocks_claims": [
+    "C6"
+   ],
+   "plausible_answers": [
+    "a) copy the service gate (recommended — steps/media/hazards are never model-authored by construction)",
+    "b) structured_output with validators",
+    "c) hybrid: structured draft, service verifies and releases"
+   ],
+   "ask_user": true,
+   "user_answer": "option a: retrieval → deterministic assembly → completeness verification (blocking) → audit → release via ProceduresAnswerService; ProceduresAgent transport adapter so ask() is gated",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
+  },
+  {
+   "id": "U5",
+   "question": "Authorization granularity for traversal patterns: tenant-wide has_role: technician on every pattern, or per-Equipment allowlists via an Employee → certified_for → Equipment relation?",
+   "blocks_claims": [
+    "C8"
+   ],
+   "plausible_answers": [
+    "a) has_role: technician tenant-wide in v1 (recommended)",
+    "b) certified_for relation + per-pattern rule from day one",
+    "c) has_role in v1 with the relation reserved in the YAML"
+   ],
+   "ask_user": true,
+   "user_answer": "option a conditional on client confirming certification not required; trusted matching tenant; policy on every read path; technician read/guided/tip vs curator verify/publish; no unenforced certified_for",
+   "resolved_by": "external review recommendation adopted 2026-09-24 (artifacts/training_agent_review.md)"
+  }
+ ],
+ "recommended_next_command": {
+  "command": "sdd-spec",
+  "rationale": "Every reuse target is line-anchored and Option B was already selected in the brainstorm; the research corrected six template claims (publish semantics, origin filter, structured_output, CLI, media path, YoutubeLoader location) which the spec must encode, and the remaining unknowns (U1–U5) are owner decisions that the spec's Open Questions capture. Keep the brainstorm's spike gate as the spec's first milestone (figure pairing, media round-trip, video alignment, tip survival) since none of the four is answerable from the repo."
+ },
+ "meta": {
+  "findings_used": [
+   "F001",
+   "F002",
+   "F003",
+   "F004",
+   "F005",
+   "F006",
+   "F007",
+   "F008",
+   "F009",
+   "F010",
+   "F011",
+   "F012",
+   "F013",
+   "F014",
+   "F015",
+   "F016",
+   "F017",
+   "F018",
+   "F019",
+   "F020",
+   "F021",
+   "F022",
+   "F023",
+   "F024",
+   "F025",
+   "F026",
+   "F027",
+   "F028",
+   "F029",
+   "F030",
+   "F031"
+  ],
+  "findings_unused": [],
+  "notes": "Brainstorm open questions not raised as unknowns (carried to spec §8): card granularity, vision provider choice, figure storage (S3FileManager vs overflow), guided-mode state owner, tips moderation, serial/model-year applicability, offline use. Follow-up research for the spec: CompletionPolicy + association store in task_memory (F021), OntologyMerger (F011), test_dependency_boundary.py (F007), whether Google image_understanding's `images: str` accepts URLs (F023).",
+  "review_crosscheck": {
+   "source": "artifacts/training_agent_review.md",
+   "reviewed_sha": "ab9f97a82",
+   "findings": {
+    "R1": "CONFIRM",
+    "R2": "CONFIRM",
+    "R3": "CONFIRM",
+    "R4": "CONFIRM"
+   },
+   "correction_to_synthesis": "F017/localization row for contracts/agent.py: ask/ask_stream/invoke REFUSE (UngatedAnswerRefused); channels call agent.ask"
+  }
+ }
+}

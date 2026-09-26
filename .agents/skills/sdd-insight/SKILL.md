@@ -5,6 +5,14 @@ description: Analyze Claude Code transcripts and repo-level SDD Process Discipli
 
 # SDD Insight
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-insight procedure](../../../.claude/commands/sdd-insight.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to analyze AI fluency, review prompt collaboration patterns, or evaluate repo-level SDD Process Discipline adherence.
 
 Invocation: `$sdd-insight [TRANSCRIPT_PATH] [--no-open] [--sdd-dir PATH | --no-sdd]`.
