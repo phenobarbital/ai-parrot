@@ -297,14 +297,14 @@ async def _handle_documents(request: web.Request) -> web.Response:
     file_content = None
     file_name = None
 
-    async for field in reader:
-        if field.name == "entity":
-            entity = await field.text()
-        elif field.name == "entityId":
-            entity_id = int(await field.text())
-        elif field.name == "file":
-            file_content = await field.read()
-            file_name = field.filename
+    async for part in reader:
+        if part.name == "entity":
+            entity = await part.text()
+        elif part.name == "entityId":
+            entity_id = int(await part.text())
+        elif part.name == "file":
+            file_content = await part.read()
+            file_name = part.filename
 
     doc_id = len(state.documents) + 1
     doc = {

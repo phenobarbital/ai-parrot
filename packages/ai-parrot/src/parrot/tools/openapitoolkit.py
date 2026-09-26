@@ -655,9 +655,6 @@ class OpenAPIToolkit(AbstractToolkit):
         """
         fields = {}
 
-        # OPTIMIZATION: Skip path/method fields for single-operation specs
-        skip_meta_fields = self.is_single_operation
-
         # Add path parameters (always required) — except toolkit-supplied defaults (FEAT-602)
         for param in operation["parameters"].get("path", []):
             if param["name"] in self._path_defaults:
@@ -671,7 +668,7 @@ class OpenAPIToolkit(AbstractToolkit):
         for param in operation["parameters"].get("query", []):
             param_schema = param.get("schema", param)
             field_type = self._openapi_type_to_python(param_schema)
-            if is_required := param.get("required", False):
+            if param.get("required", False):
                 field_info = Field(description=param.get("description", f"Query parameter: {param['name']}"))
                 fields[param["name"]] = (field_type, field_info)
             else:
@@ -684,7 +681,7 @@ class OpenAPIToolkit(AbstractToolkit):
         for param in operation["parameters"].get("header", []):
             param_schema = param.get("schema", param)
             field_type = self._openapi_type_to_python(param_schema)
-            if is_required := param.get("required", False):
+            if param.get("required", False):
                 field_info = Field(description=param.get("description", f"Header parameter: {param['name']}"))
                 fields[param["name"]] = (field_type, field_info)
             else:
@@ -718,7 +715,7 @@ class OpenAPIToolkit(AbstractToolkit):
             else:
                 # For non-object bodies, create a single 'body' field
                 field_type = self._openapi_type_to_python(schema)
-                if is_required := operation["request_body"].get("required", False):
+                if operation["request_body"].get("required", False):
                     field_info = Field(description=operation["request_body"].get("description", "Request body"))
                     fields["body"] = (field_type, field_info)
                 else:
