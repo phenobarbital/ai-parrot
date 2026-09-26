@@ -6,6 +6,7 @@ can initialize, and leave the key unset (fail-closed 403 preserved) when it
 cannot. ``setup_pbac`` itself is monkeypatched — these tests only exercise
 ``setup_dataplane_guard``'s own wiring/idempotency logic.
 """
+
 from __future__ import annotations
 
 import logging
@@ -53,9 +54,9 @@ def test_pbac_unavailable_leaves_key_absent_and_logs_info(caplog):
     assert guard is None
     assert "dataplane_guard" not in app
     info_msgs = [r.message for r in caplog.records if r.levelname == "INFO"]
-    assert any("PARROT_PBAC_POLICY_DIR" in msg for msg in info_msgs), (
-        f"Expected an INFO log naming PARROT_PBAC_POLICY_DIR. Got: {info_msgs}"
-    )
+    assert any(
+        "PARROT_PBAC_POLICY_DIR" in msg for msg in info_msgs
+    ), f"Expected an INFO log naming PARROT_PBAC_POLICY_DIR. Got: {info_msgs}"
 
 
 def test_existing_guard_is_respected_and_returned_as_is():

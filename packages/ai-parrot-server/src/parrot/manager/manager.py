@@ -21,6 +21,7 @@ from navconfig.logging import logging
 
 # FEAT-153: PBAC agent-access enforcement
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
+
 # FEAT-598: default data-plane guard wiring (TASK-3805)
 from ..auth.pbac import setup_dataplane_guard
 from asyncdb.exceptions import NoDataFound

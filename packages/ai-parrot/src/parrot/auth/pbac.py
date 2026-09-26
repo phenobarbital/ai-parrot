@@ -62,10 +62,7 @@ def _fail_open_or_closed(
         RuntimeError: When ``PARROT_SAAS_MODE`` is true.
     """
     if PARROT_SAAS_MODE:
-        raise RuntimeError(
-            f"PBAC initialization failed with PARROT_SAAS_MODE=true "
-            f"(fail-closed): {reason}"
-        )
+        raise RuntimeError(f"PBAC initialization failed with PARROT_SAAS_MODE=true " f"(fail-closed): {reason}")
     return None, None, None
 
 
@@ -140,13 +137,10 @@ def setup_pbac(
     policy_path = Path(policy_dir)
     if not policy_path.exists() or not policy_path.is_dir():
         logger.warning(
-            "PBAC policy directory '%s' not found or not a directory. "
-            "PBAC disabled — using default resolver.",
+            "PBAC policy directory '%s' not found or not a directory. " "PBAC disabled — using default resolver.",
             policy_dir,
         )
-        return _fail_open_or_closed(
-            f"policy directory '{policy_dir}' not found or not a directory"
-        )
+        return _fail_open_or_closed(f"policy directory '{policy_dir}' not found or not a directory")
 
     # Determine default effect
     if default_effect is None:
@@ -177,8 +171,7 @@ def setup_pbac(
         policies = PolicyLoader.load_from_directory(policy_path)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error(
-            "PBAC: error loading policies from '%s': %s. "
-            "PBAC disabled.",
+            "PBAC: error loading policies from '%s': %s. " "PBAC disabled.",
             policy_dir,
             exc,
         )
@@ -198,8 +191,7 @@ def setup_pbac(
                 )
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
-                "PBAC: error loading per-agent policies from '%s': %s. "
-                "Continuing without per-agent policies.",
+                "PBAC: error loading per-agent policies from '%s': %s. " "Continuing without per-agent policies.",
                 str(agents_subdir),
                 exc,
             )
@@ -229,8 +221,7 @@ def setup_pbac(
                 )
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
-                "PBAC: error loading per-dataset policies from '%s': %s. "
-                "Continuing without per-dataset policies.",
+                "PBAC: error loading per-dataset policies from '%s': %s. " "Continuing without per-dataset policies.",
                 str(datasets_subdir),
                 exc,
             )
@@ -247,8 +238,7 @@ def setup_pbac(
         evaluator.load_policies(policies)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error(
-            "PBAC: error loading policies into evaluator: %s. "
-            "PBAC disabled.",
+            "PBAC: error loading policies into evaluator: %s. " "PBAC disabled.",
             exc,
         )
         return _fail_open_or_closed(f"error loading policies into evaluator: {exc}")
@@ -294,10 +284,7 @@ def setup_pbac(
 
     guardian = app.get("security")
     if guardian is None:
-        logger.warning(
-            "PBAC: PDP.setup() did not register 'security' in app. "
-            "Guardian may not be available."
-        )
+        logger.warning("PBAC: PDP.setup() did not register 'security' in app. " "Guardian may not be available.")
 
     return pdp, evaluator, guardian
 
