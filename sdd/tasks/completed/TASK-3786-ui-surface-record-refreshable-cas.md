@@ -268,10 +268,17 @@ See the CREATE test block (spec §4: `test_refreshable_with_data_sources`, `test
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3786
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 144c7609399412697d755f7b090163c52ebb4bf6
+- Closed at (UTC): 2026-09-26T01:35:04+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: 2 pre-existing failures already characterized (test_agent_a2ui_stream.py brittle source-string assertions), unrelated to this task's diff. Task's own scoped tests: 5+14+42 passed (ui_surfaces linked store, ui_surfaces store, ui_surfaces handler). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |
