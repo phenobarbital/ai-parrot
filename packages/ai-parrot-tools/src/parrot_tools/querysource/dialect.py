@@ -7,6 +7,7 @@ for the LLM — never introspect the parser at runtime.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import importlib
 import logging
 from typing import Any
@@ -202,6 +203,34 @@ def check_version_compatibility(installed: str) -> str | None:
             "the conditions reference may be inaccurate."
         )
     return None
+
+
+def reject_variable_values(conditions: Mapping[str, Any]) -> None:
+    """Raise InvalidConditionsError when any scalar value in ``conditions`` starts with '@'.
+
+    FEAT-558 deployment variables (``@today`` …) are resolved by the deploying app and are not portable on the
+    linked-surface wire (FEAT-598 spec Non-Goals, AC3). Relative dates must use the closed UDF keyword
+    vocabulary instead (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH, LAST_YEAR).
+    """
+    offending: list[str] = []
+
+    def _walk(value: Any, path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, nested_value in value.items():
+                _walk(nested_value, f"{path}.{key}")
+        elif isinstance(value, (list, tuple)):
+            for index, nested_value in enumerate(value):
+                _walk(nested_value, f"{path}[{index}]")
+        elif isinstance(value, str) and value.startswith("@"):
+            offending.append(path)
+
+    for key, value in conditions.items():
+        _walk(value, str(key))
+    if offending:
+        raise InvalidConditionsError(
+            f"'@' variables are not allowed in linked surfaces: {offending}. "
+            "Use a UDF keyword (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH, LAST_YEAR) or a literal."
+        )
 
 
 def load_variables() -> dict[str, str]:
