@@ -1,0 +1,5 @@
+{
+  "request": {"placeholders": {"program": "pokemon", "firstdate": "FDOM"}},
+  "locked": {"program": "epson", "store_id": 42},
+  "expected": {"program": "epson", "firstdate": "FDOM", "store_id": 42}
+}
