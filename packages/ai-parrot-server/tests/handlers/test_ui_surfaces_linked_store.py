@@ -1,4 +1,5 @@
 """FEAT-598 M8 — refreshable widening + conditional update_envelope (spec §4)."""
+
 from __future__ import annotations
 
 import uuid
