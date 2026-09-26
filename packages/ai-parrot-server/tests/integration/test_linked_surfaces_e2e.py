@@ -47,9 +47,22 @@ class _FakeConnCtx:
 def _row_from_insert_args(args) -> dict:
     """Build a fake ui_surfaces row from PgUISurfaceStore's INSERT args."""
     keys = (
-        "surface_id", "kind", "title", "envelope", "catalog_id", "agent_id", "user_id", "session_id",
-        "recipe_name", "recipe_owner", "recipe_params", "tenant", "visibility", "allowed_groups",
-        "created_at", "updated_at",
+        "surface_id",
+        "kind",
+        "title",
+        "envelope",
+        "catalog_id",
+        "agent_id",
+        "user_id",
+        "session_id",
+        "recipe_name",
+        "recipe_owner",
+        "recipe_params",
+        "tenant",
+        "visibility",
+        "allowed_groups",
+        "created_at",
+        "updated_at",
     )
     return dict(zip(keys, args, strict=True))
 
@@ -223,6 +236,7 @@ def fake_core_qs(monkeypatch):
 @pytest.fixture
 def allow_guard():
     """Recording allow-all data-plane guard used by LinkedSurfaceService."""
+
     class Guard:
         calls: list[tuple[str, str]] = []
 
@@ -242,9 +256,7 @@ def app(store, allow_guard):
     """Handler wiring with an owner scope and configured linked guard."""
     return {
         "ui_surfaces_store": store,
-        "ui_surfaces_scope_resolver": _StubResolver(
-            SurfaceScope(user_id="owner-1", tenant=None, groups=frozenset())
-        ),
+        "ui_surfaces_scope_resolver": _StubResolver(SurfaceScope(user_id="owner-1", tenant=None, groups=frozenset())),
         "linked_surface_service": LinkedSurfaceService(guard=allow_guard),
     }
 
@@ -357,7 +369,11 @@ class TestLinkedSurfacesE2E:
             _handler(
                 app,
                 path="/api/v1/ui/surfaces",
-                json_body={"kind": "dashboard", "title": "Unbaked", "envelope": envelope.model_dump(by_alias=True, mode="json")},
+                json_body={
+                    "kind": "dashboard",
+                    "title": "Unbaked",
+                    "envelope": envelope.model_dump(by_alias=True, mode="json"),
+                },
             )
         )
         assert response.status == 201
@@ -413,7 +429,10 @@ class TestLinkedSurfacesE2E:
         assert body == {"status": "error", "error": "stale refresh", "snapshot_at": "2099-01-01T00:00:00+00:00"}
         stored = await store.get(surface_id)
         assert stored is not None
-        assert stored.envelope["metadata"]["extensions"]["parrot_data_sources"]["epson_field_activity"]["snapshot_at"] == source["snapshot_at"]
+        assert (
+            stored.envelope["metadata"]["extensions"]["parrot_data_sources"]["epson_field_activity"]["snapshot_at"]
+            == source["snapshot_at"]
+        )
 
     async def test_linked_save_without_guard_fails_closed(self, store, fake_core_qs, patched_catalog):
         """A linked pin save without a configured guard is rejected before execution or persistence."""
@@ -429,7 +448,11 @@ class TestLinkedSurfacesE2E:
             _handler(
                 app,
                 path="/api/v1/ui/surfaces",
-                json_body={"kind": "dashboard", "title": "Denied", "envelope": envelope.model_dump(by_alias=True, mode="json")},
+                json_body={
+                    "kind": "dashboard",
+                    "title": "Denied",
+                    "envelope": envelope.model_dump(by_alias=True, mode="json"),
+                },
             )
         )
         assert response.status == 403
