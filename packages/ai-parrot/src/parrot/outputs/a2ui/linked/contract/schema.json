@@ -1,0 +1,765 @@
+{
+  "$defs": {
+    "Derive": {
+      "additionalProperties": false,
+      "properties": {
+        "expr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeriveBinary"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Expr"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "op": {
+          "const": "derive",
+          "default": "derive",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "expr"
+      ],
+      "title": "Derive",
+      "type": "object"
+    },
+    "DeriveBinary": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeriveBinary"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Left"
+        },
+        "operator": {
+          "enum": [
+            "+",
+            "-",
+            "*",
+            "/"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeriveBinary"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Right"
+        }
+      },
+      "required": [
+        "operator",
+        "left",
+        "right"
+      ],
+      "title": "DeriveBinary",
+      "type": "object"
+    },
+    "Filter": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "title": "Column",
+          "type": "string"
+        },
+        "op": {
+          "const": "filter",
+          "default": "filter",
+          "title": "Op",
+          "type": "string"
+        },
+        "operator": {
+          "enum": [
+            "eq",
+            "ne",
+            "gt",
+            "ge",
+            "lt",
+            "le",
+            "in",
+            "contains"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "column",
+        "operator"
+      ],
+      "title": "Filter",
+      "type": "object"
+    },
+    "GroupBy": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregate": {
+          "additionalProperties": {
+            "enum": [
+              "sum",
+              "avg",
+              "count",
+              "min",
+              "max"
+            ],
+            "type": "string"
+          },
+          "title": "Aggregate",
+          "type": "object"
+        },
+        "by": {
+          "items": {
+            "type": "string"
+          },
+          "title": "By",
+          "type": "array"
+        },
+        "op": {
+          "const": "group_by",
+          "default": "group_by",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "by",
+        "aggregate"
+      ],
+      "title": "GroupBy",
+      "type": "object"
+    },
+    "Join": {
+      "additionalProperties": false,
+      "properties": {
+        "how": {
+          "default": "inner",
+          "enum": [
+            "inner",
+            "left"
+          ],
+          "title": "How",
+          "type": "string"
+        },
+        "on": {
+          "items": {
+            "$ref": "#/$defs/JoinKey"
+          },
+          "minItems": 1,
+          "title": "On",
+          "type": "array"
+        },
+        "op": {
+          "const": "join",
+          "default": "join",
+          "title": "Op",
+          "type": "string"
+        },
+        "with": {
+          "title": "With",
+          "type": "string"
+        }
+      },
+      "required": [
+        "with",
+        "on"
+      ],
+      "title": "Join",
+      "type": "object"
+    },
+    "JoinKey": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "title": "Left",
+          "type": "string"
+        },
+        "right": {
+          "title": "Right",
+          "type": "string"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ],
+      "title": "JoinKey",
+      "type": "object"
+    },
+    "Limit": {
+      "additionalProperties": false,
+      "properties": {
+        "n": {
+          "minimum": 0,
+          "title": "N",
+          "type": "integer"
+        },
+        "op": {
+          "const": "limit",
+          "default": "limit",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "n"
+      ],
+      "title": "Limit",
+      "type": "object"
+    },
+    "LinkedDataSource": {
+      "additionalProperties": false,
+      "description": "One data source of a linked surface (spec §2 Data Models).",
+      "properties": {
+        "conditions": {
+          "additionalProperties": true,
+          "title": "Conditions",
+          "type": "object"
+        },
+        "is_multiquery": {
+          "default": false,
+          "title": "Is Multiquery",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "query_slug",
+          "default": "query_slug",
+          "title": "Kind",
+          "type": "string"
+        },
+        "locked": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Locked",
+          "type": "array"
+        },
+        "multi_output": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Multi Output"
+        },
+        "params": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ParamSpec"
+          },
+          "title": "Params",
+          "type": "object"
+        },
+        "refresh": {
+          "$ref": "#/$defs/RefreshPolicy"
+        },
+        "request": {
+          "$ref": "#/$defs/SourceRequest"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "snapshot_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot At"
+        },
+        "snapshot_truncated": {
+          "default": false,
+          "title": "Snapshot Truncated",
+          "type": "boolean"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "tenant": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tenant"
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransformSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "slug",
+        "conditions",
+        "request",
+        "target"
+      ],
+      "title": "LinkedDataSource",
+      "type": "object"
+    },
+    "ParamSpec": {
+      "additionalProperties": false,
+      "description": "One user-editable query parameter (placeholder) of a source.",
+      "properties": {
+        "accepts_keywords": {
+          "default": false,
+          "title": "Accepts Keywords",
+          "type": "boolean"
+        },
+        "default": {
+          "default": null,
+          "title": "Default"
+        },
+        "editable": {
+          "default": true,
+          "title": "Editable",
+          "type": "boolean"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        }
+      },
+      "title": "ParamSpec",
+      "type": "object"
+    },
+    "Pivot": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregate": {
+          "default": "sum",
+          "enum": [
+            "sum",
+            "avg",
+            "count",
+            "min",
+            "max"
+          ],
+          "title": "Aggregate",
+          "type": "string"
+        },
+        "columns": {
+          "title": "Columns",
+          "type": "string"
+        },
+        "index": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Index",
+          "type": "array"
+        },
+        "op": {
+          "const": "pivot",
+          "default": "pivot",
+          "title": "Op",
+          "type": "string"
+        },
+        "values": {
+          "title": "Values",
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "columns",
+        "values"
+      ],
+      "title": "Pivot",
+      "type": "object"
+    },
+    "RefreshPolicy": {
+      "additionalProperties": false,
+      "description": "Renderer refresh policy: ``on_mount``, ``manual``, or ``interval``.",
+      "properties": {
+        "interval_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interval Seconds"
+        },
+        "policy": {
+          "default": "on_mount",
+          "enum": [
+            "on_mount",
+            "manual",
+            "interval"
+          ],
+          "title": "Policy",
+          "type": "string"
+        }
+      },
+      "title": "RefreshPolicy",
+      "type": "object"
+    },
+    "Rename": {
+      "additionalProperties": false,
+      "properties": {
+        "mapping": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Mapping",
+          "type": "object"
+        },
+        "op": {
+          "const": "rename",
+          "default": "rename",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mapping"
+      ],
+      "title": "Rename",
+      "type": "object"
+    },
+    "Select": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "op": {
+          "const": "select",
+          "default": "select",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "columns"
+      ],
+      "title": "Select",
+      "type": "object"
+    },
+    "Sort": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "items": {
+            "$ref": "#/$defs/SortKey"
+          },
+          "title": "By",
+          "type": "array"
+        },
+        "op": {
+          "const": "sort",
+          "default": "sort",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "by"
+      ],
+      "title": "Sort",
+      "type": "object"
+    },
+    "SortKey": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "title": "Column",
+          "type": "string"
+        },
+        "direction": {
+          "default": "asc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "title": "Direction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column"
+      ],
+      "title": "SortKey",
+      "type": "object"
+    },
+    "SourceRequest": {
+      "additionalProperties": false,
+      "description": "Canonical, structured condition representation (S5).",
+      "properties": {
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "filter": {
+          "additionalProperties": true,
+          "title": "Filter",
+          "type": "object"
+        },
+        "grouping": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Grouping",
+          "type": "array"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        },
+        "offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offset"
+        },
+        "ordering": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ordering",
+          "type": "array"
+        },
+        "placeholders": {
+          "additionalProperties": true,
+          "title": "Placeholders",
+          "type": "object"
+        }
+      },
+      "title": "SourceRequest",
+      "type": "object"
+    },
+    "TransformRef": {
+      "additionalProperties": false,
+      "description": "Catalogued renderer-side transform: opaque ``name@semver`` id plus SRI pin.",
+      "properties": {
+        "integrity": {
+          "title": "Integrity",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "integrity"
+      ],
+      "title": "TransformRef",
+      "type": "object"
+    },
+    "TransformSpec": {
+      "additionalProperties": false,
+      "description": "Exactly one of inline DSL operations or a catalogued renderer module.",
+      "properties": {
+        "ops": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "derive": "#/$defs/Derive",
+                    "filter": "#/$defs/Filter",
+                    "group_by": "#/$defs/GroupBy",
+                    "join": "#/$defs/Join",
+                    "limit": "#/$defs/Limit",
+                    "pivot": "#/$defs/Pivot",
+                    "rename": "#/$defs/Rename",
+                    "select": "#/$defs/Select",
+                    "sort": "#/$defs/Sort",
+                    "union": "#/$defs/Union_"
+                  },
+                  "propertyName": "op"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/Select"
+                  },
+                  {
+                    "$ref": "#/$defs/Rename"
+                  },
+                  {
+                    "$ref": "#/$defs/Filter"
+                  },
+                  {
+                    "$ref": "#/$defs/GroupBy"
+                  },
+                  {
+                    "$ref": "#/$defs/Sort"
+                  },
+                  {
+                    "$ref": "#/$defs/Limit"
+                  },
+                  {
+                    "$ref": "#/$defs/Derive"
+                  },
+                  {
+                    "$ref": "#/$defs/Pivot"
+                  },
+                  {
+                    "$ref": "#/$defs/Join"
+                  },
+                  {
+                    "$ref": "#/$defs/Union_"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ops"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransformRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "TransformSpec",
+      "type": "object"
+    },
+    "Union_": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "union",
+          "default": "union",
+          "title": "Op",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources"
+      ],
+      "title": "Union_",
+      "type": "object"
+    }
+  },
+  "$id": "https://ai-parrot.dev/schemas/a2ui/linked-sources.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": {
+    "$ref": "#/$defs/LinkedDataSource"
+  },
+  "description": "Value of ``metadata.extensions['parrot_data_sources']`` keyed by data-model root.",
+  "title": "LinkedSources",
+  "type": "object"
+}
