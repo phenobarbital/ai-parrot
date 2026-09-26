@@ -281,10 +281,12 @@ See the `test_linked_docs.py` block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (nova seat qwen.qwen3-coder-480b-a35b-instruct), execution b99e4988-4438-4226-a71a-362798fa8ca2
+**Date**: 2026-09-26
+**Notes**: Implementation commit `2ff066692`. `docs/outputs/a2ui-linked-surfaces.md` written per the task's
+declared anchors and trust-model phrases; `test_linked_docs.py` (TASK-3792's cross-check test) confirmed
+green: `8 passed`. This is the LAST task of FEAT-598 — all 28 tasks are now complete.
+`coder_record_feedback`/`coder_record_review` (MCP) were unavailable for this entire run (object-param tool
+outage) — feedback/review metrics **NOT recorded**.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
