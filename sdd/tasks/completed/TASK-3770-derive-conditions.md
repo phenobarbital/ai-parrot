@@ -297,10 +297,17 @@ def test_lazy_export(): ...                           # from parrot.outputs.a2ui
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3770
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 9546bced726f7cf8512a46a69fcf8425317119fd
+- Closed at (UTC): 2026-09-26T00:27:47+00:00
+- Fix commits: none
 
-**Deviations from spec**: `limit` is not emitted (see rule 5); the lane computes `querylimit`.
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | completed: 25 passed (packages/ai-parrot/tests/outputs/a2ui/linked) |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |

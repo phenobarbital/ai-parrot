@@ -35,7 +35,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports SourceRequest from TASK-3769 (linked/models.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3770-derive-conditions.md"
+      "completed_at": "2026-09-26T00:27:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3770-derive-conditions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3771",
@@ -55,7 +56,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -65,8 +66,9 @@
       "parallelism_notes": "exports LinkedSources from TASK-3769 (linked/models.py) as JSON Schema",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3771-linked-json-schema.md"
+      "completed_at": "2026-09-26T00:27:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3771-linked-json-schema.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3772",

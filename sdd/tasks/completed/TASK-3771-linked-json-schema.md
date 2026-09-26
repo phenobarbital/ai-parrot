@@ -213,10 +213,17 @@ def test_schema_uses_with_alias(): ...     # '"with"' appears under the Join def
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3771
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 9546bced726f7cf8512a46a69fcf8425317119fd
+- Closed at (UTC): 2026-09-26T00:27:54+00:00
+- Fix commits: none
 
-**Deviations from spec**: none (spec §4's `docs/outputs/schemas/` mention is superseded by S7's `linked/contract/schema.json`).
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | completed: 25 passed (packages/ai-parrot/tests/outputs/a2ui/linked) |
+| seat_summary | Seat: gpt-5.6-terra - Backend: codex - Model: gpt-5.6-terra - Attempts: 1 - Duration: 125.2s - Tokens: n/a |
