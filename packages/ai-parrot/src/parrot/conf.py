@@ -110,6 +110,13 @@ ENABLE_STRUCTURED_OUTPUT_TRANSPORT = config.getboolean("ENABLE_STRUCTURED_OUTPUT
 # single-tenant deployment behavior.
 PARROT_SAAS_MODE = config.getboolean("PARROT_SAAS_MODE", fallback=False)
 
+# FEAT-598: default policy directory for the data-plane PBAC guard
+# (DataPlanePolicyGuard) built at BotManager startup via
+# parrot.auth.pbac.setup_dataplane_guard(). When the directory is missing
+# or navigator-auth is not installed, the guard is left unregistered and
+# linked A2UI surfaces keep answering 403 (fail-closed).
+PARROT_PBAC_POLICY_DIR = config.get("PARROT_PBAC_POLICY_DIR", fallback="policies")
+
 # Bot Model Table Configuration:
 PARROT_BOTS_TABLE = config.get("PARROT_BOTS_TABLE", fallback="ai_bots")
 PARROT_SCHEMA = config.get("PARROT_SCHEMA", fallback="navigator")
