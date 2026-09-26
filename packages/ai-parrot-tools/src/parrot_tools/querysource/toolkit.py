@@ -173,7 +173,9 @@ class QuerysourceToolkit(AbstractToolkit):
             return self._legacy_placeholders_detail(rec, supported=supported, keyword_types=describe.KEYWORD_TYPES)
         return (
             [
-                PlaceholderInfo(**{key: value for key, value in var.model_dump().items() if key in PlaceholderInfo.model_fields})
+                PlaceholderInfo(
+                    **{key: value for key, value in var.model_dump().items() if key in PlaceholderInfo.model_fields}
+                )
                 for var in variables
             ],
             supported,
@@ -453,7 +455,9 @@ class QuerysourceToolkit(AbstractToolkit):
             if rec.is_multiquery:
                 await self._assert_pipeline_slugs_allowed(rec.pipeline, tenant=tenant)
                 self._raise_for_issues(await self._policy_check(rec.pipeline, tenant=tenant))
-            mq = _qs.get_multiqs()(slug=slug, conditions=dict(conditions or {}), tenant=tenant)  # multi/__init__.py:106-121
+            mq = _qs.get_multiqs()(
+                slug=slug, conditions=dict(conditions or {}), tenant=tenant
+            )  # multi/__init__.py:106-121
         else:
             await self._assert_pipeline_slugs_allowed(pipeline, tenant=tenant)
             self._raise_for_issues(await self._policy_check(pipeline, tenant=tenant))
