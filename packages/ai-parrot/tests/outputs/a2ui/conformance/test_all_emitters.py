@@ -70,6 +70,7 @@ from parrot.outputs.a2ui.builders import (
     build_graph,
     build_infographic,
     build_kpicard,
+    build_linked_surface,
     build_surface,
 )
 from parrot.outputs.a2ui.catalog import (
@@ -586,3 +587,104 @@ class TestMixedCatalogSurfaceValidates:
         with pytest.raises(CatalogValidationError) as exc:
             validate_envelope(bad_surface)
         assert "Graph" in exc.value.unknown_components
+
+
+# ---------------------------------------------------------------------------
+# FEAT-598 — linked surfaces (build_linked_surface, TOOL origin only).
+# ---------------------------------------------------------------------------
+
+
+def _linked_source(key: str, **extra):
+    """A minimal LinkedDataSource whose conditions are derived from its request (S5)."""
+    from parrot.outputs.a2ui.linked.conditions import derive_conditions
+    from parrot.outputs.a2ui.linked.models import LinkedDataSource, SourceRequest
+
+    request = SourceRequest(placeholders={"firstdate": "YESTERDAY", "lastdate": "TODAY"})
+    return LinkedDataSource(
+        slug="epson_field_activity",
+        conditions=derive_conditions(request, locked={}),
+        request=request,
+        target=f"/{key}/rows",
+        **extra,
+    )
+
+
+def _activity_frame():
+    import pandas as pd
+
+    return pd.DataFrame({"day": pd.date_range("2026-09-01", periods=3), "visits": [1, 2, 3], "program": ["a"] * 3})
+
+
+class TestLinkedSurfaceConformance:
+    """build_linked_surface output is wire-conformant for chart, table and a two-source join dashboard."""
+
+    def test_build_linked_surface_conformant_chart(self):
+        envelope = build_linked_surface(
+            [
+                {
+                    "id": "root",
+                    "component": "Chart",
+                    "type": "bar",
+                    "x": "day",
+                    "y": ["visits"],
+                    "data": {"path": "/activity/rows"},
+                }
+            ],
+            {"activity": _linked_source("activity")},
+            {"activity": _activity_frame()},
+            surface_id="linked-chart",
+        )
+        _assert_conformant(envelope, origin=ProducerOrigin.TOOL)
+
+    def test_build_linked_surface_conformant_table(self):
+        envelope = build_linked_surface(
+            [
+                {
+                    "id": "root",
+                    "component": "DataTable",
+                    "columns": [{"name": "day"}, {"name": "visits"}],
+                    "data": {"path": "/activity/rows"},
+                }
+            ],
+            {"activity": _linked_source("activity")},
+            {"activity": _activity_frame()},
+            surface_id="linked-table",
+        )
+        _assert_conformant(envelope, origin=ProducerOrigin.TOOL)
+
+    def test_build_linked_surface_conformant_dashboard_join(self):
+        import pandas as pd
+
+        from parrot.outputs.a2ui.linked.models import TransformSpec
+
+        targets_frame = pd.DataFrame({"program": ["a"], "target": [100]})
+        activity = _linked_source(
+            "activity",
+            transform=TransformSpec(
+                ops=[{"op": "join", "with": "targets", "how": "left", "on": [{"left": "program", "right": "program"}]}]
+            ),
+        )
+        targets = _linked_source("targets")
+        envelope = build_linked_surface(
+            [
+                {"id": "root", "component": "Column", "children": ["chart", "table"]},
+                {
+                    "id": "chart",
+                    "component": "Chart",
+                    "type": "bar",
+                    "x": "day",
+                    "y": ["visits"],
+                    "data": {"path": "/activity/rows"},
+                },
+                {
+                    "id": "table",
+                    "component": "DataTable",
+                    "columns": [{"name": "program"}, {"name": "target"}],
+                    "data": {"path": "/targets/rows"},
+                },
+            ],
+            {"activity": activity, "targets": targets},
+            {"activity": _activity_frame(), "targets": targets_frame},
+            surface_id="linked-dashboard-join",
+        )
+        _assert_conformant(envelope, origin=ProducerOrigin.TOOL)
