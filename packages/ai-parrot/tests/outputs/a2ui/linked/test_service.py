@@ -1,4 +1,5 @@
 """FEAT-598 S1/S2/S11 — LinkedSurfaceService (spec §4)."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -61,7 +62,9 @@ def _envelope(linked_source, **changes: object) -> CreateSurface:
             )
         ],
         dataModel={},
-        metadata=SurfaceMetadata(extensions=Extensions({"parrot_data_sources": _sources_payload(linked_source, **changes)})),
+        metadata=SurfaceMetadata(
+            extensions=Extensions({"parrot_data_sources": _sources_payload(linked_source, **changes)})
+        ),
     )
 
 
@@ -181,9 +184,7 @@ async def test_refresh_partial_failure_warnings(owner, linked_source, monkeypatc
     async def _fake_execute_sources(sources, **kwargs):
         return ExecutionOutcome(
             outcomes={
-                "activity": SourceOutcome(
-                    key="activity", rows=[{"a": 1}], snapshot_at=datetime.now(timezone.utc)
-                ),
+                "activity": SourceOutcome(key="activity", rows=[{"a": 1}], snapshot_at=datetime.now(timezone.utc)),
                 "other": SourceOutcome(key="other", error="query_not_found"),
             }
         )
@@ -224,7 +225,9 @@ async def test_refresh_passes_owner_pctx(owner, linked_source, monkeypatch) -> N
     async def _fake_execute_sources(sources, **kwargs):
         captured.update(kwargs)
         return ExecutionOutcome(
-            outcomes={"activity": SourceOutcome(key="activity", rows=[{"a": 1}], snapshot_at=datetime.now(timezone.utc))}
+            outcomes={
+                "activity": SourceOutcome(key="activity", rows=[{"a": 1}], snapshot_at=datetime.now(timezone.utc))
+            }
         )
 
     monkeypatch.setattr(executor_mod, "execute_sources", _fake_execute_sources)

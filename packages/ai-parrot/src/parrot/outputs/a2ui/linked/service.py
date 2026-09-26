@@ -6,6 +6,7 @@ envelope is never validated, snapshotted or refreshed without a configured data-
 itself fails open when navigator-auth is not installed (DataPlanePolicyGuard.authorize_source) — deployments
 exposing linked surfaces must ship navigator-auth.
 """
+
 from __future__ import annotations
 
 import copy
@@ -102,9 +103,7 @@ class LinkedSurfaceService:
                     owner_pctx, PhysicalResources(source_type="query_slug", source_id=source_id)
                 )
             except AuthorizationRequired:
-                self.logger.warning(
-                    "linked source %r (slug=%s, tenant=%s) denied for owner", key, src.slug, src.tenant
-                )
+                self.logger.warning("linked source %r (slug=%s, tenant=%s) denied for owner", key, src.slug, src.tenant)
                 raise
 
     async def validate_for_persistence(self, envelope: CreateSurface, *, owner_pctx: "PermissionContext") -> None:
