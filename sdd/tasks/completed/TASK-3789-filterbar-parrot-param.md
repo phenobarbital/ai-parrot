@@ -263,10 +263,17 @@ As above; `test_filterbar_param_passthrough` is the spec §4 row for M10.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3789
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: e632de4a296c1bc6fcdb1575703213128bf5946a
+- Closed at (UTC): 2026-09-26T02:19:02+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: same systemic pre-existing failures already characterized (parrot-formdesigner version/schema drift, ai-parrot-embeddings wheel-layout conftest collision), unrelated to this task's diff. Task's own scoped tests: 14 passed (filterbar parrot_param + pre-existing filterbar suite). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |
