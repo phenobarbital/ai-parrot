@@ -597,10 +597,18 @@ def test_a2ui_import_is_pandas_free(): ...                     # subprocess: pyt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3769
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: b0f6607a9e4604083528a40a6105d71411adab14
+- Closed at (UTC): 2026-09-26T00:16:17+00:00
+- Fix commits: none
 
-**Deviations from spec**: `Filter` comparison field is `operator` (spec prose says `op`, which is the discriminator).
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: 37 pre-existing unrelated failures (parrot-formdesigner version/schema drift) + embeddings wheel-layout conftest collision + visualizations xdist flake -- all verified reproducible on clean origin/dev, unrelated to this task's diff (packages/ai-parrot/src/parrot/outputs/a2ui/linked/{__init__,models}.py only). See issue:181bd0c01bb4. |
+| seat_summary | Seat: gpt-5.6-terra - Backend: codex - Model: gpt-5.6-terra - Attempts: 1 - Duration: 274.9s - Tokens: n/a |
+| task_own_tests | coder's own scoped tests green: packages/ai-parrot/tests/outputs/a2ui/linked/test_linked_models.py |

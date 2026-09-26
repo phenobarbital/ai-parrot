@@ -463,10 +463,18 @@ See the CREATE block above; spec §4 rows: `test_query_slug_source_closes_qs`, `
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3779
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: b0f6607a9e4604083528a40a6105d71411adab14
+- Closed at (UTC): 2026-09-26T00:16:30+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: 37 pre-existing unrelated failures (parrot-formdesigner version/schema drift) + embeddings wheel-layout conftest collision -- all verified reproducible on clean origin/dev, unrelated to this task's diff (packages/ai-parrot/src/parrot/tools/dataset_manager/sources/query_slug.py + its own new test file only). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |
+| task_own_tests | coder's own scoped tests green: test_query_slug_tenant.py (8 passed), test_authorizing_data_source.py (9 passed), test_dataset_new_sources_integration.py (24 passed); ruff clean |

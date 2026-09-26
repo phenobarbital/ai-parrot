@@ -16,7 +16,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "root task: creates parrot/outputs/a2ui/linked/{__init__,models}.py consumed by every linked task",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3769-linked-descriptor-models.md"
+      "completed_at": "2026-09-26T00:16:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3769-linked-descriptor-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3770",
@@ -217,7 +218,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -225,8 +226,9 @@
       "parallelism_notes": "independent: only modifies parrot/tools/dataset_manager/sources/query_slug.py",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3779-query-slug-tenant-principal.md"
+      "completed_at": "2026-09-26T00:16:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3779-query-slug-tenant-principal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3780",
