@@ -1,4 +1,5 @@
 """JSON Schema of ``parrot_data_sources`` (FEAT-598 M1, S7) — the published renderer contract."""
+
 from __future__ import annotations
 
 import json

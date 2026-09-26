@@ -1,4 +1,5 @@
 """Tests for the published linked-sources JSON Schema (FEAT-598 M1)."""
+
 from __future__ import annotations
 
 import jsonschema
