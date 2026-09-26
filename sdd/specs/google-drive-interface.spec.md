@@ -17,7 +17,7 @@ tags: [filemanager, google-drive, google-workspace, aiogoogle, storage, toolkit]
 **Feature ID**: FEAT-608
 **Date**: 2026-09-26
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.1.0 (next minor after 1.0.6)
 **Proposal**: `sdd/proposals/google-drive-interface.proposal.md` (accepted; research audit at `sdd/state/FEAT-608/`)
 **Precedent**: FEAT-603 `sdd/specs/sharepoint-filemanager.spec.md` (merged to `dev` in PR #1501)
