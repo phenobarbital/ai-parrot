@@ -28,6 +28,7 @@ from typing import Any, Literal
 
 from asyncdb import AsyncDB
 from parrot.conf import default_dsn
+from parrot.outputs.a2ui.linked import has_data_sources
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -82,8 +83,8 @@ class UISurfaceRecord(BaseModel):
 
     @property
     def refreshable(self) -> bool:
-        """Whether this surface can be refreshed via ``RecipeRunner`` replay."""
-        return self.recipe_name is not None
+        """Refreshable via ``RecipeRunner`` replay (recipe_ref) or via its linked data-source descriptor."""
+        return self.recipe_name is not None or has_data_sources(self.envelope)
 
 
 class UISurfaceShare(BaseModel):
@@ -251,6 +252,13 @@ _UPDATE_ENVELOPE_SQL = """
 UPDATE navigator.ui_surfaces
 SET envelope = $2::jsonb, recipe_params = $3::jsonb, updated_at = NOW()
 WHERE surface_id = $1
+RETURNING surface_id
+"""
+
+_UPDATE_ENVELOPE_IF_UNCHANGED_SQL = """
+UPDATE navigator.ui_surfaces
+SET envelope = $2::jsonb, recipe_params = $3::jsonb, updated_at = NOW()
+WHERE surface_id = $1 AND updated_at = $4
 RETURNING surface_id
 """
 
@@ -645,15 +653,35 @@ class PgUISurfaceStore:
             )
         return result is not None
 
-    async def update_envelope(self, surface_id: str, envelope: dict[str, Any], recipe_params: dict[str, Any]) -> None:
-        """Replace ``envelope``/``recipe_params`` in place, bumping ``updated_at``."""
+    async def update_envelope(
+        self,
+        surface_id: str,
+        envelope: dict[str, Any],
+        recipe_params: dict[str, Any],
+        *,
+        expected_updated_at: datetime | None = None,
+    ) -> bool:
+        """Replace ``envelope``/``recipe_params`` in place, bumping ``updated_at``.
+
+        With ``expected_updated_at`` the update is conditional (optimistic concurrency, FEAT-598 S11): it only
+        applies when the row's ``updated_at`` still equals the value the caller read; a newer snapshot wins.
+
+        Returns:
+            ``True`` when a row was updated; ``False`` for an unknown surface or a lost race.
+        """
         surface_uuid = _as_uuid(surface_id)
         if surface_uuid is None:
-            return
+            return False
         await self._ensure_ready()
         db = self._get_db()
         async with await db.connection() as conn:
-            await conn.fetchval(_UPDATE_ENVELOPE_SQL, surface_uuid, envelope, recipe_params)
+            if expected_updated_at is None:
+                result = await conn.fetchval(_UPDATE_ENVELOPE_SQL, surface_uuid, envelope, recipe_params)
+            else:
+                result = await conn.fetchval(
+                    _UPDATE_ENVELOPE_IF_UNCHANGED_SQL, surface_uuid, envelope, recipe_params, expected_updated_at
+                )
+        return result is not None
 
     async def delete(self, surface_id: str, user_id: str) -> bool:
         """Delete a surface owned by ``user_id``. Returns ``True`` if a row was removed."""
