@@ -305,10 +305,17 @@ See the `types.test.ts` block above; minimum cases: baked → null, empty → nu
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3792
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 7e938361df8c5dbbeec20154c8255f14ed20656d
+- Closed at (UTC): 2026-09-26T00:34:58+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: pre-existing collection errors unrelated to this task's diff (ai-parrot-server tests missing optional dependency 'fakeredis'). Verified reproducible on clean origin/dev. See issue:181bd0c01bb4. |
+| seat_summary | Seat: gpt-5.6-terra - Backend: codex - Model: gpt-5.6-terra - Attempts: 1 - Duration: 288.4s - Tokens: n/a |
