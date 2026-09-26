@@ -75,7 +75,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -85,8 +85,9 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml, packages/ai-parrot-tools/pyproject.toml and uv.lock (shared manifests/lockfile); its package-data test imports parrot.outputs.a2ui.linked from TASK-3769 to locate contract/",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3772-pyproject-package-data-qs-floor.md"
+      "completed_at": "2026-09-26T00:22:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3772-pyproject-package-data-qs-floor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3773",
