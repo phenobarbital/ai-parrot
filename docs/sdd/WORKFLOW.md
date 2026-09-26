@@ -118,15 +118,15 @@ its own worktree. Within one feature, tasks run in that feature's worktree
 
 ---
 
-## Work ledger & `/sdd-fix`
+## Ledger-Driven Fix Lane (`/sdd-fix`)
 
 Findings verified but not fixed (e.g. deferred code-review items) go into the
 work ledger: `wikitoolkit ledger open --kind … --severity … --discovered-from spec:FEAT-<NNN> --about sym:<file>#<symbol> --title … --body …`.
 `/sdd-fix` drains it (`wikitoolkit ledger plan-fix --json`): `critical`/`major`,
 any `vulnerability`, or unscoped groups go through the **SDD lane** (spec →
 tasks → worktree → `/sdd-done`); single-file `minor`/`low` `tech_debt` go
-through the **Fast lane** (branch `fix/<id>-<slug>` off `origin/dev`, PR to
-`dev`). `ledger claim` is authoritative; close with `ledger close --resolved-by`.
+through the **Fast lane** (branch `fix/<id>-<slug>` off `origin/dev`, always
+`gh pr create --base dev`). `ledger claim` is authoritative; close with `ledger close --resolved-by`.
 
 ---
 

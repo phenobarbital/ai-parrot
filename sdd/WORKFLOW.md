@@ -23,102 +23,57 @@ The key idea: specifications are the Single Source of Truth (SSOT). Agents acros
                                  └────────── /sdd-task → decomposes spec into tasks ──────────────────────────────────────────────────────┘
 ```
 
-### Phase 0 — Feature Proposal *(optional)*
-Start here when the idea is not yet well-defined. Use `/sdd-proposal` to discuss
-a feature in non-technical language. The agent walks through motivation, scope,
-and impact with you, producing `docs/sdd/proposals/<feature>.proposal.md`.
-
-The proposal can then automatically scaffold a formal spec (Phase 1).
+### Phase 0 — Exploration *(optional)*
+Start here when the idea is not yet well-defined:
+- `/sdd-brainstorm` compares options and writes `sdd/proposals/<feature>.brainstorm.md`.
+- `/sdd-proposal` researches a Jira issue, inline request or notes file and
+  writes `sdd/proposals/<feature>.proposal.md` (research state under `sdd/state/<FEAT-ID>/`).
+- `/sdd-fromjira` bootstraps a brainstorm from a Jira ticket.
 
 ### Phase 1 — Feature Specification
-Start here when you already know what you want to build. Use `/sdd-spec` to scaffold
-`docs/sdd/specs/<feature>.spec.md`, or accept one auto-generated from `/sdd-proposal`.
+`/sdd-spec` writes `sdd/specs/<feature>.spec.md` from a brainstorm/proposal, a
+direct request, or an intake interview (FEAT-577), and reserves the
+`FEAT-<NNN>` via `scripts/sdd/reserve_ids.py` (not for hotfixes).
 
-### Phase 2 — Task Generation (Claude Code Planner Agent)
-Run `/sdd-task <spec-file>` to decompose the spec into Task Artifacts.
-
-Each task is written to `tasks/active/TASK-<id>-<slug>.md`.
-The **per-spec index** at `sdd/tasks/index/<feature-slug>.json` is created
-or updated with task metadata (FEAT-145).
+### Phase 2 — Task Generation (Planner)
+`/sdd-task sdd/specs/<feature>.spec.md` decomposes the spec into Task Artifacts
+at `sdd/tasks/active/TASK-<NNN>-<slug>.md` and creates the **per-spec index**
+`sdd/tasks/index/<feature-slug>.json` (FEAT-145). TASK numbers come from
+`reserve_ids.py`; `/sdd-task` creates no worktree (FEAT-552).
 
 Tasks are designed to be:
 - **Atomic** — completable independently
 - **Bounded** — clear scope, no ambiguity
 - **Testable** — every task includes its own test criteria
-- **Assignable** — formatted so any Claude Code agent can start immediately
+- **Assignable** — formatted so any agent can start immediately
 
-### Phase 3 — Task Execution (Claude Code Executor Agents)
-Each executor agent picks up a task file:
-```bash
-# In a new Claude Code session:
-claude "Read tasks/active/TASK-003-pgvector-loader.md and implement it"
-```
+### Phase 3 — Task Execution (Executors)
+`/sdd-start TASK-<NNN>` (one task) or the `sdd-worker` agent (a whole feature)
+creates/reuses the feature worktree via `python -m scripts.sdd.ensure_worktree`,
+marks the task `in-progress` in the per-spec index, implements it, and closes it
+with `scripts/sdd/close_task.sh`, which moves the file to
+`sdd/tasks/completed/` and stamps the index. Code and SDD state are committed
+together on the feature branch. The manual (no-command) procedure is in
+`docs/sdd/WORKFLOW.md`.
 
-Tasks declare their dependencies, so agents know what must be done first.
-
-### Phase 4 — Validation (Claude Code Reviewer Agent)
-After execution, tasks move to `tasks/completed/`.
-A reviewer agent validates against the Test Specification.
+### Phase 4 — Validation (Reviewer)
+`/sdd-codereview` reviews completed tasks (with an adversarial `codex` cross-check);
+`/sdd-done FEAT-<NNN>` verifies every task, snapshots the ledger, pushes, and
+opens a PR against `base_branch` (`--merge` merges directly).
 
 ---
 
 ## Task Artifact Format
 
-Every task file (`tasks/active/TASK-<NNN>-<slug>.md`) follows this structure:
+Every task file follows `sdd/templates/task.md`. Header: **Feature**, **Spec**,
+**Status**, **Priority**, **Estimated effort**, **Depends-on**, **Assigned-to**.
+Sections, in order: Context · Scope (with *NOT in scope*) · Files to Create /
+Modify · Codebase Contract (Verified Imports / Existing Signatures / Does NOT
+Exist) · Complexity Contract · Delegation Contract *(optional)* · Implementation
+Notes · Implementation Blueprint · Acceptance Criteria · Validation Commands ·
+Test Specification · Agent Instructions · Completion Note.
 
-```markdown
-# TASK-<NNN>: <Title>
-
-**Feature**: <parent feature name>
-**Spec**: docs/sdd/specs/<feature>.spec.md
-**Status**: [ ] pending | [ ] in-progress | [x] done
-**Priority**: high | medium | low
-**Depends-on**: TASK-<X>, TASK-<Y>   (or "none")
-**Assigned-to**: (agent session ID or "unassigned")
-
-## Context
-Brief explanation of why this task exists and how it fits the feature.
-
-## Scope
-Exactly what this task must implement. Be precise.
-
-## Files to Create/Modify
-- `parrot/path/to/file.py` — description
-- `tests/path/to/test_file.py` — unit tests
-
-## Implementation Notes
-Technical guidance for the agent: patterns to follow, existing code to reference,
-gotchas, constraints.
-
-## Reference Code
-Existing patterns in the codebase the agent should follow:
-- See `parrot/loaders/base.py` for BaseLoader pattern
-- See `parrot/bots/orchestration/crew.py` for DAG execution pattern
-
-## Acceptance Criteria
-- [ ] Criterion 1
-- [ ] Criterion 2
-- [ ] All tests pass: `pytest tests/path/ -v`
-
-## Test Specification
-```python
-# Minimal test scaffold the agent must make pass
-def test_feature_does_x():
-    ...
-
-def test_feature_handles_edge_case():
-    ...
-```
-
-## Output
-When complete, the agent must:
-1. Move this file to `tasks/completed/`
-2. Update `tasks/.index.json` status to "done"
-3. Add a brief completion note below
-
-### Completion Note
-(Agent fills this in when done)
-```
+Index `status` values: `pending` → `in-progress` → `done` | `done-with-issues`.
 
 ---
 
@@ -437,8 +392,8 @@ TASK-001 (base interface)
             └── TASK-005 (rag-pipeline) ← waits for 002, 003, 004
 ```
 
-A Claude Code agent should **never start a task** if its `depends_on` tasks
-are not in `tasks/completed/`.
+An agent should **never start a task** unless every id in its `depends_on`
+is `"done"` in the per-spec index.
 
 ---
 
@@ -473,7 +428,7 @@ The SDD workflow is unified across all three developer platforms:
 1. **Never modify files outside the task scope** — respect boundaries
 2. **Follow existing patterns** — reference code mentioned in the task
 3. **Write tests first** — TDD approach per task
-4. **Update the index** — always update `.index.json` on completion
+4. **Update the index** — close tasks with `scripts/sdd/close_task.sh` (per-spec index), never the legacy monolith
 5. **Small commits** — one task = one logical commit
 6. **Ask via the spec** — if unclear, note the ambiguity in the completion note
    and let the Planner agent refine the spec for the next iteration

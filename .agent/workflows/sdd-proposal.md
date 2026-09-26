@@ -158,9 +158,10 @@ Invoke the prompt at `sdd/templates/research_plan.prompt.md`, passing:
 - `wiki_available` flag (so the planner knows whether to emit wiki queries)
 - repository top-level structure (`ls -la` of repo root, plus `find . -type d -maxdepth 3`)
 
-The planner produces a JSON document conforming to
-`sdd/templates/research_plan.schema.json` — a list of `queries` with
-intent, type (`grep | glob | read | git_log | tree`), parameters, and
+The planner produces a JSON document in the format defined by the
+prompt's "Output format" section (there is no separate schema file) — a
+list of `queries` with intent, type (`wiki_query | wiki_page |
+wiki_related | grep | glob | read | git_log | tree`), parameters, and
 priority.
 
 Persist to `${STATE_DIR}/research_plan.json`.
@@ -517,7 +518,6 @@ full state for re-verification of the codebase contract.
 - State schema:             `sdd/templates/state.schema.json`
 - Synthesis prompt:         `sdd/templates/synthesis.prompt.md`
 - Research-plan prompt:     `sdd/templates/research_plan.prompt.md`
-- Research-plan schema:     `sdd/templates/research_plan.schema.json`
 - Finding digest template:  `sdd/templates/finding.md`
 - SDD methodology:          `sdd/WORKFLOW.md`
 - Worktree policy:          `AGENTS.md` and `sdd/WORKFLOW.md`

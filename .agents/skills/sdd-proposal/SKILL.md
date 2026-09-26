@@ -73,8 +73,8 @@ Budget profiles:
    - File: read and preserve the source file body and frontmatter.
 4. Build a research plan:
    - Probe `wikitoolkit status`.
-   - Use `sdd/templates/research_plan.prompt.md` and
-     `sdd/templates/research_plan.schema.json` when present.
+   - Use `sdd/templates/research_plan.prompt.md` (its "Output format"
+     section defines the plan JSON; there is no separate schema file).
    - Include wiki, grep, read, git log, and tree queries as appropriate.
    - Present the plan unless `--no-gate` was supplied.
 5. Execute research:
@@ -129,7 +129,6 @@ Next: $sdd-spec <slug> or $sdd-brainstorm <slug>
 - `sdd/templates/proposal.md`
 - `sdd/templates/state.schema.json`
 - `sdd/templates/research_plan.prompt.md`
-- `sdd/templates/research_plan.schema.json`
 - `sdd/templates/synthesis.prompt.md`
 - `sdd/templates/finding.md`
 - `sdd/WORKFLOW.md`
