@@ -254,7 +254,9 @@ def _op_join(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFrame"
     _require_columns(frame, left_keys, index, "join")
     _require_columns(right, right_keys, index, "join")
 
-    same_named_keys = {right_key for left_key, right_key in zip(left_keys, right_keys) if left_key == right_key}
+    same_named_keys = {
+        right_key for left_key, right_key in zip(left_keys, right_keys, strict=True) if left_key == right_key
+    }
     right_output = [column for column in right.columns if column not in same_named_keys]
     renamed = {column: f"{op.with_}_{column}" for column in right_output if column in frame.columns}
     right_work = right.rename(columns=renamed).copy()

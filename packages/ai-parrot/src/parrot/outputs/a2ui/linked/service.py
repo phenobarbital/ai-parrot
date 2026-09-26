@@ -124,6 +124,7 @@ class LinkedSurfaceService:
             return envelope
         sources = _sources(envelope)
         self._require_guard()
+        await self._assert_sources_allowed(sources, owner_pctx)
 
         data_model = envelope.get("dataModel") or {}
 

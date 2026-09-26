@@ -1,3 +1,43 @@
+/**
+ * Transform DSL v1 — plain-TS mirror executor (FEAT-598, spec §3 M2, §7).
+ *
+ * Ports the Python reference executor (`parrot/outputs/a2ui/linked/dsl.py`) op-for-op so both
+ * sides pass the same shared golden fixtures under `contract/fixtures/dsl/` (spec AC7). Pure: no
+ * I/O; inputs are never mutated. A `ref` transform is renderer-side (see `./ref.ts`) and is never
+ * applied here — the caller (`./index.ts`) checks `transform.ref` before calling `applyTransform`.
+ */
+import type { Row, TransformOp as Op, TransformSpec } from './types';
+
+/** A DSL op failed: missing column, derive type mismatch, absent join key, … */
+export class TransformError extends Error {
+  /** Linked-source key (dataModel root key), or `null` when raised before the caller annotates it. */
+  key: string | null;
+  /** 0-based index of the failing operation. */
+  opIndex: number;
+
+  constructor(message: string, key: string | null, opIndex: number) {
+    super(message);
+    this.name = 'TransformError';
+    this.key = key;
+    this.opIndex = opIndex;
+  }
+}
+
+/**
+ * Apply `spec.ops` in order and return a new row array.
+ *
+ * A `null`/`undefined` spec returns the input rows unchanged; a `ref` transform is the caller's
+ * responsibility (never reached here — `./index.ts` checks `transform.ref` first).
+ */
+export function applyTransform(rows: Row[], spec: TransformSpec | null | undefined, frames: Record<string, Row[]>): Row[] {
+  if (!spec) return rows;
+  let out = rows;
+  const ops = spec.ops ?? [];
+  for (let i = 0; i < ops.length; i++) {
+    out = applyOp(out, ops[i] as Op, frames, null, i);
+  }
+  return out;
+}
 
 function applyOp(rows: Row[], op: Op, frames: Record<string, Row[]>, key: string | null, i: number): Row[] {
   switch (op.op) {
