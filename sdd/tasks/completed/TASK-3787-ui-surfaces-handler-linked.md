@@ -331,10 +331,17 @@ See the CREATE test block (spec §4: `test_refresh_descriptor_path`, `test_refre
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3787
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 17721ac97646c6cd5242b2eb118655fa66466583
+- Closed at (UTC): 2026-09-26T01:45:51+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: pre-existing failures unrelated to this task's diff -- 2 already-characterized test_agent_a2ui_stream.py brittle assertions, plus new-signature failures/errors in ai-parrot-server/tests/studio/* all traced to environmental DB/network unavailability (Postgres 'No route to host', DocumentDB 'Connection refused' -- no DB/network in this sandbox), verified reproducible on clean origin/dev. See issue:181bd0c01bb4. |
+| seat_summary | Seat: gpt-5.6-terra - Backend: codex - Model: gpt-5.6-terra - Attempts: 1 - Duration: 326.6s - Tokens: n/a |

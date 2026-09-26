@@ -311,7 +311,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -321,8 +321,9 @@
       "parallelism_notes": "uses _qs.get_tenants / _qs.get_definition_repository lazy accessors from TASK-3782 (parrot_tools/querysource/_qs.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3783-slugcatalog-tenant-aware.md"
+      "completed_at": "2026-09-26T01:45:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3783-slugcatalog-tenant-aware.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3784",
@@ -396,7 +397,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -407,8 +408,9 @@
       "parallelism_notes": "delegates to LinkedSurfaceService from TASK-3781 (linked/service.py); uses update_envelope(expected_updated_at=) + refreshable from TASK-3786 (handlers/models/ui_surfaces.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3787-ui-surfaces-handler-linked.md"
+      "completed_at": "2026-09-26T01:45:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3787-ui-surfaces-handler-linked.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3788",
