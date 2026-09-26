@@ -53,6 +53,7 @@ passing the validated `TransformSpec` through (validation of `ref ∈ manifest` 
 |---|---|---|
 | `packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py` | MODIFY | `build_linked_surface` tool + module docstring |
 | `packages/ai-parrot-tools/tests/querysource/test_build_linked_surface_tool.py` | CREATE | tool tests + S5 parity test |
+| `packages/ai-parrot-tools/tests/querysource/test_toolkit_core.py` | MODIFY | *(orchestrator addendum, post-merge)* add `qs_build_linked_surface` to the pinned `test_tool_names_and_write_gate` tool-name lists — this task's own Validation Commands name this exact file, but it was missing from the original scope |
 
 `parrot_tools/querysource/__init__.py` is **not** modified: the tool is a method on the already-exported
 `QuerysourceToolkit`; no new public symbol is introduced.
@@ -122,7 +123,8 @@ def build_conditions(*, placeholders, filter, fields, ordering, grouping, limit,
   "schema_version": 1,
   "targets": [
     {"path": "packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py", "action": "MODIFY"},
-    {"path": "packages/ai-parrot-tools/tests/querysource/test_build_linked_surface_tool.py", "action": "CREATE"}
+    {"path": "packages/ai-parrot-tools/tests/querysource/test_build_linked_surface_tool.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot-tools/tests/querysource/test_toolkit_core.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py#QuerysourceToolkit",
@@ -426,10 +428,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-3785
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: eb6452a6069af83422f3fe445a66045d161b8313
+- Closed at (UTC): 2026-09-26T03:23:22+00:00
+- Fix commits: eb6452a6069af83422f3fe445a66045d161b8313
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| notes | Merge-tier validation surfaced 82 pre-existing test failures across the repo (formdesigner/wheel-layout/DB-connectivity/xdist-flakiness signature, confirmed reproducible on clean origin/dev, unrelated to this diff) plus ONE genuine gap directly caused by this task: test_toolkit_core.py::test_tool_names_and_write_gate pinned an exhaustive tool-name list that did not include the new qs_build_linked_surface tool. Fixed directly by the orchestrator in commit eb6452a60 (test_toolkit_core.py was not in TASK-3785's declared file list but is named by its own Validation Commands). Feedback/review MCP tools (coder_record_feedback/coder_record_review) were down for the entire run (object-param tool outage, confirmed via minimal {} payload) — NOT recorded. |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 4 · Duration: 82.8s+250s (2 successful runs; 1 worktree-infra failure, 1 empty_delivery) · Tokens: n/a |
