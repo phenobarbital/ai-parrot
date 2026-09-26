@@ -67,3 +67,24 @@ def default_dsn() -> str:
 def installed_version() -> str:
     """Return ``querysource.version.__version__`` ("4.5.11" at spec time)."""
     return _load("querysource.version").__version__
+
+
+def get_describe() -> ModuleType:
+    """Return ``querysource.queries.describe`` (build_variables, KEYWORD_TYPES, IMPLICIT_DEFAULTS)."""
+    return _load("querysource.queries.describe")
+
+
+def get_tenants() -> ModuleType:
+    """Return ``querysource.tenants`` (QueryIdentity, LoadedDefinition, TenantError)."""
+    return _load("querysource.tenants")
+
+
+async def get_definition_repository() -> Any:
+    """Return a loop-local ``DefinitionRepository`` from QuerySource's connection accessor.
+
+    Connection ownership stays inside querysource: ``Connection().get_definition_repository()`` builds the
+    repository over the ``QuerySource()`` singleton's tenant registry and definition connection factory.
+    Tests monkeypatch this function.
+    """
+    connection_cls = _load("querysource.interfaces.connections").Connection
+    return await connection_cls().get_definition_repository()

@@ -22,11 +22,17 @@ class SlugSummary(BaseModel):
 
 
 class PlaceholderInfo(BaseModel):
-    """A declared placeholder: name, cond_definition type, stored default."""
+    """A declared placeholder: name, cond_definition type, stored default, and describe semantics.
+
+    ``required`` / ``accepts_keywords`` mirror ``querysource.queries.describe.build_variables`` exactly
+    (describe.py:154 and :163 — FEAT-598 AC6).
+    """
 
     name: str
     type: str | None = None
     default: Any = None
+    required: bool = False
+    accepts_keywords: bool = False
 
 
 class SlugDetail(SlugSummary):
@@ -42,6 +48,7 @@ class SlugDetail(SlugSummary):
     sql: str | None = None  # query_raw when include_sql=True and not multiquery
     pipeline: dict[str, Any] | None = None  # parsed query_raw when is_multiquery
     rendered_query: str | None = None  # QS.dry_run() output when dry_run=True
+    variables_supported: bool = True  # False for JSON-dialect slugs (describe.py:116-118) — linked params stay empty
 
 
 class ExecutionResult(BaseModel):
