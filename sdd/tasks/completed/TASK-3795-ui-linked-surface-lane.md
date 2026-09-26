@@ -346,10 +346,29 @@ See the `A2UISurface.linked.test.ts` block; minimum cases: baked never fetches, 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker orchestrator (native sonnet coder attempt), execution b99e4988-4438-4226-a71a-362798fa8ca2
+**Date**: 2026-09-26
 **Notes**:
+- Implementation commit: `3b7fc2e66586dc14b9b1cc0ef5b9c7db9dd0112f`.
+- Design decisions (FILL-INs) recorded by the implementing coder: lazy per-source dependency resolution
+  inside `runSource` (sequential pass reserved for `refreshAll()`); `setParam` ignores locked names and
+  re-fetches only the named source (no cascade); a second `FILTER_CONTEXT`/`FilterController` Svelte context
+  added in `linked/index.ts` (not `A2UISurface.svelte`) to avoid a circular import with `A2UINode.svelte`;
+  `baseDataModel`/`activeFilters` state split with a derived `dataModel` applying the §7.4 scoping rule;
+  context set via a stable proxy object per the Svelte 5 rule; `refresh: true` sent only by `refreshAll()`;
+  AC9 ref fallback uses raw fetched rows on SRI mismatch/unknown ref, never blocks the fetch.
+- **Real defect discovered in TASK-3793's `dsl.ts`** (missing all import/export statements — `applyTransform`/
+  `TransformError` referenced but never exported, so `dsl.test.ts`'s and this task's own imports resolve to
+  `undefined`): out of this task's declared scope, so NOT fixed here. Filed as `issue:2eb833fd70f9` (major,
+  discovered_from `task:TASK-3795`) for a follow-up fix task.
+- Real `vitest`/`tsc`/`svelte-check` could not be run in this worktree (no `node_modules` installed, per
+  `.claude/rules/worktree-management.md`); the pytest wrapper reports `1 skipped` accordingly (consistent with
+  sibling TASK-3793/TASK-3794 wrappers). Coder substituted an `esbuild` syntax check (read-only, output to
+  `/tmp`) plus manual cross-checks of every import against its real source. **Recommend running the real
+  vitest/svelte-check suite in an environment with `node_modules` installed before this feature ships.**
+- Merge-tier validation: same pre-existing, unrelated failure signature already confirmed earlier in this run
+  (formdesigner/wheel-layout/DB-connectivity/xdist-flakiness, reproducible on clean `origin/dev`).
+- `coder_record_feedback`/`coder_record_review` (MCP) were unavailable for this entire run (object-param tool
+  outage, confirmed via a minimal `{}` payload) — feedback/review metrics **NOT recorded**.
 
 **Deviations from spec**: none | describe if any
