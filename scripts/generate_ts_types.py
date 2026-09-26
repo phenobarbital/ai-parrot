@@ -78,6 +78,8 @@ def _models() -> dict[str, type[BaseModel]]:
         ToolkitOptionsResponse,
     )
     from parrot.handlers.toolkit_persistence import UserToolkitOverride
+    # FEAT-598 — linked-surface descriptor (createSurface.metadata.extensions.parrot_data_sources)
+    from parrot.outputs.a2ui.linked.models import LinkedSources
 
     return {
         "AdminStatus": AdminStatus,
@@ -106,6 +108,8 @@ def _models() -> dict[str, type[BaseModel]]:
         "AgentMcpServersResponse": AgentMcpServersResponse,
         "ToolkitOptionsResponse": ToolkitOptionsResponse,
         "UserToolkitOverride": UserToolkitOverride,
+        # FEAT-598 — A2UI linked surfaces
+        "LinkedSources": LinkedSources,
     }
 
 
