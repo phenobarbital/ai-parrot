@@ -414,10 +414,17 @@ See the three test blocks above; every AC bullet in this task maps to at least o
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-3794
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 302641eba43eaa61be68680bd301bdaed1fc2a81
+- Closed at (UTC): 2026-09-26T02:46:16+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: pre-existing collection errors unrelated to this task's diff (ai-parrot-server tests missing optional dependency 'fakeredis', already characterized). Task's own scoped tests: 23/23 vitest passing (manually verified with symlinked node_modules; pytest wrapper skips by design when node_modules absent in worktree, matching sibling UI test wrappers' convention). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |

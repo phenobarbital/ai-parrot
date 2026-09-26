@@ -549,7 +549,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -560,8 +560,9 @@
       "parallelism_notes": "imports linked/types.ts from TASK-3792; loadRef reads the manifest.json shape fixed by TASK-3775 (linked/manifest.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3794-ui-linked-fetch-scheduler-ref.md"
+      "completed_at": "2026-09-26T02:46:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3794-ui-linked-fetch-scheduler-ref.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3795",
