@@ -297,10 +297,17 @@ def test_default_path_uses_static_dir(monkeypatch, tmp_path): ...             # 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3775
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 8a40c7daa4f01824153b11fab1842743ca05017b
+- Closed at (UTC): 2026-09-26T00:41:52+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | completed: 55 passed (packages/ai-parrot/tests/outputs/a2ui/linked) |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |
