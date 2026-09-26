@@ -26,6 +26,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from parrot.auth.permission import build_principal_context
+from parrot.outputs.a2ui.linked import has_data_sources
 from parrot.outputs.a2ui.models import CreateSurface
 from parrot.outputs.a2ui.recipes.models import (
     DataSourceSpec,
@@ -497,6 +499,14 @@ class InfographicAuthoringMixin:
             RuntimeError: When no store is injected/wired AND
                 ai-parrot-server is not installed — an actionable message,
                 never a bare ``ModuleNotFoundError``.
+            LinkedGuardRequired: A linked envelope with no data-plane guard
+                configured — fails CLOSED; nothing is saved (FEAT-598 AC14).
+            AuthorizationRequired: The owner is not permitted one of the
+                envelope's data sources; nothing is saved.
+            CatalogValidationError: The linked envelope fails structural
+                validation; nothing is saved.
+            SnapshotError: The save-time snapshot could not be produced;
+                nothing is saved.
         """
         envelope_model = envelope if isinstance(envelope, CreateSurface) else CreateSurface.model_validate(envelope)
         # Code-review fix (post-merge hardening): ALWAYS mint a fresh UUID
@@ -520,12 +530,26 @@ class InfographicAuthoringMixin:
         agent_id = getattr(self, "name", None) or "unknown-agent"
         resolved_user_id = user_id or getattr(self, "user_id", None) or agent_id
 
+        envelope_dump = envelope_model.model_dump(by_alias=True, mode="json")
+        linked = has_data_sources(envelope_model)
+        if linked:
+            # FEAT-598 S1/S2: the persistence boundary for linked envelopes — TOOL-origin validation, a mandatory
+            # (fail-closed) data-plane guard, and a save-time snapshot executed ONCE in the owner's context.
+            from parrot.outputs.a2ui.linked.service import LinkedSurfaceService
+
+            service = getattr(self, "_linked_surface_service", None) or LinkedSurfaceService(
+                guard=getattr(self, "_dataplane_guard", None)
+            )
+            owner_pctx = build_principal_context(resolved_user_id, channel="ui_surfaces")
+            await service.validate_for_persistence(envelope_model, owner_pctx=owner_pctx)
+            envelope_dump = await service.ensure_snapshot(envelope_dump, owner_pctx=owner_pctx)
+
         now = datetime.now(timezone.utc)
         record = UISurfaceRecord(
             surface_id=surface_id,
             kind=UISurfaceKind(kind),
             title=title,
-            envelope=envelope_model.model_dump(by_alias=True, mode="json"),
+            envelope=envelope_dump,
             catalog_id=envelope_model.catalog_id,
             agent_id=agent_id,
             user_id=resolved_user_id,
@@ -542,7 +566,7 @@ class InfographicAuthoringMixin:
             persisted_id,
             kind,
             title,
-            recipe_name is not None,
+            recipe_name is not None or linked,
         )
         return persisted_id
 
