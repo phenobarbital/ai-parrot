@@ -26,23 +26,32 @@ class ImportManifest(BaseModel):
     skipped: Dict[str, str] = Field(default_factory=dict)
 
 
-def manifest_path_for(digest: str) -> Path:
-    """``$PARROT_STATE_DIR/business_automation/checkpoints/hooba_bbva_import/<digest>.manifest.json``."""
-    return checkpoint_dir_for(_OPERATION) / f"{digest}.manifest.json"
+def manifest_path_for(digest: str, account_id: Optional[str] = None) -> Path:
+    """``$PARROT_STATE_DIR/business_automation/checkpoints/hooba_bbva_import/<digest>.manifest.json``,
+    or ``.../<account_id>--<digest>.manifest.json`` when ``account_id`` is given.
+
+    Two different Hooba accounts sharing one ``$PARROT_STATE_DIR`` that happen to import
+    byte-identical statement content would otherwise collide on the same manifest file and
+    corrupt each other's resume/reconcile state. ``account_id`` defaults to ``None`` (the
+    legacy, unscoped path) so existing direct callers of the manifest helpers are unaffected;
+    ``HoobaToolkit``/``BbvaImporter`` always pass the resolved account id.
+    """
+    name = f"{account_id}--{digest}.manifest.json" if account_id else f"{digest}.manifest.json"
+    return checkpoint_dir_for(_OPERATION) / name
 
 
-def load_manifest(digest: str) -> Optional[ImportManifest]:
+def load_manifest(digest: str, account_id: Optional[str] = None) -> Optional[ImportManifest]:
     """Load a prior manifest or return None. Sync — call via asyncio.to_thread."""
-    path = manifest_path_for(digest)
+    path = manifest_path_for(digest, account_id)
     if not path.exists():
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
     return ImportManifest.model_validate(data)
 
 
-def write_manifest(manifest: ImportManifest) -> Path:
+def write_manifest(manifest: ImportManifest, account_id: Optional[str] = None) -> Path:
     """Atomic write, file mode 0o600. Sync — call via asyncio.to_thread."""
-    path = manifest_path_for(manifest.statement_digest)
+    path = manifest_path_for(manifest.statement_digest, account_id)
     tmp_path = path.with_name(path.name + ".tmp")
     tmp_path.write_text(manifest.model_dump_json(), encoding="utf-8")
     os.chmod(tmp_path, 0o600)

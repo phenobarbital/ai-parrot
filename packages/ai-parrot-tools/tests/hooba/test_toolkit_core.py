@@ -73,6 +73,33 @@ async def test_open_does_not_start_browser():
     assert not web.started
 
 
+async def test_ensure_open_survives_broken_api_login_so_recovery_stays_reachable():
+    """Regression: ``auto_open=True`` makes ``ToolkitTool._execute`` call
+
+    ``toolkit._ensure_open()`` (which calls ``_open()``) BEFORE every tool's own body
+    runs, including ``hooba_recover_web_session`` -- the one tool whose entire purpose
+    is to recover from a broken API session via the browser fallback. If ``_open()`` let
+    a login failure propagate, ``_ensure_open()`` would raise on every call, on every
+    retry, and the recovery tool itself could never be reached to do its job. It must
+    swallow the failure (best-effort priming only) so the gate always succeeds.
+    """
+    api = FakeApi()
+    api._ensure_session.side_effect = RuntimeError("login failed: 401 Unauthorized")
+    adapter = MagicMock()
+    adapter.recover_session = AsyncMock(return_value={"sid": "recovered-secret"})
+    toolkit = make_toolkit(api, HoobaSettings(account_id=123, catalog_dir="/private"), adapter)
+
+    # The auto_open gate itself must not raise, even though the API login failed.
+    await toolkit._ensure_open()
+    api._ensure_session.assert_awaited_once_with()
+
+    # And the recovery tool's own body must actually run and succeed.
+    result = await toolkit.hooba_recover_web_session()
+    assert result["status"] == "success"
+    assert result["result"] == {"recovered": True, "cookie_names": ["sid"]}
+    api.set_cookies.assert_awaited_once_with({"sid": "recovered-secret"})
+
+
 async def test_find_contact_threshold():
     api = FakeApi(
         responses={

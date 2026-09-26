@@ -9,6 +9,7 @@ import os
 import re
 import unicodedata
 import uuid
+from collections import Counter
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
@@ -100,8 +101,29 @@ class HoobaToolkit(AbstractToolkit):
         self._headless = headless
 
     async def _open(self) -> None:
-        """Establish the API session only; the browser remains lazy."""
-        await self._api._ensure_session()
+        """Best-effort eager API session priming; never blocks tool dispatch.
+
+        ``auto_open=True`` makes ``ToolkitTool._execute`` call ``_ensure_open()`` (which
+        calls this method) BEFORE every tool's own body runs, including
+        ``hooba_recover_web_session`` — the one tool whose entire purpose is to recover
+        from a broken/expired API session via the Playwright browser fallback. If this
+        method let a login failure propagate, that recovery tool could never be reached
+        exactly when it is needed most: the auto_open gate would fail upstream of it on
+        every call, on every retry, forever. ``hooba_recover_web_session``'s own body
+        needs no API session at all (it only drives the browser adapter and then calls
+        ``self._api.set_cookies(...)``), and every other tool's ``_call``/``_call_raw``
+        already does its own per-request ``_ensure_session()`` + retry-once-on-401 (AC-1)
+        independently of this eager priming — so swallowing a failure here costs nothing
+        beyond deferring the (still-surfaced, per-tool) error to the first real API call.
+        """
+        try:
+            await self._api._ensure_session()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "HoobaToolkit: eager API session priming failed (%s); deferring to "
+                "per-request auth retry. Call hooba_recover_web_session to recover.",
+                exc,
+            )
 
     async def _close(self) -> None:
         """Close a started web adapter and release the toolkit lifecycle state."""
@@ -536,12 +558,20 @@ class HoobaToolkit(AbstractToolkit):
         wrapper_key = _LINE_WRAPPER[kind]
         existing_raw = await self._call("GET", self._lines_path(kind, entity_id))
         existing = [self._unwrap(item, wrapper_key) for item in (existing_raw or [])]
-        existing_signatures = {self._line_signature(item.get("name"), item.get("price", 0)) for item in existing}
+        # A `set` cannot represent "two existing lines share this signature" -- use a
+        # multiset (Counter) instead, so a draft with two genuinely distinct lines that
+        # happen to share the same (name, price) is never silently collapsed to one:
+        # each already-present occurrence is consumed at most once, and any additional
+        # occurrence in `lines` still gets posted as a new line.
+        remaining_existing_signatures = Counter(
+            self._line_signature(item.get("name"), item.get("price", 0)) for item in existing
+        )
         line_ids = [item["id"] for item in existing if item.get("id") is not None]
 
         for line in lines:
             signature = self._line_signature(line.name, line.price)
-            if signature in existing_signatures:
+            if remaining_existing_signatures[signature] > 0:
+                remaining_existing_signatures[signature] -= 1
                 continue
             tax_id = await self._resolve_tax(line.tax_code, operation_type)
             income_tax_id = await self._resolve_income_tax(line.income_tax_code)
@@ -550,7 +580,9 @@ class HoobaToolkit(AbstractToolkit):
             created_entity = self._unwrap(created, wrapper_key)
             if created_entity.get("id") is not None:
                 line_ids.append(created_entity["id"])
-            existing_signatures.add(signature)
+            # Do NOT add `signature` back to remaining_existing_signatures: this occurrence
+            # was just freshly posted, not matched against an existing line, so it must not
+            # suppress a THIRD identical-signature line later in this same `lines` pass.
 
         return DraftReceipt(
             kind=kind,
@@ -692,7 +724,13 @@ class HoobaToolkit(AbstractToolkit):
         try:
             statement = await parse_bbva_statement(path)
             engine = RuleEngine.load(self._rules_path)
-            importer = BbvaImporter(engine, self._find_contacts_raw, self._create_purchase_invoice)
+            # Scope the checkpoint manifest by account: two different Hooba accounts sharing
+            # one $PARROT_STATE_DIR must never collide on the same manifest file even if they
+            # import byte-identical statement content.
+            account_id = str(self.settings.account_id)
+            importer = BbvaImporter(
+                engine, self._find_contacts_raw, self._create_purchase_invoice, account_id=account_id
+            )
             planned, manifest, skipped = await importer.plan(statement, period=period)
 
             created: list[DraftReceipt] = []
@@ -708,7 +746,7 @@ class HoobaToolkit(AbstractToolkit):
                 created=created,
                 skipped=skipped,
                 reconciled=bool(summary["reconciled"]),
-                manifest_path=str(manifest_path_for(statement.digest)),
+                manifest_path=str(manifest_path_for(statement.digest, account_id)),
             )
             return self._ok(batch.model_dump(), OperationKind.DRAFT)
         except Exception as exc:  # noqa: BLE001

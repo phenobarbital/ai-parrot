@@ -4,7 +4,7 @@ import itertools
 
 import pytest
 
-from parrot_tools.hooba.bank import load_manifest, parse_bbva_statement
+from parrot_tools.hooba.bank import load_manifest, parse_bbva_statement, reconcile
 from parrot_tools.hooba.importer import BbvaImporter
 from parrot_tools.hooba.models import ContactMatch, DraftReceipt
 from parrot_tools.hooba.rules import RuleEngine
@@ -106,6 +106,36 @@ async def test_importer_apply_resumes_after_failure(tmp_path):
     assert len(resumed) == len(receipts) == 2
     assert len(resumed_manifest.completed) == 4
     assert next(calls) == 6
+
+
+async def test_manifest_row_count_is_debit_rows_not_whole_table(tmp_path):
+    """Regression: ImportManifest.row_count must be the debit-row universe plan()/apply()
+
+    actually walk (len(statement.rows)), never BbvaStatement.row_count (the separate,
+    whole-table count bbva.py uses only for its own ExcelLoader parser cross-check, which
+    also counts the credit rows the parser discards before they ever reach the rule
+    engine). The fixture workbook has 5 debit rows + 2 credit rows = 7 whole-table rows;
+    using the whole-table count here would make ``reconciled`` permanently False even
+    after every debit row is fully accounted for (drafted or rule-skipped).
+    """
+    statement = await parse_bbva_statement(build_bbva_workbook(tmp_path / "bbva.xlsx"))
+    assert statement.row_count == 7  # whole table: 5 debits + 2 credits
+    assert len(statement.rows) == 5  # debits only
+
+    async def find_contact(concept):
+        return []
+
+    async def create_draft(draft):
+        return _receipt(draft, 1)
+
+    importer = BbvaImporter(RuleEngine.load(), find_contact, create_draft)
+    planned, manifest, _skipped = await importer.plan(statement, period="2026-09")
+    assert manifest.row_count == len(statement.rows) == 5
+
+    await importer.apply(planned, manifest)
+
+    summary = reconcile(manifest, len(planned))
+    assert summary == {"rows_in": 5, "drafts_out": 4, "skipped": 1, "delta": 0, "reconciled": True}
 
 
 async def test_drafts_carry_row_id_as_correlation_key(tmp_path):

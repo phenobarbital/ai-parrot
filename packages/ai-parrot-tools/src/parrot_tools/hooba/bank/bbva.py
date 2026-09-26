@@ -204,8 +204,19 @@ async def parse_bbva_statement(path: Union[str, Path], *, sheet: Optional[str] =
     # ``header`` as the column row — the same semantics the preamble
     # requires, so no separate raw-pandas fallback is needed here (see the
     # Completion Note for the rationale).
+    #
+    # ExcelLoader._load_row_mode (parrot_loaders/excel.py) calls the blocking
+    # pd.read_excel() directly inside its own `async def`, with no internal
+    # offloading — a pre-existing gap in that shared loader, out of this
+    # feature's scope to change. Isolate the whole call in its own thread
+    # (with its own event loop, via asyncio.run) so this cross-check never
+    # blocks the caller's event loop either way (S10).
     loader = ExcelLoader(path, output_mode="row", header=statement.header_row, sheets=statement.sheet)
-    documents = await loader.load(path, split_documents=False)
+
+    def _load_documents_sync() -> list:
+        return asyncio.run(loader.load(path, split_documents=False))
+
+    documents = await asyncio.to_thread(_load_documents_sync)
 
     if len(documents) != statement.row_count:
         raise ValueError(

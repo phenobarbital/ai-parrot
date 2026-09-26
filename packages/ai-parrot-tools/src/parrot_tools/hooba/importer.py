@@ -40,22 +40,44 @@ class PlannedDraft(BaseModel):
 class BbvaImporter:
     """Plan and apply BBVA rows as Hooba purchase-invoice drafts."""
 
-    def __init__(self, engine: RuleEngine, find_contact: ContactFinder, create_draft: DraftCreator) -> None:
+    def __init__(
+        self,
+        engine: RuleEngine,
+        find_contact: ContactFinder,
+        create_draft: DraftCreator,
+        *,
+        account_id: Optional[str] = None,
+    ) -> None:
+        """``account_id`` scopes the checkpoint manifest so two different Hooba accounts
+
+        sharing one ``$PARROT_STATE_DIR`` never collide on the same manifest file even if
+        they import byte-identical statement content. Defaults to ``None`` (unscoped,
+        legacy path) for direct/test construction; ``HoobaToolkit`` always passes it.
+        """
         self._engine = engine
         self._find_contact = find_contact
         self._create_draft = create_draft
+        self._account_id = account_id
 
     async def plan(
         self, statement: BbvaStatement, *, period: str
     ) -> tuple[list[PlannedDraft], ImportManifest, list[dict]]:
         """Build drafts for rows not yet completed; returns (planned, manifest, skipped)."""
-        manifest = await asyncio.to_thread(load_manifest, statement.digest)
+        manifest = await asyncio.to_thread(load_manifest, statement.digest, self._account_id)
         if manifest is None:
             manifest = ImportManifest(
                 statement_digest=statement.digest,
                 period=period,
                 started_at=dt.datetime.now(dt.timezone.utc),
-                row_count=statement.row_count,
+                # ImportManifest.row_count is the reconciliation unit that reconcile()
+                # compares against drafts_out + skipped -- it MUST be the debit-row
+                # universe this importer actually walks (len(statement.rows)), never
+                # statement.row_count (the separate, whole-table count BbvaStatement
+                # uses only for its own ExcelLoader parser cross-check in bbva.py,
+                # which also counts credit rows the parser discards before they ever
+                # reach the rule engine). Using the whole-table count here would make
+                # `reconciled` permanently False for any statement containing credits.
+                row_count=len(statement.rows),
             )
 
         planned: list[PlannedDraft] = []
@@ -113,6 +135,6 @@ class BbvaImporter:
         for planned_draft in planned:
             receipt = await self._create_draft(planned_draft.draft)
             manifest.completed[planned_draft.row.row_id] = receipt.id
-            await asyncio.to_thread(write_manifest, manifest)
+            await asyncio.to_thread(write_manifest, manifest, self._account_id)
             receipts.append(receipt)
         return receipts

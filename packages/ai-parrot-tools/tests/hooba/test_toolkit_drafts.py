@@ -117,6 +117,49 @@ async def test_create_invoice_draft_resolves_ids_and_posts_lines():
     assert line_call[2]["incomeTaxId"] is None
 
 
+async def test_two_identical_lines_both_get_posted_not_deduped():
+    """Regression: a `set`-based signature check silently collapsed a second, genuinely
+
+    distinct line sharing the same (name, price) as another line -- either an existing
+    server-side line or another line in the same draft -- into "already present", losing
+    it. Two identical-looking lines in one draft must both be posted.
+    """
+    ids = iter([900, 901])
+    fake = FakeHooba(
+        {
+            ("GET", "/accounts/{accountId}/invoices"): [],
+            ("GET", "/accounts/{accountId}/contacts"): [{"id": 10, "legalName": "Acme Corp"}],
+            ("GET", "/accounts/{accountId}/invoice-series"): [
+                {"id": 7, "code": "A", "default": True, "defaultForSimplified": False},
+            ],
+            ("POST", "/accounts/{accountId}/invoices"): {"id": 501, "number": "F-1"},
+            ("GET", "/accounts/{accountId}/invoices/501/invoice-lines"): [],
+            ("GET", "/taxes"): [{"id": 55, "operationType": "sale", "percentage": 21}],
+            ("POST", "/accounts/{accountId}/invoices/501/invoice-lines"): lambda data: {
+                "invoiceLine": {"id": next(ids), "name": data["name"], "price": str(data["price"])}
+            },
+            ("GET", "/accounts/{accountId}/invoices/501"): {"id": 501, "state": "draft", "number": "F-1"},
+        }
+    )
+    toolkit = _make_toolkit(fake)
+
+    draft = InvoiceDraft(
+        contact_query="Acme Corp",
+        lines=[
+            InvoiceLineDraft(name="Consulting", price=Decimal("100.00")),
+            InvoiceLineDraft(name="Consulting", price=Decimal("100.00")),  # genuinely a second, identical line
+        ],
+    )
+    result = await toolkit.hooba_create_invoice_draft(draft)
+
+    assert result["status"] == "success"
+    receipt = result["result"]
+    assert set(receipt["line_ids"]) == {900, 901}  # BOTH lines posted, neither silently dropped
+
+    line_posts = [call for call in fake.calls if call[0] == "POST" and call[1].endswith("invoice-lines")]
+    assert len(line_posts) == 2
+
+
 async def test_create_draft_rejects_non_draft_state():
     fake = FakeHooba(
         {
