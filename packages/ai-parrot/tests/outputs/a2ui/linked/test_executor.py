@@ -1,4 +1,5 @@
 """FEAT-598 M5 — execute_sources / map_query_error (spec §4)."""
+
 from __future__ import annotations
 
 import asyncio

@@ -4,6 +4,7 @@ Fetches every ``parrot_data_sources`` entry through ``QuerySlugSource`` (tenant-
 principal), applies the declarative DSL off the event loop and returns per-source outcomes. Never raises
 for data errors: a failing source yields ``SourceOutcome(error=<stable code>)``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,7 +49,7 @@ class SourceOutcome(BaseModel):
     rows: list[dict[str, Any]] | None = None
     snapshot_at: datetime | None = None
     truncated: bool = False
-    error: str | None = None          # stable code from map_query_error (a key of ERROR_STATUS)
+    error: str | None = None  # stable code from map_query_error (a key of ERROR_STATUS)
     ignored_params: list[str] = Field(default_factory=list)
 
 
@@ -56,7 +57,9 @@ class ExecutionOutcome(BaseModel):
     """Outcomes of every source of one surface, keyed by dataModel root key."""
 
     outcomes: dict[str, SourceOutcome]
-    frames: dict[str, Any] = Field(default_factory=dict, exclude=True)  # key -> transformed pd.DataFrame (in-process only,
+    frames: dict[str, Any] = Field(
+        default_factory=dict, exclude=True
+    )  # key -> transformed pd.DataFrame (in-process only,
     #                                                                     never serialised); TASK-3785 hands these to
     #                                                                     build_linked_surface for dtype-aware axis checks
 
@@ -147,8 +150,9 @@ def _execution_order(sources: Mapping[str, LinkedDataSource]) -> tuple[list[str]
     return order, failed
 
 
-def _conditions_for(src: LinkedDataSource, overrides: Mapping[str, Any], *,
-                    max_fetch_rows: int) -> tuple[dict[str, Any], list[str]]:
+def _conditions_for(
+    src: LinkedDataSource, overrides: Mapping[str, Any], *, max_fetch_rows: int
+) -> tuple[dict[str, Any], list[str]]:
     """derive_conditions(request, locked) with non-locked overrides + {'querylimit': min(request.limit or cap, cap)}.
 
     ``derive_conditions`` never emits ``limit`` (TASK-3770: ``build_conditions`` folds it into the lane-time ``querylimit``),
@@ -194,8 +198,14 @@ async def execute_sources(
     for key in order:
         src = sources[key]
         conditions, ignored = _conditions_for(src, (param_overrides or {}).get(key, {}), max_fetch_rows=max_fetch_rows)
-        inner = QuerySlugSource(src.slug, prefetch_schema_enabled=False, tenant=src.tenant,
-                                is_multiquery=src.is_multiquery, multi_output=src.multi_output, principal=principal)
+        inner = QuerySlugSource(
+            src.slug,
+            prefetch_schema_enabled=False,
+            tenant=src.tenant,
+            is_multiquery=src.is_multiquery,
+            multi_output=src.multi_output,
+            principal=principal,
+        )
         source = AuthorizingDataSource(inner, guard, pctx_provider=lambda: pctx) if guard is not None else inner
         try:
             frame = await source.fetch(**conditions)
