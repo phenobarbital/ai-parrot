@@ -1,0 +1,7 @@
+{
+  "description": "inner equality join drops unmatched left rows while preserving left order",
+  "input": [{"store": "B", "visits": 5}, {"store": "A", "visits": 3}, {"store": "C", "visits": 1}],
+  "frames": {"targets": [{"store": "A", "target": 10}, {"store": "B", "target": 4}]},
+  "ops": [{"op": "join", "with": "targets", "how": "inner", "on": [{"left": "store", "right": "store"}]}],
+  "expected": [{"store": "B", "visits": 5, "target": 4}, {"store": "A", "visits": 3, "target": 10}]
+}
