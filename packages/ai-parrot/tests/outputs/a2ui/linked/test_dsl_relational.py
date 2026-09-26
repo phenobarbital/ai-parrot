@@ -12,7 +12,9 @@ from parrot.outputs.a2ui.linked.models import TransformSpec
 
 
 def _run(
-    rows: list[dict[str, object]], ops: list[dict[str, object]], frames: dict[str, list[dict[str, object]]] | None = None
+    rows: list[dict[str, object]],
+    ops: list[dict[str, object]],
+    frames: dict[str, list[dict[str, object]]] | None = None,
 ) -> list[dict[str, object]]:
     """Execute one relational transform with record-shaped sibling frames."""
     spec = TransformSpec.model_validate({"ops": ops})
