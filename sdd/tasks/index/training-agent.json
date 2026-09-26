@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-24T22:35:12+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-25T19:12:06+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root lane — creates parrot.knowledge.common; only task touching contracts/models.py and contracts/carding.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3697-common-provenance.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-24T23:20:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3697-common-provenance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3698",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: creates packages/ai-parrot/tests/knowledge/manuals/conftest.py, which every later manuals test module loads",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3698-manuals-test-support.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-24T23:04:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3698-manuals-test-support.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3699",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,9 +64,10 @@
       "parallel": true,
       "parallelism_notes": "imports Evidence/Extracted/FieldProvenance from TASK-3697 (knowledge/common/provenance.py); its tests live in tests/knowledge/manuals/ whose __init__/conftest TASK-3698 creates",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3699-manual-models-core.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-24T23:42:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3699-manual-models-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3700",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,9 +85,10 @@
       "parallel": true,
       "parallelism_notes": "modifies manuals/models.py created by TASK-3699 (same file — serialized) and uses its Step/MediaRef/Tip",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3700-manual-answer-models.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T00:04:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3700-manual-answer-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3701",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,9 +106,10 @@
       "parallel": true,
       "parallelism_notes": "domain.py lives in the parrot.knowledge.manuals package whose __init__.py TASK-3699 creates; YAML property names are checked against TASK-3699 model fields in test_domain.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3701-procedures-ontology-domain.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T00:04:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3701-procedures-ontology-domain.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3702",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,9 +127,10 @@
       "parallel": true,
       "parallelism_notes": "ABC signatures take ManualCard/ManualVersion/VerificationState from TASK-3699 (manuals/models.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3702-manual-catalog-abc.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T07:51:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3702-manual-catalog-abc.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3703",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -142,9 +148,10 @@
       "parallel": true,
       "parallelism_notes": "subclasses ManualCatalogStore and reuses SearchHit/UpsertResult/AnswerRecord from TASK-3702 (manuals/catalog.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3703-manual-catalog-postgres.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T09:14:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3703-manual-catalog-postgres.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3704",
@@ -153,16 +160,17 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency — additive edit to pageindex/pdf_to_markdown.py, the only task touching that file",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3704-pdf-page-images.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-24T23:24:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3704-pdf-page-images.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3705",
@@ -171,7 +179,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -181,9 +189,10 @@
       "parallel": true,
       "parallelism_notes": "calls extract_page_images/PageImage from TASK-3704 (pageindex/pdf_to_markdown.py); builds MediaRef/MediaLink from TASK-3699 (manuals/models.py) ; references manuals/carding.py (TASK-3707) only as a TYPE_CHECKING import of StepDraft — pair_figures duck-types `.figure_refs`, so no runtime dependency (spec §Worktree Strategy M6 note)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3705-manual-figures.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T07:51:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3705-manual-figures.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3706",
@@ -192,7 +201,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -201,9 +210,10 @@
       "parallel": true,
       "parallelism_notes": "modifies manuals/figures.py created by TASK-3705 (same file — serialized); reuses its FigureCandidate and capability rule",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3706-manual-callouts.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T09:14:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3706-manual-callouts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3707",
@@ -212,7 +222,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -222,9 +232,10 @@
       "parallel": true,
       "parallelism_notes": "calls quote_supported/validate_extracted/load_bodies from TASK-3697 (knowledge/common/validation.py); drafts use Extracted and ProcedureKind from TASK-3699 (manuals/models.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3707-manual-carding-drafts.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T09:39:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3707-manual-carding-drafts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3708",
@@ -233,7 +244,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -243,9 +254,10 @@
       "parallel": true,
       "parallelism_notes": "modifies manuals/carding.py created by TASK-3707 (same file — serialized) and consumes its CardingDraft; calls pair_figures from TASK-3705 (manuals/figures.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3708-manual-carding-assemble.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T13:35:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3708-manual-carding-assemble.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3709",
@@ -254,7 +266,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -263,9 +275,10 @@
       "parallel": true,
       "parallelism_notes": "produces MediaRef/MediaLink(video_segment) and reads Step/ManualCard from TASK-3699 (manuals/models.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3709-manual-video-alignment.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T09:39:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3709-manual-video-alignment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3710",
@@ -274,7 +287,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -284,9 +297,10 @@
       "parallel": true,
       "parallelism_notes": "uses Tip/Step/StepIdentity from TASK-3699 (manuals/models.py) and TECHNICIAN_COLLECTIONS/resolve_context from TASK-3701 (manuals/domain.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3710-manual-tips-relink.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T13:35:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3710-manual-tips-relink.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3711",
@@ -295,7 +309,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -304,9 +318,10 @@
       "parallel": true,
       "parallelism_notes": "config['catalog'] is a ManualCatalogStore and tests use InMemoryManualCatalog from TASK-3702 (manuals/catalog.py, tests/knowledge/_support/catalog.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3711-manual-datasource.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T13:54:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3711-manual-datasource.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3712",
@@ -315,7 +330,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -326,9 +341,10 @@
       "parallel": true,
       "parallelism_notes": "reads OWNED_*/resolve_context from TASK-3701 (manuals/domain.py); calls relink_tips/RelinkReport from TASK-3710 (manuals/tips.py); snapshots via ManualCardDataSource from TASK-3711 (manuals/datasource.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3712-manual-graph-loader.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T14:22:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3712-manual-graph-loader.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3713",
@@ -337,7 +353,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -349,9 +365,10 @@
       "parallel": true,
       "parallelism_notes": "orchestrates draft_manual/assemble_card from TASK-3708 (manuals/carding.py), extract/caption/upload/map_callouts from TASK-3706 (manuals/figures.py), align_video from TASK-3709 (manuals/video.py) and ManualGraphLoader from TASK-3712 (manuals/graph_loader.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3713-manual-library.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T16:16:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3713-manual-library.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3714",
@@ -360,7 +377,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -369,9 +386,10 @@
       "parallel": true,
       "parallelism_notes": "renders ManualCard/Tip/Applicability from TASK-3699 (manuals/models.py); FakeFileManager comes transitively from TASK-3698",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3714-manual-export-bundle.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T13:54:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3714-manual-export-bundle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3715",
@@ -380,16 +398,17 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency — only task touching models/responses.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3715-aimessage-url-fields.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-24T23:42:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3715-aimessage-url-fields.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3716",
@@ -398,7 +417,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -407,9 +426,10 @@
       "parallel": true,
       "parallelism_notes": "parse_response reads AIMessage.image_urls/media_urls added by TASK-3715 (models/responses.py); tests construct AIMessage with them",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3716-parser-media-urls.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T13:54:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3716-parser-media-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3717",
@@ -418,7 +438,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -427,9 +447,10 @@
       "parallel": true,
       "parallelism_notes": "reads ParsedResponse.image_urls from TASK-3716 (integrations/parser.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3717-teams-slack-image-urls.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T14:16:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3717-teams-slack-image-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3718",
@@ -438,7 +459,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -447,9 +468,10 @@
       "parallel": true,
       "parallelism_notes": "reads ParsedResponse.image_urls and calls download_to_temp from TASK-3716 (integrations/parser.py, integrations/media_download.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3718-telegram-image-urls.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T16:16:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3718-telegram-image-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3719",
@@ -458,7 +480,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -467,9 +489,10 @@
       "parallel": true,
       "parallelism_notes": "reads ParsedResponse.image_urls and falls back to download_to_temp from TASK-3716 (integrations/media_download.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3719-whatsapp-image-urls.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T16:16:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3719-whatsapp-image-urls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3720",
@@ -478,7 +501,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -488,9 +511,10 @@
       "parallel": true,
       "parallelism_notes": "binds pattern names/READ roles to TASK-3701 (procedures.ontology.yaml, manuals/domain.py); queries ManualCatalogStore from TASK-3702 (manuals/catalog.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3720-procedures-retrieval.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T16:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3720-procedures-retrieval.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3721",
@@ -499,7 +523,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -509,9 +533,10 @@
       "parallel": true,
       "parallelism_notes": "consumes RetrievalResult/RequestContext from TASK-3720 (parrot_tools/procedures/retrieval.py); builds StepView/ProcedureCitation from TASK-3700 (manuals/models.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3721-procedures-assembly.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3721-procedures-assembly.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3722",
@@ -520,7 +545,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -529,9 +554,10 @@
       "parallel": true,
       "parallelism_notes": "verifies AssembledProcedure from TASK-3721 (parrot_tools/procedures/assembly.py) ; references manuals/library.py (TASK-3713) only as the documented implementer of the local EvidenceReader protocol — verifier imports nothing from it, tests use a fake reader",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3722-procedures-verifier.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:37:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3722-procedures-verifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3723",
@@ -540,7 +566,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -550,9 +576,10 @@
       "parallel": true,
       "parallelism_notes": "wraps ProcedureVerifier from TASK-3722 (parrot_tools/procedures/verifier.py); presigns via figures.presign from TASK-3705 (manuals/figures.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3723-procedures-service.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:50:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3723-procedures-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3724",
@@ -561,7 +588,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -571,9 +598,10 @@
       "parallel": true,
       "parallelism_notes": "tools call ProceduresAnswerService from TASK-3723 (parrot_tools/procedures/service.py) and add_tip/retire_tip from TASK-3710 (manuals/tips.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3724-procedures-toolkit-guided.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:59:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3724-procedures-toolkit-guided.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3725",
@@ -582,7 +610,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -592,9 +620,10 @@
       "parallel": true,
       "parallelism_notes": "creates ProceduresToolkit from TASK-3724 (parrot_tools/procedures/toolkit.py); returns AIMessage(image_urls, media_urls) added by TASK-3715 (models/responses.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3725-procedures-agent.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T19:04:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3725-procedures-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3726",
@@ -603,7 +632,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -615,9 +644,10 @@
       "parallel": true,
       "parallelism_notes": "spike_figures/video drive ManualLibrary from TASK-3713 (manuals/library.py); spike_media drives the channel senders from TASK-3717/3718/3719 (msteams, telegram, whatsapp wrappers)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3726-manuals-spikes.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:08:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3726-manuals-spikes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3727",
@@ -626,7 +656,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -639,9 +669,10 @@
       "parallel": true,
       "parallelism_notes": "commands call ManualLibrary from TASK-3713, export_bundle from TASK-3714, PostgresManualCatalog from TASK-3703, ProcedureRetrieval.authorize from TASK-3720 and spikes from TASK-3726",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3727-manuals-click-cli.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:23:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3727-manuals-click-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3728",
@@ -650,7 +681,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -659,9 +690,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml (dependency manifest); registers parrot_tools.procedures.cli:manuals created by TASK-3727",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3728-manuals-cli-registration.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:34:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3728-manuals-cli-registration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3729",
@@ -670,7 +702,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -679,9 +711,10 @@
       "parallel": true,
       "parallelism_notes": "documents the command set defined by TASK-3727 (parrot_tools/procedures/cli.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3729-manuals-docs.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T18:35:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3729-manuals-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3730",
@@ -690,7 +723,7 @@
       "feature_id": "FEAT-601",
       "feature": "training-agent",
       "spec": "sdd/specs/training-agent.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -704,9 +737,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: live suites share the arango/pg_pool service fixtures; needs ProceduresAgent from TASK-3725, ManualLibrary from TASK-3713, PostgresManualCatalog from TASK-3703 and the channel senders from TASK-3717/3718/3719",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3730-manuals-integration-tests.md"
+      "started_at": "2026-09-24T22:55:29+00:00",
+      "completed_at": "2026-09-25T19:12:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3730-manuals-integration-tests.md",
+      "verification": "verified"
     }
   ]
 }

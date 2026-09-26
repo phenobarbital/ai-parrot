@@ -89,17 +89,22 @@ def main(argv: list[str] | None = None) -> int:
     for invocation in plan.invocations:
         result = subprocess.run(list(invocation.argv), cwd=worktree)
         is_core_escalation = any(target.reason == "core" for target in invocation.targets)
+        is_cap_escalation = any(target.reason == "escalated" for target in invocation.targets)
         if result.returncode != 0:
             exit_code = 1
-            if is_core_escalation:
-                # R14/AC9c: a red run on a core escalation re-arms it, even when the core file's
-                # content is unchanged — never leave a stale green ledger record covering it.
+            if is_core_escalation or is_cap_escalation:
+                # R14/AC9c: a red escalation run re-arms it, even when its driving file content is unchanged.
                 kernel.context.record_red_run(worktree, [invocation.distribution])
             continue
-        if is_core_escalation:
-            core_files = [hit.path for hit in plan.core_hits if invocation.distribution in hit.distributions]
-            if core_files:
-                kernel.context.record_green_escalation(worktree, [invocation.distribution], core_files)
+        if is_core_escalation or is_cap_escalation:
+            dist = invocation.distribution
+            core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
+            impact_files = list(plan.cap_hits.get(dist, ()))
+            impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
+            if core_files or impact_files:
+                kernel.context.record_green_escalation(
+                    worktree, [dist], core_files, impact_files=impact_files, impacted_hashes=impacted_hashes
+                )
     return exit_code
 
 

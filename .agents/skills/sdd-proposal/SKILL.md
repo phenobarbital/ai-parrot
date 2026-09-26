@@ -5,6 +5,14 @@ description: Convert a thin Jira issue, inline request, or notes file into a res
 
 # SDD Proposal
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-proposal procedure](../../../.claude/commands/sdd-proposal.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to run `sdd-proposal`, turn a ticket into a
 proposal, research a bug report before spec writing, or resume proposal
 research.
@@ -106,7 +114,7 @@ Budget profiles:
    - Set status to `discussion`, `review`, or `accepted` based on unresolved
      unknowns and explicit user acceptance.
 10. Commit:
-   - clear staging with `git reset HEAD`
+   - preserve unrelated staging; stop before committing if it is outside this run's scope
    - stage only `sdd/proposals/<slug>.proposal.md` and `sdd/state/<FEAT-ID>/`
    - verify cached names
    - commit `sdd: research-grounded proposal for <FEAT-ID> - <summary>`
@@ -132,4 +140,3 @@ Next: $sdd-spec <slug> or $sdd-brainstorm <slug>
 - `sdd/templates/synthesis.prompt.md`
 - `sdd/templates/finding.md`
 - `sdd/WORKFLOW.md`
-

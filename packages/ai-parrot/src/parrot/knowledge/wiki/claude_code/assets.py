@@ -60,6 +60,11 @@ PERMISSION_RULES: tuple[str, ...] = (
     "mcp__wikitoolkit__wiki_symbol_lookup",
     "mcp__wikitoolkit__wiki_code_outline",
     "mcp__wikitoolkit__wiki_blast_radius",
+    # FEAT-600: schema-plane MCP tools (read-only).
+    "mcp__wikitoolkit__wiki_schema_lookup",
+    "mcp__wikitoolkit__wiki_schema_search",
+    "mcp__wikitoolkit__wiki_schema_neighbors",
+    "mcp__wikitoolkit__wiki_schema_sources",
 )
 
 #: Filename of the slash command (under .claude/commands/).
@@ -185,6 +190,7 @@ def git_hook_block(root: Path) -> str:
         f"# (a worktree's .git is a file, never a directory).\n"
         f"if [ ! -f .git ]; then\n"
         f"    {wt_bin} upsert --changed --quiet >/dev/null 2>&1 || true\n"
+        f"    {wt_bin} schema ingest-ddl --changed --quiet >/dev/null 2>&1 || true\n"
         f"fi\n"
         f"{GIT_HOOK_END}\n"
     )

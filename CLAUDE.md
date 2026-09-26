@@ -338,6 +338,14 @@ blast <symbol>` (`wiki_blast_radius`) shows every symbol that
 transitively calls/extends/implements it — run this BEFORE editing a
 widely-used function or class to see what you might break.
 
+**Schema plane (FEAT-600).** SQL data models live in a separate overlay plane
+(`.parrot/schema/schema.db`) as `source:` / `schema:` / `table:<origin>/<schema>.<table>`
+pages. Before writing SQL, a repository, or a `DatabaseToolkit` subclass, read the
+table with `wiki_schema_lookup("<origin>:<schema>.<table>")` (DDL, columns, FKs,
+annotations, staleness), find join paths with `wiki_schema_neighbors`, and search
+names/comments with `wiki_schema_search`. Never introspect `information_schema`
+yourself when a page exists. Operator guide: `docs/wiki/schema-plane.md`.
+
 **Query discipline** (avoids the two most common ways the wiki
 "fails" — which are usually caller error, not missing coverage):
 

@@ -3,6 +3,7 @@
 Handles Slack Events API and slash commands with async processing,
 signature verification, and event deduplication.
 """
+
 import asyncio
 import json
 import logging
@@ -39,29 +40,29 @@ def convert_markdown_to_mrkdwn(text: str) -> str:
     - Horizontal rules: --- → (removed)
     """
     # Headings: ## Title → *Title*
-    text = re.sub(r'^#{1,6}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"*\1*", text, flags=re.MULTILINE)
 
     # Horizontal rules
-    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^[-*_]{3,}\s*$", "", text, flags=re.MULTILINE)
 
     # Bold: **text** or __text__ → *text*
-    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
-    text = re.sub(r'__(.+?)__', r'*\1*', text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+    text = re.sub(r"__(.+?)__", r"*\1*", text)
 
     # Italic: *text* → _text_  (after bold is handled)
     # Only match single asterisks not preceded/followed by another asterisk
-    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'_\1_', text)
+    text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"_\1_", text)
 
     # Links: [label](url) → <url|label>
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<\2|\1>', text)
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"<\2|\1>", text)
 
     # Bullet lists: leading '- ' or '* ' → '• '
-    text = re.sub(r'^[ \t]*[-*]\s+', '• ', text, flags=re.MULTILINE)
+    text = re.sub(r"^[ \t]*[-*]\s+", "• ", text, flags=re.MULTILINE)
 
     # Numbered lists: '1. item' → '1. item' (already fine in Slack)
 
     # Blockquotes: '> text' → Slack doesn't render these, just strip '>'
-    text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^>\s*", "", text, flags=re.MULTILINE)
 
     return text.strip()
 
@@ -85,10 +86,10 @@ class SlackAgentWrapper:
 
     def __init__(
         self,
-        agent: 'AbstractBot',
+        agent: "AbstractBot",
         config: SlackAgentConfig,
         app: web.Application,
-        oauth_manager: Optional['JiraOAuthManager'] = None,
+        oauth_manager: Optional["JiraOAuthManager"] = None,
     ):
         """Initialize the Slack wrapper.
 
@@ -106,7 +107,7 @@ class SlackAgentWrapper:
         self.config = config
         self.app = app
         self.logger = logging.getLogger(f"SlackWrapper.{config.name}")
-        self.conversations: Dict[str, 'ConversationMemory'] = {}
+        self.conversations: Dict[str, "ConversationMemory"] = {}
 
         # Event deduplication (prevents duplicate processing on Slack retries)
         self._dedup = EventDeduplicator(ttl_seconds=300)
@@ -127,13 +128,10 @@ class SlackAgentWrapper:
             # Register the OAuth notifier on the app so the callback route
             # can send DMs after the Atlassian consent redirect.
             if config.bot_token:
-                app["slack_jira_oauth_notifier"] = SlackOAuthNotifier(
-                    bot_token=config.bot_token
-                )
+                app["slack_jira_oauth_notifier"] = SlackOAuthNotifier(bot_token=config.bot_token)
             else:
                 self.logger.warning(
-                    "No bot_token configured — Slack DM notification after "
-                    "Jira OAuth will be skipped"
+                    "No bot_token configured — Slack DM notification after " "Jira OAuth will be skipped"
                 )
 
         # Route setup
@@ -176,7 +174,7 @@ class SlackAgentWrapper:
         self._background_tasks.clear()
         self.logger.info("SlackWrapper stopped for %s", self.config.name)
 
-    def _get_or_create_memory(self, session_id: str) -> 'ConversationMemory':
+    def _get_or_create_memory(self, session_id: str) -> "ConversationMemory":
         """Get or create conversation memory for a session."""
         if session_id not in self.conversations:
             self.conversations[session_id] = InMemoryConversation()
@@ -230,9 +228,7 @@ class SlackAgentWrapper:
         """
         # 0. Guard: reject immediately if signing_secret is not configured.
         if not self.config.signing_secret:
-            self.logger.error(
-                "Slack signing_secret not configured — rejecting request"
-            )
+            self.logger.error("Slack signing_secret not configured — rejecting request")
             return web.Response(status=401, text="Unauthorized")
 
         # 1. Reject Slack retries immediately
@@ -249,9 +245,7 @@ class SlackAgentWrapper:
         raw_body = await request.read()
 
         # 3. Verify signature BEFORE any processing
-        if not verify_slack_signature_raw(
-            raw_body, request.headers, self.config.signing_secret
-        ):
+        if not verify_slack_signature_raw(raw_body, request.headers, self.config.signing_secret):
             self.logger.warning("Slack signature verification failed")
             return web.Response(status=401, text="Unauthorized")
 
@@ -279,17 +273,13 @@ class SlackAgentWrapper:
         # 8. Handle Agents & AI Apps events if assistant mode is enabled
         if self._assistant_handler:
             if event_type == "assistant_thread_started":
-                task = asyncio.create_task(
-                    self._assistant_handler.handle_thread_started(event, payload)
-                )
+                task = asyncio.create_task(self._assistant_handler.handle_thread_started(event, payload))
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
                 return web.json_response({"ok": True})
 
             if event_type == "assistant_thread_context_changed":
-                task = asyncio.create_task(
-                    self._assistant_handler.handle_context_changed(event)
-                )
+                task = asyncio.create_task(self._assistant_handler.handle_context_changed(event))
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
                 return web.json_response({"ok": True})
@@ -298,9 +288,7 @@ class SlackAgentWrapper:
             if event_type == "message" and event.get("channel_type") == "im":
                 # Skip bot messages
                 if not event.get("subtype") and not event.get("bot_id"):
-                    task = asyncio.create_task(
-                        self._assistant_handler.handle_user_message(event)
-                    )
+                    task = asyncio.create_task(self._assistant_handler.handle_user_message(event))
                     self._background_tasks.add(task)
                     task.add_done_callback(self._background_tasks.discard)
                     return web.json_response({"ok": True})
@@ -353,19 +341,16 @@ class SlackAgentWrapper:
         """Handle Slack slash commands."""
         # Verify Slack request signature BEFORE processing (same as _handle_events).
         if not self.config.signing_secret:
-            self.logger.error(
-                "Slack signing_secret not configured — rejecting request"
-            )
+            self.logger.error("Slack signing_secret not configured — rejecting request")
             return web.Response(status=401, text="Unauthorized")
 
         raw_body = await request.read()
-        if not verify_slack_signature_raw(
-            raw_body, request.headers, self.config.signing_secret
-        ):
+        if not verify_slack_signature_raw(raw_body, request.headers, self.config.signing_secret):
             self.logger.warning("Slack signature verification failed on /commands")
             return web.Response(status=401, text="Unauthorized")
 
         import urllib.parse
+
         data = dict(urllib.parse.parse_qsl(raw_body.decode("utf-8")))
         channel = data.get("channel_id", "")
         user = data.get("user_id", "unknown")
@@ -379,10 +364,7 @@ class SlackAgentWrapper:
                 user,
                 channel,
             )
-            return web.json_response({
-                "response_type": "ephemeral",
-                "text": "Unauthorized."
-            })
+            return web.json_response({"response_type": "ephemeral", "text": "Unauthorized."})
 
         # Try the command router first (Jira commands and any future extensions).
         # Build the full payload that command handlers expect.
@@ -399,28 +381,19 @@ class SlackAgentWrapper:
         raw_command = (data.get("command") or "").lstrip("/")
         command_word = raw_command or (text.split()[0].lstrip("/") if text else "")
         if command_word:
-            router_result = await self._command_router.dispatch(
-                command_word, command_payload
-            )
+            router_result = await self._command_router.dispatch(command_word, command_payload)
             if router_result is not None:
                 return web.json_response(router_result)
 
         if text.lower() in {"help", "/help"}:
-            return web.json_response({
-                "response_type": "ephemeral",
-                "text": self._help_text()
-            })
+            return web.json_response({"response_type": "ephemeral", "text": self._help_text()})
         if text.lower() in {"clear", "/clear"}:
             self.conversations.pop(f"{channel}:{user}", None)
-            return web.json_response({
-                "response_type": "ephemeral",
-                "text": "Conversation cleared."
-            })
+            return web.json_response({"response_type": "ephemeral", "text": "Conversation cleared."})
         if text.lower() in {"commands", "/commands"}:
-            return web.json_response({
-                "response_type": "ephemeral",
-                "text": "Available commands: help, clear, commands"
-            })
+            return web.json_response(
+                {"response_type": "ephemeral", "text": "Available commands: help, clear, commands"}
+            )
 
         # Process in background
         task = asyncio.create_task(
@@ -435,10 +408,7 @@ class SlackAgentWrapper:
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
-        return web.json_response({
-            "response_type": "ephemeral",
-            "text": "Processing..."
-        })
+        return web.json_response({"response_type": "ephemeral", "text": "Processing..."})
 
     async def _safe_answer(
         self,
@@ -484,9 +454,7 @@ class SlackAgentWrapper:
                 self.logger.debug("Slack answer task cancelled")
                 raise
             except Exception as exc:
-                self.logger.error(
-                    "Unhandled error in Slack answer: %s", exc, exc_info=True
-                )
+                self.logger.error("Unhandled error in Slack answer: %s", exc, exc_info=True)
                 try:
                     await self._post_message(
                         channel,
@@ -544,9 +512,7 @@ class SlackAgentWrapper:
                 user_id=user,
             )
         except Exception as exc:
-            self.logger.error(
-                "Error generating Slack response: %s", exc, exc_info=True
-            )
+            self.logger.error("Error generating Slack response: %s", exc, exc_info=True)
             await self._post_message(
                 channel,
                 "Sorry, I encountered an error while processing your request.",
@@ -570,37 +536,43 @@ class SlackAgentWrapper:
 
         if parsed.text:
             mrkdwn_text = convert_markdown_to_mrkdwn(parsed.text)
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": mrkdwn_text[:3000]}
-            })
+            blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": mrkdwn_text[:3000]}})
 
         if parsed.has_code and parsed.code:
             lang = parsed.code_language or ""
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"```{lang}\n{parsed.code}\n```"[:3000]}
-            })
+            blocks.append(
+                {"type": "section", "text": {"type": "mrkdwn", "text": f"```{lang}\n{parsed.code}\n```"[:3000]}}
+            )
 
         if parsed.has_table and parsed.table_markdown:
-            blocks.append({
-                "type": "section",
-                "text": {"type": "mrkdwn", "text": f"```\n{parsed.table_markdown}\n```"[:3000]}
-            })
+            blocks.append(
+                {"type": "section", "text": {"type": "mrkdwn", "text": f"```\n{parsed.table_markdown}\n```"[:3000]}}
+            )
 
         for img in parsed.images:
             image_url = str(img)
-            if image_url.startswith("http://") or image_url.startswith("https://"):
-                blocks.append({
-                    "type": "image",
-                    "image_url": image_url,
-                    "alt_text": img.name,
-                })
+            if image_url.startswith(("http://", "https://")):
+                blocks.append(
+                    {
+                        "type": "image",
+                        "image_url": image_url,
+                        "alt_text": img.name,
+                    }
+                )
             else:
-                blocks.append({
-                    "type": "context",
-                    "elements": [{"type": "mrkdwn", "text": f"Image generated: `{img}`"}]
-                })
+                blocks.append(
+                    {"type": "context", "elements": [{"type": "mrkdwn", "text": f"Image generated: `{img}`"}]}
+                )
+
+        # Remote image URLs (FEAT-601 M12) — one image block each, uncapped like Path images
+        for n, url in enumerate(getattr(parsed, "image_urls", []) or [], start=1):
+            blocks.append({"type": "image", "image_url": url, "alt_text": f"Figure {n}"})
+
+        # Remote media URLs (FEAT-601 M12) — rendered as context links
+        media_urls = getattr(parsed, "media_urls", []) or []
+        if media_urls:
+            elements = [{"type": "mrkdwn", "text": f"<{url}|Video {n}>"} for n, url in enumerate(media_urls, start=1)]
+            blocks.append({"type": "context", "elements": elements})
 
         return blocks or [{"type": "section", "text": {"type": "mrkdwn", "text": "No content."}}]
 

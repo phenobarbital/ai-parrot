@@ -1,0 +1,706 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-608",
+  "mode": "enrichment",
+  "summary_oneline": "Add a parrot-native GoogleDriveFileManager (FileManagerInterface over Drive v3 via GoogleClient/aiogoogle) as a sibling of FEAT-603's Graph managers, registered as manager_type=\"gdrive\" and exposed through FileManagerToolkit plus a Google Drive toolkit.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/google.py",
+      "symbol": "GoogleClient",
+      "lines": "226-290, 650-772, 827-836, 1051-1075",
+      "role": "existing Google auth + aiogoogle transport (service_account / user creds, Redis+file session cache, execute_api_call, interactive_login); get_drive_client() returns only a config dict",
+      "evidence": [
+        "F001",
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/interfaces/google.py",
+      "symbol": "CalendarClient",
+      "lines": "160-224",
+      "role": "precedent for promoting a get_*_client() config dict into a live per-service wrapper (FEAT-453)",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/google/base.py",
+      "symbol": "GoogleBaseTool._get_client",
+      "lines": "82-135",
+      "role": "auth-mode branch table (service_account / user / cached) the manager's connect() must reproduce, analogue of O365Tool._get_client in FEAT-603",
+      "evidence": [
+        "F003"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/navigator/utils/file/abstract.py",
+      "symbol": "FileManagerInterface",
+      "lines": "36-296",
+      "role": "the contract to implement: 9 abstract coroutines, 4 optional folder/rename hooks, find_files default",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/navigator/utils/file/gcs.py",
+      "symbol": "GCSFileManager",
+      "lines": "45-149, 507-543",
+      "role": "upstream Google-credential manager; fixes manager_name '<x>file', prefix and setup()/handle_file conventions (not reusable as base: bucket model, sync SDK)",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/graph.py",
+      "symbol": "GraphDriveFileManager",
+      "lines": "93-155, 213-361, 517-1006",
+      "role": "reference surface to mirror (lifecycle, extensions list_entries/find_entries/upload_file_from_bytes/create_sharing_link/upload_files/download_files, 413 serving guard); Microsoft-specific, so Drive is a sibling class",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/sharepoint.py",
+      "symbol": "SharePointFileManager",
+      "lines": "12-57",
+      "role": "thin concrete manager pattern (manager_name, client_class, __init__, _build_client, _resolve_drive_id)",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/batch.py",
+      "symbol": "BatchItemResult / BatchSummary",
+      "lines": "1-71",
+      "role": "backend-neutral batch result models to reuse unchanged",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/__init__.py",
+      "symbol": "_LAZY_MANAGERS",
+      "lines": "37-43",
+      "role": "registration edit site #1 (lazy re-export so no SDK loads at import)",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot-tools/src/parrot_tools/file/__init__.py",
+      "symbol": "__getattr__",
+      "lines": "21-27",
+      "role": "registration edit site #2 (parity shim)",
+      "evidence": [
+        "F010"
+      ]
+    },
+    {
+      "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/tools/filemanager.py",
+      "symbol": "ManagerType / FileManagerFactory._PARROT_NATIVE / _DRIVE_RELATIVE_BACKENDS / _OP_TO_METHOD",
+      "lines": "27-52, 259, 704-718, 862-881",
+      "role": "registration edit sites #3-#6 (literal, factory map, drive-relative path sets on tool + toolkit); find/batch ops already generic",
+      "evidence": [
+        "F011"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/pyproject.toml",
+      "symbol": "[project.optional-dependencies]",
+      "lines": "396-425, 599-604, 882",
+      "role": "packaging: aiogoogle pinned ==5.17.0 inside agents bundles, google extra is GenAI-oriented, msgraph extra (worktree) is the precedent for a new gdrive extra",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "GOOGLE_CREDENTIALS_FILE",
+      "lines": "430-435",
+      "role": "default credential file the manager falls back to",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": ".venv/lib/python3.12/site-packages/aiogoogle/resource.py",
+      "symbol": "Method.__call__ (upload_file / pipe_from / download_file / pipe_to)",
+      "lines": "394-397, 563-663",
+      "role": "media transport for Drive files.create/update/get(alt=media); resumable branch only partially wired",
+      "evidence": [
+        "F013"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/google/calendar.py",
+      "symbol": "GoogleCalendarToolkit",
+      "lines": "74",
+      "role": "toolkit precedent under parrot_tools.google for a GoogleDriveToolkit",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/google/__init__.py",
+      "symbol": "__all__",
+      "lines": "1-24",
+      "role": "export list to extend",
+      "evidence": [
+        "F014"
+      ]
+    },
+    {
+      "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/tests/interfaces/_graph_fakes.py",
+      "symbol": "FakeGraphClient",
+      "lines": "",
+      "role": "fake-client harness pattern to mirror as _gdrive_fakes.py (fake Aiogoogle/discovered drive API)",
+      "evidence": [
+        "F014",
+        "F016"
+      ]
+    },
+    {
+      "path": "sdd/specs/sharepoint-filemanager.spec.md",
+      "symbol": "§3 modules / §5 AC1-AC24",
+      "lines": "374-389, 941-964",
+      "role": "spec shape and acceptance-criteria template to mirror",
+      "evidence": [
+        "F016"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "FEAT-603 is not merged into dev: graph.py, batch.py, the _PARROT_NATIVE map and the widened ManagerType exist only on branch feat-FEAT-603-sharepoint-filemanager (dirty, review in flight).",
+      "evidence": [
+        "F015",
+        "F011"
+      ],
+      "implication": "FEAT-608 must be sequenced after FEAT-603 lands on dev (its worktree must be cut from a dev that contains FEAT-603); spec §6 anchors must be re-verified then."
+    },
+    {
+      "statement": "GraphDriveFileManager is Microsoft-Graph-specific end to end (msgraph builders, @odata.nextLink, createLink, Graph host allow-list).",
+      "evidence": [
+        "F007"
+      ],
+      "implication": "GoogleDriveFileManager subclasses FileManagerInterface directly (sibling, not subclass) and re-implements the same extension surface; only batch.py is shared."
+    },
+    {
+      "statement": "DriveEntry and GraphFileManagerError live inside graph.py, which imports msgraph.",
+      "evidence": [
+        "F007",
+        "F009"
+      ],
+      "implication": "Either relocate DriveEntry to a backend-neutral module (graph.py re-exports it) or define a Drive-specific entry model; importing graph.py from gdrive.py is not acceptable (SDK leak)."
+    },
+    {
+      "statement": "parrot.interfaces.google imports selenium, webdriver_manager, playwright and redis at module import and GoogleClient.__init__ eagerly creates an aioredis client.",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "gdrive.py must be a lazy entry in both shims (no aiogoogle/selenium/redis in sys.modules after `import parrot.interfaces.file`), and the manager must construct GoogleClient only in connect()."
+    },
+    {
+      "statement": "GoogleClient.execute_api_call opens a new Aiogoogle session and re-runs discovery on every call.",
+      "evidence": [
+        "F002"
+      ],
+      "implication": "The manager needs one long-lived Aiogoogle session + discovered `drive` API per manager (a DriveClient wrapper like CalendarClient), otherwise listings, chunked uploads and batches pay discovery per call."
+    },
+    {
+      "statement": "The three Google auth modes are service_account / user (interactive) / cached, with per-mode branches already defined in GoogleBaseTool._get_client.",
+      "evidence": [
+        "F003"
+      ],
+      "implication": "connect() reproduces that table (AC3 analogue: one credential load per manager) and adopt_client() accepts an already-initialised GoogleClient from GoogleBaseTool."
+    },
+    {
+      "statement": "FileManagerInterface is path-addressed (list_files(path), upload_file(src, destination)) while the Drive API only addresses items by id and allows same-name siblings.",
+      "evidence": [
+        "F004",
+        "F002"
+      ],
+      "implication": "A path→id resolver (segment walk over files.list with a per-manager cache) and an explicit conflict policy on upload/rename are required design elements."
+    },
+    {
+      "statement": "aiogoogle supports media upload/download through upload_file / pipe_from / download_file / pipe_to kwargs with aiofiles chunking; resumable uploads are modeled but only partially wired.",
+      "evidence": [
+        "F013"
+      ],
+      "implication": "Small uploads and streaming downloads come for free; large-file resumable sessions must be verified at spec time and may need a direct aiohttp resumable path (validated URL, no token in logs) as FEAT-603 did."
+    },
+    {
+      "statement": "FileManagerToolkit find/batch_upload/batch_download ops are already generic with a single-op fallback; _DRIVE_RELATIVE_BACKENDS gates the default_output_dir join.",
+      "evidence": [
+        "F011",
+        "F009"
+      ],
+      "implication": "No toolkit operation changes; only the six registration edit sites plus optional native upload_files/download_files on the manager."
+    },
+    {
+      "statement": "No Drive tool, loader or integration exists; the Google tools that exist bypass GoogleClient (googleapiclient.discovery.build) and only GoogleCalendarToolkit/LyriaToolkit are toolkits.",
+      "evidence": [
+        "F006",
+        "F014"
+      ],
+      "implication": "There is nothing to refactor (no M7/M8 analogue); a GoogleDriveToolkit is net-new and should follow GoogleCalendarToolkit's shape."
+    },
+    {
+      "statement": "aiogoogle is pinned ==5.17.0 inside the agents bundles while 5.19.0 is installed; no core extra covers Google Workspace.",
+      "evidence": [
+        "F012"
+      ],
+      "implication": "Add a `gdrive` extra (aiogoogle>=5.17,<6, aiofiles) included in `all`, mirroring the msgraph extra."
+    },
+    {
+      "statement": "TID251 forbids httpx/requests; aiogoogle's transport is aiohttp.",
+      "evidence": [
+        "F013",
+        "F016"
+      ],
+      "implication": "aiogoogle is admissible; any direct HTTP (resumable upload URL) must use aiohttp with the same URL-validation discipline as AC21."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "new": [
+      {
+        "item": "packages/ai-parrot/src/parrot/interfaces/file/gdrive.py — GoogleDriveFileManager(FileManagerInterface) + GoogleDriveFileManagerError; locator = root folder (id or path) and optional shared-drive id; auth kwargs credentials/auth_mode/scopes/user_creds_cache_file; extensions list_entries, find_files (server-side q=), upload_file_from_bytes, create_sharing_link, upload_files/download_files (BatchItemResult), setup()/handle_file with the 413 guard; manager_name \"gdrivefile\"",
+        "evidence": [
+          "F004",
+          "F007",
+          "F008",
+          "F009"
+        ]
+      },
+      {
+        "item": "DriveClient wrapper (one Aiogoogle session + discovered drive v3 API per manager) — either promoted from GoogleClient.get_drive_client() like CalendarClient, or private to gdrive.py",
+        "evidence": [
+          "F002"
+        ]
+      },
+      {
+        "item": "packages/ai-parrot-tools/src/parrot_tools/google/drive.py — GoogleDriveToolkit(AbstractToolkit) delegating to the manager (list / search / download / upload / share [/ export]); exported from parrot_tools.google",
+        "evidence": [
+          "F014",
+          "F003"
+        ]
+      },
+      {
+        "item": "tests: packages/ai-parrot/tests/interfaces/_gdrive_fakes.py (fake Aiogoogle + drive resource with scripted pages/errors), test_gdrive_filemanager.py, test_gdrive_filemanager_live.py (@pytest.mark.live, env-gated), packages/ai-parrot-tools/tests/google/test_drive_toolkit.py",
+        "evidence": [
+          "F014",
+          "F016"
+        ]
+      },
+      {
+        "item": "docs/interfaces/gdrive-filemanager.md + docs/integrations/google-oauth2.md (scopes, service-account vs OAuth, shared-drive permissions)",
+        "evidence": [
+          "F014"
+        ]
+      },
+      {
+        "item": "packages/ai-parrot/pyproject.toml — `gdrive` extra, added to `all`",
+        "evidence": [
+          "F012"
+        ]
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/interfaces/file/__init__.py",
+        "symbol": "_LAZY_MANAGERS / __all__",
+        "change": "add GoogleDriveFileManager → parrot.interfaces.file.gdrive",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot-tools/src/parrot_tools/file/__init__.py",
+        "symbol": "__getattr__ / __all__",
+        "change": "widen lazy branch with GoogleDriveFileManager (dev path: packages/ai-parrot-tools/src/parrot_tools/file/__init__.py once FEAT-603 merges)",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/tools/filemanager.py",
+        "symbol": "ManagerType, FileManagerFactory._PARROT_NATIVE, FileManagerTool._DRIVE_RELATIVE_BACKENDS, FileManagerToolkit._DRIVE_RELATIVE_BACKENDS, docstrings",
+        "change": "add key \"gdrive\"",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/interfaces/google.py",
+        "symbol": "GoogleClient.get_drive_client",
+        "change": "(optional, U5) promote to return a live DriveClient; additive otherwise",
+        "evidence": [
+          "F002",
+          "F006"
+        ]
+      },
+      {
+        "path": ".claude/worktrees/feat-FEAT-603-sharepoint-filemanager/packages/ai-parrot/src/parrot/interfaces/file/graph.py",
+        "symbol": "DriveEntry",
+        "change": "(design choice) relocate DriveEntry to a backend-neutral module and re-export from graph.py",
+        "evidence": [
+          "F007"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/google/__init__.py",
+        "symbol": "__all__",
+        "change": "export GoogleDriveToolkit",
+        "evidence": [
+          "F014"
+        ]
+      }
+    ],
+    "untouched": [
+      "navigator.utils.file (GCSFileManager, S3FileManager, FileServingExtension) — upstream, unchanged",
+      "GraphDriveFileManager behaviour, SharePointFileManager, OneDriveFileManager and all FEAT-603 O365 tools",
+      "GoogleClient auth paths (interactive_login, Redis/file cache), GoogleBaseTool, existing Google Search/Places/Routes/Calendar/Lyria tools",
+      "FileManagerToolkit operations and _OP_TO_METHOD (find/batch ops already generic)",
+      "parrot_loaders (no Drive loader is added in v1)"
+    ],
+    "patterns": [
+      {
+        "pattern": "thin concrete manager: manager_name + client_class + __init__ + _build_client + _resolve_drive_id (AC2 analogue: assert no other overrides)",
+        "evidence": [
+          "F008"
+        ]
+      },
+      {
+        "pattern": "lazy shim registration + test_no_cloud_sdk_leak_on_import extension (AC10 analogue for aiogoogle/selenium/redis)",
+        "evidence": [
+          "F010"
+        ]
+      },
+      {
+        "pattern": "_PARROT_NATIVE map + ValueError listing all keys (AC11 analogue: seven keys)",
+        "evidence": [
+          "F011"
+        ]
+      },
+      {
+        "pattern": "batch engine contract: input-order BatchItemResult, never raise per item, bounded concurrency, retry 429/5xx with Retry-After, skip remainder on auth failure (AC8)",
+        "evidence": [
+          "F009",
+          "F016"
+        ]
+      },
+      {
+        "pattern": "auth branch table copied from the tool base (GoogleBaseTool._get_client) into connect(); adopt_client() for an already-authenticated client (AC3)",
+        "evidence": [
+          "F003",
+          "F007"
+        ]
+      },
+      {
+        "pattern": "fake-client harness + env-gated live suite + signature-snapshot test (M0/M10/AC19)",
+        "evidence": [
+          "F014",
+          "F016"
+        ]
+      },
+      {
+        "pattern": "manager_name '<backend>file' and prefix normalisation as in GCSFileManager/S3",
+        "evidence": [
+          "F005"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Sequencing on FEAT-603: edit sites and shared models are not on dev",
+        "impact": "spec anchors invalid until merge; worktree cut too early would conflict",
+        "mitigation": "gate /sdd-task on FEAT-603 merge; re-verify §6 then",
+        "evidence": [
+          "F015"
+        ]
+      },
+      {
+        "risk": "Path semantics over an id-addressed store with duplicate names",
+        "impact": "ambiguous list/upload/rename results",
+        "mitigation": "segment resolver with cache, first-match by modifiedTime desc, conflict_behavior replace|fail|rename on upload (U2)",
+        "evidence": [
+          "F004",
+          "F002"
+        ]
+      },
+      {
+        "risk": "Heavy transitive imports in parrot.interfaces.google",
+        "impact": "importing the file shim would load selenium/playwright/redis",
+        "mitigation": "lazy shim entry + client built in connect(); leak test",
+        "evidence": [
+          "F002",
+          "F010"
+        ]
+      },
+      {
+        "risk": "aiogoogle resumable uploads partially wired",
+        "impact": "files > ~5 MB may fail or buffer",
+        "mitigation": "spec-time spike; fallback to direct aiohttp resumable session with URL validation",
+        "evidence": [
+          "F013"
+        ]
+      },
+      {
+        "risk": "Service-account ownership / storage-quota limits on My Drive",
+        "impact": "uploads to a SA's own Drive may be rejected in production tenants",
+        "mitigation": "target shared drives / shared folders / domain-wide delegation `subject` (U1)",
+        "evidence": []
+      },
+      {
+        "risk": "aiogoogle exact pin ==5.17.0 vs installed 5.19.0",
+        "impact": "resolver conflicts when adding the extra",
+        "mitigation": "new extra uses >=5.17,<6; leave agents bundles untouched or relax in the same PR",
+        "evidence": [
+          "F012"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "No Google Drive manager, tool, loader or integration exists anywhere in the repo.",
+      "evidence": [
+        "F001",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "wiki query + repo-wide grep both return only the scope table in google.py."
+    },
+    {
+      "id": "C2",
+      "statement": "GoogleClient already provides service-account and OAuth-user auth over aiogoogle with Redis/file session caching, but no Drive wrapper.",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "wiki page content read: initialize/execute_api_call/interactive_login; get_drive_client returns a dict."
+    },
+    {
+      "id": "C3",
+      "statement": "GoogleBaseTool._get_client is the auth-mode branch table (service_account/user/cached) to reproduce in the manager.",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of the branch code."
+    },
+    {
+      "id": "C4",
+      "statement": "The contract to implement is navigator's FileManagerInterface (9 abstract + 4 optional hooks + find_files default).",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of abstract.py in navigator-api 4.0.0."
+    },
+    {
+      "id": "C5",
+      "statement": "GraphDriveFileManager cannot serve as the Drive base class; the Drive manager is a sibling that reuses only batch.py.",
+      "evidence": [
+        "F007",
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "graph.py surface is msgraph-specific; batch.py docstring declares itself backend-neutral."
+    },
+    {
+      "id": "C6",
+      "statement": "Registration requires two shim entries plus four edit sites in parrot/tools/filemanager.py, following the _PARROT_NATIVE pattern.",
+      "evidence": [
+        "F010",
+        "F011"
+      ],
+      "confidence": "high",
+      "reasoning": "line-level grep of the worktree file."
+    },
+    {
+      "id": "C7",
+      "statement": "FEAT-603 is not merged into dev; its worktree is ahead and dirty.",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high",
+      "reasoning": "empty dev git log on interfaces/file/, merge-base ≠ origin/dev, porcelain shows 4 modified files."
+    },
+    {
+      "id": "C8",
+      "statement": "aiogoogle 5.19 supports chunked media upload/download via method kwargs; resumable uploads are only partially wired.",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "medium",
+      "reasoning": "grep confirms kwargs and streaming helpers; the resumable branch was not read end-to-end."
+    },
+    {
+      "id": "C9",
+      "statement": "Importing parrot.interfaces.google loads selenium, playwright, webdriver_manager and redis; the manager must be lazy and defer client construction.",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high",
+      "reasoning": "import block visible in the wiki page content."
+    },
+    {
+      "id": "C10",
+      "statement": "FileManagerToolkit's find/batch ops are generic and need no change for a new backend.",
+      "evidence": [
+        "F011",
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "_OP_TO_METHOD already lists them; spec AC12 documents the single-op fallback."
+    },
+    {
+      "id": "C11",
+      "statement": "No core extra covers Google Workspace; aiogoogle is pinned ==5.17.0 in bundles while 5.19.0 is installed.",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "grep of both pyproject files and `importlib.metadata.version`."
+    },
+    {
+      "id": "C12",
+      "statement": "Drive addresses files by id and allows duplicate sibling names, so a path resolver and a conflict policy are required.",
+      "evidence": [
+        "F002",
+        "F004"
+      ],
+      "confidence": "medium",
+      "reasoning": "Interface is path-based (F004); the id-addressed Drive model is external API knowledge, not repo evidence."
+    },
+    {
+      "id": "C13",
+      "statement": "FEAT-603's harness / live-suite / docs / AC structure transfers directly to Drive minus the client-port and tool-refactor modules.",
+      "evidence": [
+        "F014",
+        "F016"
+      ],
+      "confidence": "high",
+      "reasoning": "module table and AC list read; test and doc files listed in the worktree."
+    },
+    {
+      "id": "C14",
+      "statement": "GoogleClient.get_drive_client() has no callers and can be promoted to a live DriveClient exactly as get_calendar_client() was in FEAT-453.",
+      "evidence": [
+        "F002",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "CalendarClient precedent in the same file; repo-wide grep finds no Drive consumers."
+    },
+    {
+      "id": "C15",
+      "statement": "Service accounts may be unable to own/upload files in their own My Drive under current Google quota rules, making shared drives or delegation the practical target.",
+      "evidence": [],
+      "confidence": "low",
+      "reasoning": "External platform behaviour; nothing in the repo confirms or denies it."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Which Drive targets must v1 support: only the authenticated principal's My Drive, shared drives (driveId + supportsAllDrives), and/or domain-wide delegation (service account impersonating a user via `subject`)?",
+      "blocks_claims": [
+        "C15"
+      ],
+      "plausible_answers": [
+        "My Drive of the principal only (simplest; SA uploads may hit quota limits)",
+        "My Drive + shared drives via an optional shared_drive_id (recommended)",
+        "All three incl. domain-wide delegation `subject=`"
+      ],
+      "ask_user": true,
+      "user_answer": "My Drive + shared drives (optional shared_drive_id; supportsAllDrives). Domain-wide delegation out of scope for v1.",
+      "resolved_at": "2026-09-25"
+    },
+    {
+      "id": "U2",
+      "question": "How should paths map onto Drive's id-addressed model with duplicate names allowed?",
+      "blocks_claims": [
+        "C12"
+      ],
+      "plausible_answers": [
+        "Path-based like S3/Graph: segment resolver + cache, first match, upload conflict_behavior replace|fail|rename (recommended)",
+        "Id-based only: keys are Drive file ids, root is a folder id",
+        "Hybrid: paths by default, `id:<fileId>` accepted anywhere a path is"
+      ],
+      "ask_user": true,
+      "user_answer": "Path-based like S3/Graph: segment resolver + per-manager cache, deterministic first match, upload conflict_behavior replace|fail|rename.",
+      "resolved_at": "2026-09-25"
+    },
+    {
+      "id": "U3",
+      "question": "What should get_file_url() return by default on Drive?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "webViewLink without touching permissions (only viewers with existing access can open it)",
+        "create a `domain` reader permission then webViewLink (organization-wide, mirrors FEAT-603 default)",
+        "create an `anyone` reader permission (public link) — riskiest"
+      ],
+      "ask_user": true,
+      "user_answer": "webViewLink with no permission change; explicit sharing via create_sharing_link(scope, role, expiry, email_address).",
+      "resolved_at": "2026-09-25"
+    },
+    {
+      "id": "U4",
+      "question": "Which agent-facing surface is in scope?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "Only FileManagerToolkit(manager_type=\"gdrive\") / FileManagerTool",
+        "Also a GoogleDriveToolkit under parrot_tools.google (list/search/download/upload/share) like GoogleCalendarToolkit (recommended)",
+        "Also Workspace export (Docs/Sheets/Slides → PDF/DOCX/XLSX via files.export) in the toolkit"
+      ],
+      "ask_user": true,
+      "user_answer": "FileManagerToolkit(manager_type='gdrive') + net-new GoogleDriveToolkit under parrot_tools.google; files.export out of scope.",
+      "resolved_at": "2026-09-25"
+    },
+    {
+      "id": "U5",
+      "question": "Should GoogleClient.get_drive_client() be promoted to return a live DriveClient (hard cut of the config-dict return, as FEAT-453 did for Calendar)?",
+      "blocks_claims": [
+        "C14"
+      ],
+      "plausible_answers": [
+        "Yes — promote (no callers exist; keeps one Aiogoogle session per manager) [default assumed]",
+        "No — keep the dict; put the wrapper privately in gdrive.py"
+      ],
+      "ask_user": false,
+      "user_answer": "Defaulted: promote GoogleClient.get_drive_client() to return a live DriveClient (no callers).",
+      "resolved_at": "2026-09-25"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the architecture is fixed by the FEAT-603 precedent (sibling manager + same registration seams); the unknowns are parameter choices, not architectural forks — resolve U1–U4 then write the spec, sequenced after FEAT-603 merges."
+  },
+  "overall_confidence": "medium",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013",
+      "F014",
+      "F015",
+      "F016"
+    ],
+    "findings_unused": [],
+    "notes": "overall_confidence = min(median claims=high, localization=high, scope=medium) = medium; scope is medium because U1/U2 change the manager's public constructor and path semantics, and FEAT-603 (the dependency) is unmerged. Spec-time follow-ups (not user questions): read aiogoogle's ResumableUpload branch end to end; confirm Drive `files.list` q-syntax for name/parents/mimeType and `permissions.create` expirationTime support per role."
+  }
+}

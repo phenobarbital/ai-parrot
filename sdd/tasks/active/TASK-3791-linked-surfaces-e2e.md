@@ -123,8 +123,10 @@ class _MiniBot(InfographicAuthoringMixin)  # L387 — real publish_surface bound
 - `pytestmark = pytest.mark.asyncio` (suite convention).
 - Count executions: the fake core `QS` increments a counter on every `query()`; assertions pin
   **1** for the tool, **1** for a no-snapshot save, **0** for any `GET` (JSON and HTML), **1** per refresh.
-- The fake guard must record every `(tenant, slug, action)` it is asked about so the test proves the owner's
-  `slug:execute` was asserted on save and refresh (AC14/AC18); its interface is whatever TASK-3781's
+- The fake guard must record every `authorize_source(ctx, resources)` call — i.e. each
+  `(resources.source_type, resources.source_id)` — so the test proves the owner check ran on save and
+  refresh (AC14/AC18). Confirmed naming (2026-09-26, TASK-3781): `source_type="query_slug"`,
+  `source_id=f"{tenant or 'public'}:{slug}"`. Its interface is whatever TASK-3781's
   `LinkedSurfaceService` calls (read `linked/service.py`).
 - HTML leg: `pytest.importorskip("parrot.outputs.a2ui_renderers.interactive_html", …)` exactly like
   `test_ui_surfaces_e2e.py:446-449`.
@@ -200,7 +202,10 @@ def fake_core_qs(monkeypatch):
 @pytest.fixture
 def allow_guard():
     """Recording allow-all guard shaped as LinkedSurfaceService expects (read linked/service.py, TASK-3781)."""
-    # FILL IN: object recording (tenant, slug, action) and allowing everything — bounded by AC14/AC18
+    # FILL IN: object with async authorize_source(ctx, resources) recording
+    # (resources.source_type, resources.source_id) and allowing everything — confirmed naming is
+    # source_type="query_slug", source_id=f"{tenant or 'public'}:{slug}" (TASK-3781 § Does NOT Exist) —
+    # bounded by AC14/AC18
     raise NotImplementedError
 
 
@@ -223,7 +228,9 @@ class TestLinkedSurfacesE2E:
         # surface_store=store, user_id="owner-1"); record.refreshable is True (AC8); POST …/refresh via _handler(app,
         # match_info={"surface_id": …}, path=".../refresh", json_body={"params": {}}, user_id="owner-1") → 200,
         # executions == 2 (publish reused the tool snapshot) or 3 — pin the value TASK-3788 documents; snapshot_at advanced;
-        # allow_guard saw ("slug:execute", slug) with tenant None — bounded by AC8/AC14/AC18
+        # allow_guard saw authorize_source with ("query_slug", f"public:{slug}") — tenant None maps to
+        # "public" in the confirmed source_id (TASK-3781); QuerySource's own principal action
+        # "slug:execute" (TASK-3779, qs.py:224-231) is a DIFFERENT layer, not asserted here — bounded by AC8/AC14/AC18
         raise NotImplementedError
 
     async def test_linked_surface_no_snapshot_persist_roundtrip(self, app, store, fake_core_qs, patched_catalog):

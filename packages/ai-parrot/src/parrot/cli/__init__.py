@@ -123,6 +123,8 @@ cli._lazy_commands = {
     "gemini": "parrot.knowledge.wiki.google.cli",
     "generate-keys": "parrot.cli.generate_keys",
     "devloop": "parrot.cli.devloop",
+    # FEAT-601 — Procedure Graph manuals CLI, ships in ai-parrot-tools.
+    "manuals": "parrot_tools.procedures.cli",
     # FEAT-581 — Deterministic E2E gate, ships in ai-parrot-server.
     "e2e": "parrot.e2e.cli",
     # FEAT-422 — Agent CLI Daemon (agentd), ships in ai-parrot-integrations.
@@ -144,6 +146,7 @@ cli._lazy_extras = {
     "install-service": _AGENTD_INSTALL_HINT,
     "mcp-serve": _AGENTD_INSTALL_HINT,
     "e2e": _E2E_INSTALL_HINT,
+    "manuals": "ai-parrot-tools: pip install ai-parrot-tools ai-parrot[manuals]",
 }
 
 if __name__ == "__main__":
