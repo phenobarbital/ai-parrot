@@ -334,7 +334,9 @@ See the CREATE test block (spec §4: `test_refresh_descriptor_path`, `test_refre
 
 - Task: TASK-3787
 - Feature: a2ui-linked-surfaces
-- Implementation SHA: 17721ac97646c6cd5242b2eb118655fa66466583
+- Implementation SHA: f4c8eec9c (corrected post-review; the original entry, 17721ac97646c6cd5242b2eb118655fa66466583,
+  was a copy-paste slip pointing at TASK-3783's merge instead — flagged by the feature-end code review. The
+  code itself was always correct: this is an audit-trail-only fix, no source files changed.)
 - Closed at (UTC): 2026-09-26T01:45:51+00:00
 - Fix commits: none
 
