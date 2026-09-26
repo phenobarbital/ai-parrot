@@ -207,3 +207,90 @@ def _op_derive(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFram
     out = frame.copy()
     out[op.name] = _derive_operand(out, op.expr, index)
     return out
+
+
+_AGGS = {"sum": "sum", "avg": "mean", "count": "count", "min": "min", "max": "max"}
+
+
+def _sibling(frames: Mapping[str, "pd.DataFrame"], key: str, index: int, op_name: str) -> "pd.DataFrame":
+    """Return an already-executed sibling frame or raise a location-aware error."""
+    if key not in frames:
+        raise TransformError(None, index, f"{op_name}: sibling source {key!r} was not executed")
+    return frames[key]
+
+
+@_register("group_by")
+def _op_group_by(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFrame"], index: int) -> "pd.DataFrame":
+    """Aggregate non-null groups while preserving their first-appearance order."""
+    by = list(op.by)
+    aggregate = dict(op.aggregate)
+    _require_columns(frame, by + list(aggregate), index, "group_by")
+    out = frame.groupby(by, sort=False, dropna=True).agg({column: _AGGS[fn] for column, fn in aggregate.items()})
+    return out.reset_index()[by + list(aggregate)]
+
+
+@_register("pivot")
+def _op_pivot(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFrame"], index: int) -> "pd.DataFrame":
+    """Pivot one value column into first-appearance ordered aggregate columns."""
+    _require_columns(frame, list(op.index) + [op.columns, op.values], index, "pivot")
+    out = frame.pivot_table(
+        index=list(op.index),
+        columns=op.columns,
+        values=op.values,
+        aggfunc=_AGGS[op.aggregate],
+        sort=False,
+    ).reset_index()
+    return out.rename(columns={column: str(column) for column in out.columns})
+
+
+@_register("join")
+def _op_join(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFrame"], index: int) -> "pd.DataFrame":
+    """Join a sibling frame without allowing null keys to match each other."""
+    import pandas as pd
+
+    right = _sibling(frames, op.with_, index, "join")
+    left_keys = [pair.left for pair in op.on]
+    right_keys = [pair.right for pair in op.on]
+    _require_columns(frame, left_keys, index, "join")
+    _require_columns(right, right_keys, index, "join")
+
+    same_named_keys = {right_key for left_key, right_key in zip(left_keys, right_keys) if left_key == right_key}
+    right_output = [column for column in right.columns if column not in same_named_keys]
+    renamed = {column: f"{op.with_}_{column}" for column in right_output if column in frame.columns}
+    right_work = right.rename(columns=renamed).copy()
+    merge_right_keys = [renamed.get(column, column) for column in right_keys]
+    output_right = [renamed.get(column, column) for column in right_output]
+
+    order_column = "__parrot_join_order"
+    while order_column in frame.columns or order_column in right_work.columns:
+        order_column = f"_{order_column}"
+    left_work = frame.copy()
+    left_work[order_column] = range(len(left_work))
+    valid_left = left_work[left_work[left_keys].notna().all(axis=1)]
+    valid_right = right_work[right_work[merge_right_keys].notna().all(axis=1)]
+    merged = valid_left.merge(
+        valid_right,
+        how=op.how,
+        left_on=left_keys,
+        right_on=merge_right_keys,
+        sort=False,
+    )
+
+    if op.how == "left":
+        null_left = left_work[~left_work[left_keys].notna().all(axis=1)].copy()
+        for column in output_right:
+            null_left[column] = pd.NA
+        merged = pd.concat([merged, null_left], ignore_index=True, sort=False)
+
+    columns = list(frame.columns) + output_right
+    return merged.sort_values(order_column, kind="mergesort")[columns].reset_index(drop=True)
+
+
+@_register("union")
+def _op_union(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFrame"], index: int) -> "pd.DataFrame":
+    """Concatenate the own and sibling frames on their ordered column intersection."""
+    import pandas as pd
+
+    others = [_sibling(frames, key, index, "union") for key in op.sources]
+    columns = [column for column in frame.columns if all(column in other.columns for other in others)]
+    return pd.concat([frame[columns], *(other[columns] for other in others)], ignore_index=True)

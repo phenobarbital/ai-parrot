@@ -1,0 +1,7 @@
+{
+  "description": "left join never matches null keys on either side",
+  "input": [{"store": "A", "visits": 3}, {"store": null, "visits": 5}],
+  "frames": {"targets": [{"store": "A", "target": 10}, {"store": null, "target": 99}]},
+  "ops": [{"op": "join", "with": "targets", "how": "left", "on": [{"left": "store", "right": "store"}]}],
+  "expected": [{"store": "A", "visits": 3, "target": 10}, {"store": null, "visits": 5, "target": null}]
+}

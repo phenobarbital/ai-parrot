@@ -1,0 +1,6 @@
+{
+  "description": "two-key groups use all aggregates, skipping null aggregate values and null groups",
+  "input": [{"program": "epson", "day": "mon", "sum_value": 3, "avg_value": 2, "count_value": 1, "min_value": 8, "max_value": 4}, {"program": "epson", "day": "mon", "sum_value": null, "avg_value": 4, "count_value": null, "min_value": 3, "max_value": 9}, {"program": "hisense", "day": "tue", "sum_value": 5, "avg_value": null, "count_value": 7, "min_value": null, "max_value": 2}, {"program": null, "day": "wed", "sum_value": 99, "avg_value": 99, "count_value": 99, "min_value": 99, "max_value": 99}],
+  "ops": [{"op": "group_by", "by": ["program", "day"], "aggregate": {"sum_value": "sum", "avg_value": "avg", "count_value": "count", "min_value": "min", "max_value": "max"}}],
+  "expected": [{"program": "epson", "day": "mon", "sum_value": 3.0, "avg_value": 3.0, "count_value": 1, "min_value": 3.0, "max_value": 9}, {"program": "hisense", "day": "tue", "sum_value": 5.0, "avg_value": null, "count_value": 1, "min_value": null, "max_value": 2}]
+}
