@@ -1,4 +1,5 @@
 """Tests for the signed transforms manifest (FEAT-598 M9)."""
+
 from __future__ import annotations
 
 import json

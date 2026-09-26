@@ -1,4 +1,5 @@
 """Signed manifest of catalogued ``transform.ref`` modules (FEAT-598 M9, S6, AC9)."""
+
 from __future__ import annotations
 
 import hashlib
