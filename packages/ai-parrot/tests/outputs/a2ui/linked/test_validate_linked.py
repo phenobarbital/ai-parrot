@@ -73,7 +73,9 @@ def test_validate_linked_locked_not_in_params(linked_source) -> None:
 
 def test_validate_linked_join_with_unknown_key(linked_source) -> None:
     """Join references must name another source in the same surface."""
-    sources = _sources(linked_source, transform={"ops": [{"op": "join", "with": "missing", "on": [{"left": "id", "right": "id"}]}]})
+    sources = _sources(
+        linked_source, transform={"ops": [{"op": "join", "with": "missing", "on": [{"left": "id", "right": "id"}]}]}
+    )
     with pytest.raises(CatalogValidationError) as exc_info:
         validate_envelope(_envelope(sources), origin=ProducerOrigin.TOOL)
     assert "DATA_SOURCE_INVALID" in _codes(exc_info.value)
@@ -82,7 +84,9 @@ def test_validate_linked_join_with_unknown_key(linked_source) -> None:
 def test_validate_linked_conditions_mismatch(linked_source) -> None:
     """Conditions remain a cache derived from the canonical request."""
     with pytest.raises(CatalogValidationError) as exc_info:
-        validate_envelope(_envelope(_sources(linked_source, conditions={"firstdate": "BAD"})), origin=ProducerOrigin.TOOL)
+        validate_envelope(
+            _envelope(_sources(linked_source, conditions={"firstdate": "BAD"})), origin=ProducerOrigin.TOOL
+        )
     assert "DATA_SOURCE_INVALID" in _codes(exc_info.value)
 
 
