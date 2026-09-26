@@ -314,10 +314,17 @@ See the two CREATE test blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3788
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 2eb39f07f1416496d39a95a101374dd64e76d56f
+- Closed at (UTC): 2026-09-26T02:05:18+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: 82 pre-existing failures unrelated to this task's diff (this task touches publish_surface mixin + PublishSurfaceTool). Verified WORSE (88 failed, including new test_publish_surface_mixin.py ERRORs from an older dev-branch fixture mismatch) on clean origin/dev with the identical test selection -- confirmed pre-existing test-suite instability, not a regression from this diff. Task's own scoped tests: 5+4+8+10 passed (linked publish tests + unchanged baseline tests). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |

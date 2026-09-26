@@ -332,7 +332,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -343,8 +343,9 @@
       "parallelism_notes": "fills PlaceholderInfo.required/accepts_keywords from TASK-3782 (models.py); calls SlugCatalog.get_allowed(tenant=)/list(tenant=) from TASK-3783 (catalog.py)",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3784-toolkit-tenant-plumbing.md"
+      "completed_at": "2026-09-26T02:05:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3784-toolkit-tenant-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3785",
@@ -419,7 +420,7 @@
       "feature_id": "FEAT-598",
       "feature": "a2ui-linked-surfaces",
       "spec": "sdd/specs/a2ui-linked-surfaces.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -430,8 +431,9 @@
       "parallelism_notes": "calls LinkedSurfaceService.validate_for_persistence/ensure_snapshot from TASK-3781; returns record.refreshable from TASK-3786",
       "assigned_to": null,
       "started_at": "2026-09-25T23:46:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3788-publish-paths-linked.md"
+      "completed_at": "2026-09-26T02:05:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3788-publish-paths-linked.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3789",
