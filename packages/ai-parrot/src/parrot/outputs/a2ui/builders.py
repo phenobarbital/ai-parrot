@@ -548,9 +548,7 @@ def build_linked_surface(
             snapshot_at = None
             snapshot_truncated = False
         data_model[key] = {"rows": rows}
-        stamped[key] = source.model_copy(
-            update={"snapshot_at": snapshot_at, "snapshot_truncated": snapshot_truncated}
-        )
+        stamped[key] = source.model_copy(update={"snapshot_at": snapshot_at, "snapshot_truncated": snapshot_truncated})
 
     metadata = SurfaceMetadata(
         extensions=Extensions(

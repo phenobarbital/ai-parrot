@@ -21,7 +21,9 @@ FIXED_AT = datetime(2026, 9, 25, 12, 0, tzinfo=timezone.utc)
 def _dump(envelope) -> bytes:
     """Serialize an envelope using the linked fixture convention."""
     return (
-        json.dumps(envelope.model_dump(mode="json", by_alias=True, exclude_none=True), sort_keys=True, indent=2).encode()
+        json.dumps(
+            envelope.model_dump(mode="json", by_alias=True, exclude_none=True), sort_keys=True, indent=2
+        ).encode()
         + b"\n"
     )
 
@@ -114,7 +116,10 @@ def test_build_linked_surface_origin_tool(activity_frame, linked_source) -> None
 def test_build_linked_surface_golden(activity_frame, linked_source) -> None:
     """The fixed-time snapshot envelope matches its byte-level fixture."""
     envelope = build_linked_surface(
-        _chart(), _sources(linked_source, snapshot_at=FIXED_AT), {"activity": activity_frame.head(3)}, surface_id="linked-chart"
+        _chart(),
+        _sources(linked_source, snapshot_at=FIXED_AT),
+        {"activity": activity_frame.head(3)},
+        surface_id="linked-chart",
     )
     assert _dump(envelope) == (ENVELOPES / "linked_chart.json").read_bytes()
 
@@ -122,6 +127,10 @@ def test_build_linked_surface_golden(activity_frame, linked_source) -> None:
 def test_build_linked_surface_no_snapshot_golden(activity_frame, linked_source) -> None:
     """The no-snapshot envelope matches its byte-level fixture."""
     envelope = build_linked_surface(
-        _chart(), _sources(linked_source), {"activity": activity_frame.head(3)}, surface_id="linked-chart", snapshot=False
+        _chart(),
+        _sources(linked_source),
+        {"activity": activity_frame.head(3)},
+        surface_id="linked-chart",
+        snapshot=False,
     )
     assert _dump(envelope) == (ENVELOPES / "linked_no_snapshot.json").read_bytes()
