@@ -178,8 +178,17 @@ class BotManager: ...                                             # L179
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-3805
+- Feature: a2ui-linked-surfaces
+- Implementation SHA: 76fbf54db97cf246bbf40348cddb73c63895e862
+- Closed at (UTC): 2026-09-26T03:05:59+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| coder_record_review | NOT recorded - coder_record_review MCP tool rejects every payload including {} (systemic tool outage, confirmed also on coder_record_feedback and coder_record_native_observation) |
+| merge_validation_outcome | failed: broad pre-existing failure set unrelated to this task's diff -- 30 [postgres]-parametrized DB-connectivity errors in wiki/test_store.py (no Postgres in sandbox), plus unrelated failures in ai-parrot-client-grok, ai-parrot-integrations (telegram/matrix/jira), ai-parrot-loaders (excel), ai-parrot-embeddings namespace tests -- none touch auth/pbac.py, conf.py or manager.py (this task's only files). Task's own scoped tests: 5 + 4 passed (dataplane_guard_wiring unit + manager integration). See issue:181bd0c01bb4. |
+| seat_summary | Seat: sonnet - Backend: native - Model: sonnet - Attempts: 1 - Duration: n/a - Tokens: n/a |
