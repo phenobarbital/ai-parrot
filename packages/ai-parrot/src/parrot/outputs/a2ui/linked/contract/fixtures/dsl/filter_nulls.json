@@ -1,0 +1,6 @@
+{
+  "description": "null values never match, including for ne",
+  "input": [{"program": "epson", "visits": 3}, {"program": null, "visits": 5}, {"program": "hisense", "visits": 2}],
+  "ops": [{"op": "filter", "column": "program", "operator": "ne", "value": "epson"}],
+  "expected": [{"program": "hisense", "visits": 2}]
+}

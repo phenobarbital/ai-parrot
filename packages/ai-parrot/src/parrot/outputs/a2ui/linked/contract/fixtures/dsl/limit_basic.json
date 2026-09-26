@@ -1,0 +1,6 @@
+{
+  "description": "limit returns the leading requested rows",
+  "input": [{"day": "2026-09-01", "visits": 3}, {"day": "2026-09-02", "visits": 5}, {"day": "2026-09-03", "visits": 2}],
+  "ops": [{"op": "limit", "n": 2}],
+  "expected": [{"day": "2026-09-01", "visits": 3}, {"day": "2026-09-02", "visits": 5}]
+}
