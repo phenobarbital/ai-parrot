@@ -84,6 +84,16 @@ INLINE_DATA_NOT_ALLOWED_FOR_LLM = "INLINE_DATA_NOT_ALLOWED_FOR_LLM"
 #: gate — e.g. ``HtmlDocument``; only deterministic tool producers may emit
 #: these, same mechanism as ``ACTION_NOT_ALLOWED_FOR_LLM``).
 TOOL_ONLY_NOT_ALLOWED_FOR_LLM = "TOOL_ONLY_NOT_ALLOWED_FOR_LLM"
+#: An LLM-originated envelope carries ``metadata.extensions.parrot_data_sources``
+#: (FEAT-598 G5 — only deterministic TOOL-origin builders may emit linked data-source descriptors).
+DATA_SOURCES_NOT_ALLOWED_FOR_LLM = "DATA_SOURCES_NOT_ALLOWED_FOR_LLM"
+#: A linked data-source descriptor is malformed or inconsistent: model parse error, unbound
+#: ``target``, ``locked`` ⊄ ``params``, a ``join.with``/``union.sources`` naming no sibling, or
+#: ``conditions`` ≠ ``derive_conditions(request)`` (FEAT-598 M3/S5).
+DATA_SOURCE_INVALID = "DATA_SOURCE_INVALID"
+#: A ``transform.ref`` names no entry of the signed transforms manifest (or no valid manifest is
+#: available) (FEAT-598 M9/S6).
+TRANSFORM_REF_UNKNOWN = "TRANSFORM_REF_UNKNOWN"
 
 
 class ProducerOrigin(str, Enum):

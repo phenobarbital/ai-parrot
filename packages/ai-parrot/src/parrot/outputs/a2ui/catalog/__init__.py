@@ -38,11 +38,14 @@ from parrot.outputs.a2ui.catalog.base import (
     ACTION_NOT_ALLOWED_FOR_LLM,
     CATALOG_UNRESOLVED,
     DANGLING_CHILD,
+    DATA_SOURCE_INVALID,
+    DATA_SOURCES_NOT_ALLOWED_FOR_LLM,
     DEFAULT_CATALOG_ID,
     DUPLICATE_ID,
     INLINE_DATA_NOT_ALLOWED_FOR_LLM,
     MISSING_ROOT,
     TOOL_ONLY_NOT_ALLOWED_FOR_LLM,
+    TRANSFORM_REF_UNKNOWN,
     UNALLOWED_CHILD,
     UNALLOWED_PARENT,
     UNKNOWN_COMPONENT,
@@ -496,6 +499,129 @@ def _child_ids(component: Component) -> list[str]:
     return ids
 
 
+_DATA_SOURCES_KEY = "parrot_data_sources"
+
+
+def _binding_paths(value: Any) -> list[str]:
+    """Collect every ``{"path": "..."}`` binding pointer nested in a prop value."""
+    if isinstance(value, dict):
+        paths = [value["path"]] if isinstance(value.get("path"), str) else []
+        for child in value.values():
+            paths.extend(_binding_paths(child))
+        return paths
+    if isinstance(value, list):
+        return [path for child in value for path in _binding_paths(child)]
+    return []
+
+
+def _validate_linked_sources(
+    envelope: CreateSurface,
+    *,
+    origin: ProducerOrigin,
+    issues: list[dict[str, Any]],
+) -> None:
+    """Append surface-level linked-source validation issues without raising."""
+    meta = envelope.metadata
+    raw = meta.extensions.root.get(_DATA_SOURCES_KEY) if meta is not None and meta.extensions is not None else None
+    if not raw:
+        return
+    if origin is ProducerOrigin.LLM:
+        issues.append(
+            {
+                "code": DATA_SOURCES_NOT_ALLOWED_FOR_LLM,
+                "path": _DATA_SOURCES_KEY,
+                "message": "LLM-produced envelopes may not carry linked data-source descriptors.",
+            }
+        )
+        return
+
+    from pydantic import ValidationError
+
+    from parrot.outputs.a2ui.linked.conditions import derive_conditions
+    from parrot.outputs.a2ui.linked.models import LinkedSources
+
+    try:
+        sources = LinkedSources.model_validate(raw).root
+    except ValidationError as exc:
+        for err in exc.errors():
+            issues.append(
+                {
+                    "code": DATA_SOURCE_INVALID,
+                    "path": _DATA_SOURCES_KEY,
+                    "message": f"{'.'.join(str(part) for part in err['loc'])}: {err['msg']}",
+                }
+            )
+        return
+
+    bound_roots = {
+        path.split("/")[1]
+        for component in envelope.components
+        for value in (component.model_extra or {}).values()
+        for path in _binding_paths(value)
+        if path.startswith("/") and len(path.split("/")) > 1
+    }
+    manifest = None
+    for key, source in sources.items():
+        path = f"{_DATA_SOURCES_KEY}.{key}"
+        target_root = source.target.split("/")[1].replace("~1", "/").replace("~0", "~")
+        if target_root not in envelope.data_model and target_root not in bound_roots:
+            issues.append(
+                {
+                    "code": DATA_SOURCE_INVALID,
+                    "path": path,
+                    "message": f"Source target root {target_root!r} is not present in dataModel or a component binding.",
+                }
+            )
+        missing_locked = [name for name in source.locked if name not in source.params]
+        if missing_locked:
+            issues.append(
+                {
+                    "code": DATA_SOURCE_INVALID,
+                    "path": path,
+                    "message": f"Locked parameter names are not declared in params: {missing_locked}.",
+                }
+            )
+        if source.transform is not None and source.transform.ops is not None:
+            for operation in source.transform.ops:
+                if operation.op == "join":
+                    sibling_keys = [operation.with_]
+                elif operation.op == "union":
+                    sibling_keys = operation.sources
+                else:
+                    continue
+                unknown_keys = [sibling for sibling in sibling_keys if sibling not in sources or sibling == key]
+                if unknown_keys:
+                    issues.append(
+                        {
+                            "code": DATA_SOURCE_INVALID,
+                            "path": path,
+                            "message": f"Source transform names invalid sibling keys: {unknown_keys}.",
+                        }
+                    )
+        locked = {name: source.conditions.get(name) for name in source.locked}
+        if source.conditions != derive_conditions(source.request, locked=locked):
+            issues.append(
+                {
+                    "code": DATA_SOURCE_INVALID,
+                    "path": path,
+                    "message": "Source conditions do not match the derived request conditions.",
+                }
+            )
+        if source.transform is not None and source.transform.ref is not None:
+            if manifest is None:
+                from parrot.outputs.a2ui.linked.manifest import load_manifest
+
+                manifest = load_manifest() or False
+            if manifest is False or source.transform.ref.name not in manifest.entries:
+                issues.append(
+                    {
+                        "code": TRANSFORM_REF_UNKNOWN,
+                        "path": path,
+                        "message": f"Transform reference {source.transform.ref.name!r} is not in the manifest.",
+                    }
+                )
+
+
 def validate_envelope(
     envelope: CreateSurface | UpdateComponents,
     *,
@@ -529,6 +655,8 @@ def validate_envelope(
       data-model binding is allowed (``INLINE_DATA_NOT_ALLOWED_FOR_LLM`` —
       FEAT-473 G8 gate; ``origin=TOOL`` surfaces, e.g. the structured-output
       adapter, are exempt and may inline rows directly).
+    * Surface-level linked data-source descriptors are TOOL-origin only and
+      structurally consistent with bindings, conditions, and transform refs.
 
     Args:
         envelope: The :class:`CreateSurface`/:class:`UpdateComponents` envelope.
@@ -713,6 +841,9 @@ def validate_envelope(
                         "path": child_id,
                     }
                 )
+
+    if isinstance(envelope, CreateSurface):
+        _validate_linked_sources(envelope, origin=origin, issues=issues)
 
     if issues:
         summary = "; ".join(f"{i['code']}: {i['message']}" for i in issues)
