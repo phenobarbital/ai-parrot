@@ -313,10 +313,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (codex seat gpt-5.6-terra), execution b99e4988-4438-4226-a71a-362798fa8ca2
+**Date**: 2026-09-26
+**Notes**: Implementation commit `1257436f8`. `packages/ai-parrot-server/tests/integration/test_linked_surfaces_e2e.py`
+created with the 4 tests from the Test Specification. All 4 pass when run with the correct workspace PYTHONPATH
+(`packages/ai-parrot/src:packages/ai-parrot-server/src:packages/ai-parrot-tools/src` — the file imports
+`QuerysourceToolkit.build_linked_surface` from TASK-3785, which lives in the `ai-parrot-tools` distribution).
+The merge-tier automated validation selector correctly excludes this file (FEAT-563 auto-marks anything under
+`tests/integration/` as `integration`, and the merge tier runs `-m 'not e2e and not real_llm and not integration'`),
+so its own Validation Command was run directly by the orchestrator instead: `4 passed, 8 warnings in 3.66s`.
+`coder_record_feedback`/`coder_record_review` (MCP) were unavailable for this entire run (object-param tool
+outage) — feedback/review metrics **NOT recorded**.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
