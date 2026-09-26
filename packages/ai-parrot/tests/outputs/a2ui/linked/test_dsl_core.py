@@ -34,7 +34,9 @@ def test_apply_transform_does_not_mutate_input() -> None:
     """Each operation works on a copy of its input frame."""
     frame = frame_from_records([{"value": 1}, {"value": 2}])
     before = frame.copy(deep=True)
-    spec = TransformSpec.model_validate({"ops": [{"op": "derive", "name": "plus_one", "expr": {"operator": "+", "left": "value", "right": 1}}]})
+    spec = TransformSpec.model_validate(
+        {"ops": [{"op": "derive", "name": "plus_one", "expr": {"operator": "+", "left": "value", "right": 1}}]}
+    )
     apply_transform(frame, spec, frames={})
     assert_frame_equal(frame, before)
 
@@ -52,6 +54,8 @@ def test_limit_larger_than_frame_returns_all() -> None:
 )
 def test_filter_operators_not_covered_by_golden(operator: str, value: int, expected: list[int]) -> None:
     """Cover the remaining scalar filter operations beyond the chained fixture."""
-    spec = TransformSpec.model_validate({"ops": [{"op": "filter", "column": "value", "operator": operator, "value": value}]})
+    spec = TransformSpec.model_validate(
+        {"ops": [{"op": "filter", "column": "value", "operator": operator, "value": value}]}
+    )
     result = apply_transform(frame_from_records([{"value": 1}, {"value": 3}, {"value": None}]), spec, frames={})
     assert result["value"].tolist() == expected
