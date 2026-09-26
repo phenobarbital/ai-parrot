@@ -82,9 +82,7 @@ def fake_repo(monkeypatch):
         query_raw=None,
     )
     repo = FakeRepo({"acme": {"epson_field_activity": runtime}})
-    monkeypatch.setattr(
-        _qs, "get_tenants", lambda: SimpleNamespace(QueryIdentity=_Identity, TenantError=_TenantError)
-    )
+    monkeypatch.setattr(_qs, "get_tenants", lambda: SimpleNamespace(QueryIdentity=_Identity, TenantError=_TenantError))
 
     async def _get_definition_repository():
         return repo
