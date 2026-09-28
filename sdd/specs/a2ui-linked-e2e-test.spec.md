@@ -330,7 +330,7 @@ class QuerysourceToolkit(AbstractToolkit):
     `QuerysourceToolkit(programs=["polestar"])` and a prompt that passes `WIDGETS` to one `qs_build_linked_dashboard`
     call), and `extract_envelope(response)`.
   - `server.py` wires the app as in §2 Overview, with a version fail-fast and a CLI (`--host`, `--port`,
-    `--with-agent-api`, `--llm`).
+    `--with-agent-api`, `--llm` defaulting to `anthropic:claude-sonnet-5`).
 - **Depends on**: M2 (the tool), M1
 - **Interface Skeleton**:
   ```python
@@ -379,7 +379,10 @@ class QuerysourceToolkit(AbstractToolkit):
   - `client.py --open` opens the browser.
   - `client.py --check --user U` (password from `A2UI_DEMO_PASSWORD`) logs in, fetches the surface, re-fetches every
     source through the same route rule, and prints a value table. It exits non-zero on any failure. It uses aiohttp only.
-  - `seed_by_course.py` upserts `polestar_graduates_by_course` idempotently. It asks for explicit confirmation
+  - `seed_by_course.py` upserts `polestar_graduates_by_course` idempotently with a SQL upsert into
+    `public.queries` that copies the base slug's row columns (not the QS management API). Use
+    `INSERT … ON CONFLICT (query_slug)` only if the table has a unique key on `query_slug` (unverified — check before
+    use); otherwise UPDATE, then INSERT when no row was updated, in one transaction. It asks for explicit confirmation
     (`--yes`) because it writes to **production** `public.queries`. The SQL:
     ```sql
     SELECT {fields} FROM (SELECT d.student_uid, e->>'course' AS course, e->>'category' AS category
@@ -447,7 +450,8 @@ Reuse `fake_core_qs` / `patched_qs` from `packages/ai-parrot-tools/tests/queryso
   3300 / 2048. NULL buckets are labelled "Unassigned".
 - [ ] AC8 — Each widget's refresh issues exactly one QuerySource request for its own source and repaints only that
   widget. "Refresh all" re-fetches every source. Neither involves the LLM.
-- [ ] AC9 — The grid pages on the server over 17 572 rows with a stable `ordering`; its column filters change the rows
+- [ ] AC9 — The grid pages on the server over 17 572 rows with a stable `ordering` (column filters only, no free-text
+  search); its column filters change the rows
   and the total.
 - [ ] AC10 — `client.py --check` exits 0 against a running server and prints the AC7 values.
 - [ ] AC11 — `seed_by_course.py` is idempotent and refuses to write without `--yes`.
@@ -664,13 +668,11 @@ Verified against: `91c9e3e31`
 - [x] Where does the slug live? — *Resolved in proposal*: prod `public.queries`, data in schema `polestar`; always
   `ENV=prod`.
 - [x] Grid with 17k rows? — *Resolved in proposal*: server-side paging.
-- [ ] Which LLM does the dashboard agent use by default (`--llm`)? — *Owner: Jesus Lara* (implementation may default to
-  the parrot default client).
-- [ ] Free-text search in the grid: does QS support a case-insensitive LIKE filter usable from the payload, or do we
-  keep column filters only? — *Owner: Jesus Lara* (default: column filters only).
-- [ ] Seed mechanism for `polestar_graduates_by_course`: QS management API `PUT /api/v1/management/queries/{slug}`
-  (route verified, `services.py:241`; body shape unverified) or SQL upsert copying the base row's columns? —
-  *Owner: Jesus Lara*.
+- [x] Which LLM does the dashboard agent use by default (`--llm`)? — *Resolved by Jesus Lara (2026-09-29)*: Anthropic
+  Sonnet 5 — `--llm` defaults to `anthropic:claude-sonnet-5`.
+- [x] Free-text search in the grid? — *Resolved by Jesus Lara (2026-09-29)*: column filters only; no free-text search.
+- [x] Seed mechanism for `polestar_graduates_by_course`? — *Resolved by Jesus Lara (2026-09-29)*: a SQL upsert into
+  `public.queries` (copying the base row's columns), not the QS management API.
 
 ---
 
