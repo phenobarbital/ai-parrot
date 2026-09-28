@@ -1,0 +1,321 @@
+{
+  "feature": "wikitoolkit-structural-coverage",
+  "feature_id": "FEAT-609",
+  "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-28T18:50:17+00:00",
+  "completed_at": null,
+  "isolation": "per-spec",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "contract_verified_commit": "d99daa146",
+  "tasks": [
+    {
+      "id": "TASK-3820",
+      "slug": "wiki-languages-pulls-astgrep",
+      "title": "`wiki-languages` extra pulls `ast-grep-py`",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "estimated_hours": 2,
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3820-wiki-languages-pulls-astgrep.md",
+      "owned_files": [
+        "packages/ai-parrot/pyproject.toml",
+        "tests/knowledge/wiki/test_extras_packaging.py"
+      ]
+    },
+    {
+      "id": "TASK-3821",
+      "slug": "predictive-scanner-mode",
+      "title": "Predictive `mode` for the JS/TS, PHP, Rust and Perl scanners",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "estimated_hours": 2,
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: touches only the four scanner modules and base.py docstring; no other task writes those files before TASK-3826 (javascript.py).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3821-predictive-scanner-mode.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/javascript.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/php.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/rust.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/perl.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/base.py",
+        "tests/knowledge/wiki/languages/test_predictive_mode.py"
+      ]
+    },
+    {
+      "id": "TASK-3822",
+      "slug": "store-meta-api-core",
+      "title": "Store meta API: BaseWikiStore defaults, SQLite, in-memory and federated",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 3,
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: defines BaseWikiStore.get_meta/set_meta in store.py; file_store.py and federation.py are not touched by any earlier task.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3822-store-meta-api-core.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/file_store.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py",
+        "packages/ai-parrot/tests/knowledge/wiki/test_store_meta.py"
+      ]
+    },
+    {
+      "id": "TASK-3823",
+      "slug": "ts-local-functions-and-rule-languages",
+      "title": "Module-local JS/TS functions, `js_call_scope`, and per-rule `languages:` filter",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 3,
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: sole writer of astgrep.py, rules/typescript.yaml and render.py in this feature.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3823-ts-local-functions-and-rule-languages.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/astgrep.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/rules/typescript.yaml",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/render.py",
+        "tests/knowledge/wiki/languages/test_rules_typescript_local_functions.py"
+      ]
+    },
+    {
+      "id": "TASK-3824",
+      "slug": "structural-gap-warning-and-status",
+      "title": "Build warning and `status` `Symbols:` line when the structural tier is missing",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "estimated_hours": 2,
+      "depends_on": [
+        "TASK-3821"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Needs the predictive JavaScriptScanner.mode / PhpScanner.mode / RustScanner.mode / PerlScanner.mode from TASK-3821 (languages/*.py) for _symbols_status; first writer of cli.py.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3824-structural-gap-warning-and-status.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "tests/knowledge/wiki/test_cli_structural_gap.py"
+      ]
+    },
+    {
+      "id": "TASK-3825",
+      "slug": "store-meta-api-arango-postgres",
+      "title": "Store meta API for ArangoDB and Postgres",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "estimated_hours": 2,
+      "depends_on": [
+        "TASK-3822"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Implements the BaseWikiStore.get_meta/set_meta contract created by TASK-3822 (store.py).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3825-store-meta-api-arango-postgres.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/postgres_store.py",
+        "packages/ai-parrot/tests/knowledge/wiki/test_store_meta_backends.py"
+      ]
+    },
+    {
+      "id": "TASK-3826",
+      "slug": "svelte-component-symbol",
+      "title": "Svelte `component` symbol, markup `uses` edges, and `uses` in blast",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-3821"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies languages/javascript.py after TASK-3821 edited it (JavaScriptScanner.mode) \u2014 same-file serialization.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3826-svelte-component-symbol.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/symbols.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/javascript.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/structural/service.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/structural/tools.py",
+        "tests/knowledge/wiki/languages/test_svelte_component.py",
+        "tests/knowledge/wiki/languages/fixtures/svelte_components/Child.svelte",
+        "tests/knowledge/wiki/languages/fixtures/svelte_components/Parent.svelte",
+        "tests/knowledge/wiki/languages/fixtures/svelte_components/Other.svelte",
+        "tests/knowledge/wiki/languages/fixtures/svelte_components/routes/(app)/fieldsync/+page.svelte"
+      ]
+    },
+    {
+      "id": "TASK-3827",
+      "slug": "fts-probe-reprobe-after-migration",
+      "title": "Re-probe the legacy-FTS shape after another process migrates the plane",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "estimated_hours": 2,
+      "depends_on": [
+        "TASK-3822"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies store.py after TASK-3822 added get_meta/set_meta there \u2014 same-file serialization.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3827-fts-probe-reprobe-after-migration.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
+        "packages/ai-parrot/tests/knowledge/wiki/test_sqlite_fts_reprobe.py"
+      ]
+    },
+    {
+      "id": "TASK-3828",
+      "slug": "extractor-fingerprint-reingest",
+      "title": "Extractor fingerprint: re-ingest a language when its extraction tier changes",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "estimated_hours": 4,
+      "depends_on": [
+        "TASK-3821",
+        "TASK-3822",
+        "TASK-3824"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Uses predictive scanner mode from TASK-3821 (languages/*.py) and BaseWikiStore.get_meta/set_meta from TASK-3822 (store.py); modifies cli.py after TASK-3824 \u2014 same-file serialization.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3828-extractor-fingerprint-reingest.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/languages/fingerprint.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "tests/knowledge/wiki/test_extractor_fingerprint.py"
+      ]
+    },
+    {
+      "id": "TASK-3829",
+      "slug": "federated-symbol-queries",
+      "title": "Federated symbol queries: fan-out, qualified ids, `--ns`, no foreign read-repair",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "estimated_hours": 6,
+      "depends_on": [
+        "TASK-3822",
+        "TASK-3826",
+        "TASK-3828"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies federation.py after TASK-3822 (meta methods); symbols.py, structural/service.py and structural/tools.py after TASK-3826 (SymbolKind.COMPONENT, uses relation); cli.py after TASK-3828 (fingerprint wiring).",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3829-federated-symbol-queries.md",
+      "owned_files": [
+        "packages/ai-parrot/src/parrot/knowledge/wiki/symbols.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/structural/service.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/structural/tools.py",
+        "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
+        "tests/knowledge/wiki/test_federated_symbols.py"
+      ]
+    },
+    {
+      "id": "TASK-3830",
+      "slug": "docs-and-navigator-svelte-remeasure",
+      "title": "Document the structural-tier changes and re-measure on navigator-svelte",
+      "feature_id": "FEAT-609",
+      "feature": "wikitoolkit-structural-coverage",
+      "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "estimated_hours": 1,
+      "depends_on": [
+        "TASK-3820",
+        "TASK-3824",
+        "TASK-3826",
+        "TASK-3828",
+        "TASK-3829"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents behaviour created by TASK-3820 (wiki-languages extra), TASK-3824 (Symbols: line), TASK-3826 (component/uses), TASK-3828 (auto re-ingest) and TASK-3829 (--ns); its validation runs TASK-3820's test file.",
+      "assigned_to": null,
+      "assigned_at": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-3830-docs-and-navigator-svelte-remeasure.md",
+      "owned_files": [
+        "docs/wiki/cheatsheet.md"
+      ]
+    }
+  ]
+}
