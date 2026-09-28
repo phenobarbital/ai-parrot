@@ -76,4 +76,4 @@ async def test_dry_run_closes(tk, monkeypatch):
 
 async def test_dialect_reference_has_variables_field(tk):
     ref = await tk().get_dialect_reference()
-    assert ref.verified_against == "4.5.11" and isinstance(ref.variables, dict)
+    assert ref.verified_against == "5.1.2" and isinstance(ref.variables, dict)

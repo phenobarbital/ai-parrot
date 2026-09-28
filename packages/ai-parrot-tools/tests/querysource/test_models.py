@@ -37,7 +37,7 @@ def test_component_doc_matches_registry_shape():
 
 def test_dialect_reference_variables_default():
     ref = m.DialectReference(
-        verified_against="4.5.11",
+        verified_against="5.1.2",
         option_keys={},
         placeholder_rules=[],
         where_grammar=[],
@@ -47,3 +47,4 @@ def test_dialect_reference_variables_default():
         notes=[],
     )
     assert ref.variables == {}
+    assert ref.operators_jsonb == []

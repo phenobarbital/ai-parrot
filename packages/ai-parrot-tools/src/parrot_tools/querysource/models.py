@@ -133,6 +133,7 @@ class DialectReference(BaseModel):
     where_grammar: list[str]
     operators_list_form: list[str]
     operators_dict_form: list[str]
+    operators_jsonb: list[str] = Field(default_factory=list)  # querysource >= 5.1 JSONB operators (FEAT-610)
     examples: list[dict[str, Any]]
     variables: dict[str, str] = Field(default_factory=dict)  # '@name' → one-line doc (§8 Q2)
     notes: list[str]
