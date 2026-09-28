@@ -1428,6 +1428,14 @@ class FederatedWikiStore(BaseWikiStore):
         """Lexical symbol search over the local plane only."""
         return await self._local.search_symbols_fts(query, limit)
 
+    async def get_meta(self, key: str) -> str | None:
+        """Local plane only — a namespace's metadata is not ours to read."""
+        return await self._local.get_meta(key)
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Local plane only — never writes into a foreign namespace."""
+        await self._local.set_meta(key, value)
+
     async def page_hashes(self, concept_ids: list[str]) -> dict[str, str | None]:
         """Look up content hashes on the local plane only."""
         return await self._local.page_hashes([self._assert_local(cid) for cid in concept_ids])
@@ -1553,6 +1561,12 @@ class _EmptyStore(BaseWikiStore):
     Stands in for the local plane when :meth:`FederatedWikiStore.scoped`
     selects a subset of namespaces without ``local``.
     """
+
+    async def get_meta(self, key: str) -> str | None:
+        return None
+
+    async def set_meta(self, key: str, value: str) -> None:
+        raise PermissionError("no local plane in this scope")
 
     async def upsert_pages(self, pages: list[WikiPageRecord]) -> int:
         raise PermissionError("no local plane in this scope")

@@ -641,6 +641,29 @@ class BaseWikiStore(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not support compare_and_swap_page")
 
+    async def get_meta(self, key: str) -> Optional[str]:
+        """Read one plane-level metadata value (FEAT-609 Q2).
+
+        Args:
+            key: Metadata key (e.g. ``"extractor_fingerprint"``).
+
+        Returns:
+            The stored string, or ``None`` when the key is absent.
+
+        Raises:
+            NotImplementedError: When the backend has no meta support.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support get_meta")
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Write one plane-level metadata value (FEAT-609 Q2).
+
+        Raises:
+            NotImplementedError: When the backend has no meta support.
+            PermissionError: When the store was opened read-only.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support set_meta")
+
     def _assert_writable(self) -> None:  # noqa: B027  (deliberate concrete no-op hook)
         """Hook for stores that can be opened read-only.
 
@@ -1905,6 +1928,23 @@ class SQLiteWikiStore(BaseWikiStore):
                 (match_expr, limit),
             ) as cur:
                 return [_row_to_symbol_record(row) for row in await cur.fetchall()]
+
+    async def get_meta(self, key: str) -> Optional[str]:
+        """Read ``key`` from the ``meta`` table (works on read-only planes)."""
+        async with self._read() as conn:
+            async with conn.execute("SELECT value FROM meta WHERE key = ?", (key,)) as cur:
+                row = await cur.fetchone()
+        return None if row is None else str(row[0])
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Upsert ``key`` into the ``meta`` table."""
+        self._assert_writable()
+        async with self._write("set_meta") as conn:
+            await conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
 
     async def page_hashes(self, concept_ids: list[str]) -> dict[str, Optional[str]]:
         """Batch look-up of ``pages.content_hash`` for the given ids.
