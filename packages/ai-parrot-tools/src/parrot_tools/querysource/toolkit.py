@@ -68,6 +68,7 @@ if TYPE_CHECKING:
 _WIDGET_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _RESERVED_LAYOUT_IDS = frozenset({"root", "title", "row_kpis", "row_charts"})
 
+
 class QuerysourceToolkit(AbstractToolkit):
     """Explain, list, describe and execute QuerySource query-slugs and MultiQuery pipelines, scoped to tenants."""
 
@@ -453,9 +454,7 @@ class QuerysourceToolkit(AbstractToolkit):
             outcome = execution.outcomes.get(key)
             if outcome is None or outcome.error:
                 error = outcome.error if outcome is not None else "no outcome"
-                raise QuerysourceToolkitError(
-                    f"source '{key}' failed while building the linked dashboard: {error}"
-                )
+                raise QuerysourceToolkitError(f"source '{key}' failed while building the linked dashboard: {error}")
         components = [{**self._bind_component(w.component, w.key), "id": w.key} for w in parsed]
         layout = self._dashboard_layout(components, parsed, title)
         envelope = _build(
@@ -467,9 +466,7 @@ class QuerysourceToolkit(AbstractToolkit):
         )
         return {
             "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
-            "artifacts": [
-                {"type": "a2ui_linked_surface", "surface_id": envelope.surface_id, "sources": list(sources)}
-            ],
+            "artifacts": [{"type": "a2ui_linked_surface", "surface_id": envelope.surface_id, "sources": list(sources)}],
         }
 
     @staticmethod

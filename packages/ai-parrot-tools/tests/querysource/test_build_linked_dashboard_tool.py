@@ -43,9 +43,15 @@ def fake_core_qs(patched_qs, monkeypatch):
 
 
 def _widgets() -> list[dict]:
-    kpis = [{"key": f"kpi_{i}", "slug": SLUG, "component": {"component": "KPICard", "value": "total"}} for i in range(4)]
+    kpis = [
+        {"key": f"kpi_{i}", "slug": SLUG, "component": {"component": "KPICard", "value": "total"}} for i in range(4)
+    ]
     charts = [
-        {"key": f"bar_{i}", "slug": SLUG, "component": {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]}}
+        {
+            "key": f"bar_{i}",
+            "slug": SLUG,
+            "component": {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]},
+        }
         for i in range(2)
     ]
     charts.append(
