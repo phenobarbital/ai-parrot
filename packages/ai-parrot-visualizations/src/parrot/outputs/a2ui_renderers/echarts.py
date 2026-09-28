@@ -310,10 +310,10 @@ class EChartsRenderer(AbstractA2UIRenderer):
                     "data": trend_values,
                     "smooth": True,
                     "symbol": "none",
-                        # Grey on purpose, not the next colour off the palette:
-                        # a colour is a judgement in these reports and a
-                        # regression is geometry. Same tone as the interactive
-                        # surface and the Svelte canvas draw it in.
+                    # Grey on purpose, not the next colour off the palette:
+                    # a colour is a judgement in these reports and a
+                    # regression is geometry. Same tone as the interactive
+                    # surface and the Svelte canvas draw it in.
                     "lineStyle": {"type": "dashed", "color": _TREND_COLOR},
                     "itemStyle": {"color": _TREND_COLOR},
                 }
