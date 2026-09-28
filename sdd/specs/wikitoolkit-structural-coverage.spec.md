@@ -384,7 +384,7 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
   async def save_fingerprint(store: BaseWikiStore, fp: ExtractorFingerprint) -> None:
       """store.set_meta("extractor_fingerprint", fp.model_dump_json())."""
 
-  # store.py — BaseWikiStore  (new abstract pair; every subclass listed above implements it)
+  # store.py — BaseWikiStore  (new concrete pair, NotImplementedError by default; every backend listed above overrides it)
   async def get_meta(self, key: str) -> str | None: ...
   async def set_meta(self, key: str, value: str) -> None: ...
 
@@ -724,7 +724,7 @@ Verified against: 8bf475842
 | `languages/rules/typescript.yaml` | MODIFY | `    rule: { kind: lexical_declaration, inside: { kind: export_statement } }` | `typescript.yaml:67` | 1 |
 | `languages/rules/typescript.yaml` | MODIFY | `    scope: { ancestor: [function_declaration, method_definition, class_declaration] }` | `typescript.yaml:77` | 1 |
 | `languages/fingerprint.py` | CREATE | — | — | — |
-| `store.py` | MODIFY | `class BaseWikiStore(ABC):` (add abstract `get_meta`/`set_meta`; implement on `SQLiteWikiStore`) | `store.py:525` | 1 |
+| `store.py` | MODIFY | `class BaseWikiStore(ABC):` (add concrete `get_meta`/`set_meta` defaults; implement on `SQLiteWikiStore`) | `store.py:525` | 1 |
 | `store.py` | MODIFY | `        legacy = "concept_id" in columns` (re-probe path) | `store.py:1479` | 1 |
 | `arango_store.py` | MODIFY | `META_COLLECTION = "wiki_meta"` | `arango_store.py:50` | 1 |
 | `postgres_store.py` | MODIFY | `class PostgresWikiStore(BaseWikiStore):` (meta via existing `{schema}.meta`) | `postgres_store.py:127` | 1 |
@@ -789,7 +789,7 @@ All four were answered by Jesús on 2026-09-28.
 - [x] Q1: Should `wiki-languages` pull `ast-grep-py`? → **Yes.** Landed in M1 (packaging) and
   G7. `wiki-structural` is kept, with identical content.
 - [x] Q2: Where should the extractor fingerprint live? → **A new meta API per backend.** Landed
-  in M2: an abstract `get_meta`/`set_meta` pair on `BaseWikiStore`, implemented by sqlite
+  in M2: a `get_meta`/`set_meta` pair on `BaseWikiStore` (concrete, `NotImplementedError` by default), implemented by sqlite
   (`meta`), arango (`wiki_meta`), postgres (existing `{schema}.meta`), memory, federated (local only)
   and `_EmptyStore`.
 - [x] Q3: Component naming for route files. → **Qualified.** Landed in M3: `name` =
