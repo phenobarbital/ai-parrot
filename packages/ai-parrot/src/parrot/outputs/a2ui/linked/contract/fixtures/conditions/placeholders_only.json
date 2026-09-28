@@ -1,0 +1,5 @@
+{
+  "request": {"placeholders": {"firstdate": "YESTERDAY", "lastdate": "TODAY"}},
+  "locked": {},
+  "expected": {"firstdate": "YESTERDAY", "lastdate": "TODAY"}
+}

@@ -65,6 +65,9 @@ export interface CreateSurface {
   catalogId?: string;
   components: WireComponent[];
   dataModel?: Record<string, unknown>;
+  /** Surface-level metadata (FEAT-598): `extensions.parrot_data_sources` carries the linked-surface
+   * descriptor (spec G2). Same shape as `WireComponent.metadata`. */
+  metadata?: { extensions?: Record<string, unknown> };
 }
 
 /** The full wire envelope carried on `AgentMessage.a2ui_envelope` /

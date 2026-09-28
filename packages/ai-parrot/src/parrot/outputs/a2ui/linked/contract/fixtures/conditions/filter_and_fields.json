@@ -1,0 +1,16 @@
+{
+  "request": {
+    "placeholders": {"firstdate": "CURRENT_MONTH"},
+    "filter": {"region": ["East", "West"], "visits": [">=", 10]},
+    "fields": ["day", "visits"],
+    "ordering": ["day"],
+    "grouping": []
+  },
+  "locked": {},
+  "expected": {
+    "firstdate": "CURRENT_MONTH",
+    "filter": {"region": ["East", "West"], "visits": [">=", 10]},
+    "fields": ["day", "visits"],
+    "ordering": ["day"]
+  }
+}

@@ -4,6 +4,7 @@
 	// Reuses the EXISTING infographic block renderers (Chart/DataTable/
 	// Timeline) instead of a second rendering stack — only KPICard/InfoCard/
 	// HtmlDocument/the Basic primitives are rendered inline here.
+	import { getContext } from 'svelte';
 	import { resolveProps } from './a2ui-binding';
 	import { toChartBlockData } from './a2ui-chart-adapter';
 	import { VIZ_CORE_CATALOG_ID, type SectionDescriptor } from './a2ui-types';
@@ -15,6 +16,7 @@
 	import InfographicHeroCardBlock from '../infographic/blocks/InfographicHeroCardBlock.svelte';
 	import A2UIGraph from './A2UIGraph.svelte';
 	import A2UINode from './A2UINode.svelte';
+	import { LINKED_LANE_CONTEXT, FILTER_CONTEXT, type LinkedLane, type FilterController } from './linked';
 
 	let {
 		descriptor,
@@ -33,6 +35,124 @@
 	let component = $derived(descriptor.component);
 	let properties = $derived(descriptor.properties ?? {});
 	let resolved = $derived(resolveProps(properties, dataModel));
+
+	// FEAT-598 (TASK-3795): FilterBar branch. `lane` is a stable proxy set once by `A2UISurface`
+	// (undefined only in a component tree with no A2UISurface ancestor, e.g. a bare unit test) —
+	// its own `setParam` no-ops when there is no active linked lane (baked surface). `filterCtl` is
+	// the local-filter counterpart (works even on a surface with no data sources at all, §7.4).
+	const lane = getContext<LinkedLane | undefined>(LINKED_LANE_CONTEXT);
+	const filterCtl = getContext<FilterController | undefined>(FILTER_CONTEXT);
+
+	interface FilterBarOption {
+		label: string;
+		value: string;
+	}
+	interface RawFilterBarFilter {
+		column: string;
+		label?: string;
+		options?: { label?: string; value?: string }[];
+		multiple?: boolean;
+		param?: { source?: string; name?: string };
+	}
+	interface NormalizedFilter {
+		column: string;
+		label: string;
+		options: FilterBarOption[];
+		multiple: boolean;
+		initialValue: string[];
+		param?: { source: string; name: string };
+	}
+
+	// Unlowered FilterBar: `properties.filters[*] = {column, label, options, multiple?, param?}`
+	// (TASK-3789 wire). A FilterBar with NO `filters` at all (or an empty list) is malformed input
+	// (the catalog schema requires `filters`) — falls through to the generic "not supported"
+	// placeholder below, same as before this task.
+	let rawFilters = $derived(
+		component === 'FilterBar' && Array.isArray((properties as { filters?: unknown }).filters)
+			? ((properties as { filters: RawFilterBarFilter[] }).filters)
+			: null,
+	);
+	// Lowered FilterBar: `Row{metadata.extensions.parrot_variant: "filter-bar"}` of `ChoicePicker`
+	// children, each tagged `metadata.extensions.parrot_role: "filter"` +
+	// `parrot_filter_column` (+ NEW `parrot_param`, TASK-3789) — `catalog/parrot/filterbar.py:lower()`.
+	let isFilterBarRow = $derived(
+		(properties.metadata as { extensions?: Record<string, unknown> } | undefined)?.extensions
+			?.parrot_variant === 'filter-bar',
+	);
+	let isFilterBarBranch = $derived(
+		(rawFilters !== null && rawFilters.length > 0) || (component === 'Row' && isFilterBarRow),
+	);
+
+	let normalizedFilters = $derived.by((): NormalizedFilter[] => {
+		if (rawFilters && rawFilters.length > 0) {
+			return rawFilters.map((f): NormalizedFilter => {
+				const options = (f.options ?? []).map((o) => ({ label: o.label ?? o.value ?? '', value: o.value ?? '' }));
+				return {
+					column: f.column,
+					label: f.label ?? f.column,
+					options,
+					multiple: Boolean(f.multiple),
+					// Mirrors the backend's `_lower_filter`: exactly one option -> pre-selected; else "all".
+					initialValue: options.length === 1 ? [options[0].value] : [],
+					param: f.param?.source && f.param?.name ? { source: f.param.source, name: f.param.name } : undefined,
+				};
+			});
+		}
+		if (component === 'Row' && isFilterBarRow) {
+			const children = Array.isArray(properties.children) ? (properties.children as SectionDescriptor[]) : [];
+			return children
+				.filter((child) => child.component === 'ChoicePicker')
+				.map((child): NormalizedFilter => {
+					const childProps = (child.properties ?? {}) as Record<string, unknown>;
+					const extensions =
+						(childProps.metadata as { extensions?: Record<string, unknown> } | undefined)?.extensions ?? {};
+					const param = extensions.parrot_param as { source?: string; name?: string } | undefined;
+					const options = Array.isArray(childProps.options) ? (childProps.options as FilterBarOption[]) : [];
+					return {
+						column: String(extensions.parrot_filter_column ?? ''),
+						label: String(childProps.label ?? extensions.parrot_filter_column ?? ''),
+						options,
+						multiple: childProps.variant === 'multipleSelection',
+						initialValue: Array.isArray(childProps.value) ? (childProps.value as string[]).map(String) : [],
+						param: param?.source && param?.name ? { source: param.source, name: param.name } : undefined,
+					};
+				});
+		}
+		return [];
+	});
+
+	// Selected values per filter column — seeded once from each filter's initial `value`
+	// (checkbox state only; seeding never itself triggers a fetch or a local filter — that only
+	// happens on explicit user interaction, see `toggleOption`).
+	let selected = $state<Record<string, string[]>>({});
+	let filtersSeeded = false;
+	$effect(() => {
+		if (!filtersSeeded && normalizedFilters.length > 0) {
+			filtersSeeded = true;
+			const seed: Record<string, string[]> = {};
+			for (const filter of normalizedFilters) seed[filter.column] = filter.initialValue;
+			selected = seed;
+		}
+	});
+
+	function toggleOption(filter: NormalizedFilter, value: string, checked: boolean): void {
+		const current = selected[filter.column] ?? [];
+		const next = filter.multiple
+			? checked
+				? [...current, value]
+				: current.filter((v) => v !== value)
+			: checked
+				? [value]
+				: [];
+		selected = { ...selected, [filter.column]: next };
+		if (filter.param) {
+			// parrot_param: re-fetch that ONE source (spec §7.4) — never local filtering for this one.
+			void lane?.setParam(filter.param.source, filter.param.name, filter.multiple ? next : (next[0] ?? null));
+		} else {
+			// No param: filter locally, over the already-embedded dataModel (spec §7.4 scoping rule).
+			filterCtl?.setFilter(filter.column, next);
+		}
+	}
 
 	// FEAT-529: a nested authored descriptor carries its OWN `catalogId`
 	// (`{"component": "Graph", "catalogId": VIZ_CORE, "properties": {...}}`);
@@ -153,6 +273,25 @@
 		<input type="checkbox" checked={Boolean(resolved.value)} disabled />
 		<span>{resolved.label ?? ''}</span>
 	</label>
+{:else if isFilterBarBranch}
+	<div class="a2ui-filter-bar flex flex-wrap gap-4 items-start" data-testid="filter-bar">
+		{#each normalizedFilters as filter (filter.column)}
+			<fieldset class="flex flex-col gap-1 border-0 p-0 m-0">
+				<legend class="text-xs font-semibold text-muted-foreground">{filter.label}</legend>
+				{#each filter.options as option (option.value)}
+					<label class="flex items-center gap-1 text-xs">
+						<input
+							type="checkbox"
+							checked={(selected[filter.column] ?? []).includes(option.value)}
+							onchange={(e) =>
+								toggleOption(filter, option.value, (e.currentTarget as HTMLInputElement).checked)}
+						/>
+						{option.label}
+					</label>
+				{/each}
+			</fieldset>
+		{/each}
+	</div>
 {:else if component === 'List' || component === 'Row' || component === 'Column'}
 	<div class={component === 'Row' ? 'flex flex-row gap-3' : 'flex flex-col gap-2'}>
 		{#each childDescriptors as child, i (i)}

@@ -979,6 +979,8 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.storage.security_reports" = ["*.sql"]
 # Runtime-loaded bundled pricing tables (calculator.py globs *.json here).
 "parrot.observability.cost.pricing" = ["*.json"]
+# FEAT-598: installable linked-surface contract (JSON Schema + golden fixtures) for renderer teams.
+"parrot.outputs.a2ui.linked" = ["contract/*.json", "contract/fixtures/*/*.json"]
 # Schema DDL shipped for manual application.
 "parrot.security" = ["*.sql"]
 "parrot.pipelines" = ["*.sql"]

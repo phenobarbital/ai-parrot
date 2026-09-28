@@ -1,0 +1,5 @@
+{
+  "request": {"placeholders": {}, "limit": 100, "offset": 20, "grouping": ["program"]},
+  "locked": {},
+  "expected": {"grouping": ["program"], "_offset": 20}
+}
