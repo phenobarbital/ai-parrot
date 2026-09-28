@@ -79,6 +79,8 @@ TOOL_REGISTRY: dict[str, str] = {
     "google_routes": "parrot_tools.google.tools.GoogleRoutesTool",
     "graph_index": "parrot_tools.graphindex.toolkit.GraphIndexToolkit",
     "google_voice": "parrot_tools.gvoice.GoogleVoiceTool",
+    "hooba_open_api": "parrot_tools.hooba.openapi.HoobaOpenAPIToolkit",
+    "hooba": "parrot_tools.hooba.toolkit.HoobaToolkit",
     "ibis_world": "parrot_tools.ibisworld.tool.IBISWorldTool",
     "jira": "parrot_tools.jiratoolkit.JiraToolkit",
     "kubernetes": "parrot_tools.kubernetes.toolkit.KubernetesToolkit",

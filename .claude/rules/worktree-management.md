@@ -54,7 +54,7 @@ inside `<path>`* — never in the primary checkout.
 ## 5. Finish
 
 - Working tree clean, branch pushed.
-- SDD lane: `/sdd-done <FEAT-ID>` verifies the tasks, stamps the index, merges feature → `base_branch` and cleans up.
+- SDD lane: `/sdd-done <FEAT-ID>` verifies the tasks, stamps the index, pushes, opens a PR feature → `base_branch` (`--merge` merges directly) and cleans up.
 - Ad-hoc lane: `gh pr create --base <base_branch> --head <branch> --title "..." --body "..."` — never against `main` for a feature. If `gh` is missing or unauthenticated, hand the user the exact commands instead.
 
 ## 6. Clean up

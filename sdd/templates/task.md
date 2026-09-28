@@ -325,20 +325,26 @@ class Test<Component>:
 
 When you pick up this task:
 
-1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — verify `Depends-on` tasks are in `tasks/completed/`
-3. **Verify the Codebase Contract** — before writing ANY code:
+1. **Work in the feature worktree** — never on `base_branch`
+   (`python -m scripts.sdd.ensure_worktree --slug <feature-slug> --feature-id FEAT-<NNN>`)
+2. **Read the spec** at the path listed above for full context
+3. **Check dependencies** — every `Depends-on` task must be `"done"` in the
+   per-spec index `sdd/tasks/index/<feature-slug>.json`
+4. **Verify the Codebase Contract** — before writing ANY code:
    - Confirm every import in "Verified Imports" still exists (`grep` or `read` the source)
    - Confirm every class/method in "Existing Signatures" still has the listed attributes
    - If anything has changed, update the contract FIRST, then implement
    - **NEVER** reference an import, attribute, or method not in the contract without verifying it exists
-4. **Update status** in `tasks/.index.json` → `"in-progress"` with your session ID
-5. **Implement** — start from the Implementation Blueprint blocks, complete every
+5. **Update status** in `sdd/tasks/index/<feature-slug>.json` → `"in-progress"`
+   (set `started_at`) and commit only that index file
+6. **Implement** — start from the Implementation Blueprint blocks, complete every
    `# FILL IN:` marker, and never change a signature or path the blueprint fixes
-6. **Verify** all acceptance criteria are met
-7. **Move this file** to `tasks/completed/TASK-<NNN>-<slug>.md`
-8. **Update index** → `"done"`
-9. **Fill in the Completion Note** below
+7. **Verify** all acceptance criteria are met — run the Validation Commands
+8. **Commit the code** — stage only the files this task lists (never `git add .` / `-A`)
+9. **Close the task** with `scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified`
+   — it moves this file to `sdd/tasks/completed/` and marks it `"done"` in the
+   index; never move or copy the file by hand
+10. **Fill in the Completion Note** below, then commit the staged SDD state
 
 ---
 

@@ -233,3 +233,15 @@ drift on the target site is caught before a real write fails half-way.
 
 The Hooba (or equivalent) canary *plan* itself is out of repo (Deliverable
 X) — only the mechanism ships here.
+
+## 8. Hooba toolkit
+
+The HoobaToolkit (FEAT-602) provides drafts-only automation of Hooba (app.hooba.com) for AI-Parrot agents. It creates sales and purchase-invoice drafts, imports BBVA bank statements, and recovers web sessions via a private Playwright catalog.
+
+**Key characteristics:**
+- **Drafts only**: never issues, confirms, cancels, or sends invoices
+- **API-first**: uses the Hooba OpenAPI spec (pinned at version 2026.6.17)
+- **Private catalog**: session recovery and navigation via `HOOBA_CATALOG_DIR` (outside the repo)
+- **BBVA importer**: turns bank exports into purchase-invoice drafts under Spanish autónomo rules
+
+For full documentation, see `docs/hooba-toolkit.md`.
