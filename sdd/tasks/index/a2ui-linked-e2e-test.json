@@ -156,7 +156,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,8 +166,9 @@
       "parallelism_notes": "depends on TASK-3847: build_dashboard_agent's prompt drives the qs_build_linked_dashboard tool and WIDGETS feeds it; first task under examples/a2ui/, owns the .gitignore whitelist every later example task relies on",
       "assigned_to": null,
       "started_at": "2026-09-28T22:32:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3848-a2ui-example-dashboard-agent.md"
+      "completed_at": "2026-09-28T23:05:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3848-a2ui-example-dashboard-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3849",
