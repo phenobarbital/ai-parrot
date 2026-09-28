@@ -32,4 +32,13 @@ describe('deriveConditions golden fixtures', () => {
     expect(out).not.toHaveProperty('querylimit');
     expect(out).not.toHaveProperty('refresh');
   });
+
+  it('never emits limit and omits a falsy _offset (conditions.py:35-36)', () => {
+    const zero = deriveConditions({ placeholders: {}, limit: 10, offset: 0 }, {});
+    expect(zero).not.toHaveProperty('limit');
+    expect(zero).not.toHaveProperty('_offset');
+    expect(zero).toEqual({});
+    expect(deriveConditions({ placeholders: {}, offset: 5 }, {})).toEqual({ _offset: 5 });
+    expect(deriveConditions({ placeholders: {}, limit: 7 }, {})).toEqual({});
+  });
 });
