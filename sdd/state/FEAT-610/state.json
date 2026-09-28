@@ -3,7 +3,7 @@
   "feat_id": "FEAT-610",
   "feature_slug": "a2ui-linked-e2e-test",
   "started_at": "2026-09-28T20:12:00Z",
-  "updated_at": "2026-09-28T21:20:00Z",
+  "updated_at": "2026-09-28T22:10:00Z",
   "source": {
     "kind": "inline",
     "jira_key": null,
@@ -44,9 +44,9 @@
       "status": "completed",
       "synthesis_path": "sdd/state/FEAT-610/synthesis.json",
       "overall_confidence": "medium",
-      "claims_total": 18,
-      "claims_high_conf": 13,
-      "claims_medium_conf": 5,
+      "claims_total": 19,
+      "claims_high_conf": 18,
+      "claims_medium_conf": 1,
       "claims_low_conf": 0,
       "unknowns_count": 5,
       "lint_passed": true,
@@ -57,7 +57,7 @@
       "status": "completed",
       "questions_total": 4,
       "questions_answered": 4,
-      "note": "U5 (grid paging) defaulted to server-side paging"
+      "note": "U5 (grid paging) defaulted to server-side paging; follow-up round resolved slug/PBAC/refresh; F040 prod verification (ENV=prod, read-only); F041 verified C17/C18"
     },
     "output": {
       "status": "completed",

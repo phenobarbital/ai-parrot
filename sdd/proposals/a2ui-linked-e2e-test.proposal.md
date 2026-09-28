@@ -154,29 +154,33 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
   - logs in via `/api/v1/login` with `X-Auth-Method: BasicAuth` and stores the JWT in localStorage;
   - fetches the surface and walks the v1.0 component tree;
   - renders KPICard as hero cards, Chart (bar or pie) with echarts, and DataTable with grid.js in `server` mode (paging and search mapped to `_limit`/`_offset`/`filter`);
-  - adds a **refresh button per widget** that re-POSTs that widget's descriptor `conditions` to `/api/v3/queries/{slug}` with the bearer token.
+  - adds a **refresh button per widget** that re-POSTs only that widget's descriptor `conditions` to `/api/v3/queries/{slug}` with the bearer token and repaints only that widget;
+  - adds a dashboard-level **"Refresh all"** button that re-executes every source (deduplicated per source key, in parallel) and repaints all bound widgets. Both modes are deterministic, with no LLM involved.
+- **Runtime constraint (user decision).** The renderer must not depend on navigator-frontend-next or on any JS/Python library that ai-parrot does not already ship or reference. ECharts is vendored (`formats/assets/echarts.min.js`). grid.js is already referenced by `formats/table.py` and the `gridjs.md` catalog entry, so reuse that same source/version, pinned with real SRI hashes.
 - **Multi-widget dashboard tool/helper** (e.g. `QuerysourceToolkit.build_linked_dashboard`, or a builder over `builders.build_linked_surface`). It takes N widget specs (kind, slug, conditions, binding) and returns one TOOL-origin linked `createSurface`, so the agent emits the whole dashboard in a single tool call.
 - **Widget → query map** (the example's agent prompt / tool input):
 
-  | Widget | Slug | Conditions |
-  |---|---|---|
-  | KPI total | base | `{"fields": ["count(*) as total"]}` |
-  | KPI Pilates Studio | base | `{"fields": ["count(*) as total"], "filter": {"graduation_details": {"@>": [{"course": "Pilates Studio"}]}}}` |
-  | KPI Pilates Mat | base | same, with `"Pilates Mat"` |
-  | KPI multi-graduates | base | `{"fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]}` |
-  | Bar by country | base | `{"fields": ["country", "count(*) as graduates"], "group_by": ["country"]}` |
-  | Bar by licensee | base | `{"fields": ["licensee", "count(*) as graduates"], "group_by": ["licensee"]}` |
-  | Pie by course | `polestar_graduates_by_course` (new, seeded) | `{"fields": ["course", "count(*) as graduates"], "group_by": ["course"]}` |
-  | Grid | base | paged `_limit`/`_offset` plus a `count(*)` total; `filter` taken from the grid search box |
+  | Widget | Slug | Conditions | Expected (prod, 2026-09-28 — F040) |
+  |---|---|---|---|
+  | KPI total | base | `{"fields": ["count(*) as total"]}` | 17572 |
+  | KPI Pilates Studio | base | `{"fields": ["count(*) as total"], "filter": {"graduation_details": {"@>": [{"course": "Pilates Studio"}]}}}` | 9191 people |
+  | KPI Pilates Mat | base | same, with `"Pilates Mat"` | 6245 people |
+  | KPI multi-graduates | base | `{"fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]}` (interim; see follow-up QS-1) | 2884 |
+  | Bar by country | base | `{"fields": ["country", "count(*) as graduates"], "group_by": ["country"]}` | 94 bars |
+  | Bar by licensee | base | `{"fields": ["licensee", "count(*) as graduates"], "group_by": ["licensee"]}` | 22 bars |
+  | Pie by course | `polestar_graduates_by_course` (new, seeded in `public.queries`; interim, see follow-up QS-2) | `{"fields": ["course", "count(*) as graduates"], "group_by": ["course"]}` | Studio 9204 · Mat 6247 · Rehab 3300 · Reformer 2048 diplomas (+1 NULL course, which the slug filters out) |
+  | Grid | base | paged `_limit`/`_offset` plus a `count(*)` total; `filter` taken from the grid search box; explicit `fields` if columns beyond the slug's 7 defaults are wanted | 17572 rows total |
+
+  The KPIs count **people** and the pie counts **diplomas**, so the Studio numbers differ (9191 vs 9204) by design. The widget labels must say which is which.
 
 - **Tests.** A fixture/golden with KPI + pie + grid. Server tests with fake QuerySource/authdb, following the `test_linked_surfaces_e2e.py` pattern. A documented manual E2E run against the real slug.
 
 ### What Changes
 
 - **`packages/ai-parrot/pyproject.toml`**: `querysource>=4.1.11` → `>=5.1.1` in the `db` extras (l.225, 688). This is needed for JSONB `@>`. *Evidence*: F013
-- **`packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/echarts.py`::`_build_option`**: pie/donut series get `{name, value}` slices. *Evidence*: F034
-- **Wire doc §3** (FEAT-598 docs, TASK-3796): fix the route (v3 when no tenant, v1 when a tenant is set) and the `querylimit` cap (5000). *Evidence*: F007
-- **`packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts`::`LinkedLane`**: export a per-source refresh (`refreshSource(key)` over `runSource`) and wire an optional refresh affordance in `A2UISurface.svelte`. *Evidence*: F006, F036
+- **`packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/echarts.py`::`_build_option`**: pie/donut series get `{name, value}` slices, as funnel/treemap already do. *Evidence*: F034, F041
+- **Wire doc §3** (FEAT-598 docs, TASK-3796): fix the route (v3 when no tenant, v1 when a tenant is set), the `querylimit` cap (5000) and the `refresh` semantics (sent only when true). *Evidence*: F007, F041
+- **`packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts`::`LinkedLane`**: export a per-source refresh (`refreshSource(key)` over `runSource`) next to the existing `refreshAll`. Wire both affordances (per widget + "refresh all") in `A2UISurface.svelte`. *Evidence*: F006, F036
 - **`.gitignore`**: whitelist `examples/a2ui/**` (`.py`, `.html`, `.js`). *Evidence*: F026
 
 ### What's Untouched (Non-Goals)
@@ -198,10 +202,10 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 
 ### Integration Risks
 
-- **querysource version.** The shared venv has 5.0.0, so the `@>` KPIs fail until it is upgraded. Upgrading a shared venv is an operator action; it must not be done from a worktree. *Mitigation*: raise the pin, and document the requirement in the example README. *Evidence*: F013
-- **The slug is unverified.** Where `polestar_graduates_directory` is defined (`public.queries` or a tenant), its SQL (`SELECT *`/`{fields}`), and the 17572 count were not checked; a read-only DB lookup was denied during research. If the SQL does not allow `fields`, aggregates are ignored. *Mitigation*: the first spec task verifies the slug and records its definition. *Evidence*: F016
+- **querysource ≥5.1 is a hard requirement (user decision).** Every KPI, and FEAT-598 itself, depends on querysource ≥5.1: the JSONB `@>` operator and the changes FEAT-598 needs landed there. The shared venv still has 5.0.0, and upgrading a shared venv is an operator action that must not be done from a worktree. *Mitigation*: raise the pin in core `ai-parrot[db]`, and make `server.py` fail fast at startup with a clear message when `querysource.__version__ < 5.1`. *Evidence*: F013
+- **The slug lives in production (verified).** `polestar_graduates_directory` is defined in `public.queries` with SQL `SELECT {fields} FROM polestar.vw_graduates_directory {where_cond}`, and its data is in schema `polestar`. The environment is **production**, so every subagent and sub-shell that runs code against it must set `ENV=prod`. The SQL has no `{group_by}` placeholder, so a live check must confirm that QS appends GROUP BY for the bar charts. Seeding `polestar_graduates_by_course` writes to **prod** `public.queries`; it must be idempotent, and it is a user-confirmed step. *Evidence*: F016, F040
 - **v3 single-slug semantics.** The TS lane POSTs plain conditions to the multi-query handler (`/api/v3/queries/{slug}`), which treats the body as that slug's conditions (`../querysource/querysource/handlers/multi.py` `query`). Medium confidence: the FEAT-598 E2E test fakes QuerySource. *Mitigation*: the spec includes a live check of `fields`/`filter`/`group_by` through v3, with a fallback to `/api/v2/services/queries/{slug}`. *Evidence*: F006, F011
-- **PBAC denials.** QS PBAC returns 404 with no session or no matching policy, and the demo user needs `slug:execute` on both slugs. Also verify that the QS guardian and parrot `setup_pbac` coexist on `app['security']`. *Evidence*: F015
+- **PBAC off for the example (user decision).** No permission policy is used, only basic authentication. `env/.env` sets `QS_PBAC_ENABLED=true`, so `server.py` must run with QS PBAC disabled (e.g. `QS_PBAC_ENABLED=false` in the example's env/README), and it does not mount parrot `setup_pbac`. *Evidence*: F015
 - **Svelte change untested.** The Svelte lane was never run through vitest/svelte-check (F008). The per-widget refresh change should come with real vitest runs. *Evidence*: F008
 
 ---
@@ -217,19 +221,20 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 | C5 | Browser refresh = POST conditions (cap 5000) to `/api/v3/queries/{slug}`, or the tenant v1 route, with a bearer token; no per-widget endpoint exists | F005, F006, F011 | high |
 | C6 | The v3 handler accepts a single slug with fields/filter/group_by | F011 | medium |
 | C7 | JSONB `@>` needs querysource ≥5.1.0; the venv has 5.0.0 | F013 | high |
-| C8 | The multi-graduates KPI can be expressed via `count(*) FILTER (…)` | F014 | medium |
+| C8 | The multi-graduates KPI can be expressed via `count(*) FILTER (…)` (slug uses `{fields}`; value 2884 verified) | F014, F040 | high |
 | C9 | The course pie needs a second slug or a tExplode pipeline | F014 | high |
-| C10 | Slugs live in `<schema>.queries`; `polestar_graduates_directory` is unverified | F016 | medium |
+| C10 | `polestar_graduates_directory` is in prod `public.queries`: `SELECT {fields} FROM polestar.vw_graduates_directory {where_cond}`, 17572 rows | F016, F040 | high |
 | C11 | Postgres and Redis are required at runtime | F017, F021, F027 | high |
 | C12 | AuthHandler login returns `{token,…}`; BasicAuth needs authdb | F020, F021, F022 | high |
-| C13 | QS PBAC is on in `env/.env` and strict | F015 | high |
+| C13 | QS PBAC is on in `env/.env` and strict, so the example must disable it (basic auth only) | F015 | high |
 | C14 | No renderer uses echarts + grid.js or refreshes per widget | F006, F033, F035, F036 | high |
 | C15 | The 17.5k-row grid must page on the server | F005, F012, F037 | high |
 | C16 | `examples/a2ui/*.py` and `*.html` are gitignored | F026 | high |
-| C17 | The Python echarts mapper emits unnamed pie slices | F034 | medium |
-| C18 | The wire doc §3 contradicts the code | F007 | medium |
+| C17 | The Python echarts mapper emits unnamed pie slices (confirmed by execution: `data: [10, 5]`) | F034, F041 | high |
+| C18 | The wire doc §3 contradicts the code on the route (v3 without a tenant), the cap (500 vs 5000) and `refresh` (always vs only when true) | F007, F041 | high |
+| C19 | Expected widget values in prod: KPIs 17572 / 9191 / 6245 / 2884; 94 countries; 22 licensees; pie 9204 / 6247 / 3300 / 2048 | F040 | high |
 
-Distribution: **13** high, **5** medium, **0** low.
+Distribution: **18** high, **1** medium (C6: pending live verification), **0** low.
 
 ---
 
@@ -243,31 +248,49 @@ Distribution: **13** high, **5** medium, **0** low.
 - [x] **Core-change scope?** *Resolved*: all four — the multi-widget dashboard helper, the pin to `querysource>=5.1.1`, the pie-slice and wire-doc fixes, and per-widget refresh in the TS `LinkedLane`, with a vanilla-JS port for the example. *Resolves*: C7, C14, C17, C18
 - [x] **Grid with 17k rows?** *Defaulted, not asked*: server-side paging with `_limit`/`_offset` plus `count(*)`, using grid.js server mode. *Resolves*: C15
 
+### Resolved (follow-up round, 2026-09-28)
+
+- [x] **Refresh granularity.** *Resolved*: every widget refreshes on its own, and a collective "Refresh all" also exists. This applies to both the example renderer and the TS `LinkedLane`.
+- [x] **querysource version.** *Resolved*: everything depends on querysource ≥5.1, which carries the changes FEAT-598 requires. It is a hard requirement, with a fail-fast check.
+- [x] **"No external dependencies".** *Resolved*: the example must not run on navigator-frontend-next or depend on libraries beyond those ai-parrot already ships or references (echarts vendored, grid.js as already referenced).
+- [x] **The definition of `polestar_graduates_directory`.** *Resolved*: data in schema `polestar`, slug in `public.queries`, **production** environment. Any subagent or sub-shell that runs code against it must use `ENV=prod`. Verified read-only in F040.
+- [x] **PBAC policy.** *Resolved*: none. Only basic authentication; QS PBAC is disabled for the example.
+
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **The real definition of `polestar_graduates_directory`**: schema/tenant, SQL shape, count. *Owner*: tbd (needs DB access). *Blocks*: C6, C8, C10
-- [ ] **The PBAC policy the demo user needs** for `slug:execute` on both slugs, and whether the QS guardian and parrot PBAC coexist. *Owner*: tbd. *Blocks*: C13
+- [ ] **Does QS append GROUP BY when the slug SQL has no `{group_by}` placeholder?** It must be verified live (`ENV=prod`) through v3 before the bar charts are wired. *Blocks*: C6
+- [ ] **Exact SQL of the seeded `polestar_graduates_by_course` slug** (NULL-course handling, and whether it exposes `{where_cond}` for future filters). Settle it in the spec. The seed writes to prod `public.queries`, so it needs user confirmation at execution time.
 
 ---
 
 ## 6. Recommended Next Step
 
-→ `/sdd-spec FEAT-610`. The FEAT-598 contract is well localized and tested. The remaining unknowns are environment checks (the slug definition, the PBAC policy), and the spec's first task can verify them. A rough task split:
-1. Verify the slug and PBAC, and seed the by-course slug.
-2. Build the multi-widget dashboard helper and its tests.
-3. Core fixes: the querysource pin, the echarts pie fix, the wire doc.
-4. Per-widget refresh in the TS `LinkedLane`, with vitest.
-5. `server.py` and the agent.
-6. The static renderer (echarts + grid.js) and `client.py`.
-7. The `.gitignore` whitelist, a README, and a manual E2E run.
+→ `/sdd-spec FEAT-610`. The FEAT-598 contract is well localized and the prod data is verified (F040). The remaining unknowns are two live checks the first task can run. A rough task split:
+1. Live checks (`ENV=prod`, read-only): v3 single-slug conditions, GROUP BY append, `@>` on querysource ≥5.1. Then seed `polestar_graduates_by_course` idempotently, with user confirmation.
+2. The multi-widget dashboard helper (toolkit tool plus a builder over `build_linked_surface`) and its tests.
+3. Core fixes: the `querysource>=5.1.1` pin, the echarts pie-slice names, the wire doc §3.
+4. `LinkedLane.refreshSource(key)` plus per-widget and "refresh all" affordances in `A2UISurface.svelte`, with vitest.
+5. `server.py`: QuerySource, AuthHandler (BasicAuth, QS PBAC off), the agent and the surface route, and the version fail-fast.
+6. The static renderer (echarts + grid.js, per-widget and refresh-all, grid paged on the server) and `client.py`.
+7. The `.gitignore` whitelist, a README (`ENV=prod`, querysource ≥5.1), and a manual E2E run checked against the C19 values.
 
 ---
 
-## 7. Research Audit
+## 7. Follow-ups (out of scope for FEAT-610, to run later in `querysource`)
+
+These go to the `querysource` repo (it has its own `sdd/`) as separate features once FEAT-610 lands. Their goal is to retire the interim workarounds above.
+
+- **QS-1 — JSONB array-length filtering.** Add a filter operator for the length of a JSONB array, e.g. `{"filter": {"graduation_details": {"jsonb_array_length>": 1}}}` or `{"$len>": 1}`. It compiles to `jsonb_array_length(col) > $n` in the pgsql parser, next to the `@>` operator added in 5.1.0 (F013). The multi-graduates KPI could then use a declarative, parameterizable filter instead of raw SQL inside `fields`. *Interim in FEAT-610*: `count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1)` in `fields`.
+- **QS-2 — GROUP BY over JSONB array elements.** Let `group_by` (and `fields`) address a JSONB array element key, e.g. `"group_by": ["graduation_details[].course"]`. The parser would emit `CROSS JOIN LATERAL jsonb_array_elements(graduation_details) AS _e` and group by `_e->>'course'`. The course pie could then run against the base slug, and the extra slug `polestar_graduates_by_course` could be removed. *Interim in FEAT-610*: the seeded second slug.
+- After QS-1 and QS-2 ship, a small ai-parrot follow-up moves the example's widget map to the new syntax and drops the seed.
+
+---
+
+## 8. Research Audit
 
 - Source: `sdd/state/FEAT-610/source.md`
 - Plan: `sdd/state/FEAT-610/research_plan.json` (4 parallel lanes, A–D)
-- Findings: `sdd/state/FEAT-610/findings/` (F001–F008, F010–F018, F020–F028, F030–F039)
+- Findings: `sdd/state/FEAT-610/findings/` (F001–F008, F010–F018, F020–F028, F030–F039, F040 prod verification, F041 C17/C18 verification)
 - Synthesis: `sdd/state/FEAT-610/synthesis.json`
 - State: `sdd/state/FEAT-610/state.json`
-- Note: the wikitoolkit MCP server failed to connect this session, so the lanes used grep and direct reads. The plan gate was not shown to the user; the plan ran directly (interactive session, auto mode).
+- Note: the wikitoolkit MCP server failed to connect this session, so the lanes used grep and direct reads. The plan gate was not shown to the user; the plan ran directly (interactive session, auto mode). F040 was run read-only against production with `ENV=prod`, at the user's instruction.

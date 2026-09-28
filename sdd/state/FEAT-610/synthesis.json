@@ -159,9 +159,10 @@
       "id": "C8",
       "claim": "Multi-graduate KPI expressible via fields: count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1)",
       "evidence": [
-        "F014"
+        "F014",
+        "F040"
       ],
-      "confidence": "medium"
+      "confidence": "high"
     },
     {
       "id": "C9",
@@ -175,9 +176,10 @@
       "id": "C10",
       "claim": "Slugs live in Postgres <schema>.queries; no file-based slug loading; polestar_graduates_directory location/SQL unverified",
       "evidence": [
-        "F016"
+        "F016",
+        "F040"
       ],
-      "confidence": "medium"
+      "confidence": "high"
     },
     {
       "id": "C11",
@@ -240,17 +242,27 @@
       "id": "C17",
       "claim": "Python echarts mapper emits unnamed pie slices (bug)",
       "evidence": [
-        "F034"
+        "F034",
+        "F041"
       ],
-      "confidence": "medium"
+      "confidence": "high"
     },
     {
       "id": "C18",
       "claim": "Wire doc \u00a73 contradicts code on route/querylimit",
       "evidence": [
-        "F007"
+        "F007",
+        "F041"
       ],
-      "confidence": "medium"
+      "confidence": "high"
+    },
+    {
+      "id": "C19",
+      "claim": "Expected prod values: 17572/9191/6245/2884; 94 countries; 22 licensees; pie 9204/6247/3300/2048",
+      "evidence": [
+        "F040"
+      ],
+      "confidence": "high"
     }
   ],
   "unknowns": [
@@ -304,5 +316,19 @@
   "recommended_next_command": {
     "command": "sdd-spec",
     "rationale": "Contract is well localized (FEAT-598 is fresh and tested); remaining unknowns are design choices resolvable in Q&A, not research gaps."
+  },
+  "followup_round": {
+    "at": "2026-09-28",
+    "decisions": [
+      "per-widget refresh + refresh all",
+      "querysource>=5.1 hard requirement",
+      "no deps beyond ai-parrot / no navigator-frontend-next",
+      "slug in prod public.queries, data schema polestar, always ENV=prod",
+      "no PBAC policy, basic auth only"
+    ],
+    "followups": [
+      "QS-1 jsonb array-length filter operator",
+      "QS-2 group_by over JSONB array elements"
+    ]
   }
 }
