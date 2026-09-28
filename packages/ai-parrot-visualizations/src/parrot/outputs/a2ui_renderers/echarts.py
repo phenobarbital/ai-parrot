@@ -275,6 +275,12 @@ class EChartsRenderer(AbstractA2UIRenderer):
         series = []
         for index, col in enumerate(y_cols):
             values = [row.get(col) for row in rows if isinstance(row, dict)]
+            if chart_type in {"pie", "donut"}:
+                values = [
+                    {"name": "Unassigned" if row.get(x) is None else row.get(x), "value": row.get(col)}
+                    for row in rows
+                    if isinstance(row, dict)
+                ]
             mark = series_types[index] if index < len(series_types) and series_types[index] else chart_type
             series_entry: dict[str, Any] = {
                 "name": col,
@@ -304,10 +310,10 @@ class EChartsRenderer(AbstractA2UIRenderer):
                     "data": trend_values,
                     "smooth": True,
                     "symbol": "none",
-                        # Grey on purpose, not the next colour off the palette:
-                        # a colour is a judgement in these reports and a
-                        # regression is geometry. Same tone as the interactive
-                        # surface and the Svelte canvas draw it in.
+                    # Grey on purpose, not the next colour off the palette:
+                    # a colour is a judgement in these reports and a
+                    # regression is geometry. Same tone as the interactive
+                    # surface and the Svelte canvas draw it in.
                     "lineStyle": {"type": "dashed", "color": _TREND_COLOR},
                     "itemStyle": {"color": _TREND_COLOR},
                 }
