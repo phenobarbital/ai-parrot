@@ -263,4 +263,4 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified; mock-based tests (live PG/Arango not available). Arango set_meta uses _assert_writable() (class override). Mutations RED: dropping the wiki: prefix -> test_postgres_meta_keys_are_wiki_scoped & two_wikis_do_not_collide; dropping _assert_writable -> test_arango_meta_read_only_refuses. Live round-trip on arango/postgres not exercised (no servers).

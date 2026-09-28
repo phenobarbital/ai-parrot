@@ -153,7 +153,7 @@
       "feature_id": "FEAT-609",
       "feature": "wikitoolkit-structural-coverage",
       "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "estimated_hours": 2,
@@ -165,13 +165,14 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-28T19:08:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3825-store-meta-api-arango-postgres.md",
+      "completed_at": "2026-09-28T19:18:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3825-store-meta-api-arango-postgres.md",
       "owned_files": [
         "packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py",
         "packages/ai-parrot/src/parrot/knowledge/wiki/postgres_store.py",
         "packages/ai-parrot/tests/knowledge/wiki/test_store_meta_backends.py"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3826",
