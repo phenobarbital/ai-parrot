@@ -412,4 +412,4 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Deviation (per task): new rule leaves is_async False (async is an anonymous token). Mutations verified RED: old ancestor scope -> test_call_inside_arrow_scoped; removing render skip -> test_outline_does_not_render_local_functions; adding javascript to languages -> test_ts_only_rules_skip_javascript. Parity + 303 language tests green.
