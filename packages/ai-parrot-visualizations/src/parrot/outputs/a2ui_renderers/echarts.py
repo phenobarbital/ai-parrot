@@ -499,7 +499,7 @@ class EChartsRenderer(AbstractA2UIRenderer):
         mean_x = sum(xs) / n
         mean_y = sum(numeric) / n
         denom = sum((x - mean_x) ** 2 for x in xs) or 1
-        slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, numeric)) / denom
+        slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, numeric, strict=False)) / denom
         intercept = mean_y - slope * mean_x
         return [slope * x + intercept for x in xs]
 
