@@ -112,7 +112,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,9 @@
       "parallelism_notes": "needs v1.0-wrapped a2ui_envelope + metadata['a2ui_surface_id'] from TASK-3835 (bots/base.py, emission.py) and TASK-3833's serverRefresh/currentParams contract in A2UISurface.svelte rendered via persistedSurfaceId",
       "assigned_to": null,
       "started_at": "2026-09-28T23:41:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3836-admin-canvas-linked-wiring.md"
+      "completed_at": "2026-09-28T23:49:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3836-admin-canvas-linked-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3837",
