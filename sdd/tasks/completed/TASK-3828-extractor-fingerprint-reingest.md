@@ -363,4 +363,4 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified; no import cycle. Mutations RED: disabling the force-set union -> test_build_heals_after_extra_installed + no_churn + saved_via_meta; skipping save_fingerprint -> the same. Full tests/knowledge/wiki: 1981 passed (test_sources json-stale failure pre-existing, deselected). Note: tests/ plane test_cli_status_sqlite stays green.
