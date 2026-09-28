@@ -272,7 +272,7 @@
       "feature_id": "FEAT-609",
       "feature": "wikitoolkit-structural-coverage",
       "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "estimated_hours": 6,
@@ -286,8 +286,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-28T19:08:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3829-federated-symbol-queries.md",
+      "completed_at": "2026-09-28T19:34:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3829-federated-symbol-queries.md",
       "owned_files": [
         "packages/ai-parrot/src/parrot/knowledge/wiki/symbols.py",
         "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py",
@@ -295,7 +295,8 @@
         "packages/ai-parrot/src/parrot/knowledge/wiki/structural/tools.py",
         "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
         "tests/knowledge/wiki/test_federated_symbols.py"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3830",
