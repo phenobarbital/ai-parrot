@@ -64,7 +64,8 @@ from parrot.knowledge.wiki.federation import (
     open_namespace_store,
     resolve_namespaces,
 )
-from parrot.knowledge.wiki.languages import all_scanners
+from parrot.knowledge.wiki.languages import all_scanners, astgrep
+from parrot.knowledge.wiki.languages.render import structural_enabled
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
     WikiConfigError,
@@ -396,6 +397,55 @@ def _resolve_project_effective(path: str | None) -> tuple[Path, WikiEffectiveCon
     except WikiConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     return root, effective
+
+
+_NON_STRUCTURAL_SCANNERS = frozenset({"python", "luau"})
+_STRUCTURAL_INSTALL_HINT = "pip install 'ai-parrot[wiki-languages]'"
+
+
+def _structural_capable_languages() -> list[str]:
+    """Scanner names whose symbols come only from the ast-grep seam (FEAT-609)."""
+    return sorted(name for name in all_scanners() if name not in _NON_STRUCTURAL_SCANNERS)
+
+
+def _structural_gap_warning(scan: Any) -> str | None:
+    """One-line warning when structural-capable files were scanned without ast-grep.
+
+    Pure: no logging, no I/O. ``None`` when the kill switch is off, ast-grep is
+    available, or the scan holds no structural-capable file.
+    """
+    if not structural_enabled() or astgrep.is_available():
+        return None
+    capable = set(_structural_capable_languages())
+    counts: dict[str, int] = {}
+    for file_slice in scan.files:
+        if file_slice.language in capable:
+            counts[file_slice.language] = counts.get(file_slice.language, 0) + 1
+    if not counts:
+        return None
+    total = sum(counts.values())
+    names = ", ".join(sorted(counts))
+    return (
+        f"{total} {names} file(s) scanned without the structural tier: "
+        f"no sym: pages for them. Install {_STRUCTURAL_INSTALL_HINT}"
+    )
+
+
+def _symbols_status() -> dict[str, Any]:
+    """``status``'s view of the symbol plane: which languages lack their tier."""
+    if not structural_enabled():
+        return {"enabled": False, "disabled_for": _structural_capable_languages(), "reason": "config"}
+    missing = [name for name in _structural_capable_languages() if all_scanners()[name].mode != "ast-grep"]
+    return {"enabled": not missing, "disabled_for": missing, "reason": "missing-extra" if missing else None}
+
+
+def _format_symbols_status(info: dict[str, Any]) -> str:
+    """Render the ``Symbols`` status line."""
+    if info.get("enabled"):
+        return "enabled"
+    if info.get("reason") == "config":
+        return "disabled by configuration (structural tier switched off)"
+    return f"disabled for {', '.join(info.get('disabled_for') or [])} — {_STRUCTURAL_INSTALL_HINT}"
 
 
 def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
@@ -1533,6 +1583,12 @@ def build(
                 use_git=not no_git,
             )
 
+        gap_warning = _structural_gap_warning(scan)
+        if gap_warning:
+            _cli_logger.warning(gap_warning)
+            if not quiet:
+                click.echo(f"WARNING: {gap_warning}", err=True)
+
         output_dir = config.storage_path(root)
 
         async def _pipeline() -> dict[str, Any]:
@@ -2127,6 +2183,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         # named for the structural symbol plane specifically — additive,
         # "languages" itself is unchanged for backward compatibility.
         "structural": {name: s.mode for name, s in all_scanners().items()},
+        "symbols": _symbols_status(),
     }
     if scoped_to is not None:
         name, handle_cfg, storage_dir = scoped_to
@@ -2178,6 +2235,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Structural: {payload['structural']}")
+    click.echo(f"Symbols   : {_format_symbols_status(payload['symbols'])}")
     if scoped_to is None:
         click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if namespaces:
