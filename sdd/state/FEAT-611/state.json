@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-611",
+  "feature_slug": "a2ui-linked-e2e-parallel",
+  "started_at": "2026-09-28T20:05:00Z",
+  "updated_at": "2026-09-28T20:50:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-611/source.md",
+    "fetched_at": "2026-09-28T20:05:00Z",
+    "summary_oneline": "Parallel A2UI linked-surfaces E2E examples reusing FEAT-610 infrastructure to exercise other FEAT-598 capabilities/datasets"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "committed",
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "phases": {
+    "plan": {
+      "status": "completed",
+      "queries_total": 7,
+      "approved_by_user": false,
+      "plan_path": "sdd/state/FEAT-611/research_plan.json",
+      "note": "plan gate skipped in auto mode; 2 parallel lanes"
+    },
+    "research": {
+      "status": "completed",
+      "lanes": 2,
+      "findings": 10,
+      "truncated": false,
+      "truncation_reason": null,
+      "note": "wikitoolkit unavailable; grep/read only; no DB queried"
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-611/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 10,
+      "claims_high_conf": 8,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 3,
+      "questions_answered": 3
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/a2ui-linked-e2e-parallel.proposal.md",
+      "commit_sha": "f499732ea0897948ccde2c9837b3d2b6dc9c711c"
+    }
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "/sdd-spec FEAT-611"
+  }
+}

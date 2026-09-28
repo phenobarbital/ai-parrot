@@ -1,0 +1,6 @@
+{
+  "description": "sum groups retain first-appearance order",
+  "input": [{"program": "epson", "visits": 3}, {"program": "hisense", "visits": 5}, {"program": "epson", "visits": 2}],
+  "ops": [{"op": "group_by", "by": ["program"], "aggregate": {"visits": "sum"}}],
+  "expected": [{"program": "epson", "visits": 5}, {"program": "hisense", "visits": 5}]
+}

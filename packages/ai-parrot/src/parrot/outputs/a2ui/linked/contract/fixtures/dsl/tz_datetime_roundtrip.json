@@ -1,0 +1,6 @@
+{
+  "description": "timezone-aware ISO strings remain unchanged through filtering and sorting",
+  "input": [{"at": "2026-09-01T10:00:00-05:00", "name": "b"}, {"at": "2026-09-01T09:00:00+02:00", "name": "a"}, {"at": "2026-09-02T12:00:00+00:00", "name": "c"}],
+  "ops": [{"op": "filter", "column": "name", "operator": "contains", "value": ""}, {"op": "sort", "by": [{"column": "name", "direction": "asc"}]}],
+  "expected": [{"at": "2026-09-01T09:00:00+02:00", "name": "a"}, {"at": "2026-09-01T10:00:00-05:00", "name": "b"}, {"at": "2026-09-02T12:00:00+00:00", "name": "c"}]
+}

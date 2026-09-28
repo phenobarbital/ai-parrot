@@ -618,6 +618,13 @@ llms = [
 local = [
     { name = "ai-parrot-client-local" },
 ]
+manuals = [
+    { name = "bm25s" },
+    { name = "pymupdf" },
+    { name = "pymupdf4llm" },
+    { name = "rapidfuzz" },
+    { name = "tree-sitter" },
+]
 mcp = [
     { name = "aiogoogle" },
     { name = "arxiv" },
@@ -653,6 +660,11 @@ meta = [
 ]
 moonshot = [
     { name = "ai-parrot-client-moonshot" },
+]
+msgraph = [
+    { name = "azure-identity" },
+    { name = "microsoft-kiota-authentication-azure" },
+    { name = "msgraph-sdk" },
 ]
 needle = [
     { name = "cactus-needle" },
@@ -762,8 +774,9 @@ zai = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ai-parrot", extras = ["agents", "audio", "bigquery", "charts", "db", "docling", "finance", "flowtask", "images", "integrations", "llms", "mcp", "ocr", "pdf", "reddit", "rust", "visualizations"], marker = "extra == 'all'", editable = "packages/ai-parrot" },
+    { name = "ai-parrot", extras = ["agents", "audio", "bigquery", "charts", "db", "docling", "finance", "flowtask", "images", "integrations", "llms", "mcp", "msgraph", "ocr", "pdf", "reddit", "rust", "visualizations"], marker = "extra == 'all'", editable = "packages/ai-parrot" },
     { name = "ai-parrot", extras = ["agents-lite", "integrations", "llms"], marker = "extra == 'all-fast'", editable = "packages/ai-parrot" },
+    { name = "ai-parrot", extras = ["bookstore", "graphindex"], marker = "extra == 'manuals'", editable = "packages/ai-parrot" },
     { name = "ai-parrot", extras = ["graphindex", "leiden", "wiki-languages", "wiki-structural"], marker = "extra == 'wiki'", editable = "packages/ai-parrot" },
     { name = "ai-parrot-client-amazon", marker = "extra == 'bedrock-native'", editable = "packages/ai-parrot-client-amazon" },
     { name = "ai-parrot-client-amazon", marker = "extra == 'llms'", editable = "packages/ai-parrot-client-amazon" },
@@ -837,6 +850,7 @@ requires-dist = [
     { name = "asyncpg", marker = "extra == 'graphindex-postgres'", specifier = ">=0.29" },
     { name = "autoviz", marker = "extra == 'agents'", specifier = "==0.1.905" },
     { name = "azure-identity", marker = "extra == 'agents'", specifier = ">=1.18.0" },
+    { name = "azure-identity", marker = "extra == 'msgraph'", specifier = ">=1.18.0" },
     { name = "backoff", specifier = "==2.2.1" },
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "bm25s", marker = "extra == 'bookstore'", specifier = ">=0.2" },
@@ -912,7 +926,9 @@ requires-dist = [
     { name = "mediawikiapi", marker = "extra == 'agents-lite'", specifier = "==1.2" },
     { name = "mediawikiapi", marker = "extra == 'mcp'", specifier = "==1.2" },
     { name = "microsoft-kiota-authentication-azure", marker = "extra == 'agents'", specifier = ">=1.2.0" },
+    { name = "microsoft-kiota-authentication-azure", marker = "extra == 'msgraph'", specifier = ">=1.2.0" },
     { name = "msgraph-sdk", marker = "extra == 'agents'", specifier = ">=1.8.0" },
+    { name = "msgraph-sdk", marker = "extra == 'msgraph'", specifier = ">=1.8.0" },
     { name = "navconfig", extras = ["default"], specifier = ">=2.5.2" },
     { name = "navigator-api", extras = ["google", "locale", "uvloop"], specifier = ">=3.2.2" },
     { name = "navigator-auth", specifier = ">=0.28.0" },
@@ -987,8 +1003,8 @@ requires-dist = [
     { name = "python-statemachine", specifier = "==2.5.0" },
     { name = "python-xmp-toolkit", marker = "extra == 'images'", specifier = "==2.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "querysource", marker = "extra == 'db'", specifier = ">=4.1.11" },
-    { name = "querysource", marker = "extra == 'integrations'", specifier = ">=4.1.11" },
+    { name = "querysource", marker = "extra == 'db'", specifier = ">=5.1.2" },
+    { name = "querysource", marker = "extra == 'integrations'", specifier = ">=5.1.2" },
     { name = "questionary", specifier = ">=2.1.1" },
     { name = "rank-bm25", marker = "extra == 'retrieval'", specifier = "==0.2.2" },
     { name = "rapidfuzz", marker = "extra == 'graphindex'", specifier = ">=3.0" },
@@ -1057,7 +1073,7 @@ requires-dist = [
     { name = "zeep", extras = ["async"], marker = "extra == 'agents-lite'", specifier = "==4.3.3" },
     { name = "zeep", extras = ["async"], marker = "extra == 'mcp'", specifier = "==4.3.3" },
 ]
-provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "scheduler", "server", "reddit", "jira", "retrieval", "tokenizer", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
+provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "manuals", "scheduler", "server", "reddit", "jira", "retrieval", "tokenizer", "msgraph", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
 
 [[package]]
 name = "ai-parrot-advisors"
@@ -1081,7 +1097,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1096,7 +1112,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1113,7 +1129,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1128,7 +1144,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1143,7 +1159,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1158,7 +1174,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1173,7 +1189,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1188,7 +1204,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1199,7 +1215,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1210,7 +1226,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1221,7 +1237,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1232,7 +1248,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1243,7 +1259,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1269,7 +1285,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1280,7 +1296,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1295,7 +1311,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1759,7 +1775,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "0.2.5"
+version = "0.2.6"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -1978,6 +1994,18 @@ google = [
     { name = "aiogoogle" },
     { name = "google-api-python-client" },
 ]
+hooba = [
+    { name = "ai-parrot-loaders" },
+    { name = "odfpy" },
+    { name = "openpyxl" },
+    { name = "pandas" },
+    { name = "playwright" },
+    { name = "pyyaml" },
+    { name = "rapidfuzz" },
+    { name = "selenium" },
+    { name = "undetected-chromedriver" },
+    { name = "webdriver-manager" },
+]
 jira = [
     { name = "jira" },
 ]
@@ -2058,7 +2086,8 @@ workday = [
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
     { name = "ai-parrot-loaders", marker = "extra == 'business-automation'", editable = "packages/ai-parrot-loaders" },
-    { name = "ai-parrot-tools", extras = ["analysis", "arxiv", "aws", "business-automation", "charts", "codeinterpreter", "db", "docker", "excel", "finance", "flowtask", "git", "google", "jira", "kubernetes", "messaging", "msword", "office365", "pdf", "pulumi", "research", "rss", "sandbox", "scraping", "security", "sitesearch", "slack", "weather", "wikipedia"], marker = "extra == 'all'", editable = "packages/ai-parrot-tools" },
+    { name = "ai-parrot-tools", extras = ["analysis", "arxiv", "aws", "business-automation", "charts", "codeinterpreter", "db", "docker", "excel", "finance", "flowtask", "git", "google", "hooba", "jira", "kubernetes", "messaging", "msword", "office365", "pdf", "pulumi", "research", "rss", "sandbox", "scraping", "security", "sitesearch", "slack", "weather", "wikipedia"], marker = "extra == 'all'", editable = "packages/ai-parrot-tools" },
+    { name = "ai-parrot-tools", extras = ["business-automation", "excel", "scraping"], marker = "extra == 'hooba'", editable = "packages/ai-parrot-tools" },
     { name = "aiogoogle", marker = "extra == 'google'", specifier = ">=5.17" },
     { name = "aiohttp", marker = "extra == 'workday'", specifier = ">=3.9" },
     { name = "aioimaplib", marker = "extra == 'messaging'", specifier = ">=1.1" },
@@ -2110,8 +2139,9 @@ requires-dist = [
     { name = "pyowm", marker = "extra == 'weather'", specifier = ">=3.3" },
     { name = "python-docx", marker = "extra == 'msword'", specifier = "==1.1.2" },
     { name = "python-docx", marker = "extra == 'pdf'", specifier = "==1.1.2" },
+    { name = "pyyaml", marker = "extra == 'hooba'", specifier = ">=6.0" },
     { name = "pyyaml", marker = "extra == 'kubernetes'", specifier = ">=6.0" },
-    { name = "querysource", marker = "extra == 'db'", specifier = ">=4.5.11" },
+    { name = "querysource", marker = "extra == 'db'", specifier = ">=5.1.2" },
     { name = "rapidfuzz", marker = "extra == 'scraping'", specifier = ">=3.0" },
     { name = "rustworkx", specifier = ">=0.15" },
     { name = "sdmx1", marker = "extra == 'research'", specifier = ">=2.27" },
@@ -2128,7 +2158,7 @@ requires-dist = [
     { name = "yfinance", marker = "extra == 'finance'", specifier = ">=0.2.54" },
     { name = "zeep", extras = ["async"], marker = "extra == 'workday'", specifier = ">=4.3.3" },
 ]
-provides-extras = ["pdf", "msword", "jira", "slack", "aws", "docker", "git", "analysis", "charts", "excel", "sandbox", "codeinterpreter", "pulumi", "kubernetes", "sitesearch", "office365", "scraping", "rss", "finance", "db", "flowtask", "google", "arxiv", "wikipedia", "weather", "messaging", "security", "workday", "research", "business-automation", "all"]
+provides-extras = ["pdf", "msword", "jira", "slack", "aws", "docker", "git", "analysis", "charts", "excel", "sandbox", "codeinterpreter", "pulumi", "kubernetes", "sitesearch", "office365", "scraping", "rss", "finance", "db", "flowtask", "google", "arxiv", "wikipedia", "weather", "messaging", "security", "workday", "research", "business-automation", "hooba", "all"]
 
 [[package]]
 name = "ai-parrot-visualizations"
@@ -9365,7 +9395,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "1.0.5"
+version = "1.0.6"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]
@@ -13028,7 +13058,7 @@ wheels = [
 
 [[package]]
 name = "querysource"
-version = "5.0.0"
+version = "5.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiocsv" },
@@ -13057,6 +13087,7 @@ dependencies = [
     { name = "jinja2-iso8601" },
     { name = "jinja2-time" },
     { name = "jsonschema" },
+    { name = "lark" },
     { name = "livepopulartimes" },
     { name = "lxml" },
     { name = "matplotlib" },
@@ -13095,14 +13126,14 @@ dependencies = [
     { name = "xlrd" },
     { name = "xlsxwriter" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/57/1c/a25bc33b404fc8e498d9bcf7ff4bbb61c126a59712db83c7db10274bd4e4/querysource-5.0.0.tar.gz", hash = "sha256:9fdd7760b06bceac6d82a4d03d9059313bf03bd5f975c112db0ea4f6361235df", size = 3469131, upload-time = "2026-09-16T00:35:04.296Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/c8/6db5a7532cc2b08bb47fdfbfe3cd56c51484e4c8a7a8edc3409d4048551d/querysource-5.1.2.tar.gz", hash = "sha256:7a7a630afbafcd89109143f5999d22b03bbef2bb54c953c983ecb36bb1bf217c", size = 3678337, upload-time = "2026-09-28T21:32:43.233Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/fa/32c3c5e21760e453c4c09a22aa18747fb4943174b47d14dfa8c4feb23f46/querysource-5.0.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:7f93f8dfd0cdbae28599e736fb8d66c46f505d9a390e9082aa373370d18166ac", size = 11281533, upload-time = "2026-09-16T00:34:51.434Z" },
-    { url = "https://files.pythonhosted.org/packages/91/25/9a77d26b6748d04cdf1cd9468308e44c70b65a668ae480963395c90bf278/querysource-5.0.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:a0f6eb1ab305e1b3716b46fcb57e6eb53f019fc5f21bd44ba3899e55576d4be0", size = 11378294, upload-time = "2026-09-16T00:34:53.459Z" },
-    { url = "https://files.pythonhosted.org/packages/06/ba/b391ca67ace38a3b70f9cc751a8dae7e1db54be01ee2a8538a4d96e2f277/querysource-5.0.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:4c489a00dc4c518c65053c95674807c5cb92c3ef2837feffabef0f362f310096", size = 11557291, upload-time = "2026-09-16T00:34:55.659Z" },
-    { url = "https://files.pythonhosted.org/packages/ab/0c/7f1b51573ef5ac828f33f82b6350ccc7f5500cab4971e2576a1240ceec1b/querysource-5.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:e7e278d967db3fde2e1be928002d0380950b2bd27809609b403242bd045d328e", size = 11526394, upload-time = "2026-09-16T00:34:57.999Z" },
-    { url = "https://files.pythonhosted.org/packages/4b/1e/04a59739ccd4d11bb6ed032110f34e2c5bc879effeab000d07941f1d792c/querysource-5.0.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a4e0788af0d7f485c3551ed87fe5e050c10017e590feec50897b0dc02a116b29", size = 11500361, upload-time = "2026-09-16T00:35:00.184Z" },
-    { url = "https://files.pythonhosted.org/packages/e8/a1/a039620da67900a1dc0291e92496e8efba4edc69d3a3c03eda31af1a78c0/querysource-5.0.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:cce40c93e47bbbdf1d298878cd830f41bfd1214e7628e938e0ac7fefc8a7b1c4", size = 11468210, upload-time = "2026-09-16T00:35:02.394Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/fb/701a01fd203ca1f5e5dc707ef21f35da08f2b5ac6e3fb85e2160fc0465d5/querysource-5.1.2-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:e2f0a68e06ff1f425ac475f535f3fd7611546467fad83c035d88d3a7e4b83c47", size = 11794742, upload-time = "2026-09-28T21:32:26.147Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/75/e207cc5934c617db2b76db4501f0a37d7789e358436ce4510ec66298e894/querysource-5.1.2-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:25de5e7c5c5c84b646e0d01f5275b8f0f585bb39ed4d2d7a42296cf66712681f", size = 11895816, upload-time = "2026-09-28T21:32:29.41Z" },
+    { url = "https://files.pythonhosted.org/packages/09/99/8fa99423a03bde55bfa04114a7d69037e39b62328be56323bb6c240b34bf/querysource-5.1.2-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:797b279d1e54d5a7dfaaca74aea663f505e35d8e3e9b3a10bb2ca6c783e53ab1", size = 12068842, upload-time = "2026-09-28T21:32:31.918Z" },
+    { url = "https://files.pythonhosted.org/packages/63/c2/3781dfb8e3628c8fd333467bf715b978eb575c32a11be1409b016e3e05e2/querysource-5.1.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:62d5326431f4fd77d3584d6d1c6a64991fa07384b5258e5507135684e5402d3c", size = 12037996, upload-time = "2026-09-28T21:32:35.07Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/36/99422c407e85bec87f6845a8a40bcfe76ed42fbdeabebab36465996e6c54/querysource-5.1.2-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a3904c37686e48f8bfedeeefe9fceacd46e92fcbd1536580638b7fb8d93a4755", size = 12008808, upload-time = "2026-09-28T21:32:38.07Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/91/717f118d78e81c7257832dee029c5f287283dac1d6d8cdaafd89acaf1e65/querysource-5.1.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:6a5b89a013db826ad05e71864c0f0ea14f6850bd4e90c0f0bcb468410d0d4c71", size = 11978285, upload-time = "2026-09-28T21:32:40.723Z" },
 ]
 
 [[package]]

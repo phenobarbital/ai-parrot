@@ -18,6 +18,7 @@ plugins/*
 /outputs/**/*.png
 /outputs/dev_loop_runs/
 examples/**/*.py
+examples/**/*.html
 !examples/autonomous_analyst/**/*.py
 !examples/data/whatif_scenario_e2e.py
 # AWS Bedrock sample agents are documentation — they ship with the repo, so
@@ -29,12 +30,14 @@ examples/**/*.py
 # The A2UI dashboard walkthrough is documentation as well — it runs offline on
 # seeded data and doubles as a smoke test for the v1.0 wire (FEAT-470).
 !examples/agents/a2ui/**/*.py
+# FEAT-610 A2UI linked-surfaces E2E example (server + static renderer) ships with the repo.
+!examples/a2ui/**/*.py
+!examples/a2ui/**/*.html
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
 examples/**/*.webm
 examples/**/*.wav
-examples/**/*.html
 examples/**/*.jp*
 examples/**/*.png
 examples/zoom/*

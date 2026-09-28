@@ -16,6 +16,7 @@ service + handler classes.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -26,6 +27,7 @@ from navigator.views import BaseView
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator_session import get_session
+from parrot.auth.exceptions import AuthorizationRequired
 from parrot.auth.permission import build_principal_context
 from parrot.handlers.infographic_recipes import get_recipe_runner
 from parrot.handlers.models.ui_surfaces import (
@@ -40,6 +42,9 @@ from parrot.handlers.ui_surfaces_scope import (
     scope_grants,
 )
 from parrot.outputs.a2ui.models import CreateSurface
+from parrot.outputs.a2ui.catalog.base import CatalogValidationError
+from parrot.outputs.a2ui.linked import has_data_sources
+from parrot.outputs.a2ui.linked.service import LinkedGuardRequired, LinkedSurfaceService, SnapshotError
 from parrot.storage.artifacts import ArtifactStore
 from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
 from pydantic import BaseModel, Field, ValidationError
@@ -338,6 +343,18 @@ class UISurfacesHandler(BaseView):
             self.request.app["ui_surfaces_negotiation"] = service
         return service
 
+    def _linked_service(self) -> LinkedSurfaceService:
+        """Return the app's cached linked-surface service.
+
+        A missing guard is intentionally deferred to the service, which only
+        rejects linked envelopes and leaves baked envelopes unchanged.
+        """
+        service = self.request.app.get("linked_surface_service")
+        if service is None:
+            service = LinkedSurfaceService(guard=self.request.app.get("dataplane_guard"))
+            self.request.app["linked_surface_service"] = service
+        return service
+
     def _recipe_runner(self) -> RecipeRunner | None:
         """Reuse the process-wide RecipeRunner wired by ``register_recipe_routes()``."""
         return self.request.app.get("recipe_runner") or get_recipe_runner()
@@ -550,12 +567,35 @@ class UISurfacesHandler(BaseView):
                 status=400,
             )
 
+        owner_pctx = build_principal_context(user_id, channel="ui_surfaces")
+        envelope_dump = envelope.model_dump(by_alias=True, mode="json")
+        if has_data_sources(envelope):
+            service = self._linked_service()
+            try:
+                await service.validate_for_persistence(envelope, owner_pctx=owner_pctx)
+                envelope_dump = await service.ensure_snapshot(envelope_dump, owner_pctx=owner_pctx)
+            except LinkedGuardRequired:
+                return self.json_response(
+                    {"status": "error", "message": "Linked surfaces require a configured data-plane guard"},
+                    status=403,
+                )
+            except AuthorizationRequired:
+                return self.json_response({"status": "error", "message": "Data source not permitted"}, status=403)
+            except CatalogValidationError as exc:
+                return self.json_response(
+                    {"status": "error", "message": "Invalid linked envelope", "errors": exc.issues}, status=422
+                )
+            except SnapshotError as exc:
+                return self.json_response(
+                    {"status": "error", "message": "Data source unavailable", "code": exc.code}, status=exc.status
+                )
+
         now = datetime.now(UTC)
         record = UISurfaceRecord(
             surface_id=str(uuid.uuid4()),
             kind=req.kind,
             title=req.title,
-            envelope=envelope.model_dump(by_alias=True, mode="json"),
+            envelope=envelope_dump,
             catalog_id=envelope.catalog_id,
             agent_id=req.agent_id or "",
             user_id=user_id,
@@ -602,6 +642,12 @@ class UISurfacesHandler(BaseView):
         except Exception:  # noqa: BLE001
             body = {}
         req = RefreshSurfaceRequest.model_validate(body if isinstance(body, dict) else {})
+        # Share-bearer refresh runs with the OWNER's PermissionContext —
+        # never the bearer's identity (spec Known Risk).
+        owner_pctx = build_principal_context(record.user_id, channel="ui_surfaces")
+        if record.recipe_name is None:
+            return await self._refresh_linked(surface_id, record, req, owner_pctx)
+
         # Param precedence: request > stored recipe_params > recipe defaults
         # (recipe defaults are applied inside RecipeRunner._resolve_params_or_raise).
         merged_params = {**record.recipe_params, **req.params}
@@ -614,10 +660,6 @@ class UISurfacesHandler(BaseView):
                 {"status": "error", "message": "recipe_runner is not configured"},
                 status=500,
             )
-
-        # Share-bearer refresh runs with the OWNER's PermissionContext —
-        # never the bearer's identity (spec Known Risk).
-        owner_pctx = build_principal_context(record.user_id, channel="ui_surfaces")
 
         try:
             artifact = await runner.run(
@@ -642,6 +684,54 @@ class UISurfacesHandler(BaseView):
         updated = await self.store.get(surface_id)
         accept = self.negotiation.negotiate(self.request)
         return await self.negotiation.respond(updated, accept)
+
+    async def _refresh_linked(
+        self,
+        surface_id: str,
+        record: UISurfaceRecord,
+        req: RefreshSurfaceRequest,
+        owner_pctx: Any,
+    ) -> web.Response:
+        """Refresh descriptors under their source tenants and persist conditionally."""
+        service = self._linked_service()
+        try:
+            outcome = await service.refresh(record.envelope, params=req.params, owner_pctx=owner_pctx)
+        except LinkedGuardRequired:
+            return self.json_response(
+                {"status": "error", "message": "Linked surfaces require a data-plane guard"}, status=403
+            )
+        except AuthorizationRequired:
+            return self.json_response({"status": "error", "message": "Data source not permitted"}, status=403)
+
+        if outcome.error_status is not None:
+            return self.json_response(
+                {"status": "error", "message": "Data source unavailable", "code": outcome.error_code},
+                status=outcome.error_status,
+            )
+
+        ok = await self.store.update_envelope(
+            surface_id,
+            outcome.envelope,
+            record.recipe_params,
+            expected_updated_at=record.updated_at,
+        )
+        if not ok:
+            newer = await self.store.get(surface_id)
+            metadata = newer.envelope.get("metadata") if newer is not None else None
+            extensions = metadata.get("extensions") if isinstance(metadata, dict) else None
+            sources = extensions.get("parrot_data_sources") if isinstance(extensions, dict) else None
+            stamps = [source.get("snapshot_at") for source in sources.values() if source.get("snapshot_at")]
+            return self.json_response(
+                {"status": "error", "error": "stale refresh", "snapshot_at": max(stamps) if stamps else None},
+                status=409,
+            )
+
+        updated = await self.store.get(surface_id)
+        accept = self.negotiation.negotiate(self.request)
+        response = await self.negotiation.respond(updated, accept)
+        if outcome.warnings:
+            response.headers["X-Parrot-Refresh-Warnings"] = json.dumps(outcome.warnings)
+        return response
 
     # ── PATCH: visibility ────────────────────────────────────────────────
 

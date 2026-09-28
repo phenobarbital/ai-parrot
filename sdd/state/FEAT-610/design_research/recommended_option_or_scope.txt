@@ -1,0 +1,70 @@
+## 3. Probable Scope
+
+### What's New
+
+- **`examples/a2ui/server.py`**: an aiohttp app. It mounts:
+  - `QuerySource(lazy=False).setup(app)`;
+  - `AuthHandler(backends=[BasicAuth])` (existing authdb users);
+  - optionally, `BotManager(enable_database_bots=False, enable_registry_bots=False)` with the demo agent.
+
+  It serves the static renderer at `/` and the surface at its own route (e.g. `GET /api/a2ui/dashboard`). That route runs the agent, whose TOOL output is the linked surface, and caches the envelope. An idempotent seed step upserts the `polestar_graduates_by_course` slug. The mount order follows `app.py`.
+- **`examples/a2ui/client.py`**: a thin launcher that opens the served page (`--open`). The actual client is a static HTML5 page (`examples/a2ui/static/`: `index.html`, `renderer.js`) that does the following:
+  - logs in via `/api/v1/login` with `X-Auth-Method: BasicAuth` and stores the JWT in localStorage;
+  - fetches the surface and walks the v1.0 component tree;
+  - renders KPICard as hero cards, Chart (bar or pie) with echarts, and DataTable with grid.js in `server` mode (paging and search mapped to `_limit`/`_offset`/`filter`);
+  - adds a **refresh button per widget** that re-POSTs only that widget's descriptor `conditions` to `/api/v3/queries/{slug}` with the bearer token and repaints only that widget;
+  - adds a dashboard-level **"Refresh all"** button that re-executes every source (deduplicated per source key, in parallel) and repaints all bound widgets. Both modes are deterministic, with no LLM involved.
+- **Runtime constraint (user decision).** The renderer must not depend on navigator-frontend-next or on any JS/Python library that ai-parrot does not already ship or reference. ECharts is vendored (`formats/assets/echarts.min.js`). grid.js is already referenced by `formats/table.py` and the `gridjs.md` catalog entry, so reuse that same source/version, pinned with real SRI hashes.
+- **Multi-widget dashboard tool/helper** (e.g. `QuerysourceToolkit.build_linked_dashboard`, or a builder over `builders.build_linked_surface`). It takes N widget specs (kind, slug, conditions, binding) and returns one TOOL-origin linked `createSurface`, so the agent emits the whole dashboard in a single tool call.
+- **Widget → query map** (the example's agent prompt / tool input):
+
+  | Widget | Slug | Conditions | Expected (prod, 2026-09-28 — F040) |
+  |---|---|---|---|
+  | KPI total | base | `{"fields": ["count(*) as total"]}` | 17572 |
+  | KPI Pilates Studio | base | `{"fields": ["count(*) as total"], "filter": {"graduation_details": {"@>": [{"course": "Pilates Studio"}]}}}` | 9191 people |
+  | KPI Pilates Mat | base | same, with `"Pilates Mat"` | 6245 people |
+  | KPI multi-graduates | base | `{"fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]}` (interim; see follow-up QS-1) | 2884 |
+  | Bar by country | base | `{"fields": ["country", "count(*) as graduates"], "group_by": ["country"]}` | 95 groups (94 + NULL) |
+  | Bar by licensee | base | `{"fields": ["licensee", "count(*) as graduates"], "group_by": ["licensee"]}` | 23 groups (22 + NULL 7103) |
+  | Pie by course | `polestar_graduates_by_course` (new, seeded in `public.queries`; interim, see follow-up QS-2) | `{"fields": ["course", "count(*) as graduates"], "group_by": ["course"]}` | Studio 9204 · Mat 6247 · Rehab 3300 · Reformer 2048 diplomas (+1 NULL course, which the slug filters out) |
+  | Grid | base | paged `_limit`/`_offset` plus a `count(*)` total; `filter` taken from the grid search box; explicit `fields` if columns beyond the slug's 7 defaults are wanted | 17572 rows total |
+
+  The KPIs count **people** and the pie counts **diplomas**, so the Studio numbers differ (9191 vs 9204) by design. The widget labels must say which is which.
+
+- **Tests.** A fixture/golden with KPI + pie + grid. Server tests with fake QuerySource/authdb, following the `test_linked_surfaces_e2e.py` pattern. A documented manual E2E run against the real slug.
+
+### What Changes
+
+- **`packages/ai-parrot/pyproject.toml`**: `querysource>=4.1.11` → `>=5.1.2` in the `db` extras (l.225, 688); align `ai-parrot-tools[db]` (`>=5.1.1`) as well. 5.1.2 brings JSONB `@>` plus working tenant routes and the `/api/v1/queries/{schema}/{slug}` alias. *Evidence*: F013, F042
+- **`packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/echarts.py`::`_build_option`**: pie/donut series get `{name, value}` slices, as funnel/treemap already do. *Evidence*: F034, F041
+- **Wire doc §3** (FEAT-598 docs, TASK-3796): fix the route (v3 when no tenant, v1 when a tenant is set), the `querylimit` cap (5000) and the `refresh` semantics (sent only when true). *Evidence*: F007, F041
+- **`packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts`::`LinkedLane`**: export a per-source refresh (`refreshSource(key)` over `runSource`) next to the existing `refreshAll`. Wire both affordances (per widget + "refresh all") in `A2UISurface.svelte`. *Evidence*: F006, F036
+- **`.gitignore`**: whitelist `examples/a2ui/**` (`.py`, `.html`, `.js`). *Evidence*: F026
+
+### What's Untouched (Non-Goals)
+
+- The server-lane `/api/v1/ui/surfaces/{id}/refresh` and the persisted `PgUISurfaceStore`. The example serves its own surface route, per U3.
+- The FEAT-598 descriptor schema (`LinkedDataSource`). The example only consumes it.
+- New A2UI catalog components (a Grid container, a refresh prop). Refresh is a renderer affordance, not wire data.
+- A demo auth backend or NoAuth. BasicAuth against the existing authdb is used, per U2.
+- Fixing `transform.ref` in the Python executor, or the `ensure_snapshot` owner re-check (F008). Log these in the ledger if they are still relevant.
+
+### Patterns to Follow
+
+- The mount order and `QuerySource(lazy=False).setup(app)` from `app.py`. *Evidence*: F010, F027
+- The plain-aiohttp example layout with `static/index.html` and `add_static` from `examples/clients/voice/server.py` and `examples/forms/form_server.py`. *Evidence*: F024, F025
+- The login and localStorage token pattern from `admin_login_page`. *Evidence*: F022
+- The fetch contract (`queryUrl`, `querylimit` cap, 404 → `SourceUnavailable`, frame selection) from `linked/fetch.ts`. Port it to vanilla JS rather than inventing a new one. *Evidence*: F006, F036
+- The vendored `formats/assets/echarts.min.js`, or echarts@5.4.3 with real SRI (`tools/interactive/catalog/libraries/echarts.md`). grid.js@6.2.0 needs real SRI hashes; the catalog entry has placeholders. *Evidence*: F035
+- Degrade, don't throw, on unknown components. *Evidence*: F039
+
+### Integration Risks
+
+- **querysource ≥5.1 is a hard requirement (user decision).** Every KPI, and FEAT-598 itself, depends on querysource ≥5.1: the JSONB `@>` operator and the changes FEAT-598 needs landed there. The shared venv still has 5.0.0, and upgrading a shared venv is an operator action that must not be done from a worktree. *Mitigation*: raise the pin in core `ai-parrot[db]`, and make `server.py` fail fast at startup with a clear message when `querysource.__version__ < 5.1`. *Evidence*: F013
+- **The slug lives in production (verified).** `polestar_graduates_directory` is defined in `public.queries` with SQL `SELECT {fields} FROM polestar.vw_graduates_directory {where_cond}`, and its data is in schema `polestar`. The environment is **production**, so every subagent and sub-shell that runs code against it must set `ENV=prod`. The SQL has no `{group_by}` placeholder, so a live check must confirm that QS appends GROUP BY for the bar charts. Seeding `polestar_graduates_by_course` writes to **prod** `public.queries`; it must be idempotent, and it is a user-confirmed step. *Evidence*: F016, F040
+- **Query routes (verified live, F042).** `POST /api/v3/queries/{slug}` and `POST /api/v2/services/queries/{slug}` both accept a single slug with `fields`/`filter`/`group_by`/`_limit`/`_offset`, and QS appends GROUP BY even without a placeholder. With 5.1.2 the tenant routes work: `/api/v1/{tenant}/queries/{slug}` and the alias `/api/v1/queries/{schema}/{slug}` (e.g. `/api/v1/queries/public/polestar_graduates_directory`); on 5.0.0 the tenant route crashed with a 500. The renderer follows FEAT-598's `queryUrl` (v3 without a tenant, v1 with one), and the wire doc should list the alias. Both bar charts have a NULL bucket (country: 95 groups = 94 + NULL; licensee: 23 = 22 + NULL, 7103 rows), which they must label. Without `ordering`, pages are not deterministic (a different first row on every call), so the grid must always send an explicit `ordering` (e.g. `student_uid`). *Evidence*: F006, F011, F042
+- **PBAC off for the example (user decision).** No permission policy is used, only basic authentication. `env/.env` sets `QS_PBAC_ENABLED=true`, so `server.py` must run with QS PBAC disabled (e.g. `QS_PBAC_ENABLED=false` in the example's env/README), and it does not mount parrot `setup_pbac`. *Evidence*: F015
+- **Svelte change untested.** The Svelte lane was never run through vitest/svelte-check (F008). The per-widget refresh change should come with real vitest runs. *Evidence*: F008
+
+---
+

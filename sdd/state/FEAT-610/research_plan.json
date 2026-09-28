@@ -1,0 +1,23 @@
+{
+  "feat_id": "FEAT-610",
+  "mode": "enrichment",
+  "wiki_available": true,
+  "budget_profile": "loose",
+  "lanes": {
+    "A": "FEAT-598 linked-surfaces contract: spec, wire format, qs_build_linked_surface, refresh/rebind protocol, stateful A2UISurface, docs (F001-F009)",
+    "B": "QuerySource runtime: mounting QS in aiohttp, query-slug HTTP API + payload syntax (fields/filter/group_by, count(*), JSONB @>, array length), parrot QS toolkit (F010-F019)",
+    "C": "Server/auth/examples: navigator-auth AuthHandler setup, ai-parrot-server bot exposure, existing examples/ servers + static JS clients (F020-F029)",
+    "D": "A2UI component catalog for dashboards: KPI/hero, charts, table/grid, FilterBar, existing JS renderers, echarts/gridjs usage (F030-F039)"
+  },
+  "queries": [
+    {"id": "Q001", "lane": "A", "type": "wiki_query", "params": {"q": "a2ui linked surfaces"}, "intent": "locate FEAT-598 implementation", "priority": 1},
+    {"id": "Q002", "lane": "A", "type": "read", "params": {"path": "sdd/specs/a2ui-linked-surfaces.spec.md"}, "intent": "linked-surface contract", "priority": 1},
+    {"id": "Q003", "lane": "A", "type": "grep", "params": {"pattern": "qs_build_linked_surface|LinkedSurface|parrot_param"}, "intent": "entrypoints", "priority": 1},
+    {"id": "Q010", "lane": "B", "type": "wiki_query", "params": {"q": "querysource query slug handler"}, "intent": "QS integration", "priority": 1},
+    {"id": "Q011", "lane": "B", "type": "grep", "params": {"pattern": "querysource|QuerySource"}, "intent": "how QS is mounted / called", "priority": 1},
+    {"id": "Q020", "lane": "C", "type": "grep", "params": {"pattern": "AuthHandler|navigator_auth"}, "intent": "auth setup pattern", "priority": 1},
+    {"id": "Q021", "lane": "C", "type": "tree", "params": {"path": "examples"}, "intent": "existing server/client examples", "priority": 2},
+    {"id": "Q030", "lane": "D", "type": "grep", "params": {"pattern": "echarts|gridjs|grid.js"}, "intent": "existing renderer libs", "priority": 1},
+    {"id": "Q031", "lane": "D", "type": "wiki_query", "params": {"q": "a2ui dashboard components catalog kpi chart table"}, "intent": "component catalog", "priority": 1}
+  ]
+}

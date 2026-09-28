@@ -1,0 +1,6 @@
+{
+  "description": "multi-key sorting is stable and places nulls last in either direction",
+  "input": [{"id": "a", "program": "epson", "visits": 3}, {"id": "b", "program": "epson", "visits": 3}, {"id": "c", "program": "epson", "visits": null}, {"id": "d", "program": "hisense", "visits": 5}, {"id": "e", "program": null, "visits": 10}],
+  "ops": [{"op": "sort", "by": [{"column": "program", "direction": "asc"}, {"column": "visits", "direction": "desc"}]}],
+  "expected": [{"id": "a", "program": "epson", "visits": 3}, {"id": "b", "program": "epson", "visits": 3}, {"id": "c", "program": "epson", "visits": null}, {"id": "d", "program": "hisense", "visits": 5}, {"id": "e", "program": null, "visits": 10}]
+}

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from types import SimpleNamespace
 from typing import Any
 
 from asyncdb import AsyncDB  # verified: parrot_tools/querytoolkit.py:18
@@ -33,6 +35,26 @@ def _not_found_exception_types() -> tuple[type[BaseException], ...]:
     except ImportError:
         pass
     return tuple(types)
+
+
+def _tenant_error_to_toolkit(exc: Any, *, slug: str, tenant: str) -> QuerysourceToolkitError:
+    """Map querysource TenantError.error_code to the toolkit hierarchy (messages written for the LLM)."""
+    code = getattr(exc, "error_code", None)
+    if code in ("query_not_found", "tenant_not_available"):
+        return SlugNotFoundError(f"slug '{slug}' not found for tenant '{tenant}'")
+    if code == "invalid_tenant":
+        return InvalidConditionsError(f"invalid tenant request for '{tenant}': {exc}")
+    return QuerysourceToolkitError(f"tenant '{tenant}' store error ({code}): {exc}")
+
+
+def _store_record(row: Any, store: Any) -> "SlugRecord":
+    """Build a SlugRecord from a runtime QueryModel or a DefinitionPage Mapping row of ``store``."""
+    if isinstance(row, Mapping):
+        row = SimpleNamespace(**dict(row))
+    record = SlugRecord.from_row(row)
+    if getattr(store, "contract", None) == "tenant":
+        record = replace(record, program_slug=store.schema)
+    return record
 
 
 @dataclass(frozen=True)
@@ -146,8 +168,15 @@ class SlugCatalog:
             await self._db.close()
         self._db = None
 
-    async def get(self, slug: str) -> SlugRecord:
-        """Load one row; SlugNotFoundError when absent. Always hits the DB (S2)."""
+    async def get(self, slug: str, *, tenant: str | None = None) -> SlugRecord:
+        """Load one definition; SlugNotFoundError when absent. Always hits the store (S2).
+
+        ``tenant=None`` reads ``public.queries`` through QueryModel (FEAT-558 path, unchanged).
+        A set ``tenant`` resolves through QuerySource's DefinitionRepository exactly like
+        ``TenantQueryHandler._prepare`` (querysource handlers/tenant.py:198-212) and never falls back to public.
+        """
+        if tenant is not None:
+            return await self._get_tenant(slug, tenant)
         await self.open()
         model = _qs.get_query_model()
         logger.debug("catalog.get %s", slug)
@@ -158,14 +187,30 @@ class SlugCatalog:
                 raise SlugNotFoundError(f"slug '{slug}' not found") from exc
         return SlugRecord.from_row(row)
 
-    async def get_allowed(self, slug: str) -> SlugRecord:
-        """get() then guard.assert_allowed()."""
-        record = await self.get(slug)
+    async def _get_tenant(self, slug: str, tenant: str) -> SlugRecord:
+        """repo.registry.resolve(tenant) → repo.get(QueryIdentity(store, slug)) → SlugRecord (program_slug == schema)."""
+        tenants = _qs.get_tenants()
+        repo = await _qs.get_definition_repository()
+        logger.debug("catalog.get %s tenant=%s", slug, tenant)
+        try:
+            store = repo.registry.resolve(tenant)
+            definition = await repo.get(tenants.QueryIdentity(store=store, slug=slug))
+        except tenants.TenantError as exc:
+            raise _tenant_error_to_toolkit(exc, slug=slug, tenant=tenant) from exc
+        return _store_record(definition.runtime, store)
+
+    async def get_allowed(self, slug: str, *, tenant: str | None = None) -> SlugRecord:
+        """get() then guard.assert_allowed() — unchanged rule, now tenant-aware."""
+        record = await self.get(slug, tenant=tenant)
         self.guard.assert_allowed(record)
         return record
 
-    async def list(self, *, search: str | None, program: str | None, limit: int) -> list[SlugRecord]:
-        """QueryModel.filter(program_slug=p) per allowed program (or all() when unrestricted and program is None)."""
+    async def list(
+        self, *, search: str | None, program: str | None, limit: int, tenant: str | None = None
+    ) -> list[SlugRecord]:
+        """tenant=None: existing QueryModel path over public.queries; tenant set: repo.list(store, params)."""
+        if tenant is not None:
+            return await self._list_tenant(search=search, program=program, limit=limit, tenant=tenant)
         await self.open()
         model = _qs.get_query_model()
         async with await self._db.connection() as conn:
@@ -186,6 +231,31 @@ class SlugCatalog:
                 for prog in programs:
                     rows.extend(await model.filter(program_slug=prog, _connection=conn))
         records = [SlugRecord.from_row(r) for r in rows]
+        if search:
+            needle = search.lower()
+            records = [r for r in records if needle in r.slug.lower() or needle in (r.description or "").lower()]
+        return sorted(records, key=lambda r: r.slug)[:limit]
+
+    async def _list_tenant(
+        self, *, search: str | None, program: str | None, limit: int, tenant: str
+    ) -> list[SlugRecord]:
+        """List one tenant store's definitions; program filter/allowlist evaluated against program_slug == schema."""
+        tenants = _qs.get_tenants()
+        repo = await _qs.get_definition_repository()
+        try:
+            store = repo.registry.resolve(tenant)
+            page = await repo.list(store, {"page": 1, "page_size": 200})  # _MAX_PAGE_SIZE (definitions.py:34)
+        except tenants.TenantError as exc:
+            raise _tenant_error_to_toolkit(exc, slug="*", tenant=tenant) from exc
+        records = [_store_record(row, store) for row in page.rows]
+        if program is not None:
+            if self.guard.restricted and program not in self.guard.programs:
+                raise TenantDeniedError(
+                    f"program '{program}' is not in the allowed programs {list(self.guard.programs)}"
+                )
+            records = [r for r in records if r.program_slug == program]
+        elif self.guard.restricted:
+            records = [r for r in records if r.program_slug in self.guard.programs]
         if search:
             needle = search.lower()
             records = [r for r in records if needle in r.slug.lower() or needle in (r.description or "").lower()]

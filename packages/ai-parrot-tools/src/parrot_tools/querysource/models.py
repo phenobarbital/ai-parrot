@@ -22,11 +22,17 @@ class SlugSummary(BaseModel):
 
 
 class PlaceholderInfo(BaseModel):
-    """A declared placeholder: name, cond_definition type, stored default."""
+    """A declared placeholder: name, cond_definition type, stored default, and describe semantics.
+
+    ``required`` / ``accepts_keywords`` mirror ``querysource.queries.describe.build_variables`` exactly
+    (describe.py:154 and :163 — FEAT-598 AC6).
+    """
 
     name: str
     type: str | None = None
     default: Any = None
+    required: bool = False
+    accepts_keywords: bool = False
 
 
 class SlugDetail(SlugSummary):
@@ -42,6 +48,7 @@ class SlugDetail(SlugSummary):
     sql: str | None = None  # query_raw when include_sql=True and not multiquery
     pipeline: dict[str, Any] | None = None  # parsed query_raw when is_multiquery
     rendered_query: str | None = None  # QS.dry_run() output when dry_run=True
+    variables_supported: bool = True  # False for JSON-dialect slugs (describe.py:116-118) — linked params stay empty
 
 
 class ExecutionResult(BaseModel):
@@ -117,6 +124,18 @@ class SavedSlug(BaseModel):
     action: Literal["inserted", "updated"]
 
 
+class DashboardWidget(BaseModel):
+    """One widget of a linked dashboard: its own source key, slug, request, and unbound component (FEAT-610)."""
+
+    key: str  # data-model root + source key (JSON-pointer-safe)
+    slug: str
+    component: dict[str, Any]  # Chart | DataTable | KPICard, without its binding
+    request: dict[str, Any] | None = None  # qs grammar: placeholders/filter/fields/ordering/grouping/limit/offset
+    tenant: str | None = None
+    section: Literal["kpis", "charts", "table"] | None = None  # layout row; inferred from component when None
+    refresh: dict[str, Any] | None = None  # RefreshPolicy payload
+
+
 class DialectReference(BaseModel):
     """The QuerySource conditions dialect as shown to the LLM (spec §3 M3)."""
 
@@ -126,6 +145,7 @@ class DialectReference(BaseModel):
     where_grammar: list[str]
     operators_list_form: list[str]
     operators_dict_form: list[str]
+    operators_jsonb: list[str] = Field(default_factory=list)  # querysource >= 5.1 JSONB operators (FEAT-610)
     examples: list[dict[str, Any]]
     variables: dict[str, str] = Field(default_factory=dict)  # '@name' → one-line doc (§8 Q2)
     notes: list[str]
