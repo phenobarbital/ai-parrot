@@ -6,7 +6,9 @@ Drafts only: nothing in this package issues invoices or confirms purchase invoic
 from .models import (
     BankExpenseRow,
     BbvaStatement,
+    ContactDraft,
     ContactMatch,
+    ContactReceipt,
     DeductibilityVerdict,
     DraftReceipt,
     ExpenseDraftBatch,
@@ -24,7 +26,9 @@ from .toolkit import HoobaToolkit
 __all__ = [
     "BankExpenseRow",
     "BbvaStatement",
+    "ContactDraft",
     "ContactMatch",
+    "ContactReceipt",
     "DeductibilityVerdict",
     "DraftReceipt",
     "ExpenseDraftBatch",

@@ -21,12 +21,14 @@ class FakeHooba:
     def __init__(self, responses: dict[tuple[str, str], Any]) -> None:
         self.responses = dict(responses)
         self.calls: list[tuple[str, str, Optional[dict]]] = []
+        self.params: list[tuple[str, str, Optional[dict]]] = []
 
     async def __call__(
         self, method: str, path: str, *, params: Optional[dict] = None, data: Optional[dict] = None
     ) -> Any:
         key = (method.upper(), path)
         self.calls.append((key[0], key[1], data))
+        self.params.append((key[0], key[1], params))
         if key not in self.responses:
             raise AssertionError(f"FakeHooba: no scripted response for {key}; calls so far: {self.calls}")
         response = self.responses[key]
@@ -269,6 +271,10 @@ async def test_create_purchase_invoice_draft_simplified():
                 "purchaseInvoiceLine": {"id": 950, "name": "Software", "price": "9.99"}
             },
             ("GET", "/accounts/{accountId}/purchase-invoices/701"): {"id": 701, "state": "draft", "number": "G-1"},
+            ("GET", "/accounts/{accountId}/units-of-measure"): [
+                {"id": 7, "type": "bigger", "name": "dozen"},
+                {"id": 3, "type": "reference", "name": "unit"},
+            ],
         }
     )
     toolkit = _make_toolkit(fake)
@@ -295,6 +301,7 @@ async def test_create_purchase_invoice_draft_simplified():
     assert "type" not in line_call[2]
     assert line_call[2]["taxId"] == 66
     assert line_call[2]["accountingAccountId"] is None
+    assert line_call[2]["unitOfMeasureId"] == 3
 
     header_call = next(
         (method, path, data)
@@ -351,6 +358,10 @@ async def test_attach_document_multipart(aiohttp_server, tmp_path):
 
     fake = FakeHooba(
         {
+            ("GET", "/accounts/{accountId}/entities"): [
+                {"id": 11, "urn": "urn:entity:purchase-invoice"},
+                {"id": 18, "urn": "urn:entity:invoice"},
+            ],
             ("GET", "/accounts/{accountId}/document-types"): [
                 {"documentType": {"id": 7}, "entity": {"urn": "urn:entity:invoice"}},
             ],
@@ -367,11 +378,12 @@ async def test_attach_document_multipart(aiohttp_server, tmp_path):
 
     assert result["status"] == "success"
     assert result["result"] == {"id": 999}
-    assert received["fields"]["data"] == "{}"
+    assert received["fields"]["data"] == '{"name": "receipt.pdf"}'
     assert received["fields"]["filename"] == "receipt.pdf"
     assert received["fields"]["file"] == b"%PDF-1.4 fake"
     assert "sid=s3cr3t" in received["headers"].get("Cookie", "")
     assert received["headers"].get("x-hooba-language") == "es"
+    assert ("GET", "/accounts/{accountId}/document-types", {"entityId": 18}) in fake.params
 
 
 async def test_import_bbva_dry_run_posts_nothing(tmp_path, monkeypatch):
@@ -388,3 +400,28 @@ async def test_import_bbva_dry_run_posts_nothing(tmp_path, monkeypatch):
     assert batch["created"] == []
     assert batch["manifest_path"].endswith(".manifest.json")
     assert all(method != "POST" for method, _, _ in fake.calls)
+
+
+def test_line_signature_ignores_trailing_zeros():
+    """Hooba echoes ``59.0`` for a line sent as ``59.00``; a retry must not post the line again."""
+    assert HoobaToolkit._line_signature("Cuota", 59.0) == HoobaToolkit._line_signature("Cuota", Decimal("59.00"))
+    assert HoobaToolkit._line_signature("Cuota", "13.31") != HoobaToolkit._line_signature("Cuota", "13.3")
+
+
+async def test_find_by_key_reads_past_the_first_page():
+    """Hooba pages list endpoints (30 by default): a draft beyond the first page must still be found."""
+    records = [{"purchaseInvoice": {"id": i, "notes": f"[parrot:k{i}]"}} for i in range(250)]
+    calls: list[dict] = []
+
+    async def paged_call(method, path, *, params=None, data=None):
+        calls.append(params)
+        offset, limit = params["offset"], params["limit"]
+        return records[offset : offset + limit]
+
+    toolkit = _make_toolkit(FakeHooba({}))
+    toolkit._call = paged_call
+
+    found = await toolkit._find_by_key("purchase_invoice", "k237")
+
+    assert found["id"] == 237
+    assert [c["offset"] for c in calls] == [0, 100, 200]

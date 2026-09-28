@@ -96,8 +96,24 @@ async def _handle_contacts(request: web.Request) -> web.Response:
     state = request.app["state"]
     if err := _require_auth(request, state):
         return err
+    if request.method == "POST":
+        _record_request(state, "POST", request.path)
+        data = await request.json()
+        state.contact_counter += 1
+        contact = {"id": 1000 + state.contact_counter, **data}
+        state.contacts.append(contact)
+        return web.json_response({"contact": contact}, status=201)
     _record_request(state, "GET", request.path)
     return web.json_response(state.contacts)
+
+
+async def _handle_units_of_measure(request: web.Request) -> web.Response:
+    """GET /accounts/{accountId}/units-of-measure."""
+    state = request.app["state"]
+    if err := _require_auth(request, state):
+        return err
+    _record_request(state, "GET", request.path)
+    return web.json_response([{"id": 1, "type": "reference", "ratio": 1.0, "groupId": 1, "name": "unit"}])
 
 
 async def _handle_invoice_series(request: web.Request) -> web.Response:
@@ -133,7 +149,25 @@ async def _handle_document_types(request: web.Request) -> web.Response:
     if err := _require_auth(request, state):
         return err
     _record_request(state, "GET", request.path)
+    entity_id = request.query.get("entityId")
+    if entity_id is not None:
+        urns = {entity["id"]: entity["urn"] for entity in _ENTITIES}
+        return web.json_response(
+            [item for item in state.document_types if (item.get("entity") or {}).get("urn") == urns.get(int(entity_id))]
+        )
     return web.json_response(state.document_types)
+
+
+_ENTITIES = [{"id": 11, "urn": "urn:entity:purchase-invoice"}, {"id": 18, "urn": "urn:entity:invoice"}]
+
+
+async def _handle_entities(request: web.Request) -> web.Response:
+    """GET /accounts/{accountId}/entities."""
+    state = request.app["state"]
+    if err := _require_auth(request, state):
+        return err
+    _record_request(state, "GET", request.path)
+    return web.json_response(_ENTITIES)
 
 
 async def _handle_invoices(request: web.Request) -> web.Response:
@@ -341,6 +375,8 @@ def build_fake_hooba_app(state: FakeHoobaState) -> web.Application:
 
     # Contacts
     app.router.add_get(f"/accounts/{ACCOUNT_ID}/contacts", _handle_contacts)
+    app.router.add_post(f"/accounts/{ACCOUNT_ID}/contacts", _handle_contacts)
+    app.router.add_get(f"/accounts/{ACCOUNT_ID}/units-of-measure", _handle_units_of_measure)
 
     # Invoice series
     app.router.add_get(f"/accounts/{ACCOUNT_ID}/invoice-series", _handle_invoice_series_list)
@@ -351,6 +387,7 @@ def build_fake_hooba_app(state: FakeHoobaState) -> web.Application:
 
     # Document types
     app.router.add_get(f"/accounts/{ACCOUNT_ID}/document-types", _handle_document_types)
+    app.router.add_get(f"/accounts/{ACCOUNT_ID}/entities", _handle_entities)
 
     # Invoices
     app.router.add_get(f"/accounts/{ACCOUNT_ID}/invoices", _handle_invoices)

@@ -67,6 +67,7 @@ class PurchaseInvoiceDraft(BaseModel):
 
     date: dt.date
     number: Optional[str] = None
+    currency_id: str = "EUR"
     simplified: bool = False
     contact_id: Optional[int] = None
     contact_query: Optional[str] = None
@@ -75,6 +76,28 @@ class PurchaseInvoiceDraft(BaseModel):
     notes: Optional[str] = None
     correlation_key: Optional[str] = None
     lines: list[PurchaseInvoiceLineDraft] = Field(min_length=1)
+
+
+class ContactDraft(BaseModel):
+    """A supplier or customer contact to create (reused when one with the same TIN exists)."""
+
+    legal_name: str
+    tin: str
+    tin_type: Literal["tin", "vat-number", "passport", "other"] = "tin"
+    country_id: str = "ES"
+    legal_type: Literal["person", "business"] = "business"
+    trade_name: Optional[str] = None
+    website: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ContactReceipt(BaseModel):
+    """What Hooba returned for a created (or reused) contact."""
+
+    id: int
+    legal_name: str
+    tin: str
+    reused: bool = False
 
 
 class DraftReceipt(BaseModel):
