@@ -41,7 +41,7 @@ _BLAST_RADIUS_NODE_CAP = 500
 
 #: Default relations walked by blast_radius when the caller does not
 #: override them.
-_DEFAULT_BLAST_RELATIONS = ("calls", "extends", "implements")
+_DEFAULT_BLAST_RELATIONS = ("calls", "extends", "implements", "uses")
 
 
 class SymbolHit(BaseModel):
@@ -304,7 +304,7 @@ class StructuralService:
         Args:
             symbol: A ``sym:`` id or an exact qualname.
             relations: Edge relations to follow (default: ``calls``,
-                ``extends``, ``implements``).
+                ``extends``, ``implements``, ``uses``).
             depth: Maximum BFS depth.
             include_inferred: Whether to follow ``provenance="inferred"``
                 edges (globally-unique-name resolutions).

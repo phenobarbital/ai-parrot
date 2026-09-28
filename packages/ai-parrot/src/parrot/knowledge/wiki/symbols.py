@@ -32,7 +32,8 @@ class SymbolKind(str, Enum):
     """Kind of a symbol extracted from a source file.
 
     Mirrors the design's §4.4 symbol table across the five supported
-    languages (Python, TypeScript/JavaScript, PHP, Rust, Perl).
+    languages (Python, TypeScript/JavaScript, PHP, Rust, Perl), plus Svelte
+    single-file components (FEAT-609).
     """
 
     MODULE = "module"
@@ -51,6 +52,7 @@ class SymbolKind(str, Enum):
     FIELD = "field"
     ATTRIBUTE = "attribute"
     MOD = "mod"
+    COMPONENT = "component"
 
 
 class SymbolRecord(BaseModel):

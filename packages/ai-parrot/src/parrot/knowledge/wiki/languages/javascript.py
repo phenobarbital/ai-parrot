@@ -40,6 +40,7 @@ from typing import Any, ClassVar
 from parrot.knowledge.wiki.languages import astgrep, treesitter
 from parrot.knowledge.wiki.languages.base import LanguageOutline, LanguageScanner
 from parrot.knowledge.wiki.languages.render import render_outline, structural_enabled
+from parrot.knowledge.wiki.symbols import StructuralOutline, SymbolKind, SymbolRecord, SymbolRef, sha1_of_text
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +237,87 @@ def _grammar_for(suffix: str, lang: str | None) -> str:
     if suffix == _SVELTE_SUFFIX:
         return "typescript" if lang in _TYPESCRIPT_LANGS else "javascript"
     return "typescript" if suffix in (".ts", ".tsx") else "javascript"
+
+
+_SVELTE_DEFAULT_IMPORT = re.compile(r"""^\s*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"]+\.svelte)['"]""", re.M)
+_SVELTE_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.S | re.I)
+_SVELTE_COMPONENT_TAG = re.compile(r"<([A-Z][\w$]*)(?=[\s/>])")
+_SVELTE_PROPS = re.compile(r"let\s*(\{.*?\})\s*(?::\s*(.+?))?\s*=\s*\$props\(\s*\)", re.S)
+
+
+def _svelte_component_names(rel_path: str) -> tuple[str, str]:
+    """``(name, qualname)`` of a component (FEAT-609 Q3: route files are qualified)."""
+    path = PurePosixPath(rel_path)
+    stem = path.stem
+    if not stem.startswith("+"):
+        return stem, stem
+    name = f"{path.parent.name}/{stem}" if path.parent.name else stem
+    parts = path.with_suffix("").parts
+    if "routes" in parts:
+        idx = len(parts) - 1 - parts[::-1].index("routes")
+        return name, "/".join(parts[idx + 1 :])
+    return name, path.with_suffix("").as_posix()
+
+
+def _svelte_props_signature(source: str) -> str:
+    """The ``$props()`` type annotation, else the destructured pattern, else ``""``."""
+    match = _SVELTE_PROPS.search(source)
+    if match is None:
+        return ""
+    return (match.group(2) or match.group(1)).strip()
+
+
+def _svelte_uses_refs(source: str, qualname: str) -> list[SymbolRef]:
+    """One ``uses`` ref per markup tag bound to a default ``.svelte`` import."""
+    imports = {m.group(1): m.group(2) for m in _SVELTE_DEFAULT_IMPORT.finditer(source)}
+    if not imports:
+        return []
+    markup = _SVELTE_BLOCK.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), source)
+    seen: set[tuple[str, int]] = set()
+    refs: list[SymbolRef] = []
+    for match in _SVELTE_COMPONENT_TAG.finditer(markup):
+        spec = imports.get(match.group(1))
+        if spec is None:
+            continue
+        target = PurePosixPath(spec).stem
+        line = markup.count("\n", 0, match.start()) + 1
+        if (target, line) in seen:
+            continue
+        seen.add((target, line))
+        refs.append(SymbolRef(src_qualname=qualname, rel="uses", target_text=target, line=line))
+    return refs
+
+
+def _svelte_component_augment(source: str, rel_path: str, structural: StructuralOutline) -> StructuralOutline:
+    """Return ``structural`` with the component symbol prepended, markup ``uses``
+    refs appended, and empty-``src_qualname`` refs re-attributed (FEAT-609 M3).
+
+    Pure; never raises — on any failure returns ``structural`` unchanged.
+    """
+    try:
+        name, qualname = _svelte_component_names(rel_path)
+        component = SymbolRecord(
+            rel_path=rel_path,
+            language="javascript",
+            kind=SymbolKind.COMPONENT,
+            name=name,
+            qualname=qualname,
+            signature=_svelte_props_signature(source)[:200],
+            exported=True,
+            start_line=1,
+            end_line=max(1, source.count("\n") + 1),
+            start_byte=0,
+            end_byte=len(source.encode("utf-8")),
+            node_kind="svelte_component",
+            content_hash=sha1_of_text(source),
+            depth=1,
+        )
+        refs = [ref if ref.src_qualname else ref.model_copy(update={"src_qualname": qualname}) for ref in structural.refs]
+        refs.extend(_svelte_uses_refs(source, qualname))
+        return structural.model_copy(update={"symbols": [component, *structural.symbols], "refs": refs})
+    except Exception as exc:  # noqa: BLE001 - degrade, never raise
+        logger.debug("Svelte component augment failed on %s: %s", rel_path, exc)
+        return structural
 
 
 def _astgrep_lang_for(suffix: str, lang: str | None) -> str:
@@ -531,6 +613,8 @@ class JavaScriptScanner(LanguageScanner):
                 ast_grep_lang = _astgrep_lang_for(suffix, lang)
                 structural = astgrep.extract(script_source, ast_grep_lang, rel_path)
                 if structural is not None:
+                    if suffix == _SVELTE_SUFFIX:
+                        structural = _svelte_component_augment(source, rel_path, structural)
                     self._last_mode = "ast-grep"
                     return LanguageOutline(
                         summary=structural.summary,

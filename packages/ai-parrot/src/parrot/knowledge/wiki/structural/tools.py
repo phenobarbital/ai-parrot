@@ -71,9 +71,9 @@ class BlastRadiusInput(BaseModel):
     """Arguments for ``wiki_blast_radius`` / ``code_blast_radius``."""
 
     symbol: str = Field(..., description="A sym: id or an exact qualname")
-    relations: list[Literal["calls", "extends", "implements", "references", "contains"]] | None = Field(
+    relations: list[Literal["calls", "extends", "implements", "uses", "references", "contains"]] | None = Field(
         default=None,
-        description="Edge relations to follow (default: calls, extends, implements)",
+        description="Edge relations to follow (default: calls, extends, implements, uses)",
     )
     depth: int = Field(default=2, ge=1, le=5, description="Maximum BFS depth")
     include_inferred: bool = Field(
