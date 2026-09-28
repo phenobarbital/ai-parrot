@@ -10,7 +10,6 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Any
 
 import asyncpg
 
@@ -40,140 +39,110 @@ def get_dsn() -> str:
     raise RuntimeError("No database connection configured. Set QS_ASYNCPG_URL or install querysource[db].")
 
 
-async def has_unique_index(conn: asyncpg.Connection, table: str, column: str) -> bool:
-    """Check if a unique index exists on the given table column."""
-    query = """
-        SELECT 1
-        FROM pg_indexes
-        WHERE tablename = $1
-          AND indexdef LIKE '%UNIQUE%'
-          AND indexdef LIKE '%' || $2 || '%'
+# A single-column, non-partial UNIQUE index on public.queries(query_slug) — exactly what ON CONFLICT (query_slug) needs.
+UNIQUE_SLUG_INDEX_SQL = """
+SELECT 1
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = i.indkey[0]
+WHERE n.nspname = 'public' AND c.relname = 'queries' AND a.attname = 'query_slug'
+  AND i.indisunique AND i.indnatts = 1 AND i.indpred IS NULL
+"""
+
+BASE_ROW_SQL = (
+    "SELECT query_slug, query_name, query_raw, query_description, query_type, is_active, created_by, created_at "
+    "FROM public.queries WHERE query_slug = $1"
+)
+
+# `xmax = 0` is true only for a freshly inserted row, so RETURNING tells insert from update without a second query.
+UPSERT_SQL = """
+INSERT INTO public.queries (query_slug, query_name, query_raw, query_description,
+    query_type, is_active, created_by, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+ON CONFLICT (query_slug) DO UPDATE SET
+    query_name = EXCLUDED.query_name,
+    query_raw = EXCLUDED.query_raw,
+    query_description = EXCLUDED.query_description,
+    query_type = EXCLUDED.query_type,
+    is_active = EXCLUDED.is_active,
+    updated_at = now()
+RETURNING (xmax = 0) AS inserted
+"""
+
+FALLBACK_UPDATE_SQL = """
+UPDATE public.queries SET query_name = $2, query_raw = $3, query_description = $4,
+    query_type = $5, is_active = $6, updated_at = now()
+WHERE query_slug = $1
+"""
+
+FALLBACK_INSERT_SQL = """
+INSERT INTO public.queries (query_slug, query_name, query_raw, query_description,
+    query_type, is_active, created_by, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+"""
+
+
+async def has_unique_slug_index(conn: asyncpg.Connection) -> bool:
+    """Return True when public.queries has a single-column, non-partial unique index on query_slug."""
+    return await conn.fetchval(UNIQUE_SLUG_INDEX_SQL) is not None
+
+
+async def seed(conn: asyncpg.Connection | None = None) -> str:
+    """Copy BASE_SLUG's row, swap slug + query_raw and upsert atomically; return 'inserted' | 'updated'.
+
+    The whole operation runs in one transaction under an advisory lock keyed on the slug, so concurrent runs cannot
+    both insert (the fallback path has no unique index to protect it).
     """
-    return await conn.fetchval(query, table, column) is not None
-
-
-async def seed() -> str:
-    """Copy BASE_SLUG's row, swap slug + query_raw, upsert idempotently; return 'inserted' | 'updated'."""
-    dsn = get_dsn()
-    conn = await asyncpg.connect(dsn)
+    own_connection = conn is None
+    if conn is None:
+        conn = await asyncpg.connect(get_dsn())
     try:
-        # Check for unique index on query_slug
-        has_unique = await has_unique_index(conn, "queries", "query_slug")
-
-        # Fetch the base slug row
-        base_row = await conn.fetchrow(
-            "SELECT query_slug, query_name, query_raw, query_description, "
-            "query_type, is_active, created_by, created_at, updated_at "
-            "FROM public.queries WHERE query_slug = $1",
-            BASE_SLUG,
-        )
-        if base_row is None:
-            raise RuntimeError(f"Base slug {BASE_SLUG} not found in public.queries")
-
-        # Prepare the new row values
-        new_row: dict[str, Any] = {
-            "query_slug": NEW_SLUG,
-            "query_name": base_row["query_name"].replace(BASE_SLUG, NEW_SLUG) if base_row["query_name"] else NEW_SLUG,
-            "query_raw": QUERY_RAW,
-            "query_description": base_row["query_description"],
-            "query_type": base_row["query_type"],
-            "is_active": base_row["is_active"],
-            "created_by": base_row["created_by"],
-            "created_at": base_row["created_at"],
-            "updated_at": base_row["updated_at"],
-        }
-
-        if has_unique:
-            # Use ON CONFLICT for idempotent upsert
-            await conn.execute(
-                """
-                INSERT INTO public.queries (query_slug, query_name, query_raw, query_description,
-                    query_type, is_active, created_by, created_at, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT (query_slug) DO UPDATE SET
-                    query_name = EXCLUDED.query_name,
-                    query_raw = EXCLUDED.query_raw,
-                    query_description = EXCLUDED.query_description,
-                    query_type = EXCLUDED.query_type,
-                    is_active = EXCLUDED.is_active,
-                    updated_at = EXCLUDED.updated_at
-                """,
-                new_row["query_slug"],
-                new_row["query_name"],
-                new_row["query_raw"],
-                new_row["query_description"],
-                new_row["query_type"],
-                new_row["is_active"],
-                new_row["created_by"],
-                new_row["created_at"],
-                new_row["updated_at"],
-            )
-            # Check if it was an insert or update
-            existing = await conn.fetchrow(
-                "SELECT updated_at FROM public.queries WHERE query_slug = $1",
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", NEW_SLUG)
+            base_row = await conn.fetchrow(BASE_ROW_SQL, BASE_SLUG)
+            if base_row is None:
+                raise RuntimeError(f"Base slug {BASE_SLUG} not found in public.queries")
+            name = base_row["query_name"].replace(BASE_SLUG, NEW_SLUG) if base_row["query_name"] else NEW_SLUG
+            values = (
                 NEW_SLUG,
+                name,
+                QUERY_RAW,
+                base_row["query_description"],
+                base_row["query_type"],
+                base_row["is_active"],
+                base_row["created_by"],
+                base_row["created_at"],
             )
-            if existing and existing["updated_at"] == new_row["updated_at"]:
-                return "inserted"
-            return "updated"
-        else:
-            # Fallback: UPDATE then INSERT if no rows affected
-            updated = await conn.execute(
-                """
-                UPDATE public.queries SET
-                    query_name = $1,
-                    query_raw = $2,
-                    query_description = $3,
-                    query_type = $4,
-                    is_active = $5,
-                    updated_at = $6
-                WHERE query_slug = $7
-                """,
-                new_row["query_name"],
-                new_row["query_raw"],
-                new_row["query_description"],
-                new_row["query_type"],
-                new_row["is_active"],
-                new_row["updated_at"],
-                NEW_SLUG,
-            )
+            if await has_unique_slug_index(conn):
+                inserted = await conn.fetchval(UPSERT_SQL, *values)
+                return "inserted" if inserted else "updated"
+            updated = await conn.execute(FALLBACK_UPDATE_SQL, *values[:6])
             if updated == "UPDATE 0":
-                await conn.execute(
-                    """
-                    INSERT INTO public.queries (query_slug, query_name, query_raw, query_description,
-                        query_type, is_active, created_by, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    """,
-                    new_row["query_slug"],
-                    new_row["query_name"],
-                    new_row["query_raw"],
-                    new_row["query_description"],
-                    new_row["query_type"],
-                    new_row["is_active"],
-                    new_row["created_by"],
-                    new_row["created_at"],
-                    new_row["updated_at"],
-                )
+                await conn.execute(FALLBACK_INSERT_SQL, *values)
                 return "inserted"
             return "updated"
     finally:
-        await conn.close()
+        if own_connection:
+            await conn.close()
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point: refuses to write without --yes."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--yes", action="store_true", help="confirm the write to production public.queries")
     args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if not args.yes:
-        print(f"Refusing to write {NEW_SLUG} to production public.queries without --yes.")
+        logger.error("Refusing to write %s to production public.queries without --yes.", NEW_SLUG)
         return 2
     try:
         result = asyncio.run(seed())
-        print(result)
-        return 0
-    except Exception as e:
-        logger.error("Seed failed: %s", e)
+    except Exception as exc:  # noqa: BLE001 - CLI boundary: report and exit non-zero
+        logger.error("Seed failed: %s", exc)
         return 1
+    logger.info("%s: %s", NEW_SLUG, result)
+    return 0
 
 
 if __name__ == "__main__":

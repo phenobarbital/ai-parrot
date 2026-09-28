@@ -1,12 +1,17 @@
-"""FEAT-610 TASK-3852 — tests for client.py and seed_by_course.py."""
+"""FEAT-610 — client.py (--check against a stateful fake server) and seed_by_course.py (fake connection)."""
 
 from __future__ import annotations
 
+import json
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import patch
 
 import pytest
+
+from ._envelope import real_envelope
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples" / "a2ui"))
 
@@ -14,167 +19,291 @@ import client  # noqa: E402
 import seed_by_course  # noqa: E402
 
 
-class TestSeedRefusesWithoutYes:
-    """AC11: seed_by_course.py refuses without --yes and is idempotent."""
+def canon(value: Any) -> str:
+    """Key-order independent JSON, to match a request body against a source's own conditions."""
+    return json.dumps(value, sort_keys=True)
 
-    def test_seed_refuses_without_yes(self):
-        """Verify seed refuses without --yes and exits 2 before opening any connection."""
-        # Run with no arguments - should refuse and exit 2
-        exit_code = seed_by_course.main([])
-        assert exit_code == 2
 
-    def test_seed_accepts_yes_flag(self):
-        """Verify seed accepts --yes flag (will fail on DB but that's expected in test env)."""
-        # This will fail on DB connection but should not exit 2 (the --yes was accepted)
-        # We just verify the flag is accepted
-        with patch("asyncpg.connect", side_effect=ConnectionError("No DB")):
-            exit_code = seed_by_course.main(["--yes"])
-            # Should not be 2 (which means --yes was accepted but DB failed)
-            assert exit_code != 2
+class FakeResponse:
+    """Minimal aiohttp response: status + JSON body, usable as an async context manager."""
+
+    def __init__(self, status: int, payload: Any) -> None:
+        self.status = status
+        self._payload = payload
+
+    async def json(self) -> Any:
+        return self._payload
+
+    async def __aenter__(self) -> FakeResponse:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+
+class FakeServer:
+    """A stateful stand-in for the example server + QuerySource, answering per request body like the real one."""
+
+    def __init__(self, envelope: dict[str, Any], *, overrides: dict[str, Any] | None = None, missing: str | None = None):
+        self.envelope = envelope
+        self.sources = envelope["metadata"]["extensions"]["parrot_data_sources"]
+        self.by_conditions = {canon(src["conditions"]): key for key, src in self.sources.items()}
+        self.posts: list[dict[str, Any]] = []
+        self.overrides = overrides or {}
+        self.missing = missing  # a slug that answers 404
+        self.login_status = 200
+        self.data: dict[str, Any] = {
+            "kpi_total": [{"total": 17572}],
+            "kpi_studio": [{"total": 9191}],
+            "kpi_mat": [{"total": 6245}],
+            "kpi_multi": [{"multi_graduates": 2884}],
+            "by_country": [{"country": f"C{i}", "graduates": i + 1} for i in range(95)],
+            "by_licensee": [{"licensee": f"L{i}", "graduates": i + 1} for i in range(23)],
+            "by_course": [
+                {"course": "Pilates Studio", "graduates": 9204},
+                {"course": "Pilates Mat", "graduates": 6247},
+                {"course": "Rehab", "graduates": 3300},
+                {"course": "Reformer", "graduates": 2048},
+            ],
+        }
+        self.data.update(self.overrides)
+
+    def post(self, url: str, json: dict[str, Any] | None = None, headers: dict[str, str] | None = None, **_: Any):
+        if url.endswith("/api/v1/login"):
+            if self.login_status != 200:
+                return FakeResponse(self.login_status, {})
+            assert json == {"username": "admin", "password": "pw"}
+            return FakeResponse(200, {"token": "JWT"})
+        assert headers and headers["Authorization"] == "Bearer JWT"
+        body = dict(json or {})
+        self.posts.append(body)
+        if self.missing and self.missing in url:
+            return FakeResponse(404, {})
+        conds = {k: v for k, v in body.items() if k not in {"querylimit", "_offset", "refresh"}}
+        key = self.by_conditions.get(canon(conds))
+        if key and key != "graduates":
+            return FakeResponse(200, self.data[key])
+        if body.get("fields") == ["count(*) as total"]:
+            return FakeResponse(200, [{"total": 100 if body.get("filter", {}).get("country") else 17572}])
+        offset = body.get("_offset", 0)
+        rows = [
+            {"student_uid": offset + i, "country": (body.get("filter") or {}).get("country", "US")}
+            for i in range(body["querylimit"])
+        ]
+        return FakeResponse(200, rows)
+
+    def get(self, url: str, headers: dict[str, str] | None = None, **_: Any):
+        assert url.endswith("/api/a2ui/dashboard")
+        assert headers and headers["Authorization"] == "Bearer JWT"
+        return FakeResponse(200, self.envelope)
+
+
+def make_session(server: FakeServer):
+    """A ClientSession stand-in delegating to ``server``."""
+
+    class Session:
+        async def __aenter__(self) -> Session:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        def post(self, *args: Any, **kwargs: Any):
+            return server.post(*args, **kwargs)
+
+        def get(self, *args: Any, **kwargs: Any):
+            return server.get(*args, **kwargs)
+
+    return Session()
+
+
+async def run_check(server: FakeServer, capsys: pytest.CaptureFixture[str], **kwargs: Any) -> tuple[int, str]:
+    with patch("aiohttp.ClientSession", return_value=make_session(server)):
+        code = await client.check("http://h", "admin", "pw", **kwargs)
+    return code, capsys.readouterr().out
 
 
 class TestClientArgParsing:
-    """Test client.py argument parsing."""
+    def test_requires_open_or_check(self) -> None:
+        assert client.main([]) == 1
 
-    def test_requires_open_or_check(self):
-        """Client must have either --open or --check."""
-        exit_code = client.main([])
-        assert exit_code == 1  # Error: specify either --open or --check
+    def test_open_and_check_mutually_exclusive(self) -> None:
+        assert client.main(["--open", "--check"]) == 1
 
-    def test_open_and_check_mutually_exclusive(self):
-        """--open and --check cannot be used together."""
-        exit_code = client.main(["--open", "--check"])
-        assert exit_code == 1  # Error: mutually exclusive
-
-    def test_check_requires_password(self):
-        """--check requires A2UI_DEMO_PASSWORD env var."""
+    def test_check_requires_password(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
-            exit_code = client.main(["--check"])
-            assert exit_code == 1  # Error: password not set
+            assert client.main(["--check"]) == 1
 
 
-class TestClientCheckPrintsValues:
-    """AC10: client.py --check exits 0 against a running server and prints the AC7 values."""
+class TestClientCheck:
+    """AC10: --check asserts the AC7 values and the grid paging; it fails loudly otherwise."""
 
     @pytest.mark.asyncio
-    async def test_client_check_prints_values(self):
-        """Verify --check mode prints value table with a fake server."""
-        # Create mock responses
-        mock_login_response = {"token": "test-token-123"}
-        mock_dashboard_response = {
-            "metadata": {
-                "extensions": {
-                    "parrot_data_sources": {
-                        "kpi_total": {
-                            "slug": "polestar_graduates_directory",
-                            "tenant": None,
-                            "conditions": {},
-                            "request": {"fields": ["count(*) as total"]},
-                        },
-                        "by_course": {
-                            "slug": "polestar_graduates_by_course",
-                            "tenant": None,
-                            "conditions": {},
-                            "request": {
-                                "fields": ["course", "count(*) as graduates"],
-                                "grouping": ["course"],
-                            },
-                        },
-                    }
-                }
-            }
+    async def test_passes_and_prints_values(self, capsys: pytest.CaptureFixture[str]) -> None:
+        server = FakeServer(real_envelope())
+        code, out = await run_check(server, capsys)
+        assert code == 0
+        for expected in ("kpi_total | 17572", "kpi_studio | 9191", "kpi_mat | 6245", "kpi_multi | 2884"):
+            assert expected in out
+        assert "by_country | 95 groups" in out and "by_licensee | 23 groups" in out
+        assert "by_course | Pilates Studio = 9204" in out
+        assert "OK: all checks passed" in out
+
+    @pytest.mark.asyncio
+    async def test_replays_the_lane_requests(self, capsys: pytest.CaptureFixture[str]) -> None:
+        server = FakeServer(real_envelope())
+        await run_check(server, capsys)
+        studio = server.sources["kpi_studio"]["conditions"]
+        assert any(post.get("filter") == studio["filter"] and post["querylimit"] == 5000 for post in server.posts), (
+            "the Pilates KPI must be fetched with its own filter (not merged into top-level conditions)"
+        )
+        assert not any("graduation_details" in post for post in server.posts)
+        page = next(p for p in server.posts if p.get("_offset") == 0 and p["querylimit"] == 20 and "filter" not in p)
+        assert page["ordering"] == ["student_uid"]
+        assert any(p.get("filter") == {"country": "US"} for p in server.posts), "the column filter is exercised"
+
+    @pytest.mark.asyncio
+    async def test_wrong_value_fails(self, capsys: pytest.CaptureFixture[str]) -> None:
+        server = FakeServer(real_envelope(), overrides={"kpi_total": [{"total": 5}]})
+        code, _ = await run_check(server, capsys)
+        assert code == 1
+
+    @pytest.mark.asyncio
+    async def test_no_expect_prints_without_asserting(self, capsys: pytest.CaptureFixture[str]) -> None:
+        server = FakeServer(real_envelope(), overrides={"kpi_studio": [{"total": 5}]})
+        code, out = await run_check(server, capsys, expect=False)
+        assert code == 0 and "kpi_studio | 5" in out
+
+    @pytest.mark.asyncio
+    async def test_404_fails_instead_of_passing_empty(self, capsys: pytest.CaptureFixture[str]) -> None:
+        server = FakeServer(real_envelope(), missing="polestar_graduates_by_course")
+        code, _ = await run_check(server, capsys)
+        assert code == 1
+
+    @pytest.mark.asyncio
+    async def test_missing_source_fails(self, capsys: pytest.CaptureFixture[str]) -> None:
+        envelope = real_envelope()
+        del envelope["metadata"]["extensions"]["parrot_data_sources"]["by_course"]
+        code, _ = await run_check(FakeServer(envelope), capsys)
+        assert code == 1
+
+    @pytest.mark.asyncio
+    async def test_login_failure_fails(self, capsys: pytest.CaptureFixture[str]) -> None:
+        server = FakeServer(real_envelope())
+        server.login_status = 401
+        code, _ = await run_check(server, capsys)
+        assert code == 1
+
+    def test_evaluate_reports_every_mismatch(self) -> None:
+        failures = client.evaluate({"kpi_total": [{"total": 1}], "by_country": [], "by_licensee": [], "by_course": []})
+        assert any("kpi_total" in f for f in failures)
+        assert any("kpi_studio" in f for f in failures)
+        assert any("by_country" in f for f in failures)
+        assert any("by_course" in f for f in failures)
+
+
+class FakeConn:
+    """A recording asyncpg connection stand-in."""
+
+    def __init__(self, *, unique_index: bool, existing: bool, base: bool = True) -> None:
+        self.unique_index = unique_index
+        self.existing = existing
+        self.base = base
+        self.executed: list[str] = []
+        self.in_tx = False
+        self.closed = False
+
+    @asynccontextmanager
+    async def transaction(self):
+        self.in_tx = True
+        try:
+            yield
+        finally:
+            self.in_tx = False
+
+    async def execute(self, sql: str, *args: Any) -> str:
+        assert self.in_tx, "every write must happen inside the transaction"
+        self.executed.append(sql.strip().split()[0] + (":lock" if "advisory" in sql else ""))
+        if sql.strip().startswith("UPDATE"):
+            return "UPDATE 1" if self.existing else "UPDATE 0"
+        return "OK"
+
+    async def fetchrow(self, sql: str, *args: Any) -> dict[str, Any] | None:
+        if not self.base:
+            return None
+        return {
+            "query_slug": seed_by_course.BASE_SLUG,
+            "query_name": f"{seed_by_course.BASE_SLUG} name",
+            "query_raw": "x",
+            "query_description": "d",
+            "query_type": "t",
+            "is_active": True,
+            "created_by": "me",
+            "created_at": "2026-01-01",
         }
-        mock_source_response = [{"total": "42"}]
-        mock_by_course_response = [
-            {"course": "Pilates Studio", "graduates": "10"},
-            {"course": "Pilates Mat", "graduates": "32"},
-        ]
 
-        # Track call count for different endpoints
-        call_count = {"count": 0}
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        if "pg_index" in sql:
+            return 1 if self.unique_index else None
+        if "ON CONFLICT" in sql:
+            self.executed.append("UPSERT")
+            return not self.existing  # RETURNING (xmax = 0)
+        raise AssertionError(sql)
 
-        # Create mock response objects
-        class MockResponse:
-            def __init__(self, status, json_data):
-                self.status = status
-                self._json_data = json_data
+    async def close(self) -> None:
+        self.closed = True
 
-            async def json(self):
-                return self._json_data
 
-            async def __aenter__(self):
-                return self
+class TestSeed:
+    """AC11: the seed refuses without --yes and reports an idempotent outcome."""
 
-            async def __aexit__(self, *args):
-                pass
+    def test_refuses_without_yes(self) -> None:
+        assert seed_by_course.main([]) == 2
 
-        def mock_get(*args, **kwargs):
-            """Return an async context manager directly, not a coroutine."""
-            url = args[0] if args else kwargs.get("url", "")
-            if "/login" in url:
-                return MockResponse(200, mock_login_response)
-            elif "/api/a2ui/dashboard" in url:
-                return MockResponse(200, mock_dashboard_response)
-            return MockResponse(404, {})
+    def test_accepts_yes_flag(self) -> None:
+        with patch("asyncpg.connect", side_effect=ConnectionError("No DB")):
+            assert seed_by_course.main(["--yes"]) == 1
 
-        def mock_post(*args, **kwargs):
-            """Return an async context manager directly, not a coroutine."""
-            call_count["count"] += 1
-            if call_count["count"] == 1:
-                return MockResponse(200, mock_source_response)
-            return MockResponse(200, mock_by_course_response)
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("existing", "expected"), [(False, "inserted"), (True, "updated")])
+    async def test_upsert_reports_insert_vs_update(self, existing: bool, expected: str) -> None:
+        conn = FakeConn(unique_index=True, existing=existing)
+        assert await seed_by_course.seed(conn) == expected
+        assert conn.executed[0] == "SELECT:lock" and "UPSERT" in conn.executed
 
-        # Create mock session class that supports async context manager
-        class MockSession:
-            def __init__(self):
-                pass
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("existing", "expected"), [(False, "inserted"), (True, "updated")])
+    async def test_fallback_without_unique_index_is_transactional(self, existing: bool, expected: str) -> None:
+        conn = FakeConn(unique_index=False, existing=existing)
+        assert await seed_by_course.seed(conn) == expected
+        assert conn.executed[0] == "SELECT:lock"
+        assert conn.executed[1] == "UPDATE"
+        assert ("INSERT" in conn.executed) is (not existing)
 
-            async def __aenter__(self):
-                return self
+    @pytest.mark.asyncio
+    async def test_missing_base_slug_raises(self) -> None:
+        with pytest.raises(RuntimeError, match="not found"):
+            await seed_by_course.seed(FakeConn(unique_index=True, existing=False, base=False))
 
-            async def __aexit__(self, *args):
-                pass
+    @pytest.mark.asyncio
+    async def test_owned_connection_is_closed(self) -> None:
+        conn = FakeConn(unique_index=True, existing=False)
 
-            def get(self, *args, **kwargs):
-                # Return the async context manager directly
-                return mock_get(*args, **kwargs)
+        async def connect(_dsn: str) -> FakeConn:
+            return conn
 
-            def post(self, *args, **kwargs):
-                # Return the async context manager directly
-                return mock_post(*args, **kwargs)
-
-            async def close(self):
-                pass
-
-        # Capture stdout
-        import io
-        from contextlib import redirect_stdout
-
-        f = io.StringIO()
-        with redirect_stdout(f):
-            with patch("aiohttp.ClientSession", return_value=MockSession()):
-                exit_code = await client.check("http://localhost:5000", "admin", "password")
-
-        output = f.getvalue()
-        assert exit_code == 0
-        assert "key | value" in output
-        assert "kpi_total" in output
-        assert "by_course" in output
+        with patch("asyncpg.connect", connect), patch.object(seed_by_course, "get_dsn", return_value="dsn"):
+            await seed_by_course.seed()
+        assert conn.closed
 
 
 class TestSeedSQLTemplate:
-    """Verify the seed SQL template contains the LATERAL expansion."""
-
-    def test_sql_template_contains_lateral(self):
-        """SQL template must contain LATERAL expansion per spec §3 M9."""
+    def test_sql_template_contains_lateral(self) -> None:
         assert "LATERAL" in seed_by_course.QUERY_RAW
         assert "jsonb_array_elements" in seed_by_course.QUERY_RAW
         assert "e->>'course'" in seed_by_course.QUERY_RAW
 
-    def test_sql_template_structure(self):
-        """SQL template follows the spec pattern."""
-        # Should have {fields} and {where_cond} placeholders
+    def test_sql_template_structure(self) -> None:
         assert "{fields}" in seed_by_course.QUERY_RAW
         assert "{where_cond}" in seed_by_course.QUERY_RAW
-        # Should reference the base view
         assert "polestar.vw_graduates_directory" in seed_by_course.QUERY_RAW

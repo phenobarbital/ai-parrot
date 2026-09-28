@@ -12,62 +12,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 STATIC = ROOT / "examples" / "a2ui" / "static"
 UI_NODE_MODULES = ROOT / "packages" / "ai-parrot-server" / "ui" / "node_modules"
 
-sys.path.insert(0, str(ROOT / "examples" / "a2ui"))
-import dashboard  # noqa: E402
-
-from parrot.outputs.a2ui.builders import build_linked_surface  # noqa: E402
-from parrot.outputs.a2ui.linked.conditions import derive_conditions  # noqa: E402
-from parrot.outputs.a2ui.linked.models import LinkedDataSource, SourceRequest  # noqa: E402
-from parrot_tools.querysource.models import DashboardWidget  # noqa: E402
-from parrot_tools.querysource.toolkit import QuerysourceToolkit  # noqa: E402
-
-
-def _real_envelope(title_override: str | None = None) -> dict:
-    """Build the dashboard envelope exactly as ``qs_build_linked_dashboard`` does, minus the DB round-trip."""
-    widgets = [DashboardWidget.model_validate(w) for w in dashboard.WIDGETS]
-    sources: dict[str, LinkedDataSource] = {}
-    frames: dict[str, pd.DataFrame] = {}
-    for widget in widgets:
-        request = SourceRequest.model_validate(widget.request or {})
-        sources[widget.key] = LinkedDataSource(
-            slug=widget.slug,
-            tenant=widget.tenant,
-            is_multiquery=False,
-            conditions=derive_conditions(request, locked={}),
-            request=request,
-            params={},
-            locked=[],
-            target=f"/{widget.key}/rows",
-        )
-        frames[widget.key] = pd.DataFrame(
-            [
-                {
-                    "total": 0,
-                    "multi_graduates": 0,
-                    "country": "x",
-                    "graduates": 1,
-                    "licensee": "l",
-                    "course": "c",
-                    "student_uid": 1,
-                    "full_name": "n",
-                    "is_requalified": False,
-                    "last_diploma_date": "2026-01-01",
-                }
-            ]
-        )
-    components = [{**QuerysourceToolkit._bind_component(w.component, w.key), "id": w.key} for w in widgets]
-    if title_override:
-        components[0]["title"] = title_override
-    layout = QuerysourceToolkit._dashboard_layout(components, widgets, "Polestar graduates dashboard")
-    envelope = build_linked_surface(layout, sources, frames, surface_id="linked-dashboard", snapshot=True)
-    return envelope.model_dump(mode="json", by_alias=True, exclude_none=True)
+from ._envelope import real_envelope  # noqa: E402
 
 
 HARNESS = r"""
@@ -231,7 +182,7 @@ def test_renderer_against_real_envelope(tmp_path: Path) -> None:
     for name in ("renderer.js", "linked.js"):
         shutil.copy(STATIC / name, tmp_path / name)
     envelope_path = tmp_path / "envelope.json"
-    envelope_path.write_text(json.dumps(_real_envelope()))
+    envelope_path.write_text(json.dumps(real_envelope()))
     (tmp_path / "test.mjs").write_text(HARNESS)
     result = subprocess.run(
         ["node", "test.mjs"],
