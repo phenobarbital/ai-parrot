@@ -433,7 +433,7 @@ def _structural_gap_warning(scan: Any) -> str | None:
     names = ", ".join(sorted(counts))
     return (
         f"{total} {names} file(s) scanned without the structural tier: "
-        f"no sym: pages for them. Install {_STRUCTURAL_INSTALL_HINT}"
+        f"no sym: pages for them. Install 'ai-parrot[wiki-languages]'"
     )
 
 
@@ -1591,9 +1591,8 @@ def build(
 
         gap_warning = _structural_gap_warning(scan)
         if gap_warning:
+            # One channel only: the logger's stderr handler already prints it.
             _cli_logger.warning(gap_warning)
-            if not quiet:
-                click.echo(f"WARNING: {gap_warning}", err=True)
 
         output_dir = config.storage_path(root)
 

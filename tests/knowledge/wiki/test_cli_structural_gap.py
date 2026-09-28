@@ -56,13 +56,17 @@ def test_no_warning_when_astgrep_available(tmp_path) -> None:
     assert cli._structural_gap_warning(_scan(tmp_path, {"a.ts": "const x = 1\n"})) is None
 
 
-def test_build_warns_exactly_once(tmp_path, no_astgrep) -> None:
+def test_build_warns_exactly_once(tmp_path, no_astgrep, caplog) -> None:
     (tmp_path / "a.ts").write_text("export function f() {}\n", encoding="utf-8")
     (tmp_path / "b.ts").write_text("export function g() {}\n", encoding="utf-8")
-    result = CliRunner().invoke(wiki, ["build", "--path", str(tmp_path), "--no-git"])
+    with caplog.at_level("WARNING", logger="wikitoolkit.cli"):
+        result = CliRunner().invoke(wiki, ["build", "--path", str(tmp_path), "--no-git"])
     assert result.exit_code == 0, result.output
-    assert result.stderr.count("wiki-languages") == 1
-    assert "2 javascript file(s)" in result.stderr
+    # exactly one channel: the logger record; nothing extra echoed to stderr
+    assert result.stderr.count("wiki-languages") == 0
+    hits = [r for r in caplog.records if "wiki-languages" in r.getMessage()]
+    assert len(hits) == 1 and "2 javascript file(s)" in hits[0].getMessage()
+    assert "Install 'ai-parrot[wiki-languages]'" in hits[0].getMessage()
 
 
 def test_status_symbols_line(tmp_path, no_astgrep) -> None:

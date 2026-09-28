@@ -107,3 +107,10 @@ async def test_blast_component_users(tmp_path: Path) -> None:
     out = await service.blast_radius("sym:src/lib/Child.svelte#Child")
     users = {(imp.symbol.qualname, imp.via) for imp in out.impacted}
     assert {("Parent", "uses"), ("Other", "uses")} <= users
+
+
+@requires_astgrep
+def test_svelte_props_signature_ignores_earlier_destructuring() -> None:
+    src = "<script>\n  let { a } = foo(); const x = 1;\n  let { rows, onSave } = $props()\n</script>\n<p/>\n"
+    comps = _components(JavaScriptScanner().outline(src, "src/lib/P.svelte"))
+    assert comps[0].signature == "{ rows, onSave }"

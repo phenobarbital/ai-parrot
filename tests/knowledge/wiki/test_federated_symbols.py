@@ -246,3 +246,33 @@ def test_lookup_across_namespace(tmp_path) -> None:
         assert result.exit_code == 0, result.output
         ids = [h["symbol_id"] for h in json.loads(result.output)["hits"]]
         assert ids == ["svelte::sym:src/lib/guard.ts#requireDashboardContainer"]
+
+
+@pytest.mark.usefixtures("isolated_home")
+def test_cli_ns_outline_blast_qualified_and_no_repair(tmp_path) -> None:
+    """--ns <one>: outline/blast must not read-repair the foreign plane and must qualify ids."""
+    runner = CliRunner()
+    local = _federated_pair(tmp_path, runner)
+    _repo(local, {"pkg/store.py": "class Store:\n    pass\n"})  # same rel_path exists locally
+    out = runner.invoke(wiki, ["symbols", "outline", "pkg/store.py", "--path", str(local), "--ns", "other", "--json"])
+    assert out.exit_code == 0, out.output
+    ids = [s["symbol_id"] for s in json.loads(out.output)["symbols"]]
+    assert ids and all(i.startswith("other::") for i in ids)
+    blast = runner.invoke(
+        wiki, ["symbols", "blast", "sym:pkg/store.py#Store", "--path", str(local), "--ns", "other", "--depth", "1", "--json"]
+    )
+    assert blast.exit_code == 0, blast.output
+    payload = json.loads(blast.output)
+    assert payload["root"]["symbol_id"].startswith("other::")
+
+
+@pytest.mark.usefixtures("isolated_home")
+def test_cli_qualified_target_ids_are_qualified(tmp_path) -> None:
+    runner = CliRunner()
+    local = _federated_pair(tmp_path, runner)
+    result = runner.invoke(
+        wiki, ["symbols", "blast", "other::sym:pkg/store.py#Store", "--path", str(local), "--depth", "1", "--json"]
+    )
+    payload = json.loads(result.output)
+    assert payload["root"]["symbol_id"] == "other::sym:pkg/store.py#Store"
+    assert all(i["symbol"]["symbol_id"].startswith("other::") for i in payload["impacted"])

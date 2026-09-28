@@ -242,7 +242,7 @@ def _grammar_for(suffix: str, lang: str | None) -> str:
 _SVELTE_DEFAULT_IMPORT = re.compile(r"""^\s*import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"]+\.svelte)['"]""", re.M)
 _SVELTE_BLOCK = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.S | re.I)
 _SVELTE_COMPONENT_TAG = re.compile(r"<([A-Z][\w$]*)(?=[\s/>])")
-_SVELTE_PROPS = re.compile(r"let\s*(\{.*?\})\s*(?::\s*(.+?))?\s*=\s*\$props\(\s*\)", re.S)
+_SVELTE_PROPS = re.compile(r"let\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})\s*(?::\s*((?:(?!\b(?:let|const|function)\b).)+?))?\s*=\s*\$props\(\s*\)", re.S)
 
 
 def _svelte_component_names(rel_path: str) -> tuple[str, str]:

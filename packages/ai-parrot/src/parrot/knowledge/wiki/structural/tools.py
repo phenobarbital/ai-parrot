@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, truncate_to_tokens
+from parrot.knowledge.wiki.federation import FederatedWikiStore
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore
 from parrot.knowledge.wiki.structural.service import (
@@ -240,7 +241,10 @@ def create_structural_tools(
         ``[WikiSymbolLookupTool, WikiCodeOutlineTool, WikiBlastRadiusTool]``,
         all three sharing one ``service_factory``.
     """
-    local_service = StructuralService(store, root, config)
+    # A store scoped to ONE foreign namespace (``--ns <name>``) serves that plane as
+    # its "local" one; it must never be read-repaired from this checkout.
+    scoped_foreign = isinstance(store, FederatedWikiStore) and getattr(store, "_qualify_local", False)
+    local_service = StructuralService(store, root, config, read_repair=not scoped_foreign)
 
     def service_factory(namespace: str | None) -> StructuralService:
         try:
