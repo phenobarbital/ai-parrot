@@ -98,6 +98,9 @@ async def dashboard_handler(request: web.Request) -> web.Response:
                 envelope = extract_envelope(response)
             except RuntimeError as exc:
                 return web.json_response({"error": str(exc)}, status=502)
+            except Exception as exc:  # noqa: BLE001 - an LLM/network failure must not surface as an opaque 500
+                logger.exception("dashboard build failed")
+                return web.json_response({"error": f"dashboard build failed: {exc}"}, status=502)
             app["a2ui_envelope"] = envelope
     return web.json_response(envelope)
 

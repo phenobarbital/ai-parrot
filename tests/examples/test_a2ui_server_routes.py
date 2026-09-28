@@ -110,3 +110,23 @@ async def test_dashboard_example_server_routes(
 def test_require_querysource_exits() -> None:
     with pytest.raises(SystemExit):
         server.require_querysource("99.0")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [RuntimeError("no linked envelope"), ConnectionError("llm down")])
+async def test_dashboard_failure_is_a_502_never_a_500(
+    agent: FakeAgent, aiohttp_client: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    async def boom(question: str) -> AIMessage:
+        raise failure
+
+    monkeypatch.setattr(agent, "ask", boom)
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("<html>ok</html>")
+    monkeypatch.setattr(server, "STATIC", static)
+    client = await aiohttp_client(server.create_app())
+
+    resp = await client.get("/api/a2ui/dashboard", headers={"Authorization": "Bearer t"})
+    assert resp.status == 502
+    assert "error" in await resp.json()

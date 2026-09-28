@@ -1,8 +1,8 @@
 """QuerysourceToolkit — tenant-scoped QuerySource tools for agents (spec FEAT-558 §3 M5/M6).
 
 Generated tool names (tool_prefix 'qs'): qs_get_dialect_reference, qs_list_slugs, qs_describe_slug, qs_execute_slug,
-qs_build_linked_surface, qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when allow_write=True —
-qs_save_multiquery.
+qs_build_linked_surface, qs_build_linked_dashboard, qs_list_components, qs_validate_pipeline, qs_run_multiquery and
+— only when allow_write=True — qs_save_multiquery.
 """
 
 from __future__ import annotations
@@ -479,7 +479,7 @@ class QuerysourceToolkit(AbstractToolkit):
         charts: list[str] = []
         tables: list[str] = []
         buckets = {"kpis": kpis, "charts": charts, "table": tables}
-        for widget, comp in zip(widgets, components):
+        for widget, comp in zip(widgets, components, strict=True):
             section = widget.section or inferred[str(comp.get("component"))]
             buckets[section].append(str(comp["id"]))
         extra: list[dict[str, Any]] = []

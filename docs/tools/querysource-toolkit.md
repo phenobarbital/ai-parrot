@@ -32,7 +32,7 @@ toolkit = QuerysourceToolkit(programs=["pokemon"], allow_write=True)
 
 ## Tools
 
-Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Eight tools are always present; the ninth
+Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Nine tools are always present; the tenth
 (`qs_save_multiquery`) appears only when the toolkit is constructed with `allow_write=True`, and is marked
 `requires_confirmation` (HITL) via `confirming_tools`.
 
