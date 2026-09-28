@@ -18,7 +18,7 @@
       "feature_id": "FEAT-609",
       "feature": "wikitoolkit-structural-coverage",
       "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "estimated_hours": 2,
@@ -28,12 +28,13 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-28T19:08:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3820-wiki-languages-pulls-astgrep.md",
+      "completed_at": "2026-09-28T19:08:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3820-wiki-languages-pulls-astgrep.md",
       "owned_files": [
         "packages/ai-parrot/pyproject.toml",
         "tests/knowledge/wiki/test_extras_packaging.py"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3821",
