@@ -1,0 +1,60 @@
+### Scenarios (examples under `examples/agents/a2ui/linked_e2e/`)
+
+**Dataset**: `epson_field_activity` (`day, visits, program, store_id`, placeholders `firstdate`/`lastdate`) and `epson_program_targets` (`program, target`), plus a multiquery slug derived from them.
+
+| # | Scenario | What it validates | Evidence |
+|---|---|---|---|
+| S1 | **Server lane + share + PBAC** | Agent → `qs_build_linked_surface` → `publish_surface` (with `linked_service` injected) → GET JSON and `?format=html` (no execution) → `POST /refresh {params:{firstdate,lastdate}}` → share token → refresh as the bearer (owner pctx) → negative cases: no policy → 403; no guard → 403; `refreshable=false` → 409; concurrent refresh → 409 stale; a locked or undeclared param → warning in `X-Parrot-Refresh-Warnings` | F013, F010 |
+| S2 | **Join + DSL + FilterBar** | "Activity vs target" dashboard: KPIs (total visits, stores visited, % attainment), a bar chart of visits by day, a table joining `activity` ⋈ `targets` on `program`, and `transform.ops` (`group_by` → `derive attainment` → `sort`). Two FilterBars: a date range with `parrot_param` (re-executes the source) and a program filter (local). **Parity**: `execute_sources` (Python) and `LinkedLane` (TS) return identical rows for the same params. | F011, F012, F010 |
+| S3 | **Multiquery** | Seed `epson_activity_vs_targets_mq` in staging with `save_multiquery` (Join, 2 frames), then a linked DataTable with `is_multiquery`. Cases: with `multi_output`, without it (falls back to `result`), and an ambiguous frame (→ `[]` plus a notice). | F012, F004 |
+| S4 | **Admin-UI chat** | A BotManager agent with QuerysourceToolkit. A chat with `output_mode=a2ui` renders the linked surface in `A2UISurface` (Svelte), the FilterBar re-queries, and the Refresh button goes through the server lane. | F014 |
+
+### What's New
+
+- **`examples/agents/a2ui/linked_e2e/`**:
+  - `server.py`: aiohttp + QuerySource + AuthHandler + BotManager, using the FEAT-610 mount order; it reuses FEAT-610's `server.py` if that lands first.
+  - `agent.py`: an Epson agent with QuerysourceToolkit and the dashboard TOOL.
+  - `seed_staging.py`: idempotent. It creates the multiquery slug and a `query_slug:public:epson_*` policy in a demo policy directory.
+  - `run_e2e.py`: an asserting HTTP client for S1–S3; the exit code is the verdict.
+  - `README.md`: requirements (staging env, QS version, PBAC).
+- **Example TOOL** `build_epson_activity_dashboard` over `builders.build_linked_surface` (S2), unless FEAT-610's helper is already available.
+- **Tests**:
+  - integration tests marked `staging`, one per scenario, skipped without `ENV=staging`;
+  - a golden for the S2 envelope;
+  - a Python↔TS parity test over the same fixture;
+  - a **real** vitest run (install `node_modules` in CI or locally).
+
+### What Changes (minimal core fixes that S4 and parity need)
+
+- **Envelope lifting**: `bots/base.py` / `emission.finalize_a2ui_response` lift `a2ui_envelope` from dict tool results that carry the `a2ui_linked_surface` artifact. *Evidence*: F014
+- **v1.0 shape**: normalize the inner `CreateSurface` into `{version:"v1.0", createSurface}`, either at emission or in `A2UISurface.svelte`. *Evidence*: F014
+- **Canvas**: `infographic-tab-builder.ts` opens a tab for roots of type Chart/DataTable/KPICard/Column, and `InfographicCanvas.svelte` passes `persistedSurfaceId` when the surface is persisted. *Evidence*: F014
+- **Drift fixes**:
+  - `conditions.ts` stops emitting `limit` and `_offset: 0`, aligned with `conditions.py` and the `limit_offset.json` fixture;
+  - `setParam` ignores undeclared or locked names;
+  - `serverRefresh` applies the response to the dataModel;
+  - notices use the descriptor's `snapshot_at`.
+  *Evidence*: F015
+- **Validation**: `_validate_linked_sources` checks that the FilterBar's `param.source` and `param.name` exist. *Evidence*: F011
+- **`PublishSurfaceTool`**: document or inject `linked_service` with the guard (BotManager injects `bot._dataplane_guard`). *Evidence*: F013
+
+### What's Untouched (Non-Goals)
+
+- The **FEAT-610** scope: its renderer (echarts + grid.js), `polestar_graduates_directory`, grid paging, and the querysource pin.
+- Tenant slugs (requires QS ≥5.1.1, not installed; F003) and `transform.ref` (the publisher has no wiring; F015). These stay candidates for a later FEAT.
+- `interval` refresh policies, beyond one smoke case inside S2.
+- Any write to the **production** DB.
+
+### Patterns to Follow
+
+- Mount order and login from FEAT-610 §3 (`app.py`, `admin_login_page`).
+- The fakes in `test_linked_surfaces_e2e.py` for the offline tier of the same tests (F015).
+- The Epson fixtures `linked_dashboard_join.json` / `linked_multiquery_public.json` as the starting shape (F001, F012).
+- Idempotent seeding via `SlugCatalog.upsert` (`save_multiquery(overwrite=True)`) (F004).
+
+### Integration Risks
+
+- **Conflict with FEAT-610 in `linked/index.ts`.** FEAT-610 adds `refreshSource(key)`; this track touches `setParam` and `onUpdate`. *Mitigation*: agree on the order with Jesús; whichever merges second rebases.
+- **Staging data.** It is not verified that `epson_*` exist in `navigator_staging` with the SQL and columns the fixtures assume (inferred columns, F001). *Mitigation*: the spec's first task runs `qs_describe_slug` against staging and records the definition.
+- **PBAC.** The guard only exists if PBAC loads a policy directory. The seeded policy must not leak into `policies/` in the repo. *Mitigation*: a dedicated `PARROT_PBAC_POLICY_DIR` for the example.
+- **Vitest has never run.** The drift fixes may break tests that were never really green. *Mitigation*: run vitest before touching anything and record the baseline.
