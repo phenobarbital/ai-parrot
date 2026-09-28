@@ -235,4 +235,6 @@ token-less request is rejected).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Tokens: n/a
+
+examples/a2ui/server.py (QuerySource → optional BotManager → routes → AuthHandler last) + tests/examples/test_a2ui_server_routes.py; tests/examples: 5 passed, 1 skipped. Server not run live (needs QuerySource/DB + auth). Note: server.py inserts its own dir into sys.path so 'from dashboard import' works as a script. Merge-tier sweep skipped (env-red, see TASK-3842).

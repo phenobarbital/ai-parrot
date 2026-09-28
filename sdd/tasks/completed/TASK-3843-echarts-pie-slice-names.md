@@ -179,4 +179,6 @@ def test_bar_series_unchanged() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Tokens: n/a
+
+Pie/donut series now {name,value}; None -> 'Unassigned'. echarts tests 38 passed. Lint residual B905 zip() at echarts.py:502 is pre-existing style debt (left for /sdd-done). Merge-tier sweep skipped (env-red, see TASK-3842).

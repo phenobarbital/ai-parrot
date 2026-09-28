@@ -45,10 +45,8 @@ export function deriveConditions(
     out['grouping'] = [...request.grouping];
   }
   
-  // Rule 4: limit / offset mapped to the same dialect keys the fixtures use
-  if (request.limit !== undefined && request.limit !== null) {
-    out['limit'] = request.limit;
-  }
+  // Rule 4: only the offset is a condition (`_offset`); `request.limit` is applied by the lane as `querylimit`
+  // (capped, S8/AC17) — deriveConditions never emits `limit` (the Python reference and the fixtures agree).
   if (request.offset !== undefined && request.offset !== null) {
     out['_offset'] = request.offset;
   }

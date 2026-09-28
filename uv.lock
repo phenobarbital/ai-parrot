@@ -1003,8 +1003,8 @@ requires-dist = [
     { name = "python-statemachine", specifier = "==2.5.0" },
     { name = "python-xmp-toolkit", marker = "extra == 'images'", specifier = "==2.1.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "querysource", marker = "extra == 'db'", specifier = ">=4.1.11" },
-    { name = "querysource", marker = "extra == 'integrations'", specifier = ">=4.1.11" },
+    { name = "querysource", marker = "extra == 'db'", specifier = ">=5.1.2" },
+    { name = "querysource", marker = "extra == 'integrations'", specifier = ">=5.1.2" },
     { name = "questionary", specifier = ">=2.1.1" },
     { name = "rank-bm25", marker = "extra == 'retrieval'", specifier = "==0.2.2" },
     { name = "rapidfuzz", marker = "extra == 'graphindex'", specifier = ">=3.0" },
@@ -1994,6 +1994,18 @@ google = [
     { name = "aiogoogle" },
     { name = "google-api-python-client" },
 ]
+hooba = [
+    { name = "ai-parrot-loaders" },
+    { name = "odfpy" },
+    { name = "openpyxl" },
+    { name = "pandas" },
+    { name = "playwright" },
+    { name = "pyyaml" },
+    { name = "rapidfuzz" },
+    { name = "selenium" },
+    { name = "undetected-chromedriver" },
+    { name = "webdriver-manager" },
+]
 jira = [
     { name = "jira" },
 ]
@@ -2074,7 +2086,8 @@ workday = [
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
     { name = "ai-parrot-loaders", marker = "extra == 'business-automation'", editable = "packages/ai-parrot-loaders" },
-    { name = "ai-parrot-tools", extras = ["analysis", "arxiv", "aws", "business-automation", "charts", "codeinterpreter", "db", "docker", "excel", "finance", "flowtask", "git", "google", "jira", "kubernetes", "messaging", "msword", "office365", "pdf", "pulumi", "research", "rss", "sandbox", "scraping", "security", "sitesearch", "slack", "weather", "wikipedia"], marker = "extra == 'all'", editable = "packages/ai-parrot-tools" },
+    { name = "ai-parrot-tools", extras = ["analysis", "arxiv", "aws", "business-automation", "charts", "codeinterpreter", "db", "docker", "excel", "finance", "flowtask", "git", "google", "hooba", "jira", "kubernetes", "messaging", "msword", "office365", "pdf", "pulumi", "research", "rss", "sandbox", "scraping", "security", "sitesearch", "slack", "weather", "wikipedia"], marker = "extra == 'all'", editable = "packages/ai-parrot-tools" },
+    { name = "ai-parrot-tools", extras = ["business-automation", "excel", "scraping"], marker = "extra == 'hooba'", editable = "packages/ai-parrot-tools" },
     { name = "aiogoogle", marker = "extra == 'google'", specifier = ">=5.17" },
     { name = "aiohttp", marker = "extra == 'workday'", specifier = ">=3.9" },
     { name = "aioimaplib", marker = "extra == 'messaging'", specifier = ">=1.1" },
@@ -2126,8 +2139,9 @@ requires-dist = [
     { name = "pyowm", marker = "extra == 'weather'", specifier = ">=3.3" },
     { name = "python-docx", marker = "extra == 'msword'", specifier = "==1.1.2" },
     { name = "python-docx", marker = "extra == 'pdf'", specifier = "==1.1.2" },
+    { name = "pyyaml", marker = "extra == 'hooba'", specifier = ">=6.0" },
     { name = "pyyaml", marker = "extra == 'kubernetes'", specifier = ">=6.0" },
-    { name = "querysource", marker = "extra == 'db'", specifier = ">=5.1.1" },
+    { name = "querysource", marker = "extra == 'db'", specifier = ">=5.1.2" },
     { name = "rapidfuzz", marker = "extra == 'scraping'", specifier = ">=3.0" },
     { name = "rustworkx", specifier = ">=0.15" },
     { name = "sdmx1", marker = "extra == 'research'", specifier = ">=2.27" },
@@ -2144,7 +2158,7 @@ requires-dist = [
     { name = "yfinance", marker = "extra == 'finance'", specifier = ">=0.2.54" },
     { name = "zeep", extras = ["async"], marker = "extra == 'workday'", specifier = ">=4.3.3" },
 ]
-provides-extras = ["pdf", "msword", "jira", "slack", "aws", "docker", "git", "analysis", "charts", "excel", "sandbox", "codeinterpreter", "pulumi", "kubernetes", "sitesearch", "office365", "scraping", "rss", "finance", "db", "flowtask", "google", "arxiv", "wikipedia", "weather", "messaging", "security", "workday", "research", "business-automation", "all"]
+provides-extras = ["pdf", "msword", "jira", "slack", "aws", "docker", "git", "analysis", "charts", "excel", "sandbox", "codeinterpreter", "pulumi", "kubernetes", "sitesearch", "office365", "scraping", "rss", "finance", "db", "flowtask", "google", "arxiv", "wikipedia", "weather", "messaging", "security", "workday", "research", "business-automation", "hooba", "all"]
 
 [[package]]
 name = "ai-parrot-visualizations"
@@ -13044,7 +13058,7 @@ wheels = [
 
 [[package]]
 name = "querysource"
-version = "5.1.1"
+version = "5.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiocsv" },
@@ -13112,14 +13126,14 @@ dependencies = [
     { name = "xlrd" },
     { name = "xlsxwriter" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/73/83/f361c15323d4fce1a6199c88aca4af11092cf610c4adcaba53e3a0a4506a/querysource-5.1.1.tar.gz", hash = "sha256:686b5292fb9596a9bcf0d72cd007068ec92aaffa6b20ae37b16fef38f723b389", size = 3678004, upload-time = "2026-09-25T16:35:36.904Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/c8/6db5a7532cc2b08bb47fdfbfe3cd56c51484e4c8a7a8edc3409d4048551d/querysource-5.1.2.tar.gz", hash = "sha256:7a7a630afbafcd89109143f5999d22b03bbef2bb54c953c983ecb36bb1bf217c", size = 3678337, upload-time = "2026-09-28T21:32:43.233Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3c/f4/bc4ada01a07b98c2239e2e3639f33666f3ec9b79b4806abe489a0828111b/querysource-5.1.1-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:70da3eee1bdbd9e622675f289a929c2a7b333bdff70c0f8d63397121f772b58a", size = 11794640, upload-time = "2026-09-25T16:35:24.304Z" },
-    { url = "https://files.pythonhosted.org/packages/27/e4/6bc774c93a0e484b22436b34166d8dcba13c99d8f43b28f43101fedd1a2c/querysource-5.1.1-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:9f3f95169f885789ce63a9aa00d569b4dc020ce3f2722ad8f6724e65e5e82f27", size = 11895711, upload-time = "2026-09-25T16:35:26.926Z" },
-    { url = "https://files.pythonhosted.org/packages/31/61/d62bccdf56d1a9bcb39990e7c58fd7101dbf12f652882d76bd6b19533cfd/querysource-5.1.1-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:079d44a4b66944a5aef3702091c701ffe4dae8d6d82984fda84081a292e3832a", size = 12068737, upload-time = "2026-09-25T16:35:29.052Z" },
-    { url = "https://files.pythonhosted.org/packages/31/e5/ef40248661dea63b8a018ec84946b60c6a02c2006a5d0c3ba5659ec0418b/querysource-5.1.1-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:016c9dddf88e1db27d15362b268beee86352ff077663d8d3098448636fcb87a3", size = 12037892, upload-time = "2026-09-25T16:35:31.189Z" },
-    { url = "https://files.pythonhosted.org/packages/07/9e/8f6c19a759529105b852766e91f5f428538997e3ca9f12af329f3810b3c6/querysource-5.1.1-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:77249cb2d97344e8c406bfdd3f771db518f966eb384ce87d8f59b18395238c76", size = 12008702, upload-time = "2026-09-25T16:35:33.171Z" },
-    { url = "https://files.pythonhosted.org/packages/f5/5f/4e04d42d7bdbc6078bf5b96d1525352863df604018d666eb1b727dc5e507/querysource-5.1.1-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:9d4e0474b96ad2849d530bb68bbff7e63a37aa5fd76ae3f57ab2ad4fab57d801", size = 11978179, upload-time = "2026-09-25T16:35:35.197Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/fb/701a01fd203ca1f5e5dc707ef21f35da08f2b5ac6e3fb85e2160fc0465d5/querysource-5.1.2-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:e2f0a68e06ff1f425ac475f535f3fd7611546467fad83c035d88d3a7e4b83c47", size = 11794742, upload-time = "2026-09-28T21:32:26.147Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/75/e207cc5934c617db2b76db4501f0a37d7789e358436ce4510ec66298e894/querysource-5.1.2-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:25de5e7c5c5c84b646e0d01f5275b8f0f585bb39ed4d2d7a42296cf66712681f", size = 11895816, upload-time = "2026-09-28T21:32:29.41Z" },
+    { url = "https://files.pythonhosted.org/packages/09/99/8fa99423a03bde55bfa04114a7d69037e39b62328be56323bb6c240b34bf/querysource-5.1.2-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:797b279d1e54d5a7dfaaca74aea663f505e35d8e3e9b3a10bb2ca6c783e53ab1", size = 12068842, upload-time = "2026-09-28T21:32:31.918Z" },
+    { url = "https://files.pythonhosted.org/packages/63/c2/3781dfb8e3628c8fd333467bf715b978eb575c32a11be1409b016e3e05e2/querysource-5.1.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:62d5326431f4fd77d3584d6d1c6a64991fa07384b5258e5507135684e5402d3c", size = 12037996, upload-time = "2026-09-28T21:32:35.07Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/36/99422c407e85bec87f6845a8a40bcfe76ed42fbdeabebab36465996e6c54/querysource-5.1.2-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:a3904c37686e48f8bfedeeefe9fceacd46e92fcbd1536580638b7fb8d93a4755", size = 12008808, upload-time = "2026-09-28T21:32:38.07Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/91/717f118d78e81c7257832dee029c5f287283dac1d6d8cdaafd89acaf1e65/querysource-5.1.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:6a5b89a013db826ad05e71864c0f0ea14f6850bd4e90c0f0bcb468410d0d4c71", size = 11978285, upload-time = "2026-09-28T21:32:40.723Z" },
 ]
 
 [[package]]

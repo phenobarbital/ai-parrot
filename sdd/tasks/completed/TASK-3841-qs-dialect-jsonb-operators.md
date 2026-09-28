@@ -247,4 +247,6 @@ name from `dialect.py` (read the assignment above line 95); do not invent one.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 130.9s · Tokens: n/a
+
+Delivered per task; querysource tests 100 passed after review fix 7e80bddc (test_dialect.py::test_version_guard hardcoded the 4.5 line; the mandated DIALECT_VERIFIED_AGAINST bump to 5.1.2 broke it. File was not in the task's list — spec gap, not a coder defect). Merge-tier sweep skipped: red on pre-existing unrelated collection errors (see TASK-3842).

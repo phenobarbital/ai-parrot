@@ -32,7 +32,7 @@ toolkit = QuerysourceToolkit(programs=["pokemon"], allow_write=True)
 
 ## Tools
 
-Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Eight tools are always present; the ninth
+Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Nine tools are always present; the tenth
 (`qs_save_multiquery`) appears only when the toolkit is constructed with `allow_write=True`, and is marked
 `requires_confirmation` (HITL) via `confirming_tools`.
 
@@ -66,6 +66,10 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Eight tools are a
   keys become `locked`; `@variables` are rejected), **executes the slug once** to validate the component's
   axes/columns against the real columns, and embeds ≤ 500 rows only when `snapshot=True`. Returns
   `{a2ui_envelope, artifacts}`. See [A2UI linked surfaces](../outputs/a2ui-linked-surfaces.md).
+- **`qs_build_linked_dashboard`** — (FEAT-610) Emits ONE linked A2UI dashboard: each widget
+  `{key, slug, component, request?, tenant?, section?, refresh?}` gets its own source; KPIs, charts and tables
+  are laid out in rows. KPICards name their aggregate column. Filters accept the JSONB operators `@>`, `<@`,
+  `@>|`, `->` and `->>` in the `{op: value}` filter form (querysource >= 5.1).
 - **`qs_save_multiquery`** *(only when `allow_write=True`)* — Persists a validated MultiQuery pipeline as a
   query-slug owned by `program` (forced to the single allowed program when this toolkit is tenant-restricted).
   Requires operator opt-in (`allow_write`) and user confirmation. Refuses to overwrite a slug owned by another
@@ -77,7 +81,7 @@ Tenancy is a static `program_slug` allowlist passed at construction time (`progr
 **every** call against `public.queries` — there is no positive authorization cache, so a `program_slug`
 change takes effect immediately. `None` means unrestricted.
 
-The `qs_list_slugs`, `qs_describe_slug`, `qs_execute_slug`, and `qs_build_linked_surface` tools accept an optional `tenant` argument for selecting a QuerySource tenant store schema. Omit it for public/legacy slugs. Routing, not security.
+The `qs_list_slugs`, `qs_describe_slug`, `qs_execute_slug`, `qs_build_linked_surface`, and `qs_build_linked_dashboard` tools accept an optional `tenant` argument for selecting a QuerySource tenant store schema. Omit it for public/legacy slugs. Routing, not security.
 
 | Capability | Restricted (`programs=[...]`) | Unrestricted (`programs=None`) |
 |---|---|---|

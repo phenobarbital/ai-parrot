@@ -243,4 +243,6 @@ import dashboard  # noqa: E402
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 334.0s · Tokens: n/a
+
+.gitignore whitelists examples/a2ui/**/*.py|html; examples/a2ui/dashboard.py (8 WIDGETS, agent, extract_envelope) tracked; tests/examples: 3 passed, 1 skipped (live test is opt-in PARROT_TEST_QS_LIVE=1 + ENV=prod, NOT run). Merge-tier sweep skipped (env-red, see TASK-3842).

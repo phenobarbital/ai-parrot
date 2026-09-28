@@ -176,4 +176,6 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 238.9s · Tokens: 1935543 in / 15192 out
+
+examples/a2ui/static/linked.js (queryUrl, fetchSource, deriveConditions port, createLane with refreshSource/refreshAll/fetchPage) + node-driven test: 1 passed (node v20 present, not skipped). Merge-tier sweep skipped (env-red, see TASK-3842).

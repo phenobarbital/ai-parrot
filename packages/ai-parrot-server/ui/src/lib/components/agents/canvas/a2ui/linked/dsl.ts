@@ -365,6 +365,10 @@ function pivotOp(rows: Row[], op: Op, opIndex: number): Row[] {
     // Apply aggregation and populate pivot columns
     for (const colValue of columnValues) {
       const values = valueMap.get(colValue) || [];
+      if (values.length === 0) {
+        newRow[colValue] = null; // a missing cell is null for every aggregate (pandas pivot_table parity)
+        continue;
+      }
       let aggregatedValue: number | null = null;
       
       switch (aggregateFn) {

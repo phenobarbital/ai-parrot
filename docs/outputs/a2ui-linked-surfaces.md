@@ -41,13 +41,23 @@ The `request` field contains the canonical representation of conditions:
 Renderers fetch linked data by making authenticated requests to QuerySource endpoints:
 
 ```
-POST /api/v1/{tenant}/queries/{slug}
+POST /api/v3/queries/{slug}                     # no tenant (used by the renderer when no tenant is set)
+POST /api/v1/{tenant}/queries/{slug}            # tenant store (used by the renderer when a tenant is set)
+POST /api/v1/queries/{schema}/{slug}            # alias, querysource >= 5.1.2
+POST /api/v2/services/queries/{slug}            # service route
 ```
 
 With JWT authentication from the viewer's session. The request includes:
-- `refresh: true` (never false)
-- `querylimit: 500` (capped by toolkit)
+- `refresh: true` only on a manual refresh; the field is omitted otherwise (never sent as false)
+- `querylimit` capped at 5000 rows per fetch (`DEFAULT_MAX_FETCH_ROWS`); `request.limit` may lower it, never raise it
 - All other request parameters from the descriptor
+
+### Per-source refresh
+
+Refresh is client-side; there is no per-widget refresh HTTP endpoint. `LinkedLane.refreshSource(key)` re-fetches
+one source with `refresh: true` and then re-runs the sources that depend on it (transform dependents), in
+dependency order. Concurrent calls for the same key share one in-flight promise. `LinkedLane.refreshAll()`
+re-fetches every source sequentially in dependency order (siblings first).
 
 All denials result in 404 "unavailable" responses to prevent information leakage. The renderer shows an appropriate error state to the user.
 

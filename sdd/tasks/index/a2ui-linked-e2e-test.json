@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-28T22:25:50+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-28T23:43:35+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; first writer of querysource/models.py (DialectReference) and test_toolkit_core.py (version assert) — TASK-3846/3847 serialize after it",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3841-qs-dialect-jsonb-operators.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T22:41:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3841-qs-dialect-jsonb-operators.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3842",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml, packages/ai-parrot-tools/pyproject.toml and regenerates uv.lock (shared dependency manifests)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3842-querysource-floor-5-1-2.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T22:37:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3842-querysource-floor-5-1-2.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3843",
@@ -52,16 +54,17 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; only task touching a2ui_renderers/echarts.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3843-echarts-pie-slice-names.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T22:41:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3843-echarts-pie-slice-names.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3844",
@@ -70,16 +73,17 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; only writer of linked/index.ts — TASK-3845 depends on it for the refreshSource member",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3844-linked-lane-refresh-source.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T22:47:35+00:00",
+      "file": "sdd/tasks/completed/TASK-3844-linked-lane-refresh-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3845",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -97,9 +101,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3844: laneProxy forwards LinkedLane.refreshSource, which TASK-3844 adds to linked/index.ts",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3845-a2ui-surface-refresh-controls.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T22:58:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3845-a2ui-surface-refresh-controls.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3846",
@@ -108,7 +113,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -117,9 +122,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3841: both modify querysource/models.py (DialectReference vs DashboardWidget) — serialized, lower id first",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3846-qs-dashboard-widget-model.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T22:46:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3846-qs-dashboard-widget-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3847",
@@ -128,7 +134,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -138,9 +144,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3846 (uses DashboardWidget + _build_linked_source, toolkit.py) and TASK-3841 (both modify test_toolkit_core.py; @> KPIs need JSONB validation)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3847-qs-build-linked-dashboard-tool.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T22:54:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3847-qs-build-linked-dashboard-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3848",
@@ -149,7 +156,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -158,9 +165,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3847: build_dashboard_agent's prompt drives the qs_build_linked_dashboard tool and WIDGETS feeds it; first task under examples/a2ui/, owns the .gitignore whitelist every later example task relies on",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3848-a2ui-example-dashboard-agent.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T23:05:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3848-a2ui-example-dashboard-agent.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3849",
@@ -169,7 +177,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -178,9 +186,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3848: imports build_dashboard_agent / extract_envelope / dashboard_question from examples/a2ui/dashboard.py and needs its .gitignore whitelist",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3849-a2ui-example-server.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T23:08:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3849-a2ui-example-server.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3850",
@@ -189,7 +198,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -198,9 +207,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3848: first file under examples/a2ui/static/ relies on the .gitignore whitelist TASK-3848 adds (JS itself is not ignored, but its node test harness lives in tests/examples/ created there)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3850-a2ui-example-linked-js.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T23:10:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3850-a2ui-example-linked-js.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3851",
@@ -209,7 +219,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -219,9 +229,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3849 (fetches /api/a2ui/dashboard and /static/vendor/echarts.min.js served by server.py) and TASK-3850 (imports createLane/fetchPage from static/linked.js)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3851-a2ui-example-static-renderer.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T23:16:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3851-a2ui-example-static-renderer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3852",
@@ -230,7 +241,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -239,9 +250,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3849: client.py --check drives server.py's /api/v1/login and /api/a2ui/dashboard; README documents server.py's CLI",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3852-a2ui-example-client-seed-readme.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T23:16:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3852-a2ui-example-client-seed-readme.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3853",
@@ -250,7 +262,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -261,9 +273,10 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-3841 (documents JSONB_OPERATORS), TASK-3847 (documents qs_build_linked_dashboard) and TASK-3844 (documents LinkedLane.refreshSource)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3853-a2ui-linked-docs.md"
+      "started_at": "2026-09-28T22:32:25+00:00",
+      "completed_at": "2026-09-28T23:01:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3853-a2ui-linked-docs.md",
+      "verification": "verified"
     }
   ]
 }
