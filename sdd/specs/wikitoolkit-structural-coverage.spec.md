@@ -8,12 +8,12 @@ projects: [ai-parrot]
 tags: [wikitoolkit, symbols, ast-grep, svelte, typescript]
 ---
 
-# Feature Specification: Honest structural tier, Svelte component symbols, and module-local JS functions in wikitoolkit
+# Feature Specification: Honest structural tier, Svelte component symbols, module-local JS functions, and federated symbol queries in wikitoolkit
 
 **Feature ID**: FEAT-609
 **Date**: 2026-09-28
 **Author**: Juan (jfrruffato@trocglobal.com), FieldSync team
-**Status**: draft
+**Status**: review (v0.2 — §8 questions answered by Jesús 2026-09-28, awaiting approval)
 **Target version**: next ai-parrot minor after 1.0.6
 
 ---
@@ -109,19 +109,24 @@ A related minor issue appears on every build: `typescript.yaml` is aliased to `j
 - G5: The `## API outline` text stays byte-identical to today for every existing fixture: the
   parity contract in `tests/knowledge/wiki/languages/test_outline_parity.py` holds.
 - G6: No warnings from TS-only rules evaluated under the `javascript` alias.
+- G7 (Q1): Installing `ai-parrot[wiki-languages]` is enough to get symbols: `ast-grep-py` moves
+  into that extra.
+- G8 (Q4): `symbols lookup|outline|blast` read federated namespaces, from the CLI as well as the
+  MCP/tool surface, and a read-only foreign plane never fails because another process migrated it.
 
 ### Non-Goals (explicitly out of scope)
 
-- Making ast-grep a hard dependency, or moving `ast-grep-py` into `wiki-languages`. The seam
-  stays optional, and this feature only makes its absence visible. See Open Question Q1.
+- Making ast-grep a **core** dependency. It joins the `wiki-languages` extra (Q1), and a plain
+  `pip install ai-parrot` still has no ast-grep. M1's warning is for that case, and for an
+  environment that pinned the grammar wheels by hand, which is how this defect was found.
 - Symbol extraction on the tree-sitter tier. That would be a second extractor to keep in parity
   with the rules files.
 - Svelte markup semantics beyond component usage: `{#if}`/`{#each}` blocks, slots, snippets,
   event directives as edges, `bind:`.
 - `.vue` and `.astro` single-file components.
-- Federating the `symbols` commands across namespaces. `symbols lookup` from a repo that
-  federates `navigator-svelte` still reads only the local plane. This is a separate gap, noted
-  for a follow-up.
+- Cross-namespace symbol *edges*. `blast` in a namespace follows only that namespace's edges.
+  A local symbol is never linked to a foreign one, because resolution runs per plane at build
+  time.
 - Changing Python symbol extraction (stdlib `ast`, unaffected).
 
 ---
@@ -130,7 +135,8 @@ A related minor issue appears on every build: `typescript.yaml` is aliased to `j
 
 ### Overview
 
-Three independent modules plus one small rules-schema extension:
+Five modules. M1 through M4 cover the extraction side, and M5 covers the federated read side
+(Q4). Q1 is a one-line packaging change folded into M1.
 
 1. **Tier honesty (M1).**
    - `mode` becomes *predictive*: it reports what the next file would be served by, instead of
@@ -140,7 +146,8 @@ Three independent modules plus one small rules-schema extension:
    - `status` gains a `Symbols:` line.
 2. **Fingerprint invalidation (M2).**
    - Each build persists a per-language *extractor fingerprint*: the effective tier plus a hash
-     of the language's rule file.
+     of the language's rule file. It is stored through a new `get_meta`/`set_meta` pair that
+     every `BaseWikiStore` backend implements (Q2).
    - When a language's fingerprint changes, that language's files go into the existing
      `force_rel_paths` mechanism (`cli.py:699`, already used by FEAT-532), so only those files
      re-ingest.
@@ -157,6 +164,15 @@ Three independent modules plus one small rules-schema extension:
    - The arrow and function-expression declarators join the ref `scope` ancestors.
    - An optional `languages:` filter on `SymbolSpec`/`RefSpec` keeps TS-only rules off the
      `javascript` alias (G6).
+5. **Federated symbol queries (M5).**
+   - `FederatedWikiStore.find_symbols` and `search_symbols_fts` fan out to every namespace,
+     like `search_fts` already does. They are local-only today, by v1 design
+     (`federation.py:1397`).
+   - `symbols_for` and blast route to the namespace a qualified id or path names.
+   - The CLI's `symbols` subcommands gain the `--ns` option that the tool layer already honours
+     (`namespace` in `structural/tools.py`).
+   - The read-only legacy-FTS probe re-probes after a schema error instead of trusting a
+     per-instance cache that another process can invalidate.
 
 The outline stays unchanged (G5) because `render.py` never renders the new records:
 - `COMPONENT` is not in `_JS_RENDERED_KINDS` (`render.py:112`).
@@ -180,6 +196,10 @@ wikitoolkit build
 
 wikitoolkit status ─→ scanner.mode (predictive, M1) + "Symbols:" line
 symbols blast ─→ _DEFAULT_BLAST_RELATIONS + "uses"                        (M3)
+
+wikitoolkit symbols lookup|outline|blast [--ns NAME|all|local]            (M5)
+   └─ _structural_tool(...) ─→ service_factory(namespace)  (structural/tools.py:245)
+         └─ FederatedWikiStore.find_symbols / search_symbols_fts ─→ fan out + qualify ids
 ```
 
 ### Integration Points
@@ -199,6 +219,16 @@ symbols blast ─→ _DEFAULT_BLAST_RELATIONS + "uses"                        (M
 | `structural/tools.py` `BlastRadiusInput.relations` | modify | add `"uses"` to the `Literal` (`tools.py:74`) |
 | `astgrep.SymbolSpec` / `RefSpec` | extend | optional `languages: list[str] \| None` |
 | `rules/typescript.yaml` | modify | new `function` rules, extended ref scope, `languages:` on TS-only rules |
+| `pyproject.toml` `wiki-languages` extra | modify | add `ast-grep-py>=0.45` (Q1); `wiki-structural` stays, same content |
+| `BaseWikiStore` | extend | abstract `get_meta`/`set_meta` (Q2) |
+| `SQLiteWikiStore` | implement | existing `meta` table (`store.py:57`) |
+| `ArangoDBWikiStore` | implement | existing `wiki_meta` collection (`arango_store.py:50`, created at `:300`) |
+| `PostgresWikiStore` | implement | new `wiki_meta (key text primary key, value text not null)` table |
+| `InMemoryWikiStore` | implement | dict |
+| `FederatedWikiStore` / `_EmptyStore` | implement | meta is local-plane only (`federation.py:622`, `:1550`) |
+| `FederatedWikiStore.find_symbols` / `search_symbols_fts` | modify | fan out (`federation.py:1408`, `:1427`) |
+| `cli` `symbols lookup|outline|blast` | modify | add `--ns`, passed as the tool's `namespace` (`cli.py:2288` onwards) |
+| `SQLiteWikiStore._uses_legacy_fts` | modify | re-probe on `no such column` (`store.py:1454`) |
 
 ### Data Models
 
@@ -225,19 +255,29 @@ class ExtractorFingerprint(BaseModel):
     languages: dict[str, str]   # scanner name -> "<mode>:<sha1(rule file)|none>"
 ```
 
-The fingerprint is stored as `<storage_dir>/extractor_fingerprint.json`, next to
-`wiki_stats.json`. It does not live in the store, because there is no backend-agnostic meta API:
-the sqlite `meta` table (`store.py:1340`) has no counterpart on arango or postgres. See Open
-Question Q2.
+```python
+# store.py — BaseWikiStore (Q2)
+@abstractmethod
+async def get_meta(self, key: str) -> str | None: ...
+@abstractmethod
+async def set_meta(self, key: str, value: str) -> None: ...
+```
+
+The fingerprint is stored as the JSON-serialised `ExtractorFingerprint` under the meta key
+`extractor_fingerprint`, via the new per-backend meta API (Q2). It is not stored as a file,
+because a database-kind namespace may have no meaningful local `storage_dir`.
 
 ### New Public Interfaces
 
-No new CLI commands and no new flags. The user-visible changes are:
+No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|outline|blast`
+(M5). The user-visible changes are:
 - `status` gains a `Symbols:` line, e.g.
-  `Symbols   : disabled for javascript, php, rust, perl — pip install 'ai-parrot[wiki-structural]'`.
+  `Symbols   : disabled for javascript, php, rust, perl — pip install 'ai-parrot[wiki-languages]'`.
 - `build` may print one WARNING line with the same install hint.
 - `symbols blast` follows `uses` by default.
 - `sym:` pages of kind `component` appear.
+- `symbols lookup` from a repo that federates others returns namespace-qualified hits (for
+  example `svelte::sym:src/lib/...#requireDashboardContainer`).
 
 ---
 
@@ -248,13 +288,14 @@ No new CLI commands and no new flags. The user-visible changes are:
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: tier honesty | yes | predictive `mode` rule, warning text, status line fixed below | — |
-| M2: fingerprint invalidation | no | — | Q2 (storage location) must be answered first |
-| M3: Svelte component symbol | yes, after Q3 | record shape, tag regex, re-attribution rule fixed below | Q3 (name collisions on `+page`) confirms the decision |
+| M2: fingerprint invalidation + store meta API | yes | meta signatures, key name, per-backend storage fixed below (Q2 answered) | — |
+| M3: Svelte component symbol | yes | record shape, route-file naming (Q3 answered), tag regex, re-attribution rule fixed below | — |
 | M4: module-local functions + rule languages | yes | exact YAML rules and render exclusion fixed below | — |
+| M5: federated symbol queries | yes | fan-out, id qualification, `--ns` option, re-probe rule fixed below | — |
 
 ### Module 1: Structural tier honesty
 - **Path**: `languages/javascript.py`, `languages/php.py`, `languages/rust.py`,
-  `languages/perl.py`, `cli.py`
+  `languages/perl.py`, `cli.py`, `packages/ai-parrot/pyproject.toml`
 - **Responsibility**:
   - `mode` returns `"ast-grep"` when `structural_enabled()` and
     `astgrep.supported_language(<the scanner's primary ast-grep language>)` are both true
@@ -264,7 +305,11 @@ No new CLI commands and no new flags. The user-visible changes are:
     mode while being structural-capable (every scanner except `python` and `luau`). If that
     count is above 0 and `astgrep.is_available()` is false, it logs one WARNING:
     `"%d %s file(s) scanned without the structural tier: no sym: pages for them. Install
-    'ai-parrot[wiki-structural]'"`.
+    'ai-parrot[wiki-languages]'"`.
+  - **Q1:** `ast-grep-py>=0.45` is added to the `wiki-languages` extra
+    (`pyproject.toml:301`). `wiki-structural` (`:316`) keeps the same single entry, so existing
+    install lines keep working. The comment on `wiki-languages` stops claiming that it adds
+    tree-sitter outlines only.
   - When `structural_enabled()` is false (the kill switch), no warning is emitted: the user
     asked for that.
   - `status` prints a `Symbols:` line derived from the same predicate.
@@ -282,16 +327,32 @@ No new CLI commands and no new flags. The user-visible changes are:
       without the ast-grep seam available, else None. Pure: no logging, no I/O."""
   ```
 
-### Module 2: Extractor-fingerprint invalidation
-- **Path**: `languages/fingerprint.py` (new), `cli.py`
+### Module 2: Extractor-fingerprint invalidation and per-backend meta API
+- **Path**: `languages/fingerprint.py` (new), `cli.py`, `store.py`, `arango_store.py`,
+  `postgres_store.py`, `file_store.py`, `federation.py`
 - **Responsibility**:
+  - **Store meta API (Q2).** `BaseWikiStore` gains abstract `get_meta(key) -> str | None` and
+    `set_meta(key, value) -> None`, implemented by every backend:
+    - `SQLiteWikiStore`: the existing `meta` table (`store.py:57`). `set_meta` goes through the
+      normal writer path and honours `_assert_writable`.
+    - `ArangoDBWikiStore`: the existing `wiki_meta` collection (`arango_store.py:50`), one
+      document per key (`_key = key`).
+    - `PostgresWikiStore`: a new `wiki_meta` table, created by the backend's own schema
+      bootstrap. Its location is unverified and must be checked at task time: no `CREATE TABLE`
+      literal lives in `postgres_store.py`.
+    - `InMemoryWikiStore`: a dict.
+    - `FederatedWikiStore`: delegates to the local plane only. `set_meta` never writes into a
+      foreign namespace.
+    - `_EmptyStore`: `None` / no-op.
+    - A read-only store's `set_meta` raises exactly as its other writes do.
   - Compute `ExtractorFingerprint` from every registered scanner: `mode` (M1) plus the SHA-1
     of its rule file under `languages/rules/<lang>.yaml`, or `none`.
-  - Load the stored fingerprint and diff the two per language. The rel_paths of every scanned
+  - Load the stored fingerprint (meta key `extractor_fingerprint`, JSON of
+    `ExtractorFingerprint`) and diff the two per language. The rel_paths of every scanned
     file whose scanner's entry changed are unioned into `force_rel_paths` at both
     `_ingest_files` call sites.
   - Write the new fingerprint only after a *successful* ingest.
-  - A missing or corrupt stored file means "unknown". On an existing plane that holds pages,
+  - A missing or corrupt stored value means "unknown". On an existing plane that holds pages,
     "unknown" forces every structural-capable language once: this is what heals every plane
     built before this feature.
 - **Depends on**: Module 1 (predictive `mode`)
@@ -301,11 +362,16 @@ No new CLI commands and no new flags. The user-visible changes are:
   def current_fingerprint() -> ExtractorFingerprint:
       """Fingerprint of the scanners as installed in this process."""
 
-  def load_fingerprint(storage_dir: Path) -> ExtractorFingerprint | None:
-      """Stored fingerprint, or None when absent/unreadable. Never raises."""
+  async def load_fingerprint(store: BaseWikiStore) -> ExtractorFingerprint | None:
+      """Stored fingerprint from store.get_meta("extractor_fingerprint"), or None
+      when absent/unparseable. Never raises."""
 
-  def save_fingerprint(storage_dir: Path, fp: ExtractorFingerprint) -> None:
-      """Atomically write <storage_dir>/extractor_fingerprint.json."""
+  async def save_fingerprint(store: BaseWikiStore, fp: ExtractorFingerprint) -> None:
+      """store.set_meta("extractor_fingerprint", fp.model_dump_json())."""
+
+  # store.py — BaseWikiStore  (new abstract pair; every subclass listed above implements it)
+  async def get_meta(self, key: str) -> str | None: ...
+  async def set_meta(self, key: str, value: str) -> None: ...
 
   def changed_languages(old: ExtractorFingerprint | None, new: ExtractorFingerprint) -> set[str]:
       """Scanner names whose entry differs; every structural-capable name when old is None."""
@@ -317,7 +383,16 @@ No new CLI commands and no new flags. The user-visible changes are:
 - **Responsibility**: in `JavaScriptScanner.outline`, only when the suffix is `.svelte` and the
   seam returned a `StructuralOutline`, `_svelte_component_augment` does three things:
   1. **Add the component symbol.** It prepends one `SymbolRecord` with:
-     - `kind=COMPONENT`, `name=qualname=<file stem>`, `exported=True`, `depth=1`, `parent=None`;
+     - `kind=COMPONENT`, `exported=True`, `depth=1`, `parent=None`;
+     - `name=qualname=<file stem>`, except for **SvelteKit route files** (stem starts with `+`,
+       e.g. `+page`, `+layout`, `+error`). Per Q3 these are **qualified with their directory**:
+       - `name` = `<parent dir>/<stem>`, e.g. `fieldsync/+page`;
+       - `qualname` = the path from the nearest `routes/` ancestor directory without the suffix,
+         e.g. `(app)/[programs]/fieldsync/+page`, falling back to `rel_path` without the suffix
+         when no `routes/` ancestor exists.
+
+       So `symbols lookup fieldsync/+page` or a route path finds the file. Route groups
+       (`(app)`) and params (`[programs]`) are kept verbatim;
      - `node_kind="svelte_component"`, `start_line=1`, `end_line=<last line>`,
        `start_byte=0`, `end_byte=len(source bytes)`;
      - `content_hash` = SHA-1 of the whole file;
@@ -328,12 +403,12 @@ No new CLI commands and no new flags. The user-visible changes are:
      changes.
   2. **Emit `uses` refs.** For every PascalCase opening tag in the markup (outside `<script>` and
      `<style>`) whose tag name is the default binding of an import whose specifier ends in
-     `.svelte`, it emits `SymbolRef(src_qualname=<stem>, rel="uses",
+     `.svelte`, it emits `SymbolRef(src_qualname=<component qualname>, rel="uses",
      target_text=<stem of the imported file>, line=<tag line>)`. The ref is deduplicated per
      (target, line). The tag name alone is not the target, because the binding may differ from
      the imported file's stem.
-  3. **Re-attribute orphan refs.** Every seam ref with `src_qualname == ""` gets the component
-     stem as `src_qualname`.
+  3. **Re-attribute orphan refs.** Every seam ref with `src_qualname == ""` gets the component's
+     `qualname` as `src_qualname`.
 
   `"uses"` is added to `_DEFAULT_BLAST_RELATIONS` and to `BlastRadiusInput.relations`. No
   language emits `uses` today, so nothing else changes.
@@ -377,6 +452,50 @@ No new CLI commands and no new flags. The user-visible changes are:
   `function_expression`) must be re-verified against ast-grep-py 0.45.3's built-in typescript
   grammar, as TASK-2742 did.
 
+### Module 5: Federated symbol queries (Q4)
+- **Path**: `federation.py`, `store.py`, `cli.py`
+- **Responsibility**:
+  - `FederatedWikiStore.find_symbols` and `search_symbols_fts` (`federation.py:1408`, `:1427`)
+    query the local plane plus every opened namespace. Each foreign `SymbolRecord` gets its page
+    id qualified the same way `_qualify_row` (`federation.py:574`) qualifies pages
+    (`<ns>::sym:…`), so a hit can be fed back to `outline`/`blast`/`page`.
+    - The merge keeps local hits first, then foreign hits ordered by namespace weight, then by
+      rank within each namespace, capped at `limit`.
+    - Skipped namespaces surface through `last_skipped`, like the other fan-outs.
+    - `_fan_out` (`federation.py:775`) returns row dicts. The symbol methods need a sibling that
+      keeps `SymbolRecord` objects, or a conversion; the task decides which, and neither may
+      mutate a foreign store.
+  - `symbols_for(rel_path)` (outline) and the `blast` BFS route by namespace. A qualified seed
+    or path (`svelte::…`) resolves against that namespace's plane, and an unqualified one stays
+    local.
+    - Blast never crosses planes: see Non-Goals.
+    - Read-repair (`_ensure_fresh`) stays local-root-only, which is its existing contract
+      (`structural/tools.py:250-256`).
+  - The CLI subcommands `symbols lookup|outline|blast` gain `--ns NAME|all|local`, passed as the
+    tool's existing `namespace` argument (`_structural_tool`, `cli.py:2306`). The default
+    matches the tools' default routing: broadcast when namespaces are configured.
+  - **Stale legacy-FTS probe.** `SQLiteWikiStore._uses_legacy_fts` caches the FTS shape once per
+    instance (`store.py:1474-1481`). A long-lived read-only handle (the `wikitoolkit mcp` server)
+    keeps the answer after another process has migrated the plane (`_migrate_fts`), and every
+    later `search_symbols_fts` fails with `no such column: symbols_fts.concept_id`.
+    - Observed 2026-09-28: the fieldsync MCP server queried the `parrot` namespace
+      successfully. A CLI `wikitoolkit status` then opened that plane writable in its own
+      checkout, and the next MCP query failed.
+    - Fix: on `sqlite3.OperationalError` containing `no such column`, clear the table's cache
+      entry, re-probe, and retry the query once. The same applies to the `pages_fts` query
+      (`store.py:2033`).
+- **Depends on**: M3 for the `component` kind to be useful across namespaces, not for
+  correctness
+- **Interface Skeleton**:
+  ```python
+  # federation.py — FederatedWikiStore (modifies :1408 and :1427)
+  async def find_symbols(self, name=None, qualname_prefix=None, kind=None,
+                         language=None, path_prefix=None, limit=50) -> list[Any]:
+      """Local plane plus every namespace; foreign hits carry namespace-qualified ids."""
+  async def search_symbols_fts(self, query: str, limit: int = 20) -> list[Any]:
+      """BM25 per plane, merged local-first then by namespace weight."""
+  ```
+
 ---
 
 ## 4. Test Specification
@@ -388,19 +507,31 @@ No new CLI commands and no new flags. The user-visible changes are:
 | `test_mode_predictive_without_astgrep` | M1 | under `force_no_astgrep` (`tests/knowledge/wiki/languages/conftest.py:22`), `mode` is `tree-sitter`/`heuristic`, for all four scanners |
 | `test_mode_honours_kill_switch` | M1 | `set_structural_enabled(False)`: mode is not `ast-grep` even when available |
 | `test_structural_gap_warning_text` | M1 | a scan with JS files + `force_no_astgrep` returns the warning; a Python-only scan returns `None`; the kill switch returns `None` |
-| `test_status_symbols_line` | M1 | `status` output contains `Symbols` + `wiki-structural` hint under `force_no_astgrep` |
+| `test_status_symbols_line` | M1 | `status` output contains `Symbols` + `wiki-languages` hint under `force_no_astgrep` |
+| `test_wiki_languages_extra_pulls_astgrep` | M1 | the `wiki-languages` extra in `pyproject.toml` lists `ast-grep-py` (Q1) |
 | `test_fingerprint_changed_languages` | M2 | tier flip or rule hash change marks exactly that language; `None` old marks all structural-capable |
-| `test_fingerprint_load_corrupt` | M2 | an unreadable file returns `None`, never raises |
+| `test_fingerprint_load_corrupt` | M2 | an unparseable meta value returns `None`, never raises |
+| `test_meta_roundtrip[sqlite,memory,federated]` | M2 | `set_meta` then `get_meta` returns the value; unknown key → `None` |
+| `test_meta_roundtrip_arango` / `_postgres` | M2 | same, gated like the existing arango/postgres store tests |
+| `test_meta_read_only_refuses` | M2 | `set_meta` on a `read_only=True` SQLite store raises like other writes |
+| `test_federated_meta_never_writes_foreign` | M2 | `FederatedWikiStore.set_meta` touches only the local plane |
 | `test_svelte_component_symbol` | M3 | the §1 probe yields a `component` symbol `Parent`, with signature `{ rows: string[] }` |
 | `test_svelte_uses_ref_by_import_stem` | M3 | `import Foo from './Child.svelte'` + `<Foo/>` → `uses` ref target `Child` |
 | `test_svelte_orphan_refs_attributed` | M3 | `persist`/`$props` refs get `src_qualname == "Parent"` |
 | `test_svelte_no_script` | M3 | markup-only `.svelte` yields just the component symbol, never raises |
 | `test_svelte_existing_qualnames_stable` | M3 | script symbols keep `parent=None` and today's qualnames |
+| `test_svelte_route_component_qualified` | M3 | `src/routes/(app)/[programs]/fieldsync/+page.svelte` → name `fieldsync/+page`, qualname `(app)/[programs]/fieldsync/+page` (Q3) |
+| `test_svelte_route_without_routes_dir` | M3 | a `+page.svelte` outside any `routes/` → qualname is `rel_path` without suffix |
 | `test_arrow_function_symbol` | M4 | `const onSave = async () => {}` → `function onSave`, `is_async`, not exported |
 | `test_exported_arrow_stays_const` | M4 | `export const helper = () => 1` keeps exactly one `const` record |
 | `test_call_inside_arrow_scoped` | M4 | `persist(...)` in `onSave` → ref `src_qualname == "onSave"` |
 | `test_ts_only_rules_skip_javascript` | M4 | extracting a `.js` file logs no `could not be evaluated` warning |
 | `test_outline_parity` (existing) | M3, M4 | still passes unmodified: the parity contract (G5) |
+| `test_federated_find_symbols_fans_out` | M5 | local + one namespace plane: hits from both, foreign ids `<ns>::sym:…`, local first |
+| `test_federated_symbols_skip_unopenable` | M5 | an unbuilt namespace is reported in `last_skipped`, the query still answers |
+| `test_federated_symbols_for_routes_by_ns` | M5 | `symbols_for("svelte::src/x.ts")` reads the namespace plane; unqualified reads local |
+| `test_cli_symbols_ns_option` | M5 | `symbols lookup --ns <name>` passes `namespace` to the tool |
+| `test_legacy_fts_reprobe_after_migration` | M5 | read-only handle probes a legacy plane, a writable handle migrates it, the next `search_symbols_fts` on the read-only handle succeeds (mutation check: without the re-probe it raises `no such column`) |
 
 ### Integration Tests
 | Test | Description |
@@ -409,6 +540,7 @@ No new CLI commands and no new flags. The user-visible changes are:
 | `test_build_fingerprint_no_churn` | two consecutive plain builds with nothing changed → the second reports 0 ingested |
 | `test_blast_component_users` | fixture: `Child.svelte` used by `Parent.svelte` and `Other.svelte` → `blast Child` returns both components' symbols via `uses` |
 | `test_lookup_component` | `symbols lookup Child` returns the `component` hit |
+| `test_lookup_across_namespace` | repo A federates repo B (a built fixture plane with a `.ts` symbol): `symbols lookup <name>` from A returns B's hit qualified with B's namespace |
 
 ### Test Data / Fixtures
 ```python
@@ -427,8 +559,9 @@ No new CLI commands and no new flags. The user-visible changes are:
 - [ ] `pytest tests/knowledge/wiki/ -q` passes, including the unmodified
       `test_outline_parity.py`.
 - [ ] On a venv without `ast-grep-py`: `wikitoolkit build` on a repo with `.ts` files prints the
-      `wiki-structural` WARNING exactly once, and `status` shows `Symbols: disabled for …`.
-- [ ] Installing `ai-parrot[wiki-structural]` and running a plain `wikitoolkit build` (no
+      `wiki-languages` WARNING exactly once, and `status` shows `Symbols: disabled for …`.
+- [ ] `pip install 'ai-parrot[wiki-languages]'` alone installs `ast-grep-py` (Q1).
+- [ ] Installing `ai-parrot[wiki-languages]` and running a plain `wikitoolkit build` (no
       `--force`) on that same plane stores `sym:` pages.
 - [ ] `status` reports `javascript: ast-grep` in a fresh process when ast-grep is installed.
 - [ ] Re-measured on `navigator-svelte`, the counts are recorded in the PR description:
@@ -436,6 +569,12 @@ No new CLI commands and no new flags. The user-visible changes are:
       - at least 600 new `function` symbols with `node_kind == "variable_declarator"`;
       - `symbols blast AdminBulkBar` is non-empty.
 - [ ] No `could not be evaluated` warning when building `navigator-svelte`.
+- [ ] The extractor fingerprint round-trips through `get_meta`/`set_meta` on the sqlite,
+      arango and postgres backends (Q2). No `extractor_fingerprint.json` file is written.
+- [ ] From a repo that federates `navigator-svelte`, `wikitoolkit symbols lookup
+      requireDashboardContainer` returns the `svelte::sym:…` hit, both with the default routing
+      and with `--ns svelte` (Q4).
+- [ ] `symbols lookup fieldsync/+page` on `navigator-svelte` returns the route component (Q3).
 - [ ] No `sym:` id that exists today changes (compare the id sets of a before and an after
       build of the fixture repo: after is a superset).
 - [ ] `docs/` wikitoolkit page documents the `Symbols:` status line, the `component` kind, and
@@ -509,16 +648,24 @@ async def _ingest_files(..., force: bool = False, force_rel_paths: set[str] | No
 | `_svelte_component_augment` | seam success branch of `outline` | call | `javascript.py:532-541` |
 | `uses` in blast | default relations | tuple | `structural/service.py:44` |
 | `uses` in MCP/tool input | `BlastRadiusInput.relations` | Literal | `structural/tools.py:74` |
+| fingerprint persistence | `BaseWikiStore.get_meta`/`set_meta` (new) | await | `store.py:525` |
+| symbol fan-out | `FederatedWikiStore` namespace handles | per-namespace call + id qualification | `federation.py:775`, `:574` |
+| `--ns` | tool `namespace` argument | kwarg | `structural/tools.py:58`, `:67`, `:83` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`SymbolKind.COMPONENT`~~: added by this spec.
 - ~~`SymbolSpec.languages` / `RefSpec.languages`~~: added by this spec.
-- ~~A backend-agnostic store meta get/set API~~: only sqlite's private `meta` table exists
-  (`store.py:1340`).
+- ~~`BaseWikiStore.get_meta` / `set_meta`~~: added by this spec (Q2). Today only sqlite's
+  private `meta` table (`store.py:57`, read at `:1340`) and arango's `wiki_meta` collection
+  (`arango_store.py:50`) exist, with no public accessor on either.
+- ~~A `wiki_meta` table in postgres~~: added by this spec.
+- ~~`--ns` on `wikitoolkit symbols`~~: added by this spec. Today only the tool/MCP layer takes
+  `namespace` (`structural/tools.py:58`, `:67`, `:83`).
 - ~~A Svelte ast-grep grammar~~: Svelte is pre-extracted to its `<script>` body.
 - ~~Any language emitting `uses` refs today~~: the only mention is the `RefSpec` docstring
   (`astgrep.py:624`).
-- ~~Namespace federation in `wikitoolkit symbols`~~: out of scope.
+- ~~Symbol fan-out in `FederatedWikiStore`~~: local-only by v1 design (`federation.py:1397`),
+  changed by M5.
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -538,6 +685,16 @@ Verified against: 8bf475842
 | `languages/rules/typescript.yaml` | MODIFY | `    rule: { kind: lexical_declaration, inside: { kind: export_statement } }` | `typescript.yaml:67` | 1 |
 | `languages/rules/typescript.yaml` | MODIFY | `    scope: { ancestor: [function_declaration, method_definition, class_declaration] }` | `typescript.yaml:77` | 1 |
 | `languages/fingerprint.py` | CREATE | — | — | — |
+| `store.py` | MODIFY | `class BaseWikiStore(ABC):` (add abstract `get_meta`/`set_meta`; implement on `SQLiteWikiStore`) | `store.py:525` | 1 |
+| `store.py` | MODIFY | `        legacy = "concept_id" in columns` (re-probe path) | `store.py:1479` | 1 |
+| `arango_store.py` | MODIFY | `META_COLLECTION = "wiki_meta"` | `arango_store.py:50` | 1 |
+| `postgres_store.py` | MODIFY | `class PostgresWikiStore(BaseWikiStore):` (+ `wiki_meta` DDL, location unverified: check before use) | `postgres_store.py:127` | 1 |
+| `file_store.py` | MODIFY | `class InMemoryWikiStore(BaseWikiStore):` | `file_store.py:73` | 1 |
+| `federation.py` | MODIFY | `    async def find_symbols(` | `federation.py:1408` | 1 |
+| `federation.py` | MODIFY | `    async def search_symbols_fts(self, query: str, limit: int = 20) -> list[Any]:` | `federation.py:1427` | 1 |
+| `federation.py` | MODIFY | `class _EmptyStore(BaseWikiStore):` | `federation.py:1550` | 1 |
+| `cli.py` | MODIFY | `@symbols.command("lookup")` / `("outline")` / `("blast")` (add `--ns`) | `cli.py:2288`, `:2312`, `:2331` | 1 each |
+| `packages/ai-parrot/pyproject.toml` | MODIFY | `wiki-languages = [` (add `ast-grep-py>=0.45`) | `pyproject.toml:301` | 1 |
 | `structural/service.py` | MODIFY | `_DEFAULT_BLAST_RELATIONS = ("calls", "extends", "implements")` | `service.py:44` | 1 |
 | `structural/tools.py` | MODIFY | `    relations: list[Literal["calls", "extends", "implements", "references", "contains"]] \| None = Field(` | `tools.py:74` | 1 |
 | `cli.py` | MODIFY | `        if entry is not None and not must_force and not sources.entry_is_stale(entry):` | `cli.py:765` | 1 |
@@ -556,10 +713,16 @@ Verified against: 8bf475842
 - Log the gap warning once per build, not once per file.
 
 ### Known Risks / Gotchas
-- **SvelteKit route files share stems** (`+page`, `+layout`, `+error`): hundreds of `component`
-  symbols will be named `+page`. Ids stay unique, because concept ids embed `rel_path`. Global
-  step-3 resolution is ambiguous for them and correctly yields no edge. Nobody imports route
-  files, so no edge is lost. See Q3.
+- **SvelteKit route files share stems** (`+page`, `+layout`, `+error`). Q3 is answered by
+  qualifying them with their directory. `name` can still collide (two `[id]/+page` files); the
+  route-path `qualname` does not, and ids are unique anyway because concept ids embed
+  `rel_path`. Nobody imports route files, so global step-3 resolution being ambiguous on `name`
+  loses no edge.
+- **Federated fan-out cost.** `symbols lookup` now opens every namespace, like `query` already
+  does. Namespaces that fail to open are skipped with a reason, never fatal.
+- **Meta API is a new abstract method on `BaseWikiStore`.** Any out-of-tree subclass stops
+  instantiating until it implements the pair. The in-tree list is complete in §2 (six classes,
+  verified at 8bf475842).
 - **One-time re-ingest cost.** The first build after upgrade forces every structural-capable
   file once, because no fingerprint exists yet. On `navigator-svelte` a full `build --force`
   takes under a minute.
@@ -575,25 +738,27 @@ Verified against: 8bf475842
 ### External Dependencies
 | Package | Version | Reason |
 |---|---|---|
-| `ast-grep-py` | `>=0.45` (already the `wiki-structural` extra) | no change; tests needing it are skipped when absent, as today |
+| `ast-grep-py` | `>=0.45` | moves into the `wiki-languages` extra (Q1); still not a core dependency; tests needing it are skipped when absent, as today |
 
 ---
 
 ## 8. Open Questions
 
-- [ ] Q1: Should `wiki-languages` pull `ast-grep-py`? Today a user who installs "the language
-  plugins" gets outlines without symbols. This spec keeps them separate, per FEAT-498's "zero new
-  core dependencies", and makes the gap loud. *Owner: Jesús*
-- [ ] Q2: Where should the extractor fingerprint live: `<storage_dir>/extractor_fingerprint.json`
-  (proposed; backend-agnostic, but a database-kind namespace may have no meaningful local
-  storage_dir), or a new `get_meta`/`set_meta` pair on `BaseWikiStore` implemented by all three
-  backends? *Owner: Jesús*
-- [ ] Q3: Component symbol naming for route files. Should it be the bare stem (`+page`,
-  proposed), or should the stem be qualified with the parent directory for names starting with
-  `+`, so that `lookup` is useful for routes? *Owner: Juan*
-- [ ] Q4: Should `symbols lookup|blast` federate across namespaces (the gap found while
-  verifying this spec)? Out of scope here; decide whether it becomes its own feature.
-  *Owner: Jesús*
+All four were answered by Jesús on 2026-09-28.
+
+- [x] Q1: Should `wiki-languages` pull `ast-grep-py`? → **Yes.** Landed in M1 (packaging) and
+  G7. `wiki-structural` is kept, with identical content.
+- [x] Q2: Where should the extractor fingerprint live? → **A new meta API per backend.** Landed
+  in M2: an abstract `get_meta`/`set_meta` pair on `BaseWikiStore`, implemented by sqlite
+  (`meta`), arango (`wiki_meta`), postgres (new `wiki_meta`), memory, federated (local only)
+  and `_EmptyStore`.
+- [x] Q3: Component naming for route files. → **Qualified.** Landed in M3: `name` =
+  `<parent dir>/<stem>`, `qualname` = the path under `routes/`. (The question was marked for
+  Juan; Jesús answered it and the answer was adopted.)
+- [x] Q4: Should `symbols lookup|blast` federate across namespaces? → **Preferably yes.** Landed
+  in M5, inside this feature rather than a separate one, because it is what makes G3 useful
+  from a federating repo. `/sdd-task` may split M5 into its own task group. Verifying it
+  surfaced the stale legacy-FTS probe, which is fixed in M5.
 
 ---
 
@@ -609,3 +774,4 @@ design seat before approval if the reviewer wants one.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-28 | Juan (via Claude Code) | Initial draft from the navigator-svelte 0-symbols investigation |
+| 0.2 | 2026-09-28 | Juan (via Claude Code) | Folded in Jesús's §8 answers: ast-grep in `wiki-languages` (Q1), per-backend meta API for the fingerprint (Q2), qualified route-component names (Q3), federated symbol queries as M5 plus the stale FTS-probe fix (Q4) |
