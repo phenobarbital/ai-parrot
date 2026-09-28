@@ -1,0 +1,19 @@
+{
+  "feat_id": "FEAT-611",
+  "mode": "enrichment",
+  "wiki_available": false,
+  "budget_profile": "loose",
+  "lanes": {
+    "A": "Datasets / query slugs other than polestar_graduates_directory usable for demo dashboards; local-file drivers; slug registration and seeding",
+    "B": "FEAT-598 capabilities NOT exercised by FEAT-610 (params/FilterBar, multiquery/join, server-lane refresh + persistence, Svelte lane, tenant, transform, refresh policies)"
+  },
+  "queries": [
+    {"id": "Q001", "lane": "A", "type": "grep", "params": {"pattern": "slug=|\"slug\":|queries/|query_slug"}, "intent": "enumerate referenced query slugs", "priority": 1},
+    {"id": "Q002", "lane": "A", "type": "glob", "params": {"pattern": "**/*.{csv,parquet,sqlite,duckdb}"}, "intent": "bundled sample data", "priority": 1},
+    {"id": "Q003", "lane": "A", "type": "read", "params": {"path": "venv:querysource/providers"}, "intent": "available QS drivers incl. file-based", "priority": 2},
+    {"id": "Q010", "lane": "B", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/models.py"}, "intent": "LinkedDataSource feature surface", "priority": 1},
+    {"id": "Q011", "lane": "B", "type": "grep", "params": {"pattern": "parrot_param|setParam|is_multiquery|transform"}, "intent": "param/multiquery/transform lanes", "priority": 1},
+    {"id": "Q012", "lane": "B", "type": "read", "params": {"path": "packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py"}, "intent": "server-lane refresh & persistence", "priority": 1},
+    {"id": "Q013", "lane": "B", "type": "glob", "params": {"pattern": "**/test*linked*"}, "intent": "existing E2E coverage and fakes", "priority": 2}
+  ]
+}
