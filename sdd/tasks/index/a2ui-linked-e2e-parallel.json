@@ -16,7 +16,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot and ai-parrot-tools pyproject.toml manifests and regenerates the shared uv.lock (uv lock --upgrade-package querysource); coordinate with FEAT-610's duplicate pin hunk",
       "assigned_to": null,
       "started_at": "2026-09-28T23:12:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3831-querysource-512-pin-and-lock.md"
+      "completed_at": "2026-09-28T23:15:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3831-querysource-512-pin-and-lock.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3832",
@@ -129,7 +130,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -137,8 +138,9 @@
       "parallelism_notes": "no deps: only parrot_tools/ui_surfaces.py (guard kwarg + _resolve_linked_service) and a new tools test; LinkedSurfaceService ctor unchanged (service.py:76)",
       "assigned_to": null,
       "started_at": "2026-09-28T23:12:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3837-publish-surface-tool-guard.md"
+      "completed_at": "2026-09-28T23:15:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3837-publish-surface-tool-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3838",
