@@ -72,7 +72,7 @@
       "feature_id": "FEAT-609",
       "feature": "wikitoolkit-structural-coverage",
       "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 3,
@@ -82,14 +82,15 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-28T19:08:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3822-store-meta-api-core.md",
+      "completed_at": "2026-09-28T19:16:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3822-store-meta-api-core.md",
       "owned_files": [
         "packages/ai-parrot/src/parrot/knowledge/wiki/store.py",
         "packages/ai-parrot/src/parrot/knowledge/wiki/file_store.py",
         "packages/ai-parrot/src/parrot/knowledge/wiki/federation.py",
         "packages/ai-parrot/tests/knowledge/wiki/test_store_meta.py"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3823",

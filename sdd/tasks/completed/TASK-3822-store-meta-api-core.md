@@ -361,4 +361,4 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified (base NotImplementedError defaults; SQLite meta table; InMemory .meta.json atomic; Federated local-only; _EmptyStore). Mutation check: making FederatedWikiStore.set_meta a no-op turned test_meta_roundtrip_federated_local_only and test_federated_meta_never_writes_foreign RED.
