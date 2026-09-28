@@ -75,6 +75,10 @@ class PurchaseInvoiceDraft(BaseModel):
     subject_to_income_tax: bool = False
     notes: Optional[str] = None
     correlation_key: Optional[str] = None
+    #: What the bank charges for this invoice when it differs from the registered total (only the
+    #: deductible share registered, foreign currency...). Stored as a ``[bank:<amount>]`` notes
+    #: marker so ``hooba_reconcile_bank_statement`` can pair the draft with its debit.
+    expected_charge: Optional[Decimal] = None
     lines: list[PurchaseInvoiceLineDraft] = Field(min_length=1)
 
 

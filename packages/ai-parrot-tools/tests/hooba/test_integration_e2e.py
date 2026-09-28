@@ -253,4 +253,3 @@ async def test_resolve_tax_prefers_plain_rate_and_accepts_urn(hooba):
     assert await toolkit._resolve_tax("IVA21", "purchase") == 39
     assert await toolkit._resolve_tax("urn:tax:iva-purchase-noded-21", "purchase") == 87
     assert await toolkit._resolve_tax("EXENTO", "purchase") is None
-
