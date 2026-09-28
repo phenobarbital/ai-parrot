@@ -37,9 +37,7 @@ def get_dsn() -> str:
         return default_dsn()
     except ImportError:
         pass
-    raise RuntimeError(
-        "No database connection configured. Set QS_ASYNCPG_URL or install querysource[db]."
-    )
+    raise RuntimeError("No database connection configured. Set QS_ASYNCPG_URL or install querysource[db].")
 
 
 async def has_unique_index(conn: asyncpg.Connection, table: str, column: str) -> bool:

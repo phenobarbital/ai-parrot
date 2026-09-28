@@ -25,11 +25,7 @@ def query_url(base_url: str, slug: str, tenant: str | None) -> str:
     """Build the QuerySource URL following the same rule as linked.js (v3 / v1 tenant)."""
     base = base_url.rstrip("/")
     s = slug  # already encoded by caller
-    return (
-        f"{base}/api/v1/{tenant}/queries/{s}"
-        if tenant
-        else f"{base}/api/v3/queries/{s}"
-    )
+    return f"{base}/api/v1/{tenant}/queries/{s}" if tenant else f"{base}/api/v3/queries/{s}"
 
 
 async def login(session: aiohttp.ClientSession, base_url: str, user: str, password: str) -> str:
