@@ -143,15 +143,17 @@
       "id": "C6",
       "claim": "The v3 multi-query handler accepts a single slug with fields/filter/group_by conditions (payload becomes slug conditions)",
       "evidence": [
-        "F011"
+        "F011",
+        "F042"
       ],
-      "confidence": "medium"
+      "confidence": "high"
     },
     {
       "id": "C7",
       "claim": "JSONB @> filter requires querysource>=5.1.0; shared .venv has 5.0.0 and core ai-parrot[db] pins >=4.1.11",
       "evidence": [
-        "F013"
+        "F013",
+        "F042"
       ],
       "confidence": "high"
     },
@@ -330,5 +332,6 @@
       "QS-1 jsonb array-length filter operator",
       "QS-2 group_by over JSONB array elements"
     ]
-  }
+  },
+  "querysource_min": "5.1.2"
 }

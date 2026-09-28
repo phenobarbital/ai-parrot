@@ -72,7 +72,7 @@ What is missing for a working demo:
 - No renderer uses echarts together with grid.js.
 - No test covers a KPI + pie + grid dashboard.
 - Two data prerequisites are unmet:
-  - The JSONB `@>` filter needs querysource ≥5.1, but the shared venv has 5.0.0 (F013).
+  - The JSONB `@>` filter needs querysource ≥5.1. The shared venv had 5.0.0 during research and has since been upgraded to **5.1.2**, which also fixes the tenant routes (F013, F042).
   - The course pie cannot be computed against the base slug, so it needs a second slug (F014).
 
 The recommendation is to build the example as specified, plus four small changes in core, which the user approved in §5:
@@ -177,7 +177,7 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 
 ### What Changes
 
-- **`packages/ai-parrot/pyproject.toml`**: `querysource>=4.1.11` → `>=5.1.1` in the `db` extras (l.225, 688). This is needed for JSONB `@>`. *Evidence*: F013
+- **`packages/ai-parrot/pyproject.toml`**: `querysource>=4.1.11` → `>=5.1.2` in the `db` extras (l.225, 688); align `ai-parrot-tools[db]` (`>=5.1.1`) as well. 5.1.2 brings JSONB `@>` plus working tenant routes and the `/api/v1/queries/{schema}/{slug}` alias. *Evidence*: F013, F042
 - **`packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/echarts.py`::`_build_option`**: pie/donut series get `{name, value}` slices, as funnel/treemap already do. *Evidence*: F034, F041
 - **Wire doc §3** (FEAT-598 docs, TASK-3796): fix the route (v3 when no tenant, v1 when a tenant is set), the `querylimit` cap (5000) and the `refresh` semantics (sent only when true). *Evidence*: F007, F041
 - **`packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts`::`LinkedLane`**: export a per-source refresh (`refreshSource(key)` over `runSource`) next to the existing `refreshAll`. Wire both affordances (per widget + "refresh all") in `A2UISurface.svelte`. *Evidence*: F006, F036
@@ -204,7 +204,7 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 
 - **querysource ≥5.1 is a hard requirement (user decision).** Every KPI, and FEAT-598 itself, depends on querysource ≥5.1: the JSONB `@>` operator and the changes FEAT-598 needs landed there. The shared venv still has 5.0.0, and upgrading a shared venv is an operator action that must not be done from a worktree. *Mitigation*: raise the pin in core `ai-parrot[db]`, and make `server.py` fail fast at startup with a clear message when `querysource.__version__ < 5.1`. *Evidence*: F013
 - **The slug lives in production (verified).** `polestar_graduates_directory` is defined in `public.queries` with SQL `SELECT {fields} FROM polestar.vw_graduates_directory {where_cond}`, and its data is in schema `polestar`. The environment is **production**, so every subagent and sub-shell that runs code against it must set `ENV=prod`. The SQL has no `{group_by}` placeholder, so a live check must confirm that QS appends GROUP BY for the bar charts. Seeding `polestar_graduates_by_course` writes to **prod** `public.queries`; it must be idempotent, and it is a user-confirmed step. *Evidence*: F016, F040
-- **v3 single-slug semantics.** The TS lane POSTs plain conditions to the multi-query handler (`/api/v3/queries/{slug}`), which treats the body as that slug's conditions (`../querysource/querysource/handlers/multi.py` `query`). Medium confidence: the FEAT-598 E2E test fakes QuerySource. *Mitigation*: the spec includes a live check of `fields`/`filter`/`group_by` through v3, with a fallback to `/api/v2/services/queries/{slug}`. *Evidence*: F006, F011
+- **Query routes (verified live, F042).** `POST /api/v3/queries/{slug}` and `POST /api/v2/services/queries/{slug}` both accept a single slug with `fields`/`filter`/`group_by`/`_limit`/`_offset`, and QS appends GROUP BY even without a placeholder. With 5.1.2 the tenant routes work: `/api/v1/{tenant}/queries/{slug}` and the alias `/api/v1/queries/{schema}/{slug}` (e.g. `/api/v1/queries/public/polestar_graduates_directory`); on 5.0.0 the tenant route crashed with a 500. The renderer follows FEAT-598's `queryUrl` (v3 without a tenant, v1 with one), and the wire doc should list the alias. The licensee group has a NULL bucket (7103 rows), which the bar chart must label. *Evidence*: F006, F011, F042
 - **PBAC off for the example (user decision).** No permission policy is used, only basic authentication. `env/.env` sets `QS_PBAC_ENABLED=true`, so `server.py` must run with QS PBAC disabled (e.g. `QS_PBAC_ENABLED=false` in the example's env/README), and it does not mount parrot `setup_pbac`. *Evidence*: F015
 - **Svelte change untested.** The Svelte lane was never run through vitest/svelte-check (F008). The per-widget refresh change should come with real vitest runs. *Evidence*: F008
 
@@ -219,8 +219,8 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 | C3 | Only TOOL-origin output may carry descriptors | F001 | high |
 | C4 | No helper composes a multi-widget linked dashboard | F004, F018 | high |
 | C5 | Browser refresh = POST conditions (cap 5000) to `/api/v3/queries/{slug}`, or the tenant v1 route, with a bearer token; no per-widget endpoint exists | F005, F006, F011 | high |
-| C6 | The v3 handler accepts a single slug with fields/filter/group_by | F011 | medium |
-| C7 | JSONB `@>` needs querysource ≥5.1.0; the venv has 5.0.0 | F013 | high |
+| C6 | The v3 (and v2) handler accepts a single slug with fields/filter/group_by/paging and appends GROUP BY without a placeholder (live) | F011, F042 | high |
+| C7 | JSONB `@>` needs querysource ≥5.1 (it failed live on 5.0.0); the shared venv is now 5.1.2 | F013, F042 | high |
 | C8 | The multi-graduates KPI can be expressed via `count(*) FILTER (…)` (slug uses `{fields}`; value 2884 verified) | F014, F040 | high |
 | C9 | The course pie needs a second slug or a tExplode pipeline | F014 | high |
 | C10 | `polestar_graduates_directory` is in prod `public.queries`: `SELECT {fields} FROM polestar.vw_graduates_directory {where_cond}`, 17572 rows | F016, F040 | high |
@@ -234,7 +234,7 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 | C18 | The wire doc §3 contradicts the code on the route (v3 without a tenant), the cap (500 vs 5000) and `refresh` (always vs only when true) | F007, F041 | high |
 | C19 | Expected widget values in prod: KPIs 17572 / 9191 / 6245 / 2884; 94 countries; 22 licensees; pie 9204 / 6247 / 3300 / 2048 | F040 | high |
 
-Distribution: **18** high, **1** medium (C6: pending live verification), **0** low.
+Distribution: **19** high, **0** medium, **0** low.
 
 ---
 
@@ -245,7 +245,7 @@ Distribution: **18** high, **1** medium (C6: pending live verification), **0** l
 - [x] **How is the course pie fed?** *Resolved*: add a second slug. The example seeds `polestar_graduates_by_course` (CROSS JOIN LATERAL `jsonb_array_elements`). *Resolves*: C9
 - [x] **Which auth backend?** *Resolved*: real BasicAuth, via AuthHandler against the existing authdb; the JWT goes in localStorage. *Resolves*: C12, C13
 - [x] **How is the surface generated and served?** *Resolved*: an agent plus the example's own endpoint. An Agent with QuerysourceToolkit and a new multi-widget dashboard tool (TOOL-origin); `server.py` serves the surface at its own GET route and optionally exposes the agent via BotManager. *Resolves*: C3, C4
-- [x] **Core-change scope?** *Resolved*: all four — the multi-widget dashboard helper, the pin to `querysource>=5.1.1`, the pie-slice and wire-doc fixes, and per-widget refresh in the TS `LinkedLane`, with a vanilla-JS port for the example. *Resolves*: C7, C14, C17, C18
+- [x] **Core-change scope?** *Resolved*: all four — the multi-widget dashboard helper, the pin to `querysource>=5.1.2` (updated after the 5.1.2 release), the pie-slice and wire-doc fixes, and per-widget refresh in the TS `LinkedLane`, with a vanilla-JS port for the example. *Resolves*: C7, C14, C17, C18
 - [x] **Grid with 17k rows?** *Defaulted, not asked*: server-side paging with `_limit`/`_offset` plus `count(*)`, using grid.js server mode. *Resolves*: C15
 
 ### Resolved (follow-up round, 2026-09-28)
@@ -258,21 +258,23 @@ Distribution: **18** high, **1** medium (C6: pending live verification), **0** l
 
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **Does QS append GROUP BY when the slug SQL has no `{group_by}` placeholder?** It must be verified live (`ENV=prod`) through v3 before the bar charts are wired. *Blocks*: C6
+- [x] **Does QS append GROUP BY when the slug SQL has no `{group_by}` placeholder?** *Resolved (live, F042)*: yes, on v3 and v2.
+- [x] **Tenant/schema route.** *Resolved*: querysource 5.1.2 fixes the tenant routes and adds `/api/v1/queries/{schema}/{slug}` (user-verified; F042).
+- [ ] **`@>` KPIs through HTTP with a real bearer token on 5.1.2.** Not re-probed after the upgrade; run it in the first spec task.
 - [ ] **Exact SQL of the seeded `polestar_graduates_by_course` slug** (NULL-course handling, and whether it exposes `{where_cond}` for future filters). Settle it in the spec. The seed writes to prod `public.queries`, so it needs user confirmation at execution time.
 
 ---
 
 ## 6. Recommended Next Step
 
-→ `/sdd-spec FEAT-610`. The FEAT-598 contract is well localized and the prod data is verified (F040). The remaining unknowns are two live checks the first task can run. A rough task split:
-1. Live checks (`ENV=prod`, read-only): v3 single-slug conditions, GROUP BY append, `@>` on querysource ≥5.1. Then seed `polestar_graduates_by_course` idempotently, with user confirmation.
+→ `/sdd-spec FEAT-610`. The FEAT-598 contract is well localized and the prod data is verified (F040). What remains is one authenticated live check on 5.1.2 plus the definition of the seeded slug. A rough task split:
+1. Live check (`ENV=prod`, read-only, bearer token): the `@>` KPIs on querysource 5.1.2 through v3 and the `/api/v1/queries/{schema}/{slug}` alias. Then seed `polestar_graduates_by_course` idempotently, with user confirmation.
 2. The multi-widget dashboard helper (toolkit tool plus a builder over `build_linked_surface`) and its tests.
-3. Core fixes: the `querysource>=5.1.1` pin, the echarts pie-slice names, the wire doc §3.
+3. Core fixes: the `querysource>=5.1.2` pin, the echarts pie-slice names, the wire doc §3.
 4. `LinkedLane.refreshSource(key)` plus per-widget and "refresh all" affordances in `A2UISurface.svelte`, with vitest.
 5. `server.py`: QuerySource, AuthHandler (BasicAuth, QS PBAC off), the agent and the surface route, and the version fail-fast.
 6. The static renderer (echarts + grid.js, per-widget and refresh-all, grid paged on the server) and `client.py`.
-7. The `.gitignore` whitelist, a README (`ENV=prod`, querysource ≥5.1), and a manual E2E run checked against the C19 values.
+7. The `.gitignore` whitelist, a README (`ENV=prod`, querysource ≥5.1.2), and a manual E2E run checked against the C19 values.
 
 ---
 
@@ -290,7 +292,7 @@ These go to the `querysource` repo (it has its own `sdd/`) as separate features 
 
 - Source: `sdd/state/FEAT-610/source.md`
 - Plan: `sdd/state/FEAT-610/research_plan.json` (4 parallel lanes, A–D)
-- Findings: `sdd/state/FEAT-610/findings/` (F001–F008, F010–F018, F020–F028, F030–F039, F040 prod verification, F041 C17/C18 verification)
+- Findings: `sdd/state/FEAT-610/findings/` (F001–F008, F010–F018, F020–F028, F030–F039, F040 prod verification, F041 C17/C18 verification, F042 live route probe)
 - Synthesis: `sdd/state/FEAT-610/synthesis.json`
 - State: `sdd/state/FEAT-610/state.json`
 - Note: the wikitoolkit MCP server failed to connect this session, so the lanes used grep and direct reads. The plan gate was not shown to the user; the plan ran directly (interactive session, auto mode). F040 was run read-only against production with `ENV=prod`, at the user's instruction.
