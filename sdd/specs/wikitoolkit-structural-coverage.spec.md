@@ -13,7 +13,7 @@ tags: [wikitoolkit, symbols, ast-grep, svelte, typescript]
 **Feature ID**: FEAT-609
 **Date**: 2026-09-28
 **Author**: Juan (jfrruffato@trocglobal.com), FieldSync team
-**Status**: review (v0.3 — §8 answered by Jesús 2026-09-28; design refined during task decomposition; awaiting approval)
+**Status**: approved (v0.3 — approved by Jesús 2026-09-28 together with his §8 answers)
 **Target version**: next ai-parrot minor after 1.0.6
 
 ---
@@ -815,5 +815,6 @@ design seat before approval if the reviewer wants one.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-28 | Juan (via Claude Code) | Initial draft from the navigator-svelte 0-symbols investigation |
+| 1.0 | 2026-09-28 | Juan (via Claude Code) | Approved by Jesús (with the Q1–Q4 answers) |
 | 0.3 | 2026-09-28 | Juan (via Claude Code) | Task-decomposition refinements: meta pair is concrete-with-`NotImplementedError` (7 subclasses + a test fake); postgres reuses its existing `meta` table; `js_call_scope` extractor instead of a bare ancestor kind; M5 provenance via runtime-only `SymbolRecord.namespace`, qualified targets re-dispatched to `scoped()`, CLI reuses `ns_option`/`_federate` |
 | 0.2 | 2026-09-28 | Juan (via Claude Code) | Folded in Jesús's §8 answers: ast-grep in `wiki-languages` (Q1), per-backend meta API for the fingerprint (Q2), qualified route-component names (Q3), federated symbol queries as M5 plus the stale FTS-probe fix (Q4) |
