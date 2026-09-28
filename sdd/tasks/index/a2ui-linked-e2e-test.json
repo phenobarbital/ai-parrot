@@ -257,7 +257,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -269,8 +269,9 @@
       "parallelism_notes": "depends on TASK-3841 (documents JSONB_OPERATORS), TASK-3847 (documents qs_build_linked_dashboard) and TASK-3844 (documents LinkedLane.refreshSource)",
       "assigned_to": null,
       "started_at": "2026-09-28T22:32:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3853-a2ui-linked-docs.md"
+      "completed_at": "2026-09-28T23:01:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3853-a2ui-linked-docs.md",
+      "verification": "verified"
     }
   ]
 }
