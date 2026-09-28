@@ -15,7 +15,7 @@
   },
   "mode": "auto",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "budget": {
     "profile": "loose",
     "max_files_read": 100,
@@ -62,7 +62,7 @@
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/a2ui-linked-e2e-test.proposal.md",
-      "commit_sha": null
+      "commit_sha": "87ebf47d69551b2946b0dd278330898ae42aa01e"
     }
   },
   "resume_hint": {
