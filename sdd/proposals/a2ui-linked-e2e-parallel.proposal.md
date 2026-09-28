@@ -4,7 +4,7 @@ title: A2UI Linked Surfaces E2E — parallel track (server lane + share/PBAC, jo
 slug: a2ui-linked-e2e-parallel
 type: feature
 mode: enrichment
-status: review
+status: accepted
 source:
   kind: inline
   jira_key: null
@@ -109,7 +109,7 @@ The recommendation is four scenarios over the Epson slugs (`epson_field_activity
 
 - **The tool cannot compose a dashboard.** `qs_build_linked_surface` emits one component and one source, so a FilterBar plus a join needs a custom TOOL over `builders.build_linked_surface`. *Evidence*: F011. *Coordination*: FEAT-610 is adding a multi-widget helper to the toolkit, so this track **reuses** it if it lands first. Otherwise it uses its own example TOOL and does not modify the toolkit.
 - **The server lane fails closed.** Without PBAC policies loaded there is no guard, and without a guard every request gets a 403. There is no `query_slug` policy in `policies/`. *Evidence*: F013.
-- **Runtime version.** `querysource` 4.5.11 in the venv: no tenants and no `@>`. Tenant stays **out of scope**. Epson only needs `{firstdate}/{lastdate}` placeholders and `fields`/`group_by`. *Evidence*: F003.
+- **Runtime version.** `querysource` was 4.5.11 in the venv (no tenants, no `@>`); it is now **5.1.2**, and every scenario must pass against 5.1.2. Tenant slugs stay **out of scope** (no demo tenant in staging). Epson only needs `{firstdate}/{lastdate}` placeholders and `fields`/`group_by`. *Evidence*: F003.
 - **Slugs live in `public.queries`.** The only way to register a multiquery slug is to write to that table (`save_multiquery(allow_write=True)`), so any seed goes to **staging** and must be idempotent. *Evidence*: F004.
 - **Python renderers ignore `parrot_data_sources`.** Live refresh can only be checked in the Svelte lane or in the FEAT-610 renderer. *Evidence*: F014.
 - **Gitignore.** `examples/**/*.py` is ignored, and `examples/agents/a2ui/` is already whitelisted. The new examples should live there, or come with their own whitelist entry. *Evidence*: F002.
@@ -211,11 +211,12 @@ Distribution: **8** high, **2** medium, **0** low.
 - [x] **Which capabilities to cover?** *Resolved*: all four: the server lane with share and PBAC, join + DSL + FilterBar params, multiquery, and the admin-UI chat wiring. *Resolves*: C1, C3
 - [x] **Dataset?** *Resolved*: Epson (`epson_field_activity` + `epson_program_targets`). *Resolves*: C7 (partially)
 - [x] **Environment?** *Resolved*: staging (`env/staging`); no writes to production. *Resolves*: C8, C9
+- [x] **querysource version?** *Resolved (2026-09-28, Javier)*: test against the **latest querysource, 5.1.2**. The parrot venv has already been upgraded (4.5.11 → 5.1.2, a targeted `uv pip install`). The pins go up to `>=5.1.2` in `ai-parrot[db,integrations]` and `ai-parrot-tools[db]`, and `uv.lock` is regenerated. *Resolves*: C8, U5 (partially)
 
 ### Unresolved (defer to spec / implementation)
 
 - [ ] **The real definition of the `epson_*` slugs in staging**, and whether an Epson multiquery slug already exists or has to be seeded. *Owner*: the spec's first task. *Blocks*: C7
-- [ ] **The runtime QS version for the demo** (4.5.11 vs ≥5.1.1) and the PBAC policy for `query_slug:public:epson_*`. *Owner*: tbd (operator). *Blocks*: S1
+- [ ] **The PBAC policy for `query_slug:public:epson_*`** in staging. *Owner*: the spec's first task. *Blocks*: S1
 - [ ] **Merge order with FEAT-610** for the multi-widget helper and `linked/index.ts`. *Owner*: Javier + Jesús.
 
 ---
