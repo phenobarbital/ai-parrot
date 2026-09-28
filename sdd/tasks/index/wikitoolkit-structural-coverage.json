@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-28T18:50:17+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-28T20:00:21+00:00",
   "isolation": "per-spec",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
@@ -305,7 +305,7 @@
       "feature_id": "FEAT-609",
       "feature": "wikitoolkit-structural-coverage",
       "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "estimated_hours": 1,
@@ -321,11 +321,12 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-28T19:08:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3830-docs-and-navigator-svelte-remeasure.md",
+      "completed_at": "2026-09-28T20:00:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3830-docs-and-navigator-svelte-remeasure.md",
       "owned_files": [
         "docs/wiki/cheatsheet.md"
-      ]
+      ],
+      "verification": "verified"
     }
   ]
 }
