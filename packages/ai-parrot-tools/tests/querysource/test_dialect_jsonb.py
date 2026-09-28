@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from parrot_tools.querysource.dialect import DIALECT_REFERENCE, DIALECT_VERIFIED_AGAINST, JSONB_OPERATORS, validate_filter
+from parrot_tools.querysource.dialect import (
+    DIALECT_REFERENCE,
+    DIALECT_VERIFIED_AGAINST,
+    JSONB_OPERATORS,
+    validate_filter,
+)
 from parrot_tools.querysource.errors import InvalidConditionsError
 
 
