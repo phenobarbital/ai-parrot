@@ -13,7 +13,7 @@
 	// surface (`sources === null`) never creates a lane and never fetches —
 	// `dataModel` then stays exactly the envelope's own snapshot, byte-for-
 	// byte the same render path as before this task (AC11).
-	import { setContext } from 'svelte';
+	import { setContext, untrack } from 'svelte';
 	import A2UIInfographic from './A2UIInfographic.svelte';
 	import A2UINode from './A2UINode.svelte';
 	import type { A2UIEnvelope, WireComponent } from './a2ui-types';
@@ -118,30 +118,36 @@
 	setContext(FILTER_CONTEXT, filterController);
 
 	$effect(() => {
-		if (!sources) {
-			lane = undefined;
-			statuses = {};
-			return;
-		}
-		const created = createLinkedLane(sources, {
-			baseUrl: querySourceBaseUrl,
-			headers: querySourceHeaders,
-			transformsBase: transformsBase ?? `${config.apiBaseUrl}/static/a2ui/transforms`,
-			onUpdate: (u: SourceUpdate) => {
-				if (u.rows !== null) {
-					// S9/AC16: a source's rows always land as `dataModel[key] = {rows: [...]}` — the whole
-					// value is replaced, mirroring the Python executor's `data_model_patch` exactly.
-					baseDataModel = { ...baseDataModel, [u.key]: { rows: u.rows } };
-				}
-				statuses = { ...statuses, [u.key]: u };
-			},
+		// `sources` is the ONLY tracked dependency: `start()` may call `onUpdate` synchronously, which
+		// reads and writes `statuses` / `baseDataModel` — tracking those would re-run this effect forever
+		// (effect_update_depth_exceeded).
+		const resolved = sources;
+		return untrack(() => {
+			if (!resolved) {
+				lane = undefined;
+				statuses = {};
+				return undefined;
+			}
+			const created = createLinkedLane(resolved, {
+				baseUrl: querySourceBaseUrl,
+				headers: querySourceHeaders,
+				transformsBase: transformsBase ?? `${config.apiBaseUrl}/static/a2ui/transforms`,
+				onUpdate: (u: SourceUpdate) => {
+					if (u.rows !== null) {
+						// S9/AC16: a source's rows always land as `dataModel[key] = {rows: [...]}` — the whole
+						// value is replaced, mirroring the Python executor's `data_model_patch` exactly.
+						baseDataModel = { ...baseDataModel, [u.key]: { rows: u.rows } };
+					}
+					statuses = { ...statuses, [u.key]: u };
+				},
+			});
+			lane = created;
+			created.start();
+			return () => {
+				created.stop();
+				if (lane === created) lane = undefined;
+			};
 		});
-		lane = created;
-		created.start();
-		return () => {
-			created.stop();
-			if (lane === created) lane = undefined;
-		};
 	});
 
 	async function serverRefresh(): Promise<void> {
