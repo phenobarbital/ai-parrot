@@ -10,9 +10,7 @@ tags: [wikitoolkit, symbols, ast-grep, svelte, typescript]
 
 # Feature Specification: Honest structural tier, Svelte component symbols, and module-local JS functions in wikitoolkit
 
-**Feature ID**: FEAT-609 *(PROVISIONAL: read from `sdd/tasks/.id_ledger.json` `next_feature_id` on
-`origin/dev` 8bf475842, NOT reserved. Run `python -m scripts.sdd.reserve_ids --kind feature --count 1
---base-branch dev --label wikitoolkit-structural-coverage` and renumber before this spec lands on `dev`.)*
+**Feature ID**: FEAT-609
 **Date**: 2026-09-28
 **Author**: Juan (jfrruffato@trocglobal.com), FieldSync team
 **Status**: draft
