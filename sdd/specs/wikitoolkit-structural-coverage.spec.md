@@ -452,7 +452,8 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
     `<script>` top level:
     - `exported` is true when the rule matches inside an `export_statement`;
     - `node_kind` is `variable_declarator`;
-    - `is_async` is read from the function node.
+    - `is_async` stays False, as for the existing TS `function` rule. `async` is an anonymous
+      grammar token, not a matchable kind (verified 2026-09-28, TASK-3823).
   - Existing `export const NAME = () => …` declarations keep their `const` record, so the
     outline is unchanged. The new rule excludes that case (`not: { inside: export_statement }`),
     which avoids two records for one name.
@@ -559,7 +560,7 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
 | `test_svelte_existing_qualnames_stable` | M3 | script symbols keep `parent=None` and today's qualnames |
 | `test_svelte_route_component_qualified` | M3 | `src/routes/(app)/[programs]/fieldsync/+page.svelte` → name `fieldsync/+page`, qualname `(app)/[programs]/fieldsync/+page` (Q3) |
 | `test_svelte_route_without_routes_dir` | M3 | a `+page.svelte` outside any `routes/` → qualname is `rel_path` without suffix |
-| `test_arrow_function_symbol` | M4 | `const onSave = async () => {}` → `function onSave`, `is_async`, not exported |
+| `test_arrow_function_symbol` | M4 | `const onSave = async () => {}` → `function onSave`, not exported |
 | `test_exported_arrow_stays_const` | M4 | `export const helper = () => 1` keeps exactly one `const` record |
 | `test_call_inside_arrow_scoped` | M4 | `persist(...)` in `onSave` → ref `src_qualname == "onSave"` |
 | `test_ts_only_rules_skip_javascript` | M4 | extracting a `.js` file logs no `could not be evaluated` warning |
