@@ -462,11 +462,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD sub-agent + Claude (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3833 (commits d3f62f201, pivot fix; merged)
+**Date**: 2026-09-28
+**Notes**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Vitest ran for real for the first time: Node v24.21.0, pnpm 9.15.9, `--frozen-lockfile`, and the pytest wrappers executed instead of skipping.
 
-**Deviations from spec**: `serverRefresh` reads `body.envelope.dataModel` (inner CreateSurface) with a
-`createSurface` fallback — the spec skeleton's `.createSurface.dataModel` does not match the handler (ui_surfaces.py:266-273).
+**Baseline**: 80 tests, 6 failed.
+- `conditions › limit_offset.json`: `limit` was emitted.
+- `dsl › pivot_basic.json`: returned 0 where null was expected.
+- 4 `A2UISurface.linked` tests hit `effect_update_depth_exceeded`, an infinite effect loop, so they had never been green.
+
+**Changes**:
+- `deriveConditions` never emits `limit`, and emits `_offset` only when it is truthy.
+- New `FrameSelectionError`. `selectFrame` now follows `_select_multi_frame` rule for rule: a bare array is treated as `{result}`; a missing `multi_output` or an ambiguous payload throws.
+- `setParam` ignores locked or undeclared names with a `console.warn` and does not fetch.
+- New `LinkedLane.getParams()` and `currentParams(lane)`.
+- Error and unavailable updates carry the last known `snapshot_at`, seeded from the descriptor.
+- `A2UISurface`:
+  - the proxy forwards `getParams`;
+  - `serverRefresh` posts `{params: currentParams}`, merges the returned `dataModel`, and shows `X-Parrot-Refresh-Warnings` and refresh failures as notices without blanking the rows;
+  - `untrack(() => created.start())` fixes the effect loop.
+- TS pivot now emits null for missing (index, column) cells, matching pandas and the fixture.
+
+**After**: 91/91 vitest passed across the 9 files, and the 4 wrappers passed (`linked_{dsl,runtime,surface,types}`). The tsc error count is unchanged (135 → 135, all pre-existing). `pnpm-lock.yaml` is unchanged.
+
+**Deviations from spec**:
+- `serverRefresh` reads `body.envelope.dataModel` (the inner CreateSurface) and falls back to `createSurface`, because the handler's body is `{status, envelope, metadata}` (ui_surfaces.py:266-273).
+- Added `untrack()` in `A2UISurface.svelte`, needed for the linked-surface suite to run at all.
+- **`linked/dsl.ts` (the pivot fix) is outside the task's Files table.** It was added so that AC3 ("every suite green") holds, and because it is a Python↔TS parity defect, which is exactly what FEAT-611 G3 targets.

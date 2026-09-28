@@ -55,7 +55,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -63,8 +63,9 @@
       "parallelism_notes": "exclusive: installs Node>=24 + pnpm install --frozen-lockfile into shared packages/ai-parrot-server/ui/node_modules; sole FEAT-611 editor of A2UISurface.svelte and linked/index.ts",
       "assigned_to": null,
       "started_at": "2026-09-28T23:12:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3833-ts-linked-lane-drift-fixes.md"
+      "completed_at": "2026-09-28T23:27:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3833-ts-linked-lane-drift-fixes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3834",
