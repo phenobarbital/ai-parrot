@@ -13,7 +13,7 @@ tags: [wikitoolkit, symbols, ast-grep, svelte, typescript]
 **Feature ID**: FEAT-609
 **Date**: 2026-09-28
 **Author**: Juan (jfrruffato@trocglobal.com), FieldSync team
-**Status**: review (v0.2 — §8 questions answered by Jesús 2026-09-28, awaiting approval)
+**Status**: review (v0.3 — §8 answered by Jesús 2026-09-28; design refined during task decomposition; awaiting approval)
 **Target version**: next ai-parrot minor after 1.0.6
 
 ---
@@ -220,11 +220,11 @@ wikitoolkit symbols lookup|outline|blast [--ns NAME|all|local]            (M5)
 | `astgrep.SymbolSpec` / `RefSpec` | extend | optional `languages: list[str] \| None` |
 | `rules/typescript.yaml` | modify | new `function` rules, extended ref scope, `languages:` on TS-only rules |
 | `pyproject.toml` `wiki-languages` extra | modify | add `ast-grep-py>=0.45` (Q1); `wiki-structural` stays, same content |
-| `BaseWikiStore` | extend | abstract `get_meta`/`set_meta` (Q2) |
+| `BaseWikiStore` | extend | concrete `get_meta`/`set_meta` defaulting to `NotImplementedError`, the `compare_and_swap_page` precedent (`store.py:610-642`) (Q2) |
 | `SQLiteWikiStore` | implement | existing `meta` table (`store.py:57`) |
 | `ArangoDBWikiStore` | implement | existing `wiki_meta` collection (`arango_store.py:50`, created at `:300`) |
-| `PostgresWikiStore` | implement | new `wiki_meta (key text primary key, value text not null)` table |
-| `InMemoryWikiStore` | implement | dict |
+| `PostgresWikiStore` | implement | existing `{schema}.meta (key, value)` table (`graphindex/pg_schema.py:153`) — no DDL change |
+| `InMemoryWikiStore` | implement | dict persisted with its bundle |
 | `FederatedWikiStore` / `_EmptyStore` | implement | meta is local-plane only (`federation.py:622`, `:1550`) |
 | `FederatedWikiStore.find_symbols` / `search_symbols_fts` | modify | fan out (`federation.py:1408`, `:1427`) |
 | `cli` `symbols lookup|outline|blast` | modify | add `--ns`, passed as the tool's `namespace` (`cli.py:2288` onwards) |
@@ -256,11 +256,23 @@ class ExtractorFingerprint(BaseModel):
 ```
 
 ```python
-# store.py — BaseWikiStore (Q2)
-@abstractmethod
-async def get_meta(self, key: str) -> str | None: ...
-@abstractmethod
-async def set_meta(self, key: str, value: str) -> None: ...
+# store.py — BaseWikiStore (Q2). Concrete, not abstract: there are seven in-tree
+# subclasses (incl. parrot_tools/legal/wiki_store.py) plus a test fake
+# (test_store_cas.py); an abstract pair would break the ones this feature does not own.
+async def get_meta(self, key: str) -> str | None:
+    raise NotImplementedError(f"{type(self).__name__} does not support get_meta")
+async def set_meta(self, key: str, value: str) -> None:
+    raise NotImplementedError(f"{type(self).__name__} does not support set_meta")
+
+# symbols.py — runtime-only provenance for federated reads (M5)
+class SymbolRecord(BaseModel):
+    ...
+    namespace: str | None = Field(default=None, exclude=True)  # never persisted; set by FederatedWikiStore
+
+# structural/service.py
+class SymbolHit(BaseModel):
+    ...
+    namespace: str | None = None   # symbol_id is qualified (<ns>::sym:…) when set
 ```
 
 The fingerprint is stored as the JSON-serialised `ExtractorFingerprint` under the meta key
@@ -331,16 +343,18 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
 - **Path**: `languages/fingerprint.py` (new), `cli.py`, `store.py`, `arango_store.py`,
   `postgres_store.py`, `file_store.py`, `federation.py`
 - **Responsibility**:
-  - **Store meta API (Q2).** `BaseWikiStore` gains abstract `get_meta(key) -> str | None` and
-    `set_meta(key, value) -> None`, implemented by every backend:
+  - **Store meta API (Q2).** `BaseWikiStore` gains `get_meta(key) -> str | None` and
+    `set_meta(key, value) -> None`. They are concrete and raise `NotImplementedError` by default,
+    like `compare_and_swap_page`, so the out-of-scope subclasses
+    (`parrot_tools/legal/wiki_store.py`, the `test_store_cas.py` fake) keep working. They are
+    implemented by every in-scope backend:
     - `SQLiteWikiStore`: the existing `meta` table (`store.py:57`). `set_meta` goes through the
       normal writer path and honours `_assert_writable`.
     - `ArangoDBWikiStore`: the existing `wiki_meta` collection (`arango_store.py:50`), one
       document per key (`_key = key`).
-    - `PostgresWikiStore`: a new `wiki_meta` table, created by the backend's own schema
-      bootstrap. Its location is unverified and must be checked at task time: no `CREATE TABLE`
-      literal lives in `postgres_store.py`.
-    - `InMemoryWikiStore`: a dict.
+    - `PostgresWikiStore`: the `{schema}.meta (key text PRIMARY KEY, value text NOT NULL)`
+      table that `graphindex/pg_schema.py:153` already creates. No DDL change.
+    - `InMemoryWikiStore`: a dict, persisted with its OKF bundle, so it survives a reopen.
     - `FederatedWikiStore`: delegates to the local plane only. `set_meta` never writes into a
       foreign namespace.
     - `_EmptyStore`: `None` / no-op.
@@ -352,7 +366,8 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
     file whose scanner's entry changed are unioned into `force_rel_paths` at both
     `_ingest_files` call sites.
   - Write the new fingerprint only after a *successful* ingest.
-  - A missing or corrupt stored value means "unknown". On an existing plane that holds pages,
+  - A missing or corrupt stored value, or a backend that raises `NotImplementedError`, means
+    "unknown". On an existing plane that holds pages,
     "unknown" forces every structural-capable language once: this is what heals every plane
     built before this feature.
 - **Depends on**: Module 1 (predictive `mode`)
@@ -441,8 +456,18 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
   - Existing `export const NAME = () => …` declarations keep their `const` record, so the
     outline is unchanged. The new rule excludes that case (`not: { inside: export_statement }`),
     which avoids two records for one name.
-  - Extend the `calls` ref `scope.ancestor` list with that declarator, so a call inside an
-    arrow body gets the arrow's name as `src_qualname`.
+  - Replace the `calls` ref's `scope: { ancestor: [...] }` with a named extractor
+    `scope: js_call_scope`. This follows the `python_call_scope` precedent: `RefSpec.scope` accepts
+    an `EXTRACTORS` name (`astgrep.py:539`).
+    - A plain ancestor kind cannot express this. The dict form takes the `name` field of the
+      first matching ancestor, so adding `variable_declarator` would name
+      `let { rows } = $props()` as `{ rows }`, and adding `arrow_function` would yield `""`,
+      because arrows have no `name` field.
+    - `js_call_scope` walks the ancestors. On `function_declaration`, `method_definition` or
+      `class_declaration` it returns that ancestor's `name` text, which is today's behaviour.
+    - On an `arrow_function` or `function_expression` whose parent is a `variable_declarator`
+      with an `identifier` name, it returns that identifier.
+    - Any other arrow (an inline callback) is skipped, and the walk continues outward.
   - `render._render_javascript` skips any record with `node_kind == "variable_declarator"`
     (G5).
 - **Depends on**: nothing
@@ -453,8 +478,14 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
   grammar, as TASK-2742 did.
 
 ### Module 5: Federated symbol queries (Q4)
-- **Path**: `federation.py`, `store.py`, `cli.py`
+- **Path**: `symbols.py`, `federation.py`, `structural/service.py`, `cli.py` (the legacy-FTS
+  re-probe is in `store.py`)
 - **Responsibility**:
+  - **Provenance.** `SymbolRecord` gains `namespace: str | None = Field(default=None,
+    exclude=True)`. Every backend persists explicit columns (e.g. `store.py:1747-1790`), so the
+    field never reaches storage. `SymbolHit` gains `namespace`, and `_record_to_hit`
+    (`structural/service.py:99`) qualifies `symbol_id` with `qualify_id` when it is set.
+    `_ensure_fresh` ignores hits that carry a namespace, because read-repair is local-only.
   - `FederatedWikiStore.find_symbols` and `search_symbols_fts` (`federation.py:1408`, `:1427`)
     query the local plane plus every opened namespace. Each foreign `SymbolRecord` gets its page
     id qualified the same way `_qualify_row` (`federation.py:574`) qualifies pages
@@ -465,15 +496,21 @@ No new CLI commands. One new option: `--ns NAME|all|local` on `symbols lookup|ou
     - `_fan_out` (`federation.py:775`) returns row dicts. The symbol methods need a sibling that
       keeps `SymbolRecord` objects, or a conversion; the task decides which, and neither may
       mutate a foreign store.
-  - `symbols_for(rel_path)` (outline) and the `blast` BFS route by namespace. A qualified seed
-    or path (`svelte::…`) resolves against that namespace's plane, and an unqualified one stays
-    local.
+  - `symbols_for(rel_path)` (outline) and the `blast` BFS route by namespace.
+    - A qualified target or seed (`svelte::…`) given to `StructuralService.outline` or
+      `blast_radius` is re-dispatched to a `StructuralService` over
+      `FederatedWikiStore.scoped(<ns>)` (`federation.py:712`), with the local id.
+    - That scoped store already serves the namespace as its local plane (`federation.py:731-748`),
+      so the existing single-plane code paths answer unchanged.
+    - An unqualified target stays local.
     - Blast never crosses planes: see Non-Goals.
     - Read-repair (`_ensure_fresh`) stays local-root-only, which is its existing contract
       (`structural/tools.py:250-256`).
-  - The CLI subcommands `symbols lookup|outline|blast` gain `--ns NAME|all|local`, passed as the
-    tool's existing `namespace` argument (`_structural_tool`, `cli.py:2306`). The default
-    matches the tools' default routing: broadcast when namespaces are configured.
+  - The CLI subcommands `symbols lookup|outline|blast` gain the existing `ns_option`
+    (`cli.py:135`). `_structural_tool` (`cli.py:2237`) wraps its store with the existing
+    `_federate(root, config, local, ns_opt)` (`cli.py:187`) instead of handing the tools the bare
+    local plane. The default (no `--ns`) is a broadcast when namespaces are configured, as for
+    `query`.
   - **Stale legacy-FTS probe.** `SQLiteWikiStore._uses_legacy_fts` caches the FTS shape once per
     instance (`store.py:1474-1481`). A long-lived read-only handle (the `wikitoolkit mcp` server)
     keeps the answer after another process has migrated the plane (`_migrate_fts`), and every
@@ -658,7 +695,9 @@ async def _ingest_files(..., force: bool = False, force_rel_paths: set[str] | No
 - ~~`BaseWikiStore.get_meta` / `set_meta`~~: added by this spec (Q2). Today only sqlite's
   private `meta` table (`store.py:57`, read at `:1340`) and arango's `wiki_meta` collection
   (`arango_store.py:50`) exist, with no public accessor on either.
-- ~~A `wiki_meta` table in postgres~~: added by this spec.
+- ~~A new postgres meta table~~: not needed — `{schema}.meta` exists (`graphindex/pg_schema.py:153`).
+- ~~`SymbolRecord.namespace` / `SymbolHit.namespace`~~: added by this spec (M5).
+- ~~A `js_call_scope` extractor~~: added by this spec (M4); `python_call_scope` is the precedent.
 - ~~`--ns` on `wikitoolkit symbols`~~: added by this spec. Today only the tool/MCP layer takes
   `namespace` (`structural/tools.py:58`, `:67`, `:83`).
 - ~~A Svelte ast-grep grammar~~: Svelte is pre-extracted to its `<script>` body.
@@ -688,7 +727,7 @@ Verified against: 8bf475842
 | `store.py` | MODIFY | `class BaseWikiStore(ABC):` (add abstract `get_meta`/`set_meta`; implement on `SQLiteWikiStore`) | `store.py:525` | 1 |
 | `store.py` | MODIFY | `        legacy = "concept_id" in columns` (re-probe path) | `store.py:1479` | 1 |
 | `arango_store.py` | MODIFY | `META_COLLECTION = "wiki_meta"` | `arango_store.py:50` | 1 |
-| `postgres_store.py` | MODIFY | `class PostgresWikiStore(BaseWikiStore):` (+ `wiki_meta` DDL, location unverified: check before use) | `postgres_store.py:127` | 1 |
+| `postgres_store.py` | MODIFY | `class PostgresWikiStore(BaseWikiStore):` (meta via existing `{schema}.meta`) | `postgres_store.py:127` | 1 |
 | `file_store.py` | MODIFY | `class InMemoryWikiStore(BaseWikiStore):` | `file_store.py:73` | 1 |
 | `federation.py` | MODIFY | `    async def find_symbols(` | `federation.py:1408` | 1 |
 | `federation.py` | MODIFY | `    async def search_symbols_fts(self, query: str, limit: int = 20) -> list[Any]:` | `federation.py:1427` | 1 |
@@ -720,9 +759,10 @@ Verified against: 8bf475842
   loses no edge.
 - **Federated fan-out cost.** `symbols lookup` now opens every namespace, like `query` already
   does. Namespaces that fail to open are skipped with a reason, never fatal.
-- **Meta API is a new abstract method on `BaseWikiStore`.** Any out-of-tree subclass stops
-  instantiating until it implements the pair. The in-tree list is complete in §2 (six classes,
-  verified at 8bf475842).
+- **Meta API subclasses.** There are seven in-tree `BaseWikiStore` subclasses (the six in §2
+  plus `parrot_tools/legal/wiki_store.py`) and a test fake (`test_store_cas.py`). The concrete
+  `NotImplementedError` default keeps the two this feature does not touch working, and the
+  fingerprint treats them as "unknown".
 - **One-time re-ingest cost.** The first build after upgrade forces every structural-capable
   file once, because no fingerprint exists yet. On `navigator-svelte` a full `build --force`
   takes under a minute.
@@ -750,7 +790,7 @@ All four were answered by Jesús on 2026-09-28.
   G7. `wiki-structural` is kept, with identical content.
 - [x] Q2: Where should the extractor fingerprint live? → **A new meta API per backend.** Landed
   in M2: an abstract `get_meta`/`set_meta` pair on `BaseWikiStore`, implemented by sqlite
-  (`meta`), arango (`wiki_meta`), postgres (new `wiki_meta`), memory, federated (local only)
+  (`meta`), arango (`wiki_meta`), postgres (existing `{schema}.meta`), memory, federated (local only)
   and `_EmptyStore`.
 - [x] Q3: Component naming for route files. → **Qualified.** Landed in M3: `name` =
   `<parent dir>/<stem>`, `qualname` = the path under `routes/`. (The question was marked for
@@ -774,4 +814,5 @@ design seat before approval if the reviewer wants one.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-28 | Juan (via Claude Code) | Initial draft from the navigator-svelte 0-symbols investigation |
+| 0.3 | 2026-09-28 | Juan (via Claude Code) | Task-decomposition refinements: meta pair is concrete-with-`NotImplementedError` (7 subclasses + a test fake); postgres reuses its existing `meta` table; `js_call_scope` extractor instead of a bare ancestor kind; M5 provenance via runtime-only `SymbolRecord.namespace`, qualified targets re-dispatched to `scoped()`, CLI reuses `ns_option`/`_federate` |
 | 0.2 | 2026-09-28 | Juan (via Claude Code) | Folded in Jesús's §8 answers: ast-grep in `wiki-languages` (Q1), per-backend meta API for the fingerprint (Q2), qualified route-component names (Q3), federated symbol queries as M5 plus the stale FTS-probe fix (Q4) |
