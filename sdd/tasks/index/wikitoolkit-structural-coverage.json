@@ -126,7 +126,7 @@
       "feature_id": "FEAT-609",
       "feature": "wikitoolkit-structural-coverage",
       "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "estimated_hours": 2,
@@ -138,12 +138,13 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-28T19:08:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3824-structural-gap-warning-and-status.md",
+      "completed_at": "2026-09-28T19:18:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3824-structural-gap-warning-and-status.md",
       "owned_files": [
         "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py",
         "tests/knowledge/wiki/test_cli_structural_gap.py"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3825",

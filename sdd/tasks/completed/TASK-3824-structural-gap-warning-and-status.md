@@ -300,4 +300,4 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Build warning is emitted only in 'build' (not ingest-files), logged once + click.echo(err). Mutation: helper returning None turned test_structural_gap_warning_text and test_build_warns_exactly_once RED. status tests cover disabled/enabled/kill-switch.
