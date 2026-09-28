@@ -6,7 +6,7 @@ interception, HAR recording, tracing, PDF export, and session persistence.
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from .abstract import AbstractDriver
 from .playwright_config import PlaywrightConfig
@@ -269,6 +269,22 @@ class PlaywrightDriver(AbstractDriver):
     async def evaluate(self, expression: str) -> Any:
         """Evaluate a JavaScript expression and return the result."""
         return await self._page.evaluate(expression)
+
+    async def get_cookies(self, urls: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+        """Return the browser context's cookies (HttpOnly included).
+
+        Args:
+            urls: Restrict to cookies that would be sent to these URLs; ``None`` = all.
+
+        Returns:
+            Cookie dicts as returned by Playwright's ``BrowserContext.cookies()``.
+
+        Raises:
+            RuntimeError: The driver has not been started yet (``self._context`` is ``None``).
+        """
+        if self._context is None:
+            raise RuntimeError("PlaywrightDriver.get_cookies() called before start()")
+        return list(await self._context.cookies(list(urls) if urls else None))
 
     # ── Property ─────────────────────────────────────────────────
 

@@ -110,7 +110,7 @@ class UISurfacesHandler(BaseView):
 ```
 
 ### Does NOT Exist
-- ~~`app["linked_surface_service"]`, `app["dataplane_guard"]`~~ — `app["linked_surface_service"]` is introduced by this task; `app["dataplane_guard"]` is WRITTEN by TASK-3805 (`setup_dataplane_guard()` on `BotManager.setup` startup, when PBAC initializes) and only READ here — do not add a second writer. When TASK-3805's wiring yields no guard (bare install, no policies), the key is absent and linked saves answer 403 (fail closed, AC14) while baked saves are unaffected; this task's tests keep exercising the guard-absent path with a bare app dict.
+- ~~`app["linked_surface_service"]`, `app["dataplane_guard"]`~~ — `app["linked_surface_service"]` is introduced by this task; `app["dataplane_guard"]` is WRITTEN by TASK-3805 (`setup_dataplane_guard()` on `BotManager.setup` startup, when PBAC initializes) and only READ here — do not add a second writer. On a deployment where TASK-3805's wiring did not produce a guard (bare install, no policies), the key is absent and linked saves answer 403 (fail closed, AC14) while baked saves are unaffected; this task's tests keep exercising the guard-absent path with a bare app dict.
 - ~~reading `record.tenant` / `scope.tenant` for QuerySource routing~~ — FORBIDDEN (AC4); `record.tenant` is the FEAT-535 auth scope. Tenants come from the descriptor inside the service.
 - ~~executor calls in `_get_one` / `_get_list` / HTML rendering~~ — must stay absent (GET never executes).
 - ~~`RefreshSurfaceRequest.tenant`, `PublishSurfaceRequest.tenant`~~ — deliberately absent (L85-87); do not add.

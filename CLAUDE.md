@@ -9,24 +9,6 @@ See @.agent/CONTEXT.md for full architectural context.
 
 ## Development Environment
 
-### Package Management & Virtual Environment
-
-**CRITICAL RULES:**
-1. **Package Manager**: Use **`uv`** exclusively for package management
-   ```bash
-   uv pip install <package>
-   uv pip list
-   uv add <package>
-   ```
-
-2. **Virtual Environment**: ALWAYS activate before Python operations
-   ```bash
-   source .venv/bin/activate
-   ```
-   **NEVER** run `uv`, `python`, or `pip` commands without activating first.
-
-3. **Dependencies**: Manage all dependencies via `pyproject.toml`
-
 ### Repository layout — this is a uv workspace
 
 The repo root is the `ai-parrot-workspace` declarator
@@ -67,48 +49,27 @@ AI-Parrot's agents interact with the world through tools. When creating tools:
    redirects `parrot.tools.<x>` → `parrot_tools.<x>` → `plugins.tools.<x>`
    for any name that is not a core submodule, so legacy import paths keep
    working; prefer the explicit `parrot_tools.<x>` in new code.
-2. **Decorator Pattern**: Use `@tool` for simple functions
-   ```python
-   from parrot.tools import tool
-
-   @tool
-   def get_weather(location: str) -> str:
-       """Get the current weather for a location."""
-       return f"Weather in {location}: Sunny, 25°C"
-   ```
-
-3. **Toolkit Pattern**: Use `AbstractToolkit` for complex tool collections
-4. **Documentation**: Every tool MUST have clear docstrings explaining purpose, parameters, and return values
-
-## Async-First Development
-
-AI-Parrot is built on async/await patterns
-
-## Integration Patterns
-
-AI-Parrot supports multiple integration methods:
-
-### 1. A2A (Agent-to-Agent)
-Native protocol for agent discovery and communication
-
-### 2. MCP (Model Context Protocol)
-Expose agents as MCP servers or consume external MCP servers
-
-### 3. OpenAPI Integration
-Consume any OpenAPI spec as a dynamic toolkit using `OpenAPIToolkit`
 
 ## Non-Negotiable Rules
 
 ### Environment
-- Package manager: `uv` exclusively (`uv add`, `uv pip install`)
-- ALWAYS activate venv before any command: `source .venv/bin/activate`
-- NEVER run python/uv/pip without activating first
+1. Package manager: `uv` exclusively (`uv add`, `uv pip install`)
+
+   ```bash
+   uv pip install <package>
+   uv pip list
+   uv add <package>
+   ```
+
+2. ALWAYS activate venv before any command: `source .venv/bin/activate`
+   ```bash
+   source .venv/bin/activate
+   ```
+   **NEVER** run `uv`, `python`, or `pip` commands without activating first.
+3. Manage all dependencies via `pyproject.toml`
 
 ### Code Standards
-- All functions and classes: Google-style docstrings + strict type hints
-- Pydantic models for all data structures
-- async/await throughout — no blocking I/O in async contexts
-- Logger (`self.logger`) instead of print statements
+See `.agent/rules/codebase-conventions.md` for full code standards and conventions (its twin `.claude/rules/codebase-conventions.md` is already loaded every session).
 
 ### Workflow: Think → Act → Reflect
 1. For complex tasks: create plan in `artifacts/plan_[task_id].md` first
@@ -158,43 +119,8 @@ Rules:
   unverifiable claim as no finding at all, and say the review was
   unusable rather than reporting it as a pass.
 
-**Detection:**
-```bash
-if command -v codex &>/dev/null; then REVIEWER="codex"
-else echo "No external reviewer CLI found"; fi
-```
-
-#### codex commands
-```bash
-# Reviews
-codex exec review --uncommitted
-codex exec review --base dev
-codex exec review --commit <sha>
-
-# Opinions, brainstorming, and cross-checks
-codex exec --sandbox read-only -o <scratch-file> "<neutral brief>"
-
-# Follow-up in the same Codex session
-codex exec resume --last "<question>"
-
-# Image generation / mockups / wireframes (codex-only)
-codex exec --sandbox workspace-write -o <out.txt> \
-  "Generate an image: <description>. Save as <name>.png"
-```
-
-#### Design research at spec time (FEAT-545)
-
-The same codex seat gives an **independent design opinion** in `/sdd-spec`
-§3b, over the *accepted* brainstorm/proposal only — never over the spec
-draft. Model: `${SDD_DESIGN_RESEARCH_MODEL:-gpt-5.6-luna}` with
-`-c model_reasoning_effort=high` and `--ignore-user-config` (the operator's
-`~/.codex/config.toml` must not swap the model silently). The pass is
-**optional and never blocking**: no `codex`, failed probe, timeout or invalid
-output ⇒ spec §9 reads `Status: skipped (<reason>)` and the command continues
-(`sdd-planner` runs it unattended). Every suggestion is triaged
-`CONFIRM` / `REJECT` / `ESCALATE` in spec **§9 Design Research Cross-Check**;
-the transcript is committed under `sdd/state/<FEAT-ID>/design_research/`.
-The `agy` ban above applies to this seat too.
+**Commands:** the `second-opinion` skill (`.claude/skills/second-opinion/SKILL.md`)
+has codex detection and the review / opinion / follow-up / image invocations.
 
 ## Key References
 - Architecture & patterns: @.agent/CONTEXT.md
@@ -263,7 +189,7 @@ dev-loop orchestrators); `/sdd-task` creates none (FEAT-552).
 | `/sdd-spec`       | `sdd/specs/<n>.spec.md` (with frontmatter) + a `reserve_ids.py` FEAT-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
 | `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` + a `reserve_ids.py` TASK-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) — and NO worktree (FEAT-552: it is created by the implementing lane) | `base_branch` |
 | `/sdd-start`      | Per-spec index status update + implementation code  | worktree (feature branch) |
-| `/sdd-done`       | Verification stamp on per-spec index (committed on feature branch); merges feature → `base_branch` | worktree (feature branch), merged to `base_branch` by Step 9 |
+| `/sdd-done`       | Verification stamp on per-spec index (committed on feature branch); opens a PR feature → `base_branch` (`--merge` merges directly) | worktree (feature branch), integrated into `base_branch` by Step 9.2 |
 
 Commit message convention:
 ```
@@ -281,7 +207,8 @@ spec). The hotfix's identity is its Jira issue key instead; see
 **Note (FEAT-145)**: `/sdd-start` no longer needs to `cd` back to the main
 repo to update SDD state — per-spec indexes mean each feature owns its own
 index file, so the worktree's commit covers code AND state in one stroke.
-The merge in `/sdd-done` brings them to `base_branch` atomically.
+Merging the feature branch (the PR `/sdd-done` opens, or `/sdd-done --merge`)
+brings them to `base_branch` atomically.
 
 **Note (FEAT-387)**: `sdd/tasks/.id_ledger.json` is a git-tracked
 compare-and-swap counter for `TASK-<NNN>`/`FEAT-<NNN>` numbers, allocated
@@ -302,7 +229,7 @@ git checkout dev && git pull origin dev
 /sdd-start TASK-<NNN>                      # creates the worktree, implements the task
 cd .claude/worktrees/feat-FEAT-<NNN>-<slug>
 /sdd-start TASK-<NNN+1> …                  # or: claude --agent sdd-worker
-/sdd-done FEAT-<NNN>                       # verify, push, merge → dev, clean up
+/sdd-done FEAT-<NNN>                       # verify, push, PR → dev (--merge: direct), clean up
 ```
 
 ## Autonomous Agent (`sdd-worker`)
