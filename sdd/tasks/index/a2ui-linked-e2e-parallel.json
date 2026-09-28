@@ -153,7 +153,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -164,8 +164,9 @@
       "parallelism_notes": "needs TASK-3833's TS deriveConditions/setParam fixes (linked/conditions.ts, linked/index.ts) for parity.test.ts and TASK-3834's FilterBar param validation (catalog/__init__.py) to accept the TOOL's FilterBar; creates only new files",
       "assigned_to": null,
       "started_at": "2026-09-28T23:41:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3838-epson-dashboard-tool-golden-parity.md"
+      "completed_at": "2026-09-28T23:52:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3838-epson-dashboard-tool-golden-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3839",
