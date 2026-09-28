@@ -124,6 +124,18 @@ class SavedSlug(BaseModel):
     action: Literal["inserted", "updated"]
 
 
+class DashboardWidget(BaseModel):
+    """One widget of a linked dashboard: its own source key, slug, request, and unbound component (FEAT-610)."""
+
+    key: str  # data-model root + source key (JSON-pointer-safe)
+    slug: str
+    component: dict[str, Any]  # Chart | DataTable | KPICard, without its binding
+    request: dict[str, Any] | None = None  # qs grammar: placeholders/filter/fields/ordering/grouping/limit/offset
+    tenant: str | None = None
+    section: Literal["kpis", "charts", "table"] | None = None  # layout row; inferred from component when None
+    refresh: dict[str, Any] | None = None  # RefreshPolicy payload
+
+
 class DialectReference(BaseModel):
     """The QuerySource conditions dialect as shown to the LLM (spec §3 M3)."""
 
