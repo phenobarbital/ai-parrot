@@ -1,38 +1,37 @@
----
-id: FEAT-610
-title: A2UI Linked Surfaces E2E example — agent-built dashboard (KPIs, bar/pie charts, paged grid) over polestar_graduates_directory with per-widget deterministic QuerySource refresh in an echarts + grid.js renderer
-slug: a2ui-linked-e2e-test
-type: feature
-mode: enrichment
-status: accepted
-source:
-  kind: inline
-  jira_key: null
-  jira_url: null
-  fetched_at: 2026-09-28
-  summary_oneline: Self-contained E2E example — agent-built A2UI linked-surface dashboard (KPIs, charts, grid) over one query-slug, refreshable via QuerySource
-overall_confidence: medium
-base_branch: dev
-# projects: parts of the codebase this doc concerns. Use `packages/*` dir names
-#   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
-#   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
-projects: [ai-parrot, ai-parrot-tools, ai-parrot-server, ai-parrot-visualizations, admin-ui, docs]
-# tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
-tags: [a2ui, linked-surfaces, querysource, dashboard, e2e-example, echarts]
-research_state: sdd/state/FEAT-610/
-created: 2026-09-28
-updated: 2026-09-28
----
+<!--
+  sdd/templates/design_research.prompt.md — neutral design-research brief (FEAT-545).
+  Rendered by /sdd-spec section 3b and piped to `codex exec ... --output-schema
+  design_research.schema.json`.
+  FORBIDDEN INPUTS: never paste the spec draft, the spec author's reasoning, a preferred
+  conclusion, or any text written by the model that will author the spec. The brief carries
+  ONLY the accepted exploration document (brainstorm/proposal) and verified code anchors.
+  Placeholders (double-curly-brace tokens, deliberately NOT written with literal braces in
+  this comment — a renderer that does a naive whole-document string replace must not also
+  rewrite this sentence): problem_statement, constraints_and_goals,
+  recommended_option_or_scope, code_context_paths, open_questions, question.
+-->
+# Independent design review — read-only
 
-# FEAT-610 — A2UI Linked Surfaces E2E example
+You are an independent design reviewer for **ai-parrot**, an async-first Python
+framework for AI agents (aiohttp, Pydantic v2, `uv` workspace under `packages/`).
+You have read-only access to the repository in your working directory.
 
-> **Mode**: enrichment
-> **Confidence**: medium
-> **Source**: `inline`
-> **Audit**: [`sdd/state/FEAT-610/`](../state/FEAT-610/)
+## Rules
+1. Read the code you cite. Every `affected_paths` entry must be a repo-relative
+   path you actually opened; suggestions with unverifiable paths are discarded.
+2. Judge the design intent below against what exists in the repository: what is
+   missing, what is risky, what would be simpler, what the codebase already
+   provides that the intent re-invents.
+3. Do not restate the intent, do not praise it, do not write code. Propose at
+   most 12 concrete, falsifiable suggestions, each tagged with a kind
+   (`architecture` | `api` | `testing` | `risk` | `alternative`), a risk level and
+   your confidence.
+4. Output exactly ONE JSON object conforming to the schema you were given — no
+   markdown fences, no prose before or after.
 
----
+## Accepted design intent (verbatim from the exploration document)
 
+### Problem statement
 ## 0. Origin
 
 The full request is in `sdd/state/FEAT-610/source.md`. Condensed:
@@ -83,33 +82,7 @@ The recommendation is to build the example as specified, plus four small changes
 
 ---
 
-## 2. Codebase Findings
-
-> All entries cite finding digests in `sdd/state/FEAT-610/findings/`. The `venv:` prefix refers to the installed package, and `../querysource` to the sibling checkout (v5.1.1).
-
-### 2.1 Localization
-
-| # | Path | Symbol | Role | Evidence |
-|---|------|--------|------|----------|
-| 1 | `packages/ai-parrot/src/parrot/outputs/a2ui/linked/models.py` | `LinkedDataSource` (l.192) | Source descriptor. Fields: `kind`, `slug`, `tenant`, `is_multiquery`, `conditions`, `request`, `params`, `transform`, `snapshot_at`, `refresh`, … | F002 |
-| 2 | `packages/ai-parrot/src/parrot/outputs/a2ui/builders.py` | `build_linked_surface` (l.514) | Composes a linked `createSurface` from components, sources and frames. Snapshots are capped at 500 rows. KPI binds to `/<key>/rows/0/<col>` via `_rows_key` (l.460-476). | F003, F037 |
-| 3 | `packages/ai-parrot/src/parrot/outputs/a2ui/linked/executor.py` | `execute_sources` (l.180) | Runs descriptors in-process with no LLM; supports `param_overrides`. | F005 |
-| 4 | `packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py` | `QuerysourceToolkit.build_linked_surface` (l.339) | The `qs_build_linked_surface` tool. Builds one component and runs the query once. `max_rows` defaults to 200. | F004, F018 |
-| 5 | `packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py` | refresh route (l.94, 688) | `POST /api/v1/ui/surfaces/{id}/refresh`: persisted surfaces only, refreshes every source at once, returns 403 without a dataplane guard. | F005, F023 |
-| 6 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts` | `LinkedLane` | The only client-side executor. Exposes `start/stop/setParam/refreshAll`; `runSource(key, forceRefresh)` (l.161) is internal. | F006, F036 |
-| 7 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/fetch.ts` | `fetchSource` | POSTs `{...conditions, querylimit: min(limit, 5000)}` to `/api/v3/queries/{slug}`, or to `/api/v1/{tenant}/queries/{slug}` when a tenant is set. | F006 |
-| 8 | `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/kpicard.py` · `chart.py` · `datatable.py` · `filterbar.py` | `KPICard`, `Chart`, `DataTable`, `FilterBar` | The dashboard vocabulary. There is no Grid container and no refresh prop. | F031, F032 |
-| 9 | `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/echarts.py` | `_build_option` | Maps a Chart to an ECharts option. Pie slices get no names (l.274-287). | F034 |
-| 10 | `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/interactive_html.py` | — | Self-contained HTML renderer. Uses Chart.js, works from static snapshots only, and ignores `parrot_data_sources`. | F033 |
-| 11 | `packages/ai-parrot/src/parrot/outputs/a2ui/linked/contract/fixtures/envelopes/linked_dashboard_join.json` | — | The only on-disk linked dashboard fixture: a Chart and a DataTable over 2 sources. | F001, F038 |
-| 12 | `venv:querysource/services.py` | `QuerySource.setup` (l.131-140), routes (l.181-189, 244-270) | Mounts on a plain `web.Application`. Registers `/api/v2/services/queries/{slug}` and the multi-query `/api/v3/queries/{slug}`. | F010, F011 |
-| 13 | `../querysource/querysource/…/pgsql.pyx` | JSONB `@>` operator (l.27-29, 186-193) | Available since 5.1.0 (commit `4d7cccc`). | F013 |
-| 14 | `venv:navigator_auth/auth.py` | `AuthHandler` (l.87-126, 638-695) | Registers `/api/v1/login` and friends. Bearer JWT middleware (l.1055-1095). | F020, F021, F015 |
-| 15 | `packages/ai-parrot-server/src/parrot/manager/manager.py` | `BotManager.setup` / `add_agent` (l.1179, 193) | Minimal agent exposure. Chat with `output_mode=a2ui` returns `a2ui_envelope`. | F023 |
-| 16 | `examples/forms/form_server.py`, `examples/clients/voice/server.py` | — | Precedents: a plain aiohttp app with `AuthHandler` and static `index.html`. | F024, F025 |
-| 17 | `app.py` | — | Mount order: QuerySource(lazy=False) → PBAC → BotManager → AuthHandler. | F010, F027 |
-| 18 | `packages/ai-parrot-server/src/parrot/autonomous/admin.py` | `admin_login_page` | Login page that POSTs with `X-Auth-Method: BasicAuth` and stores the token in localStorage. Reusable pattern. | F022 |
-
+### Constraints and goals
 ### 2.2 Constraints Discovered
 
 - **Only tools may emit descriptors.** Any surface carrying `parrot_data_sources` must come from TOOL output. An LLM-authored one fails with `DATA_SOURCES_NOT_ALLOWED_FOR_LLM` (`catalog/base.py:89`). *Implication*: the agent must call a tool that composes the dashboard; it cannot write the JSON itself. *Evidence*: F001
@@ -126,20 +99,7 @@ The recommendation is to build the example as specified, plus four small changes
 - **Wire-doc drift.** The wire doc §3 says the route is only `/api/v1/{tenant}/...` with `querylimit: 500`. The code uses `/api/v3/...` when no tenant is set, capped at 5000. *Evidence*: F007
 - **Degrade, don't throw.** Renderers draw Parrot components natively, break anything else down into Basic primitives, and show a visible notice for an unknown component instead of throwing (`degrade.py:46`). ECharts options never travel on the wire. *Evidence*: F039
 
-### 2.3 Recent History (Relevant)
-
-| Commit | Message | Touched |
-|--------|---------|---------|
-| `80ed03909` | Merge PR #1513 feat-FEAT-598-a2ui-linked-surfaces | linked/* |
-| `ff066c3ae` | fix(a2ui-linked-surfaces): TASK-3796 review fixes | docs, linked |
-| `2ff066692` | TASK-3796 — wire doc, a2ui-v1 extension table, dashboard reference §6.5 | docs |
-| `3b7fc2e66` | TASK-3795 — stateful A2UISurface lane + FilterBar parrot_param branch | ui/…/a2ui/linked |
-| `00f79d3c9` | TASK-3785 — engine-committed coder deliverable (qs_build_linked_surface) | ai-parrot-tools querysource |
-
-FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 notes, its Svelte lane was never run through real vitest or svelte-check (F008).
-
----
-
+### Recommended option / probable scope
 ## 3. Probable Scope
 
 ### What's New
@@ -210,89 +170,29 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 
 ---
 
-## 4. Confidence Map
+### Verified code anchors (paths only — open them yourself)
+app.py
+chart.py
+datatable.py
+examples/clients/voice/server.py
+examples/forms/form_server.py
+filterbar.py
+packages/ai-parrot-server/src/parrot/autonomous/admin.py
+packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py
+packages/ai-parrot-server/src/parrot/manager/manager.py
+packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/fetch.ts
+packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts
+packages/ai-parrot/src/parrot/outputs/a2ui/builders.py
+packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/kpicard.py
+packages/ai-parrot/src/parrot/outputs/a2ui/linked/contract/fixtures/envelopes/linked_dashboard_join.json
+packages/ai-parrot/src/parrot/outputs/a2ui/linked/executor.py
+packages/ai-parrot/src/parrot/outputs/a2ui/linked/models.py
+packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py
+packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/echarts.py
+packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/interactive_html.py
 
-| ID | Claim | Evidence | Confidence |
-|----|-------|----------|------------|
-| C1 | A linked surface is a v1.0 `createSurface` plus `metadata.extensions.parrot_data_sources`; components bind by path only | F001, F002, F030 | high |
-| C2 | Only Chart, DataTable and KPICard can be linked; pie is a Chart with `type=pie` | F003, F031 | high |
-| C3 | Only TOOL-origin output may carry descriptors | F001 | high |
-| C4 | No helper composes a multi-widget linked dashboard | F004, F018 | high |
-| C5 | Browser refresh = POST conditions (cap 5000) to `/api/v3/queries/{slug}`, or the tenant v1 route, with a bearer token; no per-widget endpoint exists | F005, F006, F011 | high |
-| C6 | The v3 (and v2) handler accepts a single slug with fields/filter/group_by/paging and appends GROUP BY without a placeholder (live) | F011, F042 | high |
-| C7 | JSONB `@>` needs querysource ≥5.1 (it failed live on 5.0.0); the shared venv is now 5.1.2 | F013, F042 | high |
-| C8 | The multi-graduates KPI can be expressed via `count(*) FILTER (…)` (slug uses `{fields}`; value 2884 verified) | F014, F040 | high |
-| C9 | The course pie needs a second slug or a tExplode pipeline | F014 | high |
-| C10 | `polestar_graduates_directory` is in prod `public.queries`: `SELECT {fields} FROM polestar.vw_graduates_directory {where_cond}`, 17572 rows | F016, F040 | high |
-| C11 | Postgres and Redis are required at runtime | F017, F021, F027 | high |
-| C12 | AuthHandler login returns `{token,…}`; BasicAuth needs authdb | F020, F021, F022 | high |
-| C13 | QS PBAC is on in `env/.env` and strict, so the example must disable it (basic auth only) | F015 | high |
-| C14 | No renderer uses echarts + grid.js or refreshes per widget | F006, F033, F035, F036 | high |
-| C15 | The 17.5k-row grid must page on the server | F005, F012, F037 | high |
-| C16 | `examples/a2ui/*.py` and `*.html` are gitignored | F026 | high |
-| C17 | The Python echarts mapper emits unnamed pie slices (confirmed by execution: `data: [10, 5]`) | F034, F041 | high |
-| C18 | The wire doc §3 contradicts the code on the route (v3 without a tenant), the cap (500 vs 5000) and `refresh` (always vs only when true) | F007, F041 | high |
-| C19 | Expected widget values in prod: KPIs 17572 / 9191 / 6245 / 2884; 94 countries; 22 licensees; pie 9204 / 6247 / 3300 / 2048 | F040 | high |
+### Questions still open in the exploration document
+none
 
-Distribution: **19** high, **0** medium, **0** low.
-
----
-
-## 5. Open Questions
-
-### Resolved (during proposal phase)
-
-- [x] **How is the course pie fed?** *Resolved*: add a second slug. The example seeds `polestar_graduates_by_course` (CROSS JOIN LATERAL `jsonb_array_elements`). *Resolves*: C9
-- [x] **Which auth backend?** *Resolved*: real BasicAuth, via AuthHandler against the existing authdb; the JWT goes in localStorage. *Resolves*: C12, C13
-- [x] **How is the surface generated and served?** *Resolved*: an agent plus the example's own endpoint. An Agent with QuerysourceToolkit and a new multi-widget dashboard tool (TOOL-origin); `server.py` serves the surface at its own GET route and optionally exposes the agent via BotManager. *Resolves*: C3, C4
-- [x] **Core-change scope?** *Resolved*: all four — the multi-widget dashboard helper, the pin to `querysource>=5.1.2` (updated after the 5.1.2 release), the pie-slice and wire-doc fixes, and per-widget refresh in the TS `LinkedLane`, with a vanilla-JS port for the example. *Resolves*: C7, C14, C17, C18
-- [x] **Grid with 17k rows?** *Defaulted, not asked*: server-side paging with `_limit`/`_offset` plus `count(*)`, using grid.js server mode. *Resolves*: C15
-
-### Resolved (follow-up round, 2026-09-28)
-
-- [x] **Refresh granularity.** *Resolved*: every widget refreshes on its own, and a collective "Refresh all" also exists. This applies to both the example renderer and the TS `LinkedLane`.
-- [x] **querysource version.** *Resolved*: everything depends on querysource ≥5.1, which carries the changes FEAT-598 requires. It is a hard requirement, with a fail-fast check.
-- [x] **"No external dependencies".** *Resolved*: the example must not run on navigator-frontend-next or depend on libraries beyond those ai-parrot already ships or references (echarts vendored, grid.js as already referenced).
-- [x] **The definition of `polestar_graduates_directory`.** *Resolved*: data in schema `polestar`, slug in `public.queries`, **production** environment. Any subagent or sub-shell that runs code against it must use `ENV=prod`. Verified read-only in F040.
-- [x] **PBAC policy.** *Resolved*: none. Only basic authentication; QS PBAC is disabled for the example.
-
-### Unresolved (defer to spec / implementation)
-
-- [x] **Does QS append GROUP BY when the slug SQL has no `{group_by}` placeholder?** *Resolved (live, F042)*: yes, on v3 and v2.
-- [x] **Tenant/schema route.** *Resolved*: querysource 5.1.2 fixes the tenant routes and adds `/api/v1/queries/{schema}/{slug}` (user-verified; F042).
-- [x] **`@>` KPIs through HTTP with a real bearer token on 5.1.2.** *Resolved (live, F042 addendum)*: with QuerySource + AuthHandler and a real bearer token, all 32 calls return 200 across v3, v2, `/api/v1/public/queries/{slug}` and `/api/v1/queries/public/{slug}`, with values that match C19.
-- [ ] **Exact SQL of the seeded `polestar_graduates_by_course` slug** (NULL-course handling, and whether it exposes `{where_cond}` for future filters). Settle it in the spec. The seed writes to prod `public.queries`, so it needs user confirmation at execution time.
-
----
-
-## 6. Recommended Next Step
-
-→ `/sdd-spec FEAT-610`. The FEAT-598 contract is well localized and the prod data is verified (F040). All routes and widget queries are verified live on 5.1.2; what remains is the definition of the seeded slug. A rough task split:
-1. Seed `polestar_graduates_by_course` idempotently (with user confirmation, prod) and turn the F042 probe into a reusable, opt-in live test (`ENV=prod`, token taken from an environment variable, never committed). Then seed `polestar_graduates_by_course` idempotently, with user confirmation.
-2. The multi-widget dashboard helper (toolkit tool plus a builder over `build_linked_surface`) and its tests.
-3. Core fixes: the `querysource>=5.1.2` pin, the echarts pie-slice names, the wire doc §3.
-4. `LinkedLane.refreshSource(key)` plus per-widget and "refresh all" affordances in `A2UISurface.svelte`, with vitest.
-5. `server.py`: QuerySource, AuthHandler (BasicAuth, QS PBAC off), the agent and the surface route, and the version fail-fast.
-6. The static renderer (echarts + grid.js, per-widget and refresh-all, grid paged on the server) and `client.py`.
-7. The `.gitignore` whitelist, a README (`ENV=prod`, querysource ≥5.1.2), and a manual E2E run checked against the C19 values.
-
----
-
-## 7. Follow-ups (out of scope for FEAT-610, to run later in `querysource`)
-
-These go to the `querysource` repo (it has its own `sdd/`) as separate features once FEAT-610 lands. Their goal is to retire the interim workarounds above.
-
-- **QS-1 — JSONB array-length filtering.** Add a filter operator for the length of a JSONB array, e.g. `{"filter": {"graduation_details": {"jsonb_array_length>": 1}}}` or `{"$len>": 1}`. It compiles to `jsonb_array_length(col) > $n` in the pgsql parser, next to the `@>` operator added in 5.1.0 (F013). The multi-graduates KPI could then use a declarative, parameterizable filter instead of raw SQL inside `fields`. *Interim in FEAT-610*: `count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1)` in `fields`.
-- **QS-2 — GROUP BY over JSONB array elements.** Let `group_by` (and `fields`) address a JSONB array element key, e.g. `"group_by": ["graduation_details[].course"]`. The parser would emit `CROSS JOIN LATERAL jsonb_array_elements(graduation_details) AS _e` and group by `_e->>'course'`. The course pie could then run against the base slug, and the extra slug `polestar_graduates_by_course` could be removed. *Interim in FEAT-610*: the seeded second slug.
-- After QS-1 and QS-2 ship, a small ai-parrot follow-up moves the example's widget map to the new syntax and drops the seed.
-
----
-
-## 8. Research Audit
-
-- Source: `sdd/state/FEAT-610/source.md`
-- Plan: `sdd/state/FEAT-610/research_plan.json` (4 parallel lanes, A–D)
-- Findings: `sdd/state/FEAT-610/findings/` (F001–F008, F010–F018, F020–F028, F030–F039, F040 prod verification, F041 C17/C18 verification, F042 live route probe)
-- Synthesis: `sdd/state/FEAT-610/synthesis.json`
-- State: `sdd/state/FEAT-610/state.json`
-- Note: the wikitoolkit MCP server failed to connect this session, so the lanes used grep and direct reads. The plan gate was not shown to the user; the plan ran directly (interactive session, auto mode). F040 was run read-only against production with `ENV=prod`, at the user's instruction.
+## Question
+Given this accepted design intent and these verified code anchors, how would you build it? What is missing, risky, or better done another way?

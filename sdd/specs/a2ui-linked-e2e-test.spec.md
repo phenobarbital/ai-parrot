@@ -10,7 +10,7 @@ tags: [a2ui, linked-surfaces, querysource, dashboard, e2e-example, echarts]
 **Feature ID**: FEAT-610
 **Date**: 2026-09-28
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next release after ai-parrot 1.0.6
 
 Source proposal: `sdd/proposals/a2ui-linked-e2e-test.proposal.md` (research state `sdd/state/FEAT-610/`).
@@ -251,7 +251,10 @@ class QuerysourceToolkit(AbstractToolkit):
   - one `LinkedDataSource` per widget key (keys must be unique and JSON-pointer-safe, else `InvalidConditionsError`);
   - one `execute_sources` pass; any failed source raises `QuerysourceToolkitError` naming the key and the error code;
   - layout: root `Column` → `Row` of KPICards → `Row` of Charts → DataTables; empty rows are omitted; component ids
-    are the widget keys;
+    are the widget keys; every widget must be reachable from `root` through `children` (S1 — the renderers only walk
+    from `root`, so an unreachable widget silently disappears);
+  - `component` types are limited to Chart, DataTable and KPICard; a KPICard widget must name its aggregate column
+    explicitly (`component.value` = the column name), never rely on an implicit first column (S3);
   - returns `{"a2ui_envelope": ..., "artifacts": [{"type": "a2ui_linked_surface", "surface_id", "sources": [...keys]}]}`.
 - **Depends on**: M1 (the `@>` KPIs must validate)
 - **Interface Skeleton**:
@@ -276,10 +279,11 @@ class QuerysourceToolkit(AbstractToolkit):
   ```
 
 ### Module 3: querysource floor
-- **Path**: `packages/ai-parrot/pyproject.toml`, `packages/ai-parrot-tools/pyproject.toml`,
+- **Path**: `packages/ai-parrot/pyproject.toml`, `packages/ai-parrot-tools/pyproject.toml`, `uv.lock`,
   `packages/ai-parrot-tools/tests/querysource/test_querysource_floor.py`
 - **Responsibility**: `querysource>=5.1.2` in `ai-parrot[db]`, `ai-parrot[integrations]` and `ai-parrot-tools[db]`; the
-  floor test follows. There is no runtime gate in the toolkit (FEAT-598 AC12 is kept).
+  floor test follows. `uv.lock` is regenerated with `uv lock` (lock only — never `uv sync` in the worktree) so it
+  resolves querysource ≥5.1.2; today it pins 5.1.1 (`uv.lock:13047`) (S6). There is no runtime gate in the toolkit (FEAT-598 AC12 is kept).
 - **Depends on**: —
 - **Interface Skeleton**: none (packaging only).
 
@@ -300,7 +304,10 @@ class QuerysourceToolkit(AbstractToolkit):
   `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UISurface.svelte`
 - **Responsibility**:
   - `LinkedLane.refreshSource(key)`: a no-op for unknown or failed keys; otherwise delete the frame and run
-    `runSource(key, true)`.
+    `runSource(key, true)`, then re-run the sources whose `transform` references `key`, in the existing dependency
+    order (S5). The key is resolved from the widget's `/key/...` binding; the browser never sends a slug or conditions
+    of its own (S4). Concurrent calls for the same key share one in-flight request.
+  - `refreshAll()` keeps its current dependency-ordered schedule; it is not parallelized (S5).
   - `A2UISurface.svelte`: add `refreshSource` to `laneProxy`; render a "Refresh all" control for linked surfaces and a
     per-component refresh control for Chart/DataTable/KPICard bound to a source (Svelte 5 runes only).
 - **Depends on**: —
@@ -347,6 +354,9 @@ class QuerysourceToolkit(AbstractToolkit):
       """GET /api/a2ui/dashboard[?rebuild=1] → cached envelope JSON."""
   def require_querysource(min_version: str = "5.1.2") -> None:
       """Exit with a clear message when querysource is older than min_version."""
+  async def check_slugs(app: web.Application) -> None:
+      """on_startup, read-only: verify both slugs exist; if `polestar_graduates_by_course` is missing, log the
+      `seed_by_course.py --yes` hint and render that widget as 'unavailable' (never seed at startup — S9)."""
   ```
 
 ### Module 8: static HTML5 renderer
@@ -356,13 +366,19 @@ class QuerysourceToolkit(AbstractToolkit):
   - surface fetch and v1.0 tree walk (Column/Row/Card layout, with a visible notice for unknown components — degrade,
     never throw);
   - KPICard hero cards, ECharts bar/pie, and a grid.js DataTable in server mode (paging via `querylimit`/`_offset`,
-    stable `ordering`, column filters → `filter`, total via `count(*)`);
+    stable `ordering`, column filters → `filter`, total via `count(*)`). Paging is example-specific: `fetchPage` lives
+    only in `static/linked.js` and is NOT a wire-contract extension. It reuses the grid source descriptor (slug,
+    tenant, locked conditions) and overrides only `querylimit`/`_offset`/`ordering`/the column `filter`. The admin UI
+    DataTable (M5) keeps the bounded frame (≤5000 rows) (S2);
   - a per-widget refresh button, "Refresh all", and per-widget loading/error/"unavailable" states.
 
   Libraries:
   - ECharts is the vendored `echarts.min.js`, copied into `static/vendor/` at build time or served from the installed
     `parrot.outputs.formats.assets` package path by `server.py`;
-  - grid.js is `gridjs@6.2.0` from unpkg (the version the repo already references), pinned with real SRI hashes.
+  - grid.js is `gridjs@6.2.0` from unpkg (the version the repo already references), pinned with real `sha384` SRI
+    hashes computed from the exact files (`dist/gridjs.umd.js` and the theme `dist/theme/mermaid.min.css`); the placeholders in
+    `interactive/catalog/libraries/gridjs.md` must not be copied (S7). grid.js is MIT-licensed. Not vendored: the user's
+    constraint is no library ai-parrot does not already reference.
 - **Depends on**: M7 (surface route); mirrors M5 semantics.
 - **Interface Skeleton**:
   ```js
@@ -391,7 +407,8 @@ class QuerysourceToolkit(AbstractToolkit):
       WHERE e->>'course' IS NOT NULL) t {where_cond}
     ```
   - The README covers `ENV=prod`, `QS_PBAC_ENABLED=false`, querysource ≥5.1.2, and the run order.
-  - `.gitignore` whitelists `examples/a2ui/**` (`*.py`, `*.html`, `*.js`, `*.css`).
+  - `.gitignore` whitelists `examples/a2ui/**` (`*.py`, `*.html`, `*.js`, `*.css`), with narrowly scoped `!` rules;
+    validated by `git check-ignore -v examples/a2ui/server.py examples/a2ui/static/index.html` returning nothing (S10).
 - **Depends on**: M7, M8
 
 ---
@@ -403,6 +420,7 @@ class QuerysourceToolkit(AbstractToolkit):
 |---|---|---|
 | `test_validate_filter_accepts_jsonb_operators` | M1 | `@>` with a list-of-dict, `<@`, `@>|`, `->>` accepted; an unknown operator is still rejected |
 | `test_dialect_reference_lists_jsonb_operators` | M1 | `operators_jsonb` populated; `verified_against == "5.1.2"` (update `test_toolkit_core.py:79`, `test_models.py:40`) |
+| `test_build_linked_dashboard_reachability` | M2 | every widget id is reachable from `root` via `children`; every `/key/…` binding has a source (S1, S8) |
 | `test_build_linked_dashboard_one_envelope` | M2 | 8 widgets → one CreateSurface; 8 sources keyed by widget key; root Column + KPI Row + chart Row + table |
 | `test_build_linked_dashboard_kpi_bindings` | M2 | KPICard `value` → `{"path": "/<key>/rows/0/<col>"}` |
 | `test_build_linked_dashboard_duplicate_key` | M2 | duplicate or unsafe key → `InvalidConditionsError` |
@@ -678,12 +696,22 @@ Verified against: `91c9e3e31`
 
 ## 9. Design Research Cross-Check
 
-> Model: — · Status: skipped (proposal status is `review`, not `accepted`) · Transcript: —
+> Model: gpt-5.6-luna (codex-cli 0.157.0, reasoning high) · Status: completed · Transcript: `sdd/state/FEAT-610/design_research/`
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
+| S1 | Compose a rooted A2UI tree, not a flat widget list (architecture) | CONFIRM | Already designed as root Column; made reachability an explicit rule and test. | §3 M2, §4 |
+| S2 | Keep the 17k-row grid outside the normal linked-frame path (architecture) | CONFIRM | Paging is example-only (`fetchPage` in `static/linked.js`), not a wire-contract change; admin DataTable stays bounded. | §3 M8 |
+| S3 | Typed dashboard helper; validate bindings before execution (api) | CONFIRM | `DashboardWidget` model already typed; added component-type limit and explicit KPI aggregate column. | §3 M2 |
+| S4 | Refresh at the source boundary, ownership from bindings (api) | CONFIRM | Key resolved from the widget binding; browser never sends slug/conditions; in-flight dedup per key. | §3 M5 |
+| S5 | Do not parallelize refresh-all across dependent sources (risk) | CONFIRM | `refreshAll` keeps dependency order; `refreshSource` re-runs transform dependents in order. | §3 M5 |
+| S6 | Update every resolver and lock the QuerySource version (risk) | CONFIRM | Verified `uv.lock:13047` pins 5.1.1; M3 now regenerates the lock with `uv lock` (exclusive). | §3 M3, Worktree Strategy |
+| S7 | Treat grid.js as an unresolved asset dependency (risk) | CONFIRM | Real sha384 SRI computed from the pinned files; catalog placeholders not copied. Vendoring rejected by the user's no-new-library constraint. | §3 M8 |
+| S8 | Contract tests for pie slice shape and dashboard reachability (testing) | CONFIRM | Pie test already in §4 (M4); reachability test added. | §4 |
+| S9 | Move course-slug creation out of application startup (risk) | CONFIRM | Premise already met (seed is a separate `--yes` command); added a read-only startup slug check that degrades the widget. | §3 M7 |
+| S10 | Exact example whitelist and a tracked-file assertion (risk) | CONFIRM | Added `git check-ignore` validation to the whitelist. | §3 M9 |
 
-Summary: **0** confirmed · **0** rejected · **0** escalated.
+Summary: **10** confirmed · **0** rejected · **0** escalated. All `affected_paths` passed containment and `test -e`.
 
 ---
 
@@ -702,7 +730,8 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
   `DashboardWidget`) → serialize M1 before M2; `test_toolkit_core.py` (M1 version assert, M2 tool list) → same
   ordering.
 - **Exclusive resources**:
-  - M3 edits `pyproject.toml` files (lockfile implications) → `parallel: false`. Do not `uv sync` inside the worktree.
+  - M3 edits `pyproject.toml` files and regenerates `uv.lock` → `parallel: false`. Only `uv lock`; never `uv sync`
+    inside the worktree.
   - M9's seed writes to production and only runs by hand with `--yes`; it is not part of any automated task step.
 - **Cross-feature dependencies**: FEAT-598 (merged). querysource 5.1.2 must be installed in the shared venv (done
   2026-09-28).
@@ -714,3 +743,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-28 | Jesus Lara | Initial draft from the FEAT-610 proposal (research + live verification F040–F042) |
+| 0.2 | 2026-09-29 | Jesus Lara | §8 resolved (Sonnet 5, column filters, SQL upsert); codex design research folded (10 confirmed); status approved |
