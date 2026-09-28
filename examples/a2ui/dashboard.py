@@ -41,7 +41,9 @@ WIDGETS: list[dict[str, Any]] = [
     {
         "key": "kpi_multi",
         "slug": SLUG,
-        "request": {"fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]},
+        "request": {
+            "fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]
+        },
         "component": {"component": "KPICard", "title": "Multi-graduates (people)", "value": "multi_graduates"},
     },
     {
@@ -109,8 +111,7 @@ def build_dashboard_agent(llm: str | None = None) -> Agent:
     toolkit = QuerysourceToolkit(programs=["polestar"])
     prompt = (
         "You build dashboards. Call qs_build_linked_dashboard exactly once with the following widgets, unchanged, "
-        "and title 'Polestar graduates dashboard'. Then reply with one short sentence.\n"
-        + json.dumps(WIDGETS)
+        "and title 'Polestar graduates dashboard'. Then reply with one short sentence.\n" + json.dumps(WIDGETS)
     )
     return Agent(
         name="polestar-dashboard",

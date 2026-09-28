@@ -47,9 +47,7 @@ def test_widgets_match_query_map() -> None:
     assert "diplomas" in components[6]["title"]
     by_key = {widget["key"]: widget for widget in dashboard.WIDGETS}
     assert by_key["kpi_total"]["request"] == {"fields": ["count(*) as total"]}
-    assert by_key["kpi_studio"]["request"]["filter"] == {
-        "graduation_details": {"@>": [{"course": "Pilates Studio"}]}
-    }
+    assert by_key["kpi_studio"]["request"]["filter"] == {"graduation_details": {"@>": [{"course": "Pilates Studio"}]}}
     assert by_key["kpi_mat"]["request"]["filter"] == {"graduation_details": {"@>": [{"course": "Pilates Mat"}]}}
     assert by_key["kpi_multi"]["request"] == {
         "fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]
