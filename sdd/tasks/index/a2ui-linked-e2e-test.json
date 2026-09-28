@@ -104,7 +104,7 @@
       "started_at": "2026-09-28T22:32:25+00:00",
       "completed_at": "2026-09-28T22:58:39+00:00",
       "file": "sdd/tasks/completed/TASK-3845-a2ui-surface-refresh-controls.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-3846",
@@ -232,7 +232,7 @@
       "started_at": "2026-09-28T22:32:25+00:00",
       "completed_at": "2026-09-28T23:16:51+00:00",
       "file": "sdd/tasks/completed/TASK-3851-a2ui-example-static-renderer.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-3852",
