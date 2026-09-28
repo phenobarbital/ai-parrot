@@ -222,7 +222,7 @@ notify-all = [
 
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
 db = [
-    "querysource>=4.1.11",
+    "querysource>=5.1.2",
     "psycopg-binary>=3.2.12",
     "jq==1.7.0",
     "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.16.2",
@@ -685,7 +685,7 @@ llms = [
 ]
 
 integrations = [
-    "querysource>=4.1.11",
+    "querysource>=5.1.2",
     # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) — see ai-parrot[agents]'s
     # base async-notify pin and ai-parrot-server[comm-center]'s comment.
     "async-notify[all]>=1.6.0",
