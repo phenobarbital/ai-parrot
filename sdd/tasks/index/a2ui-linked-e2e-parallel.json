@@ -35,7 +35,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -44,7 +44,7 @@
       "parallel": true,
       "parallelism_notes": "needs the querysource>=5.1.2 lock/pins from TASK-3831 (uv.lock, pyproject) before the staging seed runs; writes only to the staging query catalog after human confirmation",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-28T23:41:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3832-staging-verify-and-seed.md"
     },
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": true,
       "parallelism_notes": "needs v1.0-wrapped a2ui_envelope + metadata['a2ui_surface_id'] from TASK-3835 (bots/base.py, emission.py) and TASK-3833's serverRefresh/currentParams contract in A2UISurface.svelte rendered via persistedSurfaceId",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-28T23:41:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3836-admin-canvas-linked-wiring.md"
     },
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,7 +162,7 @@
       "parallel": true,
       "parallelism_notes": "needs TASK-3833's TS deriveConditions/setParam fixes (linked/conditions.ts, linked/index.ts) for parity.test.ts and TASK-3834's FilterBar param validation (catalog/__init__.py) to accept the TOOL's FilterBar; creates only new files",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-28T23:41:23+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3838-epson-dashboard-tool-golden-parity.md"
     },
