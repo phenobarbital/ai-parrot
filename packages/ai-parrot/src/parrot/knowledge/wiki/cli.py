@@ -2307,7 +2307,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
 # --------------------------------------------------------------------------
 
 
-def _structural_tool(name: str, path_: str | None) -> Any:
+def _structural_tool(name: str, path_: str | None, ns_opt: str | None = None) -> Any:
     """Open the named structural tool (``wiki_symbol_lookup``/etc.) for one call.
 
     Reuses :func:`create_structural_tools` so the CLI's human-readable
@@ -2322,7 +2322,7 @@ def _structural_tool(name: str, path_: str | None) -> Any:
     from parrot.knowledge.wiki.structural.tools import create_structural_tools
 
     root, config = _resolve_project(path_)
-    store = _require_built(root, config)
+    store = _federate(root, config, _require_built(root, config), ns_opt)
     tools = {tool.name: tool for tool in create_structural_tools(store, root, config)}
     return tools[name]
 
@@ -2360,6 +2360,7 @@ def symbols() -> None:
 
 @symbols.command("lookup")
 @path_option
+@ns_option
 @click.argument("query")
 @click.option("--kind", default=None, help="Exact symbol kind filter (e.g. function, class).")
 @click.option("--language", default=None, help="Exact scanner-name filter (e.g. python).")
@@ -2368,6 +2369,7 @@ def symbols() -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_lookup(
     path_: str | None,
+    ns_opt: str | None,
     query: str,
     kind: str | None,
     language: str | None,
@@ -2376,7 +2378,7 @@ def symbols_lookup(
     as_json: bool,
 ) -> None:
     """Find a symbol (function/class/method) by name or qualname."""
-    tool = _structural_tool("wiki_symbol_lookup", path_)
+    tool = _structural_tool("wiki_symbol_lookup", path_, ns_opt)
     kind_enum = SymbolKind(kind) if kind else None
     result = _run(tool._execute(query=query, kind=kind_enum, language=language, path_prefix=path_prefix, limit=limit))
     _echo_structural_result(result, as_json)
@@ -2384,31 +2386,34 @@ def symbols_lookup(
 
 @symbols.command("outline")
 @path_option
+@ns_option
 @click.argument("target")
 @click.option("--depth", default=2, type=int, help="Maximum symbol nesting depth.")
 @click.option("--source", "include_source", is_flag=True, help="Include a capped source excerpt (sym: targets only).")
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_outline(
     path_: str | None,
+    ns_opt: str | None,
     target: str,
     depth: int,
     include_source: bool,
     as_json: bool,
 ) -> None:
     """Get the symbol outline of a file: file:<rel>, sym:<rel>#<q>, or a relative path."""
-    tool = _structural_tool("wiki_code_outline", path_)
+    tool = _structural_tool("wiki_code_outline", path_, ns_opt)
     result = _run(tool._execute(target=target, depth=depth, include_source=include_source))
     _echo_structural_result(result, as_json)
 
 
 @symbols.command("blast")
 @path_option
+@ns_option
 @click.argument("symbol")
 @click.option(
     "--rel",
     "relations",
     multiple=True,
-    help="Edge relation to follow (repeatable); default: calls, extends, implements.",
+    help="Edge relation to follow (repeatable); default: calls, extends, implements, uses.",
 )
 @click.option("--depth", default=2, type=int, help="Maximum BFS depth.")
 @click.option(
@@ -2426,6 +2431,7 @@ def symbols_outline(
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_blast(
     path_: str | None,
+    ns_opt: str | None,
     symbol: str,
     relations: tuple[str, ...],
     depth: int,
@@ -2434,7 +2440,7 @@ def symbols_blast(
     as_json: bool,
 ) -> None:
     """Find every symbol that transitively depends on (calls/extends/implements) SYMBOL."""
-    tool = _structural_tool("wiki_blast_radius", path_)
+    tool = _structural_tool("wiki_blast_radius", path_, ns_opt)
     result = _run(
         tool._execute(
             symbol=symbol,

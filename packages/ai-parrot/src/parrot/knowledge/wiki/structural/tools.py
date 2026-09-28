@@ -250,11 +250,9 @@ def create_structural_tools(
         if scoped is store:
             return local_service
         # A foreign/federated namespace: read-repair is local-root-only
-        # (Module 7's own contract), so this service's _ensure_fresh
-        # naturally never finds a matching on-disk file for a foreign
-        # store's rel_paths and performs no write — see TASK-2750's
-        # Completion Note for the full reasoning.
-        return StructuralService(scoped, root, config)
+        # (Module 7's own contract) and is now explicitly off (FEAT-609 M5),
+        # so a foreign plane is never written.
+        return StructuralService(scoped, root, config, read_repair=False)
 
     return [
         WikiSymbolLookupTool(service_factory),
