@@ -133,7 +133,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -144,8 +144,9 @@
       "parallelism_notes": "depends on TASK-3846 (uses DashboardWidget + _build_linked_source, toolkit.py) and TASK-3841 (both modify test_toolkit_core.py; @> KPIs need JSONB validation)",
       "assigned_to": null,
       "started_at": "2026-09-28T22:32:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3847-qs-build-linked-dashboard-tool.md"
+      "completed_at": "2026-09-28T22:54:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3847-qs-build-linked-dashboard-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3848",
