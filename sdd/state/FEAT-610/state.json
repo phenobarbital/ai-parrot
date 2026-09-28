@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-610",
+  "feature_slug": "a2ui-linked-e2e-test",
+  "started_at": "2026-09-28T20:12:00Z",
+  "updated_at": "2026-09-28T21:20:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-610/source.md",
+    "fetched_at": "2026-09-28T20:15:00Z",
+    "summary_oneline": "Self-contained E2E example \u2014 agent-built A2UI linked-surface dashboard (KPIs, charts, grid) over one query-slug, refreshable via QuerySource"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "proposal_drafted",
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "phases": {
+    "plan": {
+      "status": "completed",
+      "queries_total": 9,
+      "approved_by_user": false,
+      "plan_path": "sdd/state/FEAT-610/research_plan.json",
+      "note": "plan gate skipped in auto mode; executed as 4 parallel research lanes"
+    },
+    "research": {
+      "status": "completed",
+      "lanes": 4,
+      "findings": 36,
+      "truncated": false,
+      "truncation_reason": null,
+      "note": "wikitoolkit MCP unavailable; lanes used grep/read. Lane B DB lookup of the slug was denied (production read)."
+    },
+    "synthesis": {
+      "status": "completed",
+      "synthesis_path": "sdd/state/FEAT-610/synthesis.json",
+      "overall_confidence": "medium",
+      "claims_total": 18,
+      "claims_high_conf": 13,
+      "claims_medium_conf": 5,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1,
+      "note": "lint fixed one stale UI path (canvas/a2ui/linked)"
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "note": "U5 (grid paging) defaulted to server-side paging"
+    },
+    "output": {
+      "status": "completed",
+      "proposal_path": "sdd/proposals/a2ui-linked-e2e-test.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "/sdd-spec FEAT-610"
+  }
+}

@@ -1,0 +1,308 @@
+{
+  "feat_id": "FEAT-610",
+  "mode": "enrichment",
+  "summary_oneline": "Self-contained E2E example: agent-built A2UI v1.0 linked-surface dashboard (KPIs, bar/pie charts, paged grid) over polestar_graduates_directory, with per-widget deterministic QuerySource refresh in an echarts + grid.js HTML5 renderer",
+  "overall_confidence": "medium",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/models.py",
+      "symbol": "LinkedDataSource",
+      "role": "per-source descriptor carried in metadata.extensions.parrot_data_sources",
+      "evidence": [
+        "F002"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/builders.py",
+      "symbol": "build_linked_surface",
+      "role": "composes a multi-component linked createSurface (500-row snapshot cap)",
+      "evidence": [
+        "F003",
+        "F037"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/executor.py",
+      "symbol": "execute_sources",
+      "role": "LLM-free in-process execution of descriptors",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py",
+      "symbol": "QuerysourceToolkit.build_linked_surface",
+      "role": "agent tool qs_build_linked_surface \u2014 one component per call",
+      "evidence": [
+        "F004",
+        "F018"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py",
+      "symbol": "-",
+      "role": "persisted-surface routes incl. POST /api/v1/ui/surfaces/{id}/refresh (Postgres store, needs dataplane guard)",
+      "evidence": [
+        "F005",
+        "F023"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts",
+      "symbol": "LinkedLane",
+      "role": "only client-side descriptor executor (TS); exposes refreshAll, runSource internal",
+      "evidence": [
+        "F006",
+        "F036"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/kpicard.py",
+      "symbol": "KPICard",
+      "role": "linkable KPI component, binds /<src>/rows/0/<col>",
+      "evidence": [
+        "F031",
+        "F037"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/echarts.py",
+      "symbol": "_build_option",
+      "role": "Chart\u2192ECharts option mapper; pie slices lack names",
+      "evidence": [
+        "F034"
+      ]
+    },
+    {
+      "path": "examples/forms/form_server.py",
+      "symbol": "-",
+      "role": "precedent: plain web.Application + AuthHandler().setup",
+      "evidence": [
+        "F020",
+        "F024"
+      ]
+    },
+    {
+      "path": "app.py",
+      "symbol": "-",
+      "role": "precedent: QuerySource(lazy=False).setup + BotManager + AuthHandler mount order",
+      "evidence": [
+        "F010",
+        "F027"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "id": "C1",
+      "claim": "A linked surface is a v1.0 createSurface with metadata.extensions.parrot_data_sources keyed by dataModel root; components bind by path only",
+      "evidence": [
+        "F001",
+        "F002",
+        "F030"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C2",
+      "claim": "Only Chart, DataTable, KPICard are linkable; pie = Chart type=pie",
+      "evidence": [
+        "F003",
+        "F031"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C3",
+      "claim": "Only TOOL-origin output may carry descriptors (LLM-authored rejected)",
+      "evidence": [
+        "F001"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C4",
+      "claim": "No helper composes a multi-widget linked dashboard from the agent side; qs_build_linked_surface builds one component",
+      "evidence": [
+        "F004",
+        "F018"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C5",
+      "claim": "Browser refresh contract = POST {conditions, querylimit<=5000} to /api/v3/queries/{slug} (or /api/v1/{tenant}/queries/{slug}) with bearer token; no per-widget endpoint exists",
+      "evidence": [
+        "F005",
+        "F006",
+        "F011"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C6",
+      "claim": "The v3 multi-query handler accepts a single slug with fields/filter/group_by conditions (payload becomes slug conditions)",
+      "evidence": [
+        "F011"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "C7",
+      "claim": "JSONB @> filter requires querysource>=5.1.0; shared .venv has 5.0.0 and core ai-parrot[db] pins >=4.1.11",
+      "evidence": [
+        "F013"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C8",
+      "claim": "Multi-graduate KPI expressible via fields: count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1)",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "C9",
+      "claim": "Count-by-course pie is NOT expressible against the base slug; needs a second slug (LATERAL jsonb_array_elements) or a multi-query tExplode pipeline",
+      "evidence": [
+        "F014"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C10",
+      "claim": "Slugs live in Postgres <schema>.queries; no file-based slug loading; polestar_graduates_directory location/SQL unverified",
+      "evidence": [
+        "F016"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "C11",
+      "claim": "Runtime needs Postgres + Redis (QS import, sessions, slug cache); 'no external deps' = no code outside the workspace",
+      "evidence": [
+        "F017",
+        "F021",
+        "F027"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C12",
+      "claim": "AuthHandler login returns {token,...}; BasicAuth needs authdb Postgres users; NoAuth is the only DB-less backend",
+      "evidence": [
+        "F020",
+        "F021",
+        "F022"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C13",
+      "claim": "QS PBAC is enabled in env/.env; strict denial returns 404 without session/policy",
+      "evidence": [
+        "F015"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C14",
+      "claim": "No existing renderer uses echarts+grid.js or re-queries on refresh; Svelte LinkedLane never wires a refresh button and only exposes refreshAll",
+      "evidence": [
+        "F006",
+        "F033",
+        "F035",
+        "F036"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C15",
+      "claim": "Fetch cap 5000 rows and snapshot cap 500 rows \u2192 the ~17.5k-row grid must page server-side (_limit/_offset + count)",
+      "evidence": [
+        "F005",
+        "F012",
+        "F037"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C16",
+      "claim": "examples/a2ui/*.py and *.html are gitignored (.gitignore:20,37) and need whitelisting",
+      "evidence": [
+        "F026"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "C17",
+      "claim": "Python echarts mapper emits unnamed pie slices (bug)",
+      "evidence": [
+        "F034"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "C18",
+      "claim": "Wire doc \u00a73 contradicts code on route/querylimit",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "How to source the count-by-course pie (second slug vs multi-query pipeline vs client-side)?",
+      "claims": [
+        "C9",
+        "C10"
+      ],
+      "user_answer": "Slug adicional \u2014 the example seeds a second slug (e.g. polestar_graduates_by_course, CROSS JOIN LATERAL jsonb_array_elements) via seed SQL / management PUT"
+    },
+    {
+      "id": "U2",
+      "question": "Which auth backend for the demo login?",
+      "claims": [
+        "C12",
+        "C13"
+      ],
+      "user_answer": "BasicAuth real \u2014 AuthHandler BasicAuth against the existing authdb/auth.vw_users; JWT stored in localStorage"
+    },
+    {
+      "id": "U3",
+      "question": "How is the surface generated/served (agent via BotManager persisted surface vs example server builds it in-process)?",
+      "claims": [
+        "C4",
+        "C5"
+      ],
+      "user_answer": "Agente + endpoint propio \u2014 an Agent with QuerysourceToolkit + a new multi-widget dashboard tool (TOOL-origin); server.py serves it at its own GET route and optionally exposes the agent via BotManager"
+    },
+    {
+      "id": "U4",
+      "question": "Scope of core changes vs example-only?",
+      "claims": [
+        "C7",
+        "C14",
+        "C17",
+        "C18"
+      ],
+      "user_answer": "All four: multi-widget dashboard helper, pin querysource>=5.1.1, fix pie slices + wire doc, per-widget refresh in TS LinkedLane + vanilla-JS port for the example"
+    },
+    {
+      "id": "U5",
+      "question": "Grid 17k rows: server-side paging vs raising the cap?",
+      "claims": [
+        "C15"
+      ],
+      "user_answer": "Defaulted (not asked): server-side paging with _limit/_offset + count(*)"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Contract is well localized (FEAT-598 is fresh and tested); remaining unknowns are design choices resolvable in Q&A, not research gaps."
+  }
+}
