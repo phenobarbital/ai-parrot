@@ -12,7 +12,7 @@ import copy
 import re
 import time
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -47,6 +47,7 @@ from parrot_tools.querysource.errors import (
 )
 from parrot_tools.querysource.models import (
     ComponentDoc,
+    DashboardWidget,
     DialectReference,
     ExecutionResult,
     FilterValue,
@@ -59,6 +60,9 @@ from parrot_tools.querysource.models import (
     SlugSummary,
 )
 from parrot_tools.querysource.results import frame_to_result, multi_to_result
+
+if TYPE_CHECKING:
+    from parrot.outputs.a2ui.linked.models import LinkedDataSource
 
 
 class QuerysourceToolkit(AbstractToolkit):
@@ -361,30 +365,14 @@ class QuerysourceToolkit(AbstractToolkit):
         ``interval_seconds``; ``transform`` accepts the linked transform DSL.
         """
         from parrot.outputs.a2ui.builders import build_linked_surface as _build
-        from parrot.outputs.a2ui.linked.conditions import derive_conditions
         from parrot.outputs.a2ui.linked.executor import execute_sources
-        from parrot.outputs.a2ui.linked.models import LinkedDataSource, RefreshPolicy, SourceRequest, TransformSpec
 
         detail = await self.describe_slug(slug, tenant=tenant)
-        req = SourceRequest.model_validate(request or {})
-        validate_placeholders(dict(req.placeholders), set(detail.placeholders))
-        validate_filter(dict(req.filter))
-        forced = dict(self.forced_conditions)
-        reject_variable_values({**req.placeholders, "filter": req.filter, **forced})
-        params, locked = self._linked_params(detail, forced)
         key = target_key or self._default_target_key(slug)
-        source = LinkedDataSource(
-            slug=slug,
-            tenant=tenant,
-            is_multiquery=detail.is_multiquery,
-            conditions=derive_conditions(req, locked={name: forced[name] for name in locked}),
-            request=req,
-            params=params,
-            locked=locked,
-            transform=TransformSpec.model_validate(transform) if transform else None,
-            target=f"/{key}/rows",
-            refresh=RefreshPolicy.model_validate(refresh or {}),
+        widget = DashboardWidget(
+            key=key, slug=slug, component=component, request=request, tenant=tenant, refresh=refresh
         )
+        source = self._build_linked_source(widget, detail, transform=transform)
         self.logger.info("qs_build_linked_surface %s tenant=%s key=%s snapshot=%s", slug, tenant, key, snapshot)
         execution = await execute_sources({key: source}, pctx=None, guard=None)
         outcome = execution.outcomes[key]
@@ -411,6 +399,32 @@ class QuerysourceToolkit(AbstractToolkit):
             "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
             "artifacts": artifacts,
         }
+
+    def _build_linked_source(
+        self, widget: DashboardWidget, detail: SlugDetail, *, transform: dict[str, Any] | None = None
+    ) -> LinkedDataSource:
+        """Validate one widget's request and build its LinkedDataSource (shared by the linked-surface tools)."""
+        from parrot.outputs.a2ui.linked.conditions import derive_conditions
+        from parrot.outputs.a2ui.linked.models import LinkedDataSource, RefreshPolicy, SourceRequest, TransformSpec
+
+        req = SourceRequest.model_validate(widget.request or {})
+        validate_placeholders(dict(req.placeholders), set(detail.placeholders))
+        validate_filter(dict(req.filter))
+        forced = dict(self.forced_conditions)
+        reject_variable_values({**req.placeholders, "filter": req.filter, **forced})
+        params, locked = self._linked_params(detail, forced)
+        return LinkedDataSource(
+            slug=widget.slug,
+            tenant=widget.tenant,
+            is_multiquery=detail.is_multiquery,
+            conditions=derive_conditions(req, locked={name: forced[name] for name in locked}),
+            request=req,
+            params=params,
+            locked=locked,
+            transform=TransformSpec.model_validate(transform) if transform else None,
+            target=f"/{widget.key}/rows",
+            refresh=RefreshPolicy.model_validate(widget.refresh or {}),
+        )
 
     def _linked_params(self, detail: SlugDetail, forced: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         """Build linked parameter metadata and map forced values to locked parameters."""
