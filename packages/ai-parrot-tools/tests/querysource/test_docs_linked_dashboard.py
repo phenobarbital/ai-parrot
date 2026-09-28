@@ -1,4 +1,5 @@
 """FEAT-610 AC12 — the wire doc and toolkit doc describe the new behaviour."""
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
