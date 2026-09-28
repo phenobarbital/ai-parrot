@@ -47,3 +47,14 @@ of `apple_stores` returned 200 on describe/columns/alias. Not yet re-probed here
 - The pin should be `querysource>=5.1.2`: `@>` plus working tenant routes and the alias.
 - The licensee bar needs a label for the NULL bucket (e.g. "Unassigned").
 - Remaining check on 5.1.2: `@>` KPIs through the routes with a real bearer token (the first spec task).
+
+## Addendum — authenticated rerun on 5.1.2 (2026-09-28T23:00Z)
+Shared venv at querysource **5.1.2**, `ENV=prod`, app = `QuerySource(lazy=False).setup(app)` + `AuthHandler().setup(app)`
+(prod settings; AUTH_USER_MODEL env fixed by the user), real bearer token (not persisted). `GET /api/v1/user/session` → 200.
+All 32 calls → **200**, identical across the 4 routes `/api/v3/queries/{slug}`, `/api/v2/services/queries/{slug}`,
+`/api/v1/public/queries/{slug}`, `/api/v1/queries/public/{slug}`:
+count 17572 · multi 2884 · Studio `@>` 9191 · Mat `@>` 6245 · by_country 95 groups · by_licensee 23 groups (NULL 7103) ·
+`_limit 3/_offset 10` → 3 rows · `querylimit 5000` → 5000 rows.
+- Without `ordering`, the 5000-row page returned a different first row on every route/run → paging order is not
+  deterministic; the grid must send an explicit `ordering` (e.g. `student_uid`) for stable pages.
+- by_country 95 = 94 countries + NULL bucket; by_licensee 23 = 22 + NULL. Both bar charts must label NULL.

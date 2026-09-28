@@ -166,8 +166,8 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
   | KPI Pilates Studio | base | `{"fields": ["count(*) as total"], "filter": {"graduation_details": {"@>": [{"course": "Pilates Studio"}]}}}` | 9191 people |
   | KPI Pilates Mat | base | same, with `"Pilates Mat"` | 6245 people |
   | KPI multi-graduates | base | `{"fields": ["count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates"]}` (interim; see follow-up QS-1) | 2884 |
-  | Bar by country | base | `{"fields": ["country", "count(*) as graduates"], "group_by": ["country"]}` | 94 bars |
-  | Bar by licensee | base | `{"fields": ["licensee", "count(*) as graduates"], "group_by": ["licensee"]}` | 22 bars |
+  | Bar by country | base | `{"fields": ["country", "count(*) as graduates"], "group_by": ["country"]}` | 95 groups (94 + NULL) |
+  | Bar by licensee | base | `{"fields": ["licensee", "count(*) as graduates"], "group_by": ["licensee"]}` | 23 groups (22 + NULL 7103) |
   | Pie by course | `polestar_graduates_by_course` (new, seeded in `public.queries`; interim, see follow-up QS-2) | `{"fields": ["course", "count(*) as graduates"], "group_by": ["course"]}` | Studio 9204 · Mat 6247 · Rehab 3300 · Reformer 2048 diplomas (+1 NULL course, which the slug filters out) |
   | Grid | base | paged `_limit`/`_offset` plus a `count(*)` total; `filter` taken from the grid search box; explicit `fields` if columns beyond the slug's 7 defaults are wanted | 17572 rows total |
 
@@ -204,7 +204,7 @@ FEAT-598 merged today, so this contract is fresh. According to the TASK-3795 not
 
 - **querysource ≥5.1 is a hard requirement (user decision).** Every KPI, and FEAT-598 itself, depends on querysource ≥5.1: the JSONB `@>` operator and the changes FEAT-598 needs landed there. The shared venv still has 5.0.0, and upgrading a shared venv is an operator action that must not be done from a worktree. *Mitigation*: raise the pin in core `ai-parrot[db]`, and make `server.py` fail fast at startup with a clear message when `querysource.__version__ < 5.1`. *Evidence*: F013
 - **The slug lives in production (verified).** `polestar_graduates_directory` is defined in `public.queries` with SQL `SELECT {fields} FROM polestar.vw_graduates_directory {where_cond}`, and its data is in schema `polestar`. The environment is **production**, so every subagent and sub-shell that runs code against it must set `ENV=prod`. The SQL has no `{group_by}` placeholder, so a live check must confirm that QS appends GROUP BY for the bar charts. Seeding `polestar_graduates_by_course` writes to **prod** `public.queries`; it must be idempotent, and it is a user-confirmed step. *Evidence*: F016, F040
-- **Query routes (verified live, F042).** `POST /api/v3/queries/{slug}` and `POST /api/v2/services/queries/{slug}` both accept a single slug with `fields`/`filter`/`group_by`/`_limit`/`_offset`, and QS appends GROUP BY even without a placeholder. With 5.1.2 the tenant routes work: `/api/v1/{tenant}/queries/{slug}` and the alias `/api/v1/queries/{schema}/{slug}` (e.g. `/api/v1/queries/public/polestar_graduates_directory`); on 5.0.0 the tenant route crashed with a 500. The renderer follows FEAT-598's `queryUrl` (v3 without a tenant, v1 with one), and the wire doc should list the alias. The licensee group has a NULL bucket (7103 rows), which the bar chart must label. *Evidence*: F006, F011, F042
+- **Query routes (verified live, F042).** `POST /api/v3/queries/{slug}` and `POST /api/v2/services/queries/{slug}` both accept a single slug with `fields`/`filter`/`group_by`/`_limit`/`_offset`, and QS appends GROUP BY even without a placeholder. With 5.1.2 the tenant routes work: `/api/v1/{tenant}/queries/{slug}` and the alias `/api/v1/queries/{schema}/{slug}` (e.g. `/api/v1/queries/public/polestar_graduates_directory`); on 5.0.0 the tenant route crashed with a 500. The renderer follows FEAT-598's `queryUrl` (v3 without a tenant, v1 with one), and the wire doc should list the alias. Both bar charts have a NULL bucket (country: 95 groups = 94 + NULL; licensee: 23 = 22 + NULL, 7103 rows), which they must label. Without `ordering`, pages are not deterministic (a different first row on every call), so the grid must always send an explicit `ordering` (e.g. `student_uid`). *Evidence*: F006, F011, F042
 - **PBAC off for the example (user decision).** No permission policy is used, only basic authentication. `env/.env` sets `QS_PBAC_ENABLED=true`, so `server.py` must run with QS PBAC disabled (e.g. `QS_PBAC_ENABLED=false` in the example's env/README), and it does not mount parrot `setup_pbac`. *Evidence*: F015
 - **Svelte change untested.** The Svelte lane was never run through vitest/svelte-check (F008). The per-widget refresh change should come with real vitest runs. *Evidence*: F008
 
@@ -260,15 +260,15 @@ Distribution: **19** high, **0** medium, **0** low.
 
 - [x] **Does QS append GROUP BY when the slug SQL has no `{group_by}` placeholder?** *Resolved (live, F042)*: yes, on v3 and v2.
 - [x] **Tenant/schema route.** *Resolved*: querysource 5.1.2 fixes the tenant routes and adds `/api/v1/queries/{schema}/{slug}` (user-verified; F042).
-- [ ] **`@>` KPIs through HTTP with a real bearer token on 5.1.2.** Not re-probed after the upgrade; run it in the first spec task.
+- [x] **`@>` KPIs through HTTP with a real bearer token on 5.1.2.** *Resolved (live, F042 addendum)*: with QuerySource + AuthHandler and a real bearer token, all 32 calls return 200 across v3, v2, `/api/v1/public/queries/{slug}` and `/api/v1/queries/public/{slug}`, with values that match C19.
 - [ ] **Exact SQL of the seeded `polestar_graduates_by_course` slug** (NULL-course handling, and whether it exposes `{where_cond}` for future filters). Settle it in the spec. The seed writes to prod `public.queries`, so it needs user confirmation at execution time.
 
 ---
 
 ## 6. Recommended Next Step
 
-→ `/sdd-spec FEAT-610`. The FEAT-598 contract is well localized and the prod data is verified (F040). What remains is one authenticated live check on 5.1.2 plus the definition of the seeded slug. A rough task split:
-1. Live check (`ENV=prod`, read-only, bearer token): the `@>` KPIs on querysource 5.1.2 through v3 and the `/api/v1/queries/{schema}/{slug}` alias. Then seed `polestar_graduates_by_course` idempotently, with user confirmation.
+→ `/sdd-spec FEAT-610`. The FEAT-598 contract is well localized and the prod data is verified (F040). All routes and widget queries are verified live on 5.1.2; what remains is the definition of the seeded slug. A rough task split:
+1. Seed `polestar_graduates_by_course` idempotently (with user confirmation, prod) and turn the F042 probe into a reusable, opt-in live test (`ENV=prod`, token taken from an environment variable, never committed). Then seed `polestar_graduates_by_course` idempotently, with user confirmation.
 2. The multi-widget dashboard helper (toolkit tool plus a builder over `build_linked_surface`) and its tests.
 3. Core fixes: the `querysource>=5.1.2` pin, the echarts pie-slice names, the wire doc §3.
 4. `LinkedLane.refreshSource(key)` plus per-widget and "refresh all" affordances in `A2UISurface.svelte`, with vitest.
