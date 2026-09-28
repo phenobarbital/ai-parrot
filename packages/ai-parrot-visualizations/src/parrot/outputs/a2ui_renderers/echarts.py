@@ -275,6 +275,12 @@ class EChartsRenderer(AbstractA2UIRenderer):
         series = []
         for index, col in enumerate(y_cols):
             values = [row.get(col) for row in rows if isinstance(row, dict)]
+            if chart_type in {"pie", "donut"}:
+                values = [
+                    {"name": "Unassigned" if row.get(x) is None else row.get(x), "value": row.get(col)}
+                    for row in rows
+                    if isinstance(row, dict)
+                ]
             mark = series_types[index] if index < len(series_types) and series_types[index] else chart_type
             series_entry: dict[str, Any] = {
                 "name": col,
