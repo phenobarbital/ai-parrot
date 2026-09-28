@@ -126,4 +126,4 @@ console.assert(pageConditions.filter.country.includes('US'), 'filter should incl
         text=True,
     )
 
-    assert result.returncode == 0, 'node test failed:\nstdout: ' + result.stdout + '\nstderr: ' + result.stderr
+    assert result.returncode == 0, "node test failed:\nstdout: " + result.stdout + "\nstderr: " + result.stderr
