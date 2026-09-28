@@ -61,7 +61,6 @@ from parrot_tools.querysource.models import (
 )
 from parrot_tools.querysource.results import frame_to_result, multi_to_result
 
-
 if TYPE_CHECKING:
     from parrot.outputs.a2ui.linked.models import LinkedDataSource
 
