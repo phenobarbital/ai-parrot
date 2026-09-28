@@ -82,8 +82,9 @@ async def _noop(app: web.Application) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dashboard_example_server_routes(agent: FakeAgent, aiohttp_client: Any, tmp_path: Path,
-                                               monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_dashboard_example_server_routes(
+    agent: FakeAgent, aiohttp_client: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     static = tmp_path / "static"
     static.mkdir()
     (static / "index.html").write_text("<html>ok</html>")
