@@ -42,7 +42,7 @@ assert.equal(queryUrl('https://h', 's', 'acme'), 'https://h/api/v1/acme/queries/
 const derived = deriveConditions({ placeholders: { refresh: true, querylimit: 1, a: 1 }, filter: {}, fields: [], ordering: [], grouping: [] }, {});
 assert.deepEqual(derived, { a: 1 });
 const page = deriveConditions({ placeholders: {}, filter: { c: 'US' }, fields: ['x'], ordering: ['x'], grouping: [], limit: 10, offset: 5 }, {});
-assert.deepEqual(page, { filter: { c: 'US' }, fields: ['x'], ordering: ['x'], limit: 10, _offset: 5 });
+assert.deepEqual(page, { filter: { c: 'US' }, fields: ['x'], ordering: ['x'], _offset: 5 });
 
 // --- fetchSource: cap, bearer, refresh only when true, 404 ----------------------------------------------------------
 reset();

@@ -111,10 +111,8 @@ export function deriveConditions(request, locked) {
     out['grouping'] = [...request.grouping];
   }
 
-  // Rule 4: limit / offset mapped to the same dialect keys the fixtures use
-  if (request.limit !== undefined && request.limit !== null) {
-    out['limit'] = request.limit;
-  }
+  // Rule 4: only the offset is a condition (`_offset`); `request.limit` becomes `querylimit` in fetchSource
+  // (capped) — deriveConditions never emits `limit`, matching the Python reference and the shared fixtures.
   if (request.offset !== undefined && request.offset !== null) {
     out['_offset'] = request.offset;
   }
@@ -311,7 +309,7 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
       if (order.length > 0) pageConditions.ordering = [...order];
       else delete pageConditions.ordering;
       const countConditions = { ...base };
-      for (const dropped of ['fields', 'ordering', 'grouping', '_offset', 'limit']) delete countConditions[dropped];
+      for (const dropped of ['fields', 'ordering', 'grouping', '_offset']) delete countConditions[dropped];
       countConditions.fields = ['count(*) as total'];
       for (const c of [pageConditions, countConditions]) {
         if (Object.keys(merged).length > 0) c.filter = { ...merged };
