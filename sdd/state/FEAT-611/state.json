@@ -15,7 +15,7 @@
   },
   "mode": "auto",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "budget": {
     "profile": "loose",
     "max_files_read": 100,
@@ -60,11 +60,11 @@
     "output": {
       "status": "completed",
       "proposal_path": "sdd/proposals/a2ui-linked-e2e-parallel.proposal.md",
-      "commit_sha": null
+      "commit_sha": "f499732ea0897948ccde2c9837b3d2b6dc9c711c"
     }
   },
   "resume_hint": {
     "next_phase": "committed",
-    "next_action": "commit"
+    "next_action": "/sdd-spec FEAT-611"
   }
 }
