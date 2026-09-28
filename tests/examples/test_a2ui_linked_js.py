@@ -1,129 +1,115 @@
-"""FEAT-610 TASK-3850 — static/linked.js contract, exercised with node's test runner."""
+"""FEAT-610 — static/linked.js contract, exercised for real with node (hard asserts, fake ``fetch``)."""
 
 from __future__ import annotations
 
-import tempfile
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from parrot.models.basic import CompletionUsage, ToolCall
-from parrot.models.responses import AIMessage
+STATIC = Path(__file__).resolve().parents[2] / "examples" / "a2ui" / "static"
 
+HARNESS = r"""
+import assert from 'node:assert/strict';
+import {
+  queryUrl, fetchSource, deriveConditions, createLane, SourceUnavailable, DEFAULT_MAX_FETCH_ROWS,
+} from './linked.js';
 
-def _message(*tool_calls: ToolCall) -> AIMessage:
-    """Build an AI message with the supplied tool calls."""
-    return AIMessage(
-        input="Build a dashboard",
-        output="Dashboard built.",
-        model="test-model",
-        provider="test-provider",
-        usage=CompletionUsage(),
-        tool_calls=list(tool_calls),
-    )
+const calls = [];
+let responder = () => [];
+globalThis.fetch = async (url, init) => {
+  const body = init && init.body ? JSON.parse(init.body) : null;
+  calls.push({ url, body, headers: init && init.headers });
+  const out = responder(url, body);
+  if (out instanceof Response) return out;
+  return new Response(JSON.stringify(out), { status: 200, headers: { 'content-type': 'application/json' } });
+};
+const reset = () => { calls.length = 0; responder = () => []; };
+
+const source = (over = {}) => ({
+  slug: 'polestar_graduates_directory', tenant: null, multi_output: null, locked: [], transform: null,
+  conditions: {}, params: {},
+  request: { placeholders: {}, filter: {}, fields: [], ordering: [], grouping: [], limit: null, offset: null },
+  ...over,
+});
+
+// --- routes -------------------------------------------------------------------------------------------------------
+assert.equal(queryUrl('https://h/', 'a b', null), 'https://h/api/v3/queries/a%20b');
+assert.equal(queryUrl('https://h', 's', 'acme'), 'https://h/api/v1/acme/queries/s');
+
+// --- deriveConditions never emits lane-time keys --------------------------------------------------------------------
+const derived = deriveConditions({ placeholders: { refresh: true, querylimit: 1, a: 1 }, filter: {}, fields: [], ordering: [], grouping: [] }, {});
+assert.deepEqual(derived, { a: 1 });
+const page = deriveConditions({ placeholders: {}, filter: { c: 'US' }, fields: ['x'], ordering: ['x'], grouping: [], limit: 10, offset: 5 }, {});
+assert.deepEqual(page, { filter: { c: 'US' }, fields: ['x'], ordering: ['x'], limit: 10, _offset: 5 });
+
+// --- fetchSource: cap, bearer, refresh only when true, 404 ----------------------------------------------------------
+reset();
+await fetchSource(source({ request: { ...source().request, limit: 99999 } }), { refresh: true }, { baseUrl: 'https://h', token: 'T' });
+assert.equal(calls[0].body.querylimit, DEFAULT_MAX_FETCH_ROWS);
+assert.equal(calls[0].body.refresh, true);
+assert.equal(calls[0].headers.Authorization, 'Bearer T');
+reset();
+await fetchSource(source(), { refresh: false }, { baseUrl: 'https://h', token: 'T' });
+assert.ok(!('refresh' in calls[0].body));
+reset();
+responder = () => new Response('nope', { status: 404 });
+await assert.rejects(fetchSource(source(), {}, { baseUrl: 'https://h', token: 'T' }), SourceUnavailable);
+
+// --- lane: refreshSource is ONE request for its own key; refreshAll one per source ------------------------------------
+const sources = { a: source({ request: { ...source().request, fields: ['count(*) as total'] } }), b: source(), c: source() };
+reset();
+responder = () => [{ total: 1 }];
+const updates = [];
+const lane = createLane(sources, { baseUrl: 'https://h', token: 'T', onUpdate: (u) => updates.push(u) });
+lane.start();
+await new Promise((r) => setTimeout(r, 20));
+assert.equal(calls.length, 3, 'start fetches each source once');
+calls.length = 0;
+updates.length = 0;
+await lane.refreshSource('b');
+assert.equal(calls.length, 1, 'refreshSource re-fetches only that key');
+assert.equal(calls[0].body.refresh, true);
+assert.deepEqual([...new Set(updates.map((u) => u.key))], ['b']);
+calls.length = 0;
+await lane.refreshAll();
+assert.equal(calls.length, 3, 'refreshAll re-fetches every source');
+calls.length = 0;
+await Promise.all([lane.refreshSource('a'), lane.refreshSource('a')]);
+assert.equal(calls.length, 1, 'concurrent refreshSource calls share one request');
+calls.length = 0;
+await lane.refreshSource('nope');
+assert.equal(calls.length, 0, 'unknown key is a no-op');
+
+// --- fetchPage: server paging over the source's own conditions -------------------------------------------------------
+const grid = { g: source({ request: { ...source().request, fields: ['student_uid', 'country'], ordering: ['student_uid'], limit: 500, filter: { active: true } } }) };
+reset();
+responder = (url, body) => (body.fields && body.fields[0] === 'count(*) as total' ? [{ total: 17572 }] : [{ student_uid: 1, country: 'US' }]);
+const glane = createLane(grid, { baseUrl: 'https://h', token: 'T', onUpdate: () => {} });
+const result = await glane.fetchPage('g', { offset: 40, limit: 20, filter: { country: 'US', empty: '' } });
+assert.equal(result.total, 17572);
+assert.deepEqual(result.rows, [{ student_uid: 1, country: 'US' }]);
+assert.equal(calls.length, 2, 'one page request + one count request');
+const pageCall = calls.find((c) => c.body.fields[0] !== 'count(*) as total').body;
+const countCall = calls.find((c) => c.body.fields[0] === 'count(*) as total').body;
+assert.equal(pageCall.querylimit, 20);
+assert.equal(pageCall._offset, 40);
+assert.deepEqual(pageCall.ordering, ['student_uid'], 'stable ordering is always sent');
+assert.deepEqual(pageCall.filter, { active: true, country: 'US' }, 'column filter merges; empty values are dropped');
+assert.deepEqual(countCall.filter, pageCall.filter, 'count uses the same filter');
+assert.ok(!('ordering' in countCall) && !('_offset' in countCall) && !('grouping' in countCall));
+await assert.rejects(glane.fetchPage('missing'), /unknown source/);
+console.log('linked.js: all assertions passed');
+"""
 
 
 def test_linked_js_contract(tmp_path: Path) -> None:
-    """Node-driven test of the linked.js contract (AC8, AC9)."""
-    import shutil
-
+    """linked.js: routes, conditions, cap, refresh semantics (AC8) and server paging (AC9) with hard asserts."""
     if shutil.which("node") is None:
         pytest.skip("node not found")
-
-    # Create a temporary directory for the test harness
-    harness_dir = tmp_path / "harness"
-    harness_dir.mkdir()
-
-    # Copy the linked.js file to the harness directory
-    linked_js_path = Path(__file__).resolve().parents[2] / "examples" / "a2ui" / "static" / "linked.js"
-    shutil.copy(linked_js_path, harness_dir / "linked.js")
-
-    # Write the test harness as an ESM module
-    harness_code = """import { queryUrl, DEFAULT_MAX_FETCH_ROWS, SourceUnavailable, deriveConditions } from './linked.js';
-
-// Test 1: queryUrl routes (v3 / v1 tenant)
-const baseUrl = 'https://api.example.com';
-const slug = 'test-slug';
-const tenant = 'test-tenant';
-
-const v3Url = queryUrl(baseUrl, slug, null);
-const expectedV3 = baseUrl + '/api/v3/queries/' + encodeURIComponent(slug);
-console.assert(v3Url === expectedV3, 'v3 URL: ' + v3Url);
-
-const v1Url = queryUrl(baseUrl, slug, tenant);
-const expectedV1 = baseUrl + '/api/v1/' + encodeURIComponent(tenant) + '/queries/' + encodeURIComponent(slug);
-console.assert(v1Url === expectedV1, 'v1 URL: ' + v1Url);
-
-// Test 2: querylimit cap 5000
-const maxFetchRows = 5000;
-const src = {
-  slug: 'test-slug',
-  tenant: null,
-  request: { limit: 10000 },
-  multi_output: null,
-  locked: [],
-  conditions: {},
-  transform: null,
-};
-
-const conditions = deriveConditions(
-  { placeholders: {}, filter: {}, fields: [], ordering: [], grouping: [], limit: 10000, offset: 0 },
-  {}
-);
-
-const body = { ...conditions, querylimit: Math.min(src.request.limit ?? maxFetchRows, maxFetchRows) };
-console.assert(body.querylimit === 5000, 'querylimit capped at 5000: ' + body.querylimit);
-
-// Test 3: refresh only when true
-const conditionsWithRefresh = { ...conditions, refresh: true };
-const bodyWithRefresh = { ...conditionsWithRefresh, querylimit: 5000 };
-console.assert(bodyWithRefresh.refresh === true, 'refresh should be present when true');
-
-const conditionsWithoutRefresh = { ...conditions };
-const bodyWithoutRefresh = { ...conditionsWithoutRefresh, querylimit: 5000 };
-console.assert(!('refresh' in bodyWithoutRefresh), 'refresh should be omitted when false');
-
-// Test 4: deriveConditions never emits lane-time keys
-const conditionsWithRefreshKey = deriveConditions(
-  { placeholders: {}, filter: {}, fields: [], ordering: [], grouping: [], limit: 10000, offset: 0, refresh: true },
-  {}
-);
-console.assert(!('refresh' in conditionsWithRefreshKey), 'refresh should not be emitted by deriveConditions');
-console.assert(!('querylimit' in conditionsWithRefreshKey), 'querylimit should not be emitted by deriveConditions');
-
-// Test 5: deriveConditions preserves filter, fields, ordering, grouping
-const pageConditions = deriveConditions(
-  {
-    placeholders: {},
-    filter: { country: ['US'] },
-    fields: ['student_uid', 'full_name'],
-    ordering: ['student_uid'],
-    grouping: [],
-    limit: 100,
-    offset: 0,
-  },
-  {}
-);
-
-console.assert('querylimit' in pageConditions, 'querylimit should be present');
-console.assert(pageConditions.querylimit === 100, 'querylimit should be 100, got ' + pageConditions.querylimit);
-console.assert('_offset' in pageConditions, '_offset should be present');
-console.assert(pageConditions._offset === 0, '_offset should be 0, got ' + pageConditions._offset);
-console.assert('ordering' in pageConditions, 'ordering should be present');
-console.assert(pageConditions.ordering.length === 1, 'ordering should have 1 element, got ' + pageConditions.ordering.length);
-console.assert('filter' in pageConditions, 'filter should be present');
-console.assert(pageConditions.filter.country.includes('US'), 'filter should include country: US');
-"""
-
-    harness_file = harness_dir / "test.mjs"
-    harness_file.write_text(harness_code)
-
-    # Run the test harness with node
-    result = pytest.importorskip("subprocess").run(
-        ["node", str(harness_file)],
-        cwd=str(harness_dir),
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, "node test failed:\nstdout: " + result.stdout + "\nstderr: " + result.stderr
+    shutil.copy(STATIC / "linked.js", tmp_path / "linked.js")
+    (tmp_path / "test.mjs").write_text(HARNESS)
+    result = subprocess.run(["node", "test.mjs"], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, f"node test failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    assert "all assertions passed" in result.stdout

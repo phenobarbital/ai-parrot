@@ -13,9 +13,11 @@ def test_static_assets_sri_and_wiring() -> None:
     # Check index.html
     index_html = (static_dir / "index.html").read_text()
 
-    # Should have SRI attributes for gridjs
-    assert 'integrity="sha384-' in index_html, "Missing SRI for gridjs CSS"
-    assert 'crossorigin="anonymous"' in index_html, "Missing crossorigin for gridjs CSS"
+    # The example ships no third-party CDN asset (ECharts is vendored via /static/vendor, the grid is native)
+    assert "unpkg.com" not in index_html and "cdn." not in index_html, "no CDN assets: nothing to pin with SRI"
+    assert "gridjs" not in index_html, "the grid is a native server-paged table"
+    assert 'id="notice"' in index_html, "errors are shown in the notice area, never alert()"
+    assert 'id="loginForm"' in index_html
 
     # Should load renderer.js as module
     assert 'type="module"' in index_html, "renderer.js should be loaded as module"
@@ -32,6 +34,7 @@ def test_static_assets_sri_and_wiring() -> None:
 
     # Should reference the token key
     assert "ai_parrot_token" in renderer_js, "Should reference ai_parrot_token"
+    assert "alert(" not in renderer_js and "innerHTML" not in renderer_js, "no alert()/innerHTML (LLM-built text)"
 
     # Check that no credentials are hardcoded
     for file_name in ["index.html", "renderer.js", "styles.css"]:

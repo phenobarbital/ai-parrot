@@ -1,324 +1,403 @@
-// examples/a2ui/static/renderer.js — CREATE
+// examples/a2ui/static/renderer.js
 // FEAT-610 — renders the agent-built linked dashboard (KPICard / Chart / DataTable) and wires per-widget refresh.
+//
+// Envelope shape (CreateSurface dump served by /api/a2ui/dashboard):
+//   { surfaceId, components: [{id, component, ...}], dataModel: {key: {rows}},
+//     metadata: {extensions: {parrot_data_sources: {key: source}}} }
+// Bindings: Chart/DataTable `data.path` = "/<key>/rows"; KPICard `value.path` = "/<key>/rows/0/<column>".
 import { createLane } from './linked.js';
 
 const TOKEN_KEY = 'ai_parrot_token';
+const UNASSIGNED = 'Unassigned';
+const GRID_PAGE_SIZE = 20;
 
-async function login(username, password) {
-  try {
-    const response = await fetch('/api/v1/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Auth-Method': 'BasicAuth'
-      },
-      body: JSON.stringify({ username, password })
-    });
+// ---------------------------------------------------------------------------------------------------------------------
+// Pure helpers (exported for tests)
+// ---------------------------------------------------------------------------------------------------------------------
 
-    if (!response.ok) {
-      throw new Error(`Login failed: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    if (!data.token) {
-      throw new Error('No token received from server');
-    }
-
-    localStorage.setItem(TOKEN_KEY, data.token);
-    return data;
-  } catch (error) {
-    console.error('Login error:', error);
-    throw error;
-  }
+/** Return a display label; NULL / empty buckets are shown as "Unassigned". */
+export function label(value) {
+  return value === null || value === undefined || value === '' ? UNASSIGNED : String(value);
 }
 
-function renderNode(id, byId, ctx) {
-  const node = byId[id];
-  if (!node) return;
+/** Parse a JSON-pointer binding ("/key/rows" or "/key/rows/0/column") into `{key, column}`; null when unbound. */
+export function parseBinding(binding) {
+  const path = typeof binding === 'string' ? binding : binding && typeof binding === 'object' ? binding.path : null;
+  if (typeof path !== 'string') return null;
+  const parts = path.split('/').filter(Boolean);
+  if (parts.length < 2 || parts[1] !== 'rows') return null;
+  return { key: parts[0], column: parts.length >= 4 ? parts[3] : null };
+}
 
-  const element = document.createElement('div');
-  element.id = id;
+/** Index the envelope: components by id, the linked sources, and the baked snapshot rows per source key. */
+export function planDashboard(envelope) {
+  const byId = {};
+  for (const component of envelope.components ?? []) byId[component.id] = component;
+  const sources = envelope.metadata?.extensions?.parrot_data_sources ?? {};
+  const snapshot = {};
+  for (const [key, value] of Object.entries(envelope.dataModel ?? {})) {
+    snapshot[key] = Array.isArray(value?.rows) ? value.rows : [];
+  }
+  return { byId, rootId: byId.root ? 'root' : (envelope.components?.[0]?.id ?? 'root'), sources, snapshot };
+}
 
+/** The KPI number: the bound column of the first row, formatted for display. */
+export function kpiText(rows, column) {
+  const value = rows && rows.length > 0 && column ? rows[0][column] : null;
+  if (value === null || value === undefined) return '—';
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toLocaleString('en-US') : String(value);
+}
+
+/** Build the ECharts option for a Chart node (`type`: bar | pie | donut, `x` category column, `y` value columns). */
+export function chartOption(node, rows) {
+  const x = node.x;
+  const ys = Array.isArray(node.y) ? node.y : node.y ? [node.y] : [];
+  const title = { text: node.title ?? '' };
+  if (node.type === 'pie' || node.type === 'donut') {
+    return {
+      title,
+      tooltip: { trigger: 'item' },
+      legend: {},
+      series: [
+        {
+          type: 'pie',
+          radius: node.type === 'donut' ? ['40%', '70%'] : '70%',
+          data: rows.map((row) => ({ name: label(row[x]), value: Number(row[ys[0]]) })),
+        },
+      ],
+    };
+  }
+  return {
+    title,
+    tooltip: { trigger: 'axis' },
+    legend: ys.length > 1 ? {} : undefined,
+    xAxis: { type: 'category', data: rows.map((row) => label(row[x])), axisLabel: { interval: 0, rotate: 45 } },
+    yAxis: { type: 'value' },
+    series: ys.map((column) => ({ name: column, type: 'bar', data: rows.map((row) => Number(row[column])) })),
+  };
+}
+
+/** Column names for a DataTable: node.columns (strings or {name|field|id|key}) → the source fields → the row keys. */
+export function gridColumns(node, source, rows) {
+  const fromNode = (node.columns ?? [])
+    .map((c) => (typeof c === 'string' ? c : (c?.name ?? c?.field ?? c?.id ?? c?.key)))
+    .filter(Boolean);
+  if (fromNode.length > 0) return fromNode;
+  const fromSource = (source?.request?.fields ?? []).map((f) => f.split(/\s+as\s+/i).pop().trim());
+  if (fromSource.length > 0) return fromSource;
+  return rows && rows.length > 0 ? Object.keys(rows[0]) : [];
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** POST the credentials, store the JWT under `ai_parrot_token` and return it. */
+export async function login(username, password, { fetchImpl = fetch, storage = localStorage } = {}) {
+  const response = await fetchImpl('/api/v1/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Auth-Method': 'BasicAuth' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) throw new Error(`Login failed: ${response.status}`);
+  const data = await response.json();
+  if (!data.token) throw new Error('No token received from server');
+  storage.setItem(TOKEN_KEY, data.token);
+  return data.token;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// DOM widgets (every dynamic string goes through textContent — the envelope is LLM-built, never trusted as HTML)
+// ---------------------------------------------------------------------------------------------------------------------
+
+function el(doc, tag, className, text) {
+  const node = doc.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function toolbar(doc, lane, key, onRefresh) {
+  const bar = el(doc, 'div', 'widget-toolbar');
+  const button = el(doc, 'button', 'refresh', 'Refresh');
+  button.type = 'button';
+  button.dataset.refresh = key;
+  button.onclick = () => onRefresh();
+  const status = el(doc, 'span', 'status', 'loading');
+  status.dataset.status = key;
+  bar.append(button, status);
+  return { bar, status };
+}
+
+function makeKpi(doc, node, key, binding, lane) {
+  const box = el(doc, 'div', 'kpi-card');
+  box.dataset.widget = key;
+  const value = el(doc, 'div', 'kpi-value', '—');
+  const bar = toolbar(doc, lane, key, () => lane.refreshSource(key));
+  box.append(el(doc, 'div', 'kpi-title', node.title ?? key), value, el(doc, 'div', 'kpi-description', node.description ?? ''), bar.bar);
+  return {
+    element: box,
+    update(rows, status) {
+      if (status) bar.status.textContent = status;
+      if (rows) value.textContent = kpiText(rows, binding.column);
+    },
+  };
+}
+
+function makeChart(doc, node, key, lane) {
+  const box = el(doc, 'div', 'chart-container');
+  box.dataset.widget = key;
+  const bar = toolbar(doc, lane, key, () => lane.refreshSource(key));
+  const canvas = el(doc, 'div', 'chart');
+  box.append(bar.bar, canvas);
+  let instance = null;
+  return {
+    element: box,
+    update(rows, status) {
+      if (status) bar.status.textContent = status;
+      if (!rows) return;
+      const echarts = doc.defaultView?.echarts ?? globalThis.echarts;
+      if (!echarts) {
+        bar.status.textContent = 'echarts unavailable';
+        return;
+      }
+      if (!instance) instance = echarts.init(canvas); // one instance per widget: repaint, never re-init
+      instance.setOption(chartOption(node, rows), true);
+    },
+  };
+}
+
+function makeGrid(doc, node, key, source, lane) {
+  const box = el(doc, 'div', 'datatable-container');
+  box.dataset.widget = key;
+  const state = { page: 0, total: 0, filters: {}, columns: gridColumns(node, source, []) };
+  const status = el(doc, 'span', 'status', 'loading');
+  status.dataset.status = key;
+  const refresh = el(doc, 'button', 'refresh', 'Refresh');
+  refresh.type = 'button';
+  refresh.dataset.refresh = key;
+  const bar = el(doc, 'div', 'widget-toolbar');
+  bar.append(refresh, status);
+  const table = el(doc, 'table', 'grid');
+  const head = el(doc, 'thead');
+  const filterRow = el(doc, 'tr', 'grid-filters');
+  const titleRow = el(doc, 'tr');
+  const body = el(doc, 'tbody');
+  const pager = el(doc, 'div', 'grid-pager');
+  const prev = el(doc, 'button', 'grid-prev', 'Previous');
+  const next = el(doc, 'button', 'grid-next', 'Next');
+  const info = el(doc, 'span', 'grid-info', '');
+  prev.type = next.type = 'button';
+  pager.append(prev, info, next);
+  head.append(titleRow, filterRow);
+  table.append(head, body);
+  box.append(bar, table, pager);
+
+  function buildHeader(columns) {
+    titleRow.replaceChildren();
+    filterRow.replaceChildren();
+    for (const column of columns) {
+      titleRow.append(el(doc, 'th', '', column));
+      const cell = el(doc, 'th');
+      const input = el(doc, 'input'); // column filters only: exact-match `filter`, no free-text search
+      input.type = 'text';
+      input.dataset.filter = column;
+      input.placeholder = 'filter';
+      input.onchange = () => {
+        state.filters[column] = input.value.trim();
+        state.page = 0;
+        load();
+      };
+      cell.append(input);
+      filterRow.append(cell);
+    }
+  }
+
+  function paint(rows) {
+    if (state.columns.length === 0 && rows.length > 0) {
+      state.columns = Object.keys(rows[0]);
+    }
+    if (titleRow.childNodes.length !== state.columns.length) buildHeader(state.columns);
+    body.replaceChildren();
+    for (const row of rows) {
+      const tr = el(doc, 'tr');
+      for (const column of state.columns) tr.append(el(doc, 'td', '', row[column] === null || row[column] === undefined ? '' : String(row[column])));
+      body.append(tr);
+    }
+    const pages = Math.max(1, Math.ceil(state.total / GRID_PAGE_SIZE));
+    info.textContent = `page ${state.page + 1} / ${pages} · ${state.total.toLocaleString('en-US')} rows`;
+    prev.disabled = state.page <= 0;
+    next.disabled = state.page + 1 >= pages;
+  }
+
+  let seq = 0;
+  async function load() {
+    const mine = ++seq;
+    status.textContent = 'loading';
+    try {
+      const { rows, total } = await lane.fetchPage(key, {
+        offset: state.page * GRID_PAGE_SIZE,
+        limit: GRID_PAGE_SIZE,
+        filter: state.filters,
+      });
+      if (mine !== seq) return; // a newer page/filter request superseded this one
+      state.total = total;
+      paint(rows);
+      status.textContent = 'ready';
+    } catch (err) {
+      if (mine === seq) status.textContent = err instanceof Error && err.name === 'SourceUnavailable' ? 'unavailable' : 'error';
+    }
+  }
+
+  prev.onclick = () => {
+    if (state.page > 0) {
+      state.page -= 1;
+      load();
+    }
+  };
+  next.onclick = () => {
+    state.page += 1;
+    load();
+  };
+  // Per-widget refresh: one cache-bypassing request for this widget's own linked source, then the current page repaints
+  // from the server (paging traffic is separate from the lane's own frame, which is capped and not shown).
+  refresh.onclick = async () => {
+    await lane.refreshSource(key);
+    await load();
+  };
+  return {
+    element: box,
+    start: load,
+    update(rows, laneStatus) {
+      // The lane's frame is a bounded preview; the grid's rows always come from `fetchPage`.
+      if (laneStatus && laneStatus !== 'ready') status.textContent = laneStatus;
+    },
+  };
+}
+
+function renderNode(doc, id, ctx) {
+  const node = ctx.plan.byId[id];
+  if (!node) return null;
   switch (node.component) {
     case 'Column':
-      element.className = 'column';
-      if (node.children && Array.isArray(node.children)) {
-        node.children.forEach(childId => {
-          const childElement = renderNode(childId, byId, ctx);
-          if (childElement) element.appendChild(childElement);
-        });
+    case 'Row': {
+      const box = el(doc, 'div', node.component === 'Row' ? 'row' : 'column');
+      box.id = id;
+      for (const childId of node.children ?? []) {
+        const child = renderNode(doc, childId, ctx);
+        if (child) box.append(child);
       }
-      break;
-      
-    case 'Row':
-      element.className = 'row';
-      if (node.children && Array.isArray(node.children)) {
-        node.children.forEach(childId => {
-          const childElement = renderNode(childId, byId, ctx);
-          if (childElement) element.appendChild(childElement);
-        });
-      }
-      break;
-      
-    case 'Card':
-      element.className = 'card';
-      if (node.child) {
-        const childElement = renderNode(node.child, byId, ctx);
-        if (childElement) element.appendChild(childElement);
-      }
-      break;
-      
-    case 'KPICard':
-      element.className = 'kpi-card';
-      element.innerHTML = renderKpi(node);
-      break;
-      
-    case 'Chart':
-      element.className = 'chart-container';
-      renderChart(element, node, ctx.lane, id);
-      break;
-      
-    case 'DataTable':
-      element.className = 'datatable-container';
-      renderGrid(element, node, ctx.lane, id);
-      break;
-      
+      return box;
+    }
+    case 'Text':
+      return el(doc, 'h2', 'dashboard-title', node.text ?? '');
+    case 'KPICard': {
+      const binding = parseBinding(node.value);
+      if (!binding) return el(doc, 'div', 'notice', `KPICard '${id}' has no data binding`);
+      return register(ctx, binding.key, makeKpi(doc, node, binding.key, binding, ctx.lane));
+    }
+    case 'Chart': {
+      const binding = parseBinding(node.data);
+      if (!binding) return el(doc, 'div', 'notice', `Chart '${id}' has no data binding`);
+      return register(ctx, binding.key, makeChart(doc, node, binding.key, ctx.lane));
+    }
+    case 'DataTable': {
+      const binding = parseBinding(node.data);
+      if (!binding) return el(doc, 'div', 'notice', `DataTable '${id}' has no data binding`);
+      const widget = makeGrid(doc, node, binding.key, ctx.plan.sources[binding.key], ctx.lane);
+      ctx.grids.push(widget);
+      return register(ctx, binding.key, widget);
+    }
     default:
-      element.className = 'notice';
-      element.textContent = `Unsupported component: ${node.component}`;
+      return el(doc, 'div', 'notice', `Unsupported component: ${node.component}`);
   }
-
-  return element;
 }
 
-function renderKpi(node) {
-  return `
-    <div class="kpi-title">${node.title || ''}</div>
-    <div class="kpi-value">${node.value || ''}</div>
-    <div class="kpi-description">${node.description || ''}</div>
-  `;
+function register(ctx, key, widget) {
+  ctx.widgets[key] = widget;
+  return widget.element;
 }
 
-function renderChart(container, node, lane, key) {
-  const chartContainer = document.createElement('div');
-  chartContainer.className = 'chart';
-  chartContainer.style.width = '100%';
-  chartContainer.style.height = '400px';
-  
-  const toolbar = document.createElement('div');
-  toolbar.className = 'widget-toolbar';
-  const refreshBtn = document.createElement('button');
-  refreshBtn.textContent = 'Refresh';
-  refreshBtn.onclick = () => lane.refreshSource(key);
-  toolbar.appendChild(refreshBtn);
-  
-  const statusSpan = document.createElement('span');
-  statusSpan.className = 'status';
-  statusSpan.textContent = 'Loading...';
-  toolbar.appendChild(statusSpan);
-  
-  container.appendChild(toolbar);
-  container.appendChild(chartContainer);
-  
-  // Initialize with snapshot data if available
-  const snapshot = lane.getSnapshot(key);
-  if (snapshot && snapshot.rows) {
-    updateChart(chartContainer, node, snapshot.rows);
-    statusSpan.textContent = 'Ready';
-  }
-  
-  // Subscribe to updates
-  lane.subscribe(key, (update) => {
-    statusSpan.textContent = update.status;
-    if (update.rows) {
-      updateChart(chartContainer, node, update.rows);
-    }
+/**
+ * Render the envelope into `container` and start the lane.
+ *
+ * @returns {{lane: object, widgets: object, refreshAll: Function}} The running lane, the widget registry keyed by
+ * source key, and a refresh-everything helper.
+ */
+export function mountDashboard(envelope, { doc = document, container, token, baseUrl, laneFactory = createLane }) {
+  const plan = planDashboard(envelope);
+  const ctx = { plan, widgets: {}, grids: [], lane: null };
+  const lane = laneFactory(plan.sources, {
+    baseUrl,
+    token,
+    onUpdate: (update) => ctx.widgets[update.key]?.update(update.rows, update.status),
   });
-}
-
-function updateChart(container, node, data) {
-  if (!window.echarts) {
-    console.error('ECharts not loaded');
-    return;
-  }
-  
-  const chart = echarts.init(container);
-  
-  const options = {
-    title: {
-      text: node.title || ''
-    },
-    tooltip: {},
-    legend: {},
-    xAxis: {},
-    yAxis: {},
-    series: []
+  ctx.lane = lane;
+  const root = renderNode(doc, plan.rootId, ctx);
+  if (root) container.append(root);
+  for (const [key, widget] of Object.entries(ctx.widgets)) widget.update(plan.snapshot[key] ?? [], null); // baked snapshot first
+  lane.start();
+  for (const grid of ctx.grids) grid.start();
+  // "Refresh all" re-fetches every linked source, then repaints each server-paged grid's current page.
+  const refreshAll = async () => {
+    await lane.refreshAll();
+    await Promise.all(ctx.grids.map((grid) => grid.start()));
   };
-  
-  if (node.chartType === 'bar') {
-    options.xAxis.type = 'category';
-    options.yAxis.type = 'value';
-    options.series = [{
-      type: 'bar',
-      data: data.map(row => ({ name: row.name, value: row.value }))
-    }];
-  } else if (node.chartType === 'pie') {
-    options.series = [{
-      type: 'pie',
-      data: data.map(row => ({
-        name: row.name === null ? 'Unassigned' : row.name,
-        value: row.value
-      }))
-    }];
-  }
-  
-  chart.setOption(options);
+  return { lane, widgets: ctx.widgets, refreshAll };
 }
 
-function renderGrid(container, node, lane, key) {
-  const toolbar = document.createElement('div');
-  toolbar.className = 'widget-toolbar';
-  const refreshBtn = document.createElement('button');
-  refreshBtn.textContent = 'Refresh';
-  refreshBtn.onclick = () => lane.refreshSource(key);
-  toolbar.appendChild(refreshBtn);
-  
-  const statusSpan = document.createElement('span');
-  statusSpan.className = 'status';
-  statusSpan.textContent = 'Loading...';
-  toolbar.appendChild(statusSpan);
-  
-  container.appendChild(toolbar);
-  
-  const gridContainer = document.createElement('div');
-  gridContainer.className = 'grid-container';
-  container.appendChild(gridContainer);
-  
-  // Initialize grid
-  const grid = new gridjs.Grid({
-    columns: node.columns || [],
-    server: {
-      url: '', // We'll handle data manually
-      then: () => [] // Placeholder
-    },
-    pagination: {
-      limit: 20
+// ---------------------------------------------------------------------------------------------------------------------
+// Boot (browser only)
+// ---------------------------------------------------------------------------------------------------------------------
+
+function notice(doc, message) {
+  const node = doc.getElementById('notice');
+  if (node) node.textContent = message;
+}
+
+async function boot(doc = document) {
+  // Bind the login form FIRST: with no token boot() returns early, and the form must still work.
+  doc.getElementById('loginForm').onsubmit = async (event) => {
+    event.preventDefault();
+    try {
+      await login(doc.getElementById('username').value, doc.getElementById('password').value);
+      window.location.reload();
+    } catch (error) {
+      notice(doc, error.message);
     }
-  }).render(gridContainer);
-  
-  // Store reference for updates
-  container._grid = grid;
-  
-  // Initialize with snapshot data if available
-  const snapshot = lane.getSnapshot(key);
-  if (snapshot && snapshot.rows) {
-    updateGrid(grid, snapshot.rows);
-    statusSpan.textContent = 'Ready';
-  }
-  
-  // Subscribe to updates
-  lane.subscribe(key, (update) => {
-    statusSpan.textContent = update.status;
-    if (update.rows) {
-      updateGrid(grid, update.rows);
-    }
-  });
-}
+  };
+  doc.getElementById('logout').onclick = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.reload();
+  };
 
-function updateGrid(grid, data) {
-  // Update grid with new data
-  // This is a simplified implementation - in practice you might need to recreate the grid
-  console.log('Updating grid with', data.length, 'rows');
-}
-
-async function boot() {
-  // Check if we have a token
   const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) {
-    // Show login form
-    document.getElementById('login').style.display = 'block';
-    document.getElementById('app').style.display = 'none';
-    return;
-  }
-  
-  // Hide login, show app
-  document.getElementById('login').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  
+  doc.getElementById('login').style.display = token ? 'none' : 'block';
+  doc.getElementById('app').style.display = token ? 'block' : 'none';
+  if (!token) return;
+
   try {
-    // Fetch dashboard envelope
-    const response = await fetch('/api/a2ui/dashboard', {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch dashboard: ${response.status}`);
-    }
-    
-    const envelope = await response.json();
-    
-    // Build lookup by ID
-    const byId = {};
-    if (envelope.components) {
-      envelope.components.forEach(comp => {
-        byId[comp.id] = comp;
-      });
-    }
-    
-    // Find root component
-    const rootId = envelope.root || 'root';
-    
-    // Create lane for data fetching
-    const lane = createLane(envelope.sources || {}, {
-      baseUrl: window.location.origin,
-      token: token,
-      onUpdate: (update) => {
-        // Handle updates - in a real implementation you'd route these to specific widgets
-        console.log('Lane update:', update);
-      }
-    });
-    
-    // Render the tree
-    const ctx = { lane };
-    const rootNode = renderNode(rootId, byId, ctx);
-    if (rootNode) {
-      document.getElementById('dashboard').appendChild(rootNode);
-    }
-    
-    // Start the lane
-    lane.start();
-    
-    // Setup event handlers
-    document.getElementById('logout').onclick = () => {
+    const response = await fetch('/api/a2ui/dashboard', { headers: { Authorization: `Bearer ${token}` } });
+    if (response.status === 401 || response.status === 403) {
       localStorage.removeItem(TOKEN_KEY);
       window.location.reload();
-    };
-    
-    document.getElementById('refreshAll').onclick = () => {
-      lane.refreshAll();
-    };
-    
-    // Handle login form submission
-    document.getElementById('loginForm').onsubmit = async (e) => {
-      e.preventDefault();
-      const username = document.getElementById('username').value;
-      const password = document.getElementById('password').value;
-      
-      try {
-        await login(username, password);
-        window.location.reload();
-      } catch (error) {
-        alert('Login failed: ' + error.message);
-      }
-    };
-    
+      return;
+    }
+    if (!response.ok) throw new Error(`Failed to load the dashboard: ${response.status}`);
+    const envelope = await response.json();
+    const { refreshAll } = mountDashboard(envelope, {
+      doc,
+      container: doc.getElementById('dashboard'),
+      token,
+      baseUrl: window.location.origin,
+    });
+    doc.getElementById('refreshAll').onclick = () => refreshAll();
   } catch (error) {
-    console.error('Boot error:', error);
-    alert('Failed to load dashboard: ' + error.message);
+    notice(doc, error.message);
   }
 }
 
-// Start the application when DOM is loaded
-document.addEventListener('DOMContentLoaded', boot);
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && !globalThis.__A2UI_NO_BOOT__) {
+  document.addEventListener('DOMContentLoaded', () => boot(document));
+}

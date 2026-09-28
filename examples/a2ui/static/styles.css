@@ -168,3 +168,11 @@ body {
     gap: 1rem;
   }
 }
+/* Server-paged grid + notices (FEAT-610) */
+#notice { color: #b00020; padding: 0.5rem 1rem; }
+.notice { color: #b00020; }
+.grid { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.grid th, .grid td { border-bottom: 1px solid #ddd; padding: 0.25rem 0.5rem; text-align: left; }
+.grid-filters input { width: 100%; box-sizing: border-box; }
+.grid-pager { display: flex; gap: 1rem; align-items: center; padding: 0.5rem 0; }
+.chart { width: 100%; height: 360px; }

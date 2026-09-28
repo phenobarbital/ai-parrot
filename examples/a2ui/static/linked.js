@@ -292,6 +292,39 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
         await runSource(key, true);
       }
     },
+    /**
+     * Example-only server paging (spec S2): reuse the source's slug/tenant/locked conditions and override only
+     * `querylimit`/`_offset`/`ordering` and the column `filter`; a parallel `count(*)` on the same filter gives `total`.
+     * Never touches the lane's frames, so the paged grid stays outside the normal linked-frame path.
+     */
+    async fetchPage(key, { offset = 0, limit = 20, filter = {}, ordering } = {}) {
+      const src = sources[key];
+      if (!src || failed.has(key)) throw new Error(`unknown source '${key}'`);
+      const placeholders = { ...(src.request.placeholders ?? {}), ...(overrides[key] ?? {}) };
+      const base = deriveConditions({ ...src.request, placeholders }, lockedValues(src));
+      const merged = { ...(base.filter ?? {}) };
+      for (const [column, value] of Object.entries(filter ?? {})) {
+        if (value !== '' && value !== null && value !== undefined) merged[column] = value;
+      }
+      const pageConditions = { ...base, _offset: offset };
+      const order = ordering ?? base.ordering ?? [];
+      if (order.length > 0) pageConditions.ordering = [...order];
+      else delete pageConditions.ordering;
+      const countConditions = { ...base };
+      for (const dropped of ['fields', 'ordering', 'grouping', '_offset', 'limit']) delete countConditions[dropped];
+      countConditions.fields = ['count(*) as total'];
+      for (const c of [pageConditions, countConditions]) {
+        if (Object.keys(merged).length > 0) c.filter = { ...merged };
+        else delete c.filter;
+      }
+      const opts = { baseUrl, token };
+      const [rows, counted] = await Promise.all([
+        fetchSource({ ...src, request: { ...src.request, limit } }, pageConditions, opts),
+        fetchSource({ ...src, request: { ...src.request, limit: 1 } }, countConditions, opts),
+      ]);
+      const total = Number(counted[0]?.total);
+      return { rows, total: Number.isFinite(total) ? total : rows.length };
+    },
     refreshSource(key) {
       if (!(key in sources) || failed.has(key)) return Promise.resolve();
       if (refreshing[key]) return refreshing[key];
