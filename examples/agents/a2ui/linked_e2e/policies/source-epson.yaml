@@ -1,0 +1,14 @@
+# FEAT-611 M2 demo policy — EXAMPLE-LOCAL, loaded only via setup_dataplane_guard(policy_dir=<this dir>).
+# Never copy into the repo-root policies/. Resource type "source" is a raw-string fallback in navigator_auth
+# (no ResourceType.SOURCE); the guard evaluates ("source", "query_slug:<tenant>:<slug>", "source:read").
+version: "1.0"
+policies:
+  - name: demo_allow_epson_linked_sources
+    effect: allow
+    description: >
+      FEAT-611 demo — any authenticated user may read the public epson_* query slugs through
+      the linked-surface data-plane guard. Staging example only.
+    resources: ["source:query_slug:public:epson_*"]
+    actions: ["source:read"]
+    subjects: { groups: ["*"] }
+    priority: 10
