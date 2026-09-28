@@ -191,4 +191,6 @@ function renderNode(id, byId, ctx) {
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: qwen (attempt 2) · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 (attempt 1 glm zai.glm-4.7-flash failed: max_turns=60 exceeded, no final_output) · Duration: 146.4s (+210.4s failed) · Tokens: 1619662 in / 8958 out
+
+index.html, renderer.js, styles.css + tests/examples/test_a2ui_static_assets.py; tests/examples: 15 passed, 1 skipped (live, opt-in). Browser rendering NOT exercised (no headless run); static checks only. Merge-tier sweep skipped (env-red, see TASK-3842).
