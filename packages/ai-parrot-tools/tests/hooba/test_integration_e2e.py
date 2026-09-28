@@ -219,3 +219,37 @@ def test_no_real_data_committed():
                         matches.append(line)
                 if matches:
                     pytest.fail(f"Found {description} in {path}: {matches[:3]}")
+
+
+async def test_create_contact_reuses_same_tin(hooba):
+    """A new TIN is POSTed once; the same TIN in another spelling reuses it; find_contact sees wrapped records."""
+    from parrot_tools.hooba.models import ContactDraft
+
+    toolkit, state = hooba
+    draft = ContactDraft(legal_name="Electricidad Eleia, S.L.", tin="B-88/181441")
+    result = await toolkit.hooba_create_contact(draft)
+    assert result["status"] == "success", result
+    assert result["result"]["reused"] is False
+    contact_id = result["result"]["id"]
+
+    # The real API lists contacts wrapped as {"contact": {...}}; both lookups must see through it.
+    state.contacts = [{"contact": contact} for contact in state.contacts]
+    result = await toolkit.hooba_create_contact(ContactDraft(legal_name="Eleia", tin="ESB88181441"))
+    assert result["result"] == {**result["result"], "id": contact_id, "reused": True}
+    assert [method for method, path in state.requests if path.endswith("/contacts")].count("POST") == 1
+
+    found = await toolkit.hooba_find_contact("Electricidad Eleia, S.L.")
+    assert [match["contact_id"] for match in found["result"]] == [contact_id]
+
+
+async def test_resolve_tax_prefers_plain_rate_and_accepts_urn(hooba):
+    """``IVA21`` picks the plain domestic tax even when a variant is listed first; a URN picks exactly."""
+    toolkit, state = hooba
+    state.taxes = [
+        {"id": 87, "urn": "urn:tax:iva-purchase-noded-21", "operationType": "purchase", "percentage": 21},
+        {"id": 63, "urn": "urn:tax:iva-purchase-intraeu-serv-21", "operationType": "purchase", "percentage": 21},
+        {"id": 39, "urn": "urn:tax:iva-purchase-21", "operationType": "purchase", "percentage": 21},
+    ]
+    assert await toolkit._resolve_tax("IVA21", "purchase") == 39
+    assert await toolkit._resolve_tax("urn:tax:iva-purchase-noded-21", "purchase") == 87
+    assert await toolkit._resolve_tax("EXENTO", "purchase") is None

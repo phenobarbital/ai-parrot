@@ -151,6 +151,65 @@ The rule table is a YAML file under `packages/ai-parrot-tools/src/parrot_tools/h
 - `tax_code`: IVA code (IVA21, IVA10, IVA4, EXENTO)
 - `subject_to_income_tax`: Whether IRPF withholding applies
 
+## Using it from Claude Code (manual setup, outside the installers)
+
+HoobaToolkit is deliberately **not** offered by `parrot toolkits install` (it has no
+packaged template under `parrot/mcp/_toolkit_templates/`) nor by `parrot claude install`.
+It touches a real accounting account, so it is wired by hand, per checkout, in three
+git-ignored files. Nothing is committed and no installer run will add or remove it.
+
+**1. A separate toolkit config — `.parrot/hooba-mcp.yaml`** (not `.parrot/mcp-toolkits.yaml`):
+
+```yaml
+toolkits:
+  hooba:
+    class: parrot_tools.hooba.toolkit.HoobaToolkit
+    kwargs:
+      headless: true
+    env: {}   # never put credentials here
+```
+
+**2. A server entry in `.mcp.json`** — keyed `hooba`, **without** the `parrot-` prefix:
+
+```json
+"hooba": {
+  "command": "<repo>/.venv/bin/parrot",
+  "args": ["mcp-local", "hooba", "--config", "<repo>/.parrot/hooba-mcp.yaml"],
+  "cwd": "<repo>",
+  "env": {}
+}
+```
+
+**3. Approve it** — add `"hooba"` to `enabledMcpjsonServers` in `.claude/settings.local.json`
+(not needed when `enableAllProjectMcpServers` is `true`).
+
+Start a new Claude Code session; the tools appear as `mcp__hooba__hooba_*` (68 tools:
+10 composite + 58 generated). Smoke test without Claude Code:
+
+```bash
+source .venv/bin/activate
+parrot mcp-local hooba --config .parrot/hooba-mcp.yaml --list
+```
+
+Why this layout survives the installers:
+- `reconcile_toolkit_entries()` (`parrot/knowledge/wiki/claude_code/installer.py`) only
+  upserts/deletes `.mcp.json` keys that start with `parrot-`, and only for sections of
+  `.parrot/mcp-toolkits.yaml`. A `hooba` key read from its own config file is foreign to it.
+- `install_toolkit_approvals()` only *merges* names into `enabledMcpjsonServers`; it never
+  drops `hooba`.
+- Do **not** add a `hooba:` section to `.parrot/mcp-toolkits.yaml`: the next
+  `parrot toolkits install`/`parrot claude install` would then generate a second
+  `parrot-hooba` server.
+
+Credentials: the server inherits the `HOOBA_*` variables through navconfig (`env/.env`):
+`HOOBA_ACCOUNT_ID` (required), `HOOBA_USERNAME`/`HOOBA_PASSWORD` for the credential broker,
+plus the optional ids from [Configuration](#configuration). To restrict what Claude Code
+can call, add `include:`/`exclude:` lists to the section (or `--include`/`--exclude` in
+`args`) — e.g. keep only the READ tools.
+
+To remove it: delete the `hooba` key from `.mcp.json`, its name from
+`enabledMcpjsonServers`, and `.parrot/hooba-mcp.yaml`.
+
 ## Troubleshooting
 
 ### 401 Unauthorized

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import difflib
 import json
 import os
@@ -25,7 +26,9 @@ from .bank import manifest_path_for, parse_bbva_statement, reconcile
 from .credentials import make_login_hook, register_hooba_provider
 from .importer import BbvaImporter
 from .models import (
+    ContactDraft,
     ContactMatch,
+    ContactReceipt,
     DraftReceipt,
     ExpenseDraftBatch,
     HoobaLookupError,
@@ -34,6 +37,7 @@ from .models import (
     PurchaseInvoiceDraft,
 )
 from .openapi import HoobaOpenAPIToolkit
+from .reconcile import bank_marker, match_charges, payment_method_urn
 from .rules import RuleEngine
 from .settings import HoobaSettings
 from .web import HoobaWebAdapter
@@ -51,6 +55,8 @@ _LIST_PATH = {
 }
 #: Output-envelope wrapper key Hooba uses for line records (list AND create responses).
 _LINE_WRAPPER = {"invoice": "invoiceLine", "purchase_invoice": "purchaseInvoiceLine"}
+#: Output-envelope wrapper key Hooba uses for header records (list, get AND create responses).
+_ENTITY_WRAPPER = {"invoice": "invoice", "purchase_invoice": "purchaseInvoice"}
 
 _READ_TOOLS = (
     "hooba_whoami",
@@ -60,7 +66,12 @@ _READ_TOOLS = (
     "hooba_recover_web_session",
     "hooba_run_web_action",
 )
+#: Payment methods Hooba settles through a bank account (it rejects one on card or cash payments).
+_BANK_ACCOUNT_METHODS = frozenset({"urn:payment-method:direct-debit", "urn:payment-method:bank-transfer"})
+#: Tools with legal effect: gated behind human confirmation (OperationKind.SUBMIT).
+_SUBMIT_TOOLS = ("hooba_reconcile_bank_statement",)
 _DRAFT_TOOLS = (
+    "hooba_create_contact",
     "hooba_create_invoice_draft",
     "hooba_create_purchase_invoice_draft",
     "hooba_attach_document",
@@ -149,6 +160,7 @@ class HoobaToolkit(AbstractToolkit):
         """
         kinds = dict.fromkeys(_READ_TOOLS, OperationKind.READ)
         kinds.update(dict.fromkeys(_DRAFT_TOOLS, OperationKind.DRAFT))
+        kinds.update(dict.fromkeys(_SUBMIT_TOOLS, OperationKind.SUBMIT))
         kinds.update(self._api.operation_kinds())
         return kinds
 
@@ -193,6 +205,22 @@ class HoobaToolkit(AbstractToolkit):
             status = error.get("status") if isinstance(error, dict) else getattr(error, "status", error)
             raise RuntimeError(f"Hooba API request failed: HTTP {status}")
         return result
+
+    async def _list_all(self, path: str, page_size: int = 100, max_pages: int = 100) -> list:
+        """GET every page of a list endpoint (``limit``/``offset``; Hooba returns 30 records by default).
+
+        A single unpaginated GET silently truncates: past 30 purchase invoices the idempotency lookup
+        missed existing drafts and Hooba rejected the re-created header as a duplicate number.
+        """
+        records: list = []
+        for page in range(max_pages):
+            batch = await self._call("GET", path, params={"limit": page_size, "offset": page * page_size})
+            if isinstance(batch, dict):
+                batch = batch.get("items", batch.get("content", batch.get("data", [])))
+            records.extend(batch or [])
+            if len(batch or []) < page_size:
+                return records
+        raise RuntimeError(f"{path} returned more than {page_size * max_pages} records")
 
     async def _call_raw(self, method: str, path: str) -> bytes:
         """Download bytes through the API cookie session, refreshing once on 401."""
@@ -268,7 +296,7 @@ class HoobaToolkit(AbstractToolkit):
 
         Shared by `hooba_find_contact` and the BBVA importer's `ContactFinder`.
         """
-        contacts = await self._call("GET", "/accounts/{accountId}/contacts")
+        contacts = await self._list_all("/accounts/{accountId}/contacts")
         if isinstance(contacts, dict):
             contacts = contacts.get("items", contacts.get("content", contacts.get("data", [])))
         matches: list[ContactMatch] = []
@@ -276,6 +304,8 @@ class HoobaToolkit(AbstractToolkit):
         for contact in list(contacts or [])[:500]:
             if not isinstance(contact, dict):
                 continue
+            # The list endpoint wraps each record as {"contact": {...}, "attributes": ..., ...}.
+            contact = self._unwrap(contact, "contact")
             candidates = [
                 contact.get("legalName"),
                 contact.get("tradeName"),
@@ -304,6 +334,55 @@ class HoobaToolkit(AbstractToolkit):
         matches.sort(key=lambda match: match.score, reverse=True)
         return matches[: max(0, limit)]
 
+    async def hooba_create_contact(self, contact: ContactDraft) -> dict:
+        """Create a supplier/customer contact, or reuse the existing one with the same TIN.
+
+        Args:
+            contact: Legal name, TIN (NIF/CIF or VAT number), country and legal type.
+
+        Returns:
+            ToolResult dict whose result is a ContactReceipt (``reused`` True when the TIN already existed).
+        """
+        try:
+            contact = ContactDraft.model_validate(contact)
+            contacts = await self._list_all("/accounts/{accountId}/contacts")
+            wanted_tin = self._fold_tin(contact.tin)
+            for record in contacts or []:
+                existing = self._unwrap(record, "contact")
+                if existing.get("tin") and self._fold_tin(existing["tin"]) == wanted_tin:
+                    receipt = ContactReceipt(
+                        id=int(existing["id"]),
+                        legal_name=self._contact_name(existing),
+                        tin=existing["tin"],
+                        reused=True,
+                    )
+                    return self._ok(receipt.model_dump(), OperationKind.DRAFT)
+            body = {
+                "legalType": contact.legal_type,
+                "legalName": contact.legal_name,
+                "tradeName": contact.trade_name,
+                "tin": contact.tin,
+                "tinType": contact.tin_type,
+                "countryId": contact.country_id,
+                "languageId": self.settings.language,
+                "website": contact.website,
+                "notes": contact.notes,
+            }
+            created = self._unwrap(
+                await self._call("POST", "/accounts/{accountId}/contacts", data={k: v for k, v in body.items() if v}),
+                "contact",
+            )
+            receipt = ContactReceipt(id=int(created["id"]), legal_name=contact.legal_name, tin=contact.tin)
+            return self._ok(receipt.model_dump(), OperationKind.DRAFT)
+        except Exception as exc:  # noqa: BLE001
+            return self._err(str(exc), OperationKind.DRAFT, "hooba_recover_web_session")
+
+    @staticmethod
+    def _fold_tin(tin: str) -> str:
+        """Normalize a TIN for comparison: ``B-88/181441`` and ``ESB88181441`` both fold to ``B88181441``."""
+        folded = re.sub(r"[^0-9A-Z]", "", tin.upper())
+        return folded[2:] if folded.startswith("ES") and len(folded) > 9 else folded
+
     async def hooba_find_contact(self, query: str, limit: int = 5) -> dict:
         """Find contacts by fuzzy legal, trade, or personal name similarity."""
         try:
@@ -320,9 +399,16 @@ class HoobaToolkit(AbstractToolkit):
         """List the newest Hooba invoice or purchase-invoice drafts."""
         try:
             path = "/accounts/{accountId}/invoices" if kind == "invoice" else "/accounts/{accountId}/purchase-invoices"
-            records = await self._call("GET", path)
+            records = await self._list_all(path)
             if isinstance(records, dict):
                 records = records.get("items", records.get("content", records.get("data", [])))
+            # List endpoints wrap each record as {"createdBy": ..., "invoice"|"purchaseInvoice": {...}}.
+            records = [
+                (record.get("invoice") or record.get("purchaseInvoice") or record)
+                if isinstance(record, dict)
+                else record
+                for record in (records or [])
+            ]
             drafts = [
                 record for record in (records or []) if isinstance(record, dict) and record.get("state") == "draft"
             ]
@@ -382,10 +468,12 @@ class HoobaToolkit(AbstractToolkit):
     # -- id resolvers (never guess an id; unresolvable -> HoobaLookupError) --
 
     async def _resolve_tax(self, code: str, operation_type: Literal["sale", "purchase"]) -> Optional[int]:
-        """Resolve a symbolic tax code (``IVA21``, ``EXENTO``) to a Hooba tax id.
+        """Resolve a symbolic tax code (``IVA21``, ``EXENTO``, ``urn:tax:...``) to a Hooba tax id.
 
         Args:
-            code: ``IVA<percentage>`` or the sentinel ``EXENTO``.
+            code: ``IVA<percentage>``, the sentinel ``EXENTO``, or an exact Hooba tax URN such as
+                ``urn:tax:iva-purchase-noded-21`` (non-deductible) or ``urn:tax:iva-purchase-intraeu-serv-21``
+                (reverse charge) for the variants a bare percentage cannot express.
             operation_type: ``"sale"`` for invoice lines, ``"purchase"`` for purchase-invoice lines.
 
         Returns:
@@ -393,16 +481,26 @@ class HoobaToolkit(AbstractToolkit):
         """
         if code == "EXENTO":
             return None
+        taxes = [
+            tax
+            for tax in (await self._call("GET", "/taxes") or [])
+            if isinstance(tax, dict) and tax.get("operationType") == operation_type
+        ]
+        if code.startswith("urn:tax:"):
+            for tax in taxes:
+                if tax.get("urn") == code:
+                    return int(tax["id"])
+            raise HoobaLookupError(f"No tax found for code={code!r} operation_type={operation_type!r}")
         match = _TAX_CODE_RE.match(code)
         if match is None:
             raise HoobaLookupError(f"Unrecognized tax code: {code!r}")
         percentage = Decimal(match.group(1))
-        taxes = await self._call("GET", "/taxes")
-        for tax in taxes or []:
-            if not isinstance(tax, dict) or tax.get("operationType") != operation_type:
-                continue
-            if Decimal(str(tax.get("percentage", -1))) == percentage:
-                return int(tax["id"])
+        # Many taxes share a percentage (reverse charge, non-deductible, investment goods...):
+        # prefer the plain domestic one, e.g. ``urn:tax:iva-purchase-21``, before any other match.
+        plain_urn = f"urn:tax:iva-{operation_type}-{format(percentage.normalize(), 'f').replace('.', '-')}"
+        candidates = [tax for tax in taxes if Decimal(str(tax.get("percentage", -1))) == percentage]
+        for tax in sorted(candidates, key=lambda tax: tax.get("urn") != plain_urn):
+            return int(tax["id"])
         raise HoobaLookupError(f"No tax found for code={code!r} operation_type={operation_type!r}")
 
     async def _resolve_income_tax(self, code: Optional[str]) -> Optional[int]:
@@ -418,6 +516,18 @@ class HoobaToolkit(AbstractToolkit):
             if isinstance(item, dict) and Decimal(str(item.get("percentage", -1))) == percentage:
                 return int(item["id"])
         raise HoobaLookupError(f"No income tax found for code={code!r}")
+
+    async def _resolve_unit_of_measure(self) -> int:
+        """Resolve the account's plain ``unit`` measure (the reference unit of the counting group)."""
+        units = [
+            unit
+            for unit in (await self._call("GET", "/accounts/{accountId}/units-of-measure") or [])
+            if isinstance(unit, dict)
+        ]
+        for unit in units:
+            if unit.get("name") == "unit" and unit.get("type") == "reference":
+                return int(unit["id"])
+        raise HoobaLookupError("No 'unit' reference unit of measure found")
 
     async def _resolve_serie(self, code: Optional[str], simplified: bool) -> int:
         """Resolve an invoice serie code, or the account's default serie for `simplified`."""
@@ -449,9 +559,23 @@ class HoobaToolkit(AbstractToolkit):
         return matches[0].contact_id
 
     async def _resolve_document_type(self, entity: Literal["invoice", "purchase_invoice"]) -> int:
-        """Resolve the Hooba document type id whose entity URN matches `entity`."""
-        document_types = await self._call("GET", "/accounts/{accountId}/document-types")
+        """Resolve the Hooba document type id whose entity URN matches `entity`.
+
+        The unfiltered document-types list omits entities not managed from the documents module
+        (purchase and sales invoices among them), so filter by the entity id resolved from its URN.
+        """
         urn = _ENTITY_URN[entity]
+        entity_id = next(
+            (
+                item.get("id")
+                for item in (await self._call("GET", "/accounts/{accountId}/entities") or [])
+                if isinstance(item, dict) and item.get("urn") == urn
+            ),
+            None,
+        )
+        if entity_id is None:
+            raise HoobaLookupError(f"No entity found for urn={urn!r}")
+        document_types = await self._call("GET", "/accounts/{accountId}/document-types", params={"entityId": entity_id})
         for item in document_types or []:
             if not isinstance(item, dict):
                 continue
@@ -474,10 +598,10 @@ class HoobaToolkit(AbstractToolkit):
 
     async def _find_by_key(self, kind: Literal["invoice", "purchase_invoice"], key: str) -> Optional[dict]:
         """Find a draft header whose ``notes`` carry the ``[parrot:<key>]`` idempotency marker."""
-        records = await self._call("GET", _LIST_PATH[kind])
+        records = await self._list_all(_LIST_PATH[kind])
         if isinstance(records, dict):
             records = records.get("items", records.get("content", records.get("data", [])))
-        wrapper_key = "purchaseInvoice" if kind == "purchase_invoice" else None
+        wrapper_key = _ENTITY_WRAPPER[kind]
         marker = f"[parrot:{key}]"
         for record in records or []:
             entity = self._unwrap(record, wrapper_key)
@@ -487,8 +611,11 @@ class HoobaToolkit(AbstractToolkit):
 
     @staticmethod
     def _line_signature(name: Any, price: Any) -> tuple[str, str]:
-        """Comparable ``(name, price)`` signature used for idempotent line matching."""
-        return (str(name), str(Decimal(str(price))))
+        """Comparable ``(name, price)`` signature used for idempotent line matching.
+
+        Normalized so the ``59.0`` Hooba echoes back matches the ``Decimal("59.00")`` that was sent.
+        """
+        return (str(name), format(Decimal(str(price)).normalize(), "f"))
 
     @staticmethod
     def _lines_path(kind: Literal["invoice", "purchase_invoice"], entity_id: int) -> str:
@@ -549,8 +676,7 @@ class HoobaToolkit(AbstractToolkit):
         line onto an already-finalized document is exactly the class of harm the DRAFT_OPERATIONS
         allowlist exists to prevent, reached via a different path than the generated write surface.
         """
-        entity = await self._call("GET", self._entity_path(kind, entity_id))
-        entity = entity if isinstance(entity, dict) else {}
+        entity = self._unwrap(await self._call("GET", self._entity_path(kind, entity_id)), _ENTITY_WRAPPER[kind])
         state = entity.get("state")
         if state != "draft":
             raise HoobaStateError(f"{kind} {entity_id} came back in state {state!r}, expected 'draft'")
@@ -576,6 +702,9 @@ class HoobaToolkit(AbstractToolkit):
             tax_id = await self._resolve_tax(line.tax_code, operation_type)
             income_tax_id = await self._resolve_income_tax(line.income_tax_code)
             body = self._line_body(kind, line, tax_id, income_tax_id)
+            if kind == "purchase_invoice":
+                # Purchase-invoice lines reject a null unit of measure (HTTP 422).
+                body["unitOfMeasureId"] = await self._resolve_unit_of_measure()
             created = await self._call("POST", self._lines_path(kind, entity_id), data=body)
             created_entity = self._unwrap(created, wrapper_key)
             if created_entity.get("id") is not None:
@@ -615,7 +744,9 @@ class HoobaToolkit(AbstractToolkit):
             "reference": draft.reference,
             "notes": f"{(draft.notes or '').strip()} [parrot:{key}]".strip(),
         }
-        header = await self._call("POST", "/accounts/{accountId}/invoices", data=header_body)
+        header = self._unwrap(
+            await self._call("POST", "/accounts/{accountId}/invoices", data=header_body), _ENTITY_WRAPPER["invoice"]
+        )
         return await self._sync_lines_and_finalize("invoice", int(header["id"]), draft.lines, "sale", key, reused=False)
 
     async def hooba_create_invoice_draft(self, draft: InvoiceDraft) -> dict:
@@ -649,13 +780,25 @@ class HoobaToolkit(AbstractToolkit):
         header_body = {
             "date": draft.date.isoformat(),
             "number": draft.number,
+            "currencyId": draft.currency_id,
             "simplified": draft.simplified,
             "contactId": contact_id,
             "taxIncluded": draft.tax_included,
             "subjectToIncomeTax": draft.subject_to_income_tax,
-            "notes": f"{(draft.notes or '').strip()} [parrot:{key}]".strip(),
+            "notes": " ".join(
+                part
+                for part in (
+                    (draft.notes or "").strip(),
+                    bank_marker(draft.expected_charge) if draft.expected_charge is not None else "",
+                    f"[parrot:{key}]",
+                )
+                if part
+            ),
         }
-        header = await self._call("POST", "/accounts/{accountId}/purchase-invoices", data=header_body)
+        header = self._unwrap(
+            await self._call("POST", "/accounts/{accountId}/purchase-invoices", data=header_body),
+            _ENTITY_WRAPPER["purchase_invoice"],
+        )
         return await self._sync_lines_and_finalize(
             "purchase_invoice", int(header["id"]), draft.lines, "purchase", key, reused=False
         )
@@ -693,7 +836,11 @@ class HoobaToolkit(AbstractToolkit):
             async def _upload() -> tuple[int, Any]:
                 form = aiohttp.FormData()
                 form.add_field("file", content, filename=path.name)
-                form.add_field("data", json.dumps({}))
+                # Hooba rejects (HTTP 422) a nameless document and a `data` part that is not itself a
+                # file: send it the way the web app does, as a JSON blob.
+                form.add_field(
+                    "data", json.dumps({"name": path.name}), content_type="application/json", filename="data.json"
+                )
                 cookie_header = "; ".join(f"{name}={value}" for name, value in self._api.get_cookies().items())
                 headers = {**self.settings.default_headers(), "cookie": cookie_header}
                 async with aiohttp.ClientSession() as session:
@@ -705,10 +852,127 @@ class HoobaToolkit(AbstractToolkit):
                 await self._api._ensure_session(force=True)
                 status, payload = await _upload()
             if status >= 400:
-                raise RuntimeError(f"Hooba document upload failed: HTTP {status}")
+                violations = payload.get("violations") if isinstance(payload, dict) else None
+                detail = "; ".join(f"{v.get('propertyPath')}: {v.get('title')}" for v in violations or [])
+                raise RuntimeError(f"Hooba document upload failed: HTTP {status}" + (f" ({detail})" if detail else ""))
             return self._ok(payload, OperationKind.DRAFT)
         except Exception as exc:  # noqa: BLE001
             return self._err(str(exc), OperationKind.DRAFT, "hooba_recover_web_session")
+
+    async def hooba_reconcile_bank_statement(
+        self, path: str, dry_run: bool = True, bank_account_id: Optional[int] = None
+    ) -> dict:
+        """Pair purchase invoices with the BBVA debits that paid them; optionally confirm and pay them.
+
+        Only invoices matched to a debit (same supplier, amount within 1 cent, value date 2 days
+        before to 12 days after the invoice date) are touched: each draft is confirmed and gets one
+        payment for its outstanding amount, dated on the debit, with the payment method implied by
+        the movement (card, direct debit, transfer). Unmatched invoices stay as they are.
+
+        Args:
+            path: Local path of the BBVA .xlsx export.
+            dry_run: When True (default), only report the pairing — nothing is written to Hooba.
+            bank_account_id: Account bank account the debits came from (default: the account's default one).
+
+        Returns:
+            ToolResult dict with ``matched``, ``unmatched_invoices`` and, when applied, ``applied``
+            plus per-invoice ``errors`` (a failing invoice never stops the others).
+        """
+        try:
+            statement = await parse_bbva_statement(path)
+            debits = [row for row in statement.rows if row.amount < 0]
+            if not debits:
+                return self._ok(
+                    {"dry_run": dry_run, "matched": [], "unmatched_invoices": [], "applied": []}, OperationKind.READ
+                )
+            first = min(row.value_date or row.booking_date for row in debits)
+            last = max(row.value_date or row.booking_date for row in debits)
+            records = [
+                self._unwrap(item, _ENTITY_WRAPPER["purchase_invoice"])
+                for item in await self._list_all(_LIST_PATH["purchase_invoice"])
+            ]
+            # Only invoices the statement can have paid: open, and dated inside the statement window.
+            records = [
+                record
+                for record in records
+                if record.get("state") in ("draft", "confirmed")
+                and Decimal(str(record.get("outstandingAmount") or 0)) > 0
+                and (first - dt.timedelta(days=12)).isoformat() <= record.get("date", "") <= last.isoformat()
+            ]
+            contacts = {
+                int(contact["id"]): contact
+                for contact in (
+                    self._unwrap(item, "contact") for item in await self._list_all("/accounts/{accountId}/contacts")
+                )
+            }
+            matches, unmatched = match_charges(records, contacts, debits)
+            result: Dict[str, Any] = {
+                "dry_run": dry_run,
+                "matched": [match.model_dump(mode="json") for match in matches],
+                "unmatched_invoices": [
+                    {
+                        "id": record["id"],
+                        "number": record.get("number"),
+                        "date": record.get("date"),
+                        "supplier": contacts.get(int(record.get("contactId") or 0), {}).get("legalName"),
+                        "total": record.get("totalAmount"),
+                    }
+                    for record in unmatched
+                ],
+                "applied": [],
+                "errors": [],
+            }
+            if dry_run:
+                return self._ok(result, OperationKind.READ)
+
+            account_id = bank_account_id or await self._resolve_default_bank_account()
+            methods = {item["urn"]: int(item["id"]) for item in await self._call("GET", "/payment-methods") or []}
+            for match in matches:
+                # One invoice failing (validation, state) must not hide what was already applied.
+                try:
+                    path_ = self._entity_path("purchase_invoice", match.purchase_invoice_id)
+                    record = self._unwrap(await self._call("GET", path_), _ENTITY_WRAPPER["purchase_invoice"])
+                    if record.get("state") == "draft":
+                        await self._call("POST", f"{path_}:confirm")
+                        record = self._unwrap(await self._call("GET", path_), _ENTITY_WRAPPER["purchase_invoice"])
+                    outstanding = Decimal(str(record.get("outstandingAmount") or 0))
+                    if outstanding > 0:
+                        method = payment_method_urn(match)
+                        payment: Dict[str, Any] = {
+                            "date": match.charge_date.isoformat(),
+                            "amount": float(outstanding),
+                            "paymentMethodId": methods[method],
+                        }
+                        # Hooba rejects a bank account on card/cash payments (HTTP 422); only
+                        # debits and transfers go through the account's bank account.
+                        if method in _BANK_ACCOUNT_METHODS:
+                            payment["bankAccountId"] = account_id
+                        await self._call("POST", f"{path_}/purchase-invoice-collections", data=payment)
+                    result["applied"].append(
+                        {
+                            "id": match.purchase_invoice_id,
+                            "confirmed": True,
+                            "paid": float(outstanding),
+                            "date": match.charge_date.isoformat(),
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    result["errors"].append({"id": match.purchase_invoice_id, "error": str(exc)})
+            return self._ok(result, OperationKind.SUBMIT)
+        except Exception as exc:  # noqa: BLE001
+            return self._err(str(exc), OperationKind.SUBMIT, "hooba_recover_web_session")
+
+    async def _resolve_default_bank_account(self) -> int:
+        """The account's default bank account (where direct debits and card charges land)."""
+        accounts = [
+            item
+            for item in await self._call("GET", "/accounts/{accountId}/account-bank-accounts") or []
+            if isinstance(item, dict)
+        ]
+        for account in accounts:
+            if account.get("default"):
+                return int(account["id"])
+        raise HoobaLookupError("No default account bank account")
 
     async def hooba_import_bbva_statement(self, path: str, period: str, dry_run: bool = True) -> dict:
         """Turn a BBVA movements Excel into purchase-invoice drafts (dry run by default).
