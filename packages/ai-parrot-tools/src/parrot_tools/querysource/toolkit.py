@@ -65,6 +65,9 @@ if TYPE_CHECKING:
     from parrot.outputs.a2ui.linked.models import LinkedDataSource
 
 
+_WIDGET_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_RESERVED_LAYOUT_IDS = frozenset({"root", "title", "row_kpis", "row_charts"})
+
 class QuerysourceToolkit(AbstractToolkit):
     """Explain, list, describe and execute QuerySource query-slugs and MultiQuery pipelines, scoped to tenants."""
 
@@ -399,6 +402,103 @@ class QuerysourceToolkit(AbstractToolkit):
             "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
             "artifacts": artifacts,
         }
+
+    async def build_linked_dashboard(
+        self,
+        widgets: list[dict[str, Any]],
+        surface_id: str | None = None,
+        title: str | None = None,
+        snapshot: bool = True,
+    ) -> dict[str, Any]:
+        """Emit ONE linked A2UI dashboard surface.
+
+        Each widget ``{key, slug, component, request?, tenant?, section?, refresh?}`` gets its own source, so each
+        refreshes independently; KPIs, charts and tables are laid out in rows. Components are Chart, DataTable or
+        KPICard without bindings; a KPICard names its aggregate column in ``value``. Raises InvalidConditionsError on
+        bad/duplicate keys or grammar; QuerysourceToolkitError when a source fails to execute.
+        """
+        from parrot.outputs.a2ui.builders import build_linked_surface as _build
+        from parrot.outputs.a2ui.linked.executor import execute_sources
+
+        parsed = [DashboardWidget.model_validate(w) for w in widgets]
+        if not parsed:
+            raise InvalidConditionsError("widgets must not be empty")
+        seen: set[str] = set()
+        for widget in parsed:
+            if not _WIDGET_KEY_RE.match(widget.key):
+                raise InvalidConditionsError(
+                    f"widget key '{widget.key}' must match ^[A-Za-z_][A-Za-z0-9_]*$ (JSON-pointer-safe)"
+                )
+            if widget.key in seen:
+                raise InvalidConditionsError(f"duplicate widget key '{widget.key}'")
+            if widget.key in _RESERVED_LAYOUT_IDS:
+                raise InvalidConditionsError(f"widget key '{widget.key}' is reserved for the dashboard layout")
+            seen.add(widget.key)
+            component_type = widget.component.get("component")
+            if component_type not in {"Chart", "DataTable", "KPICard"}:
+                raise InvalidConditionsError(
+                    f"widget '{widget.key}': component must be one of Chart, DataTable, or KPICard"
+                )
+            if component_type == "KPICard" and not isinstance(widget.component.get("value"), str):
+                raise InvalidConditionsError(
+                    f"widget '{widget.key}': a KPICard must name its aggregate column as a string in `value`"
+                )
+        sources = {}
+        for widget in parsed:
+            detail = await self.describe_slug(widget.slug, tenant=widget.tenant)
+            sources[widget.key] = self._build_linked_source(widget, detail)
+        self.logger.info("qs_build_linked_dashboard %d widgets snapshot=%s", len(parsed), snapshot)
+        execution = await execute_sources(sources, pctx=None, guard=None)
+        for key in sources:
+            outcome = execution.outcomes.get(key)
+            if outcome is None or outcome.error:
+                error = outcome.error if outcome is not None else "no outcome"
+                raise QuerysourceToolkitError(
+                    f"source '{key}' failed while building the linked dashboard: {error}"
+                )
+        components = [{**self._bind_component(w.component, w.key), "id": w.key} for w in parsed]
+        layout = self._dashboard_layout(components, parsed, title)
+        envelope = _build(
+            layout,
+            sources,
+            {k: execution.frames[k] for k in sources},
+            surface_id=surface_id or "linked-dashboard",
+            snapshot=snapshot,
+        )
+        return {
+            "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
+            "artifacts": [
+                {"type": "a2ui_linked_surface", "surface_id": envelope.surface_id, "sources": list(sources)}
+            ],
+        }
+
+    @staticmethod
+    def _dashboard_layout(
+        components: list[dict[str, Any]], widgets: list[DashboardWidget], title: str | None
+    ) -> list[dict[str, Any]]:
+        """Return [root Column, Row(kpis)?, Row(charts)?, *components] with ids = widget keys."""
+        inferred = {"KPICard": "kpis", "Chart": "charts", "DataTable": "table"}
+        kpis: list[str] = []
+        charts: list[str] = []
+        tables: list[str] = []
+        buckets = {"kpis": kpis, "charts": charts, "table": tables}
+        for widget, comp in zip(widgets, components):
+            section = widget.section or inferred[str(comp.get("component"))]
+            buckets[section].append(str(comp["id"]))
+        extra: list[dict[str, Any]] = []
+        root_children: list[str] = []
+        if title:
+            extra.append({"id": "title", "component": "Text", "text": title})
+            root_children.append("title")
+        if kpis:
+            extra.append({"id": "row_kpis", "component": "Row", "children": kpis})
+            root_children.append("row_kpis")
+        if charts:
+            extra.append({"id": "row_charts", "component": "Row", "children": charts})
+            root_children.append("row_charts")
+        root_children.extend(tables)
+        root = {"id": "root", "component": "Column", "children": root_children}
+        return [root, *extra, *components]
 
     def _build_linked_source(
         self, widget: DashboardWidget, detail: SlugDetail, *, transform: dict[str, Any] | None = None
