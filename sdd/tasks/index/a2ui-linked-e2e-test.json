@@ -92,7 +92,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,9 @@
       "parallelism_notes": "depends on TASK-3844: laneProxy forwards LinkedLane.refreshSource, which TASK-3844 adds to linked/index.ts",
       "assigned_to": null,
       "started_at": "2026-09-28T22:32:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3845-a2ui-surface-refresh-controls.md"
+      "completed_at": "2026-09-28T22:58:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3845-a2ui-surface-refresh-controls.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3846",
