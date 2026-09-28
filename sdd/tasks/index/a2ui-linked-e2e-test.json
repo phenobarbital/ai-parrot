@@ -34,7 +34,7 @@
       "feature_id": "FEAT-610",
       "feature": "a2ui-linked-e2e-test",
       "spec": "sdd/specs/a2ui-linked-e2e-test.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +42,9 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot/pyproject.toml, packages/ai-parrot-tools/pyproject.toml and regenerates uv.lock (shared dependency manifests)",
       "assigned_to": null,
       "started_at": "2026-09-28T22:32:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3842-querysource-floor-5-1-2.md"
+      "completed_at": "2026-09-28T22:37:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3842-querysource-floor-5-1-2.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3843",
