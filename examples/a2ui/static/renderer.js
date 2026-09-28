@@ -232,7 +232,7 @@ function makeGrid(doc, node, key, source, lane) {
   }
 
   let seq = 0;
-  async function load() {
+  async function load(refresh = false) {
     const mine = ++seq;
     status.textContent = 'loading';
     try {
@@ -240,6 +240,7 @@ function makeGrid(doc, node, key, source, lane) {
         offset: state.page * GRID_PAGE_SIZE,
         limit: GRID_PAGE_SIZE,
         filter: state.filters,
+        refresh,
       });
       if (mine !== seq) return; // a newer page/filter request superseded this one
       state.total = total;
@@ -260,15 +261,13 @@ function makeGrid(doc, node, key, source, lane) {
     state.page += 1;
     load();
   };
-  // Per-widget refresh: one cache-bypassing request for this widget's own linked source, then the current page repaints
-  // from the server (paging traffic is separate from the lane's own frame, which is capped and not shown).
-  refresh.onclick = async () => {
-    await lane.refreshSource(key);
-    await load();
-  };
+  // Per-widget refresh: the grid is server-paged and outside the lane's frames, so refresh is exactly this widget's own
+  // page + count requests to its own source, both cache-bypassing (`refresh: true`); no other widget is touched.
+  refresh.onclick = () => load(true);
   return {
     element: box,
-    start: load,
+    start: () => load(false),
+    reload: () => load(true),
     update(rows, laneStatus) {
       // The lane's frame is a bounded preview; the grid's rows always come from `fetchPage`.
       if (laneStatus && laneStatus !== 'ready') status.textContent = laneStatus;
@@ -328,9 +327,14 @@ function register(ctx, key, widget) {
 export function mountDashboard(envelope, { doc = document, container, token, baseUrl, laneFactory = createLane }) {
   const plan = planDashboard(envelope);
   const ctx = { plan, widgets: {}, grids: [], lane: null };
+  const pagedKeys = Object.values(plan.byId)
+    .filter((node) => node.component === 'DataTable')
+    .map((node) => parseBinding(node.data)?.key)
+    .filter(Boolean);
   const lane = laneFactory(plan.sources, {
     baseUrl,
     token,
+    pagedKeys,
     onUpdate: (update) => ctx.widgets[update.key]?.update(update.rows, update.status),
   });
   ctx.lane = lane;
@@ -339,10 +343,10 @@ export function mountDashboard(envelope, { doc = document, container, token, bas
   for (const [key, widget] of Object.entries(ctx.widgets)) widget.update(plan.snapshot[key] ?? [], null); // baked snapshot first
   lane.start();
   for (const grid of ctx.grids) grid.start();
-  // "Refresh all" re-fetches every linked source, then repaints each server-paged grid's current page.
+  // "Refresh all" re-fetches every linked source, then each server-paged grid reloads its current page (cache-bypassing).
   const refreshAll = async () => {
     await lane.refreshAll();
-    await Promise.all(ctx.grids.map((grid) => grid.start()));
+    await Promise.all(ctx.grids.map((grid) => grid.reload()));
   };
   return { lane, widgets: ctx.widgets, refreshAll };
 }

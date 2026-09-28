@@ -34,6 +34,10 @@ FEAT-610 — Polestar graduates linked dashboard with example client and seed sc
    A2UI_DEMO_PASSWORD=<password> python examples/a2ui/client.py --check --no-expect
    ```
 
+**Notes.** The server binds to loopback by default (`--host 0.0.0.0` exposes production data behind BasicAuth only). The
+dashboard envelope is built once by the LLM agent and cached for all users; `GET /api/a2ui/dashboard?rebuild=1` lets any
+authenticated user re-run the agent (a demo simplification).
+
 ## Environment Variables
 
 | Variable | Required | Description |

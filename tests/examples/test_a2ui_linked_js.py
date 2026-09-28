@@ -100,6 +100,23 @@ assert.deepEqual(pageCall.filter, { active: true, country: 'US' }, 'column filte
 assert.deepEqual(countCall.filter, pageCall.filter, 'count uses the same filter');
 assert.ok(!('ordering' in countCall) && !('_offset' in countCall) && !('grouping' in countCall));
 await assert.rejects(glane.fetchPage('missing'), /unknown source/);
+
+// --- paged keys are excluded from start / refreshAll / refreshSource; fetchPage(refresh) bypasses the cache ------------
+reset();
+responder = () => [{ total: 1 }];
+const plane = createLane({ ...sources, g: grid.g }, { baseUrl: 'https://h', token: 'T', onUpdate: () => {}, pagedKeys: ['g'] });
+plane.start();
+await new Promise((r) => setTimeout(r, 20));
+assert.equal(calls.length, 3, 'start skips the paged source');
+calls.length = 0;
+await plane.refreshAll();
+assert.equal(calls.length, 3, 'refreshAll skips the paged source');
+calls.length = 0;
+await plane.refreshSource('g');
+assert.equal(calls.length, 0, 'refreshSource on a paged key is a no-op');
+await plane.fetchPage('g', { refresh: true });
+assert.equal(calls.length, 2);
+assert.ok(calls.every((c) => c.body.refresh === true), 'page and count both bypass the cache');
 console.log('linked.js: all assertions passed');
 """
 

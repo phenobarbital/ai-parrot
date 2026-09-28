@@ -139,7 +139,7 @@ def create_app(*, with_agent_api: bool = False, llm: str | None = None) -> web.A
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1", help="bind address (default: loopback; the server reads production data)")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--with-agent-api", action="store_true")
     parser.add_argument("--llm", default=DEFAULT_LLM)

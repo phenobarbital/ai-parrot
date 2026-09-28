@@ -94,6 +94,8 @@ const settle = () => new Promise((r) => setTimeout(r, 30));
 const { lane, widgets, refreshAll } = mountDashboard(envelope, { doc, container: doc.getElementById('dashboard'), token: 'T', baseUrl: 'http://h' });
 await settle();
 
+assert.equal(calls.filter((c) => c.querylimit === 500).length, 0, 'start() skips the paged grid source (no wasted 500-row frame)');
+
 // --- AC7: all 8 widgets render with the live values ------------------------------------------------------------------
 assert.deepEqual(Object.keys(widgets).sort(), Object.keys(plan.sources).sort());
 const kpis = ['kpi_total', 'kpi_studio', 'kpi_mat', 'kpi_multi'].map((k) => doc.querySelector(`[data-widget="${k}"] .kpi-value`).textContent);
@@ -145,9 +147,16 @@ assert.equal(calls.length, 1);
 assert.equal(inits.length, initsBefore, 'echarts instance is reused on refresh (no leak)');
 assert.equal(options.length, before + 1);
 calls.length = 0;
+doc.querySelector('[data-refresh="graduates"]').onclick();
+await settle();
+assert.equal(calls.length, 2, 'grid refresh = its own page + count requests, nothing else');
+assert.ok(calls.every((c) => c.refresh === true), 'both bypass the cache');
+assert.ok(calls.every((c) => c.fields[0] === 'student_uid' || c.fields[0] === 'count(*) as total'));
+calls.length = 0;
 await refreshAll();
 await settle();
-assert.equal(calls.filter((c) => c.refresh === true).length, 8, 'refresh all re-fetches every source once, bypassing the cache');
+assert.equal(calls.filter((c) => c.refresh === true).length, 9, '7 linked sources + the grid page and count, all cache-bypassing');
+assert.equal(calls.filter((c) => c.fields[0] === 'student_uid' && c.querylimit === 500).length, 0, 'the grid source is never fetched as a bounded lane frame');
 
 // --- envelope text is never injected as HTML --------------------------------------------------------------------------
 const evil = JSON.parse(JSON.stringify(envelope));

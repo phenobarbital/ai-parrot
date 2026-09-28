@@ -1,4 +1,4 @@
-// examples/a2ui/static/linked.js — CREATE
+// examples/a2ui/static/linked.js
 // FEAT-610 — vanilla port of the FEAT-598 linked lane (ui/.../a2ui/linked/{fetch,conditions,index}.ts).
 
 export const DEFAULT_MAX_FETCH_ROWS = 5000;
@@ -49,29 +49,16 @@ export async function fetchSource(src, conditions, { baseUrl, token, maxFetchRow
   // deriveConditions never emits `limit` (TASK-3770/TASK-3793); the lane re-applies request.limit bounded by the cap (S8/AC17)
   const body = { ...conditions, querylimit: Math.min(src.request.limit ?? cap, cap) };
   if (body.refresh !== true) delete body.refresh;
-  let payload;
-  try {
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    };
-    const res = await fetch(queryUrl(baseUrl, src.slug, src.tenant ?? null), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      if (res.status === 404) {
-        throw new SourceUnavailable(src.slug);
-      }
-      throw new Error(`QuerySource ${res.status}`);
-    }
-    payload = await res.json();
-  } catch (err) {
-    if (err instanceof SourceUnavailable) throw err;
-    throw err;
+  const res = await fetch(queryUrl(baseUrl, src.slug, src.tenant ?? null), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    if (res.status === 404) throw new SourceUnavailable(src.slug);
+    throw new Error(`QuerySource ${res.status}`);
   }
-  return selectFrame(payload, src);
+  return selectFrame(await res.json(), src);
 }
 
 // Keys a lane adds at fetch time; deriveConditions never emits them.
@@ -196,7 +183,10 @@ function lockedValues(source) {
   return out;
 }
 
-export function createLane(sources, { baseUrl, token, onUpdate }) {
+export function createLane(sources, { baseUrl, token, onUpdate, pagedKeys = [] }) {
+  // Server-paged sources (the grid) are fetched only through `fetchPage`: start / refreshAll / refreshSource skip them,
+  // so the grid never costs a wasted bounded-frame fetch.
+  const paged = new Set(pagedKeys);
   const deps = {};
   for (const key of Object.keys(sources)) deps[key] = dependenciesOf(sources[key]);
   const { failed } = executionOrder(sources, deps);
@@ -263,6 +253,7 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
   return {
     start() {
       for (const key of Object.keys(sources)) {
+        if (paged.has(key)) continue;
         if (failed.has(key)) {
           onUpdate({ key, rows: null, status: 'error', snapshotAt: null });
           continue;
@@ -286,6 +277,7 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
       // reference executor's `execute_sources` loop (siblings first).
       const { order } = executionOrder(sources, deps);
       for (const key of order) {
+        if (paged.has(key)) continue;
         delete frames[key];
         await runSource(key, true);
       }
@@ -295,7 +287,7 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
      * `querylimit`/`_offset`/`ordering` and the column `filter`; a parallel `count(*)` on the same filter gives `total`.
      * Never touches the lane's frames, so the paged grid stays outside the normal linked-frame path.
      */
-    async fetchPage(key, { offset = 0, limit = 20, filter = {}, ordering } = {}) {
+    async fetchPage(key, { offset = 0, limit = 20, filter = {}, ordering, refresh = false } = {}) {
       const src = sources[key];
       if (!src || failed.has(key)) throw new Error(`unknown source '${key}'`);
       const placeholders = { ...(src.request.placeholders ?? {}), ...(overrides[key] ?? {}) };
@@ -315,6 +307,10 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
         if (Object.keys(merged).length > 0) c.filter = { ...merged };
         else delete c.filter;
       }
+      if (refresh) {
+        pageConditions.refresh = true; // a manual refresh bypasses the server cache for both requests
+        countConditions.refresh = true;
+      }
       const opts = { baseUrl, token };
       const [rows, counted] = await Promise.all([
         fetchSource({ ...src, request: { ...src.request, limit } }, pageConditions, opts),
@@ -324,7 +320,7 @@ export function createLane(sources, { baseUrl, token, onUpdate }) {
       return { rows, total: Number.isFinite(total) ? total : rows.length };
     },
     refreshSource(key) {
-      if (!(key in sources) || failed.has(key)) return Promise.resolve();
+      if (!(key in sources) || failed.has(key) || paged.has(key)) return Promise.resolve();
       if (refreshing[key]) return refreshing[key];
 
       refreshing[key] = (async () => {
