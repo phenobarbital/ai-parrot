@@ -269,4 +269,4 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented via private _fts_fetch helper used by search_symbols_fts and search_fts (SQL text unchanged per shape). Tests written first: both FAILED with 'no such column' before the fix. Mutation (never retry) -> tests RED with the original error. Existing external-content tests pass unmodified.
