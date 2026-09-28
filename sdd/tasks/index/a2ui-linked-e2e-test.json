@@ -232,7 +232,7 @@
       "started_at": "2026-09-28T22:32:25+00:00",
       "completed_at": "2026-09-28T23:16:51+00:00",
       "file": "sdd/tasks/completed/TASK-3851-a2ui-example-static-renderer.md",
-      "verification": "verified"
+      "verification": "partial"
     },
     {
       "id": "TASK-3852",
