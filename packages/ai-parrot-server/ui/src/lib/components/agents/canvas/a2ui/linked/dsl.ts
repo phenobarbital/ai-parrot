@@ -366,7 +366,13 @@ function pivotOp(rows: Row[], op: Op, opIndex: number): Row[] {
     for (const colValue of columnValues) {
       const values = valueMap.get(colValue) || [];
       let aggregatedValue: number | null = null;
-      
+
+      // A missing (index, column) cell is null — mirrors pandas pivot_table (NaN → null), not sum([]) = 0.
+      if (values.length === 0) {
+        newRow[colValue] = null;
+        continue;
+      }
+
       switch (aggregateFn) {
         case 'sum':
           aggregatedValue = values.reduce((a, b) => a + b, 0);

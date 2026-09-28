@@ -1,7 +1,8 @@
 /**
  * Canonical request → QuerySource conditions (FEAT-598, spec §7 / S5).
  * TS twin of `parrot.outputs.a2ui.linked.conditions.derive_conditions`; pinned by
- * `contract/fixtures/conditions/*.json`. Never emits `querylimit` or `refresh` (lane-time keys).
+ * `contract/fixtures/conditions/*.json`. Never emits `limit`, `querylimit` or `refresh` (lane-time keys);
+ * `_offset` only when the request offset is truthy.
  */
 import type { SourceRequest } from './types';
 
@@ -45,12 +46,10 @@ export function deriveConditions(
     out['grouping'] = [...request.grouping];
   }
   
-  // Rule 4: limit / offset mapped to the same dialect keys the fixtures use
-  if (request.limit !== undefined && request.limit !== null) {
-    out['limit'] = request.limit;
-  }
-  if (request.offset !== undefined && request.offset !== null) {
-    out['_offset'] = request.offset;
+  // Rule 4: never `limit` (the lane folds request.limit into querylimit at fetch time); `_offset` only when
+  // truthy — mirrors `if request.offset: payload["_offset"] = int(request.offset)` (conditions.py:35-36).
+  if (request.offset) {
+    out['_offset'] = Math.trunc(Number(request.offset));
   }
   
   return out;
