@@ -181,7 +181,7 @@
       "feature_id": "FEAT-609",
       "feature": "wikitoolkit-structural-coverage",
       "spec": "sdd/specs/wikitoolkit-structural-coverage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "estimated_hours": 4,
@@ -193,8 +193,8 @@
       "assigned_to": null,
       "assigned_at": null,
       "started_at": "2026-09-28T19:08:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3826-svelte-component-symbol.md",
+      "completed_at": "2026-09-28T19:20:02+00:00",
+      "file": "sdd/tasks/completed/TASK-3826-svelte-component-symbol.md",
       "owned_files": [
         "packages/ai-parrot/src/parrot/knowledge/wiki/symbols.py",
         "packages/ai-parrot/src/parrot/knowledge/wiki/languages/javascript.py",
@@ -205,7 +205,8 @@
         "tests/knowledge/wiki/languages/fixtures/svelte_components/Parent.svelte",
         "tests/knowledge/wiki/languages/fixtures/svelte_components/Other.svelte",
         "tests/knowledge/wiki/languages/fixtures/svelte_components/routes/(app)/fieldsync/+page.svelte"
-      ]
+      ],
+      "verification": "verified"
     },
     {
       "id": "TASK-3827",
