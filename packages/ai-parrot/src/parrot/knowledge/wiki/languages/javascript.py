@@ -764,7 +764,7 @@ class JavaScriptScanner(LanguageScanner):
         and Svelte files were reported as tree-sitter while being parsed
         by regex.
         """
-        if self._last_mode == "ast-grep":
+        if structural_enabled() and astgrep.supported_language("typescript"):
             return "ast-grep"
         if treesitter.get_parser("typescript") is not None and treesitter.get_parser("javascript") is not None:
             return "tree-sitter"
