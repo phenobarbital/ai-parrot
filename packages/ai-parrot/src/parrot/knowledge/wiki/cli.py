@@ -65,6 +65,12 @@ from parrot.knowledge.wiki.federation import (
     resolve_namespaces,
 )
 from parrot.knowledge.wiki.languages import all_scanners, astgrep
+from parrot.knowledge.wiki.languages.fingerprint import (
+    changed_languages,
+    current_fingerprint,
+    load_fingerprint,
+    save_fingerprint,
+)
 from parrot.knowledge.wiki.languages.render import structural_enabled
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
@@ -1604,6 +1610,14 @@ def build(
             enriched_scan, force_rel_paths, enrichment_by_path = await _apply_roblox_enrichment(
                 root, scan, output_dir, sources
             )
+            # FEAT-609 M2: re-ingest every file of a language whose extractor changed
+            # (ast-grep installed/removed, rule file edited) — per-file staleness cannot see it.
+            fp_now = current_fingerprint()
+            changed = changed_languages(await load_fingerprint(store), fp_now)
+            if changed:
+                force_rel_paths = set(force_rel_paths) | {
+                    f.rel_path for f in enriched_scan.files if f.language in changed
+                }
             counts = await _ingest_files(
                 store, sources, root, enriched_scan, force=force, force_rel_paths=force_rel_paths
             )
@@ -1615,6 +1629,7 @@ def build(
             # has succeeded — so a failure anywhere leaves the previous,
             # retryable fingerprint in place for the next run.
             _record_roblox_enrichment_success(output_dir, enrichment_by_path, counts["written_rel_paths"])
+            await save_fingerprint(store, fp_now)
 
             okf_report: dict[str, Any] | None = None
             if not no_export:
