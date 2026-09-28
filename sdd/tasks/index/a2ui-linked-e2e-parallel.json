@@ -73,7 +73,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -81,8 +81,9 @@
       "parallelism_notes": "no deps: adds _validate_filter_params + FILTER_PARAM_* codes in catalog/__init__.py (no other FEAT-611 task touches it) and fixes the guard count in test_linked_surfaces_e2e.py:356",
       "assigned_to": null,
       "started_at": "2026-09-28T23:12:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3834-filterbar-param-validation.md"
+      "completed_at": "2026-09-28T23:17:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3834-filterbar-param-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3835",
