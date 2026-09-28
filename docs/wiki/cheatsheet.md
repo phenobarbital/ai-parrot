@@ -28,6 +28,7 @@ source .venv/bin/activate
 | Extractor de Jira | `uv pip install -e 'packages/ai-parrot[jira]'` |
 | Bookstore + servidor MCP | `uv pip install 'ai-parrot[bookstore,mcp]'` |
 | Comunidades Leiden (opcional) | `uv pip install leidenalg python-igraph` |
+| Símbolos de JS/TS/Svelte/PHP/Rust/Perl | incluido en `ai-parrot[wiki-languages]` (ast-grep). Sin él hay outline pero **0 símbolos**; `wikitoolkit status` lo dice en la línea `Symbols:` |
 | Verificar | `wikitoolkit --help` · `parrot --help` |
 
 ---
@@ -81,6 +82,27 @@ wikitoolkit symbols outline "sym:packages/ai-parrot/src/parrot/bots/abstract.py#
 wikitoolkit symbols blast AbstractBot.get_client       # quién depende (calls/extends/implements)
 wikitoolkit symbols blast save_conversation_turn --depth 3 --no-tests --json
 ```
+
+```bash
+# Svelte: cada .svelte es un símbolo de tipo `component`
+wikitoolkit symbols lookup AdminBulkBar                 # el componente (kind: component)
+wikitoolkit symbols lookup "fieldsync/+page"            # ficheros de ruta SvelteKit: calificados con su directorio
+wikitoolkit symbols blast Spinner                        # quién renderiza el componente (sigue `uses`, además de calls/extends/implements)
+
+# Namespaces federados: los hits ajenos vienen calificados como <ns>::sym:…
+wikitoolkit symbols lookup requireDashboardContainer                # broadcast (local + namespaces)
+wikitoolkit symbols lookup requireDashboardContainer --ns svelte    # solo ese namespace
+wikitoolkit symbols outline "svelte::src/lib/guard.ts"              # un id calificado se lee en su namespace
+```
+
+Notas:
+
+- `wikitoolkit status` imprime `Symbols   : enabled` o `disabled for javascript, php, … — pip install
+  'ai-parrot[wiki-languages]'`; `build` avisa una vez (WARNING) si escaneó código sin el tier estructural.
+- Instalar (o quitar) el extra, o cambiar un fichero de reglas, re-ingesta automáticamente los lenguajes
+  afectados en el siguiente `build` normal — no hace falta `--force`.
+- `blast` nunca cruza planos: en un namespace sigue solo las aristas de ese namespace.
+- Las funciones locales (`const onSave = () => …`) son símbolos `function`; no aparecen en el `## API outline`.
 
 Ejecuta `symbols blast` **antes** de tocar una función/clase muy usada.
 
