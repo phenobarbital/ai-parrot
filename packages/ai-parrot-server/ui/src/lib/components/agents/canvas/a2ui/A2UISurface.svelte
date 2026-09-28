@@ -103,6 +103,7 @@
 		stop: () => lane?.stop(),
 		setParam: (source, name, value) => lane?.setParam(source, name, value) ?? Promise.resolve(),
 		refreshAll: () => lane?.refreshAll() ?? Promise.resolve(),
+		refreshSource: (key) => lane?.refreshSource(key) ?? Promise.resolve(),
 	};
 	setContext(LINKED_LANE_CONTEXT, laneProxy);
 
@@ -183,7 +184,11 @@
 						{key}: data as of {status.snapshotAt}
 					</p>
 				{/if}
+				<button type="button" class="text-xs underline self-start" data-testid="refresh-{key}"
+					onclick={() => laneProxy.refreshSource(key)}>Refresh {key}</button>
 			{/each}
+			<button type="button" class="text-xs underline self-start" data-testid="refresh-all"
+				onclick={() => laneProxy.refreshAll()}>Refresh all</button>
 			{#if persistedSurfaceId}
 				<button type="button" class="text-xs underline self-start" onclick={serverRefresh}>
 					Refresh
