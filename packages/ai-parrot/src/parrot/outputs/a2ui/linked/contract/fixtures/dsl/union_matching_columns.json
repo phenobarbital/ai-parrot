@@ -1,0 +1,7 @@
+{
+  "description": "union retains the own frame's ordered column intersection and source order",
+  "input": [{"a": 1, "b": 2, "c": 3}],
+  "frames": {"other": [{"b": 4, "a": 5, "d": 6}]},
+  "ops": [{"op": "union", "sources": ["other"]}],
+  "expected": [{"a": 1, "b": 2}, {"a": 5, "b": 4}]
+}

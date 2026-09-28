@@ -20,6 +20,8 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from parrot.auth.permission import build_principal_context
+from parrot.outputs.a2ui.linked import has_data_sources
 from parrot.outputs.a2ui.models import CreateSurface
 from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema
 from pydantic import Field
@@ -85,6 +87,7 @@ class PublishSurfaceTool(AbstractTool):
         agent_id: str | None = None,
         user_id: str | None = None,
         session_id: str | None = None,
+        linked_service: Any = None,
         **kwargs: Any,
     ) -> None:
         """Construct the tool.
@@ -100,6 +103,10 @@ class PublishSurfaceTool(AbstractTool):
                 bot lane derives this from ``bot.name`` itself).
             user_id: Attribution for the standalone fallback lane only.
             session_id: Attribution for the standalone fallback lane only.
+            linked_service: ``LinkedSurfaceService`` used by the standalone
+                lane for linked envelopes (FEAT-598); built with
+                ``guard=None`` — i.e. fail-closed for linked envelopes —
+                when not given.
         """
         super().__init__(**kwargs)
         self._bot = bot
@@ -107,6 +114,7 @@ class PublishSurfaceTool(AbstractTool):
         self._agent_id = agent_id
         self._user_id = user_id
         self._session_id = session_id
+        self._linked_service = linked_service
 
     async def _execute(
         self,
@@ -146,7 +154,7 @@ class PublishSurfaceTool(AbstractTool):
         return {
             "surface_id": surface_id,
             "kind": kind,
-            "refreshable": recipe_name is not None,
+            "refreshable": recipe_name is not None or has_data_sources(envelope),
         }
 
     async def _publish_directly(
@@ -167,6 +175,12 @@ class PublishSurfaceTool(AbstractTool):
         ``PgUISurfaceStore``. Raises an actionable ``RuntimeError`` — never a
         bare ``ModuleNotFoundError`` — when ai-parrot-server is unavailable
         and no store was injected.
+
+        For a linked envelope (FEAT-598 S1/S2), delegates to
+        ``LinkedSurfaceService.validate_for_persistence`` + ``ensure_snapshot``
+        in the owner's context before persisting — ``LinkedGuardRequired``,
+        ``AuthorizationRequired``, ``CatalogValidationError``, and
+        ``SnapshotError`` all propagate; nothing is saved on failure.
         """
         try:
             from parrot.handlers.models.ui_surfaces import (
@@ -194,12 +208,23 @@ class PublishSurfaceTool(AbstractTool):
         agent_id = self._agent_id or "publish_surface_tool"
         user_id = self._user_id or agent_id
 
+        envelope_dump = envelope_model.model_dump(by_alias=True, mode="json")
+        if has_data_sources(envelope_model):
+            # FEAT-598 S1/S2: the persistence boundary for linked envelopes — TOOL-origin validation, a mandatory
+            # (fail-closed) data-plane guard, and a save-time snapshot executed ONCE in the owner's context.
+            from parrot.outputs.a2ui.linked.service import LinkedSurfaceService
+
+            service = self._linked_service or LinkedSurfaceService(guard=None)
+            owner_pctx = self._current_pctx or build_principal_context(user_id, channel="ui_surfaces")
+            await service.validate_for_persistence(envelope_model, owner_pctx=owner_pctx)
+            envelope_dump = await service.ensure_snapshot(envelope_dump, owner_pctx=owner_pctx)
+
         now = datetime.now(UTC)
         record = UISurfaceRecord(
             surface_id=surface_id,
             kind=UISurfaceKind(kind),
             title=title,
-            envelope=envelope_model.model_dump(by_alias=True, mode="json"),
+            envelope=envelope_dump,
             catalog_id=envelope_model.catalog_id,
             agent_id=agent_id,
             user_id=user_id,
