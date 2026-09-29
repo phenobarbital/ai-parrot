@@ -13,6 +13,8 @@ import pytest
 
 from ._envelope import real_envelope
 
+pytest.importorskip("querysource", reason="querysource not installed (example-only dependency)")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples" / "a2ui"))
 
 import client  # noqa: E402
@@ -232,14 +234,13 @@ class FakeConn:
         if not self.base:
             return None
         return {
-            "query_slug": seed_by_course.BASE_SLUG,
-            "query_name": f"{seed_by_course.BASE_SLUG} name",
-            "query_raw": "x",
-            "query_description": "d",
-            "query_type": "t",
-            "is_active": True,
-            "created_by": "me",
-            "created_at": "2026-01-01",
+            "program_id": 1,
+            "program_slug": "polestar",
+            "provider": "db",
+            "parser": "pgSQLParser",
+            "is_raw": False,
+            "is_cached": False,
+            "cache_timeout": 3600,
         }
 
     async def fetchval(self, sql: str, *args: Any) -> Any:
@@ -292,7 +293,7 @@ class TestSeed:
         async def connect(_dsn: str) -> FakeConn:
             return conn
 
-        with patch("asyncpg.connect", connect), patch.object(seed_by_course, "get_dsn", return_value="dsn"):
+        with patch("asyncpg.connect", connect), patch.object(seed_by_course, "default_dsn", "dsn"):
             await seed_by_course.seed()
         assert conn.closed
 

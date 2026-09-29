@@ -180,6 +180,28 @@ class PostgresWikiStore(BaseWikiStore):
             await self._pool.close()
             self._pool = None
 
+    def _meta_key(self, key: str) -> str:
+        """Scope ``key`` to this wiki: the ``meta`` table is shared by every wiki in the schema."""
+        return f"wiki:{self._wiki_name}:{key}"
+
+    async def get_meta(self, key: str) -> str | None:
+        """Read one plane metadata value (FEAT-609 Q2)."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            value = await conn.fetchval(f"SELECT value FROM {self._schema}.meta WHERE key = $1", self._meta_key(key))
+        return None if value is None else str(value)
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Upsert one plane metadata value (FEAT-609 Q2)."""
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                f"INSERT INTO {self._schema}.meta (key, value) VALUES ($1, $2) "
+                "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                self._meta_key(key),
+                value,
+            )
+
     # ------------------------------------------------------------------
     # Internal write helpers
     # ------------------------------------------------------------------

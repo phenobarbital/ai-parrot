@@ -8,7 +8,6 @@ for data errors: a failing source yields ``SourceOutcome(error=<stable code>)``.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Mapping
@@ -187,7 +186,7 @@ async def execute_sources(
     max_fetch_rows: int = 5000,
 ) -> ExecutionOutcome:
     """Fetch + transform every source (siblings first); per-source failure isolation (spec §3 M5)."""
-    from parrot.outputs.a2ui.linked.dsl import apply_transform
+    from parrot.outputs.a2ui.linked.dsl import apply_transform, frame_to_records
     from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource
     from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource, to_qs_principal
 
@@ -219,7 +218,7 @@ async def execute_sources(
             outcomes[key] = SourceOutcome(key=key, error=code, ignored_params=ignored)
             continue
         frames[key] = frame
-        rows = json.loads(frame.to_json(orient="records", date_format="iso"))
+        rows = frame_to_records(frame)
         truncated = False
         if max_snapshot_rows is not None and len(rows) > max_snapshot_rows:
             rows = rows[:max_snapshot_rows]

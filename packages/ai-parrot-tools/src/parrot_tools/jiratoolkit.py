@@ -2033,7 +2033,11 @@ class JiraToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Add a comment to an issue, optionally attaching files. Requires jira.write permission.
 
+        Set ``is_internal=True`` to post an internal (agent-only) comment on a
+        Jira Service Management issue; by default the comment is public.
+
         Example: jira.jira_add_comment('JRA-1330', 'This is a comment')
+        Example internal (Service Desk): jira.jira_add_comment('SD-42', 'Agent note', is_internal=True)
         Example with attachments:
             jira.jira_add_comment(
                 'JRA-1330',
@@ -2043,7 +2047,7 @@ class JiraToolkit(AbstractToolkit):
         """
 
         def _run():
-            return self.jira.add_comment(issue, body)
+            return self.jira.add_comment(issue, body, is_internal=is_internal)
 
         comment = await asyncio.to_thread(_run)
         result = self._issue_to_dict(comment)

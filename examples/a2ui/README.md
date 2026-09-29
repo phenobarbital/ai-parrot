@@ -28,10 +28,10 @@ FEAT-610 — Polestar graduates linked dashboard with example client and seed sc
    # Run the headless check: logs in, replays the lane's requests, ASSERTS the spec values (17572 / 9191 / 6245 /
    # 2884, 95 country groups, 23 licensee groups, the four pie slices) and exercises the grid's server paging.
    # Exit 0 only if everything passes; a 404, a wrong value or a missing source exits 1.
-   A2UI_DEMO_PASSWORD=<password> python examples/a2ui/client.py --check --user admin
+   ENV=prod python examples/a2ui/client.py --check
 
    # Print the values without asserting them (for data that has legitimately drifted)
-   A2UI_DEMO_PASSWORD=<password> python examples/a2ui/client.py --check --no-expect
+   ENV=prod python examples/a2ui/client.py --check --no-expect
    ```
 
 **Notes.** The server binds to loopback by default (`--host 0.0.0.0` exposes production data behind BasicAuth only). The
@@ -44,8 +44,9 @@ authenticated user re-run the agent (a demo simplification).
 |----------|----------|-------------|
 | `ENV` | Yes | Set to `prod` for production data |
 | `QS_PBAC_ENABLED` | Yes | Set to `false` for local dev |
-| `A2UI_DEMO_PASSWORD` | For `--check` | Password for demo user |
-| `QS_ASYNCPG_URL` | No | Override DB connection (defaults to querysource config) |
+| `A2UI_USER_USERNAME` | No | Login user for `--check` (read from `env/<ENV>/.env`; `--user` overrides; default `admin`) |
+| `A2UI_USER_PASSWORD` | For `--check` | Login password for `--check` (read from `env/<ENV>/.env`) |
+| `A2UI_DEMO_PASSWORD` | No | Password override (takes precedence over `A2UI_USER_PASSWORD`) |
 
 ## Files
 

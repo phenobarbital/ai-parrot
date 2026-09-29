@@ -511,6 +511,32 @@ class ArangoDBWikiStore(BaseWikiStore):
         return result or []
 
     # ------------------------------------------------------------------
+    # Plane metadata (FEAT-609 Q2)
+    # ------------------------------------------------------------------
+
+    async def get_meta(self, key: str) -> str | None:
+        """Read one plane metadata value from ``wiki_meta`` (FEAT-609 Q2)."""
+        await self._ensure_init()
+        rows = await self._query(
+            "FOR d IN @@collection FILTER d._key == @key RETURN d.value",
+            {"@collection": META_COLLECTION, "key": key},
+        )
+        return str(rows[0]) if rows else None
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Upsert one plane metadata value into ``wiki_meta``.
+
+        Raises:
+            PermissionError: When the store is read-only.
+        """
+        self._assert_writable()
+        await self._ensure_init()
+        await self._execute(
+            "UPSERT { _key: @key } INSERT { _key: @key, value: @value } UPDATE { value: @value } IN @@collection",
+            {"@collection": META_COLLECTION, "key": key, "value": value},
+        )
+
+    # ------------------------------------------------------------------
     # Write API
     # ------------------------------------------------------------------
 

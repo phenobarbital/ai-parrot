@@ -1,6 +1,6 @@
 // FEAT-598 (TASK-3794): fetchSource URL rule, 404 → SourceUnavailable, refresh boolean, querylimit (AC4/AC10/AC17).
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchSource, SourceUnavailable } from './fetch';
+import { FrameSelectionError, fetchSource, SourceUnavailable } from './fetch';
 import type { LinkedDataSource } from './types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -103,6 +103,39 @@ describe('fetchSource', () => {
     const src = makeSource();
     const rows = await fetchSource(src, {}, { baseUrl: '', headers: {} });
     expect(rows).toEqual([{ n: 5 }]);
+  });
+
+  it('throws FrameSelectionError when multi_output names a missing frame', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ totals: [{ n: 1 }], detail: [{ n: 2 }] })),
+    );
+    const src = makeSource({ multi_output: 'zzz' } as never);
+    const err = await fetchSource(src, {}, { baseUrl: '', headers: {} }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(FrameSelectionError);
+    expect((err as FrameSelectionError).name).toBe('FrameSelectionError');
+    expect((err as FrameSelectionError).message).toContain("no output named 'zzz' (available: detail, totals)");
+  });
+
+  it('throws FrameSelectionError when multi_output is not result against a bare-array payload', async () => {
+    // A bare array is the single `result` frame (Python wraps a bare DataFrame the same way).
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([{ n: 1 }])));
+    const src = makeSource({ multi_output: 'detail' } as never);
+    await expect(fetchSource(src, {}, { baseUrl: '', headers: {} })).rejects.toBeInstanceOf(FrameSelectionError);
+  });
+
+  it('throws FrameSelectionError on several frames with no result/multi_output', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ b: [{ n: 1 }], a: [{ n: 2 }] })));
+    const src = makeSource();
+    await expect(fetchSource(src, {}, { baseUrl: '', headers: {} })).rejects.toThrow(
+      /returned multiple outputs \(a, b\); specify multi_output/,
+    );
+  });
+
+  it('an empty keyed payload or null yields [] (no error)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({})));
+    expect(await fetchSource(makeSource({ multi_output: 'x' } as never), {}, { baseUrl: '', headers: {} })).toEqual([]);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('null'));
+    expect(await fetchSource(makeSource(), {}, { baseUrl: '', headers: {} })).toEqual([]);
   });
 
   it('exports SourceUnavailable', () => expect(new SourceUnavailable('x').name).toBe('SourceUnavailable'));

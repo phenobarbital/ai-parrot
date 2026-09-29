@@ -17,7 +17,6 @@ DatasetManager, LLM clients, or the satellite renderers.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -540,7 +539,9 @@ def build_linked_surface(
             raise ValueError(f"source '{key}' has no frame")
         frame = frames[key]
         if snapshot:
-            rows = json.loads(frame.head(max_snapshot_rows).to_json(orient="records", date_format="iso"))
+            from parrot.outputs.a2ui.linked.dsl import frame_to_records
+
+            rows = frame_to_records(frame.head(max_snapshot_rows))
             snapshot_at = source.snapshot_at if source.snapshot_at is not None else datetime.now(timezone.utc)
             snapshot_truncated = len(frame) > max_snapshot_rows
         else:

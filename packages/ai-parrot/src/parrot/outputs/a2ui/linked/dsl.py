@@ -13,6 +13,7 @@ skipped here (the caller records ``transform_skipped: ref``).
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from collections.abc import Callable, Mapping
@@ -52,8 +53,29 @@ def frame_from_records(rows: list[dict[str, Any]]) -> "pd.DataFrame":
     return pd.DataFrame.from_records(rows)
 
 
+def _binary_to_text(value: Any) -> Any:
+    """Return binary cells as text: UTF-8 when valid, otherwise base64."""
+    if not isinstance(value, (bytes, bytearray, memoryview)):
+        return value
+    raw = bytes(value)
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return base64.b64encode(raw).decode("ascii")
+
+
 def frame_to_records(frame: "pd.DataFrame") -> list[dict[str, Any]]:
-    """Serialise records with ISO dates, JSON nulls, and preserved numeric values."""
+    """Serialise records with ISO dates, JSON nulls, and preserved numeric values.
+
+    Binary cells (e.g. ``bytea`` columns) are converted to text first: pandas' ujson encoder
+    passes ``bytes`` through unvalidated and raises ``OverflowError`` on non-UTF-8 content.
+    """
+    object_cols = [c for c in frame.columns if frame[c].dtype == object]
+    binary_cols = [
+        c for c in object_cols if frame[c].map(lambda v: isinstance(v, (bytes, bytearray, memoryview))).any()
+    ]
+    if binary_cols:
+        frame = frame.assign(**{str(c): frame[c].map(_binary_to_text) for c in binary_cols})
     return json.loads(frame.to_json(orient="records", date_format="iso"))
 
 
@@ -282,7 +304,9 @@ def _op_join(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFrame"
         null_left = left_work[~left_work[left_keys].notna().all(axis=1)].copy()
         for column in output_right:
             null_left[column] = pd.NA
-        merged = pd.concat([merged, null_left], ignore_index=True, sort=False)
+        # Concat only when null-key rows exist: an empty pd.NA frame still casts right columns to object.
+        if not null_left.empty:
+            merged = pd.concat([merged, null_left], ignore_index=True, sort=False)
 
     columns = list(frame.columns) + output_right
     return merged.sort_values(order_column, kind="mergesort")[columns].reset_index(drop=True)

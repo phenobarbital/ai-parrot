@@ -16,10 +16,11 @@
 	import { setContext, untrack } from 'svelte';
 	import A2UIInfographic from './A2UIInfographic.svelte';
 	import A2UINode from './A2UINode.svelte';
-	import type { A2UIEnvelope, WireComponent } from './a2ui-types';
+	import { WIRE_INDEX_CONTEXT, type A2UIEnvelope, type WireComponent, type WireIndex } from './a2ui-types';
 	import { getDataSources, type Row } from './linked/types';
 	import {
 		createLinkedLane,
+		currentParams,
 		LINKED_LANE_CONTEXT,
 		FILTER_CONTEXT,
 		type LinkedLane,
@@ -93,6 +94,8 @@
 
 	let sources = $derived(getDataSources(envelope.createSurface));
 	let statuses = $state<Record<string, SourceUpdate>>({});
+	// Server-lane refresh feedback (§9 S3): X-Parrot-Refresh-Warnings entries and refresh failures.
+	let refreshNotices = $state<string[]>([]);
 
 	// Svelte 5 rule: `setContext` must run at component INIT, never inside `$effect` — the lane
 	// itself is only known once `sources` resolves (and is torn down/recreated on every envelope
@@ -103,6 +106,7 @@
 		stop: () => lane?.stop(),
 		setParam: (source, name, value) => lane?.setParam(source, name, value) ?? Promise.resolve(),
 		refreshAll: () => lane?.refreshAll() ?? Promise.resolve(),
+		getParams: () => lane?.getParams() ?? {},
 		refreshSource: (key) => lane?.refreshSource(key) ?? Promise.resolve(),
 	};
 	setContext(LINKED_LANE_CONTEXT, laneProxy);
@@ -116,6 +120,13 @@
 		},
 	};
 	setContext(FILTER_CONTEXT, filterController);
+
+	// FEAT-611: v1.0 flat components reference children by id; `A2UINode` resolves them through this
+	// index. Read lazily (at lookup time) so a new envelope is always the one consulted.
+	const wireIndex: WireIndex = {
+		get: (id) => envelope.createSurface.components.find((c) => c.id === id),
+	};
+	setContext(WIRE_INDEX_CONTEXT, wireIndex);
 
 	$effect(() => {
 		// `sources` is the ONLY tracked dependency: `start()` may call `onUpdate` synchronously, which
@@ -152,11 +163,51 @@
 
 	async function serverRefresh(): Promise<void> {
 		if (!persistedSurfaceId) return;
-		await fetch(`${config.apiBaseUrl}/api/v1/ui/surfaces/${persistedSurfaceId}/refresh`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-			body: JSON.stringify({ params: {} }),
-		});
+		const notices: string[] = [];
+		let res: Response;
+		try {
+			res = await fetch(`${config.apiBaseUrl}/api/v1/ui/surfaces/${persistedSurfaceId}/refresh`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+				// Always re-send the live overrides: /refresh params are not persisted (spec §7 gotcha).
+				body: JSON.stringify({ params: currentParams(laneProxy) }),
+			});
+		} catch (err) {
+			refreshNotices = [`refresh failed: ${err instanceof Error ? err.message : String(err)}`];
+			return;
+		}
+		const header = res.headers.get('X-Parrot-Refresh-Warnings');
+		if (header) {
+			// ui_surfaces.py:733-734 sends json.dumps(list[str]); never drop a warning silently (§9 S3).
+			try {
+				const parsed: unknown = JSON.parse(header);
+				if (Array.isArray(parsed)) notices.push(...parsed.map((w) => String(w)));
+				else notices.push(String(parsed));
+			} catch {
+				notices.push(header);
+			}
+		}
+		if (!res.ok) {
+			// A failed refresh never blanks the snapshot: baseDataModel is left untouched.
+			let detail = `HTTP ${res.status}`;
+			try {
+				const errBody = (await res.json()) as { error?: unknown; message?: unknown };
+				const text = errBody.error ?? errBody.message;
+				if (typeof text === 'string' && text) detail = text;
+			} catch {
+				// non-JSON error body — keep the status line
+			}
+			notices.push(`refresh failed: ${detail}`);
+			refreshNotices = notices;
+			return;
+		}
+		const body = (await res.json()) as { envelope?: Record<string, unknown> };
+		// The handler returns the stored INNER CreateSurface (ui_surfaces.py:266-273); accept a v1.0 wrapper too.
+		const surface = (body.envelope?.createSurface ?? body.envelope) as
+			| { dataModel?: Record<string, unknown> }
+			| undefined;
+		if (surface?.dataModel) baseDataModel = { ...baseDataModel, ...structuredClone(surface.dataModel) };
+		refreshNotices = notices;
 	}
 
 	let sourceEntries = $derived(sources ? Object.entries(statuses) : []);
@@ -192,6 +243,9 @@
 				{/if}
 				<button type="button" class="text-xs underline self-start" data-testid="refresh-{key}"
 					onclick={() => laneProxy.refreshSource(key)}>Refresh {key}</button>
+			{/each}
+			{#each refreshNotices as notice, i (i)}
+				<p class="text-xs text-amber-600" data-testid="notice-refresh-{i}">{notice}</p>
 			{/each}
 			<button type="button" class="text-xs underline self-start" data-testid="refresh-all"
 				onclick={() => laneProxy.refreshAll()}>Refresh all</button>

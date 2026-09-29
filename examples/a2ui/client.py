@@ -1,6 +1,6 @@
 """FEAT-610 — open the dashboard or run a headless check against a running example server.
 
-Run: A2UI_DEMO_PASSWORD=... python examples/a2ui/client.py --check --user admin
+Run: ENV=prod python examples/a2ui/client.py --check  (A2UI_USER_USERNAME / A2UI_USER_PASSWORD from env/prod/.env)
      python examples/a2ui/client.py --open
 
 ``--check`` logs in, fetches the dashboard envelope, replays exactly the requests the browser lane sends (each source's
@@ -249,6 +249,18 @@ def open_dashboard(base_url: str) -> None:
     webbrowser.open(url)
 
 
+def env_setting(name: str) -> str | None:
+    """Return ``name`` from the process environment, else from navconfig (``env/<ENV>/.env``, e.g. ENV=prod)."""
+    value = os.environ.get(name)
+    if value:
+        return value
+    try:
+        from navconfig import config
+    except ImportError:
+        return None
+    return config.get(name) or None
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -256,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--open", action="store_true", help="open the dashboard in the default browser")
     parser.add_argument("--check", action="store_true", help="run the headless check against the server")
     parser.add_argument("--no-expect", action="store_true", help="print values without asserting the verified map")
-    parser.add_argument("--user", default="admin", help="username (default: admin)")
+    parser.add_argument("--user", default=None, help="username (default: A2UI_USER_USERNAME, else admin)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -269,11 +281,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.open:
         open_dashboard(args.base_url)
         return 0
-    password = os.environ.get("A2UI_DEMO_PASSWORD")
+    user = args.user or env_setting("A2UI_USER_USERNAME") or "admin"
+    password = os.environ.get("A2UI_DEMO_PASSWORD") or env_setting("A2UI_USER_PASSWORD")
     if not password:
-        logger.error("A2UI_DEMO_PASSWORD environment variable not set")
+        logger.error("set A2UI_USER_PASSWORD (env/<ENV>/.env) or A2UI_DEMO_PASSWORD")
         return 1
-    return asyncio.run(check(args.base_url, args.user, password, expect=not args.no_expect))
+    return asyncio.run(check(args.base_url, user, password, expect=not args.no_expect))
 
 
 if __name__ == "__main__":

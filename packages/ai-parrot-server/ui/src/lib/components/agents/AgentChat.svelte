@@ -431,6 +431,8 @@
   let historyOpen = $derived(chatLayout.getHistoryOpen());
   let canvasOpen = $derived(chatLayout.getCanvasOpen());
   let canvasExpanded = $derived(chatLayout.getCanvasExpanded());
+  // FEAT-611: swapped layout — canvas takes the flexible width, chat becomes the fixed side pane.
+  let canvasPrimary = $derived(canvasOpen && !canvasExpanded && chatLayout.getCanvasPrimary());
 
   // Canvas resize state
   let canvasWidth = $state(480);
@@ -443,7 +445,9 @@
     const startWidth = canvasWidth;
 
     function onMove(ev: PointerEvent) {
-      const delta = startX - ev.clientX;
+      // `canvasWidth` is the width of whichever pane is fixed: the canvas normally (dragging LEFT
+      // grows it), the chat when swapped (the chat is left of the handle, so dragging RIGHT grows it).
+      const delta = canvasPrimary ? ev.clientX - startX : startX - ev.clientX;
       canvasWidth = Math.max(
         280,
         Math.min(startWidth + delta, window.innerWidth * 0.7),
@@ -2056,7 +2060,8 @@
 
   <!-- Main Chat Area (hidden when canvas is expanded) -->
   <main
-    class={`flex-1 flex flex-col h-full relative overflow-hidden${canvasExpanded ? " hidden" : ""}`}
+    class={`${canvasPrimary ? "shrink-0" : "flex-1"} flex flex-col h-full relative overflow-hidden${canvasExpanded ? " hidden" : ""}`}
+    style={canvasPrimary ? `width: ${canvasWidth}px` : ""}
   >
     <!-- Desktop Header — hidden in compact (caller is expected to provide its own
          section heading; the agentId + title are noise in a narrow side rail). -->
@@ -2563,21 +2568,22 @@
     <div
       class={`hidden md:flex items-center justify-center w-1.5 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors shrink-0 select-none ${isResizing ? "bg-primary/20" : ""}`}
       onpointerdown={startCanvasResize}
+      ondblclick={() => chatLayout.toggleCanvasPrimary()}
       role="separator"
       aria-orientation="vertical"
-      title="Drag to resize canvas"
+      title="Drag to resize · double-click to swap chat and canvas sizes"
     >
       <div class="w-0.5 h-8 rounded-full bg-border"></div>
     </div>
   {/if}
   <aside
-    class={`hidden md:flex flex-col bg-card border-border overflow-hidden ${canvasOpen ? (canvasExpanded ? "flex-1" : "") : "w-0"}`}
-    style={canvasOpen && !canvasExpanded ? `width: ${canvasWidth}px` : ""}
+    class={`hidden md:flex flex-col bg-card border-border overflow-hidden ${canvasOpen ? (canvasExpanded || canvasPrimary ? "flex-1 min-w-0" : "") : "w-0"}`}
+    style={canvasOpen && !canvasExpanded && !canvasPrimary ? `width: ${canvasWidth}px` : ""}
   >
     {#if canvasOpen}
       <div
-        class={`${canvasExpanded ? "w-full" : ""} h-full`}
-        style={!canvasExpanded ? `width: ${canvasWidth}px` : ""}
+        class={`${canvasExpanded || canvasPrimary ? "w-full" : ""} h-full`}
+        style={!canvasExpanded && !canvasPrimary ? `width: ${canvasWidth}px` : ""}
       >
         {#if features.canvas}
           {#await import("./canvas/CanvasPanel.svelte") then { default: CanvasPanel }}

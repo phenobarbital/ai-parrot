@@ -151,5 +151,5 @@ def test_scanner_for_rs_returns_rust_scanner():
     assert isinstance(scanner_for(".rs"), RustScanner)
 
 
-def test_rust_scanner_mode_is_heuristic_without_grammar(force_heuristic):
+def test_rust_scanner_mode_is_heuristic_without_grammar(force_heuristic, force_no_astgrep):
     assert RustScanner().mode == "heuristic"

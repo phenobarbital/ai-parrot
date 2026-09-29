@@ -473,10 +473,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3835 (commit fa5b7b092, merged)
+**Date**: 2026-09-28
 **Notes**:
+- `emission.py`: added `_wrap_create_surface` and called it in `finalize_a2ui_response`. A bare CreateSurface (no `version`, with `surfaceId` and `components`) becomes `{"version":"v1.0","createSurface":...}`. It is idempotent, and the legacy dicts in `test_emission_wiring` stay unwrapped.
+- `bots/base.py`: added `_extract_last_linked_surface_result` and `_extract_last_published_surface_id`.
+  - `ask()` lifts the linked envelope only when neither the interactive nor the infographic lift ran (precedence interactive > infographic > linked).
+  - `a2ui_surface_id` is merged into `response.metadata`.
+  - The formatter-skip condition is unchanged.
+- Tests: 12 new tests. `test_emission_wiring` (8) and `test_basebot_infographic_dual_emit` (6) still pass.
+- Integrated on the feature branch together with TASK-3834: 142 passed (ai-parrot linked + emission + lifting) and 23 passed (server linked E2E and handlers).
+- The failures seen in wider related suites also occur on the unmodified base: `test_db_agent_structured_table_artifact` and `test_agent_a2ui_stream`. Two others are order-dependent.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The log line in `ask()` uses a KeyError-safe `.get("createSurface", {})`, and there is one extra no-mutation test. Cython `.so` files were symlinked in from the main checkout to run tests; they are untracked.

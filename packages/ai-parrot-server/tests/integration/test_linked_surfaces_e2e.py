@@ -353,7 +353,9 @@ class TestLinkedSurfacesE2E:
         assert updated is not None
         after = updated.envelope["metadata"]["extensions"]["parrot_data_sources"]["epson_field_activity"]["snapshot_at"]
         assert after >= before
-        assert allow_guard.calls == [("query_slug", "public:epson_field_activity")] * 2
+        # validate_for_persistence (service.py:117) + ensure_snapshot re-check
+        # (service.py:127, since ff066c3ae) + refresh (service.py:159)
+        assert allow_guard.calls == [("query_slug", "public:epson_field_activity")] * 3
         assert all(kwargs["conditions"]["querylimit"] == 5000 for kwargs in fake_core_qs.kwargs)
         assert fake_core_qs.closed == 2
 
