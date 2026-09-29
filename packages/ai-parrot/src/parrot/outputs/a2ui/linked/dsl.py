@@ -64,19 +64,44 @@ def _binary_to_text(value: Any) -> Any:
         return base64.b64encode(raw).decode("ascii")
 
 
+def _json_safe(value: Any) -> Any:
+    """Recursively make a cell encodable by pandas' ujson writer.
+
+    Binary values become text (see :func:`_binary_to_text`), strings holding lone surrogates
+    are re-encoded with replacement characters, and dict/list/tuple containers are walked.
+    """
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return _binary_to_text(value)
+    if isinstance(value, str):
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            return value.encode("utf-8", "replace").decode("utf-8")
+        return value
+    if isinstance(value, dict):
+        return {_json_safe(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def frame_to_records(frame: "pd.DataFrame") -> list[dict[str, Any]]:
     """Serialise records with ISO dates, JSON nulls, and preserved numeric values.
 
-    Binary cells (e.g. ``bytea`` columns) are converted to text first: pandas' ujson encoder
-    passes ``bytes`` through unvalidated and raises ``OverflowError`` on non-UTF-8 content.
+    pandas' ujson encoder passes ``bytes`` through unvalidated and raises ``OverflowError``
+    ("Unterminated UTF-8 sequence") on non-UTF-8 content — including bytes nested inside
+    dict/list cells (``jsonb``/array/record columns) and ``S``-dtype columns — and a Unicode
+    error on strings holding lone surrogates. On such a failure the non-numeric columns are
+    sanitised with :func:`_json_safe` and serialisation is retried, so clean frames pay nothing.
     """
-    object_cols = [c for c in frame.columns if frame[c].dtype == object]
-    binary_cols = [
-        c for c in object_cols if frame[c].map(lambda v: isinstance(v, (bytes, bytearray, memoryview))).any()
-    ]
-    if binary_cols:
-        frame = frame.assign(**{str(c): frame[c].map(_binary_to_text) for c in binary_cols})
-    return json.loads(frame.to_json(orient="records", date_format="iso"))
+    try:
+        payload = frame.to_json(orient="records", date_format="iso", double_precision=15)
+    except (OverflowError, UnicodeError):
+        text_cols = [c for c in frame.columns if frame[c].dtype == object or frame[c].dtype.kind in "SV"]
+        logger.debug("frame_to_records: sanitising non-UTF-8 values in columns %s", text_cols)
+        frame = frame.assign(**{str(c): frame[c].map(_json_safe).astype(object) for c in text_cols})
+        payload = frame.to_json(orient="records", date_format="iso", double_precision=15)
+    return json.loads(payload)
 
 
 _OpFn = Callable[["pd.DataFrame", Any, Mapping[str, "pd.DataFrame"], int], "pd.DataFrame"]

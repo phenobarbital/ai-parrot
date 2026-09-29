@@ -101,3 +101,37 @@ def test_relational_ops_do_not_mutate_siblings() -> None:
     apply_transform(frame_from_records([{"key": "a", "value": 1}]), join_spec, frames={"right": sibling})
     apply_transform(frame_from_records([{"key": "a", "value": 1}]), union_spec, frames={"right": sibling})
     assert_frame_equal(sibling, before)
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        (b"caf\xc3\xa9", "café"),
+        (b"\xff\xfe", "//4="),
+        ({"k": b"\xe9", "ok": "x"}, {"k": "6Q==", "ok": "x"}),
+        ([b"\xff", "y"], ["/w==", "y"]),
+        ("caf\udce9", "caf?"),
+    ],
+)
+def test_frame_to_records_sanitises_non_utf8_cells(cell: object, expected: object) -> None:
+    """Binary (top-level or nested) and lone-surrogate cells never break serialisation."""
+    import pandas as pd
+
+    frame = pd.DataFrame({"a": [cell], "n": [1]})
+    assert frame_to_records(frame) == [{"a": expected, "n": 1}]
+
+
+def test_frame_to_records_sanitises_bytes_dtype_column() -> None:
+    """A numpy ``S``-dtype column (not ``object``) is sanitised too."""
+    import pandas as pd
+
+    frame = pd.DataFrame({"a": pd.Series([b"\xe9"]).astype("S")})
+    assert frame_to_records(frame) == [{"a": "6Q=="}]
+
+
+def test_frame_to_records_preserves_float_precision() -> None:
+    """Floats keep 15 significant digits instead of pandas' default of 10."""
+    import pandas as pd
+
+    frame = pd.DataFrame({"f": [0.39698840256566126]})
+    assert frame_to_records(frame)[0]["f"] == pytest.approx(0.39698840256566126, rel=1e-15)
