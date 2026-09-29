@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 from pathlib import Path
+from collections.abc import AsyncIterator
 from typing import Any
 
 from parrot.auth.context import _pctx_var
@@ -65,6 +66,23 @@ class EpsonLinkedAgent(InfographicAuthoringMixin, Agent):
         token = _pctx_var.set(pctx)
         try:
             return await super().ask(*args, **kwargs)
+        finally:
+            _pctx_var.reset(token)
+
+    async def ask_stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        """Streaming twin of :meth:`ask`: bind the caller's PermissionContext for the streamed tool loop.
+
+        Live S4 (2026-09-29): without this, a streamed chat ran the dashboard TOOL with no pctx, which
+        fails closed ("guard configured but no caller pctx"), so the streamed turn carried no surface.
+        """
+        pctx = kwargs.get("permission_context") or _pctx_var.get()
+        user_id = kwargs.get("user_id")
+        if pctx is None and user_id:
+            pctx = build_principal_context(str(user_id), channel="agent_chat")
+        token = _pctx_var.set(pctx)
+        try:
+            async for chunk in super().ask_stream(*args, **kwargs):
+                yield chunk
         finally:
             _pctx_var.reset(token)
 
