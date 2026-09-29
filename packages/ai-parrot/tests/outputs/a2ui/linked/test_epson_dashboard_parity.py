@@ -35,7 +35,7 @@ def test_parity_conditions(case):
 def test_parity_rows():
     raw = {slug: frame_from_records(rows) for slug, rows in FIXTURE["input_frames"].items()}
     frames: dict = {}
-    for key in ("targets", "activity", "attainment", "kpis"):  # dependency order (targets first)
+    for key in ("targets", "activity", "daily", "attainment", "kpis"):  # dependency order (targets first)
         src = _descriptor(key)
         frames[key] = apply_transform(raw[src.slug], src.transform, frames=frames)
         assert frame_to_records(frames[key]) == FIXTURE["expected_rows"][key], key

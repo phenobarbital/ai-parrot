@@ -5,6 +5,9 @@ Browser lane: the date FilterBar re-queries only `activity` (a FilterBar param n
 Server lane: POST /refresh {params:{firstdate,lastdate}} broadcasts to every activity-backed source.
 KPI "stores visited" = distinct stores per program, summed (the DSL has no distinct count), so a store
 active in two programs counts twice.
+Attainment is a RATIO (visits / target, e.g. 0.683); the KPICard/DataTable column carry format="percent"
+so the renderer displays it as "68.3%". The chart binds `daily` (visits summed per day), not the raw
+(day, program, store_id) activity rows; `day` is a 'YYYY-MM-DD' string (seed_staging to_char()).
 """
 
 from __future__ import annotations
@@ -27,13 +30,19 @@ TARGETS_SLUG = "epson_e2e_targets"  # == seed_staging.TARGETS_SLUG
 #: ISO start of the parity fixture's date range — offered as an explicit "From" option.
 RANGE_START = "2026-09-01"
 _JOIN_TARGETS = {"op": "join", "with": "targets", "how": "left", "on": [{"left": "program", "right": "program"}]}
-_PCT = {"operator": "/", "left": {"operator": "*", "left": "visits", "right": 100}, "right": "target"}
+#: Attainment ratio (NOT *100): renderers apply format="percent" (0.683 -> "68.3%").
+_RATIO = {"operator": "/", "left": "visits", "right": "target"}
 
 ATTAINMENT_OPS: list[dict[str, Any]] = [
     _JOIN_TARGETS,
     {"op": "group_by", "by": ["program"], "aggregate": {"visits": "sum", "target": "max"}},
-    {"op": "derive", "name": "attainment", "expr": _PCT},
+    {"op": "derive", "name": "attainment", "expr": _RATIO},
     {"op": "sort", "by": [{"column": "attainment", "direction": "desc"}]},
+]
+#: One row per day (visits summed over programs/stores) — the bar chart's series.
+DAILY_OPS: list[dict[str, Any]] = [
+    {"op": "group_by", "by": ["day"], "aggregate": {"visits": "sum"}},
+    {"op": "sort", "by": [{"column": "day", "direction": "asc"}]},
 ]
 KPI_OPS: list[dict[str, Any]] = [
     {"op": "group_by", "by": ["program", "store_id"], "aggregate": {"visits": "sum"}},
@@ -41,7 +50,7 @@ KPI_OPS: list[dict[str, Any]] = [
     {"op": "group_by", "by": ["program"], "aggregate": {"visits": "sum", "store_id": "count", "target": "max"}},
     {"op": "derive", "name": "k", "expr": 1},
     {"op": "group_by", "by": ["k"], "aggregate": {"visits": "sum", "store_id": "sum", "target": "sum"}},
-    {"op": "derive", "name": "attainment_pct", "expr": _PCT},
+    {"op": "derive", "name": "attainment_pct", "expr": _RATIO},
 ]
 
 
@@ -54,14 +63,14 @@ def _date_params() -> dict[str, ParamSpec]:
 
 
 def build_sources(firstdate: str, lastdate: str) -> dict[str, LinkedDataSource]:
-    """Return the four descriptors in dependency-friendly insertion order (targets first).
+    """Return the five descriptors in dependency-friendly insertion order (targets first).
 
     Args:
         firstdate: Initial ``firstdate`` placeholder (ISO date or QuerySource keyword such as ``FDOM``).
         lastdate: Initial ``lastdate`` placeholder (ISO date or keyword such as ``TODAY``).
 
     Returns:
-        ``{targets, activity, attainment, kpis}`` linked-source descriptors.
+        ``{targets, activity, daily, attainment, kpis}`` linked-source descriptors.
     """
     dated = SourceRequest(placeholders={"firstdate": firstdate, "lastdate": lastdate})
     plain = SourceRequest()
@@ -81,6 +90,7 @@ def build_sources(firstdate: str, lastdate: str) -> dict[str, LinkedDataSource]:
     return {
         "targets": _src("targets", TARGETS_SLUG, plain, None, {}),
         "activity": _src("activity", ACTIVITY_SLUG, dated, None, _date_params()),
+        "daily": _src("daily", ACTIVITY_SLUG, dated, DAILY_OPS, _date_params()),
         "attainment": _src("attainment", ACTIVITY_SLUG, dated, ATTAINMENT_OPS, _date_params()),
         "kpis": _src("kpis", ACTIVITY_SLUG, dated, KPI_OPS, _date_params()),
     }
@@ -101,8 +111,16 @@ def build_components(programs: list[str]) -> list[dict[str, Any]]:
         A2UI component dicts rooted at ``root``.
     """
 
-    def kpi(cid: str, label: str, col: str) -> dict[str, Any]:
-        return {"id": cid, "component": "KPICard", "label": label, "value": {"path": f"/kpis/rows/0/{col}"}}
+    def kpi(cid: str, label: str, col: str, fmt: str | None = None) -> dict[str, Any]:
+        card: dict[str, Any] = {
+            "id": cid,
+            "component": "KPICard",
+            "label": label,
+            "value": {"path": f"/kpis/rows/0/{col}"},
+        }
+        if fmt is not None:
+            card["format"] = fmt
+        return card
 
     return [
         {
@@ -113,7 +131,7 @@ def build_components(programs: list[str]) -> list[dict[str, Any]]:
         {"id": "kpi_row", "component": "Row", "children": ["kpi_visits", "kpi_stores", "kpi_attainment"]},
         kpi("kpi_visits", "Total visits", "visits"),
         kpi("kpi_stores", "Stores visited", "store_id"),
-        kpi("kpi_attainment", "% attainment", "attainment_pct"),
+        kpi("kpi_attainment", "% attainment", "attainment_pct", "percent"),  # ratio
         {
             "id": "date_filters",
             "component": "FilterBar",
@@ -147,13 +165,16 @@ def build_components(programs: list[str]) -> list[dict[str, Any]]:
             "type": "bar",
             "x": "day",
             "y": ["visits"],
-            "data": {"path": "/activity/rows"},
+            "data": {"path": "/daily/rows"},  # one bar per day
         },
         {
             "id": "table",
             "component": "DataTable",
             "data": {"path": "/attainment/rows"},
-            "columns": [{"name": c} for c in ("program", "visits", "target", "attainment")],
+            "columns": [
+                *({"name": c} for c in ("program", "visits", "target")),
+                {"name": "attainment", "format": "percent"},  # ratio
+            ],
         },
     ]
 

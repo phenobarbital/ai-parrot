@@ -72,7 +72,7 @@ SQL_SLUGS: dict[str, dict[str, Any]] = {
     ACTIVITY_SLUG: {
         "description": "FEAT-611 E2E: Epson visits per day, program and store (dedicated E2E slug)",
         "query_raw": (
-            "SELECT {fields} FROM (SELECT visit_date AS day, account_name AS program, store_id, "
+            "SELECT {fields} FROM (SELECT to_char(visit_date, 'YYYY-MM-DD') AS day, account_name AS program, store_id, "
             "count(*)::int AS visits FROM epson.vw_form_information "
             "WHERE visit_date BETWEEN {firstdate} AND {lastdate} "
             "AND account_name IS NOT NULL AND store_id IS NOT NULL GROUP BY 1,2,3) t {where_cond}"

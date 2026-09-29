@@ -13,7 +13,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('epson dashboard parity — rows', () => {
   it('applyTransform matches the Python reference rows', () => {
     const frames: Record<string, Record<string, unknown>[]> = {};
-    for (const key of ['targets', 'activity', 'attainment', 'kpis']) {
+    for (const key of ['targets', 'activity', 'daily', 'attainment', 'kpis']) {
       const src = FX.sources[key];
       frames[key] = applyTransform(FX.input_frames[src.slug], src.transform, frames);
       expect(frames[key]).toEqual(FX.expected_rows[key]);

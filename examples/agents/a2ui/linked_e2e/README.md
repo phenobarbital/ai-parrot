@@ -42,7 +42,7 @@ Two rules apply to every tier:
 
 | File | What it is |
 |---|---|
-| `dashboard_tool.py` | `build_epson_activity_dashboard`: the S2 TOOL. It has 4 sources (`activity`, `targets`, `attainment`, `kpis`), KPIs, a bar chart, an attainment table, a date FilterBar (param-bound) and a Program FilterBar (local). |
+| `dashboard_tool.py` | `build_epson_activity_dashboard`: the S2 TOOL. It has 5 sources (`targets`, `activity`, `daily`, `attainment`, `kpis`), KPIs (attainment is a ratio with `format: "percent"`), a per-day bar chart (`daily`), an attainment table (percent-formatted column), a date FilterBar (param-bound) and a Program FilterBar (local). |
 | `agent.py` | `EpsonLinkedAgent` (`epson_linked`) with the `qs_*` tools, the dashboard TOOL and `publish_surface`. It binds a pctx from the authenticated `user_id` in `ask()`. |
 | `server.py` | The example app. The mount order is QuerySource → `setup_dataplane_guard` → BotManager (+ agent) → AuthHandler(BasicAuth). |
 | `run_e2e.py` | The asserting HTTP runner for S1/S2/S3/S5. |

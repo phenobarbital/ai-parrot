@@ -133,6 +133,76 @@
         "interval_seconds": null
       }
     },
+    "daily": {
+      "kind": "query_slug",
+      "slug": "epson_e2e_activity",
+      "tenant": null,
+      "is_multiquery": false,
+      "multi_output": null,
+      "conditions": {
+        "firstdate": "2026-09-01",
+        "lastdate": "2026-09-07"
+      },
+      "request": {
+        "placeholders": {
+          "firstdate": "2026-09-01",
+          "lastdate": "2026-09-07"
+        },
+        "filter": {},
+        "fields": [],
+        "ordering": [],
+        "grouping": [],
+        "limit": null,
+        "offset": null
+      },
+      "params": {
+        "firstdate": {
+          "type": "date",
+          "default": null,
+          "required": false,
+          "editable": true,
+          "accepts_keywords": true
+        },
+        "lastdate": {
+          "type": "date",
+          "default": null,
+          "required": false,
+          "editable": true,
+          "accepts_keywords": true
+        }
+      },
+      "locked": [],
+      "transform": {
+        "ops": [
+          {
+            "op": "group_by",
+            "by": [
+              "day"
+            ],
+            "aggregate": {
+              "visits": "sum"
+            }
+          },
+          {
+            "op": "sort",
+            "by": [
+              {
+                "column": "day",
+                "direction": "asc"
+              }
+            ]
+          }
+        ],
+        "ref": null
+      },
+      "target": "/daily/rows",
+      "snapshot_at": null,
+      "snapshot_truncated": false,
+      "refresh": {
+        "policy": "on_mount",
+        "interval_seconds": null
+      }
+    },
     "attainment": {
       "kind": "query_slug",
       "slug": "epson_e2e_activity",
@@ -200,11 +270,7 @@
             "name": "attainment",
             "expr": {
               "operator": "/",
-              "left": {
-                "operator": "*",
-                "left": "visits",
-                "right": 100
-              },
+              "left": "visits",
               "right": "target"
             }
           },
@@ -322,11 +388,7 @@
             "name": "attainment_pct",
             "expr": {
               "operator": "/",
-              "left": {
-                "operator": "*",
-                "left": "visits",
-                "right": 100
-              },
+              "left": "visits",
               "right": "target"
             }
           }
@@ -501,18 +563,48 @@
         "store_id": 3
       }
     ],
+    "daily": [
+      {
+        "day": "2026-09-01",
+        "visits": 3
+      },
+      {
+        "day": "2026-09-02",
+        "visits": 5
+      },
+      {
+        "day": "2026-09-03",
+        "visits": 2
+      },
+      {
+        "day": "2026-09-04",
+        "visits": 4
+      },
+      {
+        "day": "2026-09-05",
+        "visits": 3
+      },
+      {
+        "day": "2026-09-06",
+        "visits": 1
+      },
+      {
+        "day": "2026-09-07",
+        "visits": 4
+      }
+    ],
     "attainment": [
       {
         "program": "epson",
         "visits": 16,
         "target": 20,
-        "attainment": 80.0
+        "attainment": 0.8
       },
       {
         "program": "pokemon",
         "visits": 6,
         "target": 20,
-        "attainment": 30.0
+        "attainment": 0.3
       }
     ],
     "kpis": [
@@ -521,7 +613,7 @@
         "visits": 22,
         "store_id": 5,
         "target": 40,
-        "attainment_pct": 55.0
+        "attainment_pct": 0.55
       }
     ]
   }

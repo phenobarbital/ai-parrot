@@ -39,6 +39,7 @@
     },
     {
       "component": "KPICard",
+      "format": "percent",
       "id": "kpi_attainment",
       "label": "% attainment",
       "value": {
@@ -117,7 +118,7 @@
     {
       "component": "Chart",
       "data": {
-        "path": "/activity/rows"
+        "path": "/daily/rows"
       },
       "id": "chart",
       "type": "bar",
@@ -138,6 +139,7 @@
           "name": "target"
         },
         {
+          "format": "percent",
           "name": "attainment"
         }
       ],
@@ -198,23 +200,55 @@
     "attainment": {
       "rows": [
         {
-          "attainment": 80.0,
+          "attainment": 0.8,
           "program": "epson",
           "target": 20,
           "visits": 16
         },
         {
-          "attainment": 30.0,
+          "attainment": 0.3,
           "program": "pokemon",
           "target": 20,
           "visits": 6
         }
       ]
     },
+    "daily": {
+      "rows": [
+        {
+          "day": "2026-09-01",
+          "visits": 3
+        },
+        {
+          "day": "2026-09-02",
+          "visits": 5
+        },
+        {
+          "day": "2026-09-03",
+          "visits": 2
+        },
+        {
+          "day": "2026-09-04",
+          "visits": 4
+        },
+        {
+          "day": "2026-09-05",
+          "visits": 3
+        },
+        {
+          "day": "2026-09-06",
+          "visits": 1
+        },
+        {
+          "day": "2026-09-07",
+          "visits": 4
+        }
+      ]
+    },
     "kpis": {
       "rows": [
         {
-          "attainment_pct": 55.0,
+          "attainment_pct": 0.55,
           "k": 1,
           "store_id": 5,
           "target": 40,
@@ -357,11 +391,7 @@
               },
               {
                 "expr": {
-                  "left": {
-                    "left": "visits",
-                    "operator": "*",
-                    "right": 100
-                  },
+                  "left": "visits",
                   "operator": "/",
                   "right": "target"
                 },
@@ -373,6 +403,76 @@
                   {
                     "column": "attainment",
                     "direction": "desc"
+                  }
+                ],
+                "op": "sort"
+              }
+            ],
+            "ref": null
+          }
+        },
+        "daily": {
+          "conditions": {
+            "firstdate": "2026-09-01",
+            "lastdate": "2026-09-07"
+          },
+          "is_multiquery": false,
+          "kind": "query_slug",
+          "locked": [],
+          "multi_output": null,
+          "params": {
+            "firstdate": {
+              "accepts_keywords": true,
+              "default": null,
+              "editable": true,
+              "required": false,
+              "type": "date"
+            },
+            "lastdate": {
+              "accepts_keywords": true,
+              "default": null,
+              "editable": true,
+              "required": false,
+              "type": "date"
+            }
+          },
+          "refresh": {
+            "interval_seconds": null,
+            "policy": "on_mount"
+          },
+          "request": {
+            "fields": [],
+            "filter": {},
+            "grouping": [],
+            "limit": null,
+            "offset": null,
+            "ordering": [],
+            "placeholders": {
+              "firstdate": "2026-09-01",
+              "lastdate": "2026-09-07"
+            }
+          },
+          "slug": "epson_e2e_activity",
+          "snapshot_at": "2026-09-25T00:00:00Z",
+          "snapshot_truncated": false,
+          "target": "/daily/rows",
+          "tenant": null,
+          "transform": {
+            "ops": [
+              {
+                "aggregate": {
+                  "visits": "sum"
+                },
+                "by": [
+                  "day"
+                ],
+                "op": "group_by"
+              },
+              {
+                "by": [
+                  {
+                    "column": "day",
+                    "direction": "asc"
                   }
                 ],
                 "op": "sort"
@@ -479,11 +579,7 @@
               },
               {
                 "expr": {
-                  "left": {
-                    "left": "visits",
-                    "operator": "*",
-                    "right": 100
-                  },
+                  "left": "visits",
                   "operator": "/",
                   "right": "target"
                 },

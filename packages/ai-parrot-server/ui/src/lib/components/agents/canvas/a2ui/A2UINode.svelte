@@ -7,6 +7,7 @@
 	import { getContext } from 'svelte';
 	import { resolveProps } from './a2ui-binding';
 	import { toChartBlockData } from './a2ui-chart-adapter';
+	import { formatA2UIValue } from './a2ui-format';
 	import { VIZ_CORE_CATALOG_ID, WIRE_INDEX_CONTEXT, type SectionDescriptor, type WireIndex } from './a2ui-types';
 	import type { GraphProperties } from './A2UIGraph.svelte';
 	import type { TableBlockData, TimelineBlockData } from '../infographic/infographic-types';
@@ -165,18 +166,18 @@
 	let resolvedCatalogId = $derived(componentCatalogId ?? surfaceCatalogId);
 	let isVizCoreGraph = $derived(component === 'Graph' && resolvedCatalogId === VIZ_CORE_CATALOG_ID);
 
-	// -- DataTable: columns are {name, title?, ...}; resolved rows are
+	// -- DataTable: columns are {name, title?, format?, ...}; resolved rows are
 	// objects keyed by column name — reshape into TableBlockData's
-	// positional rows.
+	// positional rows, applying each column's `format` hint (FEAT-611).
 	let tableData = $derived.by((): TableBlockData => {
 		const cols = Array.isArray(properties.columns)
-			? (properties.columns as { name: string; title?: string }[])
+			? (properties.columns as { name: string; title?: string; format?: string }[])
 			: [];
 		const rows = Array.isArray(resolved.data) ? (resolved.data as Record<string, unknown>[]) : [];
 		return {
 			title: typeof properties.title === 'string' ? properties.title : undefined,
 			columns: cols.map((c) => c.title || c.name),
-			rows: rows.map((row) => cols.map((c) => row?.[c.name] ?? null)),
+			rows: rows.map((row) => cols.map((c) => formatA2UIValue(row?.[c.name] ?? null, c.format))),
 		};
 	});
 
@@ -213,7 +214,7 @@
 {#if component === 'KPICard'}
 	<InfographicHeroCardBlock
 		label={String(resolved.label ?? '')}
-		value={(resolved.value as string | number) ?? ''}
+		value={(formatA2UIValue(resolved.value, resolved.format, resolved.unit) as string | number) ?? ''}
 		icon={resolved.icon as string | undefined}
 		trend={resolved.trend as 'up' | 'down' | 'flat' | undefined}
 		trend_value={resolved.delta as string | number | undefined}

@@ -91,7 +91,7 @@ async def test_epson_dashboard_golden(fake_qs):
     assert GOLDEN.read_text() == actual
     validate_envelope(CreateSurface.model_validate(result["a2ui_envelope"]), origin=ProducerOrigin.TOOL)
     assert result["artifacts"][0]["type"] == "a2ui_linked_surface"
-    assert fake_qs.executions == 4
+    assert fake_qs.executions == 5  # one fetch per source (targets, activity, daily, attainment, kpis)
     assert all(kwargs["conditions"]["querylimit"] == 5000 for kwargs in fake_qs.kwargs)
 
 
