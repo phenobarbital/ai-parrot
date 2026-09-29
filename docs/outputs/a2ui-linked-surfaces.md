@@ -88,3 +88,38 @@ When viewed through a share token, linked surfaces:
 - Provide a server-side refresh button for authorized users
 
 This ensures that share recipients see consistent data without inadvertently executing queries on their behalf.
+
+## 8. E2E validation
+
+FEAT-611 validated linked surfaces end to end. It ran as a parallel track to FEAT-610, against staging with
+querysource >= 5.1.2. The harness and the full runbook live in
+[`examples/agents/a2ui/linked_e2e/`](../../examples/agents/a2ui/linked_e2e/README.md). It covers seeding,
+servers, the runner, the pytest tiers and the manual S4 checklist.
+
+| Tier | Command | Role |
+|---|---|---|
+| Offline | `pytest packages/ai-parrot-server/tests/integration/test_linked_e2e_offline.py`, plus the golden/parity tests and vitest wrappers | Deterministic verdict, with no DB |
+| Staging | `ENV=staging pytest -m staging …/test_linked_e2e_staging.py`, or `run_e2e.py` against `server.py` | Live check of S1/S2/S3/S5, staging only |
+| Manual S4 | Admin UI chat with `epson_linked` in A2UI mode | Exploratory, never required |
+
+`contract/fixtures/parity/epson_dashboard_params.json` pins the conditions and rows that both the Python lane
+and the TS lane must reproduce. A SKIP never counts as a PASS.
+
+Core fixes that landed with FEAT-611:
+
+- **Envelope lifting.** A bare CreateSurface is wrapped as `{"version": "v1.0", "createSurface": …}`. The
+  bot lifts linked surfaces into the response, and `a2ui_surface_id` goes into `response.metadata`.
+- **Admin canvas.** Linked surfaces open a canvas tab (`isLinkedSurface`). `persistedSurfaceId` reaches
+  `A2UISurface` from `metadata.a2ui_surface_id`, which enables the server-lane Refresh.
+- **TS drift fixes.**
+  - `selectFrame` follows the Python rules and throws `FrameSelectionError` on a missing or ambiguous frame.
+  - Pivot emits null for missing cells.
+  - `deriveConditions` never emits `limit`.
+  - `setParam` ignores locked or undeclared names.
+  - `serverRefresh` sends the current params and shows `X-Parrot-Refresh-Warnings` as notices.
+- **FilterBar param validation.** New codes `FILTER_PARAM_UNKNOWN_SOURCE` and `FILTER_PARAM_UNDECLARED`.
+- **`PublishSurfaceTool` guard resolution.** The tool resolves its guard in this order: explicit service,
+  `guard` kwarg, `bot._dataplane_guard`, then fail closed.
+- **Python left join dtype.** Right-hand columns keep their dtypes when no null-key rows exist, which
+  restores Python↔TS parity for `derive` after a join.
+- **Dependency floor.** `querysource>=5.1.2`.
