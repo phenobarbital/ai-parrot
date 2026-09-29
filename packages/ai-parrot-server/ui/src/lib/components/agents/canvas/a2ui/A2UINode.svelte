@@ -7,7 +7,7 @@
 	import { getContext } from 'svelte';
 	import { resolveProps } from './a2ui-binding';
 	import { toChartBlockData } from './a2ui-chart-adapter';
-	import { VIZ_CORE_CATALOG_ID, type SectionDescriptor } from './a2ui-types';
+	import { VIZ_CORE_CATALOG_ID, WIRE_INDEX_CONTEXT, type SectionDescriptor, type WireIndex } from './a2ui-types';
 	import type { GraphProperties } from './A2UIGraph.svelte';
 	import type { TableBlockData, TimelineBlockData } from '../infographic/infographic-types';
 	import InfographicChartBlock from '../infographic/blocks/InfographicChartBlock.svelte';
@@ -191,8 +191,17 @@
 		};
 	});
 
+	// FEAT-611: a v1.0 surface's children are component ids (flat adjacency list); nested descriptors
+	// (Infographic sections, authored trees) pass through unchanged. Unresolvable ids are dropped.
+	const wireIndex = getContext<WireIndex | undefined>(WIRE_INDEX_CONTEXT);
 	let childDescriptors = $derived(
-		Array.isArray(properties.children) ? (properties.children as SectionDescriptor[]) : [],
+		Array.isArray(properties.children)
+			? (properties.children as (SectionDescriptor | string)[]).flatMap((child): SectionDescriptor[] => {
+					if (typeof child !== 'string') return [child];
+					const wire = wireIndex?.get(child);
+					return wire ? [{ component: wire.component, catalogId: wire.catalogId, properties: wire }] : [];
+				})
+			: [],
 	);
 	let tabsData = $derived(
 		Array.isArray(properties.tabs)
@@ -275,10 +284,12 @@
 	</label>
 {:else if isFilterBarBranch}
 	<div class="a2ui-filter-bar flex flex-wrap gap-4 items-start" data-testid="filter-bar">
-		{#each normalizedFilters as filter (filter.column)}
+		<!-- FEAT-611: index keys — two filters may share a column (a From/To pair over one date column,
+		     live S4 each_key_duplicate crash) and options may repeat a value. -->
+		{#each normalizedFilters as filter, fi (fi)}
 			<fieldset class="flex flex-col gap-1 border-0 p-0 m-0">
 				<legend class="text-xs font-semibold text-muted-foreground">{filter.label}</legend>
-				{#each filter.options as option (option.value)}
+				{#each filter.options as option, oi (oi)}
 					<label class="flex items-center gap-1 text-xs">
 						<input
 							type="checkbox"

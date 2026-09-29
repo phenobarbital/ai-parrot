@@ -16,7 +16,7 @@
 	import { setContext, untrack } from 'svelte';
 	import A2UIInfographic from './A2UIInfographic.svelte';
 	import A2UINode from './A2UINode.svelte';
-	import type { A2UIEnvelope, WireComponent } from './a2ui-types';
+	import { WIRE_INDEX_CONTEXT, type A2UIEnvelope, type WireComponent, type WireIndex } from './a2ui-types';
 	import { getDataSources, type Row } from './linked/types';
 	import {
 		createLinkedLane,
@@ -120,6 +120,13 @@
 		},
 	};
 	setContext(FILTER_CONTEXT, filterController);
+
+	// FEAT-611: v1.0 flat components reference children by id; `A2UINode` resolves them through this
+	// index. Read lazily (at lookup time) so a new envelope is always the one consulted.
+	const wireIndex: WireIndex = {
+		get: (id) => envelope.createSurface.components.find((c) => c.id === id),
+	};
+	setContext(WIRE_INDEX_CONTEXT, wireIndex);
 
 	$effect(() => {
 		// `sources` is the ONLY tracked dependency: `start()` may call `onUpdate` synchronously, which
