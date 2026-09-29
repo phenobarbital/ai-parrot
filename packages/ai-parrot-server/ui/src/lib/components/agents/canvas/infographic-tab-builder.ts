@@ -46,7 +46,11 @@ export function buildInfographicTabData(
   message: InfographicMessageLike,
   features: { a2ui: boolean },
 ): InfographicTabData | null {
-  if (message.output_mode !== 'infographic' && message.output_mode !== 'a2ui') return null;
+  // FEAT-611 (live S4): a tool-built LINKED surface opens the canvas whatever the requested mode —
+  // in "Default (Auto)" the server lifts the envelope but keeps output_mode "default", and streamed
+  // turns carry no output_mode at all.
+  const linkedAnyMode = isLinkedSurface(message.a2ui_envelope);
+  if (message.output_mode !== 'infographic' && message.output_mode !== 'a2ui' && !linkedAnyMode) return null;
 
   const meta = message.metadata;
   const inlineHtml =

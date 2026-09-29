@@ -2173,6 +2173,16 @@ class BaseBot(AbstractBot):
                     # covered by the StreamingGuardrail adapters above).
                     ai_message = await self._run_output_pipeline(ai_message, method="ask_stream")
 
+                    # FEAT-611 (live S4): ask_stream never ran the linked-surface lift ask() does, so a
+                    # streamed turn whose tool built a linked surface reached the UI without an envelope.
+                    if getattr(ai_message, "a2ui_envelope", None) is None:
+                        _linked = self._extract_last_linked_surface_result(getattr(ai_message, "tool_calls", None))
+                        if _linked is not None:
+                            ai_message.a2ui_envelope = _linked
+                    _published = self._extract_last_published_surface_id(getattr(ai_message, "tool_calls", None))
+                    if _published is not None:
+                        ai_message.metadata = {**(getattr(ai_message, "metadata", None) or {}), "a2ui_surface_id": _published}
+
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
                     await self.events.emit(

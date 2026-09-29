@@ -58,6 +58,20 @@ describe('buildInfographicTabData — linked', () => {
     });
   });
 
+  it('linked surface opens a tab in default / streamed (no output_mode) turns (FEAT-611 live S4)', () => {
+    const envelope = linkedEnvelope('Column');
+    for (const output_mode of ['default', undefined]) {
+      expect(buildInfographicTabData({ output_mode, a2ui_envelope: envelope }, { a2ui: true })).toMatchObject({
+        mode: 'a2ui',
+        envelope,
+      });
+    }
+  });
+
+  it('a non-linked envelope in default mode still opens nothing', () => {
+    expect(buildInfographicTabData({ output_mode: 'default', a2ui_envelope: plainWidget }, { a2ui: true })).toBeNull();
+  });
+
   it('plain non-Infographic root still returns null', () => {
     const msg = { output_mode: 'a2ui', a2ui_envelope: plainWidget };
     expect(buildInfographicTabData(msg, { a2ui: true })).toBeNull();

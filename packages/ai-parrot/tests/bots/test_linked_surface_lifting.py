@@ -101,3 +101,13 @@ def test_ask_linked_lift_precedence_source_level() -> None:
     )
     assert skip_line.strip() == "if interactive_envelope is not None or infographic_envelope is not None:"
     assert "linked_envelope" not in skip_line
+
+
+def test_ask_stream_lifts_linked_surface_source_level() -> None:
+    """FEAT-611 live S4: a streamed turn must carry the linked envelope + surface id, like ask()."""
+    source = inspect.getsource(_base_bot().ask_stream)
+    lift = source.index("_extract_last_linked_surface_result")
+    assert "_extract_last_published_surface_id" in source
+    # The lift runs after the output guardrail pipeline and before the final yield of the AIMessage.
+    assert source.index('_run_output_pipeline(ai_message, method="ask_stream")') < lift
+    assert lift < source.rindex("yield ai_message")
