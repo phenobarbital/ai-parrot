@@ -279,7 +279,7 @@
               "lastdate": "2026-09-07"
             }
           },
-          "slug": "epson_field_activity",
+          "slug": "epson_e2e_activity",
           "snapshot_at": "2026-09-25T00:00:00Z",
           "snapshot_truncated": false,
           "target": "/activity/rows",
@@ -327,7 +327,7 @@
               "lastdate": "2026-09-07"
             }
           },
-          "slug": "epson_field_activity",
+          "slug": "epson_e2e_activity",
           "snapshot_at": "2026-09-25T00:00:00Z",
           "snapshot_truncated": false,
           "target": "/attainment/rows",
@@ -422,7 +422,7 @@
               "lastdate": "2026-09-07"
             }
           },
-          "slug": "epson_field_activity",
+          "slug": "epson_e2e_activity",
           "snapshot_at": "2026-09-25T00:00:00Z",
           "snapshot_truncated": false,
           "target": "/kpis/rows",
@@ -514,7 +514,7 @@
             "ordering": [],
             "placeholders": {}
           },
-          "slug": "epson_program_targets",
+          "slug": "epson_e2e_targets",
           "snapshot_at": "2026-09-25T00:00:00Z",
           "snapshot_truncated": false,
           "target": "/targets/rows",

@@ -27,7 +27,7 @@ describe('epson dashboard parity — conditions on the wire', () => {
     const bodies: Record<string, unknown>[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       bodies.push(JSON.parse(String((init as RequestInit).body)));
-      return new Response(JSON.stringify(FX.input_frames['epson_field_activity']));
+      return new Response(JSON.stringify(FX.input_frames[FX.sources.activity.slug]));
     });
     const key = fxCase.source as string;
     const src = key === 'activity_locked' ? FX.locked_source : FX.sources[key];

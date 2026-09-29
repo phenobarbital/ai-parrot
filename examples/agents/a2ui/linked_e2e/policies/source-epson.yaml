@@ -7,7 +7,7 @@ policies:
     effect: allow
     description: >
       FEAT-611 demo — any authenticated user may read the public epson_* query slugs through
-      the linked-surface data-plane guard. Staging example only.
+      the linked-surface data-plane guard. Live-tier (staging or dev) example only.
     resources: ["source:query_slug:public:epson_*"]
     actions: ["source:read"]
     subjects: { groups: ["*"] }

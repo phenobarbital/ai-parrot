@@ -125,7 +125,7 @@ markers = [
     "live: hits live external services; opt-in, deselect with -m 'not live'",
     "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
     "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
-    "staging: live tests against env/staging (FEAT-611); skipped unless ENV=staging and querysource>=5.1.2",
+    "staging: live-target tests (FEAT-611): env/staging or env/dev; skipped unless ENV in {staging, dev} and querysource>=5.1.2",
 ]
 
 [tool.uv.sources]

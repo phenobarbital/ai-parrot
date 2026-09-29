@@ -1,13 +1,16 @@
-"""FEAT-611 M9 asserting HTTP runner — S1/S2/S3/S5 against a running linked_e2e server (staging only).
+"""FEAT-611 M9 asserting HTTP runner — S1/S2/S3/S5 against a running linked_e2e server (live: staging or dev).
 
-    ENV=staging E2E_USER=... E2E_PASSWORD=... python examples/agents/a2ui/linked_e2e/run_e2e.py \\
+    ENV=dev E2E_USER=... E2E_PASSWORD=... python examples/agents/a2ui/linked_e2e/run_e2e.py \\
         --base-url http://127.0.0.1:5000 [--deny-base-url http://127.0.0.1:5001] \\
         [--noguard-base-url http://127.0.0.1:5002] [--via-agent] [--scenarios s1,s2,s3,s5]
 
 Optional env: E2E_SHARE_USER / E2E_SHARE_PASSWORD (a second user for the share-bearer refresh),
-E2E_S2_RANGE_A / E2E_S2_RANGE_B ("firstdate:lastdate", two ranges KNOWN to hold different data).
+E2E_S2_RANGE_A / E2E_S2_RANGE_B ("firstdate:lastdate", two ranges KNOWN to hold different data),
+E2E_RANGE ("firstdate:lastdate" used by S1/S3/S5 and the S2 publish; must hold data).
+Defaults per ENV: staging → FDOM:TODAY / YESTERDAY:YESTERDAY; dev (data only 2024-12-31..2025-03-23) →
+2025-03-01:2025-03-07 / 2025-03-11:2025-03-15, and E2E_RANGE defaults to range A.
 Every row prints PASS / FAIL / SKIP; SKIP never counts as a pass. Exit 0 only when at least one check ran
-and every non-skipped check passed; 1 otherwise; 2 when refused (ENV != staging).
+and every non-skipped check passed; 1 otherwise; 2 when refused (ENV not in LIVE_ENVS).
 """
 
 from __future__ import annotations
@@ -27,11 +30,16 @@ import aiohttp
 
 HERE = Path(__file__).resolve().parent
 POLICY_DIR = HERE / "policies"
-MQ_SLUG = "epson_activity_vs_targets_mq"  # == seed_staging.MQ_SLUG (TASK-3832)
-ACTIVITY_SLUG = "epson_field_activity"
+MQ_SLUG = "epson_e2e_activity_vs_targets_mq"  # == seed_staging.MQ_SLUG (TASK-3832)
+ACTIVITY_SLUG = "epson_e2e_activity"  # == seed_staging.ACTIVITY_SLUG
 AGENT_NAME = "epson_linked"
+#: Live targets the runner accepts (== seed_staging.LIVE_ENVS); production is always refused.
+LIVE_ENVS: tuple[str, ...] = ("staging", "dev")
 DEFAULT_RANGE_A = "FDOM:TODAY"
 DEFAULT_RANGE_B = "YESTERDAY:YESTERDAY"
+#: The dev DB only holds 2024-12-31..2025-03-23; these two ranges hold different data.
+DEV_RANGE_A = "2025-03-01:2025-03-07"
+DEV_RANGE_B = "2025-03-11:2025-03-15"
 logger = logging.getLogger("examples.a2ui.linked_e2e.run_e2e")
 
 
@@ -83,6 +91,23 @@ def check(results: list[ScenarioResult], sid: str, ok: bool, detail: str) -> boo
 
 def skip(results: list[ScenarioResult], sid: str, detail: str) -> None:
     results.append(ScenarioResult(sid, False, detail, skipped=True))
+
+
+def _range(value: str) -> tuple[str, str]:
+    first, _, last = value.partition(":")
+    return first, last or first
+
+
+def s2_default_ranges() -> tuple[str, str]:
+    """Return the (A, B) S2 range defaults for the selected ENV (env overrides are applied by run_s2)."""
+    if os.environ.get("ENV") == "dev":
+        return DEV_RANGE_A, DEV_RANGE_B
+    return DEFAULT_RANGE_A, DEFAULT_RANGE_B
+
+
+def live_range() -> tuple[str, str]:
+    """Return the (firstdate, lastdate) S1/S3/S5 use: E2E_RANGE, else the ENV's S2 range A."""
+    return _range(os.environ.get("E2E_RANGE") or s2_default_ranges()[0])
 
 
 def load_dashboard_tool():
@@ -154,7 +179,8 @@ def mq_source(multi_output: str | None, *, key: str = "mq"):
     from parrot.outputs.a2ui.linked.conditions import derive_conditions  # noqa: PLC0415
     from parrot.outputs.a2ui.linked.models import LinkedDataSource, SourceRequest  # noqa: PLC0415
 
-    request = SourceRequest(placeholders={"firstdate": "FDOM", "lastdate": "TODAY"})
+    first, last = live_range()
+    request = SourceRequest(placeholders={"firstdate": first, "lastdate": last})
     return LinkedDataSource(
         slug=MQ_SLUG,
         is_multiquery=True,
@@ -169,7 +195,8 @@ def activity_source(tenant: str | None, *, key: str = "activity"):
     from parrot.outputs.a2ui.linked.conditions import derive_conditions  # noqa: PLC0415
     from parrot.outputs.a2ui.linked.models import LinkedDataSource, ParamSpec, SourceRequest  # noqa: PLC0415
 
-    request = SourceRequest(placeholders={"firstdate": "FDOM", "lastdate": "TODAY"})
+    first, last = live_range()
+    request = SourceRequest(placeholders={"firstdate": first, "lastdate": last})
     return LinkedDataSource(
         slug=ACTIVITY_SLUG,
         tenant=tenant,
@@ -186,7 +213,10 @@ def activity_source(tenant: str | None, *, key: str = "activity"):
 async def dashboard_envelope(ctx: E2EContext) -> dict:
     """The S2 TOOL's inner CreateSurface (snapshot=False); guarded in-process when a guard is available."""
     tool = load_dashboard_tool()
-    result = await tool.build_epson_activity_dashboard(snapshot=False, pctx=ctx.tool_pctx, guard=ctx.tool_guard)
+    first, last = live_range()
+    result = await tool.build_epson_activity_dashboard(
+        first, last, snapshot=False, pctx=ctx.tool_pctx, guard=ctx.tool_guard
+    )
     return result["a2ui_envelope"]
 
 
@@ -221,9 +251,10 @@ def _stamps(body: Any) -> dict[str, Any]:
 
 async def via_agent_envelope(ctx: E2EContext, results: list[ScenarioResult]) -> dict | None:
     """--via-agent: drive AgentTalk (output_mode=a2ui) and lift response.a2ui_envelope (TASK-3835 v1.0 wrapper)."""
+    first, last = live_range()
     query = (
         "Build the Epson activity dashboard with build_epson_activity_dashboard "
-        "(firstdate FDOM, lastdate TODAY, snapshot false) and return it as an A2UI surface."
+        f"(firstdate {first}, lastdate {last}, snapshot false) and return it as an A2UI surface."
     )
     async with ctx.session.post(
         f"{ctx.base_url}/api/v1/agents/chat/{AGENT_NAME}",
@@ -295,7 +326,8 @@ async def run_s1(ctx: E2EContext) -> list[ScenarioResult]:
         g2_status == 200 and _stamps(g2_body) == _stamps(g_body),
         "snapshot_at unchanged across GET json/html/json",
     )
-    status, body, _ = await refresh(ctx, sid, {"firstdate": "FDOM", "lastdate": "TODAY"})
+    first, last = live_range()
+    status, body, _ = await refresh(ctx, sid, {"firstdate": first, "lastdate": last})
     check(results, "s1.refresh_params", status == 200, f"{status} {_short(body) if status != 200 else ''}")
     status, _, headers = await refresh(ctx, sid, {"activity": {"store_id": 7}})
     warnings = headers.get("X-Parrot-Refresh-Warnings", "")
@@ -340,11 +372,6 @@ async def _s1_negatives_409(ctx: E2EContext, results: list[ScenarioResult], sid:
     )
 
 
-def _range(value: str) -> tuple[str, str]:
-    first, _, last = value.partition(":")
-    return first, last or first
-
-
 async def run_s2(ctx: E2EContext) -> list[ScenarioResult]:
     """Dashboard TOOL envelope publishes (validates server-side) and a FilterBar-param refresh changes rows."""
     results: list[ScenarioResult] = []
@@ -353,7 +380,8 @@ async def run_s2(ctx: E2EContext) -> list[ScenarioResult]:
         return results
     sid = body["surface_id"]
     observed: dict[str, tuple[list | None, list | None]] = {}
-    for label, env_key, default in (("a", "E2E_S2_RANGE_A", DEFAULT_RANGE_A), ("b", "E2E_S2_RANGE_B", DEFAULT_RANGE_B)):
+    default_a, default_b = s2_default_ranges()
+    for label, env_key, default in (("a", "E2E_S2_RANGE_A", default_a), ("b", "E2E_S2_RANGE_B", default_b)):
         first, last = _range(os.environ.get(env_key, default))
         status, rbody, _ = await refresh(ctx, sid, {"activity": {"firstdate": first, "lastdate": last}})
         ok = check(results, f"s2.refresh_range_{label}", status == 200, f"{status} {first}..{last}")
@@ -423,7 +451,8 @@ async def _qs_post(ctx: E2EContext, path: str, payload: dict) -> tuple[int, list
 async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
     """tenant='public' descriptor: browser route /api/v1/public/queries/{slug} and /refresh both equal the default."""
     results: list[ScenarioResult] = []
-    payload = {"firstdate": "FDOM", "lastdate": "TODAY", "querylimit": 5000}
+    first, last = live_range()
+    payload = {"firstdate": first, "lastdate": last, "querylimit": 5000}
     t_status, tenant_rows = await _qs_post(ctx, f"/api/v1/public/queries/{ACTIVITY_SLUG}", payload)
     check(
         results,
@@ -455,7 +484,7 @@ async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
         if not check(results, f"s5.{label}.publish", status == 201, f"{status} {_short(body)}"):
             refreshed[label] = None
             continue
-        status, rbody, _ = await refresh(ctx, body["surface_id"], {"firstdate": "FDOM", "lastdate": "TODAY"})
+        status, rbody, _ = await refresh(ctx, body["surface_id"], {"firstdate": first, "lastdate": last})
         refreshed[label] = rows_of(rbody, "activity") if status == 200 else None
         check(results, f"s5.{label}.refresh", status == 200, f"{status} rows={len(refreshed[label] or [])}")
     if refreshed.get("default") is None or refreshed.get("public") is None:
@@ -576,8 +605,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=300.0, help="per-session HTTP timeout (seconds)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
-    if os.environ.get("ENV") != "staging":
-        logger.error("run_e2e refuses to run unless ENV=staging")
+    if os.environ.get("ENV") not in LIVE_ENVS:
+        logger.error("run_e2e refuses to run unless ENV is one of %s", list(LIVE_ENVS))
         return 2
     if not (os.environ.get("E2E_USER") and os.environ.get("E2E_PASSWORD")):
         logger.error("E2E_USER and E2E_PASSWORD are required")

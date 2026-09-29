@@ -1,4 +1,4 @@
-"""FEAT-611 M2: seed_staging.assert_staging refuses anything that is not the staging DB (spec AC7).
+"""FEAT-611 M2: seed_staging.assert_live_target refuses anything but a staging/dev DB (spec AC7).
 
 Also proves offline (no DB, no staging) that the demo policy YAML parses and that the policy-proof
 logic yields allow with the example policy dir and deny with a control dir, through a real guard.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -31,37 +32,64 @@ def test_refuses_when_env_is_not_staging(seed, monkeypatch):
     monkeypatch.setenv("ENV", "production")
     monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_staging")
     with pytest.raises(SystemExit):
-        seed.assert_staging()
+        seed.assert_live_target()
 
 
 def test_refuses_when_env_is_unset(seed, monkeypatch):
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_staging")
     with pytest.raises(SystemExit):
-        seed.assert_staging()
+        seed.assert_live_target()
 
 
 def test_refuses_when_dbname_is_not_staging(seed, monkeypatch):
     monkeypatch.setenv("ENV", "staging")
     monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator")
     with pytest.raises(SystemExit, match="DBNAME"):
-        seed.assert_staging()
+        seed.assert_live_target()
 
 
 def test_accepts_staging(seed, monkeypatch):
     monkeypatch.setenv("ENV", "staging")
     monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_STAGING")
-    assert seed.assert_staging() is None
+    assert seed.assert_live_target() == "staging"
+    assert seed.assert_staging is seed.assert_live_target  # backwards-compatible alias
+
+
+def test_accepts_dev(seed, monkeypatch):
+    monkeypatch.setenv("ENV", "dev")
+    monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_dev")
+    assert seed.assert_live_target() == "dev"
+
+
+@pytest.mark.parametrize(
+    ("env", "dbname"),
+    [("dev", "navigator_staging"), ("dev", "navigator"), ("staging", "navigator_dev"), ("dev", "navigator_dev_prod")],
+)
+def test_refuses_when_dbname_does_not_match_env(seed, monkeypatch, env, dbname):
+    monkeypatch.setenv("ENV", env)
+    monkeypatch.setattr(seed, "_current_dbname", lambda: dbname)
+    with pytest.raises(SystemExit, match="DBNAME"):
+        seed.assert_live_target()
+
+
+@pytest.mark.parametrize("env", ["production", "prod", "development", "Dev", ""])
+def test_refuses_non_live_selectors(seed, monkeypatch, env):
+    monkeypatch.setenv("ENV", env)
+    monkeypatch.setattr(seed, "_current_dbname", lambda: f"navigator_{env}_dev_staging")
+    with pytest.raises(SystemExit, match="ENV"):
+        seed.assert_live_target()
 
 
 def _poison_toolkit(monkeypatch):
-    poisoned = types.ModuleType("parrot_tools.querysource.toolkit")
+    for name in ("parrot_tools.querysource.toolkit", "asyncpg"):
+        poisoned = types.ModuleType(name)
 
-    def __getattr__(name):  # noqa: N807 — module-level __getattr__
-        pytest.fail(f"toolkit touched before the staging guard: {name}")
+        def __getattr__(attr, _name=name):  # noqa: N807 — module-level __getattr__
+            pytest.fail(f"{_name} touched before the live-target guard: {attr}")
 
-    poisoned.__getattr__ = __getattr__
-    monkeypatch.setitem(sys.modules, "parrot_tools.querysource.toolkit", poisoned)
+        poisoned.__getattr__ = __getattr__
+        monkeypatch.setitem(sys.modules, name, poisoned)
 
 
 def test_seed_refuses_before_any_toolkit_import(seed, monkeypatch):
@@ -74,24 +102,118 @@ def test_seed_refuses_before_any_toolkit_import(seed, monkeypatch):
         asyncio.run(seed.describe_slugs([seed.ACTIVITY_SLUG]))
     with pytest.raises(SystemExit):
         asyncio.run(seed.preview_multiquery({}))
+    with pytest.raises(SystemExit):
+        asyncio.run(seed.seed_sql_slugs())
+    with pytest.raises(SystemExit):
+        asyncio.run(seed.seed_all())
 
 
-def test_cli_seed_requires_confirm_flag(seed, monkeypatch):
-    monkeypatch.setenv("ENV", "staging")
-    monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_staging")
+@pytest.mark.parametrize("command", ["seed", "seed-sql"])
+@pytest.mark.parametrize(("env", "dbname"), [("staging", "navigator_staging"), ("dev", "navigator_dev")])
+def test_cli_seed_requires_confirm_flag(seed, monkeypatch, command, env, dbname):
+    monkeypatch.setenv("ENV", env)
+    monkeypatch.setattr(seed, "_current_dbname", lambda: dbname)
     _poison_toolkit(monkeypatch)
     monkeypatch.setattr("builtins.input", lambda *_: pytest.fail("prompted without --confirm"))
     with pytest.raises(SystemExit, match="--confirm"):
-        seed.main(["seed", "--yes"])
+        seed.main([command, "--yes"])
 
 
-def test_cli_seed_aborts_without_interactive_yes(seed, monkeypatch):
-    monkeypatch.setenv("ENV", "staging")
-    monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_staging")
+@pytest.mark.parametrize("command", ["seed", "seed-sql"])
+def test_cli_seed_aborts_without_interactive_yes(seed, monkeypatch, command):
+    monkeypatch.setenv("ENV", "dev")
+    monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_dev")
     _poison_toolkit(monkeypatch)
-    monkeypatch.setattr("builtins.input", lambda *_: "no")
+    prompts: list[str] = []
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "no")
     with pytest.raises(SystemExit, match="aborted"):
-        seed.main(["seed", "--confirm"])
+        seed.main([command, "--confirm"])
+    assert "DEV query catalog" in prompts[0] and seed.TARGETS_SLUG in prompts[0]
+    assert (seed.MQ_SLUG in prompts[0]) is (command == "seed")
+
+
+class _FakeConn:
+    """Minimal asyncpg connection: an upsert table keyed by query_slug; RETURNING (xmax = 0) AS inserted."""
+
+    def __init__(self, table: dict) -> None:
+        self.table, self.statements, self.closed = table, [], False
+
+    def transaction(self):
+        conn = self
+
+        class _Tx:
+            async def __aenter__(self):
+                return conn
+
+            async def __aexit__(self, *exc):
+                return False
+
+        return _Tx()
+
+    async def fetchrow(self, sql, *args):
+        self.statements.append((sql, args))
+        slug = args[0]
+        if slug in self.table:
+            if "DO NOTHING" in sql:
+                return None
+            self.table[slug] = args
+            return {"inserted": False}
+        self.table[slug] = args
+        return {"inserted": True}
+
+    async def close(self):
+        self.closed = True
+
+
+def test_seed_sql_slugs_upserts_idempotently(seed, monkeypatch):
+    monkeypatch.setenv("ENV", "dev")
+    monkeypatch.setattr(seed, "_current_dbname", lambda: "navigator_dev")
+    monkeypatch.setattr(seed, "_queries_table", lambda: '"public"."queries"')
+    monkeypatch.setattr(seed, "_db_params", lambda: {"host": "fake"})
+    table: dict = {}
+    conns: list[_FakeConn] = []
+
+    async def connect(**kwargs):
+        assert kwargs == {"host": "fake"}
+        conns.append(_FakeConn(table))
+        return conns[-1]
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=connect))
+    slugs = {seed.ACTIVITY_SLUG: "inserted", seed.TARGETS_SLUG: "inserted"}
+    assert asyncio.run(seed.seed_sql_slugs()) == slugs
+    assert asyncio.run(seed.seed_sql_slugs()) == dict.fromkeys(slugs, "updated")
+    assert asyncio.run(seed.seed_sql_slugs(overwrite=False)) == dict.fromkeys(slugs, "unchanged")
+    assert all(conn.closed for conn in conns)
+    sql, args = conns[0].statements[0]
+    assert sql.startswith('INSERT INTO "public"."queries"') and "ON CONFLICT (query_slug) DO UPDATE" in sql
+    assert "'pgSQLParser'" in sql and "false, false" in sql  # is_raw=false, is_cached=false
+    assert args[0] == seed.ACTIVITY_SLUG and args[-2:] == (seed.PROGRAM_ID, seed.PROGRAM_SLUG)
+    assert json.loads(args[3]) == {"firstdate": "FDOM", "lastdate": "CURRENT_DATE"}
+
+
+def test_sql_slug_definitions(seed):
+    assert seed.ACTIVITY_SLUG == "epson_e2e_activity" and seed.TARGETS_SLUG == "epson_e2e_targets"
+    assert seed.MQ_SLUG == "epson_e2e_activity_vs_targets_mq"
+    assert set(seed.SQL_SLUGS) == {seed.ACTIVITY_SLUG, seed.TARGETS_SLUG}
+    for spec in seed.SQL_SLUGS.values():
+        assert spec["query_raw"].startswith("SELECT {fields} FROM (") and spec["query_raw"].endswith("{where_cond}")
+    activity = seed.SQL_SLUGS[seed.ACTIVITY_SLUG]
+    assert "{firstdate}" in activity["query_raw"] and "{lastdate}" in activity["query_raw"]
+    assert set(activity["cond_definition"]) == {"firstdate", "lastdate"}
+    assert "{firstdate}" not in seed.SQL_SLUGS[seed.TARGETS_SLUG]["query_raw"]
+
+
+def test_queries_table_rejects_unsafe_identifiers(seed, monkeypatch):
+    import navconfig
+
+    values = {"QS_QUERIES_SCHEMA": "public; drop", "QS_QUERIES_TABLE": "queries"}
+    monkeypatch.setattr(
+        navconfig, "config", types.SimpleNamespace(get=lambda k, fallback=None: values.get(k, fallback))
+    )
+    with pytest.raises(SystemExit, match="unsafe"):
+        seed._queries_table()
+    values["QS_QUERIES_SCHEMA"] = "public"
+    assert seed._queries_table() == '"public"."queries"'
 
 
 def test_cli_refuses_on_production(seed, monkeypatch):
@@ -102,7 +224,7 @@ def test_cli_refuses_on_production(seed, monkeypatch):
             seed.main([command])
 
 
-def test_prove_policy_refuses_off_staging(seed, monkeypatch):
+def test_prove_policy_refuses_off_live_target(seed, monkeypatch):
     monkeypatch.setenv("ENV", "production")
     with pytest.raises(SystemExit):
         asyncio.run(seed.prove_policy())
@@ -150,10 +272,17 @@ def test_policy_proof_offline_allow_and_deny(seed, caplog):
         outcome = asyncio.run(seed.run_policy_proof())
     assert outcome == {"with_policy": "allow", "without_policy": "deny"}
     logged = caplog.text
-    assert "resource_type=source resource=query_slug:public:epson_field_activity action=source:read" in logged
+    assert "resource_type=source resource=query_slug:public:epson_e2e_activity action=source:read" in logged
 
 
 def test_policy_proof_offline_non_epson_slug_denied(seed):
     pytest.importorskip("navigator_auth.abac.policies.evaluator")
     outcome = asyncio.run(seed.run_policy_proof(slug="pokemon_all_fso_odoo_new"))
     assert outcome == {"with_policy": "deny", "without_policy": "deny"}
+
+
+def test_policy_proof_offline_covers_every_e2e_slug(seed):
+    """The demo policy's `epson_*` pattern still matches the dedicated epson_e2e_* slugs."""
+    pytest.importorskip("navigator_auth.abac.policies.evaluator")
+    for slug in (seed.ACTIVITY_SLUG, seed.TARGETS_SLUG, seed.MQ_SLUG):
+        assert asyncio.run(seed.run_policy_proof(slug=slug)) == {"with_policy": "allow", "without_policy": "deny"}

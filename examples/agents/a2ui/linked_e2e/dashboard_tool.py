@@ -22,8 +22,8 @@ from parrot.tools.dataset_manager.sources.resolver import PhysicalResources
 logger = logging.getLogger("examples.a2ui.linked_e2e.dashboard_tool")
 
 SURFACE_ID = "linked-epson-dashboard"
-ACTIVITY_SLUG = "epson_field_activity"
-TARGETS_SLUG = "epson_program_targets"
+ACTIVITY_SLUG = "epson_e2e_activity"  # == seed_staging.ACTIVITY_SLUG (dedicated E2E slug)
+TARGETS_SLUG = "epson_e2e_targets"  # == seed_staging.TARGETS_SLUG
 #: ISO start of the parity fixture's date range — offered as an explicit "From" option.
 RANGE_START = "2026-09-01"
 _JOIN_TARGETS = {"op": "join", "with": "targets", "how": "left", "on": [{"left": "program", "right": "program"}]}

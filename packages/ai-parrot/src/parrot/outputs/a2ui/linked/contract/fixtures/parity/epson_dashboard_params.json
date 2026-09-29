@@ -2,7 +2,7 @@
   "description": "FEAT-611 S2 parity: same descriptors + params + input frames => same conditions and rows in Python and TS",
   "max_fetch_rows": 5000,
   "input_frames": {
-    "epson_field_activity": [
+    "epson_e2e_activity": [
       {
         "day": "2026-09-01",
         "visits": 3,
@@ -46,7 +46,7 @@
         "store_id": 3
       }
     ],
-    "epson_program_targets": [
+    "epson_e2e_targets": [
       {
         "program": "epson",
         "target": 20
@@ -60,7 +60,7 @@
   "sources": {
     "targets": {
       "kind": "query_slug",
-      "slug": "epson_program_targets",
+      "slug": "epson_e2e_targets",
       "tenant": null,
       "is_multiquery": false,
       "multi_output": null,
@@ -87,7 +87,7 @@
     },
     "activity": {
       "kind": "query_slug",
-      "slug": "epson_field_activity",
+      "slug": "epson_e2e_activity",
       "tenant": null,
       "is_multiquery": false,
       "multi_output": null,
@@ -135,7 +135,7 @@
     },
     "attainment": {
       "kind": "query_slug",
-      "slug": "epson_field_activity",
+      "slug": "epson_e2e_activity",
       "tenant": null,
       "is_multiquery": false,
       "multi_output": null,
@@ -230,7 +230,7 @@
     },
     "kpis": {
       "kind": "query_slug",
-      "slug": "epson_field_activity",
+      "slug": "epson_e2e_activity",
       "tenant": null,
       "is_multiquery": false,
       "multi_output": null,
@@ -344,7 +344,7 @@
   },
   "locked_source": {
     "kind": "query_slug",
-    "slug": "epson_field_activity",
+    "slug": "epson_e2e_activity",
     "tenant": null,
     "is_multiquery": false,
     "multi_output": null,

@@ -1,15 +1,20 @@
 # Linked surfaces end to end (FEAT-611)
 
 This directory holds an asserting end-to-end harness for **linked A2UI surfaces** (FEAT-598). It runs
-alongside FEAT-610 as a parallel track. It uses the Epson slugs `epson_field_activity` and
-`epson_program_targets`, plus the seeded multiquery `epson_activity_vs_targets_mq`.
+alongside FEAT-610 as a parallel track. It uses three **dedicated E2E slugs** that `seed_staging.py` seeds:
+the SQL slugs `epson_e2e_activity` (visits per `day`, `program`, `store_id`) and `epson_e2e_targets` (a static
+per-program `target` table), plus the multiquery `epson_e2e_activity_vs_targets_mq` over both. The names are
+the module constants `ACTIVITY_SLUG`, `TARGETS_SLUG` and `MQ_SLUG`.
 
-It targets **staging only**, with **querysource >= 5.1.2**. Every script refuses to run unless `ENV=staging`.
-Nothing here writes to production.
+It targets a **live environment — `staging` or `dev`** — with **querysource >= 5.1.2**. Every script refuses to
+run unless `ENV` is `staging` or `dev`; production is always refused. Nothing here writes to production.
+
+The dev DB holds data only from 2024-12-31 to 2025-03-23. With `ENV=dev` the runner therefore defaults to
+`2025-03-01:2025-03-07` (range A, also used by S1/S3/S5) and `2025-03-11:2025-03-15` (range B).
 
 Two rules apply to every tier:
 
-- **The offline pytest tier is the deterministic verdict.** The staging tiers are live checks.
+- **The offline pytest tier is the deterministic verdict.** The live tiers (staging or dev) are live checks.
 - **SKIP is not PASS.**
 
 | Scenario | What it validates | Where |
@@ -25,9 +30,9 @@ Two rules apply to every tier:
 | Requirement | Why / how |
 |---|---|
 | `querysource >= 5.1.2` | Pinned by TASK-3831. Check it with `python -c "import querysource; print(querysource.__version__)"`. |
-| `ENV=staging` in the shell | This is the navconfig **selector**. The scripts check `os.environ["ENV"]`, not `navconfig.ENV`, because `env/staging/.env` itself sets `ENV=production`. `seed_staging.py` also requires the resolved `DBNAME` to contain `staging`. |
-| Run from the **main checkout root** | `env/` is gitignored, so worktrees have no `env/staging/.env`. |
-| Network access to the staging Postgres (VPN or IP allowlist) | **This is the current blocker.** Port 5432 times out from outside the network. `prove-policy` needs no DB, but everything else does, including server startup (QS `initialize_tenants`). |
+| `ENV=staging` or `ENV=dev` in the shell | This is the navconfig **selector**. The scripts check `os.environ["ENV"]`, not `navconfig.ENV`, because `env/staging/.env` itself sets `ENV=production`. `seed_staging.py` also requires the resolved `DBNAME` to contain the selected env name (and never `prod`). |
+| Run from the **main checkout root** | `env/` is gitignored, so worktrees have no `env/staging/.env` or `env/dev/.env`. |
+| Network access to the target Postgres | Staging (and production) are unreachable from outside the network; the dev DB is reachable. `prove-policy` needs no DB, but everything else does, including server startup (QS `initialize_tenants`). |
 | `navigator-auth` installed | Provides `/api/v1/login` (BasicAuth). PBAC also needs it: without it no data-plane guard is built, and linked saves answer 403 (docs §6). |
 | E2E users | `E2E_USER` / `E2E_PASSWORD`. Optionally a second user, `E2E_SHARE_USER` / `E2E_SHARE_PASSWORD`, for the share-bearer refresh. |
 | Node >= 24 and pnpm 9.15.9 | Needed only for the vitest legs. Use `nvm use 24` and `corepack enable` (the UI's `packageManager` field pins pnpm). Then run `pnpm install --frozen-lockfile` in `packages/ai-parrot-server/ui`. The UI uses pnpm only; there is no npm lockfile. |
@@ -41,28 +46,36 @@ Two rules apply to every tier:
 | `agent.py` | `EpsonLinkedAgent` (`epson_linked`) with the `qs_*` tools, the dashboard TOOL and `publish_surface`. It binds a pctx from the authenticated `user_id` in `ask()`. |
 | `server.py` | The example app. The mount order is QuerySource → `setup_dataplane_guard` → BotManager (+ agent) → AuthHandler(BasicAuth). |
 | `run_e2e.py` | The asserting HTTP runner for S1/S2/S3/S5. |
-| `seed_staging.py` | Staging verification and the idempotent multiquery seed. |
+| `seed_staging.py` | Live-target verification and the idempotent seed of the three E2E slugs. |
 | `policies/source-epson.yaml` | The demo PBAC policy. |
 
-## 1. Seed staging (once)
+## 1. Seed the live target (once)
 
-Run these steps in order, from the main checkout root:
+Run these steps in order, from the main checkout root (`ENV=staging` works the same way):
 
 ```bash
-ENV=staging python examples/agents/a2ui/linked_e2e/seed_staging.py describe       # read-only
-ENV=staging python examples/agents/a2ui/linked_e2e/seed_staging.py preview        # read-only [--firstdate FDOM --lastdate TODAY]
-ENV=staging python examples/agents/a2ui/linked_e2e/seed_staging.py prove-policy   # no DB
-ENV=staging python examples/agents/a2ui/linked_e2e/seed_staging.py seed --confirm # the ONLY write
+ENV=dev python examples/agents/a2ui/linked_e2e/seed_staging.py prove-policy                  # no DB
+ENV=dev python examples/agents/a2ui/linked_e2e/seed_staging.py describe                      # read-only
+ENV=dev python examples/agents/a2ui/linked_e2e/seed_staging.py seed-sql --confirm            # write: SQL slugs
+ENV=dev python examples/agents/a2ui/linked_e2e/seed_staging.py preview --firstdate 2025-03-01 --lastdate 2025-03-07
+ENV=dev python examples/agents/a2ui/linked_e2e/seed_staging.py seed --confirm                # write: SQL + MQ
+ENV=dev python examples/agents/a2ui/linked_e2e/seed_staging.py describe                      # all three present
 ```
 
-1. `describe` runs `describe_slug` on both slugs. It logs the program, placeholders and fields.
-2. `preview` validates `MQ_PIPELINE` and runs it inline. It fails unless the frames are exactly
-   `{result, targets}`.
-3. `prove-policy` builds real guards and expects **allow** with `policies/` and **deny** with a control dir.
-4. `seed --confirm` upserts `epson_activity_vs_targets_mq`:
-   - it asks for an interactive `yes` (`--yes` skips the prompt);
-   - it is idempotent, so run it a second time to show that.
-5. Record the outcome in `sdd/state/FEAT-611/findings/F020-staging-slug-definitions.md`. That includes the
+1. `prove-policy` builds real guards and expects **allow** with `policies/` and **deny** with a control dir.
+2. `describe` runs `describe_slug` on all three slugs. It logs the program, placeholders and fields, and
+   reports a slug that is not seeded yet as `{"missing": true}`.
+3. `seed-sql --confirm` upserts `epson_e2e_activity` and `epson_e2e_targets` into
+   `<QS_QUERIES_SCHEMA>.<QS_QUERIES_TABLE>` (default `public.queries`) with asyncpg and the navconfig DB
+   credentials (`DBHOST`/`DBPORT`/`DBUSER`/`DBPWD`/`DBNAME`, `PGSSLMODE` → `ssl`). It uses
+   `INSERT … ON CONFLICT (query_slug) DO UPDATE` and prints `inserted` or `updated` per slug. Both slugs use
+   `program_slug='epson'`, `program_id=19`, provider `db`, parser `pgSQLParser` and `is_cached=false`.
+4. `preview` validates `MQ_PIPELINE` and runs it inline. It fails unless the frames are exactly
+   `{result, targets}`. Pass a range that holds data (the defaults `FDOM`/`TODAY` are empty on dev).
+5. `seed --confirm` runs `seed-sql` first and then upserts `epson_e2e_activity_vs_targets_mq`.
+   - Both writes ask for an interactive `yes` (`--yes` skips the prompt).
+   - Both are idempotent, so run them a second time to show that.
+6. Record the outcome in `sdd/state/FEAT-611/findings/F020-staging-slug-definitions.md`. That includes the
    slug definitions, the frame keys, and two date ranges with different data for S2.
 
 The multiquery has no server-side Join, because a Join output can never be named `result`. The two frames
@@ -71,9 +84,9 @@ are `result` and `targets`, and the join lives in the descriptor's `transform.op
 ## 2. Start the servers
 
 ```bash
-ENV=staging python examples/agents/a2ui/linked_e2e/server.py --port 5000                      # policy (default)
-ENV=staging python examples/agents/a2ui/linked_e2e/server.py --port 5001 --guard-mode deny    # S1 403: real guard, empty policy dir
-ENV=staging python examples/agents/a2ui/linked_e2e/server.py --port 5002 --guard-mode none    # S1 403: no guard at all
+ENV=dev python examples/agents/a2ui/linked_e2e/server.py --port 5000                      # policy (default)
+ENV=dev python examples/agents/a2ui/linked_e2e/server.py --port 5001 --guard-mode deny    # S1 403: real guard, empty policy dir
+ENV=dev python examples/agents/a2ui/linked_e2e/server.py --port 5002 --guard-mode none    # S1 403: no guard at all
 ```
 
 Other flags are `--host` (default `127.0.0.1`) and `--llm` (an agent LLM string, such as
@@ -86,7 +99,7 @@ fresh process.
 ## 3. Run the scenarios
 
 ```bash
-ENV=staging E2E_USER=… E2E_PASSWORD=… \
+ENV=dev E2E_USER=… E2E_PASSWORD=… \
   python examples/agents/a2ui/linked_e2e/run_e2e.py --base-url http://127.0.0.1:5000 \
   --deny-base-url http://127.0.0.1:5001 --noguard-base-url http://127.0.0.1:5002
 ```
@@ -100,24 +113,26 @@ ENV=staging E2E_USER=… E2E_PASSWORD=… \
 | `--scenarios` | Default `s1,s2,s3,s5`. |
 | `--timeout` | Per-session HTTP timeout in seconds. Default 300. |
 | `E2E_SHARE_USER` / `E2E_SHARE_PASSWORD` | A second, logged-in user for the share-bearer refresh. Without it, the E2E user acts as the bearer. |
-| `E2E_S2_RANGE_A` / `E2E_S2_RANGE_B` | `firstdate:lastdate`. Defaults are `FDOM:TODAY` and `YESTERDAY:YESTERDAY`. |
+| `E2E_S2_RANGE_A` / `E2E_S2_RANGE_B` | `firstdate:lastdate`. Defaults are `FDOM:TODAY` and `YESTERDAY:YESTERDAY` on staging, and `2025-03-01:2025-03-07` and `2025-03-11:2025-03-15` on dev. |
+| `E2E_RANGE` | `firstdate:lastdate` for S1/S3/S5 and the S2 publish. Defaults to the ENV's range A. |
 | `AUTH_USERNAME_ATTRIBUTE` / `AUTH_PASSWORD_ATTRIBUTE` | Login body field names. Defaults are `username` and `password`. |
 
 Each check prints PASS, FAIL or SKIP. The exit code is:
 
 - **0** only when at least one check ran and every non-skipped check passed;
 - **1** otherwise;
-- **2** when the run is refused (`ENV` is not `staging`, or `E2E_USER`/`E2E_PASSWORD` is missing).
+- **2** when the run is refused (`ENV` is not `staging` or `dev`, or `E2E_USER`/`E2E_PASSWORD` is missing).
 
 ## 4. Pytest tiers
 
 ```bash
 pytest packages/ai-parrot-server/tests/integration/test_linked_e2e_offline.py -q     # deterministic, no DB
-ENV=staging E2E_USER=… E2E_PASSWORD=… \
+ENV=dev E2E_USER=… E2E_PASSWORD=… \
   pytest -m staging packages/ai-parrot-server/tests/integration/test_linked_e2e_staging.py
 ```
 
-The **staging** tier skips unless three conditions hold: `ENV=staging`, querysource >= 5.1.2, and
+The **live** tier keeps the marker name `staging`, but it means "live target (staging or dev)". It skips
+unless three conditions hold: `ENV` is `staging` or `dev`, querysource >= 5.1.2, and
 `E2E_USER`/`E2E_PASSWORD` set. It needs a running server at `E2E_BASE_URL`. It also reads
 `E2E_DENY_BASE_URL`, `E2E_NOGUARD_BASE_URL` and `E2E_VIA_AGENT=1`. It fails when every check in a scenario
 was skipped.
@@ -158,7 +173,7 @@ pytest packages/ai-parrot-server/tests/ui/test_vitest_a2ui_linked_types.py
 
 S4 is exploratory and never required. Record each expectation as observed or not observed.
 
-1. Start `ENV=staging python examples/agents/a2ui/linked_e2e/server.py --port 5000 --llm <provider:model>`.
+1. Start `ENV=dev python examples/agents/a2ui/linked_e2e/server.py --port 5000 --llm <provider:model>`.
 2. Start the admin UI against it:
 
    ```bash
@@ -183,17 +198,18 @@ S4 is exploratory and never required. Record each expectation as observed or not
 ## Known gotchas and follow-ups
 
 - **Startup needs a real Postgres** (QS 5.1.x `initialize_tenants`). There is no offline server mode.
-- **Empty date range → 502 `data_stage`.** Pick ranges with data. The S2 ranges are unverified until F020 is
-  written.
+- **Empty date range → 502 `data_stage`.** Pick ranges with data. On dev, `FDOM`/`TODAY` is empty; the
+  runner's dev defaults avoid it, but the dashboard TOOL's own defaults (and the agent's) are still `FDOM`/`TODAY`.
 - **`/refresh` params are not persisted.** A later refresh with `{}` reverts to the stored placeholders. The
   UI always re-sends the current params.
 - **Lane asymmetry.** The date FilterBar re-queries only `activity` in the browser lane. A server refresh
   broadcasts `firstdate`/`lastdate` to every activity-backed source (`activity`, `attainment`, `kpis`).
-- **Stale-refresh 409.** Against staging, this check depends on winning a race. It is SKIP when the race is
+- **Stale-refresh 409.** Against a live target, this check depends on winning a race. It is SKIP when the race is
   not won.
 - **Share bearers must be logged in.** There is no anonymous share viewing.
-- **`MQ_PIPELINE` is provisional** (open placeholder comment in `seed_staging.py`). It is not yet known whether `epson_program_targets` accepts the
-  `firstdate`/`lastdate` that MultiQS forwards to every query. The staging `preview` run confirms this.
+- **`MQ_PIPELINE` is provisional** (open placeholder comment in `seed_staging.py`). It is not yet known whether
+  `epson_e2e_targets` (which has no date placeholders) tolerates the `firstdate`/`lastdate` that MultiQS
+  forwards to every query. The live `preview` run confirms this.
 - **Python left join with a real null left key.** The right-hand columns still become object dtype (pd.NA),
   so a `derive` on them fails. The fix covers only the empty-null case.
 - **`$state` proxy vs `structuredClone`.** `InfographicCanvas` passes `$state.snapshot(envelope)`.
@@ -203,4 +219,4 @@ S4 is exploratory and never required. Record each expectation as observed or not
 - **`ask_stream` does not bind the pctx.** Only `EpsonLinkedAgent.ask()` binds it, so the dashboard TOOL
   fails closed on streaming chats.
 - **Local dev `env/.env`.** It sets `AUTH_USER_MODEL=resources.users.User`, which is not in the repo. Staging
-  uses `navigator_auth.models.User`.
+  uses `navigator_auth.models.User`; check what `env/dev/.env` sets before starting `server.py` on dev.

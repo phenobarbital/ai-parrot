@@ -101,15 +101,17 @@ This ensures that share recipients see consistent data without inadvertently exe
 
 ## 8. E2E validation
 
-FEAT-611 validated linked surfaces end to end. It ran as a parallel track to FEAT-610, against staging with
-querysource >= 5.1.2. The harness and the full runbook live in
-[`examples/agents/a2ui/linked_e2e/`](../../examples/agents/a2ui/linked_e2e/README.md). It covers seeding,
-servers, the runner, the pytest tiers and the manual S4 checklist.
+FEAT-611 validated linked surfaces end to end. It ran as a parallel track to FEAT-610, against a live
+target (`ENV=staging` or `ENV=dev`; production is always refused) with querysource >= 5.1.2. It uses three
+dedicated, seeded E2E slugs: `epson_e2e_activity`, `epson_e2e_targets` and the multiquery
+`epson_e2e_activity_vs_targets_mq`. The harness and the full runbook live in
+[`examples/agents/a2ui/linked_e2e/`](../../examples/agents/a2ui/linked_e2e/README.md). It covers seeding
+(`seed_staging.py seed-sql` / `seed`), servers, the runner, the pytest tiers and the manual S4 checklist.
 
 | Tier | Command | Role |
 |---|---|---|
 | Offline | `pytest packages/ai-parrot-server/tests/integration/test_linked_e2e_offline.py`, plus the golden/parity tests and vitest wrappers | Deterministic verdict, with no DB |
-| Staging | `ENV=staging pytest -m staging …/test_linked_e2e_staging.py`, or `run_e2e.py` against `server.py` | Live check of S1/S2/S3/S5, staging only |
+| Live (staging or dev) | `ENV=dev pytest -m staging …/test_linked_e2e_staging.py`, or `run_e2e.py` against `server.py` | Live check of S1/S2/S3/S5; the `staging` marker means "live target" |
 | Manual S4 | Admin UI chat with `epson_linked` in A2UI mode | Exploratory, never required |
 
 `contract/fixtures/parity/epson_dashboard_params.json` pins the conditions and rows that both the Python lane

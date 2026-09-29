@@ -25,7 +25,8 @@ from .test_linked_surfaces_e2e import _decode, _FakeAsyncDB, _get, _handler, _po
 pytestmark = pytest.mark.asyncio
 REPO = Path(__file__).resolve().parents[4]
 EXAMPLE = REPO / "examples/agents/a2ui/linked_e2e"
-ACTIVITY_SLUG = "epson_field_activity"
+ACTIVITY_SLUG = "epson_e2e_activity"  # == dashboard_tool / run_e2e / seed_staging ACTIVITY_SLUG
+TARGETS_SLUG = "epson_e2e_targets"
 ACTIVITY = pd.DataFrame(
     {
         "day": ["2026-09-01", "2026-09-02"],
@@ -52,7 +53,7 @@ def fake_qs(monkeypatch):
     """Slug-keyed FakeQS + FakeMultiQS; records kwargs (tenant!) per execution."""
     state = SimpleNamespace(
         kwargs=[],
-        frames={ACTIVITY_SLUG: ACTIVITY, "epson_program_targets": TARGETS},
+        frames={ACTIVITY_SLUG: ACTIVITY, TARGETS_SLUG: TARGETS},
         multi={"result": ACTIVITY, "targets": TARGETS},
     )
 
@@ -306,7 +307,7 @@ async def test_s5_tenant_descriptor(fake_qs):
 
 
 async def test_run_e2e_offline_contract(monkeypatch):
-    """The runner's envelopes validate as TOOL output; it refuses non-staging; SKIP never counts as a pass."""
+    """The runner's envelopes validate as TOOL output; it refuses non-live ENVs; SKIP never counts as a pass."""
     import parrot.outputs.a2ui.builders  # noqa: F401 — registers the catalog components
     from parrot.outputs.a2ui.catalog import ProducerOrigin, validate_envelope
     from parrot.outputs.a2ui.linked import has_data_sources
@@ -336,4 +337,32 @@ async def test_run_e2e_offline_contract(monkeypatch):
     assert run_e2e.verdict([result("a", True, ""), result("b", False, "")]) == 1
 
     monkeypatch.setenv("ENV", "production")
+    assert run_e2e.main(["--scenarios", "s1"]) == 2
+    monkeypatch.delenv("ENV")
+    assert run_e2e.main(["--scenarios", "s1"]) == 2
+
+
+async def test_run_e2e_live_targets_and_ranges(monkeypatch):
+    """staging and dev are the live targets; dev defaults to date ranges that hold data (2025-03)."""
+    run_e2e = _load("run_e2e")
+    tool = _load("dashboard_tool")
+    seed = _load("seed_staging")
+    assert run_e2e.LIVE_ENVS == seed.LIVE_ENVS == ("staging", "dev")
+    assert run_e2e.ACTIVITY_SLUG == tool.ACTIVITY_SLUG == seed.ACTIVITY_SLUG
+    assert tool.TARGETS_SLUG == seed.TARGETS_SLUG and run_e2e.MQ_SLUG == seed.MQ_SLUG
+    monkeypatch.delenv("E2E_RANGE", raising=False)
+
+    monkeypatch.setenv("ENV", "staging")
+    assert run_e2e.s2_default_ranges() == ("FDOM:TODAY", "YESTERDAY:YESTERDAY")
+    assert run_e2e.live_range() == ("FDOM", "TODAY")
+
+    monkeypatch.setenv("ENV", "dev")
+    assert run_e2e.s2_default_ranges() == ("2025-03-01:2025-03-07", "2025-03-11:2025-03-15")
+    assert run_e2e.live_range() == ("2025-03-01", "2025-03-07")
+    assert run_e2e.activity_source(None).request.placeholders == {"firstdate": "2025-03-01", "lastdate": "2025-03-07"}
+    monkeypatch.setenv("E2E_RANGE", "2025-03-11:2025-03-15")
+    assert run_e2e.mq_source("targets").request.placeholders == {"firstdate": "2025-03-11", "lastdate": "2025-03-15"}
+
+    # dev passes the ENV guard and stops only at the missing credentials (still exit 2, no network).
+    monkeypatch.delenv("E2E_USER", raising=False)
     assert run_e2e.main(["--scenarios", "s1"]) == 2

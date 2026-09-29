@@ -1,8 +1,10 @@
-"""FEAT-611 M9 — live staging tier (§9 S9): same assertions as run_e2e.py; never the deterministic verdict.
+"""FEAT-611 M9 — live tier (§9 S9): same assertions as run_e2e.py; never the deterministic verdict.
 
-Needs a running ``examples/agents/a2ui/linked_e2e/server.py`` (``E2E_BASE_URL``, default http://127.0.0.1:5000),
-``ENV=staging``, querysource >= 5.1.2 and ``E2E_USER`` / ``E2E_PASSWORD``. Optional: ``E2E_DENY_BASE_URL``,
-``E2E_NOGUARD_BASE_URL``, ``E2E_SHARE_USER`` / ``E2E_SHARE_PASSWORD``, ``E2E_S2_RANGE_A`` / ``E2E_S2_RANGE_B``.
+The marker is still called ``staging`` but means "live target": ``ENV=staging`` or ``ENV=dev`` (production is
+never accepted). Needs a running ``examples/agents/a2ui/linked_e2e/server.py`` (``E2E_BASE_URL``, default
+http://127.0.0.1:5000), querysource >= 5.1.2 and ``E2E_USER`` / ``E2E_PASSWORD``. Optional: ``E2E_DENY_BASE_URL``,
+``E2E_NOGUARD_BASE_URL``, ``E2E_SHARE_USER`` / ``E2E_SHARE_PASSWORD``, ``E2E_S2_RANGE_A`` / ``E2E_S2_RANGE_B``,
+``E2E_RANGE`` (dev defaults: 2025-03-01:2025-03-07 / 2025-03-11:2025-03-15).
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
+LIVE_ENVS = ("staging", "dev")  # == run_e2e.LIVE_ENVS
 RUN_E2E = REPO / "examples/agents/a2ui/linked_e2e/run_e2e.py"
 
 
@@ -33,7 +36,7 @@ def _qs_ok() -> bool:
 pytestmark = [
     pytest.mark.staging,
     pytest.mark.asyncio,
-    pytest.mark.skipif(os.environ.get("ENV") != "staging", reason="staging tier: ENV=staging required"),
+    pytest.mark.skipif(os.environ.get("ENV") not in LIVE_ENVS, reason="live tier: ENV=staging or ENV=dev required"),
     pytest.mark.skipif(not _qs_ok(), reason="querysource >= 5.1.2 required"),
     pytest.mark.skipif(
         not (os.environ.get("E2E_USER") and os.environ.get("E2E_PASSWORD")),

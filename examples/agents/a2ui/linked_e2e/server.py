@@ -1,6 +1,8 @@
 """FEAT-611 M9 example server: QuerySource → data-plane guard → BotManager(EpsonLinkedAgent) → AuthHandler(BasicAuth).
 
-    ENV=staging python examples/agents/a2ui/linked_e2e/server.py --port 5000 [--guard-mode policy|deny|none]
+    ENV=dev python examples/agents/a2ui/linked_e2e/server.py --port 5000 [--guard-mode policy|deny|none]
+
+ENV must be a live target (`staging` or `dev`); production is always refused.
 
 Guard modes (spec §2 S1 negatives):
     policy  the example policies/ dir (allows the public epson_* slugs)            → normal lane
@@ -18,6 +20,8 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+#: Live targets the example server may run against (== seed_staging.LIVE_ENVS).
+LIVE_ENVS: tuple[str, ...] = ("staging", "dev")
 POLICY_DIR = HERE / "policies"
 GUARD_MODES = ("policy", "deny", "none")
 NO_POLICY_DIR = HERE / "_no_policies_here"
@@ -88,15 +92,17 @@ def create_app(guard_mode: str = "policy", *, policy_dir: str | Path | None = No
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI entry point; refuses to start unless ENV=staging."""
+    """CLI entry point; refuses to start unless ENV is a live target (staging or dev)."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--guard-mode", choices=GUARD_MODES, default="policy")
     parser.add_argument("--llm", default=None, help="agent llm string (only needed for run_e2e --via-agent)")
     args = parser.parse_args(argv)
-    if os.environ.get("ENV") != "staging":
-        raise SystemExit("linked_e2e server refuses to start unless ENV=staging (spec §5: no production writes)")
+    if os.environ.get("ENV") not in LIVE_ENVS:
+        raise SystemExit(
+            f"linked_e2e server refuses to start unless ENV is one of {list(LIVE_ENVS)} (spec §5: no production writes)"
+        )
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
     from aiohttp import web
 

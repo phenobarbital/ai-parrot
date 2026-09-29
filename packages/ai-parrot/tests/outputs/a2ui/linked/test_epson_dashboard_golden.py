@@ -96,15 +96,15 @@ async def test_epson_dashboard_golden(fake_qs):
 
 
 async def test_dashboard_tool_unauthorized_blocked(fake_qs):
-    """Guard denies epson_field_activity → AuthorizationRequired, and QS is never executed (§9 S4)."""
+    """Guard denies epson_e2e_activity → AuthorizationRequired, and QS is never executed (§9 S4)."""
     tool = _load_tool()
-    guard = _FakeGuard(deny={"query_slug:public:epson_field_activity"})
+    guard = _FakeGuard(deny={"query_slug:public:epson_e2e_activity"})
     pctx = build_principal_context("owner-1", channel="ui_surfaces")
     with pytest.raises(AuthorizationRequired):
         await tool.build_epson_activity_dashboard(pctx=pctx, guard=guard)
     assert fake_qs.executions == 0
     assert fake_qs.kwargs == []
-    assert [r.source_id for _, r in guard.calls] == ["public:epson_program_targets", "public:epson_field_activity"]
+    assert [r.source_id for _, r in guard.calls] == ["public:epson_e2e_targets", "public:epson_e2e_activity"]
 
 
 async def test_dashboard_tool_guard_without_pctx_fails_closed(fake_qs):
