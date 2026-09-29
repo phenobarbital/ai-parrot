@@ -74,6 +74,11 @@ def create_app(guard_mode: str = "policy", *, policy_dir: str | Path | None = No
     agent = EpsonLinkedAgent(**({"llm": llm} if llm else {}))
     manager = BotManager(enable_database_bots=False, enable_registry_bots=False)  # 3.
     manager.add_bot(agent)  # BEFORE startup: _setup_dataplane_guard only walks registered bots
+    # The admin UI lists/opens agents via GET /api/v1/bots[/{name}], which reads the DB (ai_bots) and the
+    # AgentRegistry — never add_bot'ed instances. Register the instance so manual S4 can open its chat page.
+    registry = getattr(manager, "registry", None)
+    if registry is not None:
+        registry.register_instance(agent.name, agent, tags={"feat-611", "example"}, replace=True)
     manager.setup(app)
 
     async def _configure_agent(app_: web.Application) -> None:
