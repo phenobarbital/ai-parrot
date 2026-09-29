@@ -573,7 +573,7 @@ When you pick up this task:
 
 **Completed by**: SDD sub-agent (offline code, commit bdbfc6855) + Claude (staging checks), session_01CFWijXsJLATx5g6k94o1EP
 **Date**: 2026-09-29
-**Verification**: partial. The code and the offline tests are verified. The live staging DB steps are blocked by network access (see below).
+**Verification**: verified (live on dev, 2026-09-29) — see the Live verification note below.
 
 **Notes**:
 - `seed_staging.py` provides four subcommands:
@@ -598,3 +598,18 @@ When you pick up this task:
 4. Resolve the open `MQ_PIPELINE` FILL IN in `preview`: it is not yet known whether `epson_program_targets` accepts `firstdate`/`lastdate`.
 
 **Deviations from spec**: The `--confirm` flag was added. There is no server-side Join in the multiquery, because a Join output can never be named `result`; the frames are `result` and `targets`, and the join lives in the descriptor's `transform.ops`. Extra helpers were added: `run_policy_proof` and `check_frames`.
+
+
+**Live verification (2026-09-29, ENV=dev, querysource 5.1.2)** — see `sdd/state/FEAT-611/findings/F020-staging-slug-definitions.md`.
+Staging was unreachable, so the live tier ran on the dev env.
+- `run_e2e.py`: **32/32 PASS** (exit 0) against the policy, deny and none servers.
+- `pytest -m staging test_linked_e2e_staging.py`: **4/4 PASS**.
+- The seed of the dedicated `epson_e2e_*` slugs is idempotent: inserted on the first run, updated on the second.
+- `preview` returns the frames {result, targets}.
+- Fixes found live and applied:
+  - the targets slug declares no-op date placeholders;
+  - the multiquery pins the child conditions;
+  - the demo policy grants `slug:execute` and `datasource:use` for the QS 5.1.2 tenant routes.
+- The user applied the dev DB migration `public.queries.columns_definition`, which QS 5.1.2 requires.
+
+Verification upgraded from partial to verified.

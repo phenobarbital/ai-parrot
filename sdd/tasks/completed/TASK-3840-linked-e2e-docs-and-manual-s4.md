@@ -335,3 +335,10 @@ When you pick up this task:
 **Deviations from spec**:
 - The README states that linked saves fail closed with a 403 when there is no PBAC guard, per docs §6. The blueprint had said the guard "fails open".
 - The offline section also lists `test_seed_staging_guard.py` and all six vitest wrappers.
+
+
+**Live update (2026-09-29)**: the automated live tier (S1/S2/S3/S5) passed on the dev env: runner 32/32, pytest 4/4 (F020). The manual S4 is still NOT run. Reasons:
+- The LLM client registry does not resolve provider `google` in this venv. `ai-parrot-client-google` is not installed as a distribution, and putting it on PYTHONPATH does not register its entry point.
+- The admin UI `dist/` is not built.
+
+So this task remains done-with-issues.

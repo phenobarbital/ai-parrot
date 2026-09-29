@@ -35,7 +35,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -47,7 +47,7 @@
       "started_at": "2026-09-28T23:41:23+00:00",
       "completed_at": "2026-09-29T06:22:42+00:00",
       "file": "sdd/tasks/completed/TASK-3832-staging-verify-and-seed.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-3833",
@@ -176,7 +176,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -193,7 +193,7 @@
       "started_at": "2026-09-29T06:04:17+00:00",
       "completed_at": "2026-09-29T06:22:46+00:00",
       "file": "sdd/tasks/completed/TASK-3839-linked-e2e-server-agent-runner.md",
-      "verification": "partial"
+      "verification": "verified"
     },
     {
       "id": "TASK-3840",

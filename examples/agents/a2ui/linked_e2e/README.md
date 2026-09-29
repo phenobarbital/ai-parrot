@@ -220,3 +220,27 @@ S4 is exploratory and never required. Record each expectation as observed or not
   fails closed on streaming chats.
 - **Local dev `env/.env`.** It sets `AUTH_USER_MODEL=resources.users.User`, which is not in the repo. Staging
   uses `navigator_auth.models.User`; check what `env/dev/.env` sets before starting `server.py` on dev.
+
+## Live run log (2026-09-29, `ENV=dev`)
+
+Staging Postgres was unreachable from the workstation, so the live tier ran on `env/dev/.env`, using the dedicated
+`epson_e2e_*` slugs.
+
+**Results**
+- `run_e2e.py`: 32/32 PASS, exit 0.
+- `pytest -m staging`: 4/4 PASS.
+- Evidence: `sdd/state/FEAT-611/findings/F020-staging-slug-definitions.md`.
+
+**Things you need to know before running it elsewhere**
+1. **querysource 5.1.2 needs a schema migration.** Run
+   `ALTER TABLE public.queries ADD COLUMN IF NOT EXISTS columns_definition varchar[] DEFAULT '{}';`
+   Without it, every `QueryModel` read fails (toolkit describe/build, `SlugCatalog`). Direct `QS(slug=...)` still works.
+2. **The tenant routes need PBAC grants.** `/api/v1/{tenant}/queries/...` pre-flights `slug:execute` and
+   `datasource:use` on the app's PBAC evaluator, and answers a bare 404 when denied. The example policy dir grants
+   both for `epson_e2e_*`.
+3. **MultiQS only applies conditions keyed by child query name.** A linked multiquery source cannot
+   re-parametrize its children per refresh, so the stored pipeline pins them.
+4. **Every source has to declare the date placeholders.** `/refresh` broadcasts params to all sources, so any
+   sibling slug must declare `{firstdate}`/`{lastdate}`; otherwise QS appends them as WHERE filters.
+5. **S4 (admin UI) and `--via-agent` need an LLM client provider registered as an installed distribution.**
+   Putting a package on PYTHONPATH is not enough.

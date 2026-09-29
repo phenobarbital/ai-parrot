@@ -937,7 +937,7 @@ When you pick up this task:
 
 **Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3839 (commit 7a12a75c0, merged)
 **Date**: 2026-09-29
-**Verification**: partial. The offline tier is verified. The live staging run is pending: staging Postgres is unreachable from this workstation (see TASK-3832).
+**Verification**: verified (live on dev, 2026-09-29) — see the Live verification note below.
 
 **What was added**:
 - `server.py`: `create_app(guard_mode, *, policy_dir, llm)`. The mount order is:
@@ -972,3 +972,18 @@ When you pick up this task:
 - The publish-time and refresh-time no-guard 403 messages differ, so publish is matched on a substring.
 - The S2 date ranges are configurable (`E2E_S2_RANGE_A/B`) and are not verified yet; that waits on F020.
 - The local dev `env/.env` points `AUTH_USER_MODEL` at `resources.users.User`, a module that is not in the repo. Staging uses `navigator_auth.models.User`.
+
+
+**Live verification (2026-09-29, ENV=dev, querysource 5.1.2)** — see `sdd/state/FEAT-611/findings/F020-staging-slug-definitions.md`.
+Staging was unreachable, so the live tier ran on the dev env.
+- `run_e2e.py`: **32/32 PASS** (exit 0) against the policy, deny and none servers.
+- `pytest -m staging test_linked_e2e_staging.py`: **4/4 PASS**.
+- The seed of the dedicated `epson_e2e_*` slugs is idempotent: inserted on the first run, updated on the second.
+- `preview` returns the frames {result, targets}.
+- Fixes found live and applied:
+  - the targets slug declares no-op date placeholders;
+  - the multiquery pins the child conditions;
+  - the demo policy grants `slug:execute` and `datasource:use` for the QS 5.1.2 tenant routes.
+- The user applied the dev DB migration `public.queries.columns_definition`, which QS 5.1.2 requires.
+
+Verification upgraded from partial to verified.
