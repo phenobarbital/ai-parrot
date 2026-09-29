@@ -214,6 +214,7 @@ def test_cli_outline_qualified_target(tmp_path) -> None:
     assert "Store" in {s["qualname"] for s in json.loads(result.output)["symbols"]}
 
 
+@requires_astgrep
 @pytest.mark.usefixtures("isolated_home")
 def test_cli_blast_qualified_seed(tmp_path) -> None:
     runner = CliRunner()
