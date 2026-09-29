@@ -54,9 +54,14 @@ POLICY_ACTION = "source:read"
 # Offline-verified: ComponentRegistry.validate_pipeline (structural) accepts it (see the guard test).
 # Still unverified until the live preview: that the targets slug tolerates the firstdate/lastdate conditions MultiQS
 # forwards to every query, and that both frames come back (a DataNotFound on one frame changes the keys).
+# Live-verified on dev (2026-09-29): MultiQS applies conditions ONLY when keyed by child query name
+# (`self._conditions.pop(name, {})`, querysource/queries/multi/__init__.py:451) — flat top-level
+# conditions (what a linked descriptor sends) never reach the children. So the stored pipeline pins the
+# child placeholders itself (MQ_RANGE); a linked multiquery source cannot re-parametrize them per refresh.
+MQ_RANGE: tuple[str, str] = ("2025-03-01", "2025-03-07")
 MQ_PIPELINE: dict[str, Any] = {
     "queries": {
-        "result": {"slug": ACTIVITY_SLUG},
+        "result": {"slug": ACTIVITY_SLUG, "firstdate": MQ_RANGE[0], "lastdate": MQ_RANGE[1]},
         "targets": {"slug": TARGETS_SLUG},
     },
 }
@@ -80,10 +85,14 @@ SQL_SLUGS: dict[str, dict[str, Any]] = {
         "query_raw": (
             "SELECT {fields} FROM (VALUES ('Best Buy'::varchar, 60), ('Office Depot', 40), ('Staples', 30), "
             "('Staples Canada', 20), ('Target', 30), ('BEST BUY CANADA', 15), ('Costco', 25)) "
-            "AS t(program, target) {where_cond}"
+            "AS t(program, target) WHERE {firstdate}::date IS NOT NULL AND {lastdate}::date IS NOT NULL "
+            "{and_cond}"
         ),
-        "conditions": {},
-        "cond_definition": {},
+        # Live-verified on dev: a slug WITHOUT the firstdate/lastdate placeholders gets them appended as
+        # WHERE filters ('column "firstdate" does not exist'), and the server /refresh broadcasts params to
+        # every source — so targets declares them as no-op placeholders with the same defaults as activity.
+        "conditions": {"firstdate": "FDOM", "lastdate": "CURRENT_DATE"},
+        "cond_definition": {"firstdate": "date", "lastdate": "date"},
     },
 }
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
