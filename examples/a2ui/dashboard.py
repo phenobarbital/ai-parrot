@@ -11,7 +11,7 @@ from parrot_tools.querysource.toolkit import QuerysourceToolkit
 
 SLUG = "polestar_graduates_directory"
 BY_COURSE_SLUG = "polestar_graduates_by_course"
-DEFAULT_LLM = "anthropic:claude-sonnet-5"
+DEFAULT_LLM = "google:gemini-3.5-flash"
 
 WIDGETS: list[dict[str, Any]] = [
     {

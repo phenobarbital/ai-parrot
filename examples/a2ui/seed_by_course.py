@@ -8,10 +8,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 import sys
 
 import asyncpg
+from querysource.conf import default_dsn  # writable primary; asyncpg_url is a read-only replica
 
 BASE_SLUG = "polestar_graduates_directory"
 NEW_SLUG = "polestar_graduates_by_course"
@@ -23,23 +23,6 @@ QUERY_RAW = (
 )
 
 logger = logging.getLogger("a2ui.seed_by_course")
-
-
-def get_dsn() -> str:
-    """Return the asyncpg DSN from environment or querysource config.
-
-    Uses ``querysource.conf.default_dsn`` (the writable primary); ``asyncpg_url`` points at a read-only replica.
-    """
-    dsn = os.environ.get("QS_ASYNCPG_URL")
-    if dsn:
-        return dsn
-    try:
-        from querysource.conf import default_dsn as DSN  # noqa: N811
-
-        return DSN
-    except ImportError:
-        pass
-    raise RuntimeError("No database connection configured. Set QS_ASYNCPG_URL or install querysource[db].")
 
 
 # A single-column, non-partial UNIQUE index on public.queries(query_slug) — exactly what ON CONFLICT (query_slug) needs.
@@ -100,7 +83,7 @@ async def seed(conn: asyncpg.Connection | None = None) -> str:
     """
     own_connection = conn is None
     if conn is None:
-        conn = await asyncpg.connect(get_dsn())
+        conn = await asyncpg.connect(default_dsn)
     try:
         async with conn.transaction():
             await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", NEW_SLUG)
