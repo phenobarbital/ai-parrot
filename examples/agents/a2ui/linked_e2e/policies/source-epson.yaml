@@ -33,3 +33,12 @@ policies:
     actions: ["datasource:use", "driver:use"]
     subjects: { groups: ["*"] }
     priority: 10
+  # Live-verified on dev: AgentTalk (/api/v1/agents/chat/{agent}) evaluates `agent:chat` on the same app evaluator
+  # (Parrot.AgentTalk "PBAC agent access DENIED ... default: deny") — needed for run_e2e --via-agent and manual S4.
+  - name: demo_allow_epson_linked_agent_chat
+    effect: allow
+    description: FEAT-611 demo — any authenticated user may chat with the epson_linked example agent.
+    resources: ["agent:epson_linked"]
+    actions: ["agent:chat"]
+    subjects: { groups: ["*"] }
+    priority: 10
