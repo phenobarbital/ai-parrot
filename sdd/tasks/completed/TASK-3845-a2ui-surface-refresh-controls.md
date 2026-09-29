@@ -159,4 +159,8 @@ it('Refresh all re-fetches every source', async () => { /* FILL IN — AC5/AC8 *
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 108.7s · Tokens: n/a
+
+Implemented per spec: laneProxy.refreshSource + Refresh all / per-source buttons (diff reviewed). NOT VERIFIED: A2UISurface.linked.test.ts fails 4/6 on clean dev already (svelte effect_update_depth_exceeded, ledger issue:da9483df1382); in the worktree the 2 new refresh tests fail with the same error (6 failed | 2 passed of 8), so the vitest pass cannot be confirmed in this environment. Closed as partial. Merge-tier sweep skipped (env-red, see TASK-3842).
+
+**Fix pass (post-review):** root cause was a pre-existing tracked-effect loop in A2UISurface.svelte (start() calls onUpdate synchronously); fixed with untrack (commit 81e23b1). A2UISurface.linked.test.ts now 8/8, tests/ui linked wrappers pass. Also fixed the two unrelated golden-fixture drifts it exposed (conditions.ts no longer emits limit; dsl.ts pivot nulls).

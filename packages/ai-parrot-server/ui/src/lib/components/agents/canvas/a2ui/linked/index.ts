@@ -60,6 +60,8 @@ export interface LinkedLane {
   refreshAll(): Promise<void>;
   /** Current per-source param overrides (a copy), shaped for POST /refresh {params} (service.py:162-171). */
   getParams(): Record<string, Record<string, unknown>>;
+  /** Manual refresh of ONE source (per-widget refresh button). Unknown/failed keys are a no-op. */
+  refreshSource(key: string): Promise<void>;
 }
 
 /** `{name: value}` for every locked name present in `source.conditions` — TS twin of the Python
@@ -157,6 +159,7 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
   const frames: Record<string, Row[]> = {};
   const schedulers: Record<string, RefreshScheduler> = {};
   const inFlight: Record<string, Promise<void> | undefined> = {};
+  const refreshing: Record<string, Promise<void> | undefined> = {};
 
   /** Ensure `key`'s dependencies have a frame before it runs — cycle-safe via `resolving`. */
   async function ensureFrame(key: string, resolving: Set<string>): Promise<void> {
@@ -254,6 +257,25 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
       // A deep copy: callers (the /refresh body) must never be able to mutate lane state. Values are
       // JSON-serialisable FilterBar selections (string | string[] | null), so structuredClone is safe.
       return structuredClone(overrides);
+    },
+    refreshSource(key) {
+      if (!(key in sources) || failed.has(key)) return Promise.resolve();
+      if (refreshing[key]) return refreshing[key];
+
+      refreshing[key] = (async () => {
+        delete frames[key];
+        await runSource(key, true);
+        const { order } = executionOrder(sources, deps);
+        for (const dependent of order) {
+          if (dependent !== key && deps[dependent].includes(key)) {
+            delete frames[dependent];
+            await runSource(dependent, true);
+          }
+        }
+      })().finally(() => {
+        delete refreshing[key];
+      });
+      return refreshing[key];
     },
   };
 }

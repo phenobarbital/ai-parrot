@@ -203,4 +203,6 @@ def test_a2ui_linked_refresh_vitest() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 3 dispatches (1st empty_delivery; 2nd/3rd failed to start: stale attempt-1 branch blocked git worktree add — deleted the 0-commit branch by hand; 3rd merged) · Tokens: n/a
+
+LinkedLane.refreshSource added per spec. vitest wrappers (refresh + runtime): 2 passed, run with a read-only symlink of the main checkout's ui/node_modules (untracked/ignored; otherwise run_vitest skips).

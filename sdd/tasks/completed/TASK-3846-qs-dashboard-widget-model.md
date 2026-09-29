@@ -209,4 +209,6 @@ def test_dashboard_widget_defaults() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Tokens: n/a
+
+DashboardWidget model + QuerysourceToolkit._build_linked_source extracted from build_linked_surface (behaviour-preserving). querysource suite: 102 passed. Merge-tier sweep skipped (env-red, see TASK-3842).

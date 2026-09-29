@@ -172,6 +172,44 @@ describe('A2UISurface linked lane', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it('per-source refresh button calls refreshSource(key) once', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify([{ region: 'east', total: 1 }])));
+    render(A2UISurface, { envelope: envelopeWithSource() });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+
+    await fireEvent.click(screen.getByTestId('refresh-sales'));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+  });
+
+  it('Refresh all re-fetches every source', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify([{ region: 'east', total: 1 }])));
+    const envelope = envelopeWithSource();
+    const sources = envelope.createSurface.metadata!.extensions!.parrot_data_sources!;
+    sources.inventory = {
+      kind: 'query_slug',
+      slug: 'inventory_by_region',
+      tenant: null,
+      is_multiquery: false,
+      conditions: {},
+      request: {},
+      params: {},
+      locked: [],
+      target: '/inventory',
+      refresh: { policy: 'on_mount' },
+    };
+    render(A2UISurface, { envelope });
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+
+    await fireEvent.click(screen.getByTestId('refresh-all'));
+
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(4));
+  });
+
   it('a FilterBar filter with parrot_param re-fetches only that source', async () => {
     const spy = vi
       .spyOn(globalThis, 'fetch')

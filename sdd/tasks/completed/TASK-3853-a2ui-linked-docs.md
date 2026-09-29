@@ -155,4 +155,6 @@ POST /api/v2/services/queries/{slug}            # service route
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Tokens: n/a
+
+Wire doc + toolkit doc updated; doc test passes. Caveat: the /api/v1/queries/{schema}/{slug} alias is documented per spec/design research S6 (querysource 5.1.2) but could not be verified — the local venv has an older querysource. /api/v2/services/queries/{slug} verified in installed querysource. Merge-tier sweep skipped (env-red, see TASK-3842).

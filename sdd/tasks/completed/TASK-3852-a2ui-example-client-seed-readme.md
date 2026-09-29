@@ -202,4 +202,6 @@ if __name__ == "__main__":
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 232.1s · Tokens: 792679 in / 11379 out
+
+client.py (--open/--check), seed_by_course.py (idempotent upsert, requires --yes + ENV=prod), README.md, tests; tests/examples: 15 passed, 1 skipped. seed_by_course.py was NOT executed — it writes to PRODUCTION public.queries and needs explicit operator approval. Merge-tier sweep skipped (env-red, see TASK-3842).

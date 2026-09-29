@@ -13,6 +13,7 @@ skipped here (the caller records ``transform_skipped: ref``).
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from collections.abc import Callable, Mapping
@@ -52,8 +53,29 @@ def frame_from_records(rows: list[dict[str, Any]]) -> "pd.DataFrame":
     return pd.DataFrame.from_records(rows)
 
 
+def _binary_to_text(value: Any) -> Any:
+    """Return binary cells as text: UTF-8 when valid, otherwise base64."""
+    if not isinstance(value, (bytes, bytearray, memoryview)):
+        return value
+    raw = bytes(value)
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return base64.b64encode(raw).decode("ascii")
+
+
 def frame_to_records(frame: "pd.DataFrame") -> list[dict[str, Any]]:
-    """Serialise records with ISO dates, JSON nulls, and preserved numeric values."""
+    """Serialise records with ISO dates, JSON nulls, and preserved numeric values.
+
+    Binary cells (e.g. ``bytea`` columns) are converted to text first: pandas' ujson encoder
+    passes ``bytes`` through unvalidated and raises ``OverflowError`` on non-UTF-8 content.
+    """
+    object_cols = [c for c in frame.columns if frame[c].dtype == object]
+    binary_cols = [
+        c for c in object_cols if frame[c].map(lambda v: isinstance(v, (bytes, bytearray, memoryview))).any()
+    ]
+    if binary_cols:
+        frame = frame.assign(**{str(c): frame[c].map(_binary_to_text) for c in binary_cols})
     return json.loads(frame.to_json(orient="records", date_format="iso"))
 
 

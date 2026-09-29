@@ -242,4 +242,6 @@ async def test_build_linked_dashboard_jsonb_kpi(...): ...           # {"@>": [..
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Tokens: n/a
+
+qs_build_linked_dashboard + _dashboard_layout added; querysource suite 112 passed. Coder added one unspecified guard: widget keys root/title/row_kpis/row_charts rejected (layout-id collision) — kept, harmless. Lint residual B905 zip() at toolkit.py:482 pre-existing debt. Merge-tier sweep skipped (env-red, see TASK-3842).

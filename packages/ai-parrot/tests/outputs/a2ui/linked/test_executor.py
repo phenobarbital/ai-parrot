@@ -204,6 +204,18 @@ async def test_snapshot_rows_truncated(fake_qs, linked_source):
     assert len(result.rows) == 2
 
 
+async def test_binary_cells_serialised(fake_qs, linked_source):
+    """bytea cells never crash ujson: valid UTF-8 → text, anything else → base64."""
+    fake_qs.registry[linked_source.slug] = pd.DataFrame({"blob": [b"\xfa\x01", b"abc", None], "n": [1, 2, 3]})
+
+    outcome = await execute_sources({"activity": linked_source})
+
+    result = outcome.outcomes["activity"]
+    assert result.error is None
+    assert [r["blob"] for r in result.rows] == ["+gE=", "abc", None]
+    assert [r["n"] for r in result.rows] == [1, 2, 3]
+
+
 def test_map_query_error_tenant_codes():
     """QueryAccessDenied -> (404, "query_not_found") (never "denied"); TenantError codes per the table."""
     from querysource.exceptions import QueryAccessDenied

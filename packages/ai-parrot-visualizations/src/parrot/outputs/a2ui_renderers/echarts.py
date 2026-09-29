@@ -275,6 +275,12 @@ class EChartsRenderer(AbstractA2UIRenderer):
         series = []
         for index, col in enumerate(y_cols):
             values = [row.get(col) for row in rows if isinstance(row, dict)]
+            if chart_type in {"pie", "donut"}:
+                values = [
+                    {"name": "Unassigned" if row.get(x) is None else row.get(x), "value": row.get(col)}
+                    for row in rows
+                    if isinstance(row, dict)
+                ]
             mark = series_types[index] if index < len(series_types) and series_types[index] else chart_type
             series_entry: dict[str, Any] = {
                 "name": col,
@@ -304,10 +310,10 @@ class EChartsRenderer(AbstractA2UIRenderer):
                     "data": trend_values,
                     "smooth": True,
                     "symbol": "none",
-                        # Grey on purpose, not the next colour off the palette:
-                        # a colour is a judgement in these reports and a
-                        # regression is geometry. Same tone as the interactive
-                        # surface and the Svelte canvas draw it in.
+                    # Grey on purpose, not the next colour off the palette:
+                    # a colour is a judgement in these reports and a
+                    # regression is geometry. Same tone as the interactive
+                    # surface and the Svelte canvas draw it in.
                     "lineStyle": {"type": "dashed", "color": _TREND_COLOR},
                     "itemStyle": {"color": _TREND_COLOR},
                 }
@@ -493,7 +499,7 @@ class EChartsRenderer(AbstractA2UIRenderer):
         mean_x = sum(xs) / n
         mean_y = sum(numeric) / n
         denom = sum((x - mean_x) ** 2 for x in xs) or 1
-        slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, numeric)) / denom
+        slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, numeric, strict=False)) / denom
         intercept = mean_y - slope * mean_x
         return [slope * x + intercept for x in xs]
 

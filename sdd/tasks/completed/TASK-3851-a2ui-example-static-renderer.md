@@ -191,4 +191,10 @@ function renderNode(id, byId, ctx) {
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: qwen (attempt 2) · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 2 (attempt 1 glm zai.glm-4.7-flash failed: max_turns=60 exceeded, no final_output) · Duration: 146.4s (+210.4s failed) · Tokens: 1619662 in / 8958 out
+
+index.html, renderer.js, styles.css + tests/examples/test_a2ui_static_assets.py; tests/examples: 15 passed, 1 skipped (live, opt-in). Browser rendering NOT exercised (no headless run); static checks only. Merge-tier sweep skipped (env-red, see TASK-3842).
+
+**Review update:** independent review found renderer.js non-functional (phantom lane API, wrong envelope shape, stub grid); downgraded to partial. See ledger issue:a6815669fb4e and feedback coder-feedback:d0d6d36ee4ff53cf375d3136.
+
+**Fix pass (post-review):** renderer.js rewritten against the real envelope/lane contract (real-envelope jsdom test), linked.js gained fetchPage/pagedKeys, native server-paged grid replaces grid.js (deviation from spec §368, needs owner acceptance), client.py/seed/server hardened. See commits df72d23, and later fix(a2ui-linked-e2e-test) commits.
