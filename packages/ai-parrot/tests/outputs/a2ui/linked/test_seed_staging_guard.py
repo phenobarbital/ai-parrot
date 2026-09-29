@@ -264,15 +264,24 @@ def test_pipeline_structurally_valid_offline(seed):
 def test_policy_yaml_parses(seed):
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(POLICY_YAML.read_text(encoding="utf-8"))
-    (policy,) = doc["policies"]
-    assert policy["effect"] == "allow"
-    assert policy["resources"] == ["source:query_slug:public:epson_*"]
-    assert policy["actions"] == [seed.POLICY_ACTION]
+    source_policy, slug_policy, datasource_policy = doc["policies"]
+    assert source_policy["effect"] == "allow"
+    assert source_policy["resources"] == ["source:query_slug:public:epson_*"]
+    assert source_policy["actions"] == [seed.POLICY_ACTION]
+    # querysource 5.1.2 tenant routes pre-flight `slug:execute` on the shared app evaluator (live-verified).
+    assert slug_policy["effect"] == "allow"
+    assert slug_policy["resources"] == ["slug:epson_e2e_*"]
+    assert slug_policy["actions"] == ["slug:execute", "slug:list"]
+    assert datasource_policy["resources"] == ["datasource:db", "driver:*"]
     pytest.importorskip("navigator_auth.abac.policies.evaluator")
     from navigator_auth.abac.policies.evaluator import PolicyLoader
 
     loaded = PolicyLoader.load_from_directory(POLICY_YAML.parent)
-    assert [p.name for p in loaded] == ["demo_allow_epson_linked_sources"]
+    assert [p.name for p in loaded] == [
+        "demo_allow_epson_linked_sources",
+        "demo_allow_epson_e2e_slug_execute",
+        "demo_allow_epson_e2e_datasource",
+    ]
 
 
 def test_policy_proof_offline_allow_and_deny(seed, caplog):

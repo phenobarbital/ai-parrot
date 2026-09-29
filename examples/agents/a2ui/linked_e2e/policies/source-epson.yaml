@@ -12,3 +12,24 @@ policies:
     actions: ["source:read"]
     subjects: { groups: ["*"] }
     priority: 10
+  # Live-verified on dev (2026-09-29): querysource 5.1.2's tenant routes (/api/v1/{tenant}/queries/{slug}) run
+  # an owner-aware PBAC pre-flight (`slug:execute`) against the SAME app evaluator parrot's setup_pbac installs.
+  # Without a slug policy that evaluator default-denies → QS answers a bare 404. The v3 route skips this check.
+  - name: demo_allow_epson_e2e_slug_execute
+    effect: allow
+    description: >
+      FEAT-611 demo — any authenticated user may execute/list the dedicated epson_e2e_* slugs through
+      querysource's tenant routes (S5). Live-tier (staging or dev) example only.
+    resources: ["slug:epson_e2e_*"]
+    actions: ["slug:execute", "slug:list"]
+    subjects: { groups: ["*"] }
+    priority: 10
+  # The same tenant-route pre-flight then checks the slug's datasource/driver (live-verified: `datasource:use`
+  # on ResourceType.DATASOURCE "db"), mirroring the repo-root policies/slugs.yaml temporary allows.
+  - name: demo_allow_epson_e2e_datasource
+    effect: allow
+    description: FEAT-611 demo — the epson_e2e_* slugs run on the default "db" datasource/driver.
+    resources: ["datasource:db", "driver:*"]
+    actions: ["datasource:use", "driver:use"]
+    subjects: { groups: ["*"] }
+    priority: 10
