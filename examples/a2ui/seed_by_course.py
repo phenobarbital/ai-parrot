@@ -26,14 +26,17 @@ logger = logging.getLogger("a2ui.seed_by_course")
 
 
 def get_dsn() -> str:
-    """Return the asyncpg DSN from environment or querysource config."""
+    """Return the asyncpg DSN from environment or querysource config.
+
+    Uses ``querysource.conf.default_dsn`` (the writable primary); ``asyncpg_url`` points at a read-only replica.
+    """
     dsn = os.environ.get("QS_ASYNCPG_URL")
     if dsn:
         return dsn
     try:
-        from parrot_tools.querysource._qs import default_dsn
+        from querysource.conf import default_dsn as DSN  # noqa: N811
 
-        return default_dsn()
+        return DSN
     except ImportError:
         pass
     raise RuntimeError("No database connection configured. Set QS_ASYNCPG_URL or install querysource[db].")
@@ -50,36 +53,37 @@ WHERE n.nspname = 'public' AND c.relname = 'queries' AND a.attname = 'query_slug
   AND i.indisunique AND i.indnatts = 1 AND i.indpred IS NULL
 """
 
-BASE_ROW_SQL = (
-    "SELECT query_slug, query_name, query_raw, query_description, query_type, is_active, created_by, created_at "
-    "FROM public.queries WHERE query_slug = $1"
-)
+# The by-course subquery only exposes these columns, so the base slug's `fields` (full_name, city, ...) cannot be reused.
+FIELDS = ['"student_uid"', '"course"', '"category"']
+DESCRIPTION = "Polestar Graduates by Course (one row per graduate x course)"
+
+# Columns copied verbatim from the base slug; query_slug, description, query_raw and fields are overridden.
+COPIED_COLUMNS = ("program_id", "program_slug", "provider", "parser", "is_raw", "is_cached", "cache_timeout")
+COLUMNS = ("query_slug", "description", "query_raw", "fields", *COPIED_COLUMNS)
+
+BASE_ROW_SQL = f"SELECT {', '.join(COPIED_COLUMNS)} FROM public.queries WHERE query_slug = $1"
+
+_PLACEHOLDERS = ", ".join(f"${i}" for i in range(1, len(COLUMNS) + 1))
+_ASSIGNMENTS = ", ".join(f"{col} = ${i}" for i, col in enumerate(COLUMNS[1:], start=2))
 
 # `xmax = 0` is true only for a freshly inserted row, so RETURNING tells insert from update without a second query.
-UPSERT_SQL = """
-INSERT INTO public.queries (query_slug, query_name, query_raw, query_description,
-    query_type, is_active, created_by, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+UPSERT_SQL = f"""
+INSERT INTO public.queries ({', '.join(COLUMNS)}, created_at, updated_at)
+VALUES ({_PLACEHOLDERS}, now(), now())
 ON CONFLICT (query_slug) DO UPDATE SET
-    query_name = EXCLUDED.query_name,
-    query_raw = EXCLUDED.query_raw,
-    query_description = EXCLUDED.query_description,
-    query_type = EXCLUDED.query_type,
-    is_active = EXCLUDED.is_active,
+    {', '.join(f"{col} = EXCLUDED.{col}" for col in COLUMNS[1:])},
     updated_at = now()
 RETURNING (xmax = 0) AS inserted
 """
 
-FALLBACK_UPDATE_SQL = """
-UPDATE public.queries SET query_name = $2, query_raw = $3, query_description = $4,
-    query_type = $5, is_active = $6, updated_at = now()
+FALLBACK_UPDATE_SQL = f"""
+UPDATE public.queries SET {_ASSIGNMENTS}, updated_at = now()
 WHERE query_slug = $1
 """
 
-FALLBACK_INSERT_SQL = """
-INSERT INTO public.queries (query_slug, query_name, query_raw, query_description,
-    query_type, is_active, created_by, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+FALLBACK_INSERT_SQL = f"""
+INSERT INTO public.queries ({', '.join(COLUMNS)}, created_at, updated_at)
+VALUES ({_PLACEHOLDERS}, now(), now())
 """
 
 
@@ -89,7 +93,7 @@ async def has_unique_slug_index(conn: asyncpg.Connection) -> bool:
 
 
 async def seed(conn: asyncpg.Connection | None = None) -> str:
-    """Copy BASE_SLUG's row, swap slug + query_raw and upsert atomically; return 'inserted' | 'updated'.
+    """Copy BASE_SLUG's program/provider settings, set slug + query_raw + fields, upsert; return 'inserted' | 'updated'.
 
     The whole operation runs in one transaction under an advisory lock keyed on the slug, so concurrent runs cannot
     both insert (the fallback path has no unique index to protect it).
@@ -103,21 +107,11 @@ async def seed(conn: asyncpg.Connection | None = None) -> str:
             base_row = await conn.fetchrow(BASE_ROW_SQL, BASE_SLUG)
             if base_row is None:
                 raise RuntimeError(f"Base slug {BASE_SLUG} not found in public.queries")
-            name = base_row["query_name"].replace(BASE_SLUG, NEW_SLUG) if base_row["query_name"] else NEW_SLUG
-            values = (
-                NEW_SLUG,
-                name,
-                QUERY_RAW,
-                base_row["query_description"],
-                base_row["query_type"],
-                base_row["is_active"],
-                base_row["created_by"],
-                base_row["created_at"],
-            )
+            values = (NEW_SLUG, DESCRIPTION, QUERY_RAW, FIELDS, *(base_row[col] for col in COPIED_COLUMNS))
             if await has_unique_slug_index(conn):
                 inserted = await conn.fetchval(UPSERT_SQL, *values)
                 return "inserted" if inserted else "updated"
-            updated = await conn.execute(FALLBACK_UPDATE_SQL, *values[:6])
+            updated = await conn.execute(FALLBACK_UPDATE_SQL, *values)
             if updated == "UPDATE 0":
                 await conn.execute(FALLBACK_INSERT_SQL, *values)
                 return "inserted"

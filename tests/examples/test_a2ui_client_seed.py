@@ -232,14 +232,13 @@ class FakeConn:
         if not self.base:
             return None
         return {
-            "query_slug": seed_by_course.BASE_SLUG,
-            "query_name": f"{seed_by_course.BASE_SLUG} name",
-            "query_raw": "x",
-            "query_description": "d",
-            "query_type": "t",
-            "is_active": True,
-            "created_by": "me",
-            "created_at": "2026-01-01",
+            "program_id": 1,
+            "program_slug": "polestar",
+            "provider": "db",
+            "parser": "pgSQLParser",
+            "is_raw": False,
+            "is_cached": False,
+            "cache_timeout": 3600,
         }
 
     async def fetchval(self, sql: str, *args: Any) -> Any:
