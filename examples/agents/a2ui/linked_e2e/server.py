@@ -7,6 +7,7 @@ Guard modes (spec §2 S1 negatives):
     deny    an empty temporary policy dir: a real guard that denies every source  → 403 "Data source not permitted"
     none    no guard at all (PARROT_PBAC_POLICY_DIR → a nonexistent dir)          → 403 "... data-plane guard"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,12 +58,15 @@ def create_app(guard_mode: str = "policy", *, policy_dir: str | Path | None = No
     app = web.Application()
     QuerySource(lazy=False).setup(app)  # 1. /api/v3/queries + /api/v1/{tenant}/queries
     if guard_mode != "none":
-        pdir = Path(policy_dir or POLICY_DIR) if guard_mode == "policy" else Path(
-            tempfile.mkdtemp(prefix="linked-e2e-deny-")
+        pdir = (
+            Path(policy_dir or POLICY_DIR)
+            if guard_mode == "policy"
+            else Path(tempfile.mkdtemp(prefix="linked-e2e-deny-"))
         )
         guard = setup_dataplane_guard(app, policy_dir=str(pdir))  # 2. BEFORE BotManager: its hook reuses it
-        logger.info("data-plane guard=%s mode=%s policy_dir=%s", type(guard).__name__ if guard else None,
-                    guard_mode, pdir)
+        logger.info(
+            "data-plane guard=%s mode=%s policy_dir=%s", type(guard).__name__ if guard else None, guard_mode, pdir
+        )
     agent = EpsonLinkedAgent(**({"llm": llm} if llm else {}))
     manager = BotManager(enable_database_bots=False, enable_registry_bots=False)  # 3.
     manager.add_bot(agent)  # BEFORE startup: _setup_dataplane_guard only walks registered bots

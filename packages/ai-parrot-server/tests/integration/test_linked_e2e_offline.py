@@ -279,8 +279,14 @@ async def test_s5_tenant_descriptor(fake_qs):
     guard = _Guard()
     service = LinkedSurfaceService(guard=guard)
     pctx = build_principal_context("owner-1", channel="ui_surfaces")
-    chart = {"id": "root", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"],
-             "data": {"path": "/activity/rows"}}
+    chart = {
+        "id": "root",
+        "component": "Chart",
+        "type": "bar",
+        "x": "day",
+        "y": ["visits"],
+        "data": {"path": "/activity/rows"},
+    }
 
     rows, kwargs = {}, {}
     for label, tenant in (("default", None), ("public", "public")):
@@ -308,8 +314,14 @@ async def test_run_e2e_offline_contract(monkeypatch):
 
     run_e2e = _load("run_e2e")
     table = {"id": "root", "component": "DataTable", "data": {"path": "/mq/rows"}}
-    chart = {"id": "root", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"],
-             "data": {"path": "/activity/rows"}}
+    chart = {
+        "id": "root",
+        "component": "Chart",
+        "type": "bar",
+        "x": "day",
+        "y": ["visits"],
+        "data": {"path": "/activity/rows"},
+    }
     for envelope in (
         run_e2e.linked_envelope("s3", [table], {"mq": run_e2e.mq_source("targets")}),
         run_e2e.linked_envelope("s5", [chart], {"activity": run_e2e.activity_source("public")}),

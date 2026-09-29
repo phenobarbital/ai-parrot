@@ -1,4 +1,5 @@
 """FEAT-611 M8 — Epson dashboard TOOL: golden equality, TOOL validation, unauthorized blocked before rows."""
+
 from __future__ import annotations
 
 import importlib.util

@@ -6,6 +6,7 @@ Server lane: POST /refresh {params:{firstdate,lastdate}} broadcasts to every act
 KPI "stores visited" = distinct stores per program, summed (the DSL has no distinct count), so a store
 active in two programs counts twice.
 """
+
 from __future__ import annotations
 
 import logging
@@ -104,31 +105,67 @@ def build_components(programs: list[str]) -> list[dict[str, Any]]:
         return {"id": cid, "component": "KPICard", "label": label, "value": {"path": f"/kpis/rows/0/{col}"}}
 
     return [
-        {"id": "root", "component": "Column",
-         "children": ["kpi_row", "date_filters", "program_filter", "chart", "table"]},
+        {
+            "id": "root",
+            "component": "Column",
+            "children": ["kpi_row", "date_filters", "program_filter", "chart", "table"],
+        },
         {"id": "kpi_row", "component": "Row", "children": ["kpi_visits", "kpi_stores", "kpi_attainment"]},
         kpi("kpi_visits", "Total visits", "visits"),
         kpi("kpi_stores", "Stores visited", "store_id"),
         kpi("kpi_attainment", "% attainment", "attainment_pct"),
-        {"id": "date_filters", "component": "FilterBar", "title": "Date range", "filters": [
-            {"column": "day", "label": "From", "options": _options("FDOM", "YESTERDAY", RANGE_START),
-             "param": {"source": "activity", "name": "firstdate"}},
-            {"column": "day", "label": "To", "options": _options("TODAY", "YESTERDAY"),
-             "param": {"source": "activity", "name": "lastdate"}},
-        ]},
-        {"id": "program_filter", "component": "FilterBar", "title": "Program", "filters": [
-            {"column": "program", "label": "Program", "multiple": True, "options": _options(*programs)},
-        ]},
-        {"id": "chart", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"],
-         "data": {"path": "/activity/rows"}},
-        {"id": "table", "component": "DataTable", "data": {"path": "/attainment/rows"},
-         "columns": [{"name": c} for c in ("program", "visits", "target", "attainment")]},
+        {
+            "id": "date_filters",
+            "component": "FilterBar",
+            "title": "Date range",
+            "filters": [
+                {
+                    "column": "day",
+                    "label": "From",
+                    "options": _options("FDOM", "YESTERDAY", RANGE_START),
+                    "param": {"source": "activity", "name": "firstdate"},
+                },
+                {
+                    "column": "day",
+                    "label": "To",
+                    "options": _options("TODAY", "YESTERDAY"),
+                    "param": {"source": "activity", "name": "lastdate"},
+                },
+            ],
+        },
+        {
+            "id": "program_filter",
+            "component": "FilterBar",
+            "title": "Program",
+            "filters": [
+                {"column": "program", "label": "Program", "multiple": True, "options": _options(*programs)},
+            ],
+        },
+        {
+            "id": "chart",
+            "component": "Chart",
+            "type": "bar",
+            "x": "day",
+            "y": ["visits"],
+            "data": {"path": "/activity/rows"},
+        },
+        {
+            "id": "table",
+            "component": "DataTable",
+            "data": {"path": "/attainment/rows"},
+            "columns": [{"name": c} for c in ("program", "visits", "target", "attainment")],
+        },
     ]
 
 
 async def build_epson_activity_dashboard(
-    firstdate: str = "FDOM", lastdate: str = "TODAY", programs: list[str] | None = None,
-    snapshot: bool = True, *, pctx: Any = None, guard: Any = None,
+    firstdate: str = "FDOM",
+    lastdate: str = "TODAY",
+    programs: list[str] | None = None,
+    snapshot: bool = True,
+    *,
+    pctx: Any = None,
+    guard: Any = None,
 ) -> dict[str, Any]:
     """Compose the S2 linked dashboard; returns {"a2ui_envelope": <inner CreateSurface>, "artifacts": [...]}.
 
@@ -150,8 +187,10 @@ async def build_epson_activity_dashboard(
     sources = build_sources(firstdate, lastdate)
     if guard is not None:
         if pctx is None:
-            raise AuthorizationRequired(tool_name="build_epson_activity_dashboard",
-                                        message="a caller PermissionContext is required when a guard is configured")
+            raise AuthorizationRequired(
+                tool_name="build_epson_activity_dashboard",
+                message="a caller PermissionContext is required when a guard is configured",
+            )
         seen: set[tuple[str | None, str]] = set()
         for key, src in sources.items():
             pair = (src.tenant, src.slug)
@@ -172,11 +211,19 @@ async def build_epson_activity_dashboard(
         raise RuntimeError(f"epson dashboard sources failed: {failed}")
     if programs is None:
         programs = sorted(str(p) for p in outcome.frames["targets"]["program"].dropna().unique())
-    envelope = build_linked_surface(build_components(programs), sources, outcome.frames,
-                                    surface_id=SURFACE_ID, snapshot=snapshot)
+    envelope = build_linked_surface(
+        build_components(programs), sources, outcome.frames, surface_id=SURFACE_ID, snapshot=snapshot
+    )
     logger.info("built %s with sources=%s snapshot=%s", SURFACE_ID, list(sources), snapshot)
     return {
         "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
-        "artifacts": [{"type": "a2ui_linked_surface", "surface_id": envelope.surface_id,
-                       "sources": list(sources), "slug": ACTIVITY_SLUG, "tenant": None}],
+        "artifacts": [
+            {
+                "type": "a2ui_linked_surface",
+                "surface_id": envelope.surface_id,
+                "sources": list(sources),
+                "slug": ACTIVITY_SLUG,
+                "tenant": None,
+            }
+        ],
     }

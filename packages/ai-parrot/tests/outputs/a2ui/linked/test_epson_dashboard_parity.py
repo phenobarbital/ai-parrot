@@ -1,4 +1,5 @@
 """FEAT-611 M8 / §9 S6 — Python side of the shared Epson parity fixture (conditions, ignored params, rows)."""
+
 from __future__ import annotations
 
 import json

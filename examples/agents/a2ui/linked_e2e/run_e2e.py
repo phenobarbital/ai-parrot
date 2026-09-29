@@ -9,6 +9,7 @@ E2E_S2_RANGE_A / E2E_S2_RANGE_B ("firstdate:lastdate", two ranges KNOWN to hold 
 Every row prints PASS / FAIL / SKIP; SKIP never counts as a pass. Exit 0 only when at least one check ran
 and every non-skipped check passed; 1 otherwise; 2 when refused (ENV != staging).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -64,8 +65,11 @@ async def login(session: aiohttp.ClientSession, base_url: str, user: str, passwo
     """POST /api/v1/login with X-Auth-Method: BasicAuth (NA auth.py:684); returns the bearer token."""
     user_key = os.environ.get("AUTH_USERNAME_ATTRIBUTE", "username")  # BasicAuth.username_attribute
     password_key = os.environ.get("AUTH_PASSWORD_ATTRIBUTE", "password")
-    async with session.post(f"{base_url}/api/v1/login", json={user_key: user, password_key: password},
-                            headers={"X-Auth-Method": "BasicAuth"}) as resp:
+    async with session.post(
+        f"{base_url}/api/v1/login",
+        json={user_key: user, password_key: password},
+        headers={"X-Auth-Method": "BasicAuth"},
+    ) as resp:
         body = await resp.json(content_type=None)
         if resp.status != 200 or not isinstance(body, dict) or "token" not in body:
             raise RuntimeError(f"login failed ({resp.status}) for {user!r}")
@@ -88,11 +92,15 @@ def load_dashboard_tool():
     return module
 
 
-async def publish(ctx: E2EContext, envelope: dict, title: str, base_url: str | None = None,
-                  token: str | None = None) -> tuple[int, dict]:
+async def publish(
+    ctx: E2EContext, envelope: dict, title: str, base_url: str | None = None, token: str | None = None
+) -> tuple[int, dict]:
     """POST /api/v1/ui/surfaces {kind: dashboard, title, envelope} → (status, body)."""
-    async with ctx.session.post(f"{base_url or ctx.base_url}/api/v1/ui/surfaces", headers=ctx.headers(token),
-                                json={"kind": "dashboard", "title": title, "envelope": envelope}) as resp:
+    async with ctx.session.post(
+        f"{base_url or ctx.base_url}/api/v1/ui/surfaces",
+        headers=ctx.headers(token),
+        json={"kind": "dashboard", "title": title, "envelope": envelope},
+    ) as resp:
         return resp.status, await resp.json(content_type=None)
 
 
@@ -121,9 +129,13 @@ def linked_envelope(surface_id: str, components: list[dict], sources: dict[str, 
         "catalogId": DEFAULT_CATALOG_ID,
         "components": components,
         "dataModel": {key: {"rows": []} for key in sources},
-        "metadata": {"extensions": {"parrot_data_sources": {
-            key: src.model_dump(mode="json", by_alias=True, exclude_none=False) for key, src in sources.items()
-        }}},
+        "metadata": {
+            "extensions": {
+                "parrot_data_sources": {
+                    key: src.model_dump(mode="json", by_alias=True, exclude_none=False) for key, src in sources.items()
+                }
+            }
+        },
     }
 
 
@@ -131,8 +143,11 @@ def static_envelope() -> dict:
     """A baked, non-recipe surface (no parrot_data_sources) → not refreshable (409)."""
     from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID  # noqa: PLC0415
 
-    return {"surfaceId": "feat611-static", "catalogId": DEFAULT_CATALOG_ID,
-            "components": [{"id": "root", "component": "Text", "text": "FEAT-611 static surface"}]}
+    return {
+        "surfaceId": "feat611-static",
+        "catalogId": DEFAULT_CATALOG_ID,
+        "components": [{"id": "root", "component": "Text", "text": "FEAT-611 static surface"}],
+    }
 
 
 def mq_source(multi_output: str | None, *, key: str = "mq"):
@@ -140,8 +155,14 @@ def mq_source(multi_output: str | None, *, key: str = "mq"):
     from parrot.outputs.a2ui.linked.models import LinkedDataSource, SourceRequest  # noqa: PLC0415
 
     request = SourceRequest(placeholders={"firstdate": "FDOM", "lastdate": "TODAY"})
-    return LinkedDataSource(slug=MQ_SLUG, is_multiquery=True, multi_output=multi_output,
-                            conditions=derive_conditions(request, locked={}), request=request, target=f"/{key}/rows")
+    return LinkedDataSource(
+        slug=MQ_SLUG,
+        is_multiquery=True,
+        multi_output=multi_output,
+        conditions=derive_conditions(request, locked={}),
+        request=request,
+        target=f"/{key}/rows",
+    )
 
 
 def activity_source(tenant: str | None, *, key: str = "activity"):
@@ -149,10 +170,17 @@ def activity_source(tenant: str | None, *, key: str = "activity"):
     from parrot.outputs.a2ui.linked.models import LinkedDataSource, ParamSpec, SourceRequest  # noqa: PLC0415
 
     request = SourceRequest(placeholders={"firstdate": "FDOM", "lastdate": "TODAY"})
-    return LinkedDataSource(slug=ACTIVITY_SLUG, tenant=tenant, conditions=derive_conditions(request, locked={}),
-                            request=request, target=f"/{key}/rows",
-                            params={"firstdate": ParamSpec(type="date", accepts_keywords=True),
-                                    "lastdate": ParamSpec(type="date", accepts_keywords=True)})
+    return LinkedDataSource(
+        slug=ACTIVITY_SLUG,
+        tenant=tenant,
+        conditions=derive_conditions(request, locked={}),
+        request=request,
+        target=f"/{key}/rows",
+        params={
+            "firstdate": ParamSpec(type="date", accepts_keywords=True),
+            "lastdate": ParamSpec(type="date", accepts_keywords=True),
+        },
+    )
 
 
 async def dashboard_envelope(ctx: E2EContext) -> dict:
@@ -162,8 +190,9 @@ async def dashboard_envelope(ctx: E2EContext) -> dict:
     return result["a2ui_envelope"]
 
 
-async def refresh(ctx: E2EContext, surface_id: str, params: dict, *, token: str | None = None,
-                  share: str | None = None) -> tuple[int, dict, Any]:
+async def refresh(
+    ctx: E2EContext, surface_id: str, params: dict, *, token: str | None = None, share: str | None = None
+) -> tuple[int, dict, Any]:
     url = f"{ctx.base_url}/api/v1/ui/surfaces/{surface_id}/refresh"
     query = {"share": share} if share else None
     async with ctx.session.post(url, headers=ctx.headers(token), params=query, json={"params": params}) as resp:
@@ -172,8 +201,9 @@ async def refresh(ctx: E2EContext, surface_id: str, params: dict, *, token: str 
 
 async def get_surface(ctx: E2EContext, surface_id: str, fmt: str | None = None) -> tuple[int, Any]:
     query = {"format": fmt} if fmt else None
-    async with ctx.session.get(f"{ctx.base_url}/api/v1/ui/surfaces/{surface_id}", headers=ctx.headers(),
-                               params=query) as resp:
+    async with ctx.session.get(
+        f"{ctx.base_url}/api/v1/ui/surfaces/{surface_id}", headers=ctx.headers(), params=query
+    ) as resp:
         body = await resp.text()
         if fmt == "html" and resp.status == 200:
             return resp.status, body
@@ -191,26 +221,38 @@ def _stamps(body: Any) -> dict[str, Any]:
 
 async def via_agent_envelope(ctx: E2EContext, results: list[ScenarioResult]) -> dict | None:
     """--via-agent: drive AgentTalk (output_mode=a2ui) and lift response.a2ui_envelope (TASK-3835 v1.0 wrapper)."""
-    query = ("Build the Epson activity dashboard with build_epson_activity_dashboard "
-             "(firstdate FDOM, lastdate TODAY, snapshot false) and return it as an A2UI surface.")
-    async with ctx.session.post(f"{ctx.base_url}/api/v1/agents/chat/{AGENT_NAME}", headers=ctx.headers(),
-                                params={"output_mode": "a2ui"}, json={"query": query}) as resp:
+    query = (
+        "Build the Epson activity dashboard with build_epson_activity_dashboard "
+        "(firstdate FDOM, lastdate TODAY, snapshot false) and return it as an A2UI surface."
+    )
+    async with ctx.session.post(
+        f"{ctx.base_url}/api/v1/agents/chat/{AGENT_NAME}",
+        headers=ctx.headers(),
+        params={"output_mode": "a2ui"},
+        json={"query": query},
+    ) as resp:
         body = await resp.json(content_type=None)
         status = resp.status
     wrapper = body.get("a2ui_envelope") if isinstance(body, dict) else None
     if isinstance(wrapper, list):
         wrapper = next((w for w in wrapper if isinstance(w, dict) and "createSurface" in w), None)
     inner = wrapper.get("createSurface") if isinstance(wrapper, dict) else None
-    if not check(results, "s1.via_agent_envelope", status == 200 and isinstance(inner, dict),
-                 f"{status} a2ui_envelope={'present' if inner else 'missing'}"):
+    if not check(
+        results,
+        "s1.via_agent_envelope",
+        status == 200 and isinstance(inner, dict),
+        f"{status} a2ui_envelope={'present' if inner else 'missing'}",
+    ):
         return None
     return inner
 
 
 async def _s1_negatives_403(ctx: E2EContext, results: list[ScenarioResult], envelope: dict) -> None:
     """Publish the linked envelope to the deny / no-guard servers (other guard modes of server.py)."""
-    for sid_key, url, expect in (("s1.403_no_policy", ctx.deny_base_url, "Data source not permitted"),
-                                 ("s1.403_no_guard", ctx.noguard_base_url, "data-plane guard")):
+    for sid_key, url, expect in (
+        ("s1.403_no_policy", ctx.deny_base_url, "Data source not permitted"),
+        ("s1.403_no_guard", ctx.noguard_base_url, "data-plane guard"),
+    ):
         if url is None:
             skip(results, sid_key, "server URL for this guard mode not given")
             continue
@@ -235,21 +277,31 @@ async def run_s1(ctx: E2EContext) -> list[ScenarioResult]:
     sid = ctx.state["s1_surface_id"] = body["surface_id"]
     g_status, g_body = await get_surface(ctx, sid)
     rows = rows_of(g_body, "activity") if isinstance(g_body, dict) else None
-    check(results, "s1.get_json", g_status == 200 and isinstance(rows, list) and bool(rows),
-          f"{g_status} activity rows={len(rows) if isinstance(rows, list) else None}")
+    check(
+        results,
+        "s1.get_json",
+        g_status == 200 and isinstance(rows, list) and bool(rows),
+        f"{g_status} activity rows={len(rows) if isinstance(rows, list) else None}",
+    )
     h_status, _ = await get_surface(ctx, sid, "html")
     if h_status == 501:
         skip(results, "s1.get_html", "501: ai-parrot-visualizations not installed on the server")
     else:
         check(results, "s1.get_html", h_status == 200, f"{h_status}")
     g2_status, g2_body = await get_surface(ctx, sid)
-    check(results, "s1.get_no_execution", g2_status == 200 and _stamps(g2_body) == _stamps(g_body),
-          "snapshot_at unchanged across GET json/html/json")
+    check(
+        results,
+        "s1.get_no_execution",
+        g2_status == 200 and _stamps(g2_body) == _stamps(g_body),
+        "snapshot_at unchanged across GET json/html/json",
+    )
     status, body, _ = await refresh(ctx, sid, {"firstdate": "FDOM", "lastdate": "TODAY"})
     check(results, "s1.refresh_params", status == 200, f"{status} {_short(body) if status != 200 else ''}")
     status, _, headers = await refresh(ctx, sid, {"activity": {"store_id": 7}})
     warnings = headers.get("X-Parrot-Refresh-Warnings", "")
-    check(results, "s1.warnings_undeclared", status == 200 and "store_id" in warnings, f"{status} {warnings or 'missing'}")
+    check(
+        results, "s1.warnings_undeclared", status == 200 and "store_id" in warnings, f"{status} {warnings or 'missing'}"
+    )
     await _s1_share(ctx, results, sid)
     await _s1_negatives_409(ctx, results, sid)
     await _s1_negatives_403(ctx, results, envelope)
@@ -257,8 +309,9 @@ async def run_s1(ctx: E2EContext) -> list[ScenarioResult]:
 
 
 async def _s1_share(ctx: E2EContext, results: list[ScenarioResult], sid: str) -> None:
-    async with ctx.session.post(f"{ctx.base_url}/api/v1/ui/surfaces/{sid}/share", headers=ctx.headers(),
-                                json={}) as resp:
+    async with ctx.session.post(
+        f"{ctx.base_url}/api/v1/ui/surfaces/{sid}/share", headers=ctx.headers(), json={}
+    ) as resp:
         status, body = resp.status, await resp.json(content_type=None)
     if not check(results, "s1.share_mint", status == 201 and "token" in body, f"{status}"):
         return
@@ -279,8 +332,12 @@ async def _s1_negatives_409(ctx: E2EContext, results: list[ScenarioResult], sid:
         skip(results, "s1.409_stale", "both concurrent refreshes won (no race); offline tier covers it")
         return
     stale = b_a if s_a == 409 else b_b
-    check(results, "s1.409_stale", statuses == [200, 409] and stale.get("error") == "stale refresh",
-          f"{statuses} {_short(stale)}")
+    check(
+        results,
+        "s1.409_stale",
+        statuses == [200, 409] and stale.get("error") == "stale refresh",
+        f"{statuses} {_short(stale)}",
+    )
 
 
 def _range(value: str) -> tuple[str, str]:
@@ -305,8 +362,12 @@ async def run_s2(ctx: E2EContext) -> list[ScenarioResult]:
     if act_a is None or act_b is None:
         skip(results, "s2.activity_rows_differ", "a range refresh failed")
         return results
-    check(results, "s2.activity_rows_differ", _canon(act_a) != _canon(act_b),
-          f"rows a={len(act_a)} b={len(act_b)} (set E2E_S2_RANGE_A/B to two ranges with different data)")
+    check(
+        results,
+        "s2.activity_rows_differ",
+        _canon(act_a) != _canon(act_b),
+        f"rows a={len(act_a)} b={len(act_b)} (set E2E_S2_RANGE_A/B to two ranges with different data)",
+    )
     check(results, "s2.targets_unchanged", _canon(tgt_a) == _canon(tgt_b), f"targets rows={len(tgt_a or [])}")
     return results
 
@@ -326,15 +387,20 @@ async def run_s3(ctx: E2EContext) -> list[ScenarioResult]:
         check(results, f"s3.{case}.refresh", status == 200, f"{status} rows={len(rows)}")
         columns[case] = frozenset(rows[0]) if rows else frozenset()
     if all(columns.get(case) for case in ("multi_output", "result_fallback")):
-        check(results, "s3.frames_distinct", columns["multi_output"] != columns["result_fallback"],
-              f"targets cols={sorted(columns['multi_output'])} result cols={sorted(columns['result_fallback'])}")
+        check(
+            results,
+            "s3.frames_distinct",
+            columns["multi_output"] != columns["result_fallback"],
+            f"targets cols={sorted(columns['multi_output'])} result cols={sorted(columns['result_fallback'])}",
+        )
     else:
         skip(results, "s3.frames_distinct", "a frame was empty or failed")
     component = {"id": "root", "component": "DataTable", "data": {"path": "/mq/rows"}}
     envelope = linked_envelope("feat611-s3-missing", [component], {"mq": mq_source("nope")})
     status, body = await publish(ctx, envelope, "FEAT-611 S3 missing output")
-    check(results, "s3.missing_output_502", status == 502 and body.get("code") == "data_stage",
-          f"{status} {_short(body)}")
+    check(
+        results, "s3.missing_output_502", status == 502 and body.get("code") == "data_stage", f"{status} {_short(body)}"
+    )
     return results
 
 
@@ -359,17 +425,31 @@ async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
     results: list[ScenarioResult] = []
     payload = {"firstdate": "FDOM", "lastdate": "TODAY", "querylimit": 5000}
     t_status, tenant_rows = await _qs_post(ctx, f"/api/v1/public/queries/{ACTIVITY_SLUG}", payload)
-    check(results, "s5.tenant_route", t_status == 200 and tenant_rows is not None,
-          f"{t_status} rows={len(tenant_rows or [])}")
+    check(
+        results,
+        "s5.tenant_route",
+        t_status == 200 and tenant_rows is not None,
+        f"{t_status} rows={len(tenant_rows or [])}",
+    )
     v_status, v3_rows = await _qs_post(ctx, f"/api/v3/queries/{ACTIVITY_SLUG}", payload)
     check(results, "s5.v3_route", v_status == 200 and v3_rows is not None, f"{v_status} rows={len(v3_rows or [])}")
     if tenant_rows is not None and v3_rows is not None:
-        check(results, "s5.routes_equal", _canon(tenant_rows) == _canon(v3_rows),
-              f"tenant={len(tenant_rows)} v3={len(v3_rows)}")
+        check(
+            results,
+            "s5.routes_equal",
+            _canon(tenant_rows) == _canon(v3_rows),
+            f"tenant={len(tenant_rows)} v3={len(v3_rows)}",
+        )
     refreshed: dict[str, list | None] = {}
     for label, tenant in (("default", None), ("public", "public")):
-        component = {"id": "root", "component": "Chart", "type": "bar", "x": "day", "y": ["visits"],
-                     "data": {"path": "/activity/rows"}}
+        component = {
+            "id": "root",
+            "component": "Chart",
+            "type": "bar",
+            "x": "day",
+            "y": ["visits"],
+            "data": {"path": "/activity/rows"},
+        }
         envelope = linked_envelope(f"feat611-s5-{label}", [component], {"activity": activity_source(tenant)})
         status, body = await publish(ctx, envelope, f"FEAT-611 S5 tenant={tenant}")
         if not check(results, f"s5.{label}.publish", status == 201, f"{status} {_short(body)}"):
@@ -381,8 +461,12 @@ async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
     if refreshed.get("default") is None or refreshed.get("public") is None:
         skip(results, "s5.tenant_rows_equal", "a tenant/default refresh failed")
     else:
-        check(results, "s5.tenant_rows_equal", _canon(refreshed["default"]) == _canon(refreshed["public"]),
-              f"default={len(refreshed['default'])} public={len(refreshed['public'])}")
+        check(
+            results,
+            "s5.tenant_rows_equal",
+            _canon(refreshed["default"]) == _canon(refreshed["public"]),
+            f"default={len(refreshed['default'])} public={len(refreshed['public'])}",
+        )
     return results
 
 
@@ -429,8 +513,14 @@ def _tool_guard(user: str) -> tuple[Any, Any]:
     return guard, build_principal_context(user, channel="ui_surfaces")
 
 
-async def open_context(session: aiohttp.ClientSession, base_url: str, *, deny_base_url: str | None = None,
-                       noguard_base_url: str | None = None, via_agent: bool = False) -> E2EContext:
+async def open_context(
+    session: aiohttp.ClientSession,
+    base_url: str,
+    *,
+    deny_base_url: str | None = None,
+    noguard_base_url: str | None = None,
+    via_agent: bool = False,
+) -> E2EContext:
     """Log in E2E_USER (+ optional E2E_SHARE_USER) and build the shared E2EContext (used by main and pytest)."""
     user, password = os.environ["E2E_USER"], os.environ["E2E_PASSWORD"]
     token = await login(session, base_url, user, password)
@@ -438,9 +528,18 @@ async def open_context(session: aiohttp.ClientSession, base_url: str, *, deny_ba
     if os.environ.get("E2E_SHARE_USER") and os.environ.get("E2E_SHARE_PASSWORD"):
         share_token = await login(session, base_url, os.environ["E2E_SHARE_USER"], os.environ["E2E_SHARE_PASSWORD"])
     guard, pctx = _tool_guard(user)
-    return E2EContext(session=session, base_url=base_url.rstrip("/"), token=token, share_token_user=share_token,
-                      deny_base_url=deny_base_url, noguard_base_url=noguard_base_url, via_agent=via_agent,
-                      credentials=(user, password), tool_pctx=pctx, tool_guard=guard)
+    return E2EContext(
+        session=session,
+        base_url=base_url.rstrip("/"),
+        token=token,
+        share_token_user=share_token,
+        deny_base_url=deny_base_url,
+        noguard_base_url=noguard_base_url,
+        via_agent=via_agent,
+        credentials=(user, password),
+        tool_pctx=pctx,
+        tool_guard=guard,
+    )
 
 
 async def _amain(args: argparse.Namespace) -> int:
@@ -451,8 +550,13 @@ async def _amain(args: argparse.Namespace) -> int:
         return 1
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=args.timeout)) as session:
         try:
-            ctx = await open_context(session, args.base_url, deny_base_url=args.deny_base_url,
-                                     noguard_base_url=args.noguard_base_url, via_agent=args.via_agent)
+            ctx = await open_context(
+                session,
+                args.base_url,
+                deny_base_url=args.deny_base_url,
+                noguard_base_url=args.noguard_base_url,
+                via_agent=args.via_agent,
+            )
         except (RuntimeError, aiohttp.ClientError) as exc:
             logger.error("cannot open the E2E context: %s", exc)
             return 1

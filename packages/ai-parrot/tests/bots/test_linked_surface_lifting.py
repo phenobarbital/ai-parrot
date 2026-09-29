@@ -10,7 +10,10 @@ import pytest
 from parrot.models.basic import ToolCall
 
 INNER = {"surfaceId": "linked-activity", "components": [{"id": "root", "component": "Chart"}], "dataModel": {}}
-LINKED_RESULT = {"a2ui_envelope": INNER, "artifacts": [{"type": "a2ui_linked_surface", "surface_id": "linked-activity"}]}
+LINKED_RESULT = {
+    "a2ui_envelope": INNER,
+    "artifacts": [{"type": "a2ui_linked_surface", "surface_id": "linked-activity"}],
+}
 
 
 def _base_bot():
@@ -27,7 +30,10 @@ def _tc(name: str, result=None, error: str | None = None) -> ToolCall:
 
 def test_extract_last_linked_surface_result_wraps() -> None:
     extract = _base_bot()._extract_last_linked_surface_result
-    assert extract(object(), [_tc("qs_build_linked_surface", LINKED_RESULT)]) == {"version": "v1.0", "createSurface": INNER}
+    assert extract(object(), [_tc("qs_build_linked_surface", LINKED_RESULT)]) == {
+        "version": "v1.0",
+        "createSurface": INNER,
+    }
 
 
 def test_extract_last_linked_surface_result_ignores_non_linked() -> None:
@@ -50,7 +56,10 @@ def test_extract_last_linked_surface_result_ignores_non_linked() -> None:
 def test_extract_last_linked_surface_result_last_wins() -> None:
     extract = _base_bot()._extract_last_linked_surface_result
     second_inner = dict(INNER, surfaceId="linked-second")
-    second = {"a2ui_envelope": second_inner, "artifacts": [{"type": "a2ui_linked_surface", "surface_id": "linked-second"}]}
+    second = {
+        "a2ui_envelope": second_inner,
+        "artifacts": [{"type": "a2ui_linked_surface", "surface_id": "linked-second"}],
+    }
     got = extract(object(), [_tc("a", LINKED_RESULT), _tc("b", second)])
     assert got == {"version": "v1.0", "createSurface": second_inner}
     # A later errored call does not shadow an earlier successful one.
@@ -79,14 +88,16 @@ def test_ask_linked_lift_precedence_source_level() -> None:
     linked_idx = source.index("_extract_last_linked_surface_result(")
     assert interactive_idx < infographic_idx < linked_idx
 
-    guard = source[source.rindex("if (", 0, linked_idx):linked_idx]
+    guard = source[source.rindex("if (", 0, linked_idx) : linked_idx]
     assert "interactive_envelope is None" in guard
     assert "infographic_envelope is None" in guard
     assert 'getattr(response, "a2ui_envelope", None) is None' in guard
 
     assert '"a2ui_surface_id"' in source
     skip_line = next(
-        line for line in source.splitlines() if "interactive_envelope is not None or infographic_envelope is not None" in line
+        line
+        for line in source.splitlines()
+        if "interactive_envelope is not None or infographic_envelope is not None" in line
     )
     assert skip_line.strip() == "if interactive_envelope is not None or infographic_envelope is not None:"
     assert "linked_envelope" not in skip_line
