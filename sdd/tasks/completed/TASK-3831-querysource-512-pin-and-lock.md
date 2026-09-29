@@ -309,10 +309,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (session_01CFWijXsJLATx5g6k94o1EP), feature worktree
+**Date**: 2026-09-28
+**Notes**: Raised `querysource>=5.1.2` in `ai-parrot[db,integrations]` and `ai-parrot-tools[db]`, and regenerated `uv.lock` with `uv lock --upgrade-package querysource` (querysource 5.1.1 → 5.1.2, every specifier `>=5.1.2`). Updated the `_qs.installed_version` docstring and `test_querysource_floor.py`, and added `test_querysource_version_gate.py`. The shared venv was already upgraded to querysource 5.1.2 before this task (a targeted `uv pip install`; the freeze from before is kept in the session scratchpad). `tests/querysource`: 98 passed; ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- The lock was regenerated with uv 0.12.19 (`uvx --from uv`) instead of the installed uv 0.9.13. uv 0.9.13 rewrote marker formatting across 6.5k lines; 0.12.19 matches the committed lock's format (40-line diff).
+- The lock diff also picks up the `hooba` extra that is already declared in `packages/ai-parrot-tools/pyproject.toml` on dev but was never locked. That is pre-existing drift, not something this task introduced.
+- `DIALECT_VERIFIED_AGAINST="4.5.11"` is intentionally unchanged, as the task specifies.

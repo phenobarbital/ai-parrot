@@ -500,6 +500,10 @@ def _child_ids(component: Component) -> list[str]:
 
 
 _DATA_SOURCES_KEY = "parrot_data_sources"
+#: A FilterBar ``filters[].param.source`` names no key of ``parrot_data_sources`` (FEAT-611 M4).
+FILTER_PARAM_UNKNOWN_SOURCE = "FILTER_PARAM_UNKNOWN_SOURCE"
+#: A FilterBar ``filters[].param.name`` is not declared in that source's ``params``, or is ``locked`` (FEAT-611 M4).
+FILTER_PARAM_UNDECLARED = "FILTER_PARAM_UNDECLARED"
 
 
 def _binding_paths(value: Any) -> list[str]:
@@ -512,6 +516,65 @@ def _binding_paths(value: Any) -> list[str]:
     if isinstance(value, list):
         return [path for child in value for path in _binding_paths(child)]
     return []
+
+
+def _validate_filter_params(
+    envelope: CreateSurface,
+    sources: dict[str, Any],
+    issues: list[dict[str, Any]],
+) -> None:
+    """Append FilterBar ``filters[].param`` binding issues without raising.
+
+    Emits ``FILTER_PARAM_UNKNOWN_SOURCE`` when ``param.source`` is not a parsed
+    source key, and ``FILTER_PARAM_UNDECLARED`` when ``param.name`` is not in that
+    source's ``params`` or is ``locked``. At most one issue is emitted per filter.
+    Malformed filters/params are skipped: the FilterBar JSON schema owns shape errors.
+
+    Args:
+        envelope: The ``createSurface`` envelope being validated.
+        sources: The parsed ``LinkedSources(...).root`` mapping (key -> LinkedDataSource).
+        issues: Accumulator that receives issue dicts (``code``, ``path``, ``message``).
+    """
+    for comp in envelope.components:
+        if comp.component != "FilterBar":
+            continue
+        filters = (comp.model_extra or {}).get("filters") or []
+        if not isinstance(filters, list):
+            continue
+        for index, flt in enumerate(filters):
+            param = flt.get("param") if isinstance(flt, dict) else None
+            if not isinstance(param, dict):
+                continue
+            source_key, name = param.get("source"), param.get("name")
+            if not isinstance(source_key, str) or not isinstance(name, str):
+                continue
+            path = f"{comp.id}.filters[{index}].param"
+            if source_key not in sources:
+                issues.append(
+                    {
+                        "code": FILTER_PARAM_UNKNOWN_SOURCE,
+                        "path": path,
+                        "message": f"FilterBar param source {source_key!r} is not a key of {_DATA_SOURCES_KEY}.",
+                    }
+                )
+                continue
+            source = sources[source_key]
+            if name in source.locked:
+                issues.append(
+                    {
+                        "code": FILTER_PARAM_UNDECLARED,
+                        "path": path,
+                        "message": f"FilterBar param {name!r} is locked on source {source_key!r}.",
+                    }
+                )
+            elif name not in source.params:
+                issues.append(
+                    {
+                        "code": FILTER_PARAM_UNDECLARED,
+                        "path": path,
+                        "message": f"FilterBar param {name!r} is undeclared on source {source_key!r}.",
+                    }
+                )
 
 
 def _validate_linked_sources(
@@ -620,6 +683,7 @@ def _validate_linked_sources(
                         "message": f"Transform reference {source.transform.ref.name!r} is not in the manifest.",
                     }
                 )
+    _validate_filter_params(envelope, sources, issues)
 
 
 def validate_envelope(

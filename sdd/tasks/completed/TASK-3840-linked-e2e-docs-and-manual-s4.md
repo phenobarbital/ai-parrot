@@ -313,10 +313,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), feature worktree (commit 11bb5dad1)
+**Date**: 2026-09-29
+**Verification**: partial. The docs are complete and were checked against the shipped scripts. The manual S4 was not run, because staging Postgres is unreachable from this workstation.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Record S4 as observed / not observed for steps 3-6, or "not run: <reason>".
+**Notes**:
+- **README** (`examples/agents/a2ui/linked_e2e/README.md`) covers:
+  - the purpose and the table of scenarios S1/S2/S3/S5/S4;
+  - the requirements: querysource ≥5.1.2, the `ENV=staging` selector, running from the main checkout root, staging network access, Node 24 + pnpm 9.15.9, and the demo policy;
+  - the seed order;
+  - the three server guard modes;
+  - the `run_e2e.py` flags, env vars and exit codes;
+  - the pytest tiers;
+  - the golden, parity and vitest wrappers;
+  - the manual S4 checklist (a–g);
+  - the known gotchas and follow-ups.
+- **Docs**: appended "## 8. E2E validation" to `docs/outputs/a2ui-linked-surfaces.md`.
+- Every command, flag and env var was checked against the `argparse` definitions and `os.environ` reads.
+- `test_linked_e2e_offline.py`: 4 passed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- The README states that linked saves fail closed with a 403 when there is no PBAC guard, per docs §6. The blueprint had said the guard "fails open".
+- The offline section also lists `test_seed_staging_guard.py` and all six vitest wrappers.
+
+
+**Live update (2026-09-29)**: the automated live tier (S1/S2/S3/S5) passed on the dev env: runner 32/32, pytest 4/4 (F020). The manual S4 is still NOT run. Reasons:
+- The LLM client registry does not resolve provider `google` in this venv. `ai-parrot-client-google` is not installed as a distribution, and putting it on PYTHONPATH does not register its entry point.
+- The admin UI `dist/` is not built.
+
+So this task remains done-with-issues.

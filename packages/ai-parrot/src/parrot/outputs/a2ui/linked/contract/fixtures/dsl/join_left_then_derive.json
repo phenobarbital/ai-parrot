@@ -1,0 +1,10 @@
+{
+  "description": "left join with no null keys keeps numeric right-column dtypes, so a following derive over them works",
+  "input": [{"store": "B", "visits": 5}, {"store": "A", "visits": 3}],
+  "frames": {"targets": [{"store": "A", "target": 10}, {"store": "B", "target": 4}]},
+  "ops": [
+    {"op": "join", "with": "targets", "how": "left", "on": [{"left": "store", "right": "store"}]},
+    {"op": "derive", "name": "pct", "expr": {"operator": "/", "left": {"operator": "*", "left": "visits", "right": 100}, "right": "target"}}
+  ],
+  "expected": [{"store": "B", "visits": 5, "target": 4, "pct": 125.0}, {"store": "A", "visits": 3, "target": 10, "pct": 30.0}]
+}

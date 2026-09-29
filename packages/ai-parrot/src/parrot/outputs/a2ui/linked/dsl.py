@@ -304,7 +304,9 @@ def _op_join(frame: "pd.DataFrame", op: Any, frames: Mapping[str, "pd.DataFrame"
         null_left = left_work[~left_work[left_keys].notna().all(axis=1)].copy()
         for column in output_right:
             null_left[column] = pd.NA
-        merged = pd.concat([merged, null_left], ignore_index=True, sort=False)
+        # Concat only when null-key rows exist: an empty pd.NA frame still casts right columns to object.
+        if not null_left.empty:
+            merged = pd.concat([merged, null_left], ignore_index=True, sort=False)
 
     columns = list(frame.columns) + output_right
     return merged.sort_values(order_column, kind="mergesort")[columns].reset_index(drop=True)
