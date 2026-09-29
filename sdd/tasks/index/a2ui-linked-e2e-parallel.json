@@ -202,7 +202,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -212,7 +212,7 @@
       "parallel": true,
       "parallelism_notes": "documents server.py/run_e2e.py flags and offline/staging tests from TASK-3839; S4 manual checklist exercises TASK-3836's isLinkedSurface tab + persistedSurfaceId",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-29T06:23:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3840-linked-e2e-docs-and-manual-s4.md"
     }
