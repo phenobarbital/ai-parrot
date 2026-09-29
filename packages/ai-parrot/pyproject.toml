@@ -153,10 +153,9 @@ dependencies = [
     "openapi-schema-validator==0.6.3",
     "openapi-spec-validator>=0.7.1",
     # async-notify minimal — full notification backends moved to ai-parrot-integrations[messaging].
-    # The base package itself must stay in core: parrot/bots/agent.py imports
-    # NotificationMixin unconditionally, and parrot/notifications/__init__.py
-    # does `from notify import Notify` at module level, so `parrot.bots` cannot
-    # be imported without it. Use `ai-parrot[notify-all]` for the backends.
+    # NotificationMixin defers notify imports until notification features are used.
+    # Keep the base package for its recipient/card models; use
+    # `ai-parrot[notify-all]` for the backends.
     # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) to keep this base pin at
     # or above ai-parrot-server[comm-center]'s own floor — see that extra's
     # comment for why CommCenter requires >=1.6.0.

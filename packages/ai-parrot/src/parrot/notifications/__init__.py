@@ -3,31 +3,49 @@ Notification Mixin for AI-Parrot Agents.
 
 Provides notification capabilities to agents using the async-notify library.
 """
+
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import shutil
 import tempfile
-from typing import Union, List, Optional, Dict, Any, Tuple
+from typing import Union, List, Optional, Dict, Any, Tuple, TYPE_CHECKING
 from pathlib import Path
 from dataclasses import dataclass
 from enum import Enum
 import mimetypes
-from notify import Notify
-from notify.models import (
-    Actor,
-    Channel,
-    Chat,
-    TeamsChannel,
-    TeamsWebhook,
-    TeamsCard,
-    CardAction,
-    TeamsSection,
+
+if TYPE_CHECKING:
+    from notify.models import Actor, Channel, Chat, TeamsChannel, TeamsWebhook, TeamsCard
+
+
+_NOTIFY_EXPORTS = frozenset(
+    {"Notify", "Actor", "Channel", "Chat", "TeamsChannel", "TeamsWebhook", "TeamsCard", "CardAction", "TeamsSection"}
 )
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve historical notify re-exports only when explicitly requested."""
+    if name not in _NOTIFY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib import import_module
+
+    module = import_module("notify" if name == "Notify" else "notify.models")
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    """Include deferred notification exports without importing their backend."""
+    return sorted(set(globals()) | _NOTIFY_EXPORTS)
 
 
 class NotificationProvider(Enum):
     """Supported notification providers."""
+
     EMAIL = "email"
     SLACK = "slack"
     TELEGRAM = "telegram"
@@ -36,6 +54,7 @@ class NotificationProvider(Enum):
 
 class FileType(Enum):
     """File types for smart handling."""
+
     IMAGE = "image"
     DOCUMENT = "document"
     VIDEO = "video"
@@ -84,6 +103,8 @@ class NotificationMixin:
             ``type`` is ``"AdaptiveCard"`` or ``@type`` is ``"MessageCard"``,
             or a JSON string containing ``"AdaptiveCard"`` markers.
         """
+        from notify.models import TeamsCard
+
         if isinstance(message, TeamsCard):
             return True
         if isinstance(message, dict):
@@ -133,6 +154,8 @@ class NotificationMixin:
             A fully populated ``TeamsCard`` ready for
             :meth:`send_teams_card` or :meth:`send_notification`.
         """
+        from notify.models import TeamsCard
+
         card = TeamsCard(
             title=title,
             text=text or None,
@@ -701,6 +724,8 @@ class NotificationMixin:
         Returns:
             Formatted recipient(s) for the provider
         """
+        from notify.models import Actor, Channel, Chat, TeamsChannel, TeamsWebhook
+
         # Already formatted objects
         if isinstance(recipients, (Actor, Channel, Chat, TeamsChannel, TeamsWebhook)):
             return recipients
@@ -1085,6 +1110,8 @@ class NotificationMixin:
         unavailable. When neither is available, lists filenames as actions
         with no ``url`` (visible label only).
         """
+        from notify.models import TeamsCard
+
         if isinstance(card, TeamsCard):
             if share_links:
                 for file_path, url in zip(files, share_links):
