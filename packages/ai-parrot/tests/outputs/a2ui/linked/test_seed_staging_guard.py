@@ -196,11 +196,20 @@ def test_sql_slug_definitions(seed):
     assert seed.MQ_SLUG == "epson_e2e_activity_vs_targets_mq"
     assert set(seed.SQL_SLUGS) == {seed.ACTIVITY_SLUG, seed.TARGETS_SLUG}
     for spec in seed.SQL_SLUGS.values():
-        assert spec["query_raw"].startswith("SELECT {fields} FROM (") and spec["query_raw"].endswith("{where_cond}")
-    activity = seed.SQL_SLUGS[seed.ACTIVITY_SLUG]
-    assert "{firstdate}" in activity["query_raw"] and "{lastdate}" in activity["query_raw"]
-    assert set(activity["cond_definition"]) == {"firstdate", "lastdate"}
-    assert "{firstdate}" not in seed.SQL_SLUGS[seed.TARGETS_SLUG]["query_raw"]
+        raw = spec["query_raw"]
+        assert raw.startswith("SELECT {fields} FROM (") and raw.endswith(("{where_cond}", "{and_cond}"))
+        # Live-verified on dev: the /refresh broadcast sends firstdate/lastdate to EVERY source, and a slug
+        # without those placeholders gets them appended as WHERE filters — so both slugs declare them.
+        assert "{firstdate}" in raw and "{lastdate}" in raw
+        assert set(spec["cond_definition"]) == {"firstdate", "lastdate"}
+
+
+def test_mq_pipeline_pins_child_conditions(seed):
+    """MultiQS only applies conditions keyed by child query name, so the stored pipeline pins them."""
+    result = seed.MQ_PIPELINE["queries"]["result"]
+    assert result["slug"] == seed.ACTIVITY_SLUG
+    assert (result["firstdate"], result["lastdate"]) == seed.MQ_RANGE
+    assert seed.MQ_PIPELINE["queries"]["targets"]["slug"] == seed.TARGETS_SLUG
 
 
 def test_queries_table_rejects_unsafe_identifiers(seed, monkeypatch):
