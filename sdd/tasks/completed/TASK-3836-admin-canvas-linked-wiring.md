@@ -403,10 +403,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3836 (commit a626f427e, merged)
+**Date**: 2026-09-28
 **Notes**:
+- Added `isLinkedSurface` in `a2ui-kind.ts`.
+- `buildInfographicTabData` now opens an a2ui tab for Infographic/Report roots **or** for linked surfaces. It carries `persistedSurfaceId` only when `metadata.a2ui_surface_id` is a non-empty string.
+- Added `InfographicTabData.persistedSurfaceId?`; `InfographicCanvas` passes it to `A2UISurface`.
+- Tests: related vitest went from 42/42 to 50/50. Integrated on the feature branch: 145/145 across the canvas and AgentChat a2ui vitest files. Wrappers `test_vitest_a2ui_canvas_linked.py` and `..._linked_surface.py` ran and passed. tsc 135 → 135.
 
-**Deviations from spec**: `types/agent.ts` is not modified (carrier = `metadata.a2ui_surface_id`, see Context). The builder tests live in a new `infographic-tab-builder.test.ts`.
+**Deviations from spec**:
+- `types/agent.ts` is not modified. The carrier is `metadata.a2ui_surface_id`, which the server forwards verbatim (handlers/agent.py:2804-2823).
+- Found and fixed a production crash: the tab manager's deep `$state` proxy made `A2UISurface`'s `structuredClone(dataModel)` throw `DataCloneError` for any linked surface with a `dataModel`. `InfographicCanvas` now passes `$state.snapshot(tabData.envelope)`.
+  - Follow-up: move the snapshot into `A2UISurface.svelte` itself.

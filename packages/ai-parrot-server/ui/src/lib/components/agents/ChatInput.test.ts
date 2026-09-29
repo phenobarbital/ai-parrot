@@ -20,6 +20,22 @@ beforeEach(() => {
 });
 
 describe("ChatInput", () => {
+  it("offers an A2UI output mode and sends output_mode 'a2ui' (FEAT-611)", async () => {
+    const onSend = vi.fn();
+    const { container } = render(ChatInput, { onSend, isLoading: false });
+
+    const option = container.querySelector('option[value="a2ui"]') as HTMLOptionElement | null;
+    expect(option).not.toBeNull();
+    expect(option?.textContent).toContain("A2UI");
+
+    const select = option!.closest("select") as HTMLSelectElement;
+    await fireEvent.change(select, { target: { value: "a2ui" } });
+    await fireEvent.input(screen.getByRole("textbox"), { target: { value: "dashboard" } });
+    await fireEvent.click(screen.getByTitle("Send message (Shift+Enter)"));
+
+    expect(onSend).toHaveBeenCalledWith("dashboard", undefined, "a2ui", undefined, undefined);
+  });
+
   it("calls onSend with (text, method, outputMode, llm, kwargs) on submit", async () => {
     const onSend = vi.fn();
     render(ChatInput, { onSend, isLoading: false });

@@ -363,10 +363,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3834 (commit 1475dca11, merged)
+**Date**: 2026-09-28
+**Notes**: Added `_validate_filter_params` and the `FILTER_PARAM_UNKNOWN_SOURCE` / `FILTER_PARAM_UNDECLARED` constants in `catalog/__init__.py`. It is called once, after the per-source loop in `_validate_linked_sources`, so the baked, LLM-origin and parse-error early returns are unchanged. It emits at most one issue per filter, with path `<comp.id>.filters[i].param`; it never raises and skips malformed entries. The E2E guard-call assertion is now `* 3` (the ensure_snapshot re-check at service.py:127, since ff066c3ae). 4 new tests. `tests/outputs/a2ui/linked`: 122 passed. Server `test_linked_surfaces_e2e.py`: 4 passed. ruff is clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: No behaviour deviations. `filters` values that are not a list are also skipped. The locked branch is checked before the undeclared branch so the message is clearer; both use the same code. The sub-worktree needed the main checkout's compiled Cython `.so` files temporarily symlinked in to import `parrot.utils.types`; nothing of that was committed.

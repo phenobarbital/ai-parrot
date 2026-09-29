@@ -38,11 +38,37 @@ def finalize_a2ui_response(response: Any) -> None:
 
             if isinstance(out, A2UIMessageBase):
                 envelope = serialize(out)
+    envelope = _wrap_create_surface(envelope)
     response.a2ui_envelope = envelope
     response.output_mode = OutputMode.A2UI
     if not getattr(response, "response", None):
         title = _surface_id(envelope)
         response.response = f"[A2UI surface: {title}]" if title else "[A2UI surface]"
+
+
+def _wrap_create_surface(envelope: Any) -> Any:
+    """Wrap a bare CreateSurface dump as ``{"version": "v1.0", "createSurface": envelope}``.
+
+    Idempotent: already-wrapped envelopes (any dict with ``version``), lists of sobres,
+    ``None`` and dicts that are not a bare CreateSurface (no ``surfaceId`` + ``components``)
+    are returned unchanged. Never mutates the input.
+
+    Args:
+        envelope: A candidate envelope (bare CreateSurface dict, wrapped envelope, list, or
+            anything else).
+
+    Returns:
+        The v1.0-wrapped envelope when ``envelope`` is a bare CreateSurface dict, otherwise
+        ``envelope`` itself.
+    """
+    if (
+        isinstance(envelope, dict)
+        and "version" not in envelope
+        and "surfaceId" in envelope
+        and "components" in envelope
+    ):
+        return {"version": "v1.0", "createSurface": envelope}
+    return envelope
 
 
 def _surface_id(envelope: Any) -> str | None:

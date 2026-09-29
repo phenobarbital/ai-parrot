@@ -87,6 +87,46 @@ describe('InfographicCanvas — a2ui mode', () => {
     expect(screen.getByRole('button', { name: 'HTML' })).toBeDisabled();
   });
 
+  it('passes persistedSurfaceId to A2UISurface (server-lane Refresh shown only then)', async () => {
+    // Linked surface (one `sales` source, manual refresh — the lane never calls fetch).
+    const linked = {
+      version: 'v1.0' as const,
+      createSurface: {
+        surfaceId: 's1',
+        components: [{ id: 'root', component: 'Text', text: 'hi' }],
+        dataModel: {},
+        metadata: {
+          extensions: {
+            parrot_data_sources: {
+              sales: {
+                kind: 'query_slug',
+                slug: 'sales_by_region',
+                tenant: null,
+                is_multiquery: false,
+                conditions: {},
+                request: {},
+                params: {},
+                locked: [],
+                target: '/sales',
+                refresh: { policy: 'manual' },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    openA2uiTab({ envelope: linked, persistedSurfaceId: 'srf-1' });
+    const first = render(InfographicCanvas, { data: null });
+    expect(await screen.findByRole('button', { name: 'Refresh' }, { timeout: 3000 })).toBeInTheDocument();
+    first.unmount();
+
+    openA2uiTab({ envelope: linked });
+    render(InfographicCanvas, { data: null });
+    await screen.findByText('hi', {}, { timeout: 3000 });
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+  });
+
   it('still falls back to the url iframe when html is an empty string', async () => {
     // Code-review regression guard: the previous ternary short-circuited to
     // `false` whenever `html === ''` (as opposed to `undefined`), dropping

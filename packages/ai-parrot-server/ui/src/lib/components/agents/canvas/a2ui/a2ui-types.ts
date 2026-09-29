@@ -39,6 +39,17 @@ export interface WireComponent {
   [prop: string]: unknown;
 }
 
+/**
+ * Svelte context key for the surface's id → wire-component index (FEAT-611). A v1.0 surface is a FLAT
+ * adjacency list: `children: ["kpi_row", ...]` reference other component ids. `A2UISurface` publishes the
+ * index; `A2UINode` resolves string children through it (nested descriptors are used as-is).
+ */
+export const WIRE_INDEX_CONTEXT = Symbol('a2ui-wire-index');
+
+export interface WireIndex {
+  get(id: string): WireComponent | undefined;
+}
+
 /** A nested composite child descriptor (e.g. inside an `Infographic`
  * section's `components` list) — NOT a wire `WireComponent` (no id), the
  * adapter's own authored-descriptor shape. */

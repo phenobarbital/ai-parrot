@@ -18,7 +18,7 @@ from ..memory import ConversationTurn
 from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..core.exceptions import BudgetExhausted
 from ..models.outputs import OutputMode
-from ..outputs.a2ui.emission import finalize_a2ui_response  # FEAT-273 (TASK-1738)
+from ..outputs.a2ui.emission import _wrap_create_surface, finalize_a2ui_response  # FEAT-273 (TASK-1738), FEAT-611 M5
 from ..utils.helpers import RequestContext, _current_ctx
 from .prompts import OUTPUT_SYSTEM_PROMPT
 from .abstract import AbstractBot
@@ -981,6 +981,46 @@ class BaseBot(AbstractBot):
 
         return explanation
 
+    def _extract_last_linked_surface_result(
+        self,
+        tool_calls: Optional[List[Any]],
+    ) -> Optional[dict]:
+        """Return the v1.0-wrapped envelope of the last successful linked-surface tool result, else None.
+
+        Matches dict results shaped ``{"a2ui_envelope": {...}, "artifacts": [{"type": "a2ui_linked_surface", ...}]}``
+        — the shape of ``qs_build_linked_surface`` (toolkit.py:410-413) and the FEAT-611 example TOOL (FEAT-611 M5).
+        """
+        if not tool_calls:
+            return None
+        for tc in reversed(tool_calls):
+            if getattr(tc, "error", None) is not None:
+                continue
+            result = getattr(tc, "result", None)
+            if not isinstance(result, dict) or not isinstance(result.get("a2ui_envelope"), dict):
+                continue
+            artifacts = result.get("artifacts")
+            if isinstance(artifacts, list) and any(
+                isinstance(a, dict) and a.get("type") == "a2ui_linked_surface" for a in artifacts
+            ):
+                return _wrap_create_surface(result["a2ui_envelope"])
+        return None
+
+    def _extract_last_published_surface_id(
+        self,
+        tool_calls: Optional[List[Any]],
+    ) -> Optional[str]:
+        """Return ``surface_id`` of the last successful ``publish_surface`` tool call, else None (FEAT-611 M5)."""
+        if not tool_calls:
+            return None
+        for tc in reversed(tool_calls):
+            if getattr(tc, "name", None) != "publish_surface" or getattr(tc, "error", None) is not None:
+                continue
+            result = getattr(tc, "result", None)
+            surface_id = result.get("surface_id") if isinstance(result, dict) else None
+            if isinstance(surface_id, str) and surface_id:
+                return surface_id
+        return None
+
     async def ask(
         self,
         question: str,
@@ -1574,6 +1614,27 @@ class BaseBot(AbstractBot):
                     output_mode = OutputMode.DEFAULT
                     response.output_mode = OutputMode.DEFAULT
 
+                # FEAT-611 M5: linked-surface lift (precedence interactive > infographic > linked).
+                # Dict tool results ({"a2ui_envelope", "artifacts":[{"type":"a2ui_linked_surface"}]}) are only
+                # lifted when neither typed lift ran and nothing else already set an envelope.
+                if (
+                    interactive_envelope is None
+                    and infographic_envelope is None
+                    and getattr(response, "a2ui_envelope", None) is None
+                ):
+                    linked_envelope = self._extract_last_linked_surface_result(getattr(response, "tool_calls", None))
+                    if linked_envelope is not None:
+                        response.a2ui_envelope = linked_envelope
+                        self.logger.info(
+                            "Linked A2UI surface lifted from tool result: surface=%s",
+                            linked_envelope.get("createSurface", {}).get("surfaceId"),
+                        )
+                published_surface_id = self._extract_last_published_surface_id(getattr(response, "tool_calls", None))
+                if published_surface_id is not None:
+                    meta = dict(getattr(response, "metadata", None) or {})
+                    meta["a2ui_surface_id"] = published_surface_id
+                    response.metadata = meta
+
                 # Determine output mode
                 format_kwargs = format_kwargs or {}
                 if interactive_envelope is not None or infographic_envelope is not None:
@@ -2111,6 +2172,16 @@ class BaseBot(AbstractBot):
                     # the final AIMessage at stream close (chunks were already
                     # covered by the StreamingGuardrail adapters above).
                     ai_message = await self._run_output_pipeline(ai_message, method="ask_stream")
+
+                    # FEAT-611 (live S4): ask_stream never ran the linked-surface lift ask() does, so a
+                    # streamed turn whose tool built a linked surface reached the UI without an envelope.
+                    if getattr(ai_message, "a2ui_envelope", None) is None:
+                        _linked = self._extract_last_linked_surface_result(getattr(ai_message, "tool_calls", None))
+                        if _linked is not None:
+                            ai_message.a2ui_envelope = _linked
+                    _published = self._extract_last_published_surface_id(getattr(ai_message, "tool_calls", None))
+                    if _published is not None:
+                        ai_message.metadata = {**(getattr(ai_message, "metadata", None) or {}), "a2ui_surface_id": _published}
 
                     # FEAT-176: emit AfterInvokeEvent on success.
                     _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000

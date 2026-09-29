@@ -743,10 +743,32 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3838 (commits d28bd6531 fix, 38e027a01 feat; merged)
+**Date**: 2026-09-28
+**Notes**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered. Record the vitest run result (ran / skipped).
+**The TOOL.** Implemented `build_epson_activity_dashboard` with 4 sources: targets, activity, attainment and kpis.
+- It pre-authorizes every unique (tenant, slug) before any fetch.
+- It fails closed when given a guard without a pctx.
+- It raises on any source error.
+- It derives the program options from the targets frame.
 
-**Deviations from spec**: none | describe if any
+**Fixtures.**
+- The shared parity fixture was produced by the Python reference. The numbers were picked so every division is exact: attainment 80/30; KPIs visits 22, stores 5, target 40, 55%.
+- The golden (fixed `snapshot_at`) is enrolled in `test_contract_envelopes` and passes all 4 contract checks.
+
+**Parity finding (Python↔TS drift).** The Python left join always cast the right-hand columns to object dtype, because it concatenated an empty frame of pd.NA null-key rows. As a result `derive` raised in Python while TS computed the value. Fixed with spec-owner approval: `_op_join` now concatenates `null_left` only when it is non-empty. The new `join_left_then_derive.json` regression fixture fails in Python before the fix and passes after; TS passes both before and after. After the fix, the conditions (declared, undeclared and locked, including key order) and the rows of all 4 sources match exactly across the two lanes.
+
+**Integrated results on the feature branch:**
+
+| Suite | Result |
+|---|---|
+| ai-parrot linked + emission + lifting | 164 passed, 1 skipped (expected: the TASK-3832 pipeline registry check under the querysource stub) |
+| tools querysource + publish_surface | 108 passed |
+| server linked E2E, handlers and all 6 linked/canvas vitest wrappers (really executed) | 29 passed |
+
+ruff is clean.
+
+**Known limitation (follow-up)**: a real null left-key row still yields object dtype on the right-hand columns via pd.NA, so a `derive` on them would fail.
+
+**Deviations from spec**: `dsl.py` and `fixtures/dsl/join_left_then_derive.json` were added to scope (approved design decision). The `kpi` lambda became a typed nested def.
