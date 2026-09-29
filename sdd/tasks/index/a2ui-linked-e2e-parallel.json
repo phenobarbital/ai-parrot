@@ -35,7 +35,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "done",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -176,7 +176,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "done",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -202,7 +202,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "done",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
