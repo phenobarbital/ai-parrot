@@ -35,7 +35,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "needs the querysource>=5.1.2 lock/pins from TASK-3831 (uv.lock, pyproject) before the staging seed runs; writes only to the staging query catalog after human confirmation",
       "assigned_to": null,
       "started_at": "2026-09-28T23:41:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3832-staging-verify-and-seed.md"
+      "completed_at": "2026-09-29T06:22:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3832-staging-verify-and-seed.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3833",
@@ -175,7 +176,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -190,8 +191,9 @@
       "parallelism_notes": "exclusive: adds the staging marker to shared test config (pytest.ini, ai-parrot-server pyproject). Edges: 3831 pin gate; 3832 MQ_SLUG + policies/source-epson.yaml; 3834 fixed e2e harness helpers imported; 3835 dict-result envelope lift for --via-agent; 3837 PublishSurfaceTool(guard=); 3838 build_epson_activity_dashboard/build_sources",
       "assigned_to": null,
       "started_at": "2026-09-29T06:04:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3839-linked-e2e-server-agent-runner.md"
+      "completed_at": "2026-09-29T06:22:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3839-linked-e2e-server-agent-runner.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3840",

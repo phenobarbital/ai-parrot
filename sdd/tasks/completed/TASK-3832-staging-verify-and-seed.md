@@ -571,10 +571,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD sub-agent (offline code, commit bdbfc6855) + Claude (staging checks), session_01CFWijXsJLATx5g6k94o1EP
+**Date**: 2026-09-29
+**Verification**: partial. The code and the offline tests are verified. The live staging DB steps are blocked by network access (see below).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
+- `seed_staging.py` provides four subcommands:
+  - `describe`, `preview`, `prove-policy`: read-only;
+  - `seed`: the only write. It requires `--confirm` and then an interactive "yes", unless `--yes` is given.
+- `assert_staging()` checks the `ENV` selector plus `DBNAME` containing "staging". It does not trust `navconfig.ENV`, because `env/staging/.env` sets `ENV=production`.
+- Added `policies/source-epson.yaml`.
+- `test_seed_staging_guard.py`: 13 passed, 1 skipped. The skip is the registry check under the ai-parrot querysource stub. The same check was run once outside pytest and reported valid=True.
 
-**Deviations from spec**: none | describe if any
+**Live staging checks (2026-09-29, `ENV=staging`, run from the main checkout root because `env/` is gitignored)**:
+- `assert_staging` passed: the staging target was confirmed.
+- `prove-policy` passed with real `setup_dataplane_guard` guards:
+  - with the policy: allow;
+  - without it: deny;
+  - evaluated as `resource_type=source resource=query_slug:public:epson_field_activity action=source:read`.
+- `describe` could not run: the staging Postgres host timed out on TCP port 5432 from this workstation (Redis on localhost is reachable). This most likely needs VPN or IP-allowlist access.
+
+**Still pending (operator)**:
+1. `describe`, then `preview`.
+2. `seed --confirm`, and run it twice to show it is idempotent.
+3. Write `sdd/state/FEAT-611/findings/F020-staging-slug-definitions.md`.
+4. Resolve the open `MQ_PIPELINE` FILL IN in `preview`: it is not yet known whether `epson_program_targets` accepts `firstdate`/`lastdate`.
+
+**Deviations from spec**: The `--confirm` flag was added. There is no server-side Join in the multiquery, because a Join output can never be named `result`; the frames are `result` and `targets`, and the join lives in the descriptor's `transform.ops`. Extra helpers were added: `run_policy_proof` and `check_frames`.

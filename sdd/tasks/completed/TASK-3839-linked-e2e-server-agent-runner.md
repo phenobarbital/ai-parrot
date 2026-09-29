@@ -935,10 +935,40 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3839 (commit 7a12a75c0, merged)
+**Date**: 2026-09-29
+**Verification**: partial. The offline tier is verified. The live staging run is pending: staging Postgres is unreachable from this workstation (see TASK-3832).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented. Include the `run_e2e.py` result table (or "staging not run: <reason>").
+**What was added**:
+- `server.py`: `create_app(guard_mode, *, policy_dir, llm)`. The mount order is:
+  1. QuerySource(lazy=False);
+  2. `setup_dataplane_guard(policies/)`;
+  3. BotManager, with `EpsonLinkedAgent` added through `add_bot` before startup;
+  4. the `configure` hook;
+  5. AuthHandler(BasicAuth).
 
-**Deviations from spec**: none | describe if any
+  Guard modes are `policy`, `deny` and `none`. All three were verified offline.
+- `agent.py`: the agent registers the `qs_*` tools, `build_epson_activity_dashboard` and `publish_surface`. `ask()` binds the pctx from the authenticated `user_id`; without an identity it fails closed.
+- `run_e2e.py`: runs S1, S2, S3 and S5.
+  - S1 covers publish, GET JSON/HTML, refresh with params, the warnings header, share + bearer refresh, the 409 cases and the 403 cases (the 403s run against separate servers).
+  - It exits 0 only when every non-skipped check passes; a SKIP never counts as a pass.
+  - It refuses unless `ENV=staging`.
+- Test files `test_linked_e2e_offline.py` and `test_linked_e2e_staging.py`, and the `staging` marker in `pytest.ini` and the server `pyproject.toml`.
+
+**Results**:
+- Offline: 4 passed.
+- Staging: 4 skipped without `ENV=staging`.
+- Integrated on the feature branch: 27 passed, 4 skipped (server linked E2E, offline/staging and handlers).
+- ruff clean.
+
+**Live run (operator)**: see the README (TASK-3840) for the steps. In short:
+1. Start `server.py --guard-mode policy` on :5000, and optionally `deny` on :5001 and `none` on :5002.
+2. Run `ENV=staging E2E_USER=… E2E_PASSWORD=… python run_e2e.py --base-url …`.
+3. Run `pytest -m staging`.
+
+**Deviations from spec**:
+- `QuerysourceToolkit` is registered through `.get_tools()`, because `ToolManager.register_tools` rejects toolkit instances.
+- `ask()` binds `_pctx_var`, because AgentTalk passes no pctx.
+- The publish-time and refresh-time no-guard 403 messages differ, so publish is matched on a substring.
+- The S2 date ranges are configurable (`E2E_S2_RANGE_A/B`) and are not verified yet; that waits on F020.
+- The local dev `env/.env` points `AUTH_USER_MODEL` at `resources.users.User`, a module that is not in the repo. Staging uses `navigator_auth.models.User`.
