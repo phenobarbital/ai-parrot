@@ -17,6 +17,17 @@ from parrot_tools.ui_surfaces import PublishSurfaceTool
 
 HERE = Path(__file__).resolve().parent
 AGENT_NAME = "epson_linked"
+EPSON_INSTRUCTIONS = (
+    "You build Epson field-activity dashboards as A2UI linked surfaces.\n"
+    "- For any dashboard / activity / visits / targets request, call `build_epson_activity_dashboard` exactly "
+    "once, passing `firstdate` and `lastdate` as ISO dates (YYYY-MM-DD) taken from the user's request. "
+    "Do NOT call `qs_build_linked_surface` for this and never invent query slugs.\n"
+    "- If the user gives no dates, use firstdate=2025-03-01 and lastdate=2025-03-07 (the data range available "
+    "in this environment).\n"
+    "- When the user asks to publish/save/persist the dashboard, call `publish_surface` with kind='dashboard', "
+    "a short title, and the envelope returned by the dashboard tool.\n"
+    "- Answer with one short sentence; the dashboard itself is rendered by the UI."
+)
 logger = logging.getLogger("examples.a2ui.linked_e2e.agent")
 
 
@@ -34,6 +45,9 @@ class EpsonLinkedAgent(InfographicAuthoringMixin, Agent):
     def __init__(self, **kwargs: Any) -> None:
         kwargs.setdefault("name", AGENT_NAME)
         kwargs.setdefault("agent_id", AGENT_NAME)
+        # Live S4 (2026-09-29): without guidance the LLM called qs_build_linked_surface with an invented slug
+        # and an invalid component, never the dashboard TOOL. Pin the tool choice and the date contract.
+        kwargs.setdefault("instructions", EPSON_INSTRUCTIONS)
         super().__init__(**kwargs)
 
     async def ask(self, *args: Any, **kwargs: Any) -> Any:
