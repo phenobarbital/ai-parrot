@@ -109,6 +109,10 @@ class InMemoryWikiStore(BaseWikiStore):
         self._doc_len: dict[str, int] = {}
         self._tree: dict[str, Any] = {}  # nested prefix tree of concept_ids
 
+        # FEAT-609 Q2: plane-level metadata, persisted to ``.meta.json``.
+        self._meta: dict[str, str] = {}
+        self._meta_loaded = False
+
     @property
     def bundle_dir(self) -> Path:
         """Root directory of the OKF bundle."""
@@ -737,6 +741,39 @@ class InMemoryWikiStore(BaseWikiStore):
             return json.loads(manifest.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return {}
+
+    def _meta_path(self) -> Path:
+        """``<bundle_dir>/.meta.json`` — not ``*.md``, so ``_load_bundle`` ignores it."""
+        return self._bundle_dir / ".meta.json"
+
+    def _load_meta(self) -> None:
+        """Load ``.meta.json`` once; a missing or corrupt file means empty (never raises)."""
+        if self._meta_loaded:
+            return
+        try:
+            raw = json.loads(self._meta_path().read_text(encoding="utf-8"))
+            self._meta = {str(k): str(v) for k, v in raw.items()} if isinstance(raw, dict) else {}
+        except (OSError, ValueError, AttributeError):
+            self._meta = {}
+        self._meta_loaded = True
+
+    def _write_meta(self) -> None:
+        """Atomically persist the metadata dict (tmp file + ``os.replace``)."""
+        path = self._meta_path()
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(self._meta, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, path)
+
+    async def get_meta(self, key: str) -> str | None:
+        """Read one metadata value persisted next to the bundle."""
+        await asyncio.to_thread(self._load_meta)
+        return self._meta.get(key)
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Persist one metadata value next to the bundle (atomic replace)."""
+        await asyncio.to_thread(self._load_meta)
+        self._meta[key] = value
+        await asyncio.to_thread(self._write_meta)
 
     async def orphan_sources(self) -> list[str]:
         """Sources (from the JSON manifest) that produced no pages."""

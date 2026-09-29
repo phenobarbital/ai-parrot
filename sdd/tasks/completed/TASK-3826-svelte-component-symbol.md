@@ -451,4 +451,4 @@ See the CREATE blocks above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Mutations RED: dropping 'uses' from _DEFAULT_BLAST_RELATIONS -> test_blast_component_users; disabling orphan re-attribution -> test_svelte_orphan_refs_attributed. Parity + languages + structural + cli_symbols = 353 green.

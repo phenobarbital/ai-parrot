@@ -64,7 +64,14 @@ from parrot.knowledge.wiki.federation import (
     open_namespace_store,
     resolve_namespaces,
 )
-from parrot.knowledge.wiki.languages import all_scanners
+from parrot.knowledge.wiki.languages import all_scanners, astgrep
+from parrot.knowledge.wiki.languages.fingerprint import (
+    changed_languages,
+    current_fingerprint,
+    load_fingerprint,
+    save_fingerprint,
+)
+from parrot.knowledge.wiki.languages.render import structural_enabled
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
     WikiConfigError,
@@ -396,6 +403,55 @@ def _resolve_project_effective(path: str | None) -> tuple[Path, WikiEffectiveCon
     except WikiConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     return root, effective
+
+
+_NON_STRUCTURAL_SCANNERS = frozenset({"python", "luau"})
+_STRUCTURAL_INSTALL_HINT = "pip install 'ai-parrot[wiki-languages]'"
+
+
+def _structural_capable_languages() -> list[str]:
+    """Scanner names whose symbols come only from the ast-grep seam (FEAT-609)."""
+    return sorted(name for name in all_scanners() if name not in _NON_STRUCTURAL_SCANNERS)
+
+
+def _structural_gap_warning(scan: Any) -> str | None:
+    """One-line warning when structural-capable files were scanned without ast-grep.
+
+    Pure: no logging, no I/O. ``None`` when the kill switch is off, ast-grep is
+    available, or the scan holds no structural-capable file.
+    """
+    if not structural_enabled() or astgrep.is_available():
+        return None
+    capable = set(_structural_capable_languages())
+    counts: dict[str, int] = {}
+    for file_slice in scan.files:
+        if file_slice.language in capable:
+            counts[file_slice.language] = counts.get(file_slice.language, 0) + 1
+    if not counts:
+        return None
+    total = sum(counts.values())
+    names = ", ".join(sorted(counts))
+    return (
+        f"{total} {names} file(s) scanned without the structural tier: "
+        f"no sym: pages for them. Install 'ai-parrot[wiki-languages]'"
+    )
+
+
+def _symbols_status() -> dict[str, Any]:
+    """``status``'s view of the symbol plane: which languages lack their tier."""
+    if not structural_enabled():
+        return {"enabled": False, "disabled_for": _structural_capable_languages(), "reason": "config"}
+    missing = [name for name in _structural_capable_languages() if all_scanners()[name].mode != "ast-grep"]
+    return {"enabled": not missing, "disabled_for": missing, "reason": "missing-extra" if missing else None}
+
+
+def _format_symbols_status(info: dict[str, Any]) -> str:
+    """Render the ``Symbols`` status line."""
+    if info.get("enabled"):
+        return "enabled"
+    if info.get("reason") == "config":
+        return "disabled by configuration (structural tier switched off)"
+    return f"disabled for {', '.join(info.get('disabled_for') or [])} — {_STRUCTURAL_INSTALL_HINT}"
 
 
 def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
@@ -1533,6 +1589,11 @@ def build(
                 use_git=not no_git,
             )
 
+        gap_warning = _structural_gap_warning(scan)
+        if gap_warning:
+            # One channel only: the logger's stderr handler already prints it.
+            _cli_logger.warning(gap_warning)
+
         output_dir = config.storage_path(root)
 
         async def _pipeline() -> dict[str, Any]:
@@ -1548,6 +1609,14 @@ def build(
             enriched_scan, force_rel_paths, enrichment_by_path = await _apply_roblox_enrichment(
                 root, scan, output_dir, sources
             )
+            # FEAT-609 M2: re-ingest every file of a language whose extractor changed
+            # (ast-grep installed/removed, rule file edited) — per-file staleness cannot see it.
+            fp_now = current_fingerprint()
+            changed = changed_languages(await load_fingerprint(store), fp_now)
+            if changed:
+                force_rel_paths = set(force_rel_paths) | {
+                    f.rel_path for f in enriched_scan.files if f.language in changed
+                }
             counts = await _ingest_files(
                 store, sources, root, enriched_scan, force=force, force_rel_paths=force_rel_paths
             )
@@ -1559,6 +1628,7 @@ def build(
             # has succeeded — so a failure anywhere leaves the previous,
             # retryable fingerprint in place for the next run.
             _record_roblox_enrichment_success(output_dir, enrichment_by_path, counts["written_rel_paths"])
+            await save_fingerprint(store, fp_now)
 
             okf_report: dict[str, Any] | None = None
             if not no_export:
@@ -2127,6 +2197,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         # named for the structural symbol plane specifically — additive,
         # "languages" itself is unchanged for backward compatibility.
         "structural": {name: s.mode for name, s in all_scanners().items()},
+        "symbols": _symbols_status(),
     }
     if scoped_to is not None:
         name, handle_cfg, storage_dir = scoped_to
@@ -2178,6 +2249,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Structural: {payload['structural']}")
+    click.echo(f"Symbols   : {_format_symbols_status(payload['symbols'])}")
     if scoped_to is None:
         click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if namespaces:
@@ -2234,7 +2306,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
 # --------------------------------------------------------------------------
 
 
-def _structural_tool(name: str, path_: str | None) -> Any:
+def _structural_tool(name: str, path_: str | None, ns_opt: str | None = None) -> Any:
     """Open the named structural tool (``wiki_symbol_lookup``/etc.) for one call.
 
     Reuses :func:`create_structural_tools` so the CLI's human-readable
@@ -2249,7 +2321,7 @@ def _structural_tool(name: str, path_: str | None) -> Any:
     from parrot.knowledge.wiki.structural.tools import create_structural_tools
 
     root, config = _resolve_project(path_)
-    store = _require_built(root, config)
+    store = _federate(root, config, _require_built(root, config), ns_opt)
     tools = {tool.name: tool for tool in create_structural_tools(store, root, config)}
     return tools[name]
 
@@ -2287,6 +2359,7 @@ def symbols() -> None:
 
 @symbols.command("lookup")
 @path_option
+@ns_option
 @click.argument("query")
 @click.option("--kind", default=None, help="Exact symbol kind filter (e.g. function, class).")
 @click.option("--language", default=None, help="Exact scanner-name filter (e.g. python).")
@@ -2295,6 +2368,7 @@ def symbols() -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_lookup(
     path_: str | None,
+    ns_opt: str | None,
     query: str,
     kind: str | None,
     language: str | None,
@@ -2303,7 +2377,7 @@ def symbols_lookup(
     as_json: bool,
 ) -> None:
     """Find a symbol (function/class/method) by name or qualname."""
-    tool = _structural_tool("wiki_symbol_lookup", path_)
+    tool = _structural_tool("wiki_symbol_lookup", path_, ns_opt)
     kind_enum = SymbolKind(kind) if kind else None
     result = _run(tool._execute(query=query, kind=kind_enum, language=language, path_prefix=path_prefix, limit=limit))
     _echo_structural_result(result, as_json)
@@ -2311,31 +2385,34 @@ def symbols_lookup(
 
 @symbols.command("outline")
 @path_option
+@ns_option
 @click.argument("target")
 @click.option("--depth", default=2, type=int, help="Maximum symbol nesting depth.")
 @click.option("--source", "include_source", is_flag=True, help="Include a capped source excerpt (sym: targets only).")
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_outline(
     path_: str | None,
+    ns_opt: str | None,
     target: str,
     depth: int,
     include_source: bool,
     as_json: bool,
 ) -> None:
     """Get the symbol outline of a file: file:<rel>, sym:<rel>#<q>, or a relative path."""
-    tool = _structural_tool("wiki_code_outline", path_)
+    tool = _structural_tool("wiki_code_outline", path_, ns_opt)
     result = _run(tool._execute(target=target, depth=depth, include_source=include_source))
     _echo_structural_result(result, as_json)
 
 
 @symbols.command("blast")
 @path_option
+@ns_option
 @click.argument("symbol")
 @click.option(
     "--rel",
     "relations",
     multiple=True,
-    help="Edge relation to follow (repeatable); default: calls, extends, implements.",
+    help="Edge relation to follow (repeatable); default: calls, extends, implements, uses.",
 )
 @click.option("--depth", default=2, type=int, help="Maximum BFS depth.")
 @click.option(
@@ -2353,6 +2430,7 @@ def symbols_outline(
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_blast(
     path_: str | None,
+    ns_opt: str | None,
     symbol: str,
     relations: tuple[str, ...],
     depth: int,
@@ -2361,7 +2439,7 @@ def symbols_blast(
     as_json: bool,
 ) -> None:
     """Find every symbol that transitively depends on (calls/extends/implements) SYMBOL."""
-    tool = _structural_tool("wiki_blast_radius", path_)
+    tool = _structural_tool("wiki_blast_radius", path_, ns_opt)
     result = _run(
         tool._execute(
             symbol=symbol,

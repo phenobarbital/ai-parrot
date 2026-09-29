@@ -199,4 +199,4 @@ See the CREATE block above: both tests are complete as written.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Mutation check: removing the line turned test_wiki_languages_extra_pulls_astgrep RED; restored → 2 passed.

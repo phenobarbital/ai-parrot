@@ -268,4 +268,4 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Deviation: 4 existing test files (test_javascript_plugin x5, test_perl x2, test_php_plugin, test_rust_plugin) asserted the OLD mode semantics; they now take the force_no_astgrep fixture so they pin the tree-sitter/heuristic tier (not in the task file list; unavoidable consequence of the behaviour change). Mutation check: reverting javascript.py turned test_mode_predictive_with_astgrep[.ts] RED. Pre-existing unrelated failure: test_sources.py::TestJsonBackend::test_is_stale_json_mode (fails on base too). Only .mode consumers: cli.py:1310/2125/2129.
