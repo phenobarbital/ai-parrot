@@ -1394,7 +1394,8 @@ class FederatedWikiStore(BaseWikiStore):
         """Store an embedding on the local plane."""
         await self._local.upsert_embedding(self._assert_local(concept_id), vector, model)
 
-    # -- FEAT-498: structural symbol plane — local plane only in v1 ------
+    # -- FEAT-498: structural symbol plane — writes and `symbols_for` are
+    # local-only; `find_symbols`/`search_symbols_fts` fan out (FEAT-609 M5) ---
 
     async def upsert_symbols(self, symbols: list[Any], source_id: str | None = None) -> int:
         """Write symbol rows into the local plane (no cross-namespace writes)."""
@@ -1414,8 +1415,9 @@ class FederatedWikiStore(BaseWikiStore):
         path_prefix: str | None = None,
         limit: int = 50,
     ) -> list[Any]:
-        """Find symbols in the local plane only."""
-        return await self._local.find_symbols(
+        """Local plane + every namespace; foreign rows carry ``namespace`` (FEAT-609 M5)."""
+        groups = await self._fan_out(
+            "find_symbols",
             name=name,
             qualname_prefix=qualname_prefix,
             kind=kind,
@@ -1423,10 +1425,34 @@ class FederatedWikiStore(BaseWikiStore):
             path_prefix=path_prefix,
             limit=limit,
         )
+        return self._merge_symbol_groups(groups, limit)
 
     async def search_symbols_fts(self, query: str, limit: int = 20) -> list[Any]:
-        """Lexical symbol search over the local plane only."""
-        return await self._local.search_symbols_fts(query, limit)
+        """BM25 per plane, merged local-first then by namespace weight (FEAT-609 M5)."""
+        groups = await self._fan_out("search_symbols_fts", query, limit)
+        return self._merge_symbol_groups(groups, limit)
+
+    def _merge_symbol_groups(self, groups: list[tuple[str | None, float, list[Any]]], limit: int) -> list[Any]:
+        """Tag foreign records with their namespace; local group first, then by weight.
+
+        Each group keeps its own (rank) order. Records are copied, never mutated, so a
+        foreign store's objects stay untouched.
+        """
+        local_first = [g for g in groups if g[0] == self._local_prefix]
+        others = sorted((g for g in groups if g[0] != self._local_prefix), key=lambda g: -g[1])
+        merged: list[Any] = []
+        for namespace, _weight, records in [*local_first, *others]:
+            for record in records:
+                merged.append(record.model_copy(update={"namespace": namespace}) if namespace else record)
+        return merged[:limit]
+
+    async def get_meta(self, key: str) -> str | None:
+        """Local plane only — a namespace's metadata is not ours to read."""
+        return await self._local.get_meta(key)
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Local plane only — never writes into a foreign namespace."""
+        await self._local.set_meta(key, value)
 
     async def page_hashes(self, concept_ids: list[str]) -> dict[str, str | None]:
         """Look up content hashes on the local plane only."""
@@ -1553,6 +1579,12 @@ class _EmptyStore(BaseWikiStore):
     Stands in for the local plane when :meth:`FederatedWikiStore.scoped`
     selects a subset of namespaces without ``local``.
     """
+
+    async def get_meta(self, key: str) -> str | None:
+        return None
+
+    async def set_meta(self, key: str, value: str) -> None:
+        raise PermissionError("no local plane in this scope")
 
     async def upsert_pages(self, pages: list[WikiPageRecord]) -> int:
         raise PermissionError("no local plane in this scope")

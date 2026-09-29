@@ -641,6 +641,29 @@ class BaseWikiStore(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not support compare_and_swap_page")
 
+    async def get_meta(self, key: str) -> Optional[str]:
+        """Read one plane-level metadata value (FEAT-609 Q2).
+
+        Args:
+            key: Metadata key (e.g. ``"extractor_fingerprint"``).
+
+        Returns:
+            The stored string, or ``None`` when the key is absent.
+
+        Raises:
+            NotImplementedError: When the backend has no meta support.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support get_meta")
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Write one plane-level metadata value (FEAT-609 Q2).
+
+        Raises:
+            NotImplementedError: When the backend has no meta support.
+            PermissionError: When the store was opened read-only.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support set_meta")
+
     def _assert_writable(self) -> None:  # noqa: B027  (deliberate concrete no-op hook)
         """Hook for stores that can be opened read-only.
 
@@ -1480,6 +1503,33 @@ class SQLiteWikiStore(BaseWikiStore):
         self._legacy_fts[table] = legacy
         return legacy
 
+    async def _fts_fetch(
+        self,
+        conn: aiosqlite.Connection,
+        table: str,
+        build_sql: Callable[[bool], str],
+        params: tuple[Any, ...],
+    ) -> list[Any]:
+        """Run an FTS query built for the probed shape; re-probe once if the shape moved.
+
+        A read-only handle caches the probe for its lifetime, but another process may
+        migrate the plane underneath it (``_migrate_fts``), after which the cached
+        legacy join fails with ``no such column``. Forget the cached shape, re-probe,
+        and retry exactly once (FEAT-609 M5).
+        """
+        sql = build_sql(await self._uses_legacy_fts(conn, table))
+        try:
+            async with conn.execute(sql, params) as cur:
+                return list(await cur.fetchall())
+        except sqlite3.OperationalError as exc:
+            if "no such column" not in str(exc):
+                raise
+            self.logger.debug("FTS shape of %s changed under this handle; re-probing", table)
+            self._legacy_fts.pop(table, None)
+            sql = build_sql(await self._uses_legacy_fts(conn, table))
+            async with conn.execute(sql, params) as cur:
+                return list(await cur.fetchall())
+
     async def _upsert_pages_conn(
         self,
         conn: aiosqlite.Connection,
@@ -1895,16 +1945,34 @@ class SQLiteWikiStore(BaseWikiStore):
         if not match_expr:
             return []
         async with self._read() as conn:
-            join = (
-                "SELECT s.* FROM symbols_fts JOIN symbols s ON s.concept_id = symbols_fts.concept_id"
-                if await self._uses_legacy_fts(conn, "symbols_fts")
-                else "SELECT s.* FROM symbols_fts JOIN symbols s ON s.rowid = symbols_fts.rowid"
+
+            def build_sql(legacy: bool) -> str:
+                join = (
+                    "SELECT s.* FROM symbols_fts JOIN symbols s ON s.concept_id = symbols_fts.concept_id"
+                    if legacy
+                    else "SELECT s.* FROM symbols_fts JOIN symbols s ON s.rowid = symbols_fts.rowid"
+                )
+                return join + " WHERE symbols_fts MATCH ? ORDER BY bm25(symbols_fts) LIMIT ?"
+
+            rows = await self._fts_fetch(conn, "symbols_fts", build_sql, (match_expr, limit))
+            return [_row_to_symbol_record(row) for row in rows]
+
+    async def get_meta(self, key: str) -> Optional[str]:
+        """Read ``key`` from the ``meta`` table (works on read-only planes)."""
+        async with self._read() as conn:
+            async with conn.execute("SELECT value FROM meta WHERE key = ?", (key,)) as cur:
+                row = await cur.fetchone()
+        return None if row is None else str(row[0])
+
+    async def set_meta(self, key: str, value: str) -> None:
+        """Upsert ``key`` into the ``meta`` table."""
+        self._assert_writable()
+        async with self._write("set_meta") as conn:
+            await conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
             )
-            async with conn.execute(
-                join + " WHERE symbols_fts MATCH ? ORDER BY bm25(symbols_fts) LIMIT ?",
-                (match_expr, limit),
-            ) as cur:
-                return [_row_to_symbol_record(row) for row in await cur.fetchall()]
 
     async def page_hashes(self, concept_ids: list[str]) -> dict[str, Optional[str]]:
         """Batch look-up of ``pages.content_hash`` for the given ids.
@@ -2028,29 +2096,29 @@ class SQLiteWikiStore(BaseWikiStore):
         if not match_expr:
             return []
         async with self._read() as conn:
-            join = (
-                " FROM pages_fts JOIN pages p ON p.concept_id = pages_fts.concept_id"
-                if await self._uses_legacy_fts(conn, "pages_fts")
-                else " FROM pages_fts JOIN pages p ON p.rowid = pages_fts.rowid"
-            )
-            sql = (
-                "SELECT p.concept_id, p.node_id, p.title, p.category, p.summary,"
-                " p.source_id, p.token_count, -bm25(pages_fts) AS score" + join + " WHERE pages_fts MATCH ?"
-            )
-            params: tuple[Any, ...] = (match_expr,)
-            if category is not None:
-                sql += " AND p.category = ?"
-                params += (category,)
-            else:
-                # FEAT-402: default ranking excludes the archive category.
-                # `category` is an open string in this machine plane (see
-                # module docstring) — no enum import needed here.
-                sql += " AND (p.category IS NULL OR p.category != ?)"
-                params += ("archive",)
-            sql += " ORDER BY bm25(pages_fts) LIMIT ?"
-            params += (limit,)
-            async with conn.execute(sql, params) as cur:
-                return [dict(row) for row in await cur.fetchall()]
+
+            def build_sql(legacy: bool) -> str:
+                join = (
+                    " FROM pages_fts JOIN pages p ON p.concept_id = pages_fts.concept_id"
+                    if legacy
+                    else " FROM pages_fts JOIN pages p ON p.rowid = pages_fts.rowid"
+                )
+                sql = (
+                    "SELECT p.concept_id, p.node_id, p.title, p.category, p.summary,"
+                    " p.source_id, p.token_count, -bm25(pages_fts) AS score" + join + " WHERE pages_fts MATCH ?"
+                )
+                if category is not None:
+                    sql += " AND p.category = ?"
+                else:
+                    # FEAT-402: default ranking excludes the archive category.
+                    # `category` is an open string in this machine plane (see
+                    # module docstring) — no enum import needed here.
+                    sql += " AND (p.category IS NULL OR p.category != ?)"
+                return sql + " ORDER BY bm25(pages_fts) LIMIT ?"
+
+            params: tuple[Any, ...] = (match_expr, category if category is not None else "archive", limit)
+            rows = await self._fts_fetch(conn, "pages_fts", build_sql, params)
+            return [dict(row) for row in rows]
 
     async def search_vector(
         self,
