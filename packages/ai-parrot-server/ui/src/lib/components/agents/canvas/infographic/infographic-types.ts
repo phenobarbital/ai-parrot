@@ -261,4 +261,10 @@ export interface InfographicTabData {
    * `features.a2ui`) instead of the legacy `mode: "json"` block renderers.
    */
   envelope?: A2UIEnvelope;
+  /**
+   * Persisted `ui_surfaces` row id (FEAT-611 M6) — from `message.metadata.a2ui_surface_id`, set by the
+   * bot when `publish_surface` ran in the same turn. When present, `A2UISurface` shows the server-lane
+   * Refresh (`POST /api/v1/ui/surfaces/{id}/refresh`).
+   */
+  persistedSurfaceId?: string;
 }

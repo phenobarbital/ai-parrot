@@ -1,4 +1,4 @@
-"""FEAT-610 AC3: ai-parrot-tools declares querysource>=5.1.2 (no runtime gate)."""
+"""FEAT-598 AC12 / FEAT-610 AC3 / FEAT-611 M1: ai-parrot-tools declares querysource>=5.1.2 (no runtime gate)."""
 
 from __future__ import annotations
 

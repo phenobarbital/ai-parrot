@@ -54,10 +54,12 @@ export interface LinkedLaneOptions {
 export interface LinkedLane {
   start(): void;
   stop(): void;
-  /** Re-fetch `source` with `name` overridden (FilterBar parrot_param). Locked names are ignored. */
+  /** Re-fetch `source` with `name` overridden (FilterBar parrot_param). Locked or undeclared (∉ src.params) names are ignored. */
   setParam(source: string, name: string, value: unknown): Promise<void>;
   /** Manual refresh of every source (policy manual / user button). */
   refreshAll(): Promise<void>;
+  /** Current per-source param overrides (a copy), shaped for POST /refresh {params} (service.py:162-171). */
+  getParams(): Record<string, Record<string, unknown>>;
   /** Manual refresh of ONE source (per-widget refresh button). Unknown/failed keys are a no-op. */
   refreshSource(key: string): Promise<void>;
 }
@@ -139,12 +141,21 @@ function executionOrder(
   return { order, failed };
 }
 
+/** Overrides to send with a server-side refresh, `{<sourceKey>: {name: value}}` — never the stored placeholders. */
+export function currentParams(lane: LinkedLane): Record<string, Record<string, unknown>> {
+  return lane.getParams();
+}
+
 export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions): LinkedLane {
   const deps: Record<string, string[]> = {};
   for (const key of Object.keys(sources)) deps[key] = dependenciesOf(sources[key]);
   const { failed } = executionOrder(sources, deps);
 
   const overrides: Record<string, Record<string, unknown>> = {};
+  // Last known snapshot per source: seeded from the descriptor, advanced on every 'ready' update, and reported
+  // with every error/unavailable update so the notice says "data as of <snapshot>", not "never".
+  const lastSnapshotAt: Record<string, string | null> = {};
+  for (const key of Object.keys(sources)) lastSnapshotAt[key] = sources[key].snapshot_at ?? null;
   const frames: Record<string, Row[]> = {};
   const schedulers: Record<string, RefreshScheduler> = {};
   const inFlight: Record<string, Promise<void> | undefined> = {};
@@ -167,7 +178,7 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
     if (resolving.has(key) || failed.has(key)) {
       // A real cycle, or a sibling reference that names nothing: never fetch, never blank the
       // snapshot — just report the error (TS twin of the Python executor's failed-source outcome).
-      opts.onUpdate({ key, rows: null, status: 'error', snapshotAt: null });
+      opts.onUpdate({ key, rows: null, status: 'error', snapshotAt: lastSnapshotAt[key] });
       return;
     }
     resolving.add(key);
@@ -190,14 +201,17 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
         rows = transformFn ? transformFn(rawRows) : rawRows;
       }
       frames[key] = rows;
-      opts.onUpdate({ key, rows, status: 'ready', snapshotAt: new Date().toISOString() });
+      const stamp = new Date().toISOString();
+      lastSnapshotAt[key] = stamp;
+      opts.onUpdate({ key, rows, status: 'ready', snapshotAt: stamp });
     } catch (err) {
       // A 404 (SourceUnavailable) is the only outcome the UI must word differently ("unavailable",
       // never "denied" — AC10); every other failure (a TransformError from `applyTransform`, a
+      // FrameSelectionError from `fetchSource` (missing/ambiguous MultiQuery frame, §9 S7), a
       // network error, …) reports the same generic 'error' status — the snapshot is never blanked
       // either way (rows stays null).
       const status: SourceStatus = err instanceof SourceUnavailable ? 'unavailable' : 'error';
-      opts.onUpdate({ key, rows: null, status, snapshotAt: null });
+      opts.onUpdate({ key, rows: null, status, snapshotAt: lastSnapshotAt[key] });
     } finally {
       resolving.delete(key);
     }
@@ -207,7 +221,7 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
     start() {
       for (const key of Object.keys(sources)) {
         if (failed.has(key)) {
-          opts.onUpdate({ key, rows: null, status: 'error', snapshotAt: null });
+          opts.onUpdate({ key, rows: null, status: 'error', snapshotAt: lastSnapshotAt[key] });
           continue;
         }
         const scheduler = new RefreshScheduler(sources[key].refresh ?? {}, () => runSource(key, false));
@@ -220,7 +234,12 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
     },
     async setParam(source, name, value) {
       const src = sources[source];
-      if (!src || failed.has(source) || (src.locked ?? []).includes(name)) return;
+      if (!src || failed.has(source)) return;
+      if ((src.locked ?? []).includes(name) || !Object.prototype.hasOwnProperty.call(src.params ?? {}, name)) {
+        // Same rule as executor._conditions_for (executor.py:153-177): locked or undeclared → ignored, no fetch.
+        console.warn(`a2ui linked lane: ignoring param '${name}' for source '${source}' (locked or undeclared)`);
+        return;
+      }
       overrides[source] = { ...(overrides[source] ?? {}), [name]: value };
       delete frames[source]; // force a re-fetch even if a sibling already cached this frame
       await runSource(source, false);
@@ -233,6 +252,11 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
         delete frames[key];
         await runSource(key, true);
       }
+    },
+    getParams() {
+      // A deep copy: callers (the /refresh body) must never be able to mutate lane state. Values are
+      // JSON-serialisable FilterBar selections (string | string[] | null), so structuredClone is safe.
+      return structuredClone(overrides);
     },
     refreshSource(key) {
       if (!(key in sources) || failed.has(key)) return Promise.resolve();

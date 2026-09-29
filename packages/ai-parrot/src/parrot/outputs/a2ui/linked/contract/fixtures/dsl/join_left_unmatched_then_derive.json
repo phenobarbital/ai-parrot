@@ -1,0 +1,10 @@
+{
+  "description": "left join with an UNMATCHED right key leaves target null; derive over it yields null in both lanes (pandas NaN → null; TS must not coerce null to 0 → Infinity) — FEAT-611 live S4",
+  "input": [{"program": "A", "visits": 6}, {"program": "Z", "visits": 3}],
+  "frames": {"targets": [{"program": "A", "target": 20}]},
+  "ops": [
+    {"op": "join", "with": "targets", "how": "left", "on": [{"left": "program", "right": "program"}]},
+    {"op": "derive", "name": "ratio", "expr": {"operator": "/", "left": "visits", "right": "target"}}
+  ],
+  "expected": [{"program": "A", "visits": 6, "target": 20.0, "ratio": 0.3}, {"program": "Z", "visits": 3, "target": null, "ratio": null}]
+}

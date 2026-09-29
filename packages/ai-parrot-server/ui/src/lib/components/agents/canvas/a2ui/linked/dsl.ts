@@ -209,16 +209,22 @@ function deriveOperand(rows: Row[], expr: any, opIndex: number): any[] | number 
   const leftArray = Array.isArray(left) ? left : rows.map(() => left);
   const rightArray = Array.isArray(right) ? right : rows.map(() => right);
   
+  // FEAT-611 (live S4): a missing operand (null/undefined/NaN — e.g. an unmatched left-join column)
+  // yields null, mirroring pandas NaN propagation (serialized as null). Without this, `x / null`
+  // coerced null to 0 and rendered "Infinity" in the browser lane while the server lane said null.
+  const missing = (v: unknown): boolean => v === null || v === undefined || (typeof v === 'number' && Number.isNaN(v));
+  const binary = (fn: (l: number, r: number) => number | null) =>
+    leftArray.map((l, i) => {
+      const r = rightArray[i];
+      return missing(l) || missing(r) ? null : fn(l as number, r as number);
+    });
+
   switch (operator) {
-    case '+': return leftArray.map((l, i) => l + rightArray[i]);
-    case '-': return leftArray.map((l, i) => l - rightArray[i]);
-    case '*': return leftArray.map((l, i) => l * rightArray[i]);
-    case '/': 
-      return leftArray.map((l, i) => {
-        const r = rightArray[i];
-        if (r === 0) return null;
-        return l / r;
-      });
+    case '+': return binary((l, r) => l + r);
+    case '-': return binary((l, r) => l - r);
+    case '*': return binary((l, r) => l * r);
+    case '/':
+      return binary((l, r) => (r === 0 ? null : l / r));
     default:
       throw new TransformError(`derive: unsupported operator ${operator}`, null, opIndex);
   }
@@ -370,7 +376,13 @@ function pivotOp(rows: Row[], op: Op, opIndex: number): Row[] {
         continue;
       }
       let aggregatedValue: number | null = null;
-      
+
+      // A missing (index, column) cell is null — mirrors pandas pivot_table (NaN → null), not sum([]) = 0.
+      if (values.length === 0) {
+        newRow[colValue] = null;
+        continue;
+      }
+
       switch (aggregateFn) {
         case 'sum':
           aggregatedValue = values.reduce((a, b) => a + b, 0);

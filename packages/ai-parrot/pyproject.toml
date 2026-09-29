@@ -297,6 +297,9 @@ graphindex-postgres = [
 # newer Pythons per the graphindex extra's own precedent) — each ships
 # `abi3` wheels covering py3.10-3.12, verified on PyPI 2026-07-31,
 # following the `tree_sitter_python` pattern already used by graphindex.
+# Since FEAT-609 this extra also brings the structural (symbol) tier:
+# `ast-grep-py` is included, so installing it yields `sym:` pages, not only
+# `## API outline` text.
 wiki-languages = [
     "tree-sitter>=0.23",
     "tree-sitter-php>=0.23",
@@ -305,6 +308,9 @@ wiki-languages = [
     "tree-sitter-rust>=0.23",
     "tree-sitter-perl>=0.23",
     "tree-sitter-luau>=1.2",
+    # FEAT-609 (Q1): for every non-Python language, symbols come ONLY from the
+    # ast-grep seam; without it this extra gave outlines and 0 sym: pages.
+    "ast-grep-py>=0.45",
 ]
 
 # Optional declarative structural backend (FEAT-498): ast-grep-py powers

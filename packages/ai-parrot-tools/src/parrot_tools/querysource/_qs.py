@@ -65,7 +65,7 @@ def default_dsn() -> str:
 
 
 def installed_version() -> str:
-    """Return ``querysource.version.__version__`` ("4.5.11" at spec time)."""
+    """Return ``querysource.version.__version__`` (the workspace floor is 5.1.2, FEAT-611)."""
     return _load("querysource.version").__version__
 
 

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-28T22:27:06+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-29T06:27:59+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot and ai-parrot-tools pyproject.toml manifests and regenerates the shared uv.lock (uv lock --upgrade-package querysource); coordinate with FEAT-610's duplicate pin hunk",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3831-querysource-512-pin-and-lock.md"
+      "started_at": "2026-09-28T23:12:16+00:00",
+      "completed_at": "2026-09-28T23:15:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3831-querysource-512-pin-and-lock.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3832",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "needs the querysource>=5.1.2 lock/pins from TASK-3831 (uv.lock, pyproject) before the staging seed runs; writes only to the staging query catalog after human confirmation",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3832-staging-verify-and-seed.md"
+      "started_at": "2026-09-28T23:41:23+00:00",
+      "completed_at": "2026-09-29T06:22:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3832-staging-verify-and-seed.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3833",
@@ -54,16 +56,17 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: installs Node>=24 + pnpm install --frozen-lockfile into shared packages/ai-parrot-server/ui/node_modules; sole FEAT-611 editor of A2UISurface.svelte and linked/index.ts",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3833-ts-linked-lane-drift-fixes.md"
+      "started_at": "2026-09-28T23:12:16+00:00",
+      "completed_at": "2026-09-28T23:27:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3833-ts-linked-lane-drift-fixes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3834",
@@ -72,16 +75,17 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no deps: adds _validate_filter_params + FILTER_PARAM_* codes in catalog/__init__.py (no other FEAT-611 task touches it) and fixes the guard count in test_linked_surfaces_e2e.py:356",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3834-filterbar-param-validation.md"
+      "started_at": "2026-09-28T23:12:16+00:00",
+      "completed_at": "2026-09-28T23:17:16+00:00",
+      "file": "sdd/tasks/completed/TASK-3834-filterbar-param-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3835",
@@ -90,16 +94,17 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no deps: sole FEAT-611 editor of bots/base.py and outputs/a2ui/emission.py; creates _wrap_create_surface / _extract_last_linked_surface_result consumed by TASK-3836 and TASK-3839",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3835-linked-envelope-lifting.md"
+      "started_at": "2026-09-28T23:12:16+00:00",
+      "completed_at": "2026-09-28T23:19:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3835-linked-envelope-lifting.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3836",
@@ -108,7 +113,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -118,9 +123,10 @@
       "parallel": true,
       "parallelism_notes": "needs v1.0-wrapped a2ui_envelope + metadata['a2ui_surface_id'] from TASK-3835 (bots/base.py, emission.py) and TASK-3833's serverRefresh/currentParams contract in A2UISurface.svelte rendered via persistedSurfaceId",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3836-admin-canvas-linked-wiring.md"
+      "started_at": "2026-09-28T23:41:23+00:00",
+      "completed_at": "2026-09-28T23:49:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3836-admin-canvas-linked-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3837",
@@ -129,16 +135,17 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no deps: only parrot_tools/ui_surfaces.py (guard kwarg + _resolve_linked_service) and a new tools test; LinkedSurfaceService ctor unchanged (service.py:76)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3837-publish-surface-tool-guard.md"
+      "started_at": "2026-09-28T23:12:16+00:00",
+      "completed_at": "2026-09-28T23:15:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3837-publish-surface-tool-guard.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3838",
@@ -147,7 +154,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -157,9 +164,10 @@
       "parallel": true,
       "parallelism_notes": "needs TASK-3833's TS deriveConditions/setParam fixes (linked/conditions.ts, linked/index.ts) for parity.test.ts and TASK-3834's FilterBar param validation (catalog/__init__.py) to accept the TOOL's FilterBar; creates only new files",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3838-epson-dashboard-tool-golden-parity.md"
+      "started_at": "2026-09-28T23:41:23+00:00",
+      "completed_at": "2026-09-28T23:52:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3838-epson-dashboard-tool-golden-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3839",
@@ -168,7 +176,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -182,9 +190,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: adds the staging marker to shared test config (pytest.ini, ai-parrot-server pyproject). Edges: 3831 pin gate; 3832 MQ_SLUG + policies/source-epson.yaml; 3834 fixed e2e harness helpers imported; 3835 dict-result envelope lift for --via-agent; 3837 PublishSurfaceTool(guard=); 3838 build_epson_activity_dashboard/build_sources",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3839-linked-e2e-server-agent-runner.md"
+      "started_at": "2026-09-29T06:04:17+00:00",
+      "completed_at": "2026-09-29T06:22:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3839-linked-e2e-server-agent-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3840",
@@ -193,7 +202,7 @@
       "feature_id": "FEAT-611",
       "feature": "a2ui-linked-e2e-parallel",
       "spec": "sdd/specs/a2ui-linked-e2e-parallel.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -203,9 +212,10 @@
       "parallel": true,
       "parallelism_notes": "documents server.py/run_e2e.py flags and offline/staging tests from TASK-3839; S4 manual checklist exercises TASK-3836's isLinkedSurface tab + persistedSurfaceId",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3840-linked-e2e-docs-and-manual-s4.md"
+      "started_at": "2026-09-29T06:23:22+00:00",
+      "completed_at": "2026-09-29T06:27:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3840-linked-e2e-docs-and-manual-s4.md",
+      "verification": "partial"
     }
   ]
 }

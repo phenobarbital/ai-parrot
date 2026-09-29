@@ -18,6 +18,8 @@ from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, Field
 
+from parrot.knowledge.wiki.context import qualify_id, split_namespaced_id
+from parrot.knowledge.wiki.federation import FederatedWikiStore
 from parrot.knowledge.wiki.project import WikiProjectConfig, wiki_write_lock
 from parrot.knowledge.wiki.repo_scan import (
     DEFAULT_EXCLUDE_DIRS,
@@ -41,7 +43,7 @@ _BLAST_RADIUS_NODE_CAP = 500
 
 #: Default relations walked by blast_radius when the caller does not
 #: override them.
-_DEFAULT_BLAST_RELATIONS = ("calls", "extends", "implements")
+_DEFAULT_BLAST_RELATIONS = ("calls", "extends", "implements", "uses")
 
 
 class SymbolHit(BaseModel):
@@ -58,6 +60,7 @@ class SymbolHit(BaseModel):
     exported: bool = False
     score: float = 0.0
     stale: bool = False
+    namespace: str | None = None  # symbol_id is qualified (<ns>::sym:…) when set
 
 
 class SymbolLookupOutput(BaseModel):
@@ -96,10 +99,21 @@ class BlastRadiusOutput(BaseModel):
     truncated: bool = False
 
 
+def _qualified_hit(hit: SymbolHit, namespace: str | None) -> SymbolHit:
+    """Tag a hit read through a namespace-scoped service so its id can be fed back."""
+    if not namespace or hit.namespace:
+        return hit
+    return hit.model_copy(update={"namespace": namespace, "symbol_id": qualify_id(namespace, hit.symbol_id)})
+
+
 def _record_to_hit(record: SymbolRecord, *, score: float = 0.0, stale: bool = False) -> SymbolHit:
     """Project a :class:`SymbolRecord` into the token-budgeted :class:`SymbolHit`."""
+    symbol_id = sym_concept_id(record.rel_path, record.qualname)
+    if record.namespace:
+        symbol_id = qualify_id(record.namespace, symbol_id)
     return SymbolHit(
-        symbol_id=sym_concept_id(record.rel_path, record.qualname),
+        namespace=record.namespace,
+        symbol_id=symbol_id,
         rel_path=record.rel_path,
         qualname=record.qualname,
         kind=record.kind,
@@ -121,9 +135,13 @@ class StructuralService:
         root: Repository root the store's symbols/pages describe.
         config: Effective project configuration (storage path, include/
             exclude filters) — used only by :meth:`_ensure_fresh`.
+        read_repair: When ``False`` :meth:`_ensure_fresh` never touches the
+            working tree or the store (used for foreign namespaces).
     """
 
-    def __init__(self, store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> None:
+    def __init__(
+        self, store: BaseWikiStore, root: Path, config: WikiProjectConfig, *, read_repair: bool = True
+    ) -> None:
         # Deferred: `cli.py` imports `decisions.cli` (FEAT-578) at module
         # load, and `decisions.service` imports this module — a module-level
         # import back into `cli.py` here would be circular regardless of
@@ -136,6 +154,27 @@ class StructuralService:
         self._config = config
         self._sources = _open_sources(self._root, config, store=store)
         self._lock_busy = False
+        self._read_repair = read_repair
+
+    def _foreign_ns(self, target: str) -> str | None:
+        """Namespace ``target`` names, unless it is this store's own local plane."""
+        namespace = split_namespaced_id(target)[0]
+        return None if namespace == getattr(self._store, "local_name", None) else namespace
+
+    def _redispatch_for(self, target: str) -> tuple["StructuralService", str] | None:
+        """A read-only service over the namespace ``target`` names, plus the unqualified id.
+
+        ``None`` when ``target`` is unqualified, names no known namespace, or the
+        store is not federated (the caller then answers from its own plane).
+        """
+        namespace, local_id = split_namespaced_id(target)
+        if namespace is None or not isinstance(self._store, FederatedWikiStore):
+            return None
+        try:
+            scoped = self._store.scoped("local" if namespace == self._store.local_name else namespace)
+        except KeyError:
+            return None
+        return StructuralService(scoped, self._root, self._config, read_repair=False), local_id
 
     # -- lookup -----------------------------------------------------------
 
@@ -162,7 +201,7 @@ class StructuralService:
             refreshed via read-repair on the hit files first.
         """
         hits = await self._search(query, kind=kind, language=language, path_prefix=path_prefix, limit=limit)
-        rel_paths = sorted({hit.rel_path for hit in hits})
+        rel_paths = sorted({hit.rel_path for hit in hits if hit.namespace is None})
         repaired = await self._ensure_fresh(rel_paths)
         if repaired:
             hits = await self._search(query, kind=kind, language=language, path_prefix=path_prefix, limit=limit)
@@ -185,11 +224,11 @@ class StructuralService:
         hits: list[SymbolHit] = []
 
         def _add(record: SymbolRecord, score: float) -> None:
-            symbol_id = sym_concept_id(record.rel_path, record.qualname)
-            if symbol_id in seen:
+            hit = _record_to_hit(record, score=score)
+            if hit.symbol_id in seen:
                 return
-            seen.add(symbol_id)
-            hits.append(_record_to_hit(record, score=score))
+            seen.add(hit.symbol_id)
+            hits.append(hit)
 
         qualname_matches = await self._store.find_symbols(
             qualname_prefix=query, kind=kind_value, language=language, path_prefix=path_prefix, limit=limit * 3
@@ -242,6 +281,28 @@ class StructuralService:
             read-repair first. An out-of-root or excluded ``target``
             yields an empty, unrepaired result rather than raising.
         """
+        redispatch = self._redispatch_for(target)
+        if redispatch is not None:
+            service, local_target = redispatch
+            out = await service.outline(local_target, depth=depth, include_source=include_source)
+            ns = self._foreign_ns(target)
+            return out.model_copy(update={"symbols": [_qualified_hit(h, ns) for h in out.symbols]})
+        out = await self._outline_local(target, depth=depth, include_source=include_source)
+        return self._tag_scoped_outline(out)
+
+    def _scoped_namespace(self) -> str | None:
+        """Namespace a single-namespace scoped store serves as its "local" plane."""
+        if isinstance(self._store, FederatedWikiStore) and getattr(self._store, "_qualify_local", False):
+            return self._store.local_name
+        return None
+
+    def _tag_scoped_outline(self, out: CodeOutlineOutput) -> CodeOutlineOutput:
+        ns = self._scoped_namespace()
+        if ns is None:
+            return out
+        return out.model_copy(update={"symbols": [_qualified_hit(h, ns) for h in out.symbols]})
+
+    async def _outline_local(self, target: str, *, depth: int, include_source: bool) -> CodeOutlineOutput:
         rel_path = self._resolve_rel_path(target)
         if rel_path is None or not self._is_confined(rel_path):
             return CodeOutlineOutput(target=target, language="", symbols=[], source=None, truncated=False)
@@ -304,7 +365,7 @@ class StructuralService:
         Args:
             symbol: A ``sym:`` id or an exact qualname.
             relations: Edge relations to follow (default: ``calls``,
-                ``extends``, ``implements``).
+                ``extends``, ``implements``, ``uses``).
             depth: Maximum BFS depth.
             include_inferred: Whether to follow ``provenance="inferred"``
                 edges (globally-unique-name resolutions).
@@ -316,6 +377,46 @@ class StructuralService:
             unique set of their files, and whether the node cap
             (:data:`_BLAST_RADIUS_NODE_CAP`) was hit.
         """
+        redispatch = self._redispatch_for(symbol)
+        if redispatch is not None:
+            service, local_symbol = redispatch
+            out = await service.blast_radius(
+                local_symbol,
+                relations=relations,
+                depth=depth,
+                include_inferred=include_inferred,
+                include_tests=include_tests,
+            )
+            ns = self._foreign_ns(symbol)
+            return out.model_copy(
+                update={
+                    "root": _qualified_hit(out.root, ns) if out.root else None,
+                    "impacted": [imp.model_copy(update={"symbol": _qualified_hit(imp.symbol, ns)}) for imp in out.impacted],
+                }
+            )
+        out = await self._blast_local(
+            symbol, relations=relations, depth=depth, include_inferred=include_inferred, include_tests=include_tests
+        )
+        ns = self._scoped_namespace()
+        if ns is None:
+            return out
+        return out.model_copy(
+            update={
+                "root": _qualified_hit(out.root, ns) if out.root else None,
+                "impacted": [imp.model_copy(update={"symbol": _qualified_hit(imp.symbol, ns)}) for imp in out.impacted],
+            }
+        )
+
+    async def _blast_local(
+        self,
+        symbol: str,
+        *,
+        relations: list[str] | None,
+        depth: int,
+        include_inferred: bool,
+        include_tests: bool,
+    ) -> BlastRadiusOutput:
+        """Single-plane blast BFS (docstring on :meth:`blast_radius`)."""
         rels = relations if relations else list(_DEFAULT_BLAST_RELATIONS)
         root_record = await self._resolve_symbol(symbol)
         if root_record is None:
@@ -385,6 +486,13 @@ class StructuralService:
         page = await self._store.get_page(concept_id, include_body=True)
         if page is None or page.get("category") != "symbol":
             return None
+        if isinstance(self._store, FederatedWikiStore):
+            # A federated store qualifies the ids of the rows it returns
+            # (``ns::sym:…``); the decoder wants the plane-local ones.
+            page = {
+                key: (split_namespaced_id(str(value))[1] if key in ("concept_id", "node_id") and value else value)
+                for key, value in page.items()
+            }
         return symbol_from_page(page)
 
     # -- root confinement -------------------------------------------------
@@ -444,7 +552,7 @@ class StructuralService:
         from parrot.knowledge.wiki.cli import _ingest_files
 
         self._lock_busy = False
-        if not rel_paths:
+        if not self._read_repair or not rel_paths:
             return []
         concept_ids = [file_concept_id(p) for p in rel_paths]
         known = await self._store.page_hashes(concept_ids)

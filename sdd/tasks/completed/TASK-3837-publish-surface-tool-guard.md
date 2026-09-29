@@ -337,10 +337,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD sub-agent (session_01CFWijXsJLATx5g6k94o1EP), sub-worktree feat-FEAT-611-sub-TASK-3837 (commit 0bd67f579, merged)
+**Date**: 2026-09-28
+**Notes**: Added the optional `guard` kwarg and `PublishSurfaceTool._resolve_linked_service()`. It resolves in this order, using `is not None` checks only: explicit `linked_service`, then the `guard` kwarg, then `bot._dataplane_guard`, then `guard=None` (fail-closed). The standalone-lane call site uses the resolver; the bot lane is untouched. The new `test_publish_surface_tool_guard_resolution.py` has 5 tests, all passing. The existing `test_publish_surface_tool_linked.py` still passes 5/5. ruff check is clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: A `TYPE_CHECKING`-only import of `LinkedSurfaceService` was added so the string return annotation passes ruff F821; the runtime import stays lazy.

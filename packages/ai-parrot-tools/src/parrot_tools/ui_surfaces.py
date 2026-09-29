@@ -18,13 +18,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from parrot.auth.permission import build_principal_context
 from parrot.outputs.a2ui.linked import has_data_sources
 from parrot.outputs.a2ui.models import CreateSurface
 from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema
 from pydantic import Field
+
+if TYPE_CHECKING:  # annotation only — the service stays lazily imported at runtime
+    from parrot.outputs.a2ui.linked.service import LinkedSurfaceService
 
 __all__ = ["PublishSurfaceArgs", "PublishSurfaceTool"]
 
@@ -88,6 +91,7 @@ class PublishSurfaceTool(AbstractTool):
         user_id: str | None = None,
         session_id: str | None = None,
         linked_service: Any = None,
+        guard: Any = None,
         **kwargs: Any,
     ) -> None:
         """Construct the tool.
@@ -104,9 +108,12 @@ class PublishSurfaceTool(AbstractTool):
             user_id: Attribution for the standalone fallback lane only.
             session_id: Attribution for the standalone fallback lane only.
             linked_service: ``LinkedSurfaceService`` used by the standalone
-                lane for linked envelopes (FEAT-598); built with
-                ``guard=None`` — i.e. fail-closed for linked envelopes —
-                when not given.
+                lane for linked envelopes (FEAT-598). Takes precedence over
+                ``guard`` and the bot's ``_dataplane_guard``.
+            guard: Data-plane guard used to build a ``LinkedSurfaceService``
+                for the standalone lane when no ``linked_service`` is given
+                (FEAT-611 M7). Falls back to ``bot._dataplane_guard``, then to
+                ``guard=None`` — fail-closed (``LinkedGuardRequired`` → 403).
         """
         super().__init__(**kwargs)
         self._bot = bot
@@ -115,6 +122,7 @@ class PublishSurfaceTool(AbstractTool):
         self._user_id = user_id
         self._session_id = session_id
         self._linked_service = linked_service
+        self._guard = guard
 
     async def _execute(
         self,
@@ -156,6 +164,28 @@ class PublishSurfaceTool(AbstractTool):
             "kind": kind,
             "refreshable": recipe_name is not None or has_data_sources(envelope),
         }
+
+    def _resolve_linked_service(self) -> "LinkedSurfaceService":
+        """Resolve the standalone lane's ``LinkedSurfaceService`` (FEAT-611 M7).
+
+        Order: ``linked_service`` > ``LinkedSurfaceService(guard)`` >
+        ``LinkedSurfaceService(bot._dataplane_guard)`` > ``LinkedSurfaceService(guard=None)``
+        (fail-closed: ``ensure_snapshot`` raises ``LinkedGuardRequired``).
+        """
+        from parrot.outputs.a2ui.linked.service import LinkedSurfaceService
+
+        if self._linked_service is not None:
+            self.logger.debug("publish_surface: linked service resolved at step 1 (explicit linked_service)")
+            return self._linked_service
+        if self._guard is not None:
+            self.logger.debug("publish_surface: linked service resolved at step 2 (guard kwarg)")
+            return LinkedSurfaceService(guard=self._guard)
+        bot_guard = getattr(self._bot, "_dataplane_guard", None)
+        if bot_guard is not None:
+            self.logger.debug("publish_surface: linked service resolved at step 3 (bot._dataplane_guard)")
+            return LinkedSurfaceService(guard=bot_guard)
+        self.logger.debug("publish_surface: linked service resolved at step 4 (no guard; fail-closed)")
+        return LinkedSurfaceService(guard=None)
 
     async def _publish_directly(
         self,
@@ -212,9 +242,7 @@ class PublishSurfaceTool(AbstractTool):
         if has_data_sources(envelope_model):
             # FEAT-598 S1/S2: the persistence boundary for linked envelopes — TOOL-origin validation, a mandatory
             # (fail-closed) data-plane guard, and a save-time snapshot executed ONCE in the owner's context.
-            from parrot.outputs.a2ui.linked.service import LinkedSurfaceService
-
-            service = self._linked_service or LinkedSurfaceService(guard=None)
+            service = self._resolve_linked_service()
             owner_pctx = self._current_pctx or build_principal_context(user_id, channel="ui_surfaces")
             await service.validate_for_persistence(envelope_model, owner_pctx=owner_pctx)
             envelope_dump = await service.ensure_snapshot(envelope_dump, owner_pctx=owner_pctx)

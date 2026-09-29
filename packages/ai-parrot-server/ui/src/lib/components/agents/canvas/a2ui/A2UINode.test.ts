@@ -41,6 +41,39 @@ describe('A2UINode', () => {
     expect(screen.getByText('10')).toBeInTheDocument();
   });
 
+  it('DataTable applies columns[].format per cell (FEAT-611: percent = ratio)', () => {
+    render(A2UINode, {
+      descriptor: {
+        component: 'DataTable',
+        properties: {
+          columns: [{ name: 'program' }, { name: 'attainment', format: 'percent' }],
+          data: { path: '/attainment/rows' },
+        },
+      },
+      dataModel: { attainment: { rows: [{ program: 'epson', attainment: 0.57948717948717 }] } },
+    });
+    expect(screen.getByText('epson')).toBeInTheDocument();
+    expect(screen.getByText(`${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(57.9)}%`)).toBeInTheDocument();
+  });
+
+  it('KPICard honours format and unit (FEAT-611)', () => {
+    const one = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+    const { unmount } = render(A2UINode, {
+      descriptor: {
+        component: 'KPICard',
+        properties: { label: '% attainment', value: { path: '/kpis/rows/0/pct' }, format: 'percent' },
+      },
+      dataModel: { kpis: { rows: [{ pct: 0.57948717948717 }] } },
+    });
+    expect(screen.getByText(`${one.format(57.9)}%`)).toBeInTheDocument();
+    unmount();
+    render(A2UINode, {
+      descriptor: { component: 'KPICard', properties: { label: 'Visits', value: 1234.56, format: 'number', unit: 'visits' } },
+      dataModel: {},
+    });
+    expect(screen.getByText(`${one.format(1234.6)} visits`)).toBeInTheDocument();
+  });
+
   it('Timeline maps events to items', () => {
     render(A2UINode, {
       descriptor: {
