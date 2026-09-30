@@ -37,7 +37,7 @@
       "feature_id": "bookstore-reindex-identity",
       "feature": "bookstore-reindex-identity",
       "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -47,8 +47,9 @@
       "parallelism_notes": "shared-file serialization only: edits Bookstore.add_book in library.py and appends to test_library.py, both also modified by HOTFIX-bookstore-reindex-identity-1; no symbol dependency",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-bookstore-reindex-identity-2-title-collision-guard.md"
+      "completed_at": "2026-09-30T21:27:18+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-2-title-collision-guard.md",
+      "verification": "verified"
     },
     {
       "id": "HOTFIX-bookstore-reindex-identity-3",

@@ -266,10 +266,10 @@ See the blueprint; run with `PYTHONPATH=packages/ai-parrot/src`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential self-implementation; parrot-sdd-coder not used for hotfix ids)
+**Date**: 2026-09-30
+**Implementation commit**: 4340d14dd1e8eba5a5f6a5df59ddae3714fbd577
+**Tests**: test_library 38 passed, test_models 12 passed; ruff clean
+**Notes**: Guard applied with 'if not title' (preserves original 'title or draft.title' semantics for empty-string title) instead of 'title is None'.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: none (blueprint nuance: `if not title` instead of `is None`)
