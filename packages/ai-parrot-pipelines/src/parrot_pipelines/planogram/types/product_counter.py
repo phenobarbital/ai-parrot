@@ -63,7 +63,11 @@ def _counter_profiles() -> List[ShapeProfile]:
         thresholds=(200, 220, 240),
     )
     panel = backlit.model_copy(
-        update={"name": "counter_panel_zone", "polarity": "edge", "thresholds": ShapeProfile.model_fields["thresholds"].default}
+        update={
+            "name": "counter_panel_zone",
+            "polarity": "edge",
+            "thresholds": ShapeProfile.model_fields["thresholds"].default,
+        }
     )
     return [body, backlit, panel]
 

@@ -128,7 +128,12 @@ def _evidence(observed: int) -> tuple[PerceptionResult, IdentificationResult]:
     )
     return (
         PerceptionResult(
-            image_id="img0", image_size=(400, 400), shapes=[*shapes, background], slots=slots, zones=[background], row_count=1
+            image_id="img0",
+            image_size=(400, 400),
+            shapes=[*shapes, background],
+            slots=slots,
+            zones=[background],
+            row_count=1,
         ),
         IdentificationResult(
             image_id="img0",
@@ -159,7 +164,13 @@ def test_default_layout_profile_body_and_zones():
 def test_no_fixed_element_list_or_weights():
     """Expected elements and weights belong to the shared definition/scoring paths."""
     source = inspect.getsource(counter_module)
-    for literal in ("_DEFAULT_WEIGHTS", "_EXPECTED_ELEMENTS", "promotional_background", 'get("scoring_weights"', "check_planogram_compliance"):
+    for literal in (
+        "_DEFAULT_WEIGHTS",
+        "_EXPECTED_ELEMENTS",
+        "promotional_background",
+        'get("scoring_weights"',
+        "check_planogram_compliance",
+    ):
         assert literal not in source
     for name in ("compute_roi", "detect_objects_roi", "detect_objects"):
         assert name not in ProductCounter.__dict__
