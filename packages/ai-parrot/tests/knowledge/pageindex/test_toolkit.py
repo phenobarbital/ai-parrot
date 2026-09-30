@@ -1359,7 +1359,7 @@ async def test_rename_tree_refuses_inside_batch(toolkit: PageIndexToolkit) -> No
         await toolkit.rename_tree("bad/name", "new")
     with pytest.raises(KeyError):
         await toolkit.rename_tree("missing", "new")
-    with pytest.raises(ValueError):
+    with pytest.raises(KeyError):  # 128-char names are valid; the source is simply absent
         await toolkit.rename_tree("s" * 128, "d" * 128)
     async with toolkit._batch("source"):
         with pytest.raises(ValueError, match="open batch"):
