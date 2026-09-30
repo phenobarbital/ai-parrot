@@ -18,6 +18,18 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ### Added
 
+- **Idempotent file upload — `X-Parrot-Client-Upload-Id`**: the `/file-upload`
+  route accepts a client-chosen upload id. The same id for the same field
+  names the SAME blob (`BlobMetadata.blob_id`, derived by hashing the id with
+  the tenant, form, field and part index — the raw header is never a storage
+  key), so a retried upload returns the same `blob_ref` / `thumbnail_url` /
+  checksum and stores no duplicate. Built for offline devices that replay a
+  photo until the server answers (FieldSync NAV-10040). The thumbnail follows
+  the photo's id; `X-Parrot-Prior-Blob-Ref` no longer deletes the blob the
+  request just wrote. Without the header nothing changes. Ids over 128
+  characters answer 400. Custom `AbstractBlobStorage` backends that ignore
+  `blob_id` keep today's behaviour.
+
 - **FEAT-544 — A2UI v1.0 Form Renderer**: a new `a2ui` render format
   (`GET /api/v1/{tenant}/forms/{form_uid}/render/a2ui`) lowers a
   `FormSchema` into a Basic-Catalog-only A2UI v1.0 `createSurface`

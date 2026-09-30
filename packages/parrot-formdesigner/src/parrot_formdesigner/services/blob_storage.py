@@ -73,6 +73,11 @@ class BlobMetadata(BaseModel):
         tenant: Optional tenant slug for multi-tenant deployments.
         content_type: MIME type of the stored content (e.g. ``image/jpeg``).
         size_bytes: Size of the content in bytes.
+        blob_id: Optional caller-chosen last key segment. When set, the blob is
+            stored under ``{form_uid}/{field_uid}/{blob_id}`` instead of a fresh
+            ``uuid4`` — so a retried upload of the SAME file (same client upload
+            id) overwrites one blob instead of adding a duplicate. ``None``
+            keeps the historical random name.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -85,6 +90,7 @@ class BlobMetadata(BaseModel):
     tenant: str | None = None
     content_type: str
     size_bytes: int
+    blob_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$")
 
 
 class PrePersistContext(BaseModel):
@@ -232,7 +238,7 @@ class _ManagerBackedBlobStorage(AbstractBlobStorage):
             NOT ``form_id``/``field_id``, so renaming a form's slug or a
             field's ``field_id`` never orphans its existing blobs.
         """
-        blob_id = str(uuid.uuid4())
+        blob_id = metadata.blob_id or str(uuid.uuid4())
         return f"{self._prefix}{metadata.form_uid}/{metadata.field_uid}/{blob_id}"
 
     def _to_ref(self, key: str) -> str:
