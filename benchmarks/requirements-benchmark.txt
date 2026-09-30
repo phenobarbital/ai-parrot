@@ -5,7 +5,7 @@
 uform>=3.1
 torch>=2.0
 Pillow>=9.0
-numpy>=1.24
+numpy>=2.4.6
 
 # Optional: ONNX backend
 onnxruntime>=1.16
