@@ -4,6 +4,7 @@ All Odoo-backed classes subclass :class:`_OdooEntity` (``extra="allow"``) so ten
 fields round-trip. ``HelpdeskTicket.extra_fields`` and ``.lifecycle`` are derived by
 ``parrot_tools.odoo.helpdesk_normalize``; Odoo never sends them.
 """
+
 from __future__ import annotations
 
 from typing import Literal, Optional

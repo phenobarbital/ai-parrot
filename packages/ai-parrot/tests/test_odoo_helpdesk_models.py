@@ -1,8 +1,8 @@
 """Tests for the helpdesk Pydantic layer (entities here; inputs/envelopes appended later)."""
+
 from __future__ import annotations
 
 from parrot_tools.odoo.models.helpdesk_entities import HelpdeskLifecycle, HelpdeskSla, HelpdeskStage, HelpdeskTicket
-
 
 LIVE_TICKET = {
     "id": 70,
