@@ -29,7 +29,6 @@ from parrot_pipelines.planogram.plan import PlanogramCompliance
 from parrot_pipelines.planogram.types import endcap_no_shelves_promotional as promo_module
 from parrot_pipelines.planogram.types.endcap_no_shelves_promotional import EndcapNoShelvesPromotional
 
-
 LEGACY = (
     "compute_roi",
     "detect_objects_roi",
@@ -76,13 +75,17 @@ def _definition() -> object:
 
 
 def _layout():
-    return _handler().default_layout_profile().model_copy(
-        update={
-            "zone_selectors": [
-                {"zone_id": "header", "profile": "promo_backlit_zone", "kind": "zone", "ordinal": 0},
-                {"zone_id": "base", "profile": "promo_poster_zone", "kind": "zone", "ordinal": 0},
-            ]
-        }
+    return (
+        _handler()
+        .default_layout_profile()
+        .model_copy(
+            update={
+                "zone_selectors": [
+                    {"zone_id": "header", "profile": "promo_backlit_zone", "kind": "zone", "ordinal": 0},
+                    {"zone_id": "base", "profile": "promo_poster_zone", "kind": "zone", "ordinal": 0},
+                ]
+            }
+        )
     )
 
 
@@ -169,7 +172,12 @@ async def test_optional_zone_absent_still_compliant():
         RuleBinding(rule_id="illumination", kind="illumination", target_id="header", params={"required": "on"}),
     ]
     observation = RuleObservation(
-        image_id="img0", target_id="header-shape", kind="illumination", value="on", assessed=True, source=ObservationSource.LLM
+        image_id="img0",
+        target_id="header-shape",
+        kind="illumination",
+        value="on",
+        assessed=True,
+        source=ObservationSource.LLM,
     )
     result = await _handler().compare(
         [_header_perception()],
@@ -177,20 +185,29 @@ async def test_optional_zone_absent_still_compliant():
         _ctx(bindings),
     )
     assert result.overall_compliant is True
-    assert not any(outcome.rule_id.startswith("base") for shelf in result.shelf_scores for outcome in shelf.rule_results)
+    assert not any(
+        outcome.rule_id.startswith("base") for shelf in result.shelf_scores for outcome in shelf.rule_results
+    )
 
 
 async def test_illumination_off_fails_mandatory_rule():
     binding = RuleBinding(rule_id="illumination", kind="illumination", target_id="header", params={"required": "on"})
     observation = RuleObservation(
-        image_id="img0", target_id="header-shape", kind="illumination", value="off", assessed=True, source=ObservationSource.LLM
+        image_id="img0",
+        target_id="header-shape",
+        kind="illumination",
+        value="off",
+        assessed=True,
+        source=ObservationSource.LLM,
     )
     result = await _handler().compare(
         [_header_perception()],
         [IdentificationResult(image_id="img0", rule_observations=[observation])],
         _ctx([binding]),
     )
-    outcome = next(outcome for shelf in result.shelf_scores for outcome in shelf.rule_results if outcome.rule_id == "illumination")
+    outcome = next(
+        outcome for shelf in result.shelf_scores for outcome in shelf.rule_results if outcome.rule_id == "illumination"
+    )
     assert result.overall_compliant is False
     assert outcome.assessed is True and outcome.passed is False
 
