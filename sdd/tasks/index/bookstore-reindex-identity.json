@@ -71,6 +71,27 @@
       "completed_at": "2026-09-30T21:28:40+00:00",
       "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-3-update-card-and-cli.md",
       "verification": "verified"
+    },
+    {
+      "id": "HOTFIX-bookstore-reindex-identity-4",
+      "slug": "preserve-manual-card-on-reindex",
+      "title": "Preserve manual card edits on in-place re-index",
+      "feature_id": "bookstore-reindex-identity",
+      "feature": "bookstore-reindex-identity",
+      "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-bookstore-reindex-identity-3"
+      ],
+      "parallel": true,
+      "parallelism_notes": "edits Bookstore.add_book (library.py) and test_library.py after task 3's update_card exists; discovered_from issue:9013034b010f",
+      "discovered_from": "issue:9013034b010f",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-30T21:35:51.075951+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/HOTFIX-bookstore-reindex-identity-4-preserve-manual-card-on-reindex.md"
     }
   ]
 }
