@@ -21,18 +21,21 @@ from parrot_pipelines.planogram.contracts import (
     ObservationSource,
     PerceptionResult,
     Shape,
+    ShapeKind,
     Slot,
 )
 from parrot_pipelines.planogram.grid.merger import _compute_iou
+from parrot_pipelines.planogram.identification.references import select_references
 from parrot_pipelines.planogram.identification.vision import VisionError, encode_png
 from parrot_pipelines.planogram.perception.membership import assign_membership, usable_shapes
 from parrot_pipelines.planogram.perception.slots import from_strip_norm, strip_box, to_strip_norm
 
 logger = logging.getLogger(__name__)
 
-IDENTIFY_PROMPT_VERSION: str = "identify-v1"
+IDENTIFY_PROMPT_VERSION: str = "identify-v2-ocr"
 IDENTIFY_STAGE: str = "identify"
 DUPLICATE_IOU: float = 0.5
+SLOT_CROP_PAD: float = 0.08
 PixelBox = Tuple[int, int, int, int]
 Target = Union[Slot, Shape]
 _CallResult = Tuple[List[Identification], List[Shape], List[str]]
@@ -60,10 +63,20 @@ def _order_key(target: Target) -> Tuple[int, int, int, str]:
     return row, index, target.box.x1, _target_id(target)
 
 
-def _targets(perception: PerceptionResult) -> List[Target]:
-    """Slots when perception produced any, otherwise the on-fixture shapes."""
+def _targets(perception: PerceptionResult, *, include_zones: bool = False) -> List[Target]:
+    """Slots or usable shapes, with profile-cycle zones appended once when requested."""
     targets: List[Target] = list(perception.slots) if perception.slots else list(usable_shapes(perception.shapes))
+    if include_zones:
+        if not perception.slots:
+            targets = [target for target in targets if target.kind != ShapeKind.ZONE]
+        target_ids = {_target_id(target) for target in targets}
+        targets.extend(zone for zone in perception.zones if zone.shape_id not in target_ids)
     return sorted(targets, key=_order_key)
+
+
+def _include_zones(ctx: CycleContext) -> bool:
+    """Whether the profile-driven cycle makes zones identification targets."""
+    return ctx.layout is not None
 
 
 def _plan_chunks(targets: Sequence[Any], substrip_max_slots: int) -> List[List[Any]]:
@@ -145,43 +158,52 @@ def render_marked_strip(image: np.ndarray, strip: PixelBox, marks: List[Tuple[in
     return encode_png(crop)
 
 
-def build_identify_prompt(targets: Sequence[Dict[str, Any]], vocabulary: Sequence[str]) -> str:
-    """Instructions + ``AREAS`` JSON (``id``, ``mark``, ``box_2d``, ``ocr_text``).
-
-    Must: forbid reporting on listed ids outside their area; ask to confirm or correct ``ocr_text``; ask for
-    product, brand, the ``vocabulary`` descriptor fields, a 0..1 confidence and one-sentence evidence; allow
-    products the list missed ONLY under ``added_shapes`` with a 0-1000 ``[ymin,xmin,ymax,xmax]`` box;
-    say "use null when not legible — do not guess". Must NOT mention a planogram or expected products.
+def build_identify_prompt(
+    targets: Sequence[Dict[str, Any]], vocabulary: Sequence[str], *, reference_labels: Sequence[str] = ()
+) -> str:
+    """Build provider-neutral identify-v2-ocr instructions and own-area OCR/confidence.
 
     Args:
-        targets: ``{"id", "mark", "box_2d", "ocr_text"}`` per area.
-        vocabulary: Descriptor field names to report.
+        targets: ``{"id", "mark", "box_2d", "ocr_text"[, "ocr_confidence", "tag_text"]}`` per area.
+        vocabulary: Descriptor field names to report (names only, never values).
+        reference_labels: Opaque labels of reference images attached after the main image.
 
     Returns:
-        The prompt text.
+        Prompt text that never names placement expectations or catalogue keys.
     """
     areas = json.dumps(list(targets), separators=(",", ":"), ensure_ascii=False)
     fields = ", ".join(vocabulary) if vocabulary else "(none)"
-    return (
+    prompt = (
         "You are analysing a retail shelf image. Below is a list of numbered AREAS in this image; each has an "
         "id, an optional mark (the number drawn on its outline), a box_2d as [ymin, xmin, ymax, xmax] "
-        "normalised to 0-1000 relative to the image you receive, and the text a local OCR read inside it "
-        "(ocr_text, may be empty or wrong).\n\n"
+        "normalised to 0-1000 relative to the image you receive, and ocr_text: the text a local OCR read inside "
+        "that area (may be empty, partial or slightly wrong), with ocr_confidence when available.\n\n"
         "INSTRUCTIONS:\n"
-        "- Report on each listed area ONLY from what is visible inside its own box. Never describe something "
-        "outside an area under that area's id.\n"
+        "- Judge each area independently and ONLY from what is visible inside its own box. Adjacent areas often "
+        "differ. Never copy an answer from one area to another and never describe something outside an area "
+        "under that area's id.\n"
         "- Return exactly one entry per area in existing_identifications, with shape_id equal to the area id.\n"
-        "- Confirm or correct ocr_text in the text field.\n"
-        "- For each area report: occupancy ('occupied', 'empty' or 'unknown'), product (the model/SKU text "
-        "you can read), brand, and these descriptor fields inside descriptors: "
+        "- occupancy is 'occupied' when a package or product body is visible, including a box seen from its "
+        "side, tilted, dark, or with glare. Only shelf backing, a hook, divider, price tag or fixture parts is "
+        "'empty'. Use 'unknown' only when the box itself is unreadable.\n"
+        "- ocr_text is NOT evidence of emptiness. Read the printed product code into text and product, correcting "
+        "ocr_text when needed. Brand comes from the visible logo.\n"
+        "- For each area report these descriptor fields inside descriptors: "
         f"{fields}.\n"
-        "- raw_confidence: your confidence 0..1. evidence: one short sentence saying what you saw.\n"
+        "- raw_confidence 0..1 applies to empty areas too. evidence: one short sentence saying what you saw.\n"
         "- Use null when something is not legible — do not guess.\n"
         "- If you see a product that no area covers, report it ONLY under added_shapes with box_norm "
         "[ymin, xmin, ymax, xmax] in 0-1000 relative to the image you receive, plus product, brand, text, "
         "descriptors, raw_confidence and evidence.\n\n"
-        f"AREAS: {areas}"
     )
+    if reference_labels:
+        labels = ", ".join(reference_labels)
+        prompt += (
+            f"The attached reference images, in order, have opaque labels: {labels}. They only show what some "
+            "catalogue items look like, not what belongs in any area. Set reference_id to a matching label or "
+            "null; printed text wins over a reference.\n\n"
+        )
+    return f"{prompt}AREAS: {areas}"
 
 
 def _uncertain(target_id: str, image_id: str, source: ObservationSource, reason: str) -> Identification:
@@ -238,30 +260,18 @@ def _normalise_occupancy(identification: Identification) -> Identification:
     return identification
 
 
-def validate_response(
+def _validate(
     response: IdentificationResponse,
     perception: PerceptionResult,
+    candidates: Sequence[Target],
     *,
     strip: Optional[DetectionBox],
     next_shape_id: Callable[[], str],
 ) -> Tuple[List[Identification], List[Shape], List[str]]:
-    """(identifications, accepted added shapes with pipeline-owned ids and source=llm_added, errors).
-
-    ``strip=None`` means the call covered the whole image. Pure and synchronous; never mutates its inputs;
-    never alters ``raw_confidence``. Known ids are those of the call's targets WITHIN ``strip``.
-
-    Args:
-        response: The LLM's structured answer.
-        perception: Stage-1 output of the image.
-        strip: The strip the call covered (``None`` = whole image).
-        next_shape_id: Allocator of pipeline-owned shape ids.
-
-    Returns:
-        ``(identifications, added_shapes, errors)``.
-    """
+    """Validate a response against an explicit candidate list."""
     width, height = perception.image_size
     frame = strip or DetectionBox(x1=0, y1=0, x2=width, y2=height, confidence=1.0)
-    targets = [t for t in _targets(perception) if strip is None or _inside(t.box, strip)]
+    targets = [target for target in candidates if strip is None or _inside(target.box, strip)]
     known = {_target_id(t): t for t in targets}
     source = _source_for(perception)
     errors: List[str] = []
@@ -326,8 +336,33 @@ def validate_response(
     return identifications, accepted, errors
 
 
+def validate_response(
+    response: IdentificationResponse,
+    perception: PerceptionResult,
+    *,
+    strip: Optional[DetectionBox],
+    next_shape_id: Callable[[], str],
+) -> Tuple[List[Identification], List[Shape], List[str]]:
+    """Validate a response using legacy targets and preserve the public API."""
+    return _validate(response, perception, _targets(perception), strip=strip, next_shape_id=next_shape_id)
+
+
 def _area(target: Target, strip: DetectionBox, mark: Optional[int], perception: PerceptionResult) -> Dict[str, Any]:
-    """Structured-input entry of one target."""
+    """Structured-input entry of one target; own-box OCR wins when available."""
+    if perception.ocr_readings:
+        own = perception.ocr_readings.get(_target_id(target))
+        area: Dict[str, Any] = {
+            "id": _target_id(target),
+            "mark": mark,
+            "box_2d": to_strip_norm(target.box, strip),
+            "ocr_text": (own.text or None) if own else None,
+            "ocr_confidence": own.confidence if own and own.text else None,
+        }
+        if isinstance(target, Slot) and target.anchor_shape_id:
+            anchor_reading = perception.ocr_readings.get(target.anchor_shape_id)
+            anchor = next((shape for shape in perception.shapes if shape.shape_id == target.anchor_shape_id), None)
+            area["tag_text"] = (anchor_reading.text or None) if anchor_reading else (anchor.ocr_text if anchor else None)
+        return area
     ocr_text = None
     if isinstance(target, Shape):
         ocr_text = target.ocr_text
@@ -353,23 +388,36 @@ async def _run_call(
     marks: bool,
     next_shape_id: Callable[[], str],
     full_image: bool = False,
+    include_zones: bool = False,
 ) -> _CallResult:
-    """One LLM call for ``targets``. VisionError ⇒ every target uncertain + one error string (never raises it)."""
+    """One LLM call for targets plus selected references, isolating vision failures."""
     mark_list = [(n, _as_tuple(t.box)) for n, t in enumerate(targets, start=1)] if marks else []
     areas = [_area(t, strip, n if marks else None, perception) for n, t in enumerate(targets, start=1)]
-    prompt = build_identify_prompt(areas, vocabulary)
+    target_ids = {_target_id(target) for target in targets}
+    call_readings = {key: value for key, value in perception.ocr_readings.items() if key in target_ids}
+    policy = ctx.layout.references if ctx.layout is not None else None
+    references, diagnostics = select_references(ctx.reference_bank, call_readings, policy) if policy else ([], [])
+    labels = [reference.label for reference in references]
+    prompt = build_identify_prompt(areas, vocabulary, reference_labels=labels)
+    errors = []
+    for diagnostic in diagnostics:
+        if diagnostic.startswith("references: selected"):
+            logger.info("%s: %s", perception.image_id, diagnostic)
+        else:
+            errors.append(f"{perception.image_id}: {diagnostic}")
     retry_error: Optional[str] = None
     try:
         png = await ctx.executor.run(render_marked_strip, image, _as_tuple(strip), mark_list)
+        images = [png, *(reference.image for reference in references)]
         answer = await ctx.vision.ask(
-            prompt, [png], IdentificationResponse, stage=IDENTIFY_STAGE, prompt_version=IDENTIFY_PROMPT_VERSION
+            prompt, images, IdentificationResponse, stage=IDENTIFY_STAGE, prompt_version=IDENTIFY_PROMPT_VERSION
         )
     except VisionError as exc:
         source = _source_for(perception)
         message = f"identify_failed: {exc}"
         uncertain = [_uncertain(_target_id(t), perception.image_id, source, message) for t in targets]
-        return uncertain, [], [f"{perception.image_id}: {message}"]
-    requested_ids = {_target_id(target) for target in targets}
+        return uncertain, [], [*errors, f"{perception.image_id}: {message}"]
+    requested_ids = target_ids
     returned_ids = {item.shape_id for item in answer.existing_identifications}
     missing_ids = sorted(requested_ids - returned_ids)
     if missing_ids:
@@ -381,16 +429,37 @@ async def _run_call(
         try:
             answer = await ctx.vision.ask(
                 repair_prompt,
-                [png],
+                images,
                 IdentificationResponse,
                 stage=IDENTIFY_STAGE,
                 prompt_version=IDENTIFY_PROMPT_VERSION,
             )
         except VisionError as exc:
             retry_error = f"{perception.image_id}: identify_incomplete_retry_failed: {exc}"
-    idents, added, errors = validate_response(
-        answer, perception, strip=None if full_image else strip, next_shape_id=next_shape_id
+    invalid_references = [
+        item for item in answer.existing_identifications if item.reference_id is not None and item.reference_id not in labels
+    ]
+    if invalid_references:
+        answer = answer.model_copy(
+            update={
+                "existing_identifications": [
+                    item.model_copy(update={"reference_id": None}) if item in invalid_references else item
+                    for item in answer.existing_identifications
+                ]
+            }
+        )
+        errors.extend(
+            f"{perception.image_id}: unknown reference_id {item.reference_id} for {item.shape_id}"
+            for item in invalid_references
+        )
+    idents, added, validation_errors = _validate(
+        answer,
+        perception,
+        _targets(perception, include_zones=include_zones),
+        strip=None if full_image else strip,
+        next_shape_id=next_shape_id,
     )
+    errors.extend(validation_errors)
     if retry_error is not None:
         errors.append(retry_error)
     final_ids = {item.shape_id for item in answer.existing_identifications}
@@ -413,7 +482,9 @@ def _id_allocator(perception: PerceptionResult) -> Callable[[], str]:
     return allocate
 
 
-def _finalise(perception: PerceptionResult, ctx: CycleContext, results: Sequence[_CallResult]) -> IdentificationResult:
+def _finalise(
+    perception: PerceptionResult, ctx: CycleContext, results: Sequence[_CallResult], *, include_zones: bool = False
+) -> IdentificationResult:
     """Concatenate call results, revalidate membership of additions, order deterministically, record errors."""
     identifications: List[Identification] = []
     added: List[Shape] = []
@@ -434,7 +505,7 @@ def _finalise(perception: PerceptionResult, ctx: CycleContext, results: Sequence
             )
             for s in added
         ]
-    order = {_target_id(t): n for n, t in enumerate(_targets(perception))}
+    order = {_target_id(t): n for n, t in enumerate(_targets(perception, include_zones=include_zones))}
     added_order = {s.shape_id: n for n, s in enumerate(added)}
 
     def sort_key(item: Identification) -> Tuple[int, int, str]:
@@ -451,9 +522,9 @@ def _finalise(perception: PerceptionResult, ctx: CycleContext, results: Sequence
     )
 
 
-def _check_vocabulary(vocabulary: Sequence[str]) -> None:
-    """ValueError when a name is not a field of Descriptors."""
-    unknown = [name for name in vocabulary if name not in Descriptors.model_fields]
+def _check_vocabulary(vocabulary: Sequence[str], extra: Sequence[str] = ()) -> None:
+    """ValueError when a name is not built in or profile-declared."""
+    unknown = [name for name in vocabulary if name not in set(Descriptors.model_fields) | set(extra)]
     if unknown:
         raise ValueError(f"unknown descriptor fields in vocabulary: {unknown}")
 
@@ -472,10 +543,12 @@ async def identify_full_image(
     Returns:
         The validated identification result.
     """
-    _check_vocabulary(vocabulary)
+    extra = ctx.layout.descriptor_fields if ctx.layout is not None else ()
+    _check_vocabulary(vocabulary, extra)
+    zones = _include_zones(ctx)
     width, height = perception.image_size
     frame = DetectionBox(x1=0, y1=0, x2=width, y2=height, confidence=1.0)
-    targets = _targets(perception)
+    targets = _targets(perception, include_zones=zones)
     result = await _run_call(
         image,
         targets,
@@ -486,8 +559,9 @@ async def identify_full_image(
         marks=False,
         next_shape_id=_id_allocator(perception),
         full_image=True,
+        include_zones=zones,
     )
-    return _finalise(perception, ctx, [result])
+    return _finalise(perception, ctx, [result], include_zones=zones)
 
 
 async def identify_strips(
@@ -512,9 +586,11 @@ async def identify_strips(
     Returns:
         The validated identification result.
     """
-    _check_vocabulary(vocabulary)
+    extra = ctx.layout.descriptor_fields if ctx.layout is not None else ()
+    _check_vocabulary(vocabulary, extra)
+    zones = _include_zones(ctx)
     allocate = _id_allocator(perception)
-    chunks = _plan_chunks(_targets(perception), substrip_max_slots)
+    chunks = _plan_chunks(_targets(perception, include_zones=zones), substrip_max_slots)
     results = await asyncio.gather(
         *(
             _run_call(
@@ -526,8 +602,52 @@ async def identify_strips(
                 vocabulary=vocabulary,
                 marks=marks,
                 next_shape_id=allocate,
+                include_zones=zones,
             )
             for chunk in chunks
         )
     )
-    return _finalise(perception, ctx, results)
+    return _finalise(perception, ctx, results, include_zones=zones)
+
+
+async def identify_slots(
+    image: np.ndarray,
+    perception: PerceptionResult,
+    ctx: CycleContext,
+    *,
+    vocabulary: Sequence[str],
+    marks: bool = True,
+) -> IdentificationResult:
+    """Identify each target in its own padded crop with source-coordinate validation.
+
+    Args:
+        image: Untouched full-resolution BGR image.
+        perception: Stage-1 output of the image.
+        ctx: Per-run services, profile and reference bank.
+        vocabulary: Descriptor fields to report.
+        marks: Draw the numbered outline on each crop.
+
+    Returns:
+        Validated identifications with isolated per-target errors.
+    """
+    _check_vocabulary(vocabulary, ctx.layout.descriptor_fields if ctx.layout is not None else ())
+    zones = _include_zones(ctx)
+    allocate = _id_allocator(perception)
+    targets = _targets(perception, include_zones=zones)
+    results = await asyncio.gather(
+        *(
+            _run_call(
+                image,
+                [target],
+                strip_box([target], perception.image_size, pad=SLOT_CROP_PAD),
+                perception,
+                ctx,
+                vocabulary=vocabulary,
+                marks=marks,
+                next_shape_id=allocate,
+                include_zones=zones,
+            )
+            for target in targets
+        )
+    )
+    return _finalise(perception, ctx, results, include_zones=zones)
