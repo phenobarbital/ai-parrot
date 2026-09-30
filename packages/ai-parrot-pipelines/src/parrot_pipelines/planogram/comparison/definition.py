@@ -7,12 +7,23 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 logger = logging.getLogger(__name__)
 
 RuleKind = Literal["illumination", "text_requirements", "visual_features", "zone_present"]
-ZoneKind = Literal["header", "backlit", "poster", "box_stack"]
+ZoneKind = Literal[
+    "header",
+    "backlit",
+    "poster",
+    "box_stack",
+    "graphic",
+    "advertisement",
+    "counter",
+    "information_label",
+]
+AttributeValue = Union[str, int, float, bool, List[str]]
+VIRTUAL_SHELF_PREFIX = "zone:"
 
 _DESCRIPTOR_KEYS: Tuple[str, ...] = (
     "display_name",
@@ -23,6 +34,7 @@ _DESCRIPTOR_KEYS: Tuple[str, ...] = (
     "identifiers",
     "aliases",
     "price",
+    "attributes",
 )
 
 
@@ -41,6 +53,16 @@ class Descriptors(BaseModel):
     identifiers: List[str] = Field(default_factory=list)
     aliases: List[str] = Field(default_factory=list)
     price: Optional[float] = None
+    attributes: Dict[str, AttributeValue] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _no_typed_collision(self) -> "Descriptors":
+        """Reject custom attribute keys that shadow a typed descriptor field."""
+        typed = set(type(self).model_fields) - {"attributes"}
+        clash = sorted(typed & set(self.attributes))
+        if clash:
+            raise ValueError(f"descriptor attributes collide with typed fields: {', '.join(clash)}")
+        return self
 
     @property
     def described(self) -> bool:
@@ -59,12 +81,20 @@ class FacingDefinition(BaseModel):
     facing_id: str
     shelf_id: str
     slot: int = Field(ge=1)
-    product: str
+    product: Optional[str] = None
     brand: Optional[str] = None
     facings: int = Field(default=1, ge=1)  # facing count of the source position (informational)
     facing_index: int = Field(default=1, ge=1)  # 1..facings
     position: Optional[int] = None  # source position number (page1 layout)
     descriptors: Descriptors = Field(default_factory=Descriptors)
+    expected_occupancy: Literal["occupied", "empty"] = "occupied"
+
+    @model_validator(mode="after")
+    def _occupied_needs_product(self) -> "FacingDefinition":
+        """An occupied position must name its product; an expected-empty one may not."""
+        if self.expected_occupancy == "occupied" and not (self.product and self.product.strip()):
+            raise ValueError(f"{self.facing_id}: occupied facing requires a nonblank product")
+        return self
 
 
 class ShelfDefinition(BaseModel):
@@ -100,7 +130,7 @@ class SlotsDefinition(BaseModel):
 
     version: str = "1"
     meta: Dict[str, Any] = Field(default_factory=dict)
-    shelves: List[ShelfDefinition]
+    shelves: List[ShelfDefinition] = Field(default_factory=list)
     zones: List[ZoneDefinition] = Field(default_factory=list)
 
     def all_facings(self) -> List[FacingDefinition]:
@@ -179,6 +209,9 @@ def _validate(definition: SlotsDefinition) -> None:
     Raises:
         SlotsDefinitionError: On the first failing check.
     """
+    if not definition.all_facings() and not definition.zones:
+        raise SlotsDefinitionError("empty definition: no facings and no zones")
+
     for label, ids in (
         ("shelf_id", [s.shelf_id for s in definition.shelves]),
         ("zone_id", [z.zone_id for z in definition.zones]),
@@ -200,7 +233,7 @@ def _validate(definition: SlotsDefinition) -> None:
 
     described: Dict[str, Tuple[str, Dict[str, Any]]] = {}
     for facing in definition.all_facings():
-        if not facing.descriptors.described:
+        if facing.expected_occupancy == "empty" or not facing.descriptors.described:
             continue
         dump = facing.descriptors.model_dump()
         previous = described.get(facing.product)
@@ -211,8 +244,34 @@ def _validate(definition: SlotsDefinition) -> None:
                 f"conflicting descriptors for product {facing.product!r}: {previous[0]} vs {facing.facing_id}"
             )
 
-    if not described:
-        raise SlotsDefinitionError("zero described positions: at least one facing needs a display_name")
+    occupied = [f for f in definition.all_facings() if f.expected_occupancy == "occupied"]
+    if occupied and not described:
+        raise SlotsDefinitionError("zero described positions: at least one occupied facing needs a display_name")
+
+
+def _normalise_zone_shelves(definition: SlotsDefinition) -> None:
+    """Give every unowned zone a deterministic virtual score shelf ``zone:<zone_id>`` (in place, after sorting).
+
+    Raises:
+        SlotsDefinitionError: a physical shelf already uses the virtual id of an unowned zone.
+    """
+    physical_shelf_ids = {shelf.shelf_id for shelf in definition.shelves}
+    next_shelf_number = max((shelf.shelf_number for shelf in definition.shelves), default=0) + 1
+    for index, zone in enumerate(definition.zones):
+        if zone.shelf_id is not None:
+            continue
+        virtual_shelf_id = f"{VIRTUAL_SHELF_PREFIX}{zone.zone_id}"
+        if virtual_shelf_id in physical_shelf_ids:
+            raise SlotsDefinitionError(f"virtual shelf id collision: {virtual_shelf_id}")
+        zone.shelf_id = virtual_shelf_id
+        definition.shelves.append(
+            ShelfDefinition(
+                shelf_id=virtual_shelf_id,
+                shelf_number=next_shelf_number + index,
+                level=None,
+                facings=[],
+            )
+        )
 
 
 def load_slots_definition(source: Union[Dict[str, Any], str, Path]) -> SlotsDefinition:
@@ -225,6 +284,7 @@ def load_slots_definition(source: Union[Dict[str, Any], str, Path]) -> SlotsDefi
 
     Returns:
         The validated definition; shelves ordered by ``shelf_number``, facings by ``(slot, facing_index)``.
+        Unowned zones receive deterministic virtual shelves after physical shelves.
 
     Raises:
         SlotsDefinitionError: unreadable / non-JSON source, schema error, or any rule of ``_validate``.
@@ -254,6 +314,7 @@ def load_slots_definition(source: Union[Dict[str, Any], str, Path]) -> SlotsDefi
     definition.shelves.sort(key=lambda s: s.shelf_number)
     for shelf in definition.shelves:
         shelf.facings.sort(key=lambda f: (f.slot, f.facing_index))
+    _normalise_zone_shelves(definition)
     _validate(definition)
     logger.debug(
         "slots definition loaded: %d shelves, %d facings, %d zones",
@@ -271,14 +332,16 @@ def definition_coverage(definition: SlotsDefinition) -> Tuple[float, List[str]]:
         definition: A loaded definition.
 
     Returns:
-        The coverage fraction (``1.0`` for a definition without facings) and the ids of facings lacking
-        sufficient descriptors. A described occurrence of the same ``product`` counts for every facing of it.
+        The coverage fraction (``1.0`` for a definition without facings) and the ids of occupied facings
+        lacking sufficient descriptors. Expected-empty facings count as covered, and a described occurrence
+        of the same ``product`` counts for every occupied facing of it.
     """
     facings = definition.all_facings()
     if not facings:
         return 1.0, []
-    sufficient_products = {f.product for f in facings if f.descriptors.sufficient}
-    undescribed = [f.facing_id for f in facings if f.product not in sufficient_products]
+    occupied = [f for f in facings if f.expected_occupancy == "occupied"]
+    sufficient_products = {f.product for f in occupied if f.descriptors.sufficient}
+    undescribed = [f.facing_id for f in occupied if f.product not in sufficient_products]
     return (len(facings) - len(undescribed)) / len(facings), undescribed
 
 
@@ -295,7 +358,8 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
     Raises:
         SlotsDefinitionError: malformed binding, duplicate ``rule_id``, dangling ``target_id``, ambiguous
             ``target_id`` (present in more than one of facing / zone / shelf namespaces), or a shelf with
-            no facings that ends up with no bound rule.
+            no facings that ends up with no mandatory bound rule, or a required zone without a mandatory
+            ``zone_present`` binding targeting that zone.
     """
     raw = (planogram_config or {}).get("rule_bindings")
     if raw is None:
@@ -327,11 +391,15 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
                 f"rule {binding.rule_id}: ambiguous target_id {binding.target_id!r} ({' / '.join(hits)})"
             )
 
-    targets = {b.target_id for b in bindings}
+    mandatory_targets = {b.target_id for b in bindings if b.mandatory}
     for shelf in definition.shelves:
         if shelf.facings:
             continue
         shelf_zone_ids = {z.zone_id for z in definition.zones if z.shelf_id == shelf.shelf_id}
-        if shelf.shelf_id not in targets and not (shelf_zone_ids & targets):
-            raise SlotsDefinitionError(f"{shelf.shelf_id}: zone-only shelf has no bound rule")
+        if shelf.shelf_id not in mandatory_targets and not (shelf_zone_ids & mandatory_targets):
+            raise SlotsDefinitionError(f"{shelf.shelf_id}: zone-only shelf has no mandatory bound rule")
+    presence = {b.target_id for b in bindings if b.kind == "zone_present" and b.mandatory}
+    for zone in definition.zones:
+        if zone.required and zone.zone_id not in presence:
+            raise SlotsDefinitionError(f"required zone {zone.zone_id}: no mandatory zone_present binding")
     return bindings
