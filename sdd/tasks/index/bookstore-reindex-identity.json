@@ -18,7 +18,7 @@
       "feature_id": "bookstore-reindex-identity",
       "feature": "bookstore-reindex-identity",
       "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -26,8 +26,9 @@
       "parallelism_notes": "no dependencies; creates CatalogStore.find_by_path and Bookstore._invalidate_graph in catalog.py/library.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-bookstore-reindex-identity-1-path-identity-and-graph-invalidation.md"
+      "completed_at": "2026-09-30T21:26:26+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-1-path-identity-and-graph-invalidation.md",
+      "verification": "verified"
     },
     {
       "id": "HOTFIX-bookstore-reindex-identity-2",
@@ -39,7 +40,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["HOTFIX-bookstore-reindex-identity-1"],
+      "depends_on": [
+        "HOTFIX-bookstore-reindex-identity-1"
+      ],
       "parallel": true,
       "parallelism_notes": "shared-file serialization only: edits Bookstore.add_book in library.py and appends to test_library.py, both also modified by HOTFIX-bookstore-reindex-identity-1; no symbol dependency",
       "assigned_to": null,
@@ -57,7 +60,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["HOTFIX-bookstore-reindex-identity-2"],
+      "depends_on": [
+        "HOTFIX-bookstore-reindex-identity-2"
+      ],
       "parallel": true,
       "parallelism_notes": "shared-file serialization only: adds update_card to library.py and tests to test_library.py, both modified by HOTFIX-bookstore-reindex-identity-2 (cli.py/test_cli.py are exclusive to this task); no symbol dependency",
       "assigned_to": null,
