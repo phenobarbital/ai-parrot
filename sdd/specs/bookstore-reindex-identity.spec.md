@@ -13,7 +13,7 @@ tags: [bookstore, pageindex, cli, ingest, catalog]
 **Identity**: bookstore-reindex-identity (hotfix — slug identity, no Jira key yet; see §8 Q1)
 **Date**: 2026-09-30
 **Author**: jesuslarag@gmail.com
-**Status**: draft
+**Status**: approved
 **Target version**: next patch release of `ai-parrot`
 **Type**: hotfix
 **Base branch**: main
