@@ -97,7 +97,11 @@ async def test_cv_tag_below_geometry_matches_ink_wall(ink_image):
     assert [len(row) for row in rows] == [8, 8, 8, 8]
     assert sum(slot.inferred for slot in rows[1]) == 1
     assert all(slot.inferred for slot in rows[3])
-    assert all(slot.anchor_shape_id in {shape.shape_id for shape in perception.shapes} for slot in perception.slots if not slot.inferred)
+    assert all(
+        slot.anchor_shape_id in {shape.shape_id for shape in perception.shapes}
+        for slot in perception.slots
+        if not slot.inferred
+    )
 
 
 async def test_profile_overrides_reach_primitives(ink_image):
@@ -113,7 +117,10 @@ async def test_profile_overrides_reach_primitives(ink_image):
 async def test_rebuild_geometry_keeps_llm_anchor_ids(ink_image):
     """Fallback geometry remaps generated candidate anchors to LLM shape ids."""
     profile = LayoutProfile(shape_profiles=[], anchor_rule=AnchorRule.SHAPE_IS_SLOT, perception_mode="llm_detector")
-    shapes = [_shape(f"img0:llm:{index}", ShapeKind.PRODUCT, (100 + index * 200, 300, 250 + index * 200, 500)) for index in range(3)]
+    shapes = [
+        _shape(f"img0:llm:{index}", ShapeKind.PRODUCT, (100 + index * 200, 300, 250 + index * 200, 500))
+        for index in range(3)
+    ]
     perception = await rebuild_geometry(ink_image, shapes, "img0", _ctx(profile), detection_source="llm")
     assert {slot.anchor_shape_id for slot in perception.slots} == {shape.shape_id for shape in shapes}
     assert all(shape.row_index == 0 and shape.slot_index is not None for shape in perception.shapes)
@@ -134,15 +141,29 @@ async def test_mixed_source_when_cv_zones_retained(ink_image):
 def test_count_usable_targets_excludes_off_fixture_and_tags():
     """Only on-fixture targets relevant to the active anchor rule suppress fallback."""
     shapes = [
-        _shape("product-1", ShapeKind.PRODUCT, (0, 0, 10, 10)).model_copy(update={"membership": FixtureMembership.ON_FIXTURE}),
-        _shape("product-2", ShapeKind.PRODUCT, (20, 0, 30, 10)).model_copy(update={"membership": FixtureMembership.ON_FIXTURE}),
-        _shape("product-off", ShapeKind.PRODUCT, (40, 0, 50, 10)).model_copy(update={"membership": FixtureMembership.OFF_FIXTURE}),
-        _shape("fact", ShapeKind.FACT_TAG, (60, 0, 70, 10)).model_copy(update={"membership": FixtureMembership.ON_FIXTURE}),
-        _shape("tag", ShapeKind.PRICE_TAG, (80, 0, 90, 10)).model_copy(update={"membership": FixtureMembership.ON_FIXTURE}),
+        _shape("product-1", ShapeKind.PRODUCT, (0, 0, 10, 10)).model_copy(
+            update={"membership": FixtureMembership.ON_FIXTURE}
+        ),
+        _shape("product-2", ShapeKind.PRODUCT, (20, 0, 30, 10)).model_copy(
+            update={"membership": FixtureMembership.ON_FIXTURE}
+        ),
+        _shape("product-off", ShapeKind.PRODUCT, (40, 0, 50, 10)).model_copy(
+            update={"membership": FixtureMembership.OFF_FIXTURE}
+        ),
+        _shape("fact", ShapeKind.FACT_TAG, (60, 0, 70, 10)).model_copy(
+            update={"membership": FixtureMembership.ON_FIXTURE}
+        ),
+        _shape("tag", ShapeKind.PRICE_TAG, (80, 0, 90, 10)).model_copy(
+            update={"membership": FixtureMembership.ON_FIXTURE}
+        ),
     ]
     perception = PerceptionResult(shapes=shapes)
-    slot_profile = LayoutProfile(shape_profiles=[], anchor_rule=AnchorRule.SHAPE_IS_SLOT, perception_mode="llm_detector")
-    tag_profile = LayoutProfile(shape_profiles=[], anchor_rule=AnchorRule.TAG_BELOW_PRODUCT, perception_mode="llm_detector")
+    slot_profile = LayoutProfile(
+        shape_profiles=[], anchor_rule=AnchorRule.SHAPE_IS_SLOT, perception_mode="llm_detector"
+    )
+    tag_profile = LayoutProfile(
+        shape_profiles=[], anchor_rule=AnchorRule.TAG_BELOW_PRODUCT, perception_mode="llm_detector"
+    )
     assert count_usable_targets(perception, slot_profile) == 2
     assert count_usable_targets(perception, tag_profile) == 1
 
@@ -156,7 +177,9 @@ def test_zone_only_counts_matched_zones():
         zone_selectors=[selector],
     )
     zones = [
-        _shape("zone-1", ShapeKind.ZONE, (0, 0, 100, 100)).model_copy(update={"membership_evidence": ["zone_selector:z1"]}),
+        _shape("zone-1", ShapeKind.ZONE, (0, 0, 100, 100)).model_copy(
+            update={"membership_evidence": ["zone_selector:z1"]}
+        ),
         _shape("zone-2", ShapeKind.ZONE, (100, 100, 200, 200)),
     ]
     perception = PerceptionResult(zones=zones)

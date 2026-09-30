@@ -113,7 +113,9 @@ async def _rows_shape_is_slot(
     if edges:
         bounds = [0, *sorted(edges), size[1]]
         for shape in anchors:
-            band = next((index for index in range(len(bounds) - 1) if bounds[index] <= centre_y(shape) < bounds[index + 1]), 0)
+            band = next(
+                (index for index in range(len(bounds) - 1) if bounds[index] <= centre_y(shape) < bounds[index + 1]), 0
+            )
             bands.setdefault(band, []).append(shape)
     else:
         ordered = sorted(anchors, key=lambda shape: (centre_y(shape), shape.box.x1))
@@ -140,9 +142,7 @@ async def _rows_shape_is_slot(
     return rows, by_candidate
 
 
-def _match_zone_selectors(
-    zones: List[Shape], selectors: Sequence[ZoneSelector], size: Tuple[int, int]
-) -> List[Shape]:
+def _match_zone_selectors(zones: List[Shape], selectors: Sequence[ZoneSelector], size: Tuple[int, int]) -> List[Shape]:
     """Copy zones and mark only unambiguously selector-matched observations as on-fixture."""
     grouped: Dict[Tuple[str | None, str | None, Tuple[float, float, float, float] | None], List[ZoneSelector]] = {}
     for selector in selectors:
@@ -171,14 +171,19 @@ def _match_zone_selectors(
                 if selector.ordinal is not None and selector.ordinal < len(ordered):
                     matches[ordered[selector.ordinal].shape_id] = selector.zone_id
     return [
-        zone.model_copy(
-            update={
-                "membership": FixtureMembership.ON_FIXTURE,
-                "membership_evidence": [*zone.membership_evidence, f"{SELECTOR_EVIDENCE_PREFIX}{matches[zone.shape_id]}"],
-            }
+        (
+            zone.model_copy(
+                update={
+                    "membership": FixtureMembership.ON_FIXTURE,
+                    "membership_evidence": [
+                        *zone.membership_evidence,
+                        f"{SELECTOR_EVIDENCE_PREFIX}{matches[zone.shape_id]}",
+                    ],
+                }
+            )
+            if zone.shape_id in matches
+            else zone.model_copy()
         )
-        if zone.shape_id in matches
-        else zone.model_copy()
         for zone in zones
     ]
 
@@ -186,11 +191,11 @@ def _match_zone_selectors(
 def _detection_source(shapes: Sequence[Shape], requested: str) -> str:
     """Return requested provenance only when every observation agrees with it."""
     sources = {
-        "cv"
-        if shape.source == ObservationSource.CV
-        else "llm"
-        if shape.source in (ObservationSource.LLM, ObservationSource.LLM_ADDED)
-        else shape.source.value
+        (
+            "cv"
+            if shape.source == ObservationSource.CV
+            else "llm" if shape.source in (ObservationSource.LLM, ObservationSource.LLM_ADDED) else shape.source.value
+        )
         for shape in shapes
     }
     return requested if not sources or sources == {requested} else "mixed"
@@ -227,15 +232,26 @@ async def rebuild_geometry(
         slot.anchor_shape_id: (slot.row_index, slot.slot_index) for slot in slots if slot.anchor_shape_id is not None
     }
     others = [
-        shape.model_copy(update={"row_index": positions[shape.shape_id][0], "slot_index": positions[shape.shape_id][1]})
-        if shape.shape_id in positions
-        else shape.model_copy()
+        (
+            shape.model_copy(
+                update={"row_index": positions[shape.shape_id][0], "slot_index": positions[shape.shape_id][1]}
+            )
+            if shape.shape_id in positions
+            else shape.model_copy()
+        )
         for shape in others
     ]
     zones = _match_zone_selectors(zones, profile.zone_selectors, size)
     others = assign_membership(others, zones, size)
     source = _detection_source([*zones, *others], detection_source)
-    logger.debug("rebuild_geometry[%s] source=%s shapes=%d slots=%d rows=%d", image_id, source, len(others), len(slots), len(rows))
+    logger.debug(
+        "rebuild_geometry[%s] source=%s shapes=%d slots=%d rows=%d",
+        image_id,
+        source,
+        len(others),
+        len(slots),
+        len(rows),
+    )
     return PerceptionResult(
         image_id=image_id,
         image_size=size,
