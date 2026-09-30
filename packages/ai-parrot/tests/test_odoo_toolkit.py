@@ -714,9 +714,7 @@ async def test_aggregate_records_calls_formatted_read_group_for_odoo_19():
     )
 
     assert result.count == 1
-    # Verify formatted_read_group was called (second call)
-    calls = transport.execute_kw.call_args_list
-    assert any("formatted_read_group" in str(c) for c in calls)
+    assert transport.execute_kw.await_args.args == ("sale.order", "formatted_read_group", [[]], {"groupby": ["state"]})
 
 
 @pytest.mark.asyncio
@@ -747,6 +745,36 @@ async def test_aggregate_records_allows_empty_group_by_global_aggregation():
     # read_group must have been called with an empty groupby.
     calls = transport.execute_kw.call_args_list
     assert any("read_group" in str(c) for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_aggregate_records_odoo_19_ignores_lazy_flag():
+    """Odoo 19+ formatted_read_group has no lazy mode: the flag is not sent."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "19.0", "server_version": "19.0"}
+    toolkit = _make_toolkit(transport)
+    transport.execute_kw.side_effect = [[{"state": "sale", "__count": 2}]]
+
+    await toolkit.aggregate_records(model="sale.order", group_by=["state"], lazy=True)
+
+    _model, method, _args, kwargs = transport.execute_kw.await_args.args
+    assert method == "formatted_read_group"
+    assert "lazy" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_aggregate_records_odoo_17_still_sends_lazy():
+    """Odoo 16-18 read_group keeps receiving lazy."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "17.0", "server_version": "17.0"}
+    toolkit = _make_toolkit(transport)
+    transport.execute_kw.side_effect = [[{"state": "sale", "state_count": 2}]]
+
+    await toolkit.aggregate_records(model="sale.order", group_by=["state"], lazy=True)
+
+    _model, method, _args, kwargs = transport.execute_kw.await_args.args
+    assert method == "read_group"
+    assert kwargs["lazy"] is True
 
 
 @pytest.mark.asyncio

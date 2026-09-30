@@ -278,7 +278,7 @@ class AggregateRecordsInput(_OdooBaseInput):
     )
     lazy: bool = Field(
         default=False,
-        description="Use lazy grouping (only first group_by level resolved)",
+        description="Use lazy grouping (only first group_by level resolved). Odoo 16-18 only; ignored on Odoo 19+.",
     )
     limit: Optional[int] = Field(default=None, ge=1, description="Max groups to return")
     offset: int = Field(default=0, ge=0, description="Groups to skip (pagination)")

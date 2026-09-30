@@ -1015,6 +1015,9 @@ class OdooToolkit(AbstractToolkit):
                 aggregators: sum, avg, min, max, count, count_distinct.
             domain: Optional domain filter.
             lazy: When True, only the first group_by level is resolved.
+                Honoured on Odoo 16-18 (``read_group``) only; Odoo 19+
+                ``formatted_read_group`` has no lazy mode and the flag is
+                ignored (a debug log line records that).
             limit: Max number of groups to return.
             offset: Groups to skip.
             order: Sort order string.
@@ -1043,10 +1046,15 @@ class OdooToolkit(AbstractToolkit):
 
         if use_formatted:
             # Odoo 19+ formatted_read_group
+            # formatted_read_group (Odoo 19+) has no ``lazy`` parameter — sending it is rejected.
             kwargs: dict[str, Any] = {
                 "groupby": group_by,
-                "lazy": lazy,
             }
+            if lazy:
+                self.logger.debug(
+                    "aggregate_records: lazy=True ignored — formatted_read_group (Odoo %s) has no lazy mode",
+                    odoo_version,
+                )
             if parsed_measures:
                 kwargs["aggregates"] = [f"{f}:{a}" for f, a in parsed_measures]
             if limit is not None:
