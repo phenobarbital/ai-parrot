@@ -54,7 +54,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -62,8 +62,9 @@
       "parallelism_notes": "No dependency: creates models/helpdesk_entities.py and creates tests/test_odoo_helpdesk_models.py (TASK-3894/3895 append to that test module afterwards).",
       "assigned_to": null,
       "started_at": "2026-09-30T23:25:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3893-helpdesk-entities.md"
+      "completed_at": "2026-09-30T23:57:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3893-helpdesk-entities.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3894",
