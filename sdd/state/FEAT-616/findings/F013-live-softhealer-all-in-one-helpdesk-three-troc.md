@@ -17,9 +17,9 @@ Installed: `sh_all_in_one_helpdesk` 19.0.0.0.1 (Softhealer Technologies, OPL-1; 
 
 ## Citations
 
-- path: `sdd/state/FEAT-615/findings/live/01_modules.json`
+- path: `sdd/state/FEAT-616/findings/live/01_modules.json`
   symbol: sh_all_in_one_helpdesk, troc_helpdesk, dynamic_form_helpdesk, troc_helpdesk_dynamic_forms
-- path: `sdd/state/FEAT-615/findings/live/11_troc_modules.json`
+- path: `sdd/state/FEAT-616/findings/live/11_troc_modules.json`
   symbol: modules_detail (summary/description/depends)
 
 ## Notes

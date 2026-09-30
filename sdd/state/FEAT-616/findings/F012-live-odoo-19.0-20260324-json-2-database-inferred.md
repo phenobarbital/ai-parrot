@@ -17,7 +17,7 @@ depth: 0
 
 ## Citations
 
-- path: `sdd/state/FEAT-615/findings/live/00_version.json`
+- path: `sdd/state/FEAT-616/findings/live/00_version.json`
   symbol: version_info, databases (empty)
 - path: `packages/ai-parrot-tools/src/parrot_tools/odoo/transport/json2.py`
   lines: 60-65

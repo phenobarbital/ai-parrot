@@ -1,6 +1,6 @@
 {
  "schema_version": "1.0",
- "feat_id": "FEAT-615",
+ "feat_id": "FEAT-616",
  "mode": "enrichment",
  "summary_oneline": "Add a typed OdooHelpdeskToolkit (subclass of OdooToolkit) for the Softhealer sh_all_in_one_helpdesk + TROC layer on Odoo 19: ticket CRUD, assignment, stage transitions via Softhealer action_* methods, comments, SLA policies, reference-data lookups, with Pydantic inputs and result envelopes.",
  "localization": [

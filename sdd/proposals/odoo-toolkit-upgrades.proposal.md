@@ -1,5 +1,5 @@
 ---
-id: FEAT-615
+id: FEAT-616
 title: OdooHelpdeskToolkit — typed helpdesk tools for the Softhealer helpdesk (Odoo 19) on top of OdooToolkit
 slug: odoo-toolkit-upgrades
 type: feature
@@ -15,25 +15,25 @@ overall_confidence: medium
 base_branch: dev
 projects: [ai-parrot-tools, ai-parrot]
 tags: [odoo, helpdesk, softhealer, json2, toolkit, structured-outputs, sla]
-research_state: sdd/state/FEAT-615/
+research_state: sdd/state/FEAT-616/
 created: 2026-09-30
 updated: 2026-10-01
 ---
 
-# FEAT-615 — OdooHelpdeskToolkit: typed helpdesk tools for the Softhealer helpdesk (Odoo 19)
+# FEAT-616 — OdooHelpdeskToolkit: typed helpdesk tools for the Softhealer helpdesk (Odoo 19)
 
 > **Mode**: enrichment
 > **Confidence**: medium
 > **Source**: `inline` (slug requested: `odoo-toolkit-upgrades`)
-> **Audit**: [`sdd/state/FEAT-615/`](../state/FEAT-615/)
-> **ID note**: `FEAT-615` is **provisional** (ledger `next_feature_id` was 615 when this
-> proposal was written). `/sdd-spec` reserves the definitive id via `reserve_ids.py`.
+> **Audit**: [`sdd/state/FEAT-616/`](../state/FEAT-616/)
+> **ID note**: `FEAT-616` was reserved in the ledger by `reserve_ids.py` on 2026-10-01
+> (the provisional `FEAT-615` used while drafting was taken by `bookstore-reindex-atomic-swap`).
 
 ---
 
 ## 0. Origin
 
-The original request, preserved verbatim (Spanish). Full source at `sdd/state/FEAT-615/source.md`.
+The original request, preserved verbatim (Spanish). Full source at `sdd/state/FEAT-616/source.md`.
 
 > En el Odoo expuesto en staging environment: https://pokemon.helpdesk.staging.trocdigital.io/
 > con credenciales acequibles via ODOO_HELPDESK_URL, ODOO_HELPDESK_USER, ODOO_HELPDESK_PASSWORD
@@ -76,7 +76,7 @@ edits the same files and is a prerequisite for any aggregate tool. Recommended n
 
 ## 2. Codebase Findings
 
-> All entries are grounded in `sdd/state/FEAT-615/findings/`. Live-instance evidence
+> All entries are grounded in `sdd/state/FEAT-616/findings/`. Live-instance evidence
 > (read-only probes, sanitized) is under `findings/live/`. **No fabricated paths or symbols.**
 
 ### 2.1 Localization
@@ -333,18 +333,18 @@ Distribution: **9** high, **3** medium, **1** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-615`** — *Rationale*: localization is high-confidence (C1–C5, C7, C9–C11),
+**`/sdd-spec FEAT-616`** — *Rationale*: localization is high-confidence (C1–C5, C7, C9–C11),
 the subclass-vs-mixin fork is resolved with an in-repo precedent, and the remaining unknowns
 are bounded product decisions the spec can pin. The spec must (a) declare a dependency on
 FEAT-614, (b) include the staging verification task for `action_*` semantics and one SLA
-policy, (c) reserve the definitive FEAT id (this one is provisional).
+policy. The FEAT id is already reserved (`FEAT-616`) — `/sdd-spec` must not reserve another.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-615`** — only if the mixin route is reconsidered (e.g. to share
+- **`/sdd-brainstorm FEAT-616`** — only if the mixin route is reconsidered (e.g. to share
   helpdesk tools with a future fieldservice toolkit).
-- **`/sdd-task FEAT-615`** — not suitable: multi-module, ~30 tools, new models and conf keys.
-- **Manual review** — the live audit under `sdd/state/FEAT-615/findings/live/` if the tenant
+- **`/sdd-task FEAT-616`** — not suitable: multi-module, ~30 tools, new models and conf keys.
+- **Manual review** — the live audit under `sdd/state/FEAT-616/findings/live/` if the tenant
   changes (module versions, stages) before the spec is written.
 
 ---
@@ -353,12 +353,12 @@ policy, (c) reserve the definitive FEAT id (this one is provisional).
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-615/state.json` |
-| Source (raw) | `sdd/state/FEAT-615/source.md` |
-| Research plan | `sdd/state/FEAT-615/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-615/findings/F001-*.md` … `F021-*.md` |
-| Live evidence (sanitized JSON) | `sdd/state/FEAT-615/findings/live/*.json` |
-| Synthesis (JSON) | `sdd/state/FEAT-615/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-616/state.json` |
+| Source (raw) | `sdd/state/FEAT-616/source.md` |
+| Research plan | `sdd/state/FEAT-616/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-616/findings/F001-*.md` … `F021-*.md` |
+| Live evidence (sanitized JSON) | `sdd/state/FEAT-616/findings/live/*.json` |
+| Synthesis (JSON) | `sdd/state/FEAT-616/synthesis.json` |
 | Synthesis reasoning | not persisted |
 
 **Budget consumed** (profile `default`):

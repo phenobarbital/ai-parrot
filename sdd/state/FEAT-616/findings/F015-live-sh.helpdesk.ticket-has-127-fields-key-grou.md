@@ -17,9 +17,9 @@ Required non-readonly: `state` (selection `customer_replied|staff_replied`, labe
 
 ## Citations
 
-- path: `sdd/state/FEAT-615/findings/live/03_fields.json`
+- path: `sdd/state/FEAT-616/findings/live/03_fields.json`
   symbol: `sh.helpdesk.ticket`
-- path: `sdd/state/FEAT-615/findings/live/10_stages_fields.json`
+- path: `sdd/state/FEAT-616/findings/live/10_stages_fields.json`
   symbol: `fields:sh.ticket.alarm`, `fields:helpdesk.priority`, `fields:sh.helpdesk.ticket.extra_fields`, `fields:dynamic.form.submission`
 
 ## Notes

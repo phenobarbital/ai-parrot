@@ -17,11 +17,11 @@ depth: 0
 
 ## Citations
 
-- path: `sdd/state/FEAT-615/findings/live/03_fields.json`
+- path: `sdd/state/FEAT-616/findings/live/03_fields.json`
   symbol: `sh.helpdesk.sla`, `sh.helpdesk.sla.status`, `sh.helpdesk.sla.analysis`
-- path: `sdd/state/FEAT-615/findings/live/10_stages_fields.json`
+- path: `sdd/state/FEAT-616/findings/live/10_stages_fields.json`
   symbol: `fields:sh.ticket.alarm`
-- path: `sdd/state/FEAT-615/findings/live/12_distribution_acl.json`
+- path: `sdd/state/FEAT-616/findings/live/12_distribution_acl.json`
   symbol: api_user_groups
 
 ## Notes

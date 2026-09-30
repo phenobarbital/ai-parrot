@@ -17,9 +17,9 @@ depth: 0
 
 ## Citations
 
-- path: `sdd/state/FEAT-615/findings/live/02_models.json`
+- path: `sdd/state/FEAT-616/findings/live/02_models.json`
   symbol: model list
-- path: `sdd/state/FEAT-615/findings/live/03_fields.json`
+- path: `sdd/state/FEAT-616/findings/live/03_fields.json`
   symbol: fields_get per model
 
 ## Notes

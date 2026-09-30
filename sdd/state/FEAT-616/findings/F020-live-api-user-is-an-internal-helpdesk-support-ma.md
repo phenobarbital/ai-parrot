@@ -17,9 +17,9 @@ depth: 0
 
 ## Citations
 
-- path: `sdd/state/FEAT-615/findings/live/12_distribution_acl.json`
+- path: `sdd/state/FEAT-616/findings/live/12_distribution_acl.json`
   symbol: api_user_groups
-- path: `sdd/state/FEAT-615/findings/live/00_version.json`
+- path: `sdd/state/FEAT-616/findings/live/00_version.json`
 
 ## Notes
 
