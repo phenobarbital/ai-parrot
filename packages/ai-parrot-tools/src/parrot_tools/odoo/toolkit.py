@@ -13,6 +13,7 @@ Inspired by:
 Configuration falls back to the ``ODOO_*`` keys in :mod:`parrot.conf` when
 constructor arguments are omitted.
 """
+
 from __future__ import annotations
 
 import ast
@@ -20,7 +21,6 @@ import asyncio
 import base64
 import binascii
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -78,14 +78,10 @@ from .models.envelopes import (
 )
 from .models.entities import (
     AccountMove,
-    CrmLead,
     HrEmployee,
     HrLeave,
-    ProductProduct,
-    ProductTemplate,
     ResPartner,
     SaleOrder,
-    StockPicking,
 )
 from .models.inputs import (
     AggregateRecordsInput,
@@ -257,9 +253,7 @@ class OdooToolkit(AbstractToolkit):
                 else:
                     built = build_transport(self.protocol, self.config)
                     if built is None:
-                        raise ValueError(
-                            f"build_transport returned None for protocol={self.protocol!r}"
-                        )
+                        raise ValueError(f"build_transport returned None for protocol={self.protocol!r}")
                     self._transport = built
             if self._transport.uid is None:
                 await self._transport.authenticate()
@@ -446,8 +440,7 @@ class OdooToolkit(AbstractToolkit):
                 field_selection_method="auto" if auto_selected else "requested",
                 total_fields_available=len(fields_meta) if fields_meta else None,
                 note=(
-                    f"Smart field selection chose {len(fields)} of "
-                    f"{len(fields_meta)} available fields."
+                    f"Smart field selection chose {len(fields)} of " f"{len(fields_meta)} available fields."
                     if auto_selected and fields_meta
                     else "Caller-requested fields used."
                 ),
@@ -480,8 +473,7 @@ class OdooToolkit(AbstractToolkit):
             field_selection_method="auto" if auto_selected else "requested",
             total_fields_available=len(fields_meta) if fields_meta else None,
             note=(
-                f"Smart field selection chose {len(fields)} of "
-                f"{len(fields_meta)} available fields."
+                f"Smart field selection chose {len(fields)} of " f"{len(fields_meta)} available fields."
                 if auto_selected and fields_meta
                 else "Caller-requested fields used."
             ),
@@ -617,20 +609,36 @@ class OdooToolkit(AbstractToolkit):
             ids=ids,
             errors=errors,
             model=model,
-            message=(
-                f"Imported {len(ids)} {model} record(s); "
-                f"{len(errors)} message(s)"
-            ),
+            message=(f"Imported {len(ids)} {model} record(s); " f"{len(errors)} message(s)"),
         )
 
     # ── Partner helpers ─────────────────────────────────────────────────────
 
     _PARTNER_DEFAULT_FIELDS = [
-        "id", "display_name", "name", "is_company", "company_type",
-        "email", "phone", "mobile", "website", "vat", "ref",
-        "street", "street2", "city", "zip", "state_id", "country_id",
-        "parent_id", "user_id", "lang", "active",
-        "customer_rank", "supplier_rank", "category_id",
+        "id",
+        "display_name",
+        "name",
+        "is_company",
+        "company_type",
+        "email",
+        "phone",
+        "mobile",
+        "website",
+        "vat",
+        "ref",
+        "street",
+        "street2",
+        "city",
+        "zip",
+        "state_id",
+        "country_id",
+        "parent_id",
+        "user_id",
+        "lang",
+        "active",
+        "customer_rank",
+        "supplier_rank",
+        "category_id",
     ]
 
     @tool_schema(FindPartnerInput)
@@ -691,21 +699,28 @@ class OdooToolkit(AbstractToolkit):
         """Create a ``res.partner`` and return it as a typed model."""
         values: dict[str, Any] = {"name": name, "is_company": is_company}
         for key, val in (
-            ("email", email), ("phone", phone), ("mobile", mobile),
-            ("website", website), ("street", street), ("street2", street2),
-            ("city", city), ("zip", zip), ("state_id", state_id),
-            ("country_id", country_id), ("parent_id", parent_id),
-            ("vat", vat), ("ref", ref),
-            ("customer_rank", customer_rank), ("supplier_rank", supplier_rank),
+            ("email", email),
+            ("phone", phone),
+            ("mobile", mobile),
+            ("website", website),
+            ("street", street),
+            ("street2", street2),
+            ("city", city),
+            ("zip", zip),
+            ("state_id", state_id),
+            ("country_id", country_id),
+            ("parent_id", parent_id),
+            ("vat", vat),
+            ("ref", ref),
+            ("customer_rank", customer_rank),
+            ("supplier_rank", supplier_rank),
         ):
             if val is not None:
                 values[key] = val
         if extra:
             values.update(extra)
         new_id = await self._execute("res.partner", "create", [values])
-        record = await self._read_one(
-            "res.partner", int(new_id), self._PARTNER_DEFAULT_FIELDS
-        )
+        record = await self._read_one("res.partner", int(new_id), self._PARTNER_DEFAULT_FIELDS)
         return ResPartner.model_validate(record)
 
     @requires_permission("odoo.write")
@@ -726,29 +741,49 @@ class OdooToolkit(AbstractToolkit):
     ) -> ResPartner:
         """Update contact / address fields on an existing partner."""
         values = {
-            k: v for k, v in {
-                "email": email, "phone": phone, "mobile": mobile,
-                "website": website, "street": street, "street2": street2,
-                "city": city, "zip": zip, "state_id": state_id,
+            k: v
+            for k, v in {
+                "email": email,
+                "phone": phone,
+                "mobile": mobile,
+                "website": website,
+                "street": street,
+                "street2": street2,
+                "city": city,
+                "zip": zip,
+                "state_id": state_id,
                 "country_id": country_id,
-            }.items() if v is not None
+            }.items()
+            if v is not None
         }
         if not values:
             raise ValueError("update_partner_contact_info requires at least one field to update")
         await self._execute("res.partner", "write", [[partner_id], values])
-        record = await self._read_one(
-            "res.partner", partner_id, self._PARTNER_DEFAULT_FIELDS
-        )
+        record = await self._read_one("res.partner", partner_id, self._PARTNER_DEFAULT_FIELDS)
         return ResPartner.model_validate(record)
 
     # ── Sales helpers ───────────────────────────────────────────────────────
 
     _SALE_ORDER_DEFAULT_FIELDS = [
-        "id", "display_name", "name", "state", "partner_id",
-        "date_order", "validity_date", "user_id", "team_id",
-        "company_id", "currency_id", "pricelist_id", "payment_term_id",
-        "amount_untaxed", "amount_tax", "amount_total",
-        "order_line", "invoice_status", "client_order_ref",
+        "id",
+        "display_name",
+        "name",
+        "state",
+        "partner_id",
+        "date_order",
+        "validity_date",
+        "user_id",
+        "team_id",
+        "company_id",
+        "currency_id",
+        "pricelist_id",
+        "payment_term_id",
+        "amount_untaxed",
+        "amount_tax",
+        "amount_total",
+        "order_line",
+        "invoice_status",
+        "client_order_ref",
     ]
 
     @requires_permission("odoo.write")
@@ -774,19 +809,21 @@ class OdooToolkit(AbstractToolkit):
             "order_line": line_commands,
         }
         for key, val in (
-            ("date_order", date_order), ("validity_date", validity_date),
-            ("pricelist_id", pricelist_id), ("payment_term_id", payment_term_id),
-            ("user_id", user_id), ("team_id", team_id),
-            ("company_id", company_id), ("client_order_ref", client_order_ref),
+            ("date_order", date_order),
+            ("validity_date", validity_date),
+            ("pricelist_id", pricelist_id),
+            ("payment_term_id", payment_term_id),
+            ("user_id", user_id),
+            ("team_id", team_id),
+            ("company_id", company_id),
+            ("client_order_ref", client_order_ref),
         ):
             if val is not None:
                 values[key] = val
         if extra:
             values.update(extra)
         new_id = await self._execute("sale.order", "create", [values])
-        record = await self._read_one(
-            "sale.order", int(new_id), self._SALE_ORDER_DEFAULT_FIELDS
-        )
+        record = await self._read_one("sale.order", int(new_id), self._SALE_ORDER_DEFAULT_FIELDS)
         return SaleOrder.model_validate(record)
 
     @requires_permission("odoo.write")
@@ -794,18 +831,31 @@ class OdooToolkit(AbstractToolkit):
     async def confirm_sale_order(self, sale_order_id: int) -> SaleOrder:
         """Confirm a draft quotation, transitioning it to the 'sale' state."""
         await self._execute("sale.order", "action_confirm", [[sale_order_id]])
-        record = await self._read_one(
-            "sale.order", sale_order_id, self._SALE_ORDER_DEFAULT_FIELDS
-        )
+        record = await self._read_one("sale.order", sale_order_id, self._SALE_ORDER_DEFAULT_FIELDS)
         return SaleOrder.model_validate(record)
 
     # ── Invoicing helpers ───────────────────────────────────────────────────
 
     _ACCOUNT_MOVE_DEFAULT_FIELDS = [
-        "id", "display_name", "name", "move_type", "state", "payment_state",
-        "partner_id", "invoice_date", "invoice_date_due", "journal_id",
-        "currency_id", "company_id", "invoice_user_id", "invoice_origin", "ref",
-        "amount_untaxed", "amount_tax", "amount_total", "amount_residual",
+        "id",
+        "display_name",
+        "name",
+        "move_type",
+        "state",
+        "payment_state",
+        "partner_id",
+        "invoice_date",
+        "invoice_date_due",
+        "journal_id",
+        "currency_id",
+        "company_id",
+        "invoice_user_id",
+        "invoice_origin",
+        "ref",
+        "amount_untaxed",
+        "amount_tax",
+        "amount_total",
+        "amount_residual",
         "invoice_line_ids",
     ]
 
@@ -815,9 +865,7 @@ class OdooToolkit(AbstractToolkit):
         self,
         partner_id: int,
         invoice_lines: list[dict[str, Any]],
-        move_type: Literal[
-            "out_invoice", "in_invoice", "out_refund", "in_refund"
-        ] = "out_invoice",
+        move_type: Literal["out_invoice", "in_invoice", "out_refund", "in_refund"] = "out_invoice",
         invoice_date: Optional[str] = None,
         invoice_date_due: Optional[str] = None,
         journal_id: Optional[int] = None,
@@ -846,9 +894,7 @@ class OdooToolkit(AbstractToolkit):
         if extra:
             values.update(extra)
         new_id = await self._execute("account.move", "create", [values])
-        record = await self._read_one(
-            "account.move", int(new_id), self._ACCOUNT_MOVE_DEFAULT_FIELDS
-        )
+        record = await self._read_one("account.move", int(new_id), self._ACCOUNT_MOVE_DEFAULT_FIELDS)
         return AccountMove.model_validate(record)
 
     @requires_permission("odoo.write")
@@ -856,9 +902,7 @@ class OdooToolkit(AbstractToolkit):
     async def post_invoice(self, invoice_id: int) -> AccountMove:
         """Post a draft invoice (Odoo 13+: ``action_post``)."""
         await self._execute("account.move", "action_post", [[invoice_id]])
-        record = await self._read_one(
-            "account.move", invoice_id, self._ACCOUNT_MOVE_DEFAULT_FIELDS
-        )
+        record = await self._read_one("account.move", invoice_id, self._ACCOUNT_MOVE_DEFAULT_FIELDS)
         return AccountMove.model_validate(record)
 
     @requires_permission("odoo.write")
@@ -955,18 +999,26 @@ class OdooToolkit(AbstractToolkit):
             field="datas",
             size_bytes=len(data),
             message=(
-                f"Attached {name!r} ({len(data)} bytes) to {res_model} #{res_id} "
-                f"as ir.attachment #{attachment_id}"
+                f"Attached {name!r} ({len(data)} bytes) to {res_model} #{res_id} " f"as ir.attachment #{attachment_id}"
             ),
         )
 
     # ── Aggregation ─────────────────────────────────────────────────────────
 
     #: Recognised aggregation functions for ``aggregate_records`` measures.
-    ALLOWED_AGGREGATORS: frozenset[str] = frozenset({
-        "sum", "avg", "min", "max", "count", "count_distinct",
-        "array_agg", "bool_and", "bool_or",
-    })
+    ALLOWED_AGGREGATORS: frozenset[str] = frozenset(
+        {
+            "sum",
+            "avg",
+            "min",
+            "max",
+            "count",
+            "count_distinct",
+            "array_agg",
+            "bool_and",
+            "bool_or",
+        }
+    )
 
     @staticmethod
     def _parse_measure_spec(spec: str) -> tuple[str, str]:
@@ -1015,6 +1067,9 @@ class OdooToolkit(AbstractToolkit):
                 aggregators: sum, avg, min, max, count, count_distinct.
             domain: Optional domain filter.
             lazy: When True, only the first group_by level is resolved.
+                Honoured on Odoo 16-18 (``read_group``) only; Odoo 19+
+                ``formatted_read_group`` has no lazy mode and the flag is
+                ignored (a debug log line records that).
             limit: Max number of groups to return.
             offset: Groups to skip.
             order: Sort order string.
@@ -1043,10 +1098,15 @@ class OdooToolkit(AbstractToolkit):
 
         if use_formatted:
             # Odoo 19+ formatted_read_group
+            # formatted_read_group (Odoo 19+) has no ``lazy`` parameter — sending it is rejected.
             kwargs: dict[str, Any] = {
                 "groupby": group_by,
-                "lazy": lazy,
             }
+            if lazy:
+                self.logger.debug(
+                    "aggregate_records: lazy=True ignored — formatted_read_group (Odoo %s) has no lazy mode",
+                    odoo_version,
+                )
             if parsed_measures:
                 kwargs["aggregates"] = [f"{f}:{a}" for f, a in parsed_measures]
             if limit is not None:
@@ -1084,13 +1144,26 @@ class OdooToolkit(AbstractToolkit):
     # ── Domain Builder ───────────────────────────────────────────────────────
 
     #: Operators safe to use in Odoo domain triplets.
-    SAFE_DOMAIN_OPERATORS: frozenset[str] = frozenset({
-        "=", "!=", ">", ">=", "<", "<=",
-        "in", "not in",
-        "like", "not like", "ilike", "not ilike",
-        "=like", "=ilike",
-        "child_of", "parent_of",
-    })
+    SAFE_DOMAIN_OPERATORS: frozenset[str] = frozenset(
+        {
+            "=",
+            "!=",
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "in",
+            "not in",
+            "like",
+            "not like",
+            "ilike",
+            "not ilike",
+            "=like",
+            "=ilike",
+            "child_of",
+            "parent_of",
+        }
+    )
 
     @tool_schema(BuildDomainInput)
     async def build_domain(
@@ -1183,12 +1256,15 @@ class OdooToolkit(AbstractToolkit):
         if include_modules:
             try:
                 cap = min(module_limit, 500)
-                installed_modules = await self._execute(
-                    "ir.module.module",
-                    "search_read",
-                    [[("state", "=", "installed")]],
-                    {"fields": ["name", "shortdesc", "installed_version"], "limit": cap},
-                ) or []
+                installed_modules = (
+                    await self._execute(
+                        "ir.module.module",
+                        "search_read",
+                        [[("state", "=", "installed")]],
+                        {"fields": ["name", "shortdesc", "installed_version"], "limit": cap},
+                    )
+                    or []
+                )
             except OdooError as exc:
                 self.logger.debug("module list fetch failed: %s", exc)
 
@@ -1232,12 +1308,15 @@ class OdooToolkit(AbstractToolkit):
         elif models:
             domain = [("model", "in", models)]
 
-        raw_models: list[dict[str, Any]] = await self._execute(
-            "ir.model",
-            "search_read",
-            [domain],
-            {"fields": ["model", "name", "info"], "limit": cap},
-        ) or []
+        raw_models: list[dict[str, Any]] = (
+            await self._execute(
+                "ir.model",
+                "search_read",
+                [domain],
+                {"fields": ["model", "name", "info"], "limit": cap},
+            )
+            or []
+        )
 
         result_models: list[dict[str, Any]] = []
         for m in raw_models:
@@ -1303,20 +1382,16 @@ class OdooToolkit(AbstractToolkit):
         # Build create hints
         hints: list[str] = []
         if required_fields:
-            hints.append(
-                f"Required non-readonly fields: "
-                + ", ".join(f["name"] for f in required_fields)
-            )
+            hints.append("Required non-readonly fields: " + ", ".join(f["name"] for f in required_fields))
         if many2one:
             hints.append(
-                f"Many2one fields accept an integer id: "
+                "Many2one fields accept an integer id: "
                 + ", ".join(f["name"] for f in many2one[:5])
                 + ("..." if len(many2one) > 5 else "")
             )
         if one2many:
             hints.append(
-                f"One2many fields use ORM commands [(0,0,{{...}}), ...]: "
-                + ", ".join(f["name"] for f in one2many[:3])
+                "One2many fields use ORM commands [(0,0,{...}), ...]: " + ", ".join(f["name"] for f in one2many[:3])
             )
 
         return ModelRelationshipsResult(
@@ -1352,33 +1427,39 @@ class OdooToolkit(AbstractToolkit):
         # Check ACL via check_access_rights
         acl_allowed = False
         try:
-            acl_allowed = bool(await self._execute(
-                model, "check_access_rights", [operation], {"raise_exception": False}
-            ))
+            acl_allowed = bool(
+                await self._execute(model, "check_access_rights", [operation], {"raise_exception": False})
+            )
         except OdooError as exc:
             self.logger.debug("check_access_rights failed for %s: %s", model, exc)
 
         # Fetch ir.model.access rules for the model
         acl_rules: list[dict[str, Any]] = []
         try:
-            acl_rules = await self._execute(
-                "ir.model.access",
-                "search_read",
-                [[("model_id.model", "=", model)]],
-                {"fields": ["name", f"perm_{operation}", "group_id", "active"]},
-            ) or []
+            acl_rules = (
+                await self._execute(
+                    "ir.model.access",
+                    "search_read",
+                    [[("model_id.model", "=", model)]],
+                    {"fields": ["name", f"perm_{operation}", "group_id", "active"]},
+                )
+                or []
+            )
         except OdooError as exc:
             self.logger.debug("ir.model.access query failed: %s", exc)
 
         # Fetch ir.rule for the model
         record_rules: list[dict[str, Any]] = []
         try:
-            record_rules = await self._execute(
-                "ir.rule",
-                "search_read",
-                [[("model_id.model", "=", model)]],
-                {"fields": ["name", "domain_force", "global", f"perm_{operation}"]},
-            ) or []
+            record_rules = (
+                await self._execute(
+                    "ir.rule",
+                    "search_read",
+                    [[("model_id.model", "=", model)]],
+                    {"fields": ["name", "domain_force", "global", f"perm_{operation}"]},
+                )
+                or []
+            )
         except OdooError as exc:
             self.logger.debug("ir.rule query failed: %s", exc)
 
@@ -1436,9 +1517,7 @@ class OdooToolkit(AbstractToolkit):
             HealthCheckResult with runtime posture information.
         """
         connected = self._transport is not None and self._transport.uid is not None
-        transport_name = (
-            self._transport.name if self._transport is not None else self.protocol
-        )
+        transport_name = self._transport.name if self._transport is not None else self.protocol
         # Use get_tools() for an accurate count of registered async tools
         tool_count = len(self.get_tools())
         return HealthCheckResult(
@@ -1452,14 +1531,30 @@ class OdooToolkit(AbstractToolkit):
     # ── HR Convenience Methods ───────────────────────────────────────────────
 
     _HR_EMPLOYEE_DEFAULT_FIELDS: list[str] = [
-        "id", "display_name", "name", "job_id", "job_title",
-        "department_id", "parent_id", "work_email", "work_phone",
-        "mobile_phone", "company_id", "active",
+        "id",
+        "display_name",
+        "name",
+        "job_id",
+        "job_title",
+        "department_id",
+        "parent_id",
+        "work_email",
+        "work_phone",
+        "mobile_phone",
+        "company_id",
+        "active",
     ]
 
     _HR_LEAVE_DEFAULT_FIELDS: list[str] = [
-        "id", "display_name", "name", "employee_id", "holiday_status_id",
-        "date_from", "date_to", "number_of_days", "state",
+        "id",
+        "display_name",
+        "name",
+        "employee_id",
+        "holiday_status_id",
+        "date_from",
+        "date_to",
+        "number_of_days",
+        "state",
     ]
 
     @tool_schema(SearchEmployeeInput)
@@ -1489,9 +1584,7 @@ class OdooToolkit(AbstractToolkit):
                 {"fields": self._HR_EMPLOYEE_DEFAULT_FIELDS, "limit": limit},
             )
         except OdooRPCError as exc:
-            raise OdooRPCError(
-                f"search_employee failed — is the 'hr' module installed? Error: {exc}"
-            ) from exc
+            raise OdooRPCError(f"search_employee failed — is the 'hr' module installed? Error: {exc}") from exc
         return [HrEmployee.model_validate(r) for r in (records or [])]
 
     @tool_schema(SearchHolidaysInput)
@@ -1528,19 +1621,26 @@ class OdooToolkit(AbstractToolkit):
                 {"fields": self._HR_LEAVE_DEFAULT_FIELDS},
             )
         except OdooRPCError as exc:
-            raise OdooRPCError(
-                f"search_holidays failed — is the 'hr_holidays' module installed? Error: {exc}"
-            ) from exc
+            raise OdooRPCError(f"search_holidays failed — is the 'hr_holidays' module installed? Error: {exc}") from exc
         return [HrLeave.model_validate(r) for r in (records or [])]
 
     # ── Phase 2: Diagnostics, Audit & Planning ───────────────────────────────
 
     #: ORM methods that are read-only (no Odoo data mutation).
-    _READ_ONLY_METHODS: frozenset[str] = frozenset({
-        "search", "search_count", "search_read", "read",
-        "fields_get", "name_get", "name_search", "context_get",
-        "read_group", "formatted_read_group",
-    })
+    _READ_ONLY_METHODS: frozenset[str] = frozenset(
+        {
+            "search",
+            "search_count",
+            "search_read",
+            "read",
+            "fields_get",
+            "name_get",
+            "name_search",
+            "context_get",
+            "read_group",
+            "formatted_read_group",
+        }
+    )
 
     #: ORM methods that permanently mutate Odoo data.
     _DESTRUCTIVE_METHODS: frozenset[str] = frozenset({"create", "write", "unlink"})
@@ -1548,13 +1648,13 @@ class OdooToolkit(AbstractToolkit):
     #: JSON-2 positional-argument name mapping for common ORM methods.
     _JSON2_ARG_MAP: dict[str, list[str]] = {
         "search_read": ["domain", "fields", "offset", "limit", "order"],
-        "search":      ["domain", "offset", "limit", "order"],
+        "search": ["domain", "offset", "limit", "order"],
         "search_count": ["domain"],
-        "read":        ["ids", "fields"],
-        "create":      ["vals_list"],
-        "write":       ["ids", "vals"],
-        "unlink":      ["ids"],
-        "fields_get":  ["allfields", "attributes"],
+        "read": ["ids", "fields"],
+        "create": ["vals_list"],
+        "write": ["ids", "vals"],
+        "unlink": ["ids"],
+        "fields_get": ["allfields", "attributes"],
         "name_search": ["name", "args", "operator", "limit"],
     }
 
@@ -1636,28 +1736,23 @@ class OdooToolkit(AbstractToolkit):
             method_safety = "read_only"
         elif method in self._DESTRUCTIVE_METHODS:
             method_safety = "destructive"
-            warnings.append(
-                f"Method {method!r} mutates Odoo data. Ensure you have write permissions."
-            )
+            warnings.append(f"Method {method!r} mutates Odoo data. Ensure you have write permissions.")
         elif method.startswith("action_") or method.startswith("_"):
             method_safety = "side_effect"
-            warnings.append(
-                f"Method {method!r} may trigger business logic side-effects."
-            )
+            warnings.append(f"Method {method!r} may trigger business logic side-effects.")
         else:
             method_safety = "unknown"
             warnings.append(f"Method {method!r} is not a standard ORM method.")
 
         # Transport compatibility check
         transport_compat = "ok"
-        active_transport = transport if transport != "auto" else (
-            self._transport.name if self._transport else "unknown"
+        active_transport = (
+            transport if transport != "auto" else (self._transport.name if self._transport else "unknown")
         )
         if active_transport == "xmlrpc" and method in {"formatted_read_group"}:
             transport_compat = "error"
             warnings.append(
-                f"Method {method!r} is only available via JSON-2 transport "
-                "(Odoo 19+). XML-RPC does not support it."
+                f"Method {method!r} is only available via JSON-2 transport " "(Odoo 19+). XML-RPC does not support it."
             )
         elif active_transport == "xmlrpc":
             transport_compat = "warning"
@@ -1668,10 +1763,7 @@ class OdooToolkit(AbstractToolkit):
 
         # Odoo 20 deprecation warning
         if target_version and target_version.startswith("20"):
-            warnings.append(
-                "Odoo 20 has removed XML-RPC support. Migrate to the JSON-2 endpoint "
-                "before upgrading."
-            )
+            warnings.append("Odoo 20 has removed XML-RPC support. Migrate to the JSON-2 endpoint " "before upgrading.")
             next_actions.append("Use generate_json2_payload to preview the JSON-2 equivalent.")
 
         # Observed error hints
@@ -1757,14 +1849,10 @@ class OdooToolkit(AbstractToolkit):
                     named_params[param_names[i]] = val
                 else:
                     notes.append(
-                        f"Extra positional arg[{i}] has no named mapping for '{method}'; "
-                        "added as positional."
+                        f"Extra positional arg[{i}] has no named mapping for '{method}'; " "added as positional."
                     )
         else:
-            notes.append(
-                f"Method '{method}' has no JSON-2 arg mapping. "
-                "Using generic args/kwargs body."
-            )
+            notes.append(f"Method '{method}' has no JSON-2 arg mapping. " "Using generic args/kwargs body.")
             if arg_list:
                 named_params["args"] = arg_list
 
@@ -1815,9 +1903,7 @@ class OdooToolkit(AbstractToolkit):
             AddonScanResult with discovered addons, model classes, risky methods,
             and any scan warnings.
         """
-        return await asyncio.to_thread(
-            self._scan_addons_source_sync, addons_paths, max_files, max_file_bytes
-        )
+        return await asyncio.to_thread(self._scan_addons_source_sync, addons_paths, max_files, max_file_bytes)
 
     def _scan_addons_source_sync(
         self,
@@ -1855,17 +1941,15 @@ class OdooToolkit(AbstractToolkit):
                 # Guard at outer loop so we stop between addons too
                 if files_parsed >= max_files:
                     if not scan_truncated:
-                        all_warnings.append(
-                            f"Reached max_files={max_files} limit. Scan truncated."
-                        )
+                        all_warnings.append(f"Reached max_files={max_files} limit. Scan truncated.")
                         scan_truncated = True
                     break
                 if not entry.is_dir():
                     continue
                 manifest_path = entry / "__manifest__.py"
                 openerp_path = entry / "__openerp__.py"
-                manifest_file = manifest_path if manifest_path.exists() else (
-                    openerp_path if openerp_path.exists() else None
+                manifest_file = (
+                    manifest_path if manifest_path.exists() else (openerp_path if openerp_path.exists() else None)
                 )
                 if not manifest_file:
                     continue
@@ -1905,17 +1989,13 @@ class OdooToolkit(AbstractToolkit):
                 for py_file in entry.rglob("*.py"):
                     if files_parsed >= max_files:
                         if not scan_truncated:
-                            all_warnings.append(
-                                f"Reached max_files={max_files} limit. Scan truncated."
-                            )
+                            all_warnings.append(f"Reached max_files={max_files} limit. Scan truncated.")
                             scan_truncated = True
                         break
                     try:
                         file_size = py_file.stat().st_size
                         if file_size > max_file_bytes:
-                            all_warnings.append(
-                                f"Skipping large file {py_file.name} ({file_size} bytes)."
-                            )
+                            all_warnings.append(f"Skipping large file {py_file.name} ({file_size} bytes).")
                             continue
                         source = py_file.read_text(encoding="utf-8", errors="replace")
                         tree = ast.parse(source, filename=str(py_file))
@@ -1925,12 +2005,8 @@ class OdooToolkit(AbstractToolkit):
                             if isinstance(node, ast.ClassDef):
                                 # Look for Odoo model class (_name attribute)
                                 for body_node in node.body:
-                                    if (
-                                        isinstance(body_node, ast.Assign)
-                                        and any(
-                                            isinstance(t, ast.Name) and t.id == "_name"
-                                            for t in body_node.targets
-                                        )
+                                    if isinstance(body_node, ast.Assign) and any(
+                                        isinstance(t, ast.Name) and t.id == "_name" for t in body_node.targets
                                     ):
                                         try:
                                             model_name = ast.literal_eval(body_node.value)
@@ -1940,19 +2016,17 @@ class OdooToolkit(AbstractToolkit):
                                             pass
                             elif isinstance(node, ast.FunctionDef):
                                 if node.name in risky_method_names:
-                                    addon_info["risky_methods"].append({
-                                        "method": node.name,
-                                        "file": py_file.name,
-                                        "line": node.lineno,
-                                    })
+                                    addon_info["risky_methods"].append(
+                                        {
+                                            "method": node.name,
+                                            "file": py_file.name,
+                                            "line": node.lineno,
+                                        }
+                                    )
                     except SyntaxError as exc:
-                        addon_info["parse_warnings"].append(
-                            f"Syntax error in {py_file.name}: {exc}"
-                        )
+                        addon_info["parse_warnings"].append(f"Syntax error in {py_file.name}: {exc}")
                     except OSError as exc:
-                        addon_info["parse_warnings"].append(
-                            f"Read error in {py_file.name}: {exc}"
-                        )
+                        addon_info["parse_warnings"].append(f"Read error in {py_file.name}: {exc}")
 
                 # Security files
                 for csv_file in entry.rglob("ir.model.access.csv"):
@@ -1999,25 +2073,75 @@ class OdooToolkit(AbstractToolkit):
             - ``"unknown"`` — cannot be classified with available context
         """
         # Heuristic keyword classifier
-        STANDARD_KEYWORDS = frozenset({
-            "sales order", "sale order", "quotation", "invoice", "payment",
-            "purchase order", "inventory", "stock", "picking", "delivery",
-            "crm", "lead", "opportunity", "employee", "leave", "holiday",
-            "payroll", "partner", "contact", "product", "accounting",
-            "journal", "report", "track", "manage", "view", "list",
-        })
-        STUDIO_KEYWORDS = frozenset({
-            "custom field", "add field", "new field", "rename field",
-            "custom view", "dashboard", "kanban", "form layout",
-        })
-        CONFIG_KEYWORDS = frozenset({
-            "setting", "configure", "enable", "disable", "activate",
-            "workflow", "stage", "status", "pipeline", "category",
-        })
-        AVOID_KEYWORDS = frozenset({
-            "delete all", "drop table", "truncate", "raw sql", "direct db",
-            "bypass", "hack", "workaround",
-        })
+        STANDARD_KEYWORDS = frozenset(
+            {
+                "sales order",
+                "sale order",
+                "quotation",
+                "invoice",
+                "payment",
+                "purchase order",
+                "inventory",
+                "stock",
+                "picking",
+                "delivery",
+                "crm",
+                "lead",
+                "opportunity",
+                "employee",
+                "leave",
+                "holiday",
+                "payroll",
+                "partner",
+                "contact",
+                "product",
+                "accounting",
+                "journal",
+                "report",
+                "track",
+                "manage",
+                "view",
+                "list",
+            }
+        )
+        STUDIO_KEYWORDS = frozenset(
+            {
+                "custom field",
+                "add field",
+                "new field",
+                "rename field",
+                "custom view",
+                "dashboard",
+                "kanban",
+                "form layout",
+            }
+        )
+        CONFIG_KEYWORDS = frozenset(
+            {
+                "setting",
+                "configure",
+                "enable",
+                "disable",
+                "activate",
+                "workflow",
+                "stage",
+                "status",
+                "pipeline",
+                "category",
+            }
+        )
+        AVOID_KEYWORDS = frozenset(
+            {
+                "delete all",
+                "drop table",
+                "truncate",
+                "raw sql",
+                "direct db",
+                "bypass",
+                "hack",
+                "workaround",
+            }
+        )
 
         # Optionally fetch live model list for improved classification
         live_models: set[str] = set()
@@ -2029,8 +2153,12 @@ class OdooToolkit(AbstractToolkit):
 
         classified: list[dict[str, Any]] = []
         summary: dict[str, int] = {
-            "standard": 0, "configuration": 0, "studio": 0,
-            "custom_module": 0, "avoid": 0, "unknown": 0,
+            "standard": 0,
+            "configuration": 0,
+            "studio": 0,
+            "custom_module": 0,
+            "avoid": 0,
+            "unknown": 0,
         }
         recommended_calls: set[str] = set()
 
@@ -2058,11 +2186,13 @@ class OdooToolkit(AbstractToolkit):
                 recommended_calls.add("inspect_model_relationships")
 
             summary[bucket] = summary.get(bucket, 0) + 1
-            classified.append({
-                **req,
-                "classification": bucket,
-                "confidence": confidence,
-            })
+            classified.append(
+                {
+                    **req,
+                    "classification": bucket,
+                    "confidence": confidence,
+                }
+            )
 
         return FitGapResult(
             requirements=classified,
@@ -2088,15 +2218,10 @@ class OdooToolkit(AbstractToolkit):
             ValueError: When an unknown pack name is given.
         """
         if pack not in self._BUSINESS_PACKS:
-            raise ValueError(
-                f"Unknown business pack {pack!r}. "
-                f"Supported packs: {sorted(self._BUSINESS_PACKS)}"
-            )
+            raise ValueError(f"Unknown business pack {pack!r}. " f"Supported packs: {sorted(self._BUSINESS_PACKS)}")
 
         pack_def = self._BUSINESS_PACKS[pack]
-        expected_modules = [
-            {"name": m, "description": f"{pack.title()} module"} for m in pack_def["modules"]
-        ]
+        expected_modules = [{"name": m, "description": f"{pack.title()} module"} for m in pack_def["modules"]]
         expected_models: list[str] = pack_def["models"]
 
         # Try live check
@@ -2233,10 +2358,7 @@ class OdooToolkit(AbstractToolkit):
         """
         bin_path = odoo_bin_path()
         if not bin_path:
-            msg = (
-                "odoo_cli_command is disabled: ODOO_BIN is not set and "
-                "odoo-bin is not on PATH."
-            )
+            msg = "odoo_cli_command is disabled: ODOO_BIN is not set and " "odoo-bin is not on PATH."
             self.logger.warning(msg)
             return ShellResult(
                 success=False,
