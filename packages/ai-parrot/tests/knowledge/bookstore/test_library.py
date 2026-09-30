@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import builtins
+import os
+import time
 from pathlib import Path
 
 import pytest
 
 from parrot.knowledge.bookstore.carding import disambiguate_title
 from parrot.knowledge.bookstore.config import LibraryLocation
-from parrot.knowledge.bookstore.library import Bookstore, BookstoreError
+from parrot.knowledge.bookstore.library import (
+    _REPLACED_MARKER,
+    _STAGING_MARKER,
+    _STAGING_MAX_AGE_S,
+    Bookstore,
+    BookstoreError,
+)
 from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS, TocEntry
 
 from .conftest import SAMPLE_MARKDOWN
@@ -609,3 +617,191 @@ async def test_update_card_requires_a_field(store, book_md):
         store.update_card(card.book_id, title="  ")
     with pytest.raises(BookstoreError):
         store.update_card("no-such-book", title="X")
+
+
+@pytest.mark.asyncio
+async def test_reindex_failed_ingest_keeps_old_book(store: Bookstore, book_md: Path, tmp_path: Path) -> None:
+    """Preserve old JSON, card and graph on failed ingest."""
+    card, _ = await store.add_book(book_md)
+    store._content_store("project")
+    old_json = (store._location("project").trees_dir / f"{card.book_id}.json").read_bytes()
+    store.update_card(card.book_id, title="Edited title")
+    other = tmp_path / "other-book.md"
+    other.write_text(SAMPLE_MARKDOWN + "\n## Other\n\nDifferent bytes.\n", encoding="utf-8")
+    other_card, _ = await store.add_book(other)
+    catalog = store._catalog("project")
+    catalog.upsert_relations(
+        [
+            BookRelation(
+                src_book_id=card.book_id,
+                dst_book_id=other_card.book_id,
+                rel="parallels",
+                origin="llm",
+                confidence=0.7,
+                weight=REL_WEIGHTS["parallels"],
+                computed_at="2026-09-06T00:00:00+00:00",
+            )
+        ]
+    )
+    catalog.record_judgements(
+        card.book_id,
+        [RelationJudgement(dst_book_id=other_card.book_id, rel="parallels", confidence=0.7)],
+    )
+    catalog.upsert_communities(
+        [
+            BookCommunity(
+                community_id="c1",
+                label="Pair",
+                label_origin="derived",
+                algorithm="leiden",
+                size=2,
+                cohesion=1.0,
+                centroid_book_id=card.book_id,
+                member_book_ids=[card.book_id, other_card.book_id],
+                computed_at="2026-09-06T00:00:00+00:00",
+            )
+        ]
+    )
+    old_relations = store.related_books(card.book_id)
+    old_judgements = catalog.judged_pairs(card.book_id)
+    old_communities = store.communities()
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Changed\n\nNew content.\n", encoding="utf-8")
+
+    async def fail_insert(*args, **kwargs) -> None:
+        raise RuntimeError("ingest failed")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(store._toolkit("project"), "insert_markdown", fail_insert)
+    try:
+        with pytest.raises(RuntimeError, match="ingest failed"):
+            await store.add_book(book_md)
+    finally:
+        monkeypatch.undo()
+
+    assert (store._location("project").trees_dir / f"{card.book_id}.json").read_bytes() == old_json
+    assert store.get_card(card.book_id).title == "Edited title"
+    assert store.related_books(card.book_id) == old_relations
+    assert catalog.judged_pairs(card.book_id) == old_judgements
+    assert store.communities() == old_communities
+    assert not list(store._location("project").trees_dir.glob(f"*{_STAGING_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
+async def test_reindex_success_swaps_tree_same_book_id(store: Bookstore, book_md: Path) -> None:
+    """Keep identity and evict warmed content caches."""
+    card, _ = await store.add_book(book_md)
+    store._content_store("project")
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Replacement\n\nFresh replacement content.\n", encoding="utf-8")
+
+    updated, status = await store.add_book(book_md)
+
+    assert status == "updated"
+    assert updated.book_id == updated.tree_name == card.book_id
+    assert "project" not in store._content_stores
+    assert await store.search_book(card.book_id, "replacement content")
+
+
+@pytest.mark.asyncio
+async def test_add_failed_ingest_leaves_no_tree(store: Bookstore, book_md: Path) -> None:
+    """Leave no staging or card after a first-add failure."""
+
+    async def fail_insert(*args, **kwargs) -> None:
+        raise RuntimeError("ingest failed")
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(store._toolkit("project"), "insert_markdown", fail_insert)
+    try:
+        with pytest.raises(RuntimeError, match="ingest failed"):
+            await store.add_book(book_md)
+    finally:
+        monkeypatch.undo()
+
+    assert store.list_books() == []
+    assert not list(store._location("project").trees_dir.glob("*.json"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["draft", "swap"])
+async def test_reindex_card_draft_and_swap_failures_keep_old_book(
+    store: Bookstore, book_md: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """Keep the live tree when card drafting or publishing fails."""
+    card, _ = await store.add_book(book_md)
+    old_json = (store._location("project").trees_dir / f"{card.book_id}.json").read_bytes()
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Changed\n\nNew content.\n", encoding="utf-8")
+
+    async def fail(*args, **kwargs) -> None:
+        raise RuntimeError(f"{failure} failed")
+
+    if failure == "draft":
+        monkeypatch.setattr(store, "_draft_card", fail)
+    else:
+        monkeypatch.setattr(store._toolkit("project"), "rename_tree", fail)
+
+    with pytest.raises(RuntimeError, match=f"{failure} failed"):
+        await store.add_book(book_md)
+
+    assert (store._location("project").trees_dir / f"{card.book_id}.json").read_bytes() == old_json
+    assert store.get_card(card.book_id).book_id == card.book_id
+    assert not list(store._location("project").trees_dir.glob(f"*{_STAGING_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
+async def test_sweep_restores_orphaned_replaced_tree(store: Bookstore, book_md: Path) -> None:
+    """Restore backup when its live tree is absent."""
+    card, _ = await store.add_book(book_md)
+    backup = f"{card.book_id}{_REPLACED_MARKER}deadbeef"
+    toolkit = store._toolkit("project")
+    await toolkit.rename_tree(card.book_id, backup)
+
+    skipped, status = await store.add_book(book_md)
+
+    assert status == "skipped"
+    assert skipped.book_id == card.book_id
+    assert (store._location("project").trees_dir / f"{card.book_id}.json").is_file()
+    assert not (store._location("project").trees_dir / f"{backup}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_sweep_deletes_stale_staging_keeps_fresh(store: Bookstore, book_md: Path) -> None:
+    """Honor the fixed one-hour threshold."""
+    toolkit = store._toolkit("project")
+    stale = f"stale{_STAGING_MARKER}deadbeef"
+    fresh = f"fresh{_STAGING_MARKER}deadbeef"
+    await toolkit.create_tree(stale)
+    await toolkit.create_tree(fresh)
+    stale_path = store._location("project").trees_dir / f"{stale}.json"
+    os.utime(stale_path, (time.time() - _STAGING_MAX_AGE_S - 1, time.time() - _STAGING_MAX_AGE_S - 1))
+
+    await store._sweep_reserved_trees("project")
+
+    assert not stale_path.exists()
+    assert (store._location("project").trees_dir / f"{fresh}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_all_taken_slugs_ignores_reserved_names(store: Bookstore, book_md: Path) -> None:
+    """Ignore staging and replacement names."""
+    toolkit = store._toolkit("project")
+    await toolkit.create_tree(f"book{_STAGING_MARKER}deadbeef")
+    await toolkit.create_tree(f"book{_REPLACED_MARKER}deadbeef")
+
+    assert "book" not in store._all_taken_slugs()
+
+
+@pytest.mark.asyncio
+async def test_reindex_roundtrip_markdown(store: Bookstore, book_md: Path) -> None:
+    """Read and search changed markdown under the same ID."""
+    card, _ = await store.add_book(book_md)
+    book_md.write_text(
+        SAMPLE_MARKDOWN + "\n## Replacement Chapter\n\nAtomic swap roundtrip phrase.\n",
+        encoding="utf-8",
+    )
+
+    updated, status = await store.add_book(book_md)
+    toc = store.get_toc(updated.book_id)
+
+    assert status == "updated"
+    assert updated.book_id == card.book_id
+    assert any(entry["title"] == "Replacement Chapter" for entry in toc["entries"])
+    assert await store.search_book(updated.book_id, "atomic swap roundtrip")

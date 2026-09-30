@@ -20,12 +20,14 @@ import asyncio
 import hashlib
 import itertools
 import logging
+import secrets
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
-from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKER
 
 from .carding import (
     derive_toc,
@@ -62,6 +64,14 @@ _FORMAT_BY_SUFFIX = {
     # .doc (legacy binary) is deliberately absent: python-docx can't read it.
     ".docx": "docx",
 }
+
+_STAGING_MARKER = "--staging-"
+_STAGING_MAX_AGE_S = 3600
+
+
+def _is_reserved_tree_name(name: str) -> bool:
+    """Identify reserved staging and replacement tree names."""
+    return _STAGING_MARKER in name or _REPLACED_MARKER in name
 
 
 def _other_endpoint(relation: BookRelation, anchor: str) -> Optional[str]:
@@ -253,8 +263,35 @@ class Bookstore:
             if loc.db_path.is_file():
                 taken |= self._catalog(loc.scope).taken_slugs()
             if loc.trees_dir.is_dir():
-                taken |= {p.stem for p in loc.trees_dir.glob("*.json")}
+                taken |= {p.stem for p in loc.trees_dir.glob("*.json") if not _is_reserved_tree_name(p.stem)}
         return taken
+
+    def _staging_tree_name(self, slug: str) -> str:
+        """Return a temporary tree name using an eight-hex-character suffix."""
+        return f"{slug}{_STAGING_MARKER}{secrets.token_hex(4)}"
+
+    async def _sweep_reserved_trees(self, scope: str) -> None:
+        """Restore interrupted swaps and sweep staging trees older than one hour."""
+        location = self._location(scope)
+        if not location.trees_dir.is_dir():
+            return
+
+        toolkit = self._toolkit(scope)
+        for tree_path in list(location.trees_dir.glob("*.json")):
+            tree_name = tree_path.stem
+            try:
+                if _REPLACED_MARKER in tree_name:
+                    live_name = tree_name.split(_REPLACED_MARKER, maxsplit=1)[0]
+                    if not (location.trees_dir / f"{live_name}.json").is_file():
+                        await toolkit.rename_tree(tree_name, live_name)
+                    else:
+                        await toolkit.delete_tree(tree_name)
+                elif _STAGING_MARKER in tree_name:
+                    age = time.time() - tree_path.stat().st_mtime
+                    if age > _STAGING_MAX_AGE_S:
+                        await toolkit.delete_tree(tree_name)
+            except Exception:  # noqa: BLE001 — crash recovery is best-effort
+                logger.warning("Failed to sweep reserved tree %r", tree_name, exc_info=True)
 
     # ------------------------------------------------------------------
     # Read surface
@@ -966,6 +1003,7 @@ class Bookstore:
             raise BookstoreError(f"Unsupported format {path.suffix!r} — " f"supported: {sorted(_FORMAT_BY_SUFFIX)}")
 
         catalog = self._catalog(scope)
+        await self._sweep_reserved_trees(scope)
         payload = await asyncio.to_thread(path.read_bytes)
         sha256 = hashlib.sha256(payload).hexdigest()
         existing = catalog.find_by_sha(sha256)
@@ -981,14 +1019,13 @@ class Bookstore:
         toolkit = self._toolkit(scope)
         if status == "updated":
             slug = existing.book_id
-            await toolkit.delete_tree(slug)
-            self._invalidate_graph(slug)
         else:
             slug = unique_slug(slugify(title or path.stem), self._all_taken_slugs())
 
-        await toolkit.create_tree(slug, doc_name=title or path.stem)
+        staging = self._staging_tree_name(slug)
         doc_description = ""
         try:
+            await toolkit.create_tree(staging, doc_name=title or path.stem)
             if fmt == "pdf":
                 if not self.has_llm:
                     raise BookstoreError(
@@ -997,7 +1034,7 @@ class Bookstore:
                         "or convert to markdown/text first"
                     )
                 result = await toolkit.import_pdf(
-                    tree_name=slug,
+                    tree_name=staging,
                     pdf_path=str(path),
                     with_summaries=self.has_llm,
                     with_doc_description=self.has_llm,
@@ -1005,7 +1042,7 @@ class Bookstore:
                 doc_description = result.get("doc_description") or ""
             elif fmt == "md":
                 await toolkit.insert_markdown(
-                    tree_name=slug,
+                    tree_name=staging,
                     markdown=await asyncio.to_thread(path.read_text, encoding="utf-8"),
                     doc_name=title or path.stem,
                 )
@@ -1016,87 +1053,91 @@ class Bookstore:
                         "content — configure one or convert to markdown"
                     )
                 await toolkit.insert_content(
-                    tree_name=slug,
+                    tree_name=staging,
                     content=await asyncio.to_thread(path.read_text, encoding="utf-8"),
                 )
             elif fmt == "docx":
                 markdown = await self._docx_to_markdown(path)
                 await toolkit.insert_markdown(
-                    tree_name=slug,
+                    tree_name=staging,
                     markdown=markdown,
                     doc_name=title or path.stem,
                 )
             else:  # ebook
                 sections = await self._ebook_sections(path)
                 await toolkit.insert_ebook(
-                    tree_name=slug,
+                    tree_name=staging,
                     sections=sections,
                 )
+            tree = await toolkit.get_tree(staging)
+            toc_entries, toc_digest = derive_toc(tree)
+            draft = await self._draft_card(
+                path=path,
+                tree_name=staging,
+                scope=scope,
+                doc_description=doc_description or tree.get("doc_description") or "",
+                toc_digest=toc_digest,
+                toc_entries=toc_entries,
+            )
+            if not title:
+                taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
+                final_title = disambiguate_title(draft.title, taken_titles, toc_entries=toc_entries, stem=path.stem)
+            else:
+                final_title = title
+            card_origin = "fallback" if not self.has_llm else "llm"
+            if title or authors or topics:
+                card_origin = "manual"
+            # An in-place re-index of a manually edited card (``update_card`` /
+            # explicit overrides at a previous ``add``) must not silently revert
+            # those edits to the fresh draft: keep title/authors/topics/summary
+            # unless this call overrides them explicitly.
+            preserved = (
+                existing if existing is not None and status == "updated" and existing.card_origin == "manual" else None
+            )
+            if preserved is not None:
+                if not title:
+                    final_title = preserved.title
+                card_origin = "manual"
+
+            page_count = max(
+                (e.end_page for e in toc_entries if e.end_page is not None),
+                default=None,
+            )
+            card = BookCard(
+                book_id=slug,
+                title=final_title,
+                authors=authors if authors is not None else (preserved.authors if preserved else draft.authors),
+                year=draft.year,
+                language=draft.language,
+                topics=topics if topics is not None else (preserved.topics if preserved else draft.topics),
+                summary=preserved.summary if preserved and preserved.summary else draft.summary,
+                toc_digest=toc_digest,
+                toc=toc_entries,
+                tree_name=slug,
+                scope=scope,  # type: ignore[arg-type]
+                source_path=str(path),
+                source_sha256=sha256,
+                source_format=fmt,  # type: ignore[arg-type]
+                page_count=page_count,
+                chapter_count=sum(1 for e in toc_entries if e.depth == 1),
+                added_at=datetime.now(timezone.utc).isoformat(),
+                card_origin=card_origin,  # type: ignore[arg-type]
+                genre=draft.genre,  # type: ignore[arg-type]
+                traditions=draft.traditions,
+                period=draft.period,
+            )
+            await toolkit.rename_tree(staging, slug, overwrite=status == "updated")
         except Exception:
-            # Never leave a half-imported tree behind an errored add.
+            # Never leave a half-imported staging tree behind an errored add.
             try:
-                await toolkit.delete_tree(slug)
+                await toolkit.delete_tree(staging)
             except Exception:  # noqa: BLE001 — best-effort cleanup
-                logger.debug("Cleanup of tree %r failed", slug, exc_info=True)
+                logger.debug("Cleanup of tree %r failed", staging, exc_info=True)
             raise
 
-        tree = await toolkit.get_tree(slug)
-        toc_entries, toc_digest = derive_toc(tree)
-        draft = await self._draft_card(
-            path=path,
-            tree_name=slug,
-            scope=scope,
-            doc_description=doc_description or tree.get("doc_description") or "",
-            toc_digest=toc_digest,
-            toc_entries=toc_entries,
-        )
-        if not title:
-            taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
-            final_title = disambiguate_title(draft.title, taken_titles, toc_entries=toc_entries, stem=path.stem)
-        else:
-            final_title = title
-        card_origin = "fallback" if not self.has_llm else "llm"
-        if title or authors or topics:
-            card_origin = "manual"
-        # An in-place re-index of a manually edited card (``update_card`` /
-        # explicit overrides at a previous ``add``) must not silently revert
-        # those edits to the fresh draft: keep title/authors/topics/summary
-        # unless this call overrides them explicitly.
-        preserved = (
-            existing if existing is not None and status == "updated" and existing.card_origin == "manual" else None
-        )
-        if preserved is not None:
-            if not title:
-                final_title = preserved.title
-            card_origin = "manual"
-
-        page_count = max(
-            (e.end_page for e in toc_entries if e.end_page is not None),
-            default=None,
-        )
-        card = BookCard(
-            book_id=slug,
-            title=final_title,
-            authors=authors if authors is not None else (preserved.authors if preserved else draft.authors),
-            year=draft.year,
-            language=draft.language,
-            topics=topics if topics is not None else (preserved.topics if preserved else draft.topics),
-            summary=preserved.summary if preserved and preserved.summary else draft.summary,
-            toc_digest=toc_digest,
-            toc=toc_entries,
-            tree_name=slug,
-            scope=scope,  # type: ignore[arg-type]
-            source_path=str(path),
-            source_sha256=sha256,
-            source_format=fmt,  # type: ignore[arg-type]
-            page_count=page_count,
-            chapter_count=sum(1 for e in toc_entries if e.depth == 1),
-            added_at=datetime.now(timezone.utc).isoformat(),
-            card_origin=card_origin,  # type: ignore[arg-type]
-            genre=draft.genre,  # type: ignore[arg-type]
-            traditions=draft.traditions,
-            period=draft.period,
-        )
+        if status == "updated":
+            self._invalidate_graph(slug)
+        self._content_stores.pop(scope, None)
         catalog.upsert(card)
         if relate:
             await self.relate_books([card.book_id], communities=False)
