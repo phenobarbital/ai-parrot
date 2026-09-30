@@ -47,3 +47,17 @@ def test_static_assets_sri_and_wiring() -> None:
             or ("ai_parrot_token" in content.lower())
             or ("placeholder" in content.lower())
         ), f"Unexpected token references in {file_name}"
+
+
+def test_finance_index_reuses_the_shared_lane() -> None:
+    """The finance example ships only its index.html; the lane assets come from examples/a2ui/static."""
+    finance = Path(__file__).resolve().parents[2] / "examples" / "a2ui_finance" / "static"
+    assert sorted(p.name for p in finance.iterdir()) == ["index.html"]
+    index_html = (finance / "index.html").read_text()
+    assert "unpkg.com" not in index_html and "cdn." not in index_html
+    for needle in ('id="notice"', 'id="loginForm"', 'id="refreshAll"', 'id="logout"', 'id="dashboard"'):
+        assert needle in index_html
+    assert 'type="module"' in index_html and 'src="/static/renderer.js"' in index_html
+    assert 'href="/static/styles.css"' in index_html and 'src="/static/vendor/echarts.min.js"' in index_html
+    assert "ai_parrot_token" in index_html
+    assert "Finance projection" in index_html

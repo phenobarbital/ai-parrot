@@ -33,6 +33,9 @@ examples/**/*.html
 # FEAT-610 A2UI linked-surfaces E2E example (server + static renderer) ships with the repo.
 !examples/a2ui/**/*.py
 !examples/a2ui/**/*.html
+# The finance twin of that example (definition-only surface, DatasetManager-backed check) ships too.
+!examples/a2ui_finance/**/*.py
+!examples/a2ui_finance/**/*.html
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
