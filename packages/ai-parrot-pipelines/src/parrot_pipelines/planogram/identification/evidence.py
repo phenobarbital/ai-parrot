@@ -70,7 +70,9 @@ def build_region_prompt() -> str:
     )
 
 
-def _region_box(region: Tuple[float, float, float, float], size: Tuple[int, int]) -> Optional[Tuple[int, int, int, int]]:
+def _region_box(
+    region: Tuple[float, float, float, float], size: Tuple[int, int]
+) -> Optional[Tuple[int, int, int, int]]:
     """Convert a normalised source region to a clamped pixel box, if non-degenerate."""
     width, height = size
     x1, y1, x2, y2 = region

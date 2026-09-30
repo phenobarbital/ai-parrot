@@ -94,7 +94,9 @@ async def test_illumination_observation_is_neutral():
         rule_id="r0", kind="illumination", target_id="zone_header", params={"required": "off", "penalty": 0.3}
     )
     vision = RecordingVision(ZoneEvidenceAnswer(illumination="on"))
-    observations = await collect_rule_evidence(np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [binding]))
+    observations = await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [binding])
+    )
     assert observations[0].kind == "illumination"
     assert observations[0].value == "on" and observations[0].assessed
     assert observations[0].target_id == "img0:zone0"
@@ -107,7 +109,9 @@ async def test_unknown_illumination_is_unassessed():
     """An unknown visible state remains an unassessed observation."""
     binding = RuleBinding(rule_id="r0", kind="illumination", target_id="zone_header")
     vision = RecordingVision(ZoneEvidenceAnswer(illumination="unknown"))
-    observations = await collect_rule_evidence(np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [binding]))
+    observations = await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [binding])
+    )
     assert observations[0].assessed is False
 
 
@@ -116,7 +120,9 @@ async def test_visual_features_are_recorded_as_seen():
     """Feature observations preserve the model's visible phrases."""
     binding = RuleBinding(rule_id="r0", kind="visual_features", target_id="zone_header")
     vision = RecordingVision(ZoneEvidenceAnswer(visual_features=["blue logo", "header text"]))
-    observations = await collect_rule_evidence(np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [binding]))
+    observations = await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [binding])
+    )
     assert observations[0].value == ["blue logo", "header text"]
     assert observations[0].target_id == "img0:zone0" and observations[0].assessed
 
@@ -153,9 +159,16 @@ async def test_region_is_inspected_only_without_an_observed_zone():
     binding = RuleBinding(rule_id="r0", kind="zone_present", target_id="zone_header")
     layout = _layout(zone_selectors=[ZoneSelector(zone_id="zone_header", region=(0.0, 0.0, 1.0, 0.3))])
     blocked = RecordingVision()
-    assert await collect_rule_evidence(np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(blocked, [binding], layout)) == []
+    assert (
+        await collect_rule_evidence(
+            np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(blocked, [binding], layout)
+        )
+        == []
+    )
     vision = RecordingVision(RegionPresenceAnswer(present="no"))
-    observations = await collect_rule_evidence(np.zeros((300, 400, 3), np.uint8), _perception(), _ctx(vision, [binding], layout))
+    observations = await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(), _ctx(vision, [binding], layout)
+    )
     assert observations[0].target_id == "img0:zone-region:zone_header"
     assert observations[0].value is False and observations[0].assessed
 
@@ -166,7 +179,9 @@ async def test_region_unknown_stays_unassessed():
     binding = RuleBinding(rule_id="r0", kind="zone_present", target_id="zone_header")
     layout = _layout(zone_selectors=[ZoneSelector(zone_id="zone_header", region=(0.0, 0.0, 1.0, 0.3))])
     vision = RecordingVision(RegionPresenceAnswer(present="unknown"))
-    observations = await collect_rule_evidence(np.zeros((300, 400, 3), np.uint8), _perception(), _ctx(vision, [binding], layout))
+    observations = await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(), _ctx(vision, [binding], layout)
+    )
     assert observations[0].value is None and observations[0].assessed is False
 
 
