@@ -370,6 +370,38 @@ def card_cmd(book_id: str, refresh: bool, llm: Optional[str]) -> None:
     _echo_card(card)
 
 
+@bookstore.command("update")
+@click.argument("book_id")
+@click.option("--title", default=None, help="New title.")
+@click.option("--author", "authors", multiple=True, help="Replace the authors (repeatable).")
+@click.option("--topic", "topics", multiple=True, help="Replace the topics (repeatable).")
+@click.option("--summary", default=None, help="New summary.")
+def update_cmd(
+    book_id: str,
+    title: Optional[str],
+    authors: tuple[str, ...],
+    topics: tuple[str, ...],
+    summary: Optional[str],
+) -> None:
+    """Edit a book's ficha fields without re-indexing (marks the card as manual)."""
+    from .library import BookstoreError
+
+    if title is None and not authors and not topics and summary is None:
+        raise click.ClickException("Nothing to do — pass --title, --author, --topic or --summary")
+    store = _open_bookstore(require_exists=True, use_llm=False)
+    try:
+        card = store.update_card(
+            book_id,
+            title=title,
+            authors=list(authors) or None,
+            topics=list(topics) or None,
+            summary=summary,
+        )
+    except BookstoreError as exc:
+        raise click.ClickException(str(exc)) from exc
+    _echo_card(card)
+
+
 @bookstore.command("related")
 @click.argument("book_id")
 @click.option("--rel", default=None, help="Filter to one relation kind.")

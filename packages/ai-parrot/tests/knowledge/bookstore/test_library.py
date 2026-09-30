@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from parrot.knowledge.bookstore.carding import disambiguate_title
 from parrot.knowledge.bookstore.config import LibraryLocation
 from parrot.knowledge.bookstore.library import Bookstore, BookstoreError
+from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS, TocEntry
 
 from .conftest import SAMPLE_MARKDOWN
 
@@ -52,6 +54,92 @@ async def test_add_book_markdown_with_llm(store, book_md, locations):
     # Tree JSON + catalog row exist on disk in the project scope.
     assert (locations[0].trees_dir / "synthetic-handbook.json").is_file()
     assert (locations[0].db_path).is_file()
+
+
+@pytest.mark.asyncio
+async def test_add_book_changed_content_same_path_updates_in_place(store, book_md):
+    card1, status1 = await store.add_book(book_md)
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## New chapter\n\nChanged content.\n", encoding="utf-8")
+    card2, status2 = await store.add_book(book_md)
+    assert (status1, status2) == ("added", "updated")
+    assert card2.book_id == card1.book_id
+    assert card2.source_sha256 != card1.source_sha256
+    assert [c.book_id for c in store.list_books()] == [card1.book_id]
+    assert store.get_toc(card2.book_id)
+
+
+@pytest.mark.asyncio
+async def test_add_book_same_bytes_other_path_is_skipped(store, book_md, tmp_path):
+    card1, _ = await store.add_book(book_md)
+    other = tmp_path / "copy.md"
+    other.write_bytes(book_md.read_bytes())
+    card2, status2 = await store.add_book(other)
+    assert status2 == "skipped"
+    assert card2.book_id == card1.book_id
+    assert card2.source_path == str(book_md.resolve())
+
+
+@pytest.mark.asyncio
+async def test_reindex_invalidates_relations_and_communities(store, book_md, tmp_path):
+    card_a, _ = await store.add_book(book_md)
+    other = tmp_path / "other-book.md"
+    other.write_text(SAMPLE_MARKDOWN + "\n## Other\n\nDifferent bytes.\n", encoding="utf-8")
+    card_b, _ = await store.add_book(other)
+    a, b = card_a.book_id, card_b.book_id
+    assert a != b
+    catalog = store._catalog("project")
+    catalog.upsert_relations(
+        [
+            BookRelation(
+                src_book_id=a,
+                dst_book_id=b,
+                rel="parallels",
+                origin="llm",
+                confidence=0.7,
+                weight=REL_WEIGHTS["parallels"],
+                computed_at="2026-09-06T00:00:00+00:00",
+            )
+        ]
+    )
+    catalog.record_judgements(a, [RelationJudgement(dst_book_id=b, rel="parallels", confidence=0.7)])
+    catalog.upsert_communities(
+        [
+            BookCommunity(
+                community_id="c1",
+                label="Pair",
+                label_origin="derived",
+                algorithm="leiden",
+                size=2,
+                cohesion=1.0,
+                centroid_book_id=a,
+                member_book_ids=[a, b],
+                computed_at="2026-09-06T00:00:00+00:00",
+            )
+        ]
+    )
+    assert store.related_books(a)
+    assert catalog.judged_pairs(a) == {b}
+    assert store.communities()
+
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Changed\n\nNew content.\n", encoding="utf-8")
+    _, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert store.related_books(a) == []
+    assert catalog.judged_pairs(a) == set()
+    assert store.communities() == []
+
+
+@pytest.mark.asyncio
+async def test_add_folder_changed_file_updates_not_duplicates(store, tmp_path):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    (root / "two.md").write_text(SAMPLE_MARKDOWN + "\n## Two\n\nSecond.\n", encoding="utf-8")
+    await store.add_folder(root)
+    (root / "two.md").write_text(SAMPLE_MARKDOWN + "\n## Two\n\nSecond, edited.\n", encoding="utf-8")
+    out = await store.add_folder(root)
+    assert sorted(r["status"] for r in out["results"]) == ["skipped", "updated"]
+    assert len(store.list_books()) == 2
 
 
 @pytest.mark.asyncio
@@ -407,3 +495,117 @@ def test_card_prompt_requests_classification():
     from parrot.knowledge.bookstore.carding import _CARD_PROMPT
 
     assert "genre" in _CARD_PROMPT and "traditions" in _CARD_PROMPT
+
+
+def test_disambiguate_title_not_taken_is_unchanged():
+    assert disambiguate_title("Book", set(), toc_entries=[], stem="book") == "Book"
+
+
+def test_disambiguate_title_uses_first_distinct_toc_entry():
+    toc = [TocEntry(node_id="n1", title="Book"), TocEntry(node_id="n2", title="Chapter 3 — Modules")]
+    assert disambiguate_title("Book", {"book"}, toc_entries=toc, stem="ch03") == "Book — Chapter 3 — Modules"
+
+
+def test_disambiguate_title_falls_back_to_stem_then_counter():
+    assert disambiguate_title("Book", {"book"}, toc_entries=[], stem="odoo_ch03") == "Book — Odoo Ch03"
+    taken = {"book", "book — odoo ch03"}
+    assert disambiguate_title("Book", taken, toc_entries=[], stem="odoo_ch03") == "Book — Odoo Ch03 (2)"
+    taken.add("book — odoo ch03 (2)")
+    assert disambiguate_title("BOOK", taken, toc_entries=[], stem="odoo_ch03") == "BOOK — Odoo Ch03 (3)"
+    # a ToC entry equal to the title (case-insensitively) is not a usable hint
+    toc = [TocEntry(node_id="n1", title="BOOK")]
+    assert disambiguate_title("Book", {"book"}, toc_entries=toc, stem="x") == "Book — X"
+
+
+@pytest.mark.asyncio
+async def test_add_book_llm_duplicate_title_is_disambiguated(store, book_md, tmp_path):
+    first, _ = await store.add_book(book_md)
+    other = tmp_path / "second-part.md"
+    other.write_text(SAMPLE_MARKDOWN + "\n## Part two\n\nDifferent bytes.\n", encoding="utf-8")
+    second, status = await store.add_book(other)
+    assert status == "added"
+    assert first.title == "Synthetic Handbook"
+    assert second.title != first.title
+    assert second.title.startswith("Synthetic Handbook — ")
+    assert store.get_card(first.book_id).title == "Synthetic Handbook"
+
+
+@pytest.mark.asyncio
+async def test_add_book_explicit_title_never_disambiguated(store, book_md, tmp_path):
+    other = tmp_path / "another.md"
+    other.write_text(SAMPLE_MARKDOWN + "\n## Another\n\nDifferent bytes.\n", encoding="utf-8")
+    first, _ = await store.add_book(book_md, title="Same Title")
+    second, _ = await store.add_book(other, title="Same Title")
+    assert first.title == second.title == "Same Title"
+    assert (first.book_id, second.book_id) == ("same-title", "same-title-2")
+
+
+@pytest.mark.asyncio
+async def test_update_card_fields_and_manual_origin(store, book_md):
+    card, _ = await store.add_book(book_md)
+    store._catalog("project").set_card_community(card.book_id, "c1", "Community One")
+    updated = store.update_card(card.book_id, title="  New Title ", authors=["A"], topics=["t1"], summary="S")
+    assert (updated.title, updated.authors, updated.topics, updated.summary) == ("New Title", ["A"], ["t1"], "S")
+    assert updated.card_origin == "manual"
+    reread = store.get_card(card.book_id)
+    assert reread.title == "New Title" and reread.community_id == "c1"
+
+
+@pytest.mark.asyncio
+async def test_reindex_preserves_manual_card_edits(store, book_md):
+    """issue:9013034b010f — an in-place re-index must not revert update_card edits."""
+    card, _ = await store.add_book(book_md)
+    store.update_card(
+        card.book_id, title="Hand Title", authors=["Hand Author"], topics=["hand"], summary="Hand summary"
+    )
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## New chapter\n\nChanged content.\n", encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert updated.book_id == card.book_id
+    assert (updated.title, updated.authors, updated.topics, updated.summary) == (
+        "Hand Title",
+        ["Hand Author"],
+        ["hand"],
+        "Hand summary",
+    )
+    assert updated.card_origin == "manual"
+    assert updated.source_sha256 != card.source_sha256
+    reread = store.get_card(card.book_id)
+    assert reread.title == "Hand Title" and reread.card_origin == "manual"
+
+
+@pytest.mark.asyncio
+async def test_reindex_explicit_overrides_beat_preserved_manual_fields(store, book_md):
+    """Explicit title/authors on the re-index call still win over the preserved manual card."""
+    card, _ = await store.add_book(book_md)
+    store.update_card(card.book_id, title="Hand Title", topics=["hand"])
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Another\n\nMore.\n", encoding="utf-8")
+    updated, status = await store.add_book(book_md, title="Override Title", authors=["New Author"])
+    assert status == "updated"
+    assert updated.title == "Override Title"
+    assert updated.authors == ["New Author"]
+    assert updated.topics == ["hand"]
+    assert updated.card_origin == "manual"
+
+
+@pytest.mark.asyncio
+async def test_reindex_of_llm_card_takes_fresh_draft(store, book_md):
+    """A non-manual card is rebuilt from the fresh draft on re-index (unchanged behaviour)."""
+    card, _ = await store.add_book(book_md)
+    assert card.card_origin == "llm"
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Fresh\n\nContent.\n", encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert updated.card_origin == "llm"
+    assert updated.summary == card.summary  # fake adapter drafts the same summary
+
+
+@pytest.mark.asyncio
+async def test_update_card_requires_a_field(store, book_md):
+    card, _ = await store.add_book(book_md)
+    with pytest.raises(BookstoreError):
+        store.update_card(card.book_id)
+    with pytest.raises(BookstoreError):
+        store.update_card(card.book_id, title="  ")
+    with pytest.raises(BookstoreError):
+        store.update_card("no-such-book", title="X")

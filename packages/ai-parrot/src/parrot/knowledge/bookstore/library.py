@@ -29,6 +29,7 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 from .carding import (
     derive_toc,
+    disambiguate_title,
     fallback_card_fields,
     generate_card_fields,
     sample_sections,
@@ -939,7 +940,9 @@ class Bookstore:
             authors: Override the carded authors.
             topics: Override the carded topics.
             force: Re-index even when the same file (by sha256) is
-                already catalogued.
+                already catalogued. A file whose content changed at an
+                already-catalogued path is always re-indexed in place
+                (same ``book_id``), ``force`` or not.
             relate: When ``True``, run :meth:`relate_books` for just
                 this book (Stages 1-2 only, no communities) right after
                 cataloguing it. ``False`` by default (G3: plain ``add``
@@ -947,7 +950,8 @@ class Bookstore:
 
         Returns:
             ``(card, status)`` where status is ``"added"``, ``"updated"``
-            or ``"skipped"`` (sha match without ``force``).
+            or ``"skipped"`` (sha match without ``force``). ``"updated"``
+            also covers changed content at an already-catalogued path.
 
         Raises:
             BookstoreError: Unsupported format, missing file, ``.pdf``
@@ -965,9 +969,12 @@ class Bookstore:
         payload = await asyncio.to_thread(path.read_bytes)
         sha256 = hashlib.sha256(payload).hexdigest()
         existing = catalog.find_by_sha(sha256)
+        same_bytes = existing is not None
+        if existing is None:
+            existing = catalog.find_by_path(str(path))
         status = "added"
         if existing is not None:
-            if not force:
+            if same_bytes and not force:
                 return existing.model_copy(update={"scope": scope}), "skipped"
             status = "updated"
 
@@ -975,6 +982,7 @@ class Bookstore:
         if status == "updated":
             slug = existing.book_id
             await toolkit.delete_tree(slug)
+            self._invalidate_graph(slug)
         else:
             slug = unique_slug(slugify(title or path.stem), self._all_taken_slugs())
 
@@ -1042,8 +1050,24 @@ class Bookstore:
             toc_digest=toc_digest,
             toc_entries=toc_entries,
         )
+        if not title:
+            taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
+            final_title = disambiguate_title(draft.title, taken_titles, toc_entries=toc_entries, stem=path.stem)
+        else:
+            final_title = title
         card_origin = "fallback" if not self.has_llm else "llm"
         if title or authors or topics:
+            card_origin = "manual"
+        # An in-place re-index of a manually edited card (``update_card`` /
+        # explicit overrides at a previous ``add``) must not silently revert
+        # those edits to the fresh draft: keep title/authors/topics/summary
+        # unless this call overrides them explicitly.
+        preserved = (
+            existing if existing is not None and status == "updated" and existing.card_origin == "manual" else None
+        )
+        if preserved is not None:
+            if not title:
+                final_title = preserved.title
             card_origin = "manual"
 
         page_count = max(
@@ -1052,12 +1076,12 @@ class Bookstore:
         )
         card = BookCard(
             book_id=slug,
-            title=title or draft.title,
-            authors=authors if authors is not None else draft.authors,
+            title=final_title,
+            authors=authors if authors is not None else (preserved.authors if preserved else draft.authors),
             year=draft.year,
             language=draft.language,
-            topics=topics if topics is not None else draft.topics,
-            summary=draft.summary,
+            topics=topics if topics is not None else (preserved.topics if preserved else draft.topics),
+            summary=preserved.summary if preserved and preserved.summary else draft.summary,
             toc_digest=toc_digest,
             toc=toc_entries,
             tree_name=slug,
@@ -1211,7 +1235,9 @@ class Bookstore:
             folder: Directory holding the books.
             scope: Target library (``"project"`` or ``"global"``).
             recursive: Also ingest files in subdirectories.
-            force: Re-index files already catalogued (by sha256).
+            force: Re-index files already catalogued (by sha256). Files
+                whose content changed at a catalogued path are always
+                re-indexed in place.
             relate: When ``True``, each new book is related right after
                 its own ingest (Stage 1-2 only, per file — same as
                 ``add_book(relate=True)``); once the whole folder is
@@ -1246,6 +1272,19 @@ class Bookstore:
             "ignored": [str(p) for p in ignored],
         }
 
+    def _invalidate_graph(self, book_id: str) -> None:
+        """Drop every relation/judgement touching ``book_id`` and clear the community partition.
+
+        Edges touching ``book_id`` may live in either scope's DB (the scope
+        owning an edge's ``src``), so the cascade runs across every store.
+        Community ids are membership hashes, so any change to a member
+        invalidates the whole partition; the next ``relate_books`` recomputes it.
+        """
+        for _scope, store in self._stores():
+            store.delete_relations(book_id=book_id)
+            store.delete_judgements(book_id)
+        self._clear_communities()
+
     async def remove_book(self, book_id: str) -> bool:
         """Remove a book — catalog row, PageIndex tree, and graph edges.
 
@@ -1268,12 +1307,8 @@ class Bookstore:
             await toolkit.delete_tree(card.tree_name)
         except Exception:  # noqa: BLE001 — the tree may already be gone
             logger.warning("Tree %r missing while removing book %r", card.tree_name, book_id)
-        for _scope, store in self._stores():
-            store.delete_relations(book_id=book_id)
-            store.delete_judgements(book_id)
         removed = self._catalog(loc.scope).remove(book_id)
-        if removed:
-            self._clear_communities()
+        self._invalidate_graph(book_id)
         return removed
 
     async def refresh_card(self, book_id: str) -> BookCard:
@@ -1316,4 +1351,42 @@ class Bookstore:
             }
         )
         self._catalog(loc.scope).upsert(updated)
+        return updated
+
+    def update_card(
+        self,
+        book_id: str,
+        *,
+        title: Optional[str] = None,
+        authors: Optional[list[str]] = None,
+        topics: Optional[list[str]] = None,
+        summary: Optional[str] = None,
+    ) -> BookCard:
+        """Overwrite the given descriptive fields of an existing card and persist it.
+
+        Only non-``None`` arguments are applied. ``title``/``summary`` are
+        stripped; an empty ``title`` is rejected. Marks the card
+        ``card_origin="manual"``; community stamps survive untouched.
+
+        Raises:
+            BookstoreError: Unknown ``book_id``, empty ``title``, or no field given.
+        """
+        if title is None and authors is None and topics is None and summary is None:
+            raise BookstoreError("Nothing to update — pass title, authors, topics or summary")
+        card, loc = self.resolve_book(book_id)
+        changes: dict[str, Any] = {"card_origin": "manual"}
+        if title is not None:
+            title = title.strip()
+            if not title:
+                raise BookstoreError("title must not be empty")
+            changes["title"] = title
+        if authors is not None:
+            changes["authors"] = list(authors)
+        if topics is not None:
+            changes["topics"] = list(topics)
+        if summary is not None:
+            changes["summary"] = summary.strip()
+        updated = card.model_copy(update=changes)
+        self._catalog(loc.scope).upsert(updated)
+        logger.info("update_card: %s (%s)", book_id, ", ".join(k for k in changes if k != "card_origin"))
         return updated

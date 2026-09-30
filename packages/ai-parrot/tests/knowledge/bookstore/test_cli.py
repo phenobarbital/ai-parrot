@@ -162,6 +162,7 @@ def test_bookstore_cli_degrades_without_any_config_or_cli(tmp_path, monkeypatch)
     assert (tmp_path / "lib" / "trees" / "one.json").is_file()
     assert (tmp_path / "lib" / "trees" / "two.json").is_file()
 
+
 def test_related_cli_table_and_json(tmp_path, monkeypatch):
     import json as jsonlib
 
@@ -316,3 +317,39 @@ def test_show_prints_classification(capsys):
     assert "estoicismo" in out
     assert "Imperio romano" in out
     assert "Virtue ethics" in out
+
+
+def _seed_one_book(tmp_path, monkeypatch) -> str:
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+    from parrot.knowledge.bookstore.models import BookCard
+
+    lib_dir = tmp_path / "lib"
+    monkeypatch.setenv(ENV_LIBRARY_DIR, str(lib_dir))
+    monkeypatch.setenv("PARROT_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(bookstore_cli, "_INVOCATION_CWD", str(tmp_path))
+    CatalogStore(lib_dir / "library.db").upsert(
+        BookCard(
+            book_id="a",
+            title="Original",
+            tree_name="a",
+            source_path="/books/a.md",
+            source_sha256="a" * 64,
+            source_format="md",
+            added_at="2026-09-06T00:00:00+00:00",
+        )
+    )
+    return "a"
+
+
+def test_update_command_edits_title(tmp_path, monkeypatch):
+    book_id = _seed_one_book(tmp_path, monkeypatch)
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["update", book_id, "--title", "Renamed"])
+    assert result.exit_code == 0, result.output
+    assert "Renamed" in result.output
+
+
+def test_update_command_without_fields_fails(tmp_path, monkeypatch):
+    book_id = _seed_one_book(tmp_path, monkeypatch)
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["update", book_id])
+    assert result.exit_code != 0
+    assert "Nothing to do" in result.output
