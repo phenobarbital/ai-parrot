@@ -275,6 +275,14 @@ class AggregateRecordsInput(_OdooBaseInput):
     limit: Optional[int] = Field(default=None, ge=1, description="Max groups to return")
     offset: int = Field(default=0, ge=0, description="Groups to skip (pagination)")
     order: Optional[str] = Field(default=None, description="Sort order for groups")
+    having: Optional[OdooDomain] = Field(
+        default=None,
+        description=(
+            "Odoo 19+ only. Domain over the aggregates to filter groups, e.g. "
+            "[['__count', '>', 5]] or [['amount_total:sum', '>', 1000]]. "
+            "Each aggregate referenced must also be listed in measures (except __count)."
+        ),
+    )
 
 
 class BuildDomainInput(_OdooBaseInput):
