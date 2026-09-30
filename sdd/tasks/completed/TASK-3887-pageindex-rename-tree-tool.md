@@ -235,3 +235,7 @@ Use existing toolkit fixture and mocks. Extend generated tool discovery coverage
 ## Completion Note
 
 Pending; populated by finalize_task after verified implementation.
+
+## Completion Note
+
+Merged by sdd-worker (gpt-5.6-terra, 1 attempt). Review fix: test_rename_tree_refuses_inside_batch expected ValueError for valid 128-char names with a missing source; corrected to KeyError. pageindex+bookstore suite: only baseline failures remain (test_adapter, test_okf_ontology, test_integration_graph — identical on origin/dev).

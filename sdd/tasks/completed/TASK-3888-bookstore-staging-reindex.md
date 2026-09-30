@@ -254,3 +254,7 @@ The seven tree_name=slug occurrences must be disambiguated by their enclosing ca
 ## Completion Note
 
 Pending; populated by finalize_task after verified implementation.
+
+## Completion Note
+
+Merged by sdd-worker (gpt-5.6-terra, 1 attempt). Review fix 6ebbaba34e2543187b01c5a8366a103defb44ea4: test_reindex_roundtrip_markdown used a too-short section body, so the markdown parser thinned the node away; lengthened the body. bookstore+pageindex suite: only baseline failures remain (test_adapter, test_okf_ontology, test_integration_graph).

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T22:00:44.513374+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-30T23:25:09+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent store primitives; owns store.py, content_store.py and their two test files. No shared mutable test configuration.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3886-pageindex-store-rename-primitives.md"
+      "started_at": "2026-09-30T22:40:50+00:00",
+      "completed_at": "2026-09-30T22:53:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3886-pageindex-store-rename-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3887",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes JSONTreeStore.rename and NodeContentStore.rename_tree from TASK-3886. Owns toolkit.py and test_toolkit.py; no overlapping writers.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3887-pageindex-rename-tree-tool.md"
+      "started_at": "2026-09-30T22:40:50+00:00",
+      "completed_at": "2026-09-30T22:59:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3887-pageindex-rename-tree-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3888",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,9 +65,10 @@
       "parallel": true,
       "parallelism_notes": "Calls PageIndexToolkit.rename_tree and imports _REPLACED_MARKER created by TASK-3887. Owns library.py and test_library.py, including their local store/book_md fixtures.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3888-bookstore-staging-reindex.md"
+      "started_at": "2026-09-30T22:40:50+00:00",
+      "completed_at": "2026-09-30T23:08:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3888-bookstore-staging-reindex.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3889",
@@ -74,16 +77,17 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Uses existing disambiguate_title and _stem_to_title; owns carding.py and a new test_title_fallback.py. Separate test file avoids overlap with the staging task\u2019s test_library.py.",
+      "parallelism_notes": "Uses existing disambiguate_title and _stem_to_title; owns carding.py and a new test_title_fallback.py. Separate test file avoids overlap with the staging task’s test_library.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3889-bookstore-title-fallback.md"
+      "started_at": "2026-09-30T22:40:50+00:00",
+      "completed_at": "2026-09-30T22:53:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3889-bookstore-title-fallback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3890",
@@ -92,16 +96,17 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Consumes existing Bookstore.update_card support for empty lists; owns cli.py and test_cli.py. No new symbol dependency or shared-resource mutation.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3890-bookstore-cli-clear-card-lists.md"
+      "started_at": "2026-09-30T22:40:50+00:00",
+      "completed_at": "2026-09-30T22:53:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3890-bookstore-cli-clear-card-lists.md",
+      "verification": "verified"
     }
   ]
 }
