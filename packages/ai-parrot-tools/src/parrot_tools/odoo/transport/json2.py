@@ -28,7 +28,6 @@ from parrot.interfaces.odoointerface import (
 
 from .base import AbstractOdooTransport
 
-
 logger = logging.getLogger(__name__)
 
 
