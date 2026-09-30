@@ -279,8 +279,8 @@ See the blueprint. Existing tests `test_aggregate_records_calls_read_group_for_o
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sonnet (native)
+**Date**: 2026-09-30
+**Notes**: Odoo 19+ branch of `aggregate_records` no longer sends `lazy` (debug log when lazy=True); docstring/Field description updated; tests added. 64 tests pass (scratch copy, same env caveat).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

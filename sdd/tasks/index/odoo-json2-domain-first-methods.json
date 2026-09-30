@@ -16,7 +16,7 @@
       "feature_id": "FEAT-614",
       "feature": "odoo-json2-domain-first-methods",
       "spec": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependency: touches only json2.py and test_odoo_json2_transport.py, which no other FEAT-614 task edits; runs concurrently with TASK-3884.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:52:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3883-json2-domain-first-mapping.md"
+      "completed_at": "2026-09-30T21:57:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3883-json2-domain-first-mapping.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3884",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-614",
       "feature": "odoo-json2-domain-first-methods",
       "spec": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "No dependency: edits toolkit.py, models/inputs.py and test_odoo_toolkit.py, disjoint from TASK-3883's files; runs concurrently with TASK-3883.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:52:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3884-aggregate-odoo19-drop-lazy.md"
+      "completed_at": "2026-09-30T21:57:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3884-aggregate-odoo19-drop-lazy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3885",
