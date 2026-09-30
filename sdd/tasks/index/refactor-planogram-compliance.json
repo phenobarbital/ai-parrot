@@ -122,7 +122,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -134,8 +134,9 @@
       "parallelism_notes": "imports read_target_text from TASK-3857 (identification/targets.py); dispatches identify_slots/identify_strips from TASK-3858 (identification/identify.py); adds stages/identify.py into the stages package created by TASK-3856 (stages/__init__.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3859-rule-evidence-stage-identify.md"
+      "completed_at": "2026-09-30T22:19:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3859-rule-evidence-stage-identify.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3860",
