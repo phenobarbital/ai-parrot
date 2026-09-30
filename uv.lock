@@ -1794,7 +1794,6 @@ dependencies = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pillow" },
-    { name = "pytesseract" },
     { name = "rapidfuzz" },
 ]
 
@@ -1811,7 +1810,6 @@ requires-dist = [
     { name = "onnxruntime", marker = "extra == 'planogram'", specifier = ">=1.20" },
     { name = "opencv-python-headless", specifier = ">=4.8" },
     { name = "pillow" },
-    { name = "pytesseract", specifier = ">=0.3.13" },
     { name = "rapidfuzz", specifier = ">=3.0" },
     { name = "rapidocr", marker = "extra == 'planogram'", specifier = ">=3.9" },
 ]
