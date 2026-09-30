@@ -36,6 +36,55 @@ The `request` field contains the canonical representation of conditions:
 - `grouping`: Group-by columns
 - `limit`/`offset`: Pagination
 
+### Source kinds
+
+Every entry carries a `kind` discriminator (a descriptor without one is a `query_slug` source — the shape above):
+
+| `kind` | What it is | Fields |
+|---|---|---|
+| `query_slug` | A fetched source: one QuerySource call per run | the table above |
+| `derived` | A **view computed from a sibling source's frame** with the transform DSL — never fetched, no params, no refresh policy of its own | `from` (sibling key), `transform` (`ops` only; `ref` is rejected), `target`, `snapshot_at`, `snapshot_truncated` |
+
+A derived source is the wire form of "my data comes from the Dashboard": the dashboard fetches `from` once, and
+any number of derived views (and any number of components bound directly to `/<from>/rows`) reuse that frame.
+Its base is the parent's **full fetched frame** (bounded by the 5000-row fetch cap), never the parent's ≤500-row
+snapshot; its own rows are snapshotted like any other source, so bake/HTML lanes and renderers without a lane see
+the computed view. Validation (`DATA_SOURCE_INVALID`) requires `from` to name another key of the same surface, a
+parent without a `transform.ref`, and no dependency cycle; a FilterBar `parrot_param` may not target a derived key.
+
+## 2b. Linked dashboards — dashboard-owned sources
+
+A dashboard is one linked surface whose sources belong to the *dashboard*, not to its widgets. A widget declares
+one of three data origins:
+
+1. **inline** — rows baked into `dataModel[<key>]` with no descriptor (never refreshed);
+2. **its own `query_slug` source** — fetched and refreshed independently (the FEAT-610 one-widget-one-source shape);
+3. **a dashboard source** — bound directly (`/kpis/rows/0/total_visits` from six KPICards over one `kpis` query that
+   computes six aggregates) or through a `derived` view (a grid shows every row of `rows`; a pie chart is
+   `{"kind": "derived", "from": "rows", "transform": {"ops": [{"op": "group_by", …}]}}` — a categorical aggregation of
+   those same rows computed on the client, with no second call).
+
+`qs_build_linked_dashboard` (see [querysource-toolkit.md](../tools/querysource-toolkit.md)) emits this shape from a
+`sources` map plus widgets with `source` / `slug` / `data`. The [Polestar example](../../examples/a2ui/README.md) loads
+with 4 QuerySource calls instead of the 8 per-widget calls of its first version.
+
+Refresh semantics, identical on the Python executor, the admin UI lane and the example lane:
+
+| Action | `query_slug` source | `derived` source |
+|---|---|---|
+| Mount / save-time snapshot | fetched in dependency order, once per pass however many widgets read it | computed after its parent, from the parent's full frame |
+| Refresh the dashboard (`refreshAll`, `POST …/refresh {}`) | re-fetched | recomputed through the parent's cascade; never fetched |
+| Refresh one shared source (`refreshSource(k)`) | re-fetched, then its `join`/`union` dependents | every derived view of `k` recomputed |
+| Refresh a derived widget (`refreshSource(d)`) | its parent is refreshed | recomputed by the cascade |
+| `setParam` / `{"params": {"d": {…}}}` | applied when declared and unlocked | ignored (`source d: ignored params […]` warning); broadcast params never reach derived keys |
+| Failure | `error` / `unavailable`, snapshot kept | a parent failure marks its derived views `error` (Python: `data_stage`); a `TransformError` fails only that view and blocks save-time snapshots (502 `data_stage`) |
+
+Caveat: a derived view aggregates what its parent fetched (≤ `max_fetch_rows`, 5000). When the full data set is
+larger, put the aggregation in the parent's `request` (`fields` + `grouping`) and derive from that; a server-paged
+grid source can never feed a derived view. Note that the DSL `group_by` drops rows whose group key is NULL, whereas
+QuerySource `grouping` keeps them as one bucket. `contract/fixtures/parity/derived_dashboard.json` pins the execution
+order, the set of fetched keys, the ignored params and the rows every executor must reproduce.
+
 ## 3. Fetch path and errors
 
 Renderers fetch linked data by making authenticated requests to QuerySource endpoints:
