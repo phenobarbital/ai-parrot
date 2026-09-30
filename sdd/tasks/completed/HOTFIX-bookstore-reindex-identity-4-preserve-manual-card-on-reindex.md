@@ -2,7 +2,7 @@
 
 **Feature**: bookstore-reindex-identity — Bookstore re-index identity, graph invalidation, title collision guard and card editing (hotfix)
 **Spec**: `sdd/specs/bookstore-reindex-identity.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: HOTFIX-bookstore-reindex-identity-3
@@ -147,8 +147,8 @@ Three tests inserted before `test_update_card_requires_a_field`:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Fable 5.1, interactive session)
+**Date**: 2026-09-30
+**Notes**: `preserved` branch added to `add_book` (commit 5f29b8320); 3 tests added; bookstore suite 167 passed; ruff adds no new findings (the 2 ASYNC240 hits pre-exist on main); black applied to the touched hunks. `issue:759176f0cf1a` (same ledger group) deliberately not fixed — released.
 
 **Deviations from spec**: none
