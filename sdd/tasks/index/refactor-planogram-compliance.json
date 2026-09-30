@@ -100,7 +100,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -111,8 +111,9 @@
       "parallelism_notes": "calls select_references from TASK-3857 (identification/references.py); uses ctx.reference_bank, Identification.reference_id, IdentifyStrategy.SLOTS from TASK-3854 (contracts.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3858-identify-v2-strategies.md"
+      "completed_at": "2026-09-30T22:13:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3858-identify-v2-strategies.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3859",
@@ -205,7 +206,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -218,8 +219,9 @@
       "parallelism_notes": "imports resolve_identity from TASK-3861 (comparison/identity.py); composes score_shelves/summarize/project_compliance as changed by TASK-3862; reads LayoutProfile vocabulary from TASK-3855 (layout.py); adds stages/compare.py into the package created by TASK-3856.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3863-rules-and-compare-stage.md"
+      "completed_at": "2026-09-30T22:13:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3863-rules-and-compare-stage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3864",
