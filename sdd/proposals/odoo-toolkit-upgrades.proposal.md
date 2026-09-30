@@ -4,7 +4,7 @@ title: OdooHelpdeskToolkit — typed helpdesk tools for the Softhealer helpdesk 
 slug: odoo-toolkit-upgrades
 type: feature
 mode: enrichment
-status: discussion
+status: accepted
 source:
   kind: inline
   jira_key: null
