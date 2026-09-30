@@ -417,7 +417,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -427,8 +427,9 @@
       "parallelism_notes": "handler tests assert the fail-fast ValueError that PlanogramCompliance.__init__ raises after TASK-3871 (planogram/plan.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3872-config-handler-integration.md"
+      "completed_at": "2026-09-30T23:06:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3872-config-handler-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3873",
@@ -456,7 +457,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -468,8 +469,9 @@
       "parallelism_notes": "grid detector/strategy/horizontal_bands lose their last importer when TASK-3865 rewrites types/product_on_shelves.py; legacy_adapter and grid.strategy lose theirs when TASK-3870 rewrites types/abstract.py; the legacy ClassVars/fallback_detection_prompt in abstract.py become dead only after TASK-3871 stops reading them in plan.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3874-remove-adapter-grid-execution.md"
+      "completed_at": "2026-09-30T23:06:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3874-remove-adapter-grid-execution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3875",
