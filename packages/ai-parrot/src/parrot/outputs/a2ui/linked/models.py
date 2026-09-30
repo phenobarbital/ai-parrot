@@ -223,8 +223,60 @@ class LinkedDataSource(BaseModel):
         return self
 
 
-class LinkedSources(RootModel[dict[str, LinkedDataSource]]):
+class DerivedDataSource(BaseModel):
+    """A dashboard-owned view computed from a sibling source's frame — never fetched (linked dashboards).
+
+    The base frame is the *full* fetched (and transformed) frame of ``from`` (bounded by ``max_fetch_rows``),
+    not its ≤500-row snapshot; the derived rows are snapshotted like any other source so bake/HTML lanes see
+    the computed view. Only inline ``transform.ops`` are allowed: a renderer-side ``ref`` cannot run in the
+    Python executor, which would break Python ↔ renderer parity.
+    """
+
+    model_config = _CFG
+    kind: Literal["derived"]
+    from_: str = Field(alias="from")
+    transform: TransformSpec
+    target: str
+    snapshot_at: datetime | None = None
+    snapshot_truncated: bool = False
+
+    @field_validator("target")
+    @classmethod
+    def _check_target(cls, value: str) -> str:
+        if not value or not is_valid_pointer(value):
+            raise ValueError(f"target {value!r} must be a non-empty absolute JSON pointer")
+        return value
+
+    @field_validator("from_")
+    @classmethod
+    def _check_from(cls, value: str) -> str:
+        if not value.isidentifier():
+            raise ValueError(f"from {value!r} must name a sibling source key (identifier)")
+        return value
+
+    @model_validator(mode="after")
+    def _ops_only(self) -> DerivedDataSource:
+        if self.transform.ref is not None or not self.transform.ops:
+            raise ValueError("a derived source requires inline transform.ops (transform.ref is not allowed)")
+        return self
+
+
+LinkedSource = Annotated[Union[LinkedDataSource, DerivedDataSource], Field(discriminator="kind")]
+
+
+class LinkedSources(RootModel[dict[str, LinkedSource]]):
     """Value of ``metadata.extensions['parrot_data_sources']`` keyed by data-model root."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _default_kind(cls, value: Any) -> Any:
+        """Descriptors written before the ``derived`` kind existed carry no ``kind``: they are ``query_slug``."""
+        if isinstance(value, dict):
+            return {
+                key: ({"kind": "query_slug", **src} if isinstance(src, dict) and "kind" not in src else src)
+                for key, src in value.items()
+            }
+        return value
 
     @model_validator(mode="after")
     def _check_keys(self) -> LinkedSources:

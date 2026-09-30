@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from parrot.auth.exceptions import AuthorizationRequired
 from parrot.outputs.a2ui.linked import has_data_sources
-from parrot.outputs.a2ui.linked.models import LinkedDataSource, LinkedSources
+from parrot.outputs.a2ui.linked.models import DerivedDataSource, LinkedSource, LinkedSources
 from parrot.outputs.a2ui.models import CreateSurface
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -51,7 +51,7 @@ class RefreshOutcome(BaseModel):
     error_code: str | None = None
 
 
-def _sources(envelope: CreateSurface | dict[str, Any]) -> dict[str, LinkedDataSource]:
+def _sources(envelope: CreateSurface | dict[str, Any]) -> dict[str, LinkedSource]:
     """Parse metadata.extensions.parrot_data_sources (dict or model envelope) into LinkedDataSource objects."""
     if isinstance(envelope, Mapping):
         metadata = envelope.get("metadata")
@@ -85,14 +85,20 @@ class LinkedSurfaceService:
         return self.guard
 
     async def _assert_sources_allowed(
-        self, sources: Mapping[str, LinkedDataSource], owner_pctx: "PermissionContext"
+        self, sources: Mapping[str, LinkedSource], owner_pctx: "PermissionContext"
     ) -> None:
-        """Owner must be allowed to execute every (tenant, slug) — raises AuthorizationRequired on denial (S2)."""
+        """Owner must be allowed to execute every (tenant, slug) — raises AuthorizationRequired on denial (S2).
+
+        Derived sources fetch nothing: their authorization is transitive through the parent they are computed
+        from (validation guarantees the parent is a sibling of the same surface), so they are skipped here.
+        """
         from parrot.tools.dataset_manager.sources.resolver import PhysicalResources
 
         guard = self._require_guard()
         seen: set[tuple[str | None, str]] = set()
         for key, src in sources.items():
+            if isinstance(src, DerivedDataSource):
+                continue
             pair = (src.tenant, src.slug)
             if pair in seen:
                 continue
@@ -128,7 +134,7 @@ class LinkedSurfaceService:
 
         data_model = envelope.get("dataModel") or {}
 
-        def _has_snapshot(key: str, src: LinkedDataSource) -> bool:
+        def _has_snapshot(key: str, src: LinkedSource) -> bool:
             root = data_model.get(key)
             rows = root.get("rows") if isinstance(root, Mapping) else None
             return src.snapshot_at is not None and isinstance(rows, list)
@@ -160,7 +166,9 @@ class LinkedSurfaceService:
 
         # `params` is the flat RefreshSurfaceRequest.params dict: a key naming a source with a mapping value is
         # that source's overrides; every other key (and any mapping-valued key that does NOT name a source) is
-        # broadcast to every source (execute_sources ignores names a source does not declare / has locked).
+        # broadcast to every query_slug source (execute_sources ignores names a source does not declare / has
+        # locked). A derived source takes no params: it only receives overrides explicitly addressed to it, so
+        # they surface as an "ignored params" warning while broadcast params never fan out to derived keys.
         broadcast: dict[str, Any] = {}
         per_source: dict[str, dict[str, Any]] = {key: {} for key in sources}
         for name, value in params.items():
@@ -168,7 +176,10 @@ class LinkedSurfaceService:
                 per_source[name].update(value)
             else:
                 broadcast[name] = value
-        param_overrides = {key: {**broadcast, **per_source[key]} for key in sources}
+        param_overrides = {
+            key: (dict(per_source[key]) if isinstance(src, DerivedDataSource) else {**broadcast, **per_source[key]})
+            for key, src in sources.items()
+        }
 
         outcome = await execute_sources(
             sources,
