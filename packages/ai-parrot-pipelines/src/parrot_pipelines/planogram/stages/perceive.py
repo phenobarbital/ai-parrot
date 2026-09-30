@@ -91,7 +91,7 @@ async def _rows_tag_below(
     candidates = [_candidate_from_shape(shape) for shape in anchors]
     image_id = anchors[0].image_id if anchors else ""
     by_candidate = {
-        candidate_shape_id(image_id, candidate): shape.shape_id for shape, candidate in zip(anchors, candidates)
+        candidate_shape_id(image_id, candidate): shape.shape_id for shape, candidate in zip(anchors, candidates, strict=False)
     }
     rows = await ctx.executor.run(_group_rows, candidates, size[0], profile.min_row_items, profile.max_row_slope)
     return rows, by_candidate
@@ -137,7 +137,7 @@ async def _rows_shape_is_slot(
         row = [_candidate_from_shape(shape) for shape in shapes]
         rows.append(row)
         by_candidate.update(
-            {candidate_shape_id(image_id, candidate): shape.shape_id for shape, candidate in zip(shapes, row)}
+            {candidate_shape_id(image_id, candidate): shape.shape_id for shape, candidate in zip(shapes, row, strict=False)}
         )
     return rows, by_candidate
 

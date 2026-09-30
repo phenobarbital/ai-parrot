@@ -237,7 +237,7 @@ def _entity_texts(
     refs: List[ObservationRef] = []
     observed = False
     results = {result.image_id: result for result in identifications}
-    for image_id, zone, shape, status in _zone_matches(binding.target_id, perceptions, definition, selectors):
+    for image_id, _zone, shape, status in _zone_matches(binding.target_id, perceptions, definition, selectors):
         if status != "matched" or shape is None:
             continue
         observed = True
