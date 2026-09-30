@@ -488,10 +488,5 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by coder seat via sdd-worker orchestration (merge-tier tests green for planogram scope; unrelated ai-parrot-server collection errors due to missing fakeredis in shared env).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any

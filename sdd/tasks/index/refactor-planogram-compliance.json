@@ -16,7 +16,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies: extends existing models in contracts.py only.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3854-contracts-cycle-additions.md"
+      "completed_at": "2026-09-30T21:44:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3854-contracts-cycle-additions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3855",
@@ -139,7 +140,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -147,8 +148,9 @@
       "parallelism_notes": "No dependencies: self-contained change to comparison/definition.py and its test.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3860-definition-empty-zones.md"
+      "completed_at": "2026-09-30T21:44:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3860-definition-empty-zones.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3861",
@@ -419,7 +421,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -427,8 +429,9 @@
       "parallelism_notes": "No dependencies: planogram/legacy.py and detector.py are imported only by the export tables and core proxies this task edits (verified by grep).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3873-remove-legacy-pipeline-exports.md"
+      "completed_at": "2026-09-30T21:44:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3873-remove-legacy-pipeline-exports.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3874",
