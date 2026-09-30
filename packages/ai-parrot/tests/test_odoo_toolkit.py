@@ -792,6 +792,54 @@ async def test_aggregate_records_rejects_invalid_aggregator():
         )
 
 
+@pytest.mark.asyncio
+async def test_aggregate_records_odoo_19_forwards_having():
+    """A non-empty having is sent to formatted_read_group on Odoo 19+."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "19.0", "server_version": "19.0"}
+    toolkit = _make_toolkit(transport)
+    transport.execute_kw.side_effect = [[{"state": "sale", "amount_total:sum": 5000.0}]]
+    having = [["amount_total:sum", ">", 1000]]
+
+    await toolkit.aggregate_records(
+        model="sale.order", group_by=["state"], measures=["amount_total:sum"], having=having
+    )
+
+    _model, method, _args, kwargs = transport.execute_kw.await_args.args
+    assert method == "formatted_read_group"
+    assert kwargs["having"] == having
+
+
+@pytest.mark.asyncio
+async def test_aggregate_records_odoo_19_omits_empty_having():
+    """None and [] send no having key."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "19.0", "server_version": "19.0"}
+    toolkit = _make_toolkit(transport)
+    transport.execute_kw.side_effect = [[{"state": "sale"}], [{"state": "sale"}]]
+
+    await toolkit.aggregate_records(model="sale.order", group_by=["state"], having=None)
+    first_kwargs = transport.execute_kw.await_args.args[3]
+    await toolkit.aggregate_records(model="sale.order", group_by=["state"], having=[])
+    second_kwargs = transport.execute_kw.await_args.args[3]
+
+    assert "having" not in first_kwargs
+    assert "having" not in second_kwargs
+
+
+@pytest.mark.asyncio
+async def test_aggregate_records_having_rejected_before_odoo_19():
+    """read_group has no having: raise instead of returning unfiltered groups."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "17.0", "server_version": "17.0"}
+    toolkit = _make_toolkit(transport)
+
+    with pytest.raises(ValueError, match="having requires Odoo 19"):
+        await toolkit.aggregate_records(model="sale.order", group_by=["state"], having=[["__count", ">", 5]])
+
+    assert transport.execute_kw.await_count == 0
+
+
 # ── Phase 1: Domain Builder ───────────────────────────────────────────────────
 
 

@@ -1053,6 +1053,7 @@ class OdooToolkit(AbstractToolkit):
         limit: Optional[int] = None,
         offset: int = 0,
         order: Optional[str] = None,
+        having: Optional[list[Any]] = None,
     ) -> AggregateResult:
         """Group and aggregate records server-side using read_group (Odoo 16-18)
         or formatted_read_group (Odoo 19+).
@@ -1073,12 +1074,16 @@ class OdooToolkit(AbstractToolkit):
             limit: Max number of groups to return.
             offset: Groups to skip.
             order: Sort order string.
+            having: Optional domain over the aggregates, filtering groups after
+                aggregation (e.g. ``[[\"__count\", \">\", 5]]`` or
+                ``[[\"amount_total:sum\", \">\", 1000]]``). Odoo 19+ only.
 
         Returns:
             AggregateResult with groups list and metadata.
 
         Raises:
-            ValueError: When an unsupported aggregator name is used.
+            ValueError: When an unsupported aggregator name is used, or when a
+                non-empty ``having`` is given and the server is not Odoo 19+.
         """
         # Validate and parse measure specs
         parsed_measures: list[tuple[str, str]] = []
@@ -1095,6 +1100,13 @@ class OdooToolkit(AbstractToolkit):
         domain = domain or []
         odoo_version = await self._get_odoo_major_version()
         use_formatted = odoo_version is not None and odoo_version >= 19
+
+        if having and not use_formatted:
+            # read_group (Odoo <= 18) has no ``having``; dropping it would return unfiltered groups.
+            raise ValueError(
+                f"having requires Odoo 19+ (formatted_read_group); detected Odoo {odoo_version}. "
+                "Filter the returned groups instead."
+            )
 
         if use_formatted:
             # Odoo 19+ formatted_read_group
@@ -1115,6 +1127,8 @@ class OdooToolkit(AbstractToolkit):
                 kwargs["offset"] = offset
             if order:
                 kwargs["order"] = order
+            if having:
+                kwargs["having"] = having
             groups = await self._execute(model, "formatted_read_group", [domain], kwargs)
         else:
             # Odoo 16-18 read_group — fields must include group_by columns AND measure specs
