@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -45,6 +46,7 @@ from .utils import find_node_by_id
 logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
 _MAX_TREES_HARD_CAP = 10
+_REPLACED_MARKER = "--replaced-"
 
 
 class PageIndexToolkit(AbstractToolkit):
@@ -406,6 +408,106 @@ class PageIndexToolkit(AbstractToolkit):
             "tree_removed": tree_removed,
             "sidecars_removed": sidecars_removed,
         }
+
+    async def rename_tree(
+        self,
+        src: str,
+        dst: str,
+        *,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Rename a tree and its sidecars, optionally replacing the destination.
+
+        Args:
+            src: Existing filesystem-safe tree name.
+            dst: New filesystem-safe tree name, distinct from ``src``.
+            overwrite: Replace an existing destination when true.
+
+        Returns:
+            Source, destination and whether a destination was replaced.
+
+        Raises:
+            KeyError: Source tree does not exist.
+            ValueError: Invalid names, identical names, an open batch, or a
+                destination collision without overwrite.
+        """
+        self._store._validate_name(src)
+        self._store._validate_name(dst)
+        if src == dst:
+            raise ValueError("Source and destination tree names must differ")
+        if self._batch_depth.get(src, 0) > 0 or self._batch_depth.get(dst, 0) > 0:
+            raise ValueError("Cannot rename a tree participating in an open batch")
+        if not self._store.exists(src):
+            raise KeyError(f"Tree {src!r} does not exist")
+
+        replaced = self._store.exists(dst)
+        if replaced and not overwrite:
+            raise ValueError(f"Tree {dst!r} already exists")
+
+        backup: str | None = None
+        if replaced:
+            backup_prefix = dst[: 128 - len(_REPLACED_MARKER) - 8]
+            for _ in range(32):
+                candidate = f"{backup_prefix}{_REPLACED_MARKER}{secrets.token_hex(4)}"
+                if candidate != src and not self._store.exists(candidate):
+                    backup = candidate
+                    break
+            if backup is None:
+                raise ValueError("Could not allocate a replacement backup name")
+
+        moves: list[tuple[str, str, str]] = []
+
+        def move_json(old: str, new: str) -> None:
+            self._store.rename(old, new)
+            moves.append(("json", old, new))
+
+        def move_content(old: str, new: str) -> None:
+            if self._content_store.rename_tree(old, new):
+                moves.append(("content", old, new))
+
+        def rollback() -> None:
+            for artifact, old, new in reversed(moves):
+                try:
+                    if artifact == "json":
+                        self._store.rename(new, old)
+                    else:
+                        self._content_store.rename_tree(new, old)
+                except Exception:
+                    logger.exception("Failed to roll back %s move from %r to %r", artifact, new, old)
+
+        affected_names = {src, dst}
+        if backup is not None:
+            affected_names.add(backup)
+
+        try:
+            if backup is not None:
+                move_json(dst, backup)
+                move_content(dst, backup)
+
+            if self._embedding_store is not None:
+                self._embedding_store.invalidate_tree(src)
+            move_content(src, dst)
+            move_json(src, dst)
+        except Exception:
+            rollback()
+            raise
+        finally:
+            for tree_name in affected_names:
+                self._trees.pop(tree_name, None)
+                self._search.pop(tree_name, None)
+                self._content_store._cache_evict_tree(tree_name)
+                self._okf_toolkits.pop(tree_name, None)
+
+        if backup is not None:
+            try:
+                self._store.delete(backup)
+                self._content_store.delete_tree(backup)
+            except Exception:
+                logger.exception("Failed to delete replacement backup tree %r", backup)
+
+        tree = self._load_tree(dst)
+        self._project_okf_sidecars(dst, tree)
+        return {"src": src, "dst": dst, "replaced": replaced}
 
     async def get_tree(self, tree_name: str) -> dict[str, Any]:
         """Return the full tree dict for ``tree_name``."""

@@ -8,7 +8,7 @@ import pytest
 
 from parrot.knowledge.pageindex.ingest import IngestedMarkdown
 from parrot.knowledge.pageindex.schemas import TreeSearchResult
-from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKER
 
 
 def _adapter() -> MagicMock:
@@ -1100,6 +1100,170 @@ def test_set_okf_toolkit_registers_tools(toolkit: PageIndexToolkit, tmp_path: Pa
     assert len(all_tools) > len(toolkit.__class__.mro())  # at least some tools
     # OKF toolkit returns 9 tools (6 read tools + FEAT-216 lint/export/import).
     assert len(okf_tk.get_tools()) == 9
+
+
+# ---- tree rename (FEAT-615 / TASK-3887) -----------------------------------
+
+
+async def _seed_rename_tree(toolkit: PageIndexToolkit, name: str, body: str) -> str:
+    """Create a tree with one sidecar and return its node id."""
+    await toolkit.create_tree(name)
+    result = await toolkit.add_node(name, title=name, body=body)
+    return result["node_id"]
+
+
+@pytest.mark.asyncio
+async def test_rename_tree_basic(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
+    """Move a tree and its sidecars to the new name."""
+    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+
+    result = await toolkit.rename_tree("source", "destination")
+
+    assert result == {"src": "source", "dst": "destination", "replaced": False}
+    assert not (tmp_path / "source.json").exists()
+    assert not (tmp_path / "source").exists()
+    assert (tmp_path / "destination.json").is_file()
+    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
+    assert (await toolkit.get_tree("destination"))["structure"][0]["title"] == "source"
+
+
+@pytest.mark.asyncio
+async def test_rename_tree_refuses_existing_dst_without_overwrite(
+    toolkit: PageIndexToolkit, tmp_path: Path
+) -> None:
+    """Reject collisions without mutating either tree."""
+    src_node = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    dst_node = await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+
+    with pytest.raises(ValueError, match="already exists"):
+        await toolkit.rename_tree("source", "destination")
+
+    assert (tmp_path / "source" / f"{src_node}.md").read_text() == "SOURCE_BODY"
+    assert (tmp_path / "destination" / f"{dst_node}.md").read_text() == "DESTINATION_BODY"
+
+
+@pytest.mark.asyncio
+async def test_rename_tree_overwrite_replaces_and_removes_backup(
+    toolkit: PageIndexToolkit, tmp_path: Path
+) -> None:
+    """Replace destination contents and remove its backup JSON."""
+    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+
+    result = await toolkit.rename_tree("source", "destination", overwrite=True)
+
+    assert result == {"src": "source", "dst": "destination", "replaced": True}
+    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
+    assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["backup_json", "backup_content", "publish_content", "publish_json"])
+async def test_rename_tree_overwrite_rolls_back_on_failure(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path, failure: str
+) -> None:
+    """Restore the destination for failures at every individual move boundary."""
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    dst_node = await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+    original_json_rename = toolkit._store.rename
+    original_content_rename = toolkit._content_store.rename_tree
+    json_calls = 0
+    content_calls = 0
+
+    def fail_json(src: str, dst: str) -> None:
+        nonlocal json_calls
+        json_calls += 1
+        if (failure == "backup_json" and json_calls == 1) or (failure == "publish_json" and json_calls == 2):
+            raise OSError("injected JSON move failure")
+        original_json_rename(src, dst)
+
+    def fail_content(src: str, dst: str) -> bool:
+        nonlocal content_calls
+        content_calls += 1
+        if (failure == "backup_content" and content_calls == 1) or (
+            failure == "publish_content" and content_calls == 2
+        ):
+            raise OSError("injected content move failure")
+        return original_content_rename(src, dst)
+
+    monkeypatch.setattr(toolkit._store, "rename", fail_json)
+    monkeypatch.setattr(toolkit._content_store, "rename_tree", fail_content)
+
+    with pytest.raises(OSError, match="injected"):
+        await toolkit.rename_tree("source", "destination", overwrite=True)
+
+    assert (tmp_path / "destination" / f"{dst_node}.md").read_text() == "DESTINATION_BODY"
+    assert (tmp_path / "source.json").is_file()
+    assert (tmp_path / "destination.json").is_file()
+    assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*.json"))
+
+
+@pytest.mark.asyncio
+async def test_rename_tree_invalidates_search_engine_cache(toolkit: PageIndexToolkit) -> None:
+    """Drop stale tree and search caches after a successful rename."""
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+    toolkit._search_for("source")
+    toolkit._search_for("destination")
+    embedding_store = MagicMock()
+    toolkit._embedding_store = embedding_store
+
+    await toolkit.rename_tree("source", "destination", overwrite=True)
+
+    assert "source" not in toolkit._trees
+    assert "source" not in toolkit._search
+    assert "destination" not in toolkit._search
+    embedding_store.invalidate_tree.assert_called_once_with("source")
+
+
+@pytest.mark.asyncio
+async def test_rename_tree_reprojects_okf_sidecars(toolkit: PageIndexToolkit) -> None:
+    """Reproject an enriched tree after it has its destination URI."""
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    source_tree = toolkit._trees["source"]
+    source_tree["structure"][0].update({"concept_id": "source/node", "type": "Section"})
+    toolkit._persist("source")
+    projected: list[str] = []
+
+    def project(tree_name: str, tree: dict) -> None:
+        projected.append(tree_name)
+
+    toolkit._project_okf_sidecars = project
+    await toolkit.rename_tree("source", "destination")
+
+    assert projected == ["destination"]
+
+
+def test_rename_tree_exposed_as_tool(toolkit: PageIndexToolkit) -> None:
+    """Expose rename through normal prefixed toolkit discovery."""
+    tool = toolkit.get_tool("pageindex_rename_tree")
+
+    assert tool is not None
+    fields = tool.args_schema.model_fields
+    assert {"src", "dst", "overwrite"} <= set(fields)
+    assert fields["overwrite"].default is False
+
+
+@pytest.mark.asyncio
+async def test_rename_tree_refuses_inside_batch(toolkit: PageIndexToolkit) -> None:
+    """Reject open source or destination batch participation and invalid input."""
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+
+    with pytest.raises(ValueError):
+        await toolkit.rename_tree("source", "source")
+    with pytest.raises(ValueError):
+        await toolkit.rename_tree("bad/name", "new")
+    with pytest.raises(KeyError):
+        await toolkit.rename_tree("missing", "new")
+    with pytest.raises(ValueError):
+        await toolkit.rename_tree("s" * 128, "d" * 128)
+    async with toolkit._batch("source"):
+        with pytest.raises(ValueError, match="open batch"):
+            await toolkit.rename_tree("source", "new")
+    async with toolkit._batch("destination"):
+        with pytest.raises(ValueError, match="open batch"):
+            await toolkit.rename_tree("source", "destination", overwrite=True)
 
 
 @pytest.mark.asyncio
