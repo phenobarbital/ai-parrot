@@ -1,4 +1,5 @@
 """PageIndex tree builder for Markdown documents."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,6 @@ from .utils import (
     create_clean_structure_for_description,
     write_node_id,
 )
-
 
 logger = logging.getLogger("parrot.knowledge.pageindex.md_builder")
 
@@ -53,6 +53,7 @@ def _parse_header_level(line: str) -> tuple[int, str] | None:
 
 
 # ======================== Markdown Parsing ========================
+
 
 def parse_markdown_structure(md_text: str) -> list[dict]:
     """Parse markdown text into a flat list of section entries.
@@ -114,14 +115,16 @@ def parse_markdown_structure(md_text: str) -> list[dict]:
                     parts.append(str(counters[lv]))
             structure = ".".join(parts) if parts else str(level)
 
-            sections.append({
-                "structure": structure,
-                "title": title,
-                "level": level,
-                "line_num": line_num,
-                "text": "",
-                "token_count": 0,
-            })
+            sections.append(
+                {
+                    "structure": structure,
+                    "title": title,
+                    "level": level,
+                    "line_num": line_num,
+                    "text": "",
+                    "token_count": 0,
+                }
+            )
         else:
             current_text.append(line)
 
@@ -168,6 +171,7 @@ def sections_to_tree(sections: list[dict]) -> list[dict]:
 
 # ======================== Tree Thinning ========================
 
+
 def _count_tree_tokens(node: dict) -> int:
     """Count total tokens in a node and its children."""
     total = node.get("token_count", 0)
@@ -199,6 +203,7 @@ def thin_tree(
 
 # ======================== Summary Generation ========================
 
+
 async def generate_node_summary_md(
     node: dict,
     adapter: PageIndexLLMAdapter,
@@ -223,6 +228,7 @@ async def generate_prefix_summaries(
     adapter: PageIndexLLMAdapter,
 ) -> None:
     """Generate prefix summaries for all nodes."""
+
     async def process_node(node: dict) -> None:
         if node.get("text") and node["text"].strip():
             summary = await generate_node_summary_md(node, adapter)
@@ -236,15 +242,14 @@ async def generate_prefix_summaries(
             child_summaries = [c.get("summary", "") for c in children if c.get("summary")]
             if child_summaries:
                 combined = "; ".join(child_summaries[:5])
-                node["prefix_summary"] = (
-                    f"{node.get('summary', '')}\nSubsections cover: {combined}"
-                )
+                node["prefix_summary"] = f"{node.get('summary', '')}\nSubsections cover: {combined}"
 
     tasks = [process_node(node) for node in tree]
     await asyncio.gather(*tasks)
 
 
 # ======================== Public API ========================
+
 
 async def md_to_tree(
     md_text: str,
@@ -311,6 +316,7 @@ async def md_to_tree(
 
     if opt.if_add_doc_description == "yes" and adapter is not None:
         from .builder import generate_doc_description
+
         clean_struct = create_clean_structure_for_description(tree)
         doc_description = await generate_doc_description(clean_struct, adapter)
         return {

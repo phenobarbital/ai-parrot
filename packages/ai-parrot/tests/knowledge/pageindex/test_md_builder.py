@@ -1,4 +1,5 @@
 """Regression tests for the fence-aware PageIndex Markdown parser (FEAT-613)."""
+
 from __future__ import annotations
 
 import pytest
