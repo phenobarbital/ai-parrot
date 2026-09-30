@@ -53,10 +53,13 @@ authenticated user re-run the agent (a demo simplification).
 - `server.py` — Example aiohttp server serving the dashboard
 - `client.py` — CLI client with `--open` and `--check` modes
 - `seed_by_course.py` — Idempotent seed script for the by-course slug
-- `dashboard.py` — Widget definitions and agent configuration
-- `static/linked.js` — Vanilla JS port of the linked lane (fetch, conditions, `refreshSource`/`refreshAll`, and the
-  example-only `fetchPage` used for the server-paged grid). **Transforms (`transform.ops` / `ref`) are pass-through in
-  this port** — the dashboard's sources declare none. Use the admin UI lane for transform-heavy surfaces.
+- `dashboard.py` — Dashboard-owned data sources (`SOURCES`), widget definitions (`WIDGETS`) and agent configuration.
+  The dashboard fetches each source once and shares it: four KPICards read one `kpis` query, two bar charts are
+  *derived views* (`kind: "derived"`, DSL `group_by`) of one `geo` matrix — 4 QuerySource calls instead of 8.
+- `static/linked.js` — Vanilla JS port of the linked lane (fetch, conditions, `refreshSource`/`refreshAll`, derived
+  views computed from their parent's frame with a cascade on refresh, and the example-only `fetchPage` used for the
+  server-paged grid). `transform.ops` run through `static/dsl.js`; `transform.ref` modules are not supported here.
+- `static/dsl.js` — Vanilla port of the transform DSL (ten ops), checked against the shared golden fixtures.
 - `static/renderer.js` — renders the envelope (KPICard / Chart / DataTable). The grid is a small native table paged on
   the server (`querylimit` + `_offset`, stable `ordering`, exact-match column filters, total via `count(*)`); all
   envelope text is inserted with `textContent`. The browser logs in with `POST /api/v1/login` (JSON) and keeps the JWT

@@ -30,7 +30,10 @@ def test_static_assets_sri_and_wiring() -> None:
     renderer_js = (static_dir / "renderer.js").read_text()
 
     # Should import from linked.js
-    assert "import { createLane } from './linked.js'" in renderer_js, "Should import createLane from linked.js"
+    assert "import { createLane, isDerived, isQuerySlug } from './linked.js'" in renderer_js, (
+        "Should import createLane from linked.js"
+    )
+    assert "from './dsl.js'" in (static_dir / "linked.js").read_text(), "linked.js runs transforms through dsl.js"
 
     # Should reference the token key
     assert "ai_parrot_token" in renderer_js, "Should reference ai_parrot_token"

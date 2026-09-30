@@ -50,23 +50,33 @@ const { mountDashboard, planDashboard, parseBinding, chartOption, kpiText, label
 // --- pure helpers on the real envelope -----------------------------------------------------------------------------
 const plan = planDashboard(envelope);
 assert.equal(plan.rootId, 'root');
-assert.deepEqual(Object.keys(plan.sources), ['kpi_total', 'kpi_studio', 'kpi_mat', 'kpi_multi', 'by_country', 'by_licensee', 'by_course', 'graduates']);
-assert.deepEqual(parseBinding(plan.byId.kpi_total.value), { key: 'kpi_total', column: 'total' });
+assert.deepEqual(Object.keys(plan.sources), ['kpis', 'geo', 'by_country', 'by_licensee', 'by_course', 'graduates']);
+assert.equal(plan.sources.by_country.kind, 'derived');
+assert.equal(plan.sources.by_country.from, 'geo');
+assert.deepEqual(plan.pagedKeys, ['graduates']);
+assert.deepEqual(parseBinding(plan.byId.kpi_total.value), { key: 'kpis', column: 'total' });
+assert.deepEqual(parseBinding(plan.byId.kpi_studio.value), { key: 'kpis', column: 'studio' });
 assert.deepEqual(parseBinding(plan.byId.by_country.data), { key: 'by_country', column: null });
 assert.equal(parseBinding(undefined), null);
 assert.equal(label(null), 'Unassigned');
 assert.equal(kpiText([{ total: 17572 }], 'total'), '17,572');
 assert.equal(kpiText([], 'total'), '—');
+const broken = JSON.parse(JSON.stringify(envelope));
+broken.metadata.extensions.parrot_data_sources.bad = { kind: 'derived', from: 'graduates', target: '/bad/rows', transform: { ops: [{ op: 'limit', n: 1 }] } };
+assert.throws(() => planDashboard(broken), /server-paged source 'graduates'/, 'a derived view over the paged grid is rejected');
 
 // --- fake QuerySource ----------------------------------------------------------------------------------------------
 const canon = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
 const keyOf = new Map();
-for (const [key, src] of Object.entries(plan.sources)) keyOf.set(canon(src.conditions), key);
+for (const [key, src] of Object.entries(plan.sources)) if (src.conditions) keyOf.set(canon(src.conditions), key);
 const calls = [];
+// 95 countries × 23 licensees, one NULL country: the derived group_by drops the NULL key (DSL semantics), so
+// by_country has 94 bars and by_licensee 23.
+const GEO = [];
+for (let c = 0; c < 95; c++) for (let l = 0; l < 23; l++) GEO.push({ country: c === 0 ? null : `C${c}`, licensee: `L${l}`, graduates: c + 1 });
 const DATA = {
-  kpi_total: [{ total: 17572 }], kpi_studio: [{ total: 9191 }], kpi_mat: [{ total: 6245 }], kpi_multi: [{ multi_graduates: 2884 }],
-  by_country: Array.from({ length: 95 }, (_, i) => ({ country: i === 0 ? null : `C${i}`, graduates: i + 1 })),
-  by_licensee: Array.from({ length: 23 }, (_, i) => ({ licensee: `L${i}`, graduates: i + 1 })),
+  kpis: [{ total: 17572, studio: 9191, mat: 6245, multi_graduates: 2884 }],
+  geo: GEO,
   by_course: [
     { course: 'Pilates Studio', graduates: 9204 }, { course: 'Pilates Mat', graduates: 6247 },
     { course: 'Reformer', graduates: 3300 }, { course: null, graduates: 2048 },
@@ -95,20 +105,28 @@ const { lane, widgets, refreshAll } = mountDashboard(envelope, { doc, container:
 await settle();
 
 assert.equal(calls.filter((c) => c.querylimit === 500).length, 0, 'start() skips the paged grid source (no wasted 500-row frame)');
+assert.equal(calls.filter((c) => c.grouping && c.grouping.length === 2).length, 1, 'the geo matrix is fetched ONCE for both derived charts');
+assert.equal(calls.filter((c) => c.fields && c.fields[0] === 'count(*) as total' && c.fields.length === 4).length, 1, 'the four KPIs cost ONE request');
+assert.equal(calls.length, 3 + 2, '3 linked sources (kpis, geo, by_course) + the grid page and count');
 
 // --- AC7: all 8 widgets render with the live values ------------------------------------------------------------------
-assert.deepEqual(Object.keys(widgets).sort(), Object.keys(plan.sources).sort());
+assert.deepEqual(Object.keys(widgets).sort(), ['by_country', 'by_course', 'by_licensee', 'graduates', 'kpis']);
+assert.equal(widgets.kpis.length, 4, 'one shared source fans out to four KPICards');
+assert.equal(widgets.geo, undefined, 'no widget binds the geo matrix directly');
 const kpis = ['kpi_total', 'kpi_studio', 'kpi_mat', 'kpi_multi'].map((k) => doc.querySelector(`[data-widget="${k}"] .kpi-value`).textContent);
 assert.deepEqual(kpis, ['17,572', '9,191', '6,245', '2,884']);
-const latest = (nodeKey) => options.filter((o) => o.node === widgets[nodeKey].element.querySelector('.chart')).at(-1).o;
-assert.equal(latest('by_country').xAxis.data.length, 95);
-assert.equal(latest('by_country').xAxis.data[0], 'Unassigned', 'NULL bucket is labelled Unassigned');
+const chartOf = (nodeKey) => doc.querySelector(`[data-widget="${nodeKey}"] .chart`);
+const latest = (nodeKey) => options.filter((o) => o.node === chartOf(nodeKey)).at(-1).o;
+assert.equal(latest('by_country').xAxis.data.length, 94, 'derived group_by drops the NULL country (DSL semantics)');
+assert.equal(latest('by_country').xAxis.data[0], 'C94', 'sorted by graduates desc');
+assert.deepEqual(latest('by_country').series[0].data.slice(0, 2), [95 * 23, 94 * 23]);
 assert.equal(latest('by_licensee').xAxis.data.length, 23);
 const pie = latest('by_course').series[0];
 assert.equal(pie.type, 'pie');
 assert.deepEqual(pie.data.map((d) => d.value), [9204, 6247, 3300, 2048]);
 assert.equal(pie.data.at(-1).name, 'Unassigned');
 assert.equal(latest('by_country').series[0].type, 'bar');
+assert.equal(doc.querySelector('[data-status="by_country"]').textContent, 'ready');
 
 // --- AC9: grid pages on the server, filters change rows and total ---------------------------------------------------
 const gridBox = doc.querySelector('[data-widget="graduates"]');
@@ -130,22 +148,24 @@ await settle();
 assert.deepEqual(calls.find((c) => c.fields[0] === 'student_uid').filter, { country: 'US' });
 assert.match(gridBox.querySelector('.grid-info').textContent, /page 1 \/ 5 · 100 rows/, 'total follows the filter, page resets');
 
-// --- AC8: per-widget refresh = ONE request for its own source, only that widget repaints -------------------------------
+// --- AC8: per-widget refresh = ONE request for its (shared) source; every widget on that source repaints ---------------
 const initsBefore = inits.length;
 const before = options.length;
 calls.length = 0;
 doc.querySelector('[data-refresh="kpi_studio"]').onclick();
 await settle();
-assert.equal(calls.length, 1);
+assert.equal(calls.length, 1, 'refreshing one KPI re-fetches the shared kpis source once');
 assert.equal(calls[0].refresh, true);
-assert.deepEqual(calls[0].filter, plan.sources.kpi_studio.conditions.filter);
+assert.deepEqual(calls[0].fields, plan.sources.kpis.conditions.fields);
 assert.equal(options.length, before, 'no chart repaints for a KPI refresh');
+assert.deepEqual([...doc.querySelectorAll('[data-widget^="kpi_"] .status')].map((s) => s.textContent), ['ready', 'ready', 'ready', 'ready'], 'all four cards follow the shared source');
 calls.length = 0;
 doc.querySelector('[data-refresh="by_country"]').onclick();
 await settle();
-assert.equal(calls.length, 1);
+assert.equal(calls.length, 1, 'refreshing a derived chart re-fetches its parent (geo) once');
+assert.deepEqual(calls[0].grouping, ['country', 'licensee']);
 assert.equal(inits.length, initsBefore, 'echarts instance is reused on refresh (no leak)');
-assert.equal(options.length, before + 1);
+assert.equal(options.length, before + 2, 'both derived charts repaint from the one geo fetch');
 calls.length = 0;
 doc.querySelector('[data-refresh="graduates"]').onclick();
 await settle();
@@ -155,7 +175,7 @@ assert.ok(calls.every((c) => c.fields[0] === 'student_uid' || c.fields[0] === 'c
 calls.length = 0;
 await refreshAll();
 await settle();
-assert.equal(calls.filter((c) => c.refresh === true).length, 9, '7 linked sources + the grid page and count, all cache-bypassing');
+assert.equal(calls.filter((c) => c.refresh === true).length, 5, '3 query-slug sources + the grid page and count, all cache-bypassing; derived views cost nothing');
 assert.equal(calls.filter((c) => c.fields[0] === 'student_uid' && c.querylimit === 500).length, 0, 'the grid source is never fetched as a bounded lane frame');
 
 // --- envelope text is never injected as HTML --------------------------------------------------------------------------
@@ -188,7 +208,7 @@ def test_renderer_against_real_envelope(tmp_path: Path) -> None:
         pytest.skip("node not found")
     if not (UI_NODE_MODULES / "jsdom").exists():
         pytest.skip("jsdom not installed (packages/ai-parrot-server/ui/node_modules)")
-    for name in ("renderer.js", "linked.js"):
+    for name in ("renderer.js", "linked.js", "dsl.js"):
         shutil.copy(STATIC / name, tmp_path / name)
     envelope_path = tmp_path / "envelope.json"
     envelope_path.write_text(json.dumps(real_envelope()))

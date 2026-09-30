@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -117,16 +119,89 @@ assert.equal(calls.length, 0, 'refreshSource on a paged key is a no-op');
 await plane.fetchPage('g', { refresh: true });
 assert.equal(calls.length, 2);
 assert.ok(calls.every((c) => c.body.refresh === true), 'page and count both bypass the cache');
+
+// --- linked dashboards: one shared parent fetch feeds N derived views; refresh cascades; params are ignored ------------
+const GEO = [
+  { country: 'US', licensee: 'a', graduates: 10 }, { country: 'MX', licensee: 'a', graduates: 5 },
+  { country: 'US', licensee: 'b', graduates: 20 }, { country: null, licensee: 'b', graduates: 1 },
+];
+const dsources = {
+  by_country: { kind: 'derived', from: 'geo', target: '/by_country/rows',
+    transform: { ops: [{ op: 'group_by', by: ['country'], aggregate: { graduates: 'sum' } }, { op: 'sort', by: [{ column: 'graduates', direction: 'desc' }] }] } },
+  geo: source({ kind: 'query_slug', request: { ...source().request, fields: ['country', 'licensee', 'count(*) as graduates'], grouping: ['country', 'licensee'] } }),
+  by_licensee: { kind: 'derived', from: 'geo', target: '/by_licensee/rows',
+    transform: { ops: [{ op: 'group_by', by: ['licensee'], aggregate: { graduates: 'sum' } }] } },
+  top: { kind: 'derived', from: 'by_country', target: '/top/rows', transform: { ops: [{ op: 'limit', n: 1 }] } },
+};
+reset();
+responder = () => GEO;
+const dupdates = [];
+const dlane = createLane(dsources, { baseUrl: 'https://h', token: 'T', onUpdate: (u) => dupdates.push(u) });
+dlane.start();
+await new Promise((r) => setTimeout(r, 20));
+assert.equal(calls.length, 1, 'start fetches the shared parent exactly once; derived views are never fetched');
+const readyKeys = dupdates.filter((u) => u.status === 'ready').map((u) => u.key);
+assert.deepEqual(readyKeys, ['geo', 'by_country', 'top', 'by_licensee'], 'parent first, then its derived views (chain included)');
+const rowsOf = (key) => dupdates.filter((u) => u.status === 'ready' && u.key === key).at(-1).rows;
+assert.deepEqual(rowsOf('by_country'), [{ country: 'US', graduates: 30 }, { country: 'MX', graduates: 5 }], 'group_by drops the NULL key, sort desc');
+assert.deepEqual(rowsOf('by_licensee'), [{ licensee: 'a', graduates: 15 }, { licensee: 'b', graduates: 21 }]);
+assert.deepEqual(rowsOf('top'), [{ country: 'US', graduates: 30 }]);
+calls.length = 0;
+dupdates.length = 0;
+await dlane.refreshSource('by_licensee');
+assert.equal(calls.length, 1, 'refreshing a derived view re-fetches its parent once');
+assert.equal(calls[0].body.refresh, true);
+assert.deepEqual(dupdates.filter((u) => u.status === 'ready').map((u) => u.key), ['geo', 'by_country', 'top', 'by_licensee'], 'the cascade recomputes every derived view');
+calls.length = 0;
+await dlane.refreshAll();
+assert.equal(calls.length, 1, 'refreshAll fetches only the query-slug source');
+calls.length = 0;
+await dlane.setParam('by_country', 'firstdate', '2026-01-01');
+assert.equal(calls.length, 0, 'a derived view takes no params');
+dupdates.length = 0;
+responder = () => new Response('nope', { status: 404 });
+await dlane.refreshSource('geo');
+assert.deepEqual(dupdates.filter((u) => u.status !== 'loading').map((u) => [u.key, u.status]).sort(),
+  [['by_country', 'error'], ['by_licensee', 'error'], ['geo', 'unavailable'], ['top', 'error']], 'a parent failure takes its derived views down, snapshots kept');
+await assert.rejects(dlane.fetchPage('by_country'), /unknown source/);
+
+// --- the DSL port passes the shared golden fixtures (contract/fixtures/dsl) -------------------------------------------
+const { applyTransform } = await import('./dsl.js');
+const fixtures = JSON.parse(process.env.DSL_FIXTURES);
+for (const fx of fixtures) {
+  const out = applyTransform(fx.input, { ops: fx.ops }, fx.frames ?? {});
+  assert.deepEqual(out, fx.expected, `dsl fixture ${fx.name}: ${fx.description}`);
+}
+assert.ok(fixtures.length >= 10, 'the golden DSL fixtures were loaded');
 console.log('linked.js: all assertions passed');
 """
 
+FIXTURES = (
+    Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/outputs/a2ui/linked/contract/fixtures/dsl"
+)
+# Fixtures whose expectations depend on pandas dtype/datetime semantics the row-based JS port does not model.
+SKIPPED_FIXTURES = {"dtype_preservation.json", "tz_datetime_roundtrip.json"}
+
 
 def test_linked_js_contract(tmp_path: Path) -> None:
-    """linked.js: routes, conditions, cap, refresh semantics (AC8) and server paging (AC9) with hard asserts."""
+    """linked.js: routes, conditions, cap, refresh semantics (AC8), server paging (AC9), derived views and the DSL port."""
     if shutil.which("node") is None:
         pytest.skip("node not found")
-    shutil.copy(STATIC / "linked.js", tmp_path / "linked.js")
+    for name in ("linked.js", "dsl.js"):
+        shutil.copy(STATIC / name, tmp_path / name)
+    fixtures = [
+        {"name": path.name, **json.loads(path.read_text())}
+        for path in sorted(FIXTURES.glob("*.json"))
+        if path.name not in SKIPPED_FIXTURES
+    ]
     (tmp_path / "test.mjs").write_text(HARNESS)
-    result = subprocess.run(["node", "test.mjs"], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(
+        ["node", "test.mjs"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "DSL_FIXTURES": json.dumps(fixtures)},
+    )
     assert result.returncode == 0, f"node test failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     assert "all assertions passed" in result.stdout
