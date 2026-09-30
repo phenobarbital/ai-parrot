@@ -176,3 +176,81 @@ class TestIdempotentUpload:
         again = await (await client.post(url, data=data2, headers=headers)).json()
         assert [e["blob_ref"] for e in again] == [e["blob_ref"] for e in first]
         assert len(_files(tmp_path)) == 2
+
+
+class TestIdempotentUploadReview:
+    """Blind review, 2026-09-30: the blob name must follow the FILE, not its position."""
+
+    @staticmethod
+    def _two(first: tuple[str, bytes], second: tuple[str, bytes]) -> FormData:
+        data = FormData()
+        for name, content in (first, second):
+            data.add_field("file", io.BytesIO(content), filename=name, content_type="text/plain")
+        return data
+
+    @pytest.mark.asyncio
+    async def test_a_retry_with_the_parts_reordered_never_swaps_content(self, aiohttp_client, storage, tmp_path):
+        # RED/GREEN BY MUTATION: name the blob by part index again, and the
+        # reordered retry writes B's bytes over A's blob.
+        form, field_uid = _form(FieldType.MULTI_UPLOAD, "gallery")
+        client = await _client(aiohttp_client, form, storage)
+        url = f"/api/v1/navigator/forms/{form.form_uid}/fields/{field_uid}/file-upload"
+        headers = {CLIENT_UPLOAD_ID_HEADER: "batch-9"}
+        first = await (await client.post(url, data=self._two(("a.txt", b"AAAA"), ("b.txt", b"BBBB")), headers=headers)).json()
+        await client.post(url, data=self._two(("b.txt", b"BBBB"), ("a.txt", b"AAAA")), headers=headers)
+        for env, expected in zip(first, (b"AAAA", b"BBBB")):
+            stream = await storage.get(env["blob_ref"])
+            assert b"".join([c async for c in stream]) == expected
+        assert len(_files(tmp_path)) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_retry_never_deletes_the_live_blob(self, aiohttp_client, storage):
+        # RED/GREEN BY MUTATION: drop the client-id guard on the
+        # single-cardinality cleanup, and the 400 deletes the stored photo.
+        form, field_uid = _form()
+        client = await _client(aiohttp_client, form, storage)
+        photo = _png()
+        headers = {CLIENT_UPLOAD_ID_HEADER: "photo-live"}
+        live = await _upload(client, form, field_uid, photo, headers=headers)
+        bad = FormData()
+        bad.add_field("file", io.BytesIO(photo), filename="shelf.png", content_type="image/png")
+        bad.add_field("file", io.BytesIO(photo), filename="again.png", content_type="image/png")
+        resp = await client.post(
+            f"/api/v1/navigator/forms/{form.form_uid}/fields/{field_uid}/file-upload", data=bad, headers=headers
+        )
+        assert resp.status == 400
+        stream = await storage.get(live["blob_ref"])
+        assert b"".join([c async for c in stream]) == photo
+
+    @pytest.mark.asyncio
+    async def test_two_chunked_sessions_under_one_client_id_store_one_file(self, aiohttp_client, storage, tmp_path):
+        # RED/GREEN BY MUTATION: stop threading the seed into the chunked path.
+        form, field_uid = _form(FieldType.FILE, "doc")
+        client = await _client(aiohttp_client, form, storage)
+        url = f"/api/v1/navigator/forms/{form.form_uid}/fields/{field_uid}/file-upload"
+        body = b"0123456789"
+        refs = []
+        for session in ("s-1", "s-2"):
+            for offset in (0, 5):
+                resp = await client.post(url, data=body[offset:offset + 5], headers={
+                    "X-Parrot-Upload-Offset": str(offset), "X-Parrot-Upload-Length": str(len(body)),
+                    "X-Parrot-Upload-Id": session, CLIENT_UPLOAD_ID_HEADER: "doc-1",
+                    "Content-Type": "application/octet-stream"})
+            assert resp.status == 200, await resp.text()
+            refs.append((await resp.json())["blob_ref"])
+        assert refs[0] == refs[1]
+        assert len(_files(tmp_path)) == 1
+
+    @pytest.mark.asyncio
+    async def test_one_client_id_on_two_fields_is_two_blobs(self, aiohttp_client, storage):
+        # RED/GREEN BY MUTATION: drop the field from the seed.
+        first = FormField(field_id="front", field_type=FieldType.IMAGE, label={"en": "Front"})
+        second = FormField(field_id="back", field_type=FieldType.IMAGE, label={"en": "Back"})
+        form = FormSchema(form_id="visit2", title={"en": "Visit"},
+                          sections=[FormSection(section_id="s1", fields=[first, second])], tenant="navigator")
+        client = await _client(aiohttp_client, form, storage)
+        photo = _png()
+        headers = {CLIENT_UPLOAD_ID_HEADER: "same"}
+        a = await _upload(client, form, first.field_uid, photo, headers=headers)
+        b = await _upload(client, form, second.field_uid, photo, headers=headers)
+        assert a["blob_ref"] != b["blob_ref"]

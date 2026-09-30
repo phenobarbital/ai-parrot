@@ -136,13 +136,16 @@ _MAX_CLIENT_UPLOAD_ID = 128
 
 
 def _client_blob_id(
-    request: web.Request, form: FormSchema, field: FormField, tenant: str | None, index: int
+    request: web.Request, form: FormSchema, field: FormField, tenant: str | None
 ) -> str | None:
-    """The deterministic blob name for this upload part, or ``None`` (random, as before).
+    """The client-id SEED for this upload's blob names, or ``None`` (random, as before).
 
-    Derived by hashing the header with the tenant, form, field and part index,
-    so the raw header never becomes a storage key and one client id can never
-    collide across tenants, forms, fields or the files of one multi-upload.
+    A hash of the header with the tenant, form and field, so the raw header
+    never becomes a storage key and one client id can never collide across
+    tenants, forms or fields. The blob name itself is this seed hashed with
+    the FILE's own SHA-256 (:func:`_deterministic_blob_id`): a retry — even
+    one that sends the parts of a multi-upload in another order — names each
+    file's own blob, and two different files can never share one.
 
     Raises:
         web.HTTPBadRequest: The header is longer than 128 characters.
@@ -152,8 +155,15 @@ def _client_blob_id(
         return None
     if len(client_id) > _MAX_CLIENT_UPLOAD_ID:
         raise web.HTTPBadRequest(reason=f"{CLIENT_UPLOAD_ID_HEADER} is longer than {_MAX_CLIENT_UPLOAD_ID} characters")
-    name = "\x1f".join((tenant or "", str(form.form_uid), str(field.field_uid), client_id, str(index)))
+    name = "\x1f".join((tenant or "", str(form.form_uid), str(field.field_uid), client_id))
     return hashlib.sha256(name.encode("utf-8")).hexdigest()[:32]
+
+
+def _deterministic_blob_id(client_seed: str | None, checksum_hex: str) -> str | None:
+    """The blob name for one file: the client seed hashed with the file's SHA-256."""
+    if not client_seed:
+        return None
+    return hashlib.sha256(f"{client_seed}\x1f{checksum_hex}".encode("utf-8")).hexdigest()[:32]
 
 
 async def handle_file_upload(request: web.Request) -> web.Response:
@@ -249,7 +259,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
             allowed_mimes,
             max_inline,
             thumbnail_base_path,
-            blob_id=_client_blob_id(request, form, field, blob_tenant, 0),
+            client_seed=_client_blob_id(request, form, field, blob_tenant),
         )
         if envelope is None:
             return web.json_response({"status": "chunk_received"}, status=202)
@@ -272,6 +282,11 @@ async def handle_file_upload(request: web.Request) -> web.Response:
                 # The first file was already persisted before we could see
                 # a second 'file' part arrive — clean it up (and any
                 # thumbnail) rather than leaving an orphaned blob behind.
+                # NOT under a client upload id: that name is deterministic and
+                # may be a blob an EARLIER request stored and a submission
+                # already references — an orphan is the lesser harm.
+                if request.headers.get(CLIENT_UPLOAD_ID_HEADER):
+                    raise web.HTTPBadRequest(reason=f"Field {field_id!r} accepts a single file only")
                 for orphan in envelopes:
                     for ref in (orphan.blob_ref, orphan.thumbnail_url):
                         if not ref:
@@ -296,7 +311,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
                 allowed_mimes,
                 max_inline,
                 thumbnail_base_path,
-                blob_id=_client_blob_id(request, form, field, blob_tenant, len(envelopes)),
+                client_seed=_client_blob_id(request, form, field, blob_tenant),
             )
             envelopes.append(envelope)
 
@@ -338,7 +353,7 @@ async def _process_file_part(
     max_inline: int,
     thumbnail_base_path: str,
     *,
-    blob_id: str | None = None,
+    client_seed: str | None = None,
 ) -> FileEnvelope:
     """Stream, validate, and persist a single multipart file part.
 
@@ -389,7 +404,7 @@ async def _process_file_part(
         blob_tenant,
         max_inline,
         thumbnail_base_path,
-        blob_id=blob_id,
+        client_seed=client_seed,
     )
 
 
@@ -405,7 +420,7 @@ async def _handle_chunk(
     max_inline: int,
     thumbnail_base_path: str,
     *,
-    blob_id: str | None = None,
+    client_seed: str | None = None,
 ) -> FileEnvelope | None:
     """Handle one chunk of a basic chunked upload.
 
@@ -518,7 +533,7 @@ async def _handle_chunk(
         blob_tenant,
         max_inline,
         thumbnail_base_path,
-        blob_id=blob_id,
+        client_seed=client_seed,
     )
 
 
@@ -535,7 +550,7 @@ async def _finalize_envelope(
     max_inline: int,
     thumbnail_base_path: str,
     *,
-    blob_id: str | None = None,
+    client_seed: str | None = None,
 ) -> FileEnvelope:
     """Persist file bytes to blob storage and build the FileEnvelope.
 
@@ -568,7 +583,7 @@ async def _finalize_envelope(
         tenant=blob_tenant,
         content_type=content_type,
         size_bytes=len(file_bytes),
-        blob_id=blob_id,
+        blob_id=_deterministic_blob_id(client_seed, checksum_hex),
     )
 
     try:
