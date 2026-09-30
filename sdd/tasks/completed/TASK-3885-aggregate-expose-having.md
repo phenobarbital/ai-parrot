@@ -305,8 +305,8 @@ See the blueprint. TASK-3884's tests and all pre-existing aggregate tests must s
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: gpt-5.6-terra (codex, MCP seat)
+**Date**: 2026-09-30
+**Notes**: `aggregate_records` now exposes `having` (inputs.py + toolkit.py) with tests. 67 tests pass (scratch copy; in-repo conftest fails locally on `parrot.utils`, pre-existing env issue).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

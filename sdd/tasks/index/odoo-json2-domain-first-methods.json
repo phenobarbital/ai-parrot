@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T21:47:41+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-30T21:59:21+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-614",
       "feature": "odoo-json2-domain-first-methods",
       "spec": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -64,8 +64,9 @@
       "parallelism_notes": "Depends on TASK-3884: both modify toolkit.py (the Odoo 19 kwargs dict in aggregate_records), models/inputs.py (AggregateRecordsInput) and test_odoo_toolkit.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:52:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3885-aggregate-expose-having.md"
+      "completed_at": "2026-09-30T21:59:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3885-aggregate-expose-having.md",
+      "verification": "verified"
     }
   ]
 }
