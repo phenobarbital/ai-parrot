@@ -384,7 +384,9 @@ def _convert_backlit(config: Dict[str, Any], report: ConversionReport, bindings:
     """Backlit shelves -> candidate shelves/zones; sections require human spatial configuration."""
     shelves, zones = _walk_shelves(config, report, bindings)
     _endcap_rules(config, shelves, zones, bindings)
-    for shelf_id, source_shelf in zip((shelf["shelf_id"] for shelf in shelves), config.get("shelves") or [], strict=False):
+    for shelf_id, source_shelf in zip(
+        (shelf["shelf_id"] for shelf in shelves), config.get("shelves") or [], strict=False
+    ):
         for section in source_shelf.get("sections") or []:
             report.unresolved.append(
                 f"{shelf_id} section {section.get('id')}: configure a zone selector / section group"
