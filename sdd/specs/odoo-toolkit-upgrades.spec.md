@@ -15,8 +15,8 @@ tags: [odoo, helpdesk, softhealer, json2, toolkit, structured-outputs, sla]
 
 > Source proposal: `sdd/proposals/odoo-toolkit-upgrades.proposal.md` (accepted 2026-10-01)
 > Research audit: `sdd/state/FEAT-616/` — 21 findings, sanitized live evidence under `findings/live/`
-> (`13_action_verification.json`, `14_wizard_verification.json` are the staging write-verification runs
-> authorised in proposal U3: three throwaway tickets, ids 69/70/71, all deleted).
+> (`13_action_verification.json`, `14_wizard_verification.json`, `15_merge_and_closed_stage.json` are the
+> staging write-verification runs authorised in proposal U3: five throwaway tickets, ids 69–73, all deleted).
 > Ledger: opens `issue:e17074affa1b` (major, JSON-2 `create` broken on Odoo 19) — resolved by M1;
 > `issue:f5ae793643be` (minor, `get_views` unmappable) stays open, out of scope.
 > Depends on: **FEAT-614** (`odoo-json2-domain-first-methods`) — must merge first (§Worktree Strategy).
@@ -192,6 +192,7 @@ class HelpdeskLifecycle(BaseModel):
     stage_id: Optional[int]; stage_name: Optional[str]
     is_closed: bool; is_cancelled: bool; is_done: bool; can_reopen: bool   # from closed_stage_boolean/cancel_stage_boolean/done_stage_boolean/open_boolean
     next_stage_id: Optional[int]; next_stage_name: Optional[str]           # from helpdesk.stages.sh_next_stage (when stages were fetched)
+    role: Optional[Literal["new","reopen","done","cancel","close"]] = None  # from res.company *_stage_id roles (when given)
 
 class HelpdeskTicket(_OdooEntity):
     name, description, comment, customer_comment, email, email_cc, email_subject, mobile_no, person_name: Optional[str]
@@ -238,7 +239,7 @@ class TakeTicketInput(TicketIdInput)
 class ReassignTicketInput(TicketIdInput):       new_assignee: Ref
 class MoveTicketToStageInput(TicketIdInput):    stage: Ref; expected_current_stage: Optional[Ref]
 class CloseTicketInput(TicketIdInput):          comment: Optional[str] (posted as internal note before closing)
-class ReopenTicketInput(TicketIdInput):         to_stage: Ref = "Open"
+class ReopenTicketInput(TicketIdInput):         to_stage: Optional[Ref] = None (default: company reopen_stage_id, else "Open")
 class ResolveTicketInput(TicketIdInput); class ApproveTicketInput(TicketIdInput)
 class CancelTicketInput(TicketIdInput):         reason: str (written to cancel_reason before action_cancel)
 class ListSlaPoliciesInput(_OdooBaseInput):     team: Optional[Ref]; ticket_type: Optional[Ref]; limit: int = 50
@@ -425,12 +426,15 @@ files (`helpdesk.py`, `test_odoo_helpdesk_toolkit.py`) so their tasks serialise;
       ``(values, labels)``. ``False``/``None`` values become ``""``; duplicate ``field_name`` keeps the last row;
       rows lacking ``field_name`` are skipped; a non-list input yields ``({}, {})``."""
 
-  def lifecycle_from_record(record: dict[str, Any], stages: dict[int, dict[str, Any]] | None = None) -> HelpdeskLifecycle:
+  def lifecycle_from_record(record: dict[str, Any], stages: dict[int, dict[str, Any]] | None = None,
+                            stage_roles: dict[str, int | None] | None = None) -> HelpdeskLifecycle:
       """Derive the lifecycle block from ``stage_id`` (``[id, name]`` | ``False``) and the computed booleans
-      (missing → ``False``); ``next_stage_*`` come from ``stages[stage_id]["sh_next_stage"]`` when given."""
+      (missing → ``False``); ``next_stage_*`` come from ``stages[stage_id]["sh_next_stage"]`` and ``role`` from
+      ``stage_roles`` (company ``*_stage_id`` ids) when given."""
 
   def normalize_ticket(record: dict[str, Any], extra_rows: list[dict[str, Any]] | None = None,
-                       stages: dict[int, dict[str, Any]] | None = None) -> HelpdeskTicket:
+                       stages: dict[int, dict[str, Any]] | None = None,
+                       stage_roles: dict[str, int | None] | None = None) -> HelpdeskTicket:
       """Build a :class:`HelpdeskTicket` preserving every raw field, adding ``extra_fields`` and ``lifecycle``."""
 
   def normalize_stats_groups(groups: list[dict[str, Any]], group_by: str, source_method: str) -> list[StatsGroup]:
@@ -463,9 +467,14 @@ files (`helpdesk.py`, `test_odoo_helpdesk_toolkit.py`) so their tasks serialise;
   - `_stage_map()` returns `{id: {"name", "sequence", "sh_next_stage"}}` (cached, used by lifecycle and transitions).
   - `_load_ticket(ticket_id, include_extra=True, include_history=False) -> HelpdeskTicket` = `_read_one`
     with `_TICKET_DEFAULT_FIELDS` + `extra_fields` rows + `normalize_ticket`.
-  - `only_open` domain: `("stage_id.name", "not in", [closed-like stage names])` where closed-like =
-    stages whose id is `stage_id` of tickets having `closed_stage_boolean`/`cancel_stage_boolean`… — **decided simpler**:
-    `only_open` excludes stages named `Closed` **or** flagged `sh_next_stage == False` (last stage); documented in the tool docstring.
+  - **Stage roles come from `res.company`** (live-verified 2026-10-01, `findings/live/15_*`): Softhealer stores
+    `new_stage_id`, `reopen_stage_id`, `done_stage_id`, `cancel_stage_id`, `close_stage_id`,
+    `sh_staff_replied_stage_id` / `sh_customer_replied_stage_id` (+ `sh_staff_replied` / `sh_customer_replied`
+    booleans) on the company. `_company_stage_config()` reads them once for the connected user's company
+    (`res.users.read([uid], ["company_id"])` → `res.company.read`) and caches them (`_stage_roles`).
+    `only_open` = `("stage_id", "not in", [close_stage_id, cancel_stage_id])` (unset roles skipped); when
+    **both** are unset, fall back to the last stage of the `sh_next_stage` chain. `HelpdeskLifecycle` gains
+    `role: Optional[Literal["new","reopen","done","cancel","close"]]` derived from these ids.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot-tools/src/parrot_tools/odoo/helpdesk.py  (new)
@@ -476,6 +485,7 @@ files (`helpdesk.py`, `test_odoo_helpdesk_toolkit.py`) so their tasks serialise;
       async def _resolve_ref(self, kind: str, value: int | str) -> int:  """Id or unique name → id; raises ValueError."""
       async def _resolve_refs(self, kind: str, values: list[int | str]) -> list[int]
       async def _stage_map(self) -> dict[int, dict[str, Any]]
+      async def _company_stage_config(self) -> dict[str, int | None]:  """{'new','reopen','done','cancel','close','staff_replied','customer_replied'} → stage id or None (cached)."""
       async def _load_ticket(self, ticket_id: int, include_extra: bool = True) -> HelpdeskTicket
       async def _extra_rows(self, ticket_id: int) -> list[dict[str, Any]]
       def _ticket_url(self, ticket_id: int) -> str                              # uses _record_url verified: toolkit.py:295
@@ -548,19 +558,22 @@ files (`helpdesk.py`, `test_odoo_helpdesk_toolkit.py`) so their tasks serialise;
     `"none"` with warning `f"{action} produced no change on this instance (stage guard flags may be off)"`.
     A dict return with `type == "ir.actions.act_window"` is recorded as warning "action opened a wizard; not applied".
   - `close_ticket(ticket_id, comment=None)`: optional internal note, then `action_closed`.
-  - `resolve_ticket` → `action_done`; `approve_ticket` → `action_approve`; **no fallback**.
+  - `resolve_ticket` → `action_done`; `approve_ticket` → `action_approve`; **no fallback**. When the
+    company has no `done_stage_id`, `resolve_ticket` adds the warning
+    "done stage not configured on company <name>; action_done cannot apply" (still calls the action, so
+    the result reflects the server).
   - `cancel_ticket(ticket_id, reason)`: `write({"cancel_reason": reason})` then `action_cancel`;
-    no fallback; HITL-confirmed.
-  - `reopen_ticket(ticket_id, to_stage="Open")`: `action_open`; if not applied →
-    `write({"stage_id": resolve(to_stage)})`, `method_used="stage_write"`, warning
-    "action_open was a no-op; stage written directly".
+    no fallback; HITL-confirmed; same warning pattern when `cancel_stage_id` is unset.
+  - `reopen_ticket(ticket_id, to_stage=None)`: `action_open`; if not applied →
+    `write({"stage_id": <to_stage resolved, else company reopen_stage_id, else stage named "Open">})`,
+    `method_used="stage_write"`, warning "action_open was a no-op; stage written directly".
   - `move_ticket_to_stage(ticket_id, stage, expected_current_stage=None)`: explicit `write`,
     `method_used="stage_write"`, `applied` = post-condition.
 - **Interface Skeleton**:
   ```python
   async def _transition(self, ticket_id: int, action: str, *, expected_stage: int | None = None, fallback_stage: int | None = None) -> TicketTransitionResult
   @requires_permission("odoo.write") @tool_schema(CloseTicketInput) async def close_ticket(self, ticket_id: int, comment: str | None = None) -> TicketTransitionResult
-  @requires_permission("odoo.write") @tool_schema(ReopenTicketInput) async def reopen_ticket(self, ticket_id: int, to_stage: int | str = "Open") -> TicketTransitionResult
+  @requires_permission("odoo.write") @tool_schema(ReopenTicketInput) async def reopen_ticket(self, ticket_id: int, to_stage: int | str | None = None) -> TicketTransitionResult
   @requires_permission("odoo.write") @tool_schema(ResolveTicketInput) async def resolve_ticket(self, ticket_id: int) -> TicketTransitionResult
   @requires_permission("odoo.write") @tool_schema(ApproveTicketInput) async def approve_ticket(self, ticket_id: int) -> TicketTransitionResult
   @requires_permission("odoo.write") @tool_schema(CancelTicketInput) async def cancel_ticket(self, ticket_id: int, reason: str) -> TicketTransitionResult
@@ -599,9 +612,14 @@ files (`helpdesk.py`, `test_odoo_helpdesk_toolkit.py`) so their tasks serialise;
     ≤ 18 → `read_group([domain], {"groupby": [group_by], "fields": ["id:count"], "lazy": False})`;
     on `OdooRPCError` from either → per-stage `search_count` fallback **only when `group_by == "stage_id"`**,
     `source_method="search_count"`; rows normalised by `normalize_stats_groups` (S11).
-  - `merge_tickets`: `sh.helpdesk.ticket.merge.ticket.wizard.create([{"sh_helpdesk_ticket_ids": [[6,0,ids]],
-    "sh_select_type": "existing"|"new", "sh_existing_ticket", "sh_select_merge_type", "sh_merge_history"}])`
-    then `action_merge_tickets([[wizard_id]])`; HITL-confirmed.
+  - `merge_tickets` (**live-verified** on tickets 72/73, `findings/live/15_*`):
+    `sh.helpdesk.ticket.merge.ticket.wizard.create([{"sh_helpdesk_ticket_ids": [[6,0,ids]], "sh_select_type":
+    "existing"|"new", "sh_existing_ticket": into_ticket_id, "sh_select_merge_type", "sh_merge_history",
+    "sh_partner_id": <partner of the target ticket — required, readonly in the UI but writable via RPC>}])`
+    then `action_merge_tickets([[wizard_id]])` → returns `None`; with `merged_action="close"` every source
+    ticket moves to the company close stage and the target's `sh_merge_ticket_ids` lists all merged ids
+    (including itself), `sh_merge_ticket_count` = len. `WizardResult.result_ticket_id` = target id;
+    `applied` = target `sh_merge_ticket_count >= len(ticket_ids)`. HITL-confirmed.
   - `mass_update_tickets`: wizard `create` with `helpdesks_ticket_ids [[6,0,ids]]` + `check_helpdesks_state`/`helpdesk_stages`,
     `check_assign_to`/`assign_to`, `check_team_id`/`team_id`, `check_add_remove`/`followers`/`ticket_follower_update_type`;
     then `update_record([[wizard_id]])` (verified live); HITL-confirmed.
@@ -656,6 +674,8 @@ files (`helpdesk.py`, `test_odoo_helpdesk_toolkit.py`) so their tasks serialise;
 | `test_confirming_tools_is_union_with_base` | M5 | S10 |
 | `test_get_tools_registers_helpdesk_and_inherited_tools` | M5 | prefix `odoo`, names present |
 | `test_search_tickets_builds_domain_and_uses_list_fields` | M5 | domain assembly incl. `only_open` |
+| `test_only_open_uses_company_close_and_cancel_stages` / `_falls_back_to_last_stage` | M5 | AC21 |
+| `test_company_stage_config_is_cached` | M5 | one `res.company.read` per instance |
 | `test_get_ticket_loads_extra_fields_and_lifecycle` | M5 | two RPCs, normalised result |
 | `test_create_ticket_resolves_refs_and_calls_create` | M6 | values dict exact |
 | `test_create_ticket_creates_partner_when_email_unknown` | M6 | partner path |
@@ -669,7 +689,7 @@ files (`helpdesk.py`, `test_odoo_helpdesk_toolkit.py`) so their tasks serialise;
 | `test_cancel_ticket_writes_reason_then_action` | M7 | order of calls |
 | `test_create_sla_policy_values` / `test_get_ticket_sla_status_envelope` | M8 | |
 | `test_ticket_stats_odoo19_formatted_read_group` / `_odoo17_read_group` / `_fallback_search_count` | M9 | S11 |
-| `test_merge_tickets_wizard_calls` / `test_mass_update_tickets_wizard_calls` | M9 | |
+| `test_merge_tickets_wizard_calls` / `test_mass_update_tickets_wizard_calls` | M9 | merge values incl. `sh_partner_id`; `applied` from `sh_merge_ticket_count` |
 | `test_start_ticket_timer_surfaces_config_error_as_warning` | M9 | |
 
 ### Integration Tests
@@ -712,6 +732,8 @@ No E2E surface (FEAT-581): the `e2e` frontmatter key and the E2E Scenarios subse
 - [ ] AC17. `ruff check` is clean on every file in §6 Edit Sites; no `requests`/`httpx`/LangChain imports.
 - [ ] AC18. No public signature of `OdooToolkit`, `Json2Transport._build_body`, or any existing model changes.
 - [ ] AC19. Ledger `issue:e17074affa1b` is claimed at `/sdd-start` of M1 and closed by `/sdd-done FEAT-616` with `--resolved-by spec:FEAT-616`.
+- [ ] AC21. `only_open` excludes the company `close_stage_id` and `cancel_stage_id` (falling back to the last stage of the `sh_next_stage` chain only when both are unset); `HelpdeskLifecycle.role` reflects the company role ids.
+- [ ] AC22. `merge_tickets` creates the wizard with `sh_partner_id` set and reports `applied` from the target's `sh_merge_ticket_count`.
 - [ ] AC20. `docs/tools/odoo-helpdesk.md` exists and documents every tool, the tenant caveats (§7) and the one-toolkit-per-agent rule; the live smoke ran once against staging with all created records deleted (recorded in the Completion Notes).
 
 ---
@@ -832,7 +854,12 @@ write stage_id → works, creates a sh.helpdesk.ticket.stage.info line; write sh
 message_post kwargs {body, message_type:"comment", subtype_xmlid:"mail.mt_comment"|"mail.mt_note"} → returns message id; mt_comment REOPENS a Closed ticket (→ Open), mt_note does not
 Wizards: reassign — create {ticket_id,new_user_id} then action_confirm [[wid]] → {'type':'ir.actions.act_window_close'}, user_id changes;
          mass update — create {helpdesks_ticket_ids [[6,0,ids]], check_helpdesks_state, helpdesk_stages} then update_record [[wid]] → None, stage changes;
-         merge — button action_merge_tickets (shape only, not exercised); timer line — button end_ticket
+         merge — create {sh_helpdesk_ticket_ids [[6,0,ids]], sh_select_type "existing", sh_existing_ticket, sh_select_merge_type "close", sh_merge_history, sh_partner_id} then action_merge_tickets [[wid]] → None; sources Closed, target sh_merge_ticket_ids=[all ids] (verified, tickets 72/73);
+         timer line — button end_ticket
+res.company stage roles (Softhealer settings): new_stage_id=New, reopen_stage_id=Open, done_stage_id=False, cancel_stage_id=False, close_stage_id=Closed,
+         sh_staff_replied=True + sh_staff_replied_stage_id=Open (why a staff public comment reopens), sh_customer_replied=False, auto_close_ticket=False;
+         same fields exist on res.config.settings. ir.config_parameter holds nothing helpdesk-related.
+ticket booleans by stage (100 tickets): New (all False); Open (all False); Pending close (done_stage=True, open=True); Closed (closed_stage=True, open=True)
 create over JSON-2: sh.helpdesk.ticket / helpdesk.tags reject vals_list, values and vals (422/500); web_save {vals, specification:{id:{}}} → [{id, ...}]
          wizard models (TransientModel) accept the normal create → returns [id]
 SLA: sh.helpdesk.sla {name R, sh_team_id R, sh_days/sh_hours/sh_minutes R, sh_sla_target_type reaching_stage|assign_to, sh_stage_id, sh_ticket_type_id}; 0 policies on staging
@@ -912,8 +939,13 @@ Verified against: `b3141f286`
   one-line opt-out, deliberately not the default (owner decision, S3).
 - **`state` is reply direction, not lifecycle.** Exposed as `replied_status`; lifecycle comes from
   `stage_id` + booleans. Never filter "open tickets" on `state`.
-- **Tenant no-op actions.** `action_done/open/cancel/approve` do nothing on this tenant (stage guard
-  flags off). Tools report `applied=False`; only `reopen_ticket`/`move_ticket_to_stage` write the stage.
+- **Tenant no-op actions.** `action_done/cancel/approve` do nothing on this tenant because
+  `res.company.done_stage_id` / `cancel_stage_id` are unset (Softhealer routes those actions to the
+  configured role stages); `action_open` was a no-op even with `reopen_stage_id=Open`. Tools report
+  `applied=False` (+ a "not configured on company" warning); only `reopen_ticket`/`move_ticket_to_stage`
+  write the stage.
+- **Staff replies move the stage.** `sh_staff_replied=True` + `sh_staff_replied_stage_id=Open` is why a
+  public comment reopens a Closed ticket. Read the roles from `res.company`, never hard-code them.
 - **Public comments reopen closed tickets** (`mail.mt_comment`); the comment tool defaults to
   internal notes and reports `reopened`.
 - **JSON-2 `create` on Odoo 19** rejects models with an overridden `create`; the M1 fallback is
@@ -952,8 +984,8 @@ Verified against: `b3141f286`
 - [x] **Throwaway SLA policy on staging?** — *Resolved in spec Q&A 2026-10-01*: yes, one policy with immediate deletion (M8 live check).
 - [x] **Where do the helpdesk models live?** — *Resolved by the spec author*: three sibling modules (`helpdesk_entities/inputs/envelopes.py`) re-exported from `models/__init__.py`, to avoid FEAT-614's edits to `inputs.py`.
 - [x] **Where is the JSON-2 `create` fix?** — *Resolved by the spec author*: in `Json2Transport.execute_kw` (M1) so every caller benefits; the helpdesk never calls `web_save` itself.
-- [ ] **`only_open` definition** (§3 M5): stages named `Closed` or last in the `sh_next_stage` chain. Confirm at implementation against a second tenant if one exists — *Owner: implementer (M5 Completion Note)*.
-- [ ] **Merge wizard live check**: `action_merge_tickets` was not exercised on staging (shape only). The M9 task runs it once on two throwaway tickets — *Owner: M9 task*.
+- [x] **`only_open` definition** — *Resolved 2026-10-01 by live probe*: Softhealer keeps the stage roles on `res.company` (`close_stage_id`=Closed, `cancel_stage_id` unset, `reopen_stage_id`=Open, `done_stage_id` unset on staging); `only_open` excludes `close_stage_id` + `cancel_stage_id`, last-stage fallback only when both are unset (§3 M5, AC21).
+- [x] **Merge wizard live check** — *Resolved 2026-10-01 by live run* (tickets 72/73, deleted): wizard needs `sh_partner_id`; `action_merge_tickets` returns `None`; sources go to the close stage; target `sh_merge_ticket_ids` lists every merged id (§3 M9, AC22).
 
 ---
 
@@ -971,7 +1003,7 @@ Verified against: `b3141f286`
 | S3 | Do not expose unrestricted inherited CRUD by default (risk) | REJECT | owner decision (spec Q&A): expose all, prefix `odoo`; `exclude_tools` documented as opt-out | §7 Known Risks |
 | S4 | Choose a distinct prefix when both toolkits may coexist (architecture) | REJECT | verified collision at `manager.py:806-811`; owner kept `odoo` → hard rule "one Odoo toolkit per agent" | §7, AC5 |
 | S5 | Add an explicit JSON-2 mapping for name resolution (api) | CONFIRM (as design rule) | `name_search` works kwargs-only (live); resolvers use `search_read` exact-then-`ilike` — no transport change | §3 M5, AC13 |
-| S6 | Treat wizard calls as transport-specific contracts (api) | CONFIRM (verified) | reassign and mass-update wizards verified live over JSON-2; merge left to the M9 live check | §3 M9, §8 |
+| S6 | Treat wizard calls as transport-specific contracts (api) | CONFIRM (verified) | reassign, mass-update **and merge** wizards verified live over JSON-2 | §3 M9 |
 | S7 | Do not silently convert action failure into direct stage writes (risk) | CONFIRM | post-condition contract; only `reopen_ticket`/`move_ticket_to_stage` write `stage_id`, reported | §3 M7, AC9–AC11 |
 | S8 | Normalize derived helpdesk output before Pydantic validation (api) | CONFIRM | pure `helpdesk_normalize.py` with shape tests | §3 M4, AC14 |
 | S9 | Constrain ticket write payloads (api) | CONFIRM | explicit `UpdateTicketInput`; lifecycle/assignment/SLA excluded | §3 M6, AC8 |
@@ -1011,3 +1043,4 @@ Summary: **9** confirmed · **2** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-01 | Jesus Lara / Claude Fable 5.1 | Initial draft from the accepted proposal, the staging write-verification and the codex design research |
+| 0.2 | 2026-10-01 | Jesus Lara / Claude Fable 5.1 | §8 closed: stage roles from `res.company` (`only_open`, lifecycle role, reopen default), merge wizard live-verified (AC21–AC22, live evidence 15) |
