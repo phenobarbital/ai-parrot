@@ -297,10 +297,10 @@ See the blueprint; run with `PYTHONPATH=packages/ai-parrot/src`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (sequential self-implementation; parrot-sdd-coder not used for hotfix ids)
+**Date**: 2026-09-30
+**Implementation commit**: c3f716342bea184a000fd90c39413cc851b2a0f0
+**Tests**: test_library 40 passed, test_cli 15 passed; ruff clean
+**Notes**: Sync update_card + bookstore update per blueprint.
 
 **Deviations from spec**: none

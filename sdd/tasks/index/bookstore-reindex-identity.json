@@ -7,7 +7,7 @@
   "type": "hotfix",
   "base_branch": "main",
   "created_at": "2026-09-30T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-09-30T21:28:40+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -58,7 +58,7 @@
       "feature_id": "bookstore-reindex-identity",
       "feature": "bookstore-reindex-identity",
       "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -68,8 +68,9 @@
       "parallelism_notes": "shared-file serialization only: adds update_card to library.py and tests to test_library.py, both modified by HOTFIX-bookstore-reindex-identity-2 (cli.py/test_cli.py are exclusive to this task); no symbol dependency",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/HOTFIX-bookstore-reindex-identity-3-update-card-and-cli.md"
+      "completed_at": "2026-09-30T21:28:40+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-3-update-card-and-cli.md",
+      "verification": "verified"
     }
   ]
 }
