@@ -94,6 +94,54 @@
       "title": "DeriveBinary",
       "type": "object"
     },
+    "DerivedDataSource": {
+      "additionalProperties": false,
+      "description": "A dashboard-owned view computed from a sibling source's frame \u2014 never fetched (linked dashboards).\n\nThe base frame is the *full* fetched (and transformed) frame of ``from`` (bounded by ``max_fetch_rows``),\nnot its \u2264500-row snapshot; the derived rows are snapshotted like any other source so bake/HTML lanes see\nthe computed view. Only inline ``transform.ops`` are allowed: a renderer-side ``ref`` cannot run in the\nPython executor, which would break Python \u2194 renderer parity.",
+      "properties": {
+        "from": {
+          "title": "From",
+          "type": "string"
+        },
+        "kind": {
+          "const": "derived",
+          "title": "Kind",
+          "type": "string"
+        },
+        "snapshot_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot At"
+        },
+        "snapshot_truncated": {
+          "default": false,
+          "title": "Snapshot Truncated",
+          "type": "boolean"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "#/$defs/TransformSpec"
+        }
+      },
+      "required": [
+        "kind",
+        "from",
+        "transform",
+        "target"
+      ],
+      "title": "DerivedDataSource",
+      "type": "object"
+    },
     "Filter": {
       "additionalProperties": false,
       "properties": {
@@ -755,7 +803,21 @@
     }
   },
   "additionalProperties": {
-    "$ref": "#/$defs/LinkedDataSource"
+    "discriminator": {
+      "mapping": {
+        "derived": "#/$defs/DerivedDataSource",
+        "query_slug": "#/$defs/LinkedDataSource"
+      },
+      "propertyName": "kind"
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/LinkedDataSource"
+      },
+      {
+        "$ref": "#/$defs/DerivedDataSource"
+      }
+    ]
   },
   "description": "Value of ``metadata.extensions['parrot_data_sources']`` keyed by data-model root.",
   "title": "LinkedSources",
