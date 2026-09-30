@@ -1,4 +1,5 @@
 """Tests for parrot.knowledge.pageindex.content_store.NodeContentStore."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -148,9 +149,7 @@ def test_delete_node_by_flattened_concept_id(store: NodeContentStore):
     assert store.load("tree", "playbooks--aws-ir") is None
 
 
-def test_content_store_rename_tree_moves_dir_and_evicts_cache(
-    store: NodeContentStore, tmp_path: Path
-) -> None:
+def test_content_store_rename_tree_moves_dir_and_evicts_cache(store: NodeContentStore, tmp_path: Path) -> None:
     """Move nested content and invalidate both cache names."""
     store.save("source", "0000", "source markdown")
     embeddings_dir = tmp_path / "source" / "embeddings"
@@ -195,9 +194,7 @@ def test_content_store_rename_tree_refuses_existing_dst(store: NodeContentStore,
     assert destination_path.read_text(encoding="utf-8") == "destination markdown"
 
 
-def test_content_store_rename_tree_preserves_source_on_replace_failure(
-    store: NodeContentStore, tmp_path: Path
-) -> None:
+def test_content_store_rename_tree_preserves_source_on_replace_failure(store: NodeContentStore, tmp_path: Path) -> None:
     """Leave the source directory intact when the filesystem move fails."""
     store.save("source", "0000", "source markdown")
 

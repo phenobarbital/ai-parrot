@@ -19,6 +19,7 @@ This module deliberately uses only the standard library — file I/O is
 fast enough for the access patterns PageIndex exercises, and wrapping
 small reads in async would add noise without benefit.
 """
+
 from __future__ import annotations
 
 import logging
@@ -27,7 +28,6 @@ import re
 from collections import OrderedDict
 from pathlib import Path
 from typing import Callable, Optional
-
 
 logger = logging.getLogger("parrot.knowledge.pageindex.content_store")
 
@@ -67,18 +67,12 @@ class NodeContentStore:
     @staticmethod
     def _validate_tree_name(tree_name: str) -> None:
         if not isinstance(tree_name, str) or not _TREE_NAME_RE.match(tree_name):
-            raise ValueError(
-                f"Invalid tree_name {tree_name!r}; "
-                "expected 1-128 chars from [A-Za-z0-9_-]."
-            )
+            raise ValueError(f"Invalid tree_name {tree_name!r}; " "expected 1-128 chars from [A-Za-z0-9_-].")
 
     @staticmethod
     def _validate_node_id(node_id: str) -> None:
         if not isinstance(node_id, str) or not _NODE_ID_RE.match(node_id):
-            raise ValueError(
-                f"Invalid node_id {node_id!r}; "
-                "expected 1-64 chars from [A-Za-z0-9_-]."
-            )
+            raise ValueError(f"Invalid node_id {node_id!r}; " "expected 1-64 chars from [A-Za-z0-9_-].")
 
     def _tree_dir(self, tree_name: str) -> Path:
         self._validate_tree_name(tree_name)
@@ -133,9 +127,7 @@ class NodeContentStore:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError as exc:
-            logger.warning(
-                "NodeContentStore.load failed for %s/%s: %s", tree_name, node_id, exc
-            )
+            logger.warning("NodeContentStore.load failed for %s/%s: %s", tree_name, node_id, exc)
             return None
         self._cache_put(key, text)
         return text
@@ -211,8 +203,7 @@ class NodeContentStore:
         ids = [
             entry.stem
             for entry in tree_dir.iterdir()
-            if entry.is_file() and entry.suffix == ".md"
-            and _NODE_ID_RE.match(entry.stem)
+            if entry.is_file() and entry.suffix == ".md" and _NODE_ID_RE.match(entry.stem)
         ]
         return sorted(ids)
 

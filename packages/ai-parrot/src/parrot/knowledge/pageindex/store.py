@@ -4,6 +4,7 @@ Each tree is stored as ``<storage_dir>/<tree_name>.json`` and is written
 atomically (temp file in the same directory followed by ``os.replace``)
 so a crash mid-write cannot leave a half-written tree on disk.
 """
+
 from __future__ import annotations
 
 import json
@@ -13,7 +14,6 @@ import re
 import tempfile
 from pathlib import Path
 from typing import Any
-
 
 logger = logging.getLogger("parrot.knowledge.pageindex.store")
 
@@ -35,9 +35,7 @@ class JSONTreeStore:
     @staticmethod
     def _validate_name(tree_name: str) -> None:
         if not isinstance(tree_name, str) or not _TREE_NAME_RE.match(tree_name):
-            raise ValueError(
-                f"Invalid tree_name {tree_name!r}; expected 1-128 chars from [A-Za-z0-9_-]."
-            )
+            raise ValueError(f"Invalid tree_name {tree_name!r}; expected 1-128 chars from [A-Za-z0-9_-].")
 
     def _path_for(self, tree_name: str) -> Path:
         self._validate_name(tree_name)

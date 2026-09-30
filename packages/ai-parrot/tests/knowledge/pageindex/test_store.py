@@ -1,4 +1,5 @@
 """Tests for parrot.knowledge.pageindex.store.JSONTreeStore."""
+
 from __future__ import annotations
 
 import json
@@ -118,9 +119,7 @@ def test_json_store_rename_invalid_or_missing_source(store: JSONTreeStore) -> No
         store.rename("source", "destination")
 
 
-def test_json_store_rename_preserves_source_on_replace_failure(
-    store: JSONTreeStore, tmp_path: Path
-) -> None:
+def test_json_store_rename_preserves_source_on_replace_failure(store: JSONTreeStore, tmp_path: Path) -> None:
     """Leave the source JSON intact when the filesystem move fails."""
     source_bytes = b'{"structure":["source"]}\n'
     (tmp_path / "source.json").write_bytes(source_bytes)
