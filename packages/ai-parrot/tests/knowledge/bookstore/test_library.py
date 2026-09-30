@@ -704,6 +704,7 @@ async def test_reindex_success_swaps_tree_same_book_id(store: Bookstore, book_md
 @pytest.mark.asyncio
 async def test_add_failed_ingest_leaves_no_tree(store: Bookstore, book_md: Path) -> None:
     """Leave no staging or card after a first-add failure."""
+
     async def fail_insert(*args, **kwargs) -> None:
         raise RuntimeError("ingest failed")
 
