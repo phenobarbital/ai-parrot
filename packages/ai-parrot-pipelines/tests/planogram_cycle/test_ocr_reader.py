@@ -124,8 +124,7 @@ def test_pyproject_declares_extra_and_direct_deps():
     for dep in ("opencv-python-headless>=4.8", "numpy", "pillow", "rapidfuzz>=3.0"):
         assert dep in deps
     assert all(
-        dep.split("[")[0].split(";")[0].split("<")[0].split(">")[0].split("=")[0].split(" ")[0].lower()
-        != "pytesseract"
+        dep.split("[")[0].split(";")[0].split("<")[0].split(">")[0].split("=")[0].split(" ")[0].lower() != "pytesseract"
         for dep in deps
     )
     assert project["optional-dependencies"]["planogram"] == ["rapidocr>=3.9", "onnxruntime>=1.20"]
