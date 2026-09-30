@@ -162,7 +162,12 @@ function makeChart(doc, node, key, lane) {
         bar.status.textContent = 'echarts unavailable';
         return;
       }
-      if (!instance) instance = echarts.init(canvas); // one instance per widget: repaint, never re-init
+      if (!instance) {
+        instance = echarts.init(canvas); // one instance per widget: repaint, never re-init
+        // ECharts measures its container once at init; follow later width changes (layout, window resize).
+        const Observer = doc.defaultView?.ResizeObserver ?? globalThis.ResizeObserver;
+        if (Observer) new Observer(() => instance.resize()).observe(canvas);
+      }
       instance.setOption(chartOption(node, rows), true);
     },
   };

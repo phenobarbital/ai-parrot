@@ -27,6 +27,12 @@ body {
   margin-bottom: 1rem;
 }
 
+/* Widgets in a row share its full width (min-width: 0 lets charts shrink instead of overflowing) */
+.row > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .column {
   display: flex;
   flex-direction: column;
