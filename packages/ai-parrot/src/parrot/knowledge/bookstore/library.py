@@ -1341,3 +1341,41 @@ class Bookstore:
         )
         self._catalog(loc.scope).upsert(updated)
         return updated
+
+    def update_card(
+        self,
+        book_id: str,
+        *,
+        title: Optional[str] = None,
+        authors: Optional[list[str]] = None,
+        topics: Optional[list[str]] = None,
+        summary: Optional[str] = None,
+    ) -> BookCard:
+        """Overwrite the given descriptive fields of an existing card and persist it.
+
+        Only non-``None`` arguments are applied. ``title``/``summary`` are
+        stripped; an empty ``title`` is rejected. Marks the card
+        ``card_origin="manual"``; community stamps survive untouched.
+
+        Raises:
+            BookstoreError: Unknown ``book_id``, empty ``title``, or no field given.
+        """
+        if title is None and authors is None and topics is None and summary is None:
+            raise BookstoreError("Nothing to update — pass title, authors, topics or summary")
+        card, loc = self.resolve_book(book_id)
+        changes: dict[str, Any] = {"card_origin": "manual"}
+        if title is not None:
+            title = title.strip()
+            if not title:
+                raise BookstoreError("title must not be empty")
+            changes["title"] = title
+        if authors is not None:
+            changes["authors"] = list(authors)
+        if topics is not None:
+            changes["topics"] = list(topics)
+        if summary is not None:
+            changes["summary"] = summary.strip()
+        updated = card.model_copy(update=changes)
+        self._catalog(loc.scope).upsert(updated)
+        logger.info("update_card: %s (%s)", book_id, ", ".join(k for k in changes if k != "card_origin"))
+        return updated

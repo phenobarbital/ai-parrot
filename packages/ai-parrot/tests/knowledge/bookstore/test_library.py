@@ -538,3 +538,25 @@ async def test_add_book_explicit_title_never_disambiguated(store, book_md, tmp_p
     second, _ = await store.add_book(other, title="Same Title")
     assert first.title == second.title == "Same Title"
     assert (first.book_id, second.book_id) == ("same-title", "same-title-2")
+
+
+@pytest.mark.asyncio
+async def test_update_card_fields_and_manual_origin(store, book_md):
+    card, _ = await store.add_book(book_md)
+    store._catalog("project").set_card_community(card.book_id, "c1", "Community One")
+    updated = store.update_card(card.book_id, title="  New Title ", authors=["A"], topics=["t1"], summary="S")
+    assert (updated.title, updated.authors, updated.topics, updated.summary) == ("New Title", ["A"], ["t1"], "S")
+    assert updated.card_origin == "manual"
+    reread = store.get_card(card.book_id)
+    assert reread.title == "New Title" and reread.community_id == "c1"
+
+
+@pytest.mark.asyncio
+async def test_update_card_requires_a_field(store, book_md):
+    card, _ = await store.add_book(book_md)
+    with pytest.raises(BookstoreError):
+        store.update_card(card.book_id)
+    with pytest.raises(BookstoreError):
+        store.update_card(card.book_id, title="  ")
+    with pytest.raises(BookstoreError):
+        store.update_card("no-such-book", title="X")
