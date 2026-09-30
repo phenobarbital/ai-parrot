@@ -16,14 +16,14 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: extends existing models in contracts.py only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3854-contracts-cycle-additions.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "imports IdentifyStrategy (incl. new SLOTS) from TASK-3854 (planogram/contracts.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3855-layout-profile.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -64,7 +64,7 @@
       "parallel": true,
       "parallelism_notes": "uses PerceptionResult.ocr_readings/CycleContext.layout from TASK-3854 (contracts.py); imports LayoutProfile from TASK-3855 (planogram/layout.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3856-shared-perception-stage.md"
     },
@@ -75,7 +75,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -85,7 +85,7 @@
       "parallel": true,
       "parallelism_notes": "imports OcrReading/ReferenceImage from TASK-3854 (contracts.py); imports ReferencePolicy and reads LayoutProfile.ocr_targets from TASK-3855 (layout.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3857-target-ocr-reference-bank.md"
     },
@@ -96,7 +96,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -106,7 +106,7 @@
       "parallel": true,
       "parallelism_notes": "calls select_references from TASK-3857 (identification/references.py); uses ctx.reference_bank, Identification.reference_id, IdentifyStrategy.SLOTS from TASK-3854 (contracts.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3858-identify-v2-strategies.md"
     },
@@ -117,7 +117,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -128,7 +128,7 @@
       "parallel": true,
       "parallelism_notes": "imports read_target_text from TASK-3857 (identification/targets.py); dispatches identify_slots/identify_strips from TASK-3858 (identification/identify.py); adds stages/identify.py into the stages package created by TASK-3856 (stages/__init__.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3859-rule-evidence-stage-identify.md"
     },
@@ -139,14 +139,14 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: self-contained change to comparison/definition.py and its test.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3860-definition-empty-zones.md"
     },
@@ -157,7 +157,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,7 +166,7 @@
       "parallel": true,
       "parallelism_notes": "reads Descriptors.attributes and FacingDefinition.expected_occupancy added by TASK-3860 (comparison/definition.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3861-shared-identity-resolution.md"
     },
@@ -177,7 +177,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -187,7 +187,7 @@
       "parallel": true,
       "parallelism_notes": "uses FacingStatus.EXPECTED_EMPTY/UNEXPECTED_OCCUPIED and RuleOutcome.observations from TASK-3854 (contracts.py); scores expected_occupancy and virtual zone shelves from TASK-3860 (definition.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3862-scoring-empty-zone-units.md"
     },
@@ -198,7 +198,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -210,7 +210,7 @@
       "parallel": true,
       "parallelism_notes": "imports resolve_identity from TASK-3861 (comparison/identity.py); composes score_shelves/summarize/project_compliance as changed by TASK-3862; reads LayoutProfile vocabulary from TASK-3855 (layout.py); adds stages/compare.py into the package created by TASK-3856.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3863-rules-and-compare-stage.md"
     },
@@ -221,7 +221,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -232,7 +232,7 @@
       "parallel": true,
       "parallelism_notes": "composes perceive_image from TASK-3856 (stages/perceive.py), identify_image from TASK-3859 (stages/identify.py), compare_observations from TASK-3863 (stages/compare.py) inside types/ink_wall.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3864-ink-wall-cycle.md"
     },
@@ -243,7 +243,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -254,7 +254,7 @@
       "parallel": true,
       "parallelism_notes": "composes perceive_image (TASK-3856, stages/perceive.py), identify_image (TASK-3859, stages/identify.py) and compare_observations (TASK-3863, stages/compare.py) inside types/product_on_shelves.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3865-product-on-shelves-cycle.md"
     },
@@ -265,7 +265,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -276,7 +276,7 @@
       "parallel": true,
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/endcap_backlit_multitier.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3866-endcap-backlit-cycle.md"
     },
@@ -287,7 +287,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -298,7 +298,7 @@
       "parallel": true,
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/endcap_no_shelves_promotional.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3867-endcap-promotional-cycle.md"
     },
@@ -309,7 +309,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -320,7 +320,7 @@
       "parallel": true,
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/graphic_panel_display.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3868-graphic-panel-cycle.md"
     },
@@ -331,7 +331,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -342,7 +342,7 @@
       "parallel": true,
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/product_counter.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3869-product-counter-cycle.md"
     },
@@ -353,7 +353,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -367,7 +367,7 @@
       "parallel": true,
       "parallelism_notes": "validate_contract turns strict in types/abstract.py only after every registered type defines perceive/identify/compare/default_layout_profile: TASK-3864 (types/ink_wall.py), TASK-3865 (types/product_on_shelves.py), TASK-3866 (types/endcap_backlit_multitier.py), TASK-3867 (types/endcap_no_shelves_promotional.py), TASK-3868 (types/graphic_panel_display.py), TASK-3869 (types/product_counter.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3870-strict-type-contract.md"
     },
@@ -378,7 +378,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -388,7 +388,7 @@
       "parallel": true,
       "parallelism_notes": "plan.py drops the legacy_perceive path removed from types/abstract.py by TASK-3870; also edits contracts.py (LegacyPayload removal) after TASK-3854's additions to the same file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3871-orchestrator-cutover.md"
     },
@@ -399,7 +399,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -408,7 +408,7 @@
       "parallel": true,
       "parallelism_notes": "handler tests assert the fail-fast ValueError that PlanogramCompliance.__init__ raises after TASK-3871 (planogram/plan.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3872-config-handler-integration.md"
     },
@@ -419,14 +419,14 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: planogram/legacy.py and detector.py are imported only by the export tables and core proxies this task edits (verified by grep).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3873-remove-legacy-pipeline-exports.md"
     },
@@ -437,7 +437,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -448,7 +448,7 @@
       "parallel": true,
       "parallelism_notes": "grid detector/strategy/horizontal_bands lose their last importer when TASK-3865 rewrites types/product_on_shelves.py; legacy_adapter and grid.strategy lose theirs when TASK-3870 rewrites types/abstract.py; the legacy ClassVars/fallback_detection_prompt in abstract.py become dead only after TASK-3871 stops reading them in plan.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3874-remove-adapter-grid-execution.md"
     },
@@ -459,7 +459,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -469,7 +469,7 @@
       "parallel": true,
       "parallelism_notes": "re-pins behavior of the ProductOnShelves hooks from TASK-3865 (types/product_on_shelves.py) through PlanogramCompliance.run as cut over by TASK-3871 (plan.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3875-pos-characterization-rewrite.md"
     },
@@ -480,7 +480,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -494,7 +494,7 @@
       "parallel": true,
       "parallelism_notes": "tests the hooks of TASK-3866..3869 (types/*.py), the base helpers removed by TASK-3870 (types/abstract.py) and adapter-mediated illumination through run() from TASK-3871 (plan.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3876-type-test-suites-rewrite.md"
     },
@@ -505,7 +505,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -521,7 +521,7 @@
       "parallel": true,
       "parallelism_notes": "validates layout via resolve_layout_profile from TASK-3855 (layout.py) and definitions via the schema of TASK-3860 (definition.py); readiness calls default_layout_profile of each type: TASK-3864 (types/ink_wall.py), TASK-3865 (types/product_on_shelves.py), TASK-3866 (types/endcap_backlit_multitier.py), TASK-3867 (types/endcap_no_shelves_promotional.py), TASK-3868 (types/graphic_panel_display.py), TASK-3869 (types/product_counter.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3877-six-type-migration.md"
     },
@@ -532,7 +532,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -542,7 +542,7 @@
       "parallel": true,
       "parallelism_notes": "runner consumes the final PlanogramCompliance.run result contract from TASK-3871 (plan.py) and validates fixture configs with check_row from TASK-3877 (migration.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3878-live-e2e-harness-core.md"
     },
@@ -553,7 +553,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -562,7 +562,7 @@
       "parallel": true,
       "parallelism_notes": "imports LiveCase/GroundTruth/run_case/compare_ground_truth from TASK-3878 (examples/planogram/e2e/models.py, runner.py) and needs its .gitignore negations to be committable.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3879-live-e2e-cases-readme.md"
     },
@@ -573,7 +573,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -586,7 +586,7 @@
       "parallel": true,
       "parallelism_notes": "documents the handler/config contract of TASK-3872, the APIs removed by TASK-3873/TASK-3874, converter usage from TASK-3877 (migration.py) and the harness from TASK-3879 (examples/planogram/e2e/README.md).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3880-cycle-docs-runbook.md"
     },
@@ -597,7 +597,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -606,7 +606,7 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: rewrites packages/ai-parrot-pipelines/pyproject.toml and uv.lock. Depends on TASK-3873 deleting planogram/legacy.py, the last pytesseract importer in the pipelines package.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-09-30T21:34:29+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3881-release-packaging.md"
     }
