@@ -1261,6 +1261,23 @@ async def test_rename_tree_overwrite_replaces_and_removes_backup(toolkit: PageIn
 
 
 @pytest.mark.asyncio
+async def test_rename_tree_overwrite_removes_backup_dir_with_embeddings(
+    toolkit: PageIndexToolkit, tmp_path: Path
+) -> None:
+    """Leave no ``--replaced-`` directory behind even when it holds an ``embeddings/`` subdir."""
+    await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+    await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
+    embeddings = tmp_path / "destination" / "embeddings"
+    embeddings.mkdir()
+    (embeddings / "destination.matrix.npy").write_bytes(b"old")
+
+    await toolkit.rename_tree("source", "destination", overwrite=True)
+
+    assert not list(tmp_path.glob(f"destination{_REPLACED_MARKER}*"))
+    assert not (tmp_path / "destination" / "embeddings").exists()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["backup_json", "backup_content", "publish_content", "publish_json"])
 async def test_rename_tree_overwrite_rolls_back_on_failure(
     monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path, failure: str

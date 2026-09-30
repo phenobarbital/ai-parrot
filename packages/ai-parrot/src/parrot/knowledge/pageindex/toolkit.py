@@ -22,6 +22,7 @@ import asyncio
 import fnmatch
 import logging
 import secrets
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -498,6 +499,8 @@ class PageIndexToolkit(AbstractToolkit):
             try:
                 self._store.delete(backup)
                 self._content_store.delete_tree(backup)
+                # delete_tree only removes *.md sidecars; drop leftovers such as embeddings/.
+                shutil.rmtree(self._content_store._tree_dir(backup), ignore_errors=True)
             except Exception:
                 logger.exception("Failed to delete replacement backup tree %r", backup)
 
