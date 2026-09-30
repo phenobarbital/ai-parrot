@@ -117,16 +117,15 @@ def test_read_crop_is_picklable_and_singleton(monkeypatch):
 
 
 def test_pyproject_declares_extra_and_direct_deps():
-    """Direct dependencies and the planogram extra are declared."""
+    """Direct dependencies and the planogram extra are declared; pytesseract is gone (FEAT-612, AC15)."""
     project = tomllib.loads(_PYPROJECT.read_text())["project"]
     deps = project["dependencies"]
-    for dep in (
-        "ai-parrot>=1.0.4",
-        "opencv-python-headless>=4.8",
-        "pytesseract>=0.3.13",
-        "numpy",
-        "pillow",
-        "rapidfuzz>=3.0",
-    ):
+    assert any(dep.startswith("ai-parrot>=") for dep in deps)
+    for dep in ("opencv-python-headless>=4.8", "numpy", "pillow", "rapidfuzz>=3.0"):
         assert dep in deps
+    assert all(
+        dep.split("[")[0].split(";")[0].split("<")[0].split(">")[0].split("=")[0].split(" ")[0].lower()
+        != "pytesseract"
+        for dep in deps
+    )
     assert project["optional-dependencies"]["planogram"] == ["rapidocr>=3.9", "onnxruntime>=1.20"]
