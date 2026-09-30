@@ -480,7 +480,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -491,8 +491,9 @@
       "parallelism_notes": "re-pins behavior of the ProductOnShelves hooks from TASK-3865 (types/product_on_shelves.py) through PlanogramCompliance.run as cut over by TASK-3871 (plan.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3875-pos-characterization-rewrite.md"
+      "completed_at": "2026-09-30T23:06:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3875-pos-characterization-rewrite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3876",
