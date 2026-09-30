@@ -66,9 +66,7 @@ def ink_page1() -> dict:
     """Minimal page-1 ink layout with no source descriptors."""
     return {
         "planogram": {"planogram": "Ink"},
-        "shelves": [
-            {"shelf_number": 1, "products": {"p1": {"position": 1, "slot": 1, "product": "INK-1"}}}
-        ],
+        "shelves": [{"shelf_number": 1, "products": {"p1": {"position": 1, "slot": 1, "product": "INK-1"}}}],
     }
 
 
@@ -309,9 +307,10 @@ def test_every_type_converts_without_mutation(ptype, fixture_name, request):
 
 
 def test_conversion_is_deterministic(promo_config):
-    assert convert_config(promo_config, planogram_type="endcap_no_shelves_promotional").model_dump() == convert_config(
-        promo_config, planogram_type="endcap_no_shelves_promotional"
-    ).model_dump()
+    assert (
+        convert_config(promo_config, planogram_type="endcap_no_shelves_promotional").model_dump()
+        == convert_config(promo_config, planogram_type="endcap_no_shelves_promotional").model_dump()
+    )
 
 
 def test_zone_only_candidate_has_zones_and_mandatory_presence(promo_config):

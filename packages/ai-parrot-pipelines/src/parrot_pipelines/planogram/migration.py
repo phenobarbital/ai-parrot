@@ -406,7 +406,9 @@ def convert_config(planogram_config: Dict[str, Any], *, planogram_type: str) -> 
         ValueError: When ``planogram_type`` is not convertible.
     """
     if planogram_type not in MIGRATED_TYPES:
-        raise ValueError(f"Unsupported planogram_type '{planogram_type}'; convertible: {', '.join(sorted(MIGRATED_TYPES))}")
+        raise ValueError(
+            f"Unsupported planogram_type '{planogram_type}'; convertible: {', '.join(sorted(MIGRATED_TYPES))}"
+        )
     config = copy.deepcopy(planogram_config)
     report = ConversionReport()
     bindings = _BindingSet()
@@ -490,7 +492,9 @@ def _layout_problem(planogram_type: str, planogram_config: Dict[str, Any], confi
         "ink_wall": planogram_types.InkWall,
     }
     try:
-        resolve_layout_profile(classes[planogram_type].default_layout_profile(), planogram_config, config_name=config_name)
+        resolve_layout_profile(
+            classes[planogram_type].default_layout_profile(), planogram_config, config_name=config_name
+        )
     except ValueError as exc:
         return f"invalid layout_profile: {exc}"
     return None
