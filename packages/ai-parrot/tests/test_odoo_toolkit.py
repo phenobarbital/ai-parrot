@@ -201,9 +201,7 @@ async def test_get_record_uses_read():
     assert result.metadata is not None
     assert result.metadata.fields_returned == 2
     assert result.metadata.field_selection_method == "requested"
-    transport.execute_kw.assert_awaited_once_with(
-        "res.partner", "read", [[7]], {"fields": ["id", "name"]}
-    )
+    transport.execute_kw.assert_awaited_once_with("res.partner", "read", [[7]], {"fields": ["id", "name"]})
 
 
 @pytest.mark.asyncio
@@ -656,9 +654,11 @@ async def test_fields_cache_prevents_redundant_fields_get():
 
     fields_meta = {"name": {"type": "char", "string": "Name"}}
     transport.execute_kw.side_effect = [
-        fields_meta,                        # fields_get (first call)
-        [{"id": 1, "name": "A"}], 1,       # search_read + search_count (first call)
-        [{"id": 2, "name": "B"}], 2,       # search_read + search_count (second call)
+        fields_meta,  # fields_get (first call)
+        [{"id": 1, "name": "A"}],
+        1,  # search_read + search_count (first call)
+        [{"id": 2, "name": "B"}],
+        2,  # search_read + search_count (second call)
     ]
     await toolkit.search_records(model="res.partner")
     await toolkit.search_records(model="res.partner")
@@ -690,6 +690,7 @@ async def test_aggregate_records_calls_read_group_for_odoo_16_18():
     )
 
     from parrot_tools.odoo.models.envelopes import AggregateResult
+
     assert isinstance(result, AggregateResult)
     assert result.model == "sale.order"
     assert result.group_by == ["state"]
@@ -723,9 +724,7 @@ async def test_aggregate_records_allows_empty_group_by_global_aggregation():
     from parrot_tools.odoo.models.inputs import AggregateRecordsInput
 
     # Input schema accepts empty group_by (no min_length constraint).
-    payload = AggregateRecordsInput(
-        model="res.partner", group_by=[], measures=["id:count"]
-    )
+    payload = AggregateRecordsInput(model="res.partner", group_by=[], measures=["id:count"])
     assert payload.group_by == []
 
     transport = _fake_transport()
@@ -808,6 +807,7 @@ async def test_build_domain_and_operator():
         logical_operator="and",
     )
     from parrot_tools.odoo.models.envelopes import DomainBuildResult
+
     assert isinstance(result, DomainBuildResult)
     assert result.valid is True
     assert "&" in result.domain
@@ -833,9 +833,7 @@ async def test_build_domain_or_operator():
 async def test_build_domain_invalid_operator():
     """Unsafe operators produce valid=False with a warning."""
     toolkit = _make_toolkit()
-    result = await toolkit.build_domain(
-        conditions=[{"field": "name", "operator": "EVIL; DROP TABLE", "value": "x"}]
-    )
+    result = await toolkit.build_domain(conditions=[{"field": "name", "operator": "EVIL; DROP TABLE", "value": "x"}])
     assert result.valid is False
     assert len(result.warnings) > 0
 
@@ -853,9 +851,7 @@ async def test_build_domain_empty_conditions():
 async def test_build_domain_single_condition_no_prefix():
     """Single condition needs no prefix operator."""
     toolkit = _make_toolkit()
-    result = await toolkit.build_domain(
-        conditions=[{"field": "name", "operator": "=", "value": "Alice"}]
-    )
+    result = await toolkit.build_domain(conditions=[{"field": "name", "operator": "=", "value": "Alice"}])
     assert result.valid is True
     assert len(result.domain) == 1  # just one triplet, no prefix
 
@@ -870,12 +866,13 @@ async def test_get_odoo_profile_returns_typed_envelope():
     toolkit = _make_toolkit(transport)
 
     transport.execute_kw.side_effect = [
-        {"lang": "en_US"},          # context_get
+        {"lang": "en_US"},  # context_get
         [{"name": "sale", "shortdesc": "Sales", "installed_version": "17.0.1.0"}],  # module list
     ]
     result = await toolkit.get_odoo_profile()
 
     from parrot_tools.odoo.models.envelopes import OdooProfileResult
+
     assert isinstance(result, OdooProfileResult)
     assert result.server_version != "" or result.server_serie != ""
     assert result.transport in ("jsonrpc", "json2", "xmlrpc", "auto", "unknown")
@@ -910,6 +907,7 @@ async def test_schema_catalog_returns_typed_envelope():
     result = await toolkit.schema_catalog()
 
     from parrot_tools.odoo.models.envelopes import SchemaCatalogResult
+
     assert isinstance(result, SchemaCatalogResult)
     assert result.total == 2
 
@@ -949,6 +947,7 @@ async def test_inspect_model_relationships_groups_fields_by_type():
     result = await toolkit.inspect_model_relationships(model="sale.order")
 
     from parrot_tools.odoo.models.envelopes import ModelRelationshipsResult
+
     assert isinstance(result, ModelRelationshipsResult)
     assert any(f["name"] == "partner_id" for f in result.many2one)
     assert any(f["name"] == "line_ids" for f in result.one2many)
@@ -968,15 +967,16 @@ async def test_diagnose_access_when_allowed():
 
     # check_access_rights → True, ir.model.access → [], ir.rule → [], groups → [{groups_id:[1]}], res.groups → [{full_name:"..."}]
     transport.execute_kw.side_effect = [
-        True,   # check_access_rights
-        [],     # ir.model.access
-        [],     # ir.rule
-        [{"groups_id": [1]}],           # res.users.read
-        [{"full_name": "Technical"}],   # res.groups.read
+        True,  # check_access_rights
+        [],  # ir.model.access
+        [],  # ir.rule
+        [{"groups_id": [1]}],  # res.users.read
+        [{"full_name": "Technical"}],  # res.groups.read
     ]
     result = await toolkit.diagnose_access(model="res.partner", operation="read")
 
     from parrot_tools.odoo.models.envelopes import AccessDiagnosisResult
+
     assert isinstance(result, AccessDiagnosisResult)
     assert result.acl_allowed is True
     assert "permission" in result.diagnosis.lower() or "acl" in result.diagnosis.lower()
@@ -990,8 +990,8 @@ async def test_diagnose_access_when_denied():
 
     transport.execute_kw.side_effect = [
         False,  # check_access_rights
-        [],     # ir.model.access
-        [],     # ir.rule
+        [],  # ir.model.access
+        [],  # ir.rule
         [{"groups_id": []}],  # res.users.read
     ]
     result = await toolkit.diagnose_access(model="res.partner", operation="write")
@@ -1012,6 +1012,7 @@ async def test_health_check_no_network_call():
     result = await toolkit.health_check()
 
     from parrot_tools.odoo.models.envelopes import HealthCheckResult
+
     assert isinstance(result, HealthCheckResult)
     # health_check should not have called execute_kw
     transport.execute_kw.assert_not_awaited()
@@ -1030,15 +1031,21 @@ async def test_search_employee_returns_typed_entities():
 
     transport.execute_kw.return_value = [
         {
-            "id": 1, "display_name": "Alice", "name": "Alice",
-            "job_id": [1, "Engineer"], "department_id": [2, "R&D"],
-            "work_email": "alice@example.com", "work_phone": "555-1234",
-            "company_id": [1, "My Company"], "active": True,
+            "id": 1,
+            "display_name": "Alice",
+            "name": "Alice",
+            "job_id": [1, "Engineer"],
+            "department_id": [2, "R&D"],
+            "work_email": "alice@example.com",
+            "work_phone": "555-1234",
+            "company_id": [1, "My Company"],
+            "active": True,
         }
     ]
     result = await toolkit.search_employee(name="Alice")
 
     from parrot_tools.odoo.models.entities import HrEmployee
+
     assert isinstance(result, list)
     assert len(result) == 1
     assert isinstance(result[0], HrEmployee)
@@ -1053,15 +1060,20 @@ async def test_search_holidays_date_range():
 
     transport.execute_kw.return_value = [
         {
-            "id": 10, "display_name": "Leave #10", "name": "Annual Leave",
-            "employee_id": [1, "Alice"], "date_from": "2026-06-01",
-            "date_to": "2026-06-05", "number_of_days": 5.0,
+            "id": 10,
+            "display_name": "Leave #10",
+            "name": "Annual Leave",
+            "employee_id": [1, "Alice"],
+            "date_from": "2026-06-01",
+            "date_to": "2026-06-05",
+            "number_of_days": 5.0,
             "state": "validate",
         }
     ]
     result = await toolkit.search_holidays(start_date="2026-06-01", end_date="2026-06-30")
 
     from parrot_tools.odoo.models.entities import HrLeave
+
     assert isinstance(result, list)
     assert len(result) == 1
     assert isinstance(result[0], HrLeave)
@@ -1075,9 +1087,7 @@ async def test_search_holidays_with_employee_filter():
     toolkit = _make_toolkit(transport)
 
     transport.execute_kw.return_value = []
-    await toolkit.search_holidays(
-        start_date="2026-06-01", end_date="2026-06-30", employee_id=5
-    )
+    await toolkit.search_holidays(start_date="2026-06-01", end_date="2026-06-30", employee_id=5)
 
     call_args = transport.execute_kw.call_args
     domain_arg = call_args[0][2][0]  # positional args[2][0] = domain
