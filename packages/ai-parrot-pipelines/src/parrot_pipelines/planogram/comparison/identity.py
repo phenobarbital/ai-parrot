@@ -91,7 +91,9 @@ def resolve_identity(
 
     if lines:
         by_identifier = [
-            facing for facing in pool if any(_norm(identifier) in lines for identifier in facing.descriptors.identifiers if identifier)
+            facing
+            for facing in pool
+            if any(_norm(identifier) in lines for identifier in facing.descriptors.identifiers if identifier)
         ]
         ids = _dedupe(by_identifier)
         if len(ids) == 1:

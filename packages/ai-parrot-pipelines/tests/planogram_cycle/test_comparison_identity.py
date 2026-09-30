@@ -115,18 +115,23 @@ def test_no_slot_parameter_and_shape_id_independent():
 
 
 def test_required_fields_empty_disables_signature():
-    assert resolve_identity(
-        _ident(brand="Acme", descriptors={"family": "F2"}), _definition(), required_fields=()
-    ) == (None, [])
+    assert resolve_identity(_ident(brand="Acme", descriptors={"family": "F2"}), _definition(), required_fields=()) == (
+        None,
+        [],
+    )
 
 
 def test_custom_attribute_resolves_and_contradicts():
     kwargs = {"vocabulary": ("family", "finish"), "required_fields": ("family", "finish")}
-    assert resolve_identity(_ident(brand="Acme", descriptors={"family": "F1", "finish": "matte"}), _definition(), **kwargs) == (
+    assert resolve_identity(
+        _ident(brand="Acme", descriptors={"family": "F1", "finish": "matte"}), _definition(), **kwargs
+    ) == (
         "P-1",
         ["P-1"],
     )
-    assert resolve_identity(_ident(brand="Acme", descriptors={"family": "F1", "finish": "satin"}), _definition(), **kwargs) == (
+    assert resolve_identity(
+        _ident(brand="Acme", descriptors={"family": "F1", "finish": "satin"}), _definition(), **kwargs
+    ) == (
         None,
         [],
     )
@@ -147,7 +152,9 @@ def test_expected_empty_facing_never_candidate():
         "P-3",
         ["P-3"],
     )
-    assert all(facing.facing_id != "f4" for facing in pick_candidates(_ident(brand="Acme", uncertain=True), definition, 5))
+    assert all(
+        facing.facing_id != "f4" for facing in pick_candidates(_ident(brand="Acme", uncertain=True), definition, 5)
+    )
 
 
 @pytest.mark.asyncio
@@ -164,12 +171,16 @@ async def test_offered_candidate_without_visible_text_is_not_evidence():
     answer = VerificationAnswer(choice="P-1", visible_text=[], evidence="it is P-1", confidence=0.9)
     adapter = _CountingAdapter(answer)
     original = _ident(brand="Acme", uncertain=True)
-    result = await verify_unresolved(IMAGE, [original], _definition(), CycleContext(vision=adapter, executor=_InlineExecutor()), boxes={"s": BOX})
+    result = await verify_unresolved(
+        IMAGE, [original], _definition(), CycleContext(vision=adapter, executor=_InlineExecutor()), boxes={"s": BOX}
+    )
     assert len(adapter.calls) == 1
     assert result[0] is original and result[0].uncertain
 
 
 def test_pick_candidates_attribute_contradiction():
-    candidates = pick_candidates(_ident(brand="Acme", descriptors={"family": "F1", "finish": "gloss"}), _definition(), 5)
+    candidates = pick_candidates(
+        _ident(brand="Acme", descriptors={"family": "F1", "finish": "gloss"}), _definition(), 5
+    )
     assert "P-2" in [facing.product for facing in candidates]
     assert "P-1" not in [facing.product for facing in candidates]
