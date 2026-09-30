@@ -56,9 +56,21 @@ ADDITIVE_KEYS = {
     "errors",
 }
 _DEFINITION = {
-    "shelves": [{"shelf_id": "shelf_1", "shelf_number": 1, "facings": [{
-        "facing_id": "f1", "shelf_id": "shelf_1", "slot": 1, "product": "A", "descriptors": {"display_name": "A"},
-    }]}]
+    "shelves": [
+        {
+            "shelf_id": "shelf_1",
+            "shelf_number": 1,
+            "facings": [
+                {
+                    "facing_id": "f1",
+                    "shelf_id": "shelf_1",
+                    "slot": 1,
+                    "product": "A",
+                    "descriptors": {"display_name": "A"},
+                }
+            ],
+        }
+    ]
 }
 
 
@@ -166,7 +178,9 @@ def pipeline(monkeypatch, fake_vision_client):
         ("seen_refs", []),
     ):
         monkeypatch.setattr(_StubCycleType, name, value)
-    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={"layout_profile": {}}, slots_definition=_DEFINITION)
+    config = PlanogramConfig(
+        planogram_type="stub_cycle", planogram_config={"layout_profile": {}}, slots_definition=_DEFINITION
+    )
     return PlanogramCompliance(planogram_config=config, llm=fake_vision_client)
 
 
@@ -213,9 +227,16 @@ async def test_run_preserves_eight_keys_for_every_type(
     )
     pipe = PlanogramCompliance(planogram_config=config, llm=fake_vision_client)
     handler = pipe._type_handler
-    handler.perceive = AsyncMock(return_value=PerceptionResult(image_id="img0", image_size=synthetic_shelf_image.size, detection_source="cv"))
+    handler.perceive = AsyncMock(
+        return_value=PerceptionResult(image_id="img0", image_size=synthetic_shelf_image.size, detection_source="cv")
+    )
     handler.identify = AsyncMock(return_value=IdentificationResult(image_id="img0"))
-    handler.compare = AsyncMock(return_value=ComparisonResult(compliance_results=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)], assessment_status=AssessmentStatus.INCONCLUSIVE))
+    handler.compare = AsyncMock(
+        return_value=ComparisonResult(
+            compliance_results=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)],
+            assessment_status=AssessmentStatus.INCONCLUSIVE,
+        )
+    )
     result = await pipe.run(synthetic_shelf_image)
     assert LEGACY_KEYS <= set(result)
     assert result["compliance_results"] is result["step3_compliance_results"]
@@ -349,7 +370,9 @@ async def test_empty_compliance_results_never_compliant(pipeline, synthetic_shel
 
 def test_constructor_passes_config_backend(fake_vision_client, monkeypatch):
     monkeypatch.setitem(PlanogramCompliance._PLANOGRAM_TYPES, "stub_cycle", _StubCycleType)
-    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={}, slots_definition=_DEFINITION, llm_backend="anthropic:claude-x")
+    config = PlanogramConfig(
+        planogram_type="stub_cycle", planogram_config={}, slots_definition=_DEFINITION, llm_backend="anthropic:claude-x"
+    )
     fake_client = MagicMock(client_name="Claude", model="claude-x")
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(PlanogramCompliance, "_get_llm", lambda self, provider, model, **kw: fake_client)

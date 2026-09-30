@@ -27,7 +27,13 @@ from .perception.executor import CpuExecutor
 from .perception.ocr import OcrReader
 from .identification.detector import GENERIC_DETECTION_PROMPT, llm_detect_shapes
 from .identification.vision import VisionAdapter
-from .comparison.definition import SlotsDefinition, SlotsDefinitionError, definition_coverage, load_slots_definition, validate_bindings
+from .comparison.definition import (
+    SlotsDefinition,
+    SlotsDefinitionError,
+    definition_coverage,
+    load_slots_definition,
+    validate_bindings,
+)
 from .identification.references import load_reference_bank
 from .layout import LayoutProfile, resolve_layout_profile, validate_zone_selectors
 from .stages.perceive import count_usable_targets, rebuild_geometry
@@ -48,8 +54,12 @@ from .types import (
 ImageInput = Union[str, Path, Image.Image]
 MIGRATION_RUNBOOK = "docs/pipelines/planogram-cycle-migration.md"
 _PRODUCT_TYPE_BY_KIND: Dict[ShapeKind, str] = {
-    ShapeKind.PRODUCT: "product", ShapeKind.BOX: "product_box", ShapeKind.FACT_TAG: "fact_tag",
-    ShapeKind.PRICE_TAG: "price_tag", ShapeKind.ZONE: "promotional_graphic", ShapeKind.UNKNOWN: "unknown",
+    ShapeKind.PRODUCT: "product",
+    ShapeKind.BOX: "product_box",
+    ShapeKind.FACT_TAG: "fact_tag",
+    ShapeKind.PRICE_TAG: "price_tag",
+    ShapeKind.ZONE: "promotional_graphic",
+    ShapeKind.UNKNOWN: "unknown",
 }
 
 
@@ -115,7 +125,9 @@ class PlanogramCompliance(AbstractPipeline):
             available = ", ".join(sorted(self._PLANOGRAM_TYPES))
             raise ValueError(f"Unknown planogram_type '{ptype}'. Available types: {available}")
         if planogram_config.slots_definition is None:
-            raise ValueError(f"PlanogramConfig {config_name!r} ({ptype}) has no slots_definition; convert it as described in {MIGRATION_RUNBOOK}")
+            raise ValueError(
+                f"PlanogramConfig {config_name!r} ({ptype}) has no slots_definition; convert it as described in {MIGRATION_RUNBOOK}"
+            )
         super().__init__(
             llm=llm,
             llm_provider=llm_provider,
@@ -149,7 +161,9 @@ class PlanogramCompliance(AbstractPipeline):
         else:
             self._definition_path = Path(source)
             if not self._definition_path.is_file():
-                raise ValueError(f"PlanogramConfig {config_name!r}: slots_definition path {self._definition_path} does not exist; convert it as described in {MIGRATION_RUNBOOK}")
+                raise ValueError(
+                    f"PlanogramConfig {config_name!r}: slots_definition path {self._definition_path} does not exist; convert it as described in {MIGRATION_RUNBOOK}"
+                )
         self._type_handler = composable_cls(pipeline=self, config=planogram_config)
 
     def _load_definition(self, source: Union[Dict[str, Any], str, Path]) -> Tuple[SlotsDefinition, List[Any]]:
@@ -319,7 +333,9 @@ class PlanogramCompliance(AbstractPipeline):
             return perception.model_copy(update={"errors": [*perception.errors, message]})
         zones = [shape for shape in shapes if shape.kind == ShapeKind.ZONE] or list(perception.zones)
         merged = [*zones, *(shape for shape in shapes if shape.kind != ShapeKind.ZONE)]
-        source = ObservationSource.LLM.value if all(shape.source == ObservationSource.LLM for shape in merged) else "mixed"
+        source = (
+            ObservationSource.LLM.value if all(shape.source == ObservationSource.LLM for shape in merged) else "mixed"
+        )
         rebuilt = await rebuild_geometry(img, merged, perception.image_id, ctx, detection_source=source)
         return rebuilt.model_copy(update={"errors": [*perception.errors, *rebuilt.errors]})
 
@@ -413,8 +429,10 @@ class PlanogramCompliance(AbstractPipeline):
                     shelf_id=f"{perception.image_id}:row{row_index}",
                     level=f"row{row_index}",
                     bbox=DetectionBox(
-                        x1=min(box.x1 for box in boxes), y1=min(box.y1 for box in boxes),
-                        x2=max(box.x2 for box in boxes), y2=max(box.y2 for box in boxes),
+                        x1=min(box.x1 for box in boxes),
+                        y1=min(box.y1 for box in boxes),
+                        x2=max(box.x2 for box in boxes),
+                        y2=max(box.y2 for box in boxes),
                         confidence=min(box.confidence for box in boxes),
                     ),
                     objects=boxes,
