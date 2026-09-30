@@ -256,11 +256,15 @@ def _resolve_config_paths(config: dict[str, Any], base: Path) -> dict[str, Any]:
     refs = resolved.get("reference_images")
     if isinstance(refs, dict):
         resolved["reference_images"] = {
-            key: [str((base / Path(item)).resolve()) if not Path(item).is_absolute() else item for item in value]
-            if isinstance(value, list)
-            else str((base / Path(value)).resolve())
-            if isinstance(value, str) and not Path(value).is_absolute()
-            else value
+            key: (
+                [str((base / Path(item)).resolve()) if not Path(item).is_absolute() else item for item in value]
+                if isinstance(value, list)
+                else (
+                    str((base / Path(value)).resolve())
+                    if isinstance(value, str) and not Path(value).is_absolute()
+                    else value
+                )
+            )
             for key, value in refs.items()
         }
     return resolved
