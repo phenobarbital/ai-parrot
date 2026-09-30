@@ -549,14 +549,16 @@ def test_handler_module_has_no_google_client():
     assert "GoogleGenAIClient" not in source and "DEFAULT_LLM_MODEL" not in source
 
 
-async def _run_job(handler, job_manager, pipeline_class):
+async def _run_job(handler, job_manager, pipeline_class=None):
     parts = [
         _MockPart("config_name", b"BOSE S1 Pro+ Planogram"),
         _MockPart("image", _make_jpeg_bytes(), filename="store.jpg"),
     ]
     handler.request.multipart = AsyncMock(return_value=_MockMultipartReader(parts))
-    patcher = patch("parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance", pipeline_class)
-    patcher.start()
+    patcher = None
+    if pipeline_class is not None:
+        patcher = patch("parrot_pipelines.handlers.planogram_compliance.PlanogramCompliance", pipeline_class)
+        patcher.start()
     try:
         response = await handler.post()
         job_id = response.data["job_id"]
@@ -567,7 +569,8 @@ async def _run_job(handler, job_manager, pipeline_class):
                 break
             await asyncio.sleep(0.1)
     finally:
-        patcher.stop()
+        if patcher is not None:
+            patcher.stop()
     return response, job
 
 
@@ -613,3 +616,52 @@ async def test_construction_value_error_fails_job(planogram_db_row, job_manager)
     assert response.status == 202
     assert job.status == JobStatus.FAILED
     assert "slots_definition missing" in job.error
+
+
+def test_build_config_hydrates_reference_lists(planogram_db_row, job_manager, tmp_path, monkeypatch):
+    import parrot_pipelines.handlers.planogram_compliance as handler_module
+
+    monkeypatch.setattr(handler_module, "PLANOGRAM_FOLDER", tmp_path)
+    (tmp_path / "rel").mkdir()
+    (tmp_path / "rel" / "b.jpg").write_bytes(b"x")
+    row = {**planogram_db_row, "reference_images": {"A": ["/abs/a.jpg", "rel/b.jpg", ""], "B": "c.jpg"}}
+    config = _make_handler(job_manager)._build_planogram_config(row)
+    assert config.reference_images["A"] == [Path("/abs/a.jpg"), tmp_path / "rel" / "b.jpg"]
+    assert config.reference_images["B"] == tmp_path / "c.jpg"
+
+
+def test_build_config_decodes_json_reference_column(planogram_db_row, job_manager):
+    row = {**planogram_db_row, "reference_images": '{"A": ["/abs/a.jpg"]}'}
+    assert _make_handler(job_manager)._build_planogram_config(row).reference_images["A"] == [Path("/abs/a.jpg")]
+
+
+def test_build_config_rejects_non_path_reference(planogram_db_row, job_manager):
+    row = {**planogram_db_row, "reference_images": {"A": [42]}}
+    with pytest.raises(ValueError, match="'A'"):
+        _make_handler(job_manager)._build_planogram_config(row)
+
+
+def test_model_descriptions_are_current():
+    fields = PlanogramConfig.model_fields
+    assert "tv_wall" not in fields["planogram_type"].description
+    for name in (
+        "roi_detection_prompt",
+        "object_identification_prompt",
+        "confidence_threshold",
+        "detection_model",
+        "detection_grid",
+    ):
+        assert "Accepted and ignored" in fields[name].description
+    assert fields["confidence_threshold"].default == 0.25 and fields["detection_model"].default == "yolo11l.pt"
+
+
+@pytest.mark.asyncio
+async def test_unmigrated_row_fails_job_fast(planogram_db_row, job_manager, monkeypatch):
+    """Real orchestrator: no slots_definition fails before a provider client is created."""
+    from parrot_pipelines.planogram.plan import PlanogramCompliance
+
+    monkeypatch.setattr(PlanogramCompliance, "_get_llm", lambda self, provider, model, **kw: MagicMock())
+    response, job = await _run_job(_make_handler(job_manager, db_row=planogram_db_row), job_manager)
+    assert response.status == 202
+    assert job.status == JobStatus.FAILED
+    assert "BOSE S1 Pro+ Planogram" in job.error and "planogram-cycle-migration.md" in job.error
