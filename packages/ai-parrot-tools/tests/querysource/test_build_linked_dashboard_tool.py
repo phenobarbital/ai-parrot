@@ -130,7 +130,7 @@ async def test_build_linked_dashboard_kpi_needs_column(fake_core_qs):
 async def test_build_linked_dashboard_source_failure(fake_core_qs):
     fake_core_qs["fail"].append(True)
     toolkit = QuerysourceToolkit(dsn="postgres://fake")
-    with pytest.raises(QuerysourceToolkitError, match="source '"):
+    with pytest.raises(QuerysourceToolkitError, match=r"source\(s\) failed while building the linked dashboard: 'kpi_0'"):
         await toolkit.build_linked_dashboard(_widgets())
 
 

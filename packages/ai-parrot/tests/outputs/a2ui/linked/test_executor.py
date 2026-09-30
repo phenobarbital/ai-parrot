@@ -246,3 +246,25 @@ def test_map_query_error_tenant_codes():
     for exc in (QueryAccessDenied(), TenantError("x", error_code="query_not_found"), ValueError("y")):
         _, code = map_query_error(exc)
         assert code in ERROR_STATUS
+
+
+async def test_execute_sources_never_mutates_the_request_filter(fake_qs, monkeypatch):
+    """A data source that consumes nested operator dicts (querysource's popitem()) must not empty the
+    descriptor's request/conditions filter, which is serialised into the envelope for client refreshes."""
+    real_fetch = qsmod.QuerySlugSource.fetch
+
+    async def destructive_fetch(self, **conditions):
+        for value in (conditions.get("filter") or {}).values():
+            if isinstance(value, dict) and value:
+                value.popitem()
+        return await real_fetch(self, **conditions)
+
+    monkeypatch.setattr(qsmod.QuerySlugSource, "fetch", destructive_fetch)
+    request = SourceRequest(filter={"graduation_details": {"@>": [{"course": "Pilates Mat"}]}}, fields=["count(*)"])
+    src = LinkedDataSource(slug="grads", conditions={}, request=request, target="/kpi/rows")
+    fake_qs.registry["grads"] = pd.DataFrame({"count": [1]})
+
+    outcome = await execute_sources({"kpi": src})
+
+    assert outcome.outcomes["kpi"].error is None
+    assert src.request.filter == {"graduation_details": {"@>": [{"course": "Pilates Mat"}]}}
