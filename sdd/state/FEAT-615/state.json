@@ -62,7 +62,7 @@
   "output": {
    "status": "complete",
    "proposal_path": "sdd/proposals/odoo-toolkit-upgrades.proposal.md",
-   "commit_sha": "dff305f8967993a50650fd6bd36a07e5686c7849"
+   "commit_sha": "dd45342da"
   }
  },
  "budget": {
