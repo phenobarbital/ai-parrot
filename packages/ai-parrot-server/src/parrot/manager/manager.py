@@ -2296,11 +2296,16 @@ class BotManager:
         # Register OAuth2 providers after startup (FEAT-144)
         # Uses a deferred callback so app["jira_oauth_manager"] is available.
         self.app.on_startup.append(self._register_oauth2_providers)
-        # FEAT-598 (TASK-3805): default data-plane guard wiring. Deferred so
-        # it runs after self.on_startup (registered above) has completed
-        # load_bots(app) — on_startup callbacks run in append order, so the
-        # managed-bot collection is populated by the time this callback
-        # walks it to inject the app-level guard into bots without one.
+        # FEAT-598 (TASK-3805): default data-plane guard wiring, in two phases.
+        # 1. Build PBAC + the guard NOW, while the app is still mutable:
+        #    PDP.setup(app) appends a middleware, on_startup/on_shutdown
+        #    signals and /api/v1/abac/* routes, all of which are frozen by the
+        #    time on_startup callbacks run ("Cannot modify frozen list").
+        setup_dataplane_guard(self.app, policy_dir=PARROT_PBAC_POLICY_DIR)
+        # 2. Inject it into bots in a deferred callback, after self.on_startup
+        #    (registered above) has completed load_bots(app) — on_startup
+        #    callbacks run in append order, so the managed-bot collection is
+        #    populated by the time this callback walks it.
         self.app.on_startup.append(self._setup_dataplane_guard)
         ## Configure Routes
         router = self.app.router
@@ -2705,16 +2710,19 @@ Available documentation UIs:
             )
 
     async def _setup_dataplane_guard(self, app: web.Application) -> None:
-        """Build the default FEAT-598 data-plane guard and inject it into bots.
+        """Inject the default FEAT-598 data-plane guard into managed bots.
 
         Called as an ``on_startup`` callback (same deferred pattern as
         :meth:`_register_oauth2_providers`), registered AFTER
         :meth:`on_startup` (which runs ``load_bots``), so ``self._bots`` is
         already populated when this callback walks it.
 
-        Uses :func:`parrot.auth.pbac.setup_dataplane_guard` to build (or
-        reuse) ``app["dataplane_guard"]``. When PBAC cannot initialize
-        (navigator-auth missing or no policy directory), no guard is built
+        The guard itself is built eagerly in :meth:`setup` via
+        :func:`parrot.auth.pbac.setup_dataplane_guard` — it cannot be built
+        here because ``PDP.setup(app)`` mutates middlewares, signals and the
+        router, all frozen once startup callbacks run. This callback only
+        reads ``app["dataplane_guard"]``. When PBAC could not initialize
+        (navigator-auth missing or no policy directory), the key is absent
         and no bot is touched — linked A2UI surfaces keep answering 403
         (fail-closed) until an operator configures PBAC.
 
@@ -2722,7 +2730,7 @@ Available documentation UIs:
         ``_dataplane_guard`` receives the app-level guard; a bot's own
         pre-set guard is never overwritten.
         """
-        guard = setup_dataplane_guard(app, policy_dir=PARROT_PBAC_POLICY_DIR)
+        guard = app.get("dataplane_guard")
         if guard is None:
             return
         for bot in self._bots.values():
