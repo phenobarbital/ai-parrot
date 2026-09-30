@@ -1,30 +1,17 @@
-"""Grid detection package for adaptive planogram compliance.
+"""Detection-grid configuration models (accepted, not executed).
 
-Provides the infrastructure to decompose an ROI into independent grid cells
-before LLM detection, improving accuracy on dense or large planograms.
+The grid execution classes were removed with the legacy pipeline (FEAT-612). ``DetectionGridConfig`` is kept
+because ``PlanogramConfig.detection_grid`` is still accepted — and ignored — for one release.
 """
+
 from parrot_pipelines.planogram.grid.models import (
     DetectionGridConfig,
     GridCell,
     GridType,
 )
-from parrot_pipelines.planogram.grid.detector import GridDetector
-from parrot_pipelines.planogram.grid.horizontal_bands import HorizontalBands
-from parrot_pipelines.planogram.grid.merger import CellResultMerger
-from parrot_pipelines.planogram.grid.strategy import (
-    AbstractGridStrategy,
-    NoGrid,
-    get_strategy,
-)
 
 __all__ = [
-    "AbstractGridStrategy",
-    "CellResultMerger",
     "DetectionGridConfig",
     "GridCell",
-    "GridDetector",
     "GridType",
-    "HorizontalBands",
-    "NoGrid",
-    "get_strategy",
 ]
