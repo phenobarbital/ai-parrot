@@ -10,7 +10,7 @@ tags: [odoo, json2, transport, aggregate-records, ledger-fix]
 **Feature ID**: FEAT-614
 **Date**: 2026-09-30
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next `ai-parrot-tools` patch release
 **Ledger**: resolves `issue:c32c408ded92` (minor · bug · discovered by `agent:odoo_hd`)
 
@@ -438,7 +438,7 @@ Verified against: `b6c6a9fd8`
 - [x] Should `_looks_like_ids` stop treating `[]` as ids so unknown domain-first methods fail loudly instead of sending `ids: []`? — *Resolved in spec*: no; out of scope (Non-Goals). The explicit `_DOMAIN_FIRST_METHODS` mapping covers every method the toolkit calls and the helper's current semantics keep `read`/`write`/`unlink` untouched.
 - [x] Does Odoo 19 `formatted_read_group` accept `lazy`? — *Resolved from upstream source*: no (`addons/web/models/models.py:802-811`); M2 drops it and documents the flag as Odoo 16–18 only.
 - [x] Should the mapping set include `web_read_group` / `formatted_read_grouping_sets` even though the toolkit does not call them yet? — *Resolved in spec*: yes, they are domain-first with the same shape and cost nothing; AC2 covers them.
-- [ ] Should `aggregate_records` expose `having` for Odoo 19+ in a follow-up? — *Owner: Jesus Lara* (non-blocking; not part of this fix).
+- [x] Should `aggregate_records` expose `having` for Odoo 19+ in a follow-up? — *Owner: Jesus Lara* (non-blocking; not part of this fix).: yes, expose having.
 
 ---
 
