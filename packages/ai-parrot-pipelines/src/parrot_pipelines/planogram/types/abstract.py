@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import ClassVar, Dict, Optional, Sequence, Tuple, TYPE_CHECKING
+from typing import ClassVar, Dict, Sequence, Tuple, TYPE_CHECKING
 
 from PIL import Image
 
@@ -11,7 +11,6 @@ from ..contracts import (
     ComparisonResult,
     CycleContext,
     IdentificationResult,
-    IdentifyStrategy,
     PerceptionResult,
 )
 from ..layout import LayoutProfile
@@ -35,11 +34,6 @@ class AbstractPlanogramType(ABC):
             utilities (LLM clients, image processing, config).
         config: The PlanogramConfig for this compliance run.
     """
-
-    identify_strategy: ClassVar[IdentifyStrategy] = IdentifyStrategy.FULL_IMAGE  # plan.py reads it until TASK-3871
-    requires_slots_definition: ClassVar[bool] = True  # every cycle type needs a definition (plan.py until TASK-3871)
-    min_usable_shapes: ClassVar[int] = 0  # plan.py until TASK-3871 (the layout profile is authoritative after)
-    uses_enhanced_image: ClassVar[bool] = False  # all types receive the untouched image (spec §2)
 
     _CYCLE_HOOKS: ClassVar[Tuple[str, ...]] = ("default_layout_profile", "perceive", "identify", "compare")
 
@@ -103,10 +97,6 @@ class AbstractPlanogramType(ABC):
         ctx: CycleContext,
     ) -> ComparisonResult:
         """Stage 3: deterministic comparison of every processed image against the definition; no I/O."""
-
-    def fallback_detection_prompt(self) -> Optional[str]:
-        """Prompt for the LLM detector fallback; ``None`` selects the generic prompt."""
-        return None
 
     def get_render_colors(self) -> Dict[str, Tuple[int, int, int]]:
         """Return color scheme for rendering compliance overlays.
