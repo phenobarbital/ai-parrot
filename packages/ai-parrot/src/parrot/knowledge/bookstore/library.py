@@ -29,6 +29,7 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 from .carding import (
     derive_toc,
+    disambiguate_title,
     fallback_card_fields,
     generate_card_fields,
     sample_sections,
@@ -1049,6 +1050,11 @@ class Bookstore:
             toc_digest=toc_digest,
             toc_entries=toc_entries,
         )
+        if not title:
+            taken_titles = {c.title.casefold() for c in self.list_books() if c.book_id != slug}
+            final_title = disambiguate_title(draft.title, taken_titles, toc_entries=toc_entries, stem=path.stem)
+        else:
+            final_title = title
         card_origin = "fallback" if not self.has_llm else "llm"
         if title or authors or topics:
             card_origin = "manual"
@@ -1059,7 +1065,7 @@ class Bookstore:
         )
         card = BookCard(
             book_id=slug,
-            title=title or draft.title,
+            title=final_title,
             authors=authors if authors is not None else draft.authors,
             year=draft.year,
             language=draft.language,

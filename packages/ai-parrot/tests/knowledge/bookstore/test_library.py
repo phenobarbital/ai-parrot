@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
+from parrot.knowledge.bookstore.carding import disambiguate_title
 from parrot.knowledge.bookstore.config import LibraryLocation
 from parrot.knowledge.bookstore.library import Bookstore, BookstoreError
-from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS
+from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS, TocEntry
 
 from .conftest import SAMPLE_MARKDOWN
 
@@ -494,3 +495,46 @@ def test_card_prompt_requests_classification():
     from parrot.knowledge.bookstore.carding import _CARD_PROMPT
 
     assert "genre" in _CARD_PROMPT and "traditions" in _CARD_PROMPT
+
+
+def test_disambiguate_title_not_taken_is_unchanged():
+    assert disambiguate_title("Book", set(), toc_entries=[], stem="book") == "Book"
+
+
+def test_disambiguate_title_uses_first_distinct_toc_entry():
+    toc = [TocEntry(node_id="n1", title="Book"), TocEntry(node_id="n2", title="Chapter 3 — Modules")]
+    assert disambiguate_title("Book", {"book"}, toc_entries=toc, stem="ch03") == "Book — Chapter 3 — Modules"
+
+
+def test_disambiguate_title_falls_back_to_stem_then_counter():
+    assert disambiguate_title("Book", {"book"}, toc_entries=[], stem="odoo_ch03") == "Book — Odoo Ch03"
+    taken = {"book", "book — odoo ch03"}
+    assert disambiguate_title("Book", taken, toc_entries=[], stem="odoo_ch03") == "Book — Odoo Ch03 (2)"
+    taken.add("book — odoo ch03 (2)")
+    assert disambiguate_title("BOOK", taken, toc_entries=[], stem="odoo_ch03") == "BOOK — Odoo Ch03 (3)"
+    # a ToC entry equal to the title (case-insensitively) is not a usable hint
+    toc = [TocEntry(node_id="n1", title="BOOK")]
+    assert disambiguate_title("Book", {"book"}, toc_entries=toc, stem="x") == "Book — X"
+
+
+@pytest.mark.asyncio
+async def test_add_book_llm_duplicate_title_is_disambiguated(store, book_md, tmp_path):
+    first, _ = await store.add_book(book_md)
+    other = tmp_path / "second-part.md"
+    other.write_text(SAMPLE_MARKDOWN + "\n## Part two\n\nDifferent bytes.\n", encoding="utf-8")
+    second, status = await store.add_book(other)
+    assert status == "added"
+    assert first.title == "Synthetic Handbook"
+    assert second.title != first.title
+    assert second.title.startswith("Synthetic Handbook — ")
+    assert store.get_card(first.book_id).title == "Synthetic Handbook"
+
+
+@pytest.mark.asyncio
+async def test_add_book_explicit_title_never_disambiguated(store, book_md, tmp_path):
+    other = tmp_path / "another.md"
+    other.write_text(SAMPLE_MARKDOWN + "\n## Another\n\nDifferent bytes.\n", encoding="utf-8")
+    first, _ = await store.add_book(book_md, title="Same Title")
+    second, _ = await store.add_book(other, title="Same Title")
+    assert first.title == second.title == "Same Title"
+    assert (first.book_id, second.book_id) == ("same-title", "same-title-2")
