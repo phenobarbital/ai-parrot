@@ -108,7 +108,9 @@ class InkWall(AbstractPlanogramType):
         if (self.config.planogram_config or {}).get("verify_pass") and ctx.definition is not None:
             boxes = {slot.slot_id: slot.box for slot in perception.slots}
             boxes.update({shape.shape_id: shape.box for shape in perception.shapes})
-            verified = await verify_unresolved(_to_bgr(image), list(result.identifications), ctx.definition, ctx, boxes=boxes)
+            verified = await verify_unresolved(
+                _to_bgr(image), list(result.identifications), ctx.definition, ctx, boxes=boxes
+            )
             return result.model_copy(update={"identifications": verified})
         return result
 
@@ -193,7 +195,9 @@ class InkWall(AbstractPlanogramType):
     ) -> List[PositionResult]:
         """Append ``price_mismatch`` notes (tag OCR vs descriptors.price); credits are never touched."""
         expected = {
-            facing.facing_id: facing.descriptors.price for facing in definition.all_facings() if facing.descriptors.price
+            facing.facing_id: facing.descriptors.price
+            for facing in definition.all_facings()
+            if facing.descriptors.price
         }
         if not expected:
             return positions

@@ -364,7 +364,8 @@ async def test_compare_never_calls_vision(fake_vision_client):
     )
     perception = PerceptionResult(image_id="img0", image_size=(100, 100), shapes=[tag], slots=[slot], row_count=1)
     identifications = IdentificationResult(
-        image_id="img0", identifications=[Identification(shape_id=slot.slot_id, image_id="img0", text="A11", brand="Acme")]
+        image_id="img0",
+        identifications=[Identification(shape_id=slot.slot_id, image_id="img0", text="A11", brand="Acme")],
     )
     ctx = _ctx(definition)
     ctx.vision = _RaisingVision()
