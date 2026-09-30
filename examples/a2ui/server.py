@@ -75,8 +75,12 @@ async def index_handler(request: web.Request) -> web.FileResponse:
 
 
 async def echarts_handler(request: web.Request) -> web.FileResponse:
-    """Serve the echarts bundle shipped with parrot.outputs."""
-    path = importlib.resources.files("parrot.outputs.formats") / "assets" / "echarts.min.js"
+    """Serve the echarts bundle shipped by ai-parrot-visualizations.
+
+    Resolve the ``assets`` package itself: ``parrot.outputs.formats`` spans the core and visualizations
+    distributions, and ``files()`` on it returns only the core directory, which has no ``assets/``.
+    """
+    path = importlib.resources.files("parrot.outputs.formats.assets") / "echarts.min.js"
     return web.FileResponse(Path(str(path)))
 
 

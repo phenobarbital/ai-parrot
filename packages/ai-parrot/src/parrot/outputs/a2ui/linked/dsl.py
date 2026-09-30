@@ -14,8 +14,10 @@ skipped here (the caller records ``transform_skipped: ref``).
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import logging
+import uuid
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -64,6 +66,11 @@ def _binary_to_text(value: Any) -> Any:
         return base64.b64encode(raw).decode("ascii")
 
 
+# Objects pandas' ujson writer cannot encode: it reads their raw memory as a string, so it either raises
+# (OverflowError / UnicodeDecodeError) or silently emits garbage. asyncpg returns these for uuid/inet columns.
+_STRINGIFY_TYPES = (uuid.UUID, ipaddress.IPv4Address, ipaddress.IPv6Address, ipaddress.IPv4Network, ipaddress.IPv6Network)
+
+
 def _json_safe(value: Any) -> Any:
     """Recursively make a cell encodable by pandas' ujson writer.
 
@@ -72,6 +79,8 @@ def _json_safe(value: Any) -> Any:
     """
     if isinstance(value, (bytes, bytearray, memoryview)):
         return _binary_to_text(value)
+    if isinstance(value, _STRINGIFY_TYPES):
+        return str(value)
     if isinstance(value, str):
         try:
             value.encode("utf-8")
@@ -93,7 +102,14 @@ def frame_to_records(frame: "pd.DataFrame") -> list[dict[str, Any]]:
     dict/list cells (``jsonb``/array/record columns) and ``S``-dtype columns — and a Unicode
     error on strings holding lone surrogates. On such a failure the non-numeric columns are
     sanitised with :func:`_json_safe` and serialisation is retried, so clean frames pay nothing.
+
+    UUID / IP-address cells are stringified *before* the first attempt: ujson may encode them as
+    garbage without raising, so a retry-on-failure would not catch every case.
     """
+    object_cols = [c for c in frame.columns if frame[c].dtype == object]
+    stringify_cols = [c for c in object_cols if any(isinstance(v, _STRINGIFY_TYPES) for v in frame[c])]
+    if stringify_cols:
+        frame = frame.assign(**{str(c): frame[c].map(_json_safe).astype(object) for c in stringify_cols})
     try:
         payload = frame.to_json(orient="records", date_format="iso", double_precision=15)
     except (OverflowError, UnicodeError):

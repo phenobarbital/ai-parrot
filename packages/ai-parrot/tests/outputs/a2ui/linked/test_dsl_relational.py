@@ -129,6 +129,28 @@ def test_frame_to_records_sanitises_bytes_dtype_column() -> None:
     assert frame_to_records(frame) == [{"a": "6Q=="}]
 
 
+def test_frame_to_records_stringifies_uuid_and_inet_cells() -> None:
+    """uuid/inet cells (asyncpg returns UUID / ipaddress objects) serialise as their text form."""
+    import datetime
+    import ipaddress
+    import uuid
+
+    from asyncpg.pgproto.pgproto import UUID as PgUUID
+
+    uid = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    frame = frame_from_records(
+        [
+            {"u": uid, "pg": PgUUID(str(uid)), "ip": ipaddress.ip_address("10.0.0.1"), "d": datetime.date(2024, 1, 2)},
+            {"u": None, "pg": None, "ip": None, "d": None},
+        ]
+    )
+    records = frame_to_records(frame)
+    assert records[0]["u"] == records[0]["pg"] == str(uid)
+    assert records[0]["ip"] == "10.0.0.1"
+    assert records[0]["d"].startswith("2024-01-02")
+    assert records[1] == {"u": None, "pg": None, "ip": None, "d": None}
+
+
 def test_frame_to_records_preserves_float_precision() -> None:
     """Floats keep 15 significant digits instead of pandas' default of 10."""
     import pandas as pd
