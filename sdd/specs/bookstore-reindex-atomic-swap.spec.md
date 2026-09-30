@@ -13,7 +13,7 @@ tags: [bookstore, pageindex, ingest, reindex, atomicity]
 **Feature ID**: FEAT-615
 **Date**: 2026-09-30
 **Author**: Jesus Lara (spec drafted by Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Source**: ledger `issue:759176f0cf1a` (tech_debt/minor, discovered from `spec:bookstore-reindex-identity`)
 
@@ -563,9 +563,9 @@ None.
 ## 8. Open Questions
 
 - [ ] Staging sweep age threshold: 1 h hard-coded constant, or configurable via
-      bookstore config? Default in this spec: constant `_STAGING_MAX_AGE_S = 3600`. — *Owner: Jesus Lara*
-- [ ] Should `rename_tree` ever be exposed as an LLM tool (e.g. non-overwriting
-      only)? This spec excludes it. — *Owner: Jesus Lara*
+      bookstore config? Default in this spec: constant `_STAGING_MAX_AGE_S = 3600`. — *Owner: Jesus Lara*: 1h hard constant
+- [x] Should `rename_tree` ever be exposed as an LLM tool (e.g. non-overwriting
+      only)? This spec excludes it. — *Owner: Jesus Lara*: yes, included
 - [x] Hotfix or feature? — *Resolved by user*: feature — touches
       `PageIndexToolkit` (new rename capability) and requires a temporary tree.
 
