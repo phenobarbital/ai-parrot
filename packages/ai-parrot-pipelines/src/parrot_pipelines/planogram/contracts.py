@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from parrot.models.compliance import ComplianceResult
-from parrot.models.detections import DetectionBox, IdentifiedProduct, ShelfRegion
+from parrot.models.detections import DetectionBox
 
 
 class ShapeKind(str, Enum):
@@ -105,13 +105,6 @@ class RuleObservation(BaseModel):
     evidence: List[str] = Field(default_factory=list)
 
 
-class LegacyPayload(BaseModel):
-    """What the legacy adapter carries between hooks."""
-
-    identified_products: List[IdentifiedProduct] = Field(default_factory=list)
-    shelf_regions: List[ShelfRegion] = Field(default_factory=list)
-
-
 class PerceptionResult(BaseModel):
     """Stage-1 output for one image."""
 
@@ -121,9 +114,8 @@ class PerceptionResult(BaseModel):
     slots: List[Slot] = Field(default_factory=list)
     zones: List[Shape] = Field(default_factory=list)
     row_count: int = 0
-    detection_source: str = "cv"  # "cv" | "llm" | "legacy_llm"
+    detection_source: str = "cv"  # "cv" | "llm" | "mixed" (historical "legacy_llm" payloads still parse)
     ocr_available: bool = False
-    legacy: Optional[LegacyPayload] = None
     ocr_readings: Dict[str, OcrReading] = Field(default_factory=dict)  # target id -> own-box local read
     errors: List[str] = Field(default_factory=list)
 
