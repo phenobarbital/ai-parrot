@@ -939,7 +939,9 @@ class Bookstore:
             authors: Override the carded authors.
             topics: Override the carded topics.
             force: Re-index even when the same file (by sha256) is
-                already catalogued.
+                already catalogued. A file whose content changed at an
+                already-catalogued path is always re-indexed in place
+                (same ``book_id``), ``force`` or not.
             relate: When ``True``, run :meth:`relate_books` for just
                 this book (Stages 1-2 only, no communities) right after
                 cataloguing it. ``False`` by default (G3: plain ``add``
@@ -947,7 +949,8 @@ class Bookstore:
 
         Returns:
             ``(card, status)`` where status is ``"added"``, ``"updated"``
-            or ``"skipped"`` (sha match without ``force``).
+            or ``"skipped"`` (sha match without ``force``). ``"updated"``
+            also covers changed content at an already-catalogued path.
 
         Raises:
             BookstoreError: Unsupported format, missing file, ``.pdf``
@@ -965,9 +968,12 @@ class Bookstore:
         payload = await asyncio.to_thread(path.read_bytes)
         sha256 = hashlib.sha256(payload).hexdigest()
         existing = catalog.find_by_sha(sha256)
+        same_bytes = existing is not None
+        if existing is None:
+            existing = catalog.find_by_path(str(path))
         status = "added"
         if existing is not None:
-            if not force:
+            if same_bytes and not force:
                 return existing.model_copy(update={"scope": scope}), "skipped"
             status = "updated"
 
@@ -975,6 +981,7 @@ class Bookstore:
         if status == "updated":
             slug = existing.book_id
             await toolkit.delete_tree(slug)
+            self._invalidate_graph(slug)
         else:
             slug = unique_slug(slugify(title or path.stem), self._all_taken_slugs())
 
@@ -1211,7 +1218,9 @@ class Bookstore:
             folder: Directory holding the books.
             scope: Target library (``"project"`` or ``"global"``).
             recursive: Also ingest files in subdirectories.
-            force: Re-index files already catalogued (by sha256).
+            force: Re-index files already catalogued (by sha256). Files
+                whose content changed at a catalogued path are always
+                re-indexed in place.
             relate: When ``True``, each new book is related right after
                 its own ingest (Stage 1-2 only, per file — same as
                 ``add_book(relate=True)``); once the whole folder is
@@ -1246,6 +1255,19 @@ class Bookstore:
             "ignored": [str(p) for p in ignored],
         }
 
+    def _invalidate_graph(self, book_id: str) -> None:
+        """Drop every relation/judgement touching ``book_id`` and clear the community partition.
+
+        Edges touching ``book_id`` may live in either scope's DB (the scope
+        owning an edge's ``src``), so the cascade runs across every store.
+        Community ids are membership hashes, so any change to a member
+        invalidates the whole partition; the next ``relate_books`` recomputes it.
+        """
+        for _scope, store in self._stores():
+            store.delete_relations(book_id=book_id)
+            store.delete_judgements(book_id)
+        self._clear_communities()
+
     async def remove_book(self, book_id: str) -> bool:
         """Remove a book — catalog row, PageIndex tree, and graph edges.
 
@@ -1268,12 +1290,8 @@ class Bookstore:
             await toolkit.delete_tree(card.tree_name)
         except Exception:  # noqa: BLE001 — the tree may already be gone
             logger.warning("Tree %r missing while removing book %r", card.tree_name, book_id)
-        for _scope, store in self._stores():
-            store.delete_relations(book_id=book_id)
-            store.delete_judgements(book_id)
         removed = self._catalog(loc.scope).remove(book_id)
-        if removed:
-            self._clear_communities()
+        self._invalidate_graph(book_id)
         return removed
 
     async def refresh_card(self, book_id: str) -> BookCard:

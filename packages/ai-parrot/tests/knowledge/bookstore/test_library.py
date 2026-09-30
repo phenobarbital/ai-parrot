@@ -9,6 +9,7 @@ import pytest
 
 from parrot.knowledge.bookstore.config import LibraryLocation
 from parrot.knowledge.bookstore.library import Bookstore, BookstoreError
+from parrot.knowledge.bookstore.models import BookCommunity, BookRelation, RelationJudgement, REL_WEIGHTS
 
 from .conftest import SAMPLE_MARKDOWN
 
@@ -52,6 +53,92 @@ async def test_add_book_markdown_with_llm(store, book_md, locations):
     # Tree JSON + catalog row exist on disk in the project scope.
     assert (locations[0].trees_dir / "synthetic-handbook.json").is_file()
     assert (locations[0].db_path).is_file()
+
+
+@pytest.mark.asyncio
+async def test_add_book_changed_content_same_path_updates_in_place(store, book_md):
+    card1, status1 = await store.add_book(book_md)
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## New chapter\n\nChanged content.\n", encoding="utf-8")
+    card2, status2 = await store.add_book(book_md)
+    assert (status1, status2) == ("added", "updated")
+    assert card2.book_id == card1.book_id
+    assert card2.source_sha256 != card1.source_sha256
+    assert [c.book_id for c in store.list_books()] == [card1.book_id]
+    assert store.get_toc(card2.book_id)
+
+
+@pytest.mark.asyncio
+async def test_add_book_same_bytes_other_path_is_skipped(store, book_md, tmp_path):
+    card1, _ = await store.add_book(book_md)
+    other = tmp_path / "copy.md"
+    other.write_bytes(book_md.read_bytes())
+    card2, status2 = await store.add_book(other)
+    assert status2 == "skipped"
+    assert card2.book_id == card1.book_id
+    assert card2.source_path == str(book_md.resolve())
+
+
+@pytest.mark.asyncio
+async def test_reindex_invalidates_relations_and_communities(store, book_md, tmp_path):
+    card_a, _ = await store.add_book(book_md)
+    other = tmp_path / "other-book.md"
+    other.write_text(SAMPLE_MARKDOWN + "\n## Other\n\nDifferent bytes.\n", encoding="utf-8")
+    card_b, _ = await store.add_book(other)
+    a, b = card_a.book_id, card_b.book_id
+    assert a != b
+    catalog = store._catalog("project")
+    catalog.upsert_relations(
+        [
+            BookRelation(
+                src_book_id=a,
+                dst_book_id=b,
+                rel="parallels",
+                origin="llm",
+                confidence=0.7,
+                weight=REL_WEIGHTS["parallels"],
+                computed_at="2026-09-06T00:00:00+00:00",
+            )
+        ]
+    )
+    catalog.record_judgements(a, [RelationJudgement(dst_book_id=b, rel="parallels", confidence=0.7)])
+    catalog.upsert_communities(
+        [
+            BookCommunity(
+                community_id="c1",
+                label="Pair",
+                label_origin="derived",
+                algorithm="leiden",
+                size=2,
+                cohesion=1.0,
+                centroid_book_id=a,
+                member_book_ids=[a, b],
+                computed_at="2026-09-06T00:00:00+00:00",
+            )
+        ]
+    )
+    assert store.related_books(a)
+    assert catalog.judged_pairs(a) == {b}
+    assert store.communities()
+
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Changed\n\nNew content.\n", encoding="utf-8")
+    _, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert store.related_books(a) == []
+    assert catalog.judged_pairs(a) == set()
+    assert store.communities() == []
+
+
+@pytest.mark.asyncio
+async def test_add_folder_changed_file_updates_not_duplicates(store, tmp_path):
+    root = tmp_path / "books"
+    root.mkdir()
+    (root / "one.md").write_text(SAMPLE_MARKDOWN, encoding="utf-8")
+    (root / "two.md").write_text(SAMPLE_MARKDOWN + "\n## Two\n\nSecond.\n", encoding="utf-8")
+    await store.add_folder(root)
+    (root / "two.md").write_text(SAMPLE_MARKDOWN + "\n## Two\n\nSecond, edited.\n", encoding="utf-8")
+    out = await store.add_folder(root)
+    assert sorted(r["status"] for r in out["results"]) == ["skipped", "updated"]
+    assert len(store.list_books()) == 2
 
 
 @pytest.mark.asyncio
