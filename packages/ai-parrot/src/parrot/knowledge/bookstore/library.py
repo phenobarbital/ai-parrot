@@ -1058,6 +1058,17 @@ class Bookstore:
         card_origin = "fallback" if not self.has_llm else "llm"
         if title or authors or topics:
             card_origin = "manual"
+        # An in-place re-index of a manually edited card (``update_card`` /
+        # explicit overrides at a previous ``add``) must not silently revert
+        # those edits to the fresh draft: keep title/authors/topics/summary
+        # unless this call overrides them explicitly.
+        preserved = (
+            existing if existing is not None and status == "updated" and existing.card_origin == "manual" else None
+        )
+        if preserved is not None:
+            if not title:
+                final_title = preserved.title
+            card_origin = "manual"
 
         page_count = max(
             (e.end_page for e in toc_entries if e.end_page is not None),
@@ -1066,11 +1077,11 @@ class Bookstore:
         card = BookCard(
             book_id=slug,
             title=final_title,
-            authors=authors if authors is not None else draft.authors,
+            authors=authors if authors is not None else (preserved.authors if preserved else draft.authors),
             year=draft.year,
             language=draft.language,
-            topics=topics if topics is not None else draft.topics,
-            summary=draft.summary,
+            topics=topics if topics is not None else (preserved.topics if preserved else draft.topics),
+            summary=preserved.summary if preserved and preserved.summary else draft.summary,
             toc_digest=toc_digest,
             toc=toc_entries,
             tree_name=slug,

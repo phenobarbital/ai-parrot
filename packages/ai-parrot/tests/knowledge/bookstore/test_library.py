@@ -552,6 +552,55 @@ async def test_update_card_fields_and_manual_origin(store, book_md):
 
 
 @pytest.mark.asyncio
+async def test_reindex_preserves_manual_card_edits(store, book_md):
+    """issue:9013034b010f — an in-place re-index must not revert update_card edits."""
+    card, _ = await store.add_book(book_md)
+    store.update_card(
+        card.book_id, title="Hand Title", authors=["Hand Author"], topics=["hand"], summary="Hand summary"
+    )
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## New chapter\n\nChanged content.\n", encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert updated.book_id == card.book_id
+    assert (updated.title, updated.authors, updated.topics, updated.summary) == (
+        "Hand Title",
+        ["Hand Author"],
+        ["hand"],
+        "Hand summary",
+    )
+    assert updated.card_origin == "manual"
+    assert updated.source_sha256 != card.source_sha256
+    reread = store.get_card(card.book_id)
+    assert reread.title == "Hand Title" and reread.card_origin == "manual"
+
+
+@pytest.mark.asyncio
+async def test_reindex_explicit_overrides_beat_preserved_manual_fields(store, book_md):
+    """Explicit title/authors on the re-index call still win over the preserved manual card."""
+    card, _ = await store.add_book(book_md)
+    store.update_card(card.book_id, title="Hand Title", topics=["hand"])
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Another\n\nMore.\n", encoding="utf-8")
+    updated, status = await store.add_book(book_md, title="Override Title", authors=["New Author"])
+    assert status == "updated"
+    assert updated.title == "Override Title"
+    assert updated.authors == ["New Author"]
+    assert updated.topics == ["hand"]
+    assert updated.card_origin == "manual"
+
+
+@pytest.mark.asyncio
+async def test_reindex_of_llm_card_takes_fresh_draft(store, book_md):
+    """A non-manual card is rebuilt from the fresh draft on re-index (unchanged behaviour)."""
+    card, _ = await store.add_book(book_md)
+    assert card.card_origin == "llm"
+    book_md.write_text(SAMPLE_MARKDOWN + "\n## Fresh\n\nContent.\n", encoding="utf-8")
+    updated, status = await store.add_book(book_md)
+    assert status == "updated"
+    assert updated.card_origin == "llm"
+    assert updated.summary == card.summary  # fake adapter drafts the same summary
+
+
+@pytest.mark.asyncio
 async def test_update_card_requires_a_field(store, book_md):
     card, _ = await store.add_book(book_md)
     with pytest.raises(BookstoreError):
