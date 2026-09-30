@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -145,3 +146,64 @@ def test_delete_node_by_flattened_concept_id(store: NodeContentStore):
     store.save("tree", "playbooks--aws-ir", "content")
     assert store.delete_node("tree", "playbooks--aws-ir") is True
     assert store.load("tree", "playbooks--aws-ir") is None
+
+
+def test_content_store_rename_tree_moves_dir_and_evicts_cache(
+    store: NodeContentStore, tmp_path: Path
+) -> None:
+    """Move nested content and invalidate both cache names."""
+    store.save("source", "0000", "source markdown")
+    embeddings_dir = tmp_path / "source" / "embeddings"
+    embeddings_dir.mkdir()
+    embedding_bytes = b"embedding data"
+    (embeddings_dir / "vectors.bin").write_bytes(embedding_bytes)
+    assert store.load("source", "0000") == "source markdown"
+    store._cache_put(("destination", "0000"), "stale destination cache")
+
+    assert store.rename_tree("source", "destination") is True
+
+    assert not (tmp_path / "source").exists()
+    assert all(key[0] not in {"source", "destination"} for key in store._cache)
+    assert store.load("destination", "0000") == "source markdown"
+    assert (tmp_path / "destination" / "embeddings" / "vectors.bin").read_bytes() == embedding_bytes
+
+
+def test_content_store_rename_tree_missing_src_dir_returns_false(store: NodeContentStore) -> None:
+    """Treat absent content as a no-op."""
+    store._cache_put(("source", "0000"), "stale source cache")
+    store._cache_put(("destination", "0000"), "stale destination cache")
+
+    assert store.rename_tree("source", "destination") is False
+    assert all(key[0] not in {"source", "destination"} for key in store._cache)
+    with pytest.raises(ValueError):
+        store.rename_tree("../source", "destination")
+    with pytest.raises(ValueError):
+        store.rename_tree("source", "../destination")
+
+
+def test_content_store_rename_tree_refuses_existing_dst(store: NodeContentStore, tmp_path: Path) -> None:
+    """Preserve both directories on collision."""
+    store.save("source", "0000", "source markdown")
+    store.save("destination", "0000", "destination markdown")
+    source_path = tmp_path / "source" / "0000.md"
+    destination_path = tmp_path / "destination" / "0000.md"
+
+    with pytest.raises(FileExistsError):
+        store.rename_tree("source", "destination")
+
+    assert source_path.read_text(encoding="utf-8") == "source markdown"
+    assert destination_path.read_text(encoding="utf-8") == "destination markdown"
+
+
+def test_content_store_rename_tree_preserves_source_on_replace_failure(
+    store: NodeContentStore, tmp_path: Path
+) -> None:
+    """Leave the source directory intact when the filesystem move fails."""
+    store.save("source", "0000", "source markdown")
+
+    with patch("parrot.knowledge.pageindex.content_store.os.replace", side_effect=OSError("boom")):
+        with pytest.raises(OSError, match="boom"):
+            store.rename_tree("source", "destination")
+
+    assert (tmp_path / "source" / "0000.md").read_text(encoding="utf-8") == "source markdown"
+    assert not (tmp_path / "destination").exists()

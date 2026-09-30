@@ -81,3 +81,53 @@ def test_save_overwrites_existing(store: JSONTreeStore, tmp_path: Path):
     with (tmp_path / "docs.json").open() as f:
         loaded = json.load(f)
     assert loaded["structure"][0]["title"] == "v2"
+
+
+def test_json_store_rename_moves_file(store: JSONTreeStore, tmp_path: Path) -> None:
+    """Preserve bytes and remove the old JSON name."""
+    source_bytes = b'{"structure":["source"]}\n'
+    (tmp_path / "source.json").write_bytes(source_bytes)
+
+    store.rename("source", "destination")
+
+    assert not (tmp_path / "source.json").exists()
+    assert (tmp_path / "destination.json").read_bytes() == source_bytes
+
+
+def test_json_store_rename_refuses_existing_dst(store: JSONTreeStore, tmp_path: Path) -> None:
+    """Keep both JSON files intact on collision."""
+    source_bytes = b'{"structure":["source"]}\n'
+    destination_bytes = b'{"structure":["destination"]}\n'
+    (tmp_path / "source.json").write_bytes(source_bytes)
+    (tmp_path / "destination.json").write_bytes(destination_bytes)
+
+    with pytest.raises(FileExistsError):
+        store.rename("source", "destination")
+
+    assert (tmp_path / "source.json").read_bytes() == source_bytes
+    assert (tmp_path / "destination.json").read_bytes() == destination_bytes
+
+
+def test_json_store_rename_invalid_or_missing_source(store: JSONTreeStore) -> None:
+    """Reject unsafe names and absent source."""
+    with pytest.raises(ValueError):
+        store.rename("../source", "destination")
+    with pytest.raises(ValueError):
+        store.rename("source", "../destination")
+    with pytest.raises(FileNotFoundError):
+        store.rename("source", "destination")
+
+
+def test_json_store_rename_preserves_source_on_replace_failure(
+    store: JSONTreeStore, tmp_path: Path
+) -> None:
+    """Leave the source JSON intact when the filesystem move fails."""
+    source_bytes = b'{"structure":["source"]}\n'
+    (tmp_path / "source.json").write_bytes(source_bytes)
+
+    with patch("parrot.knowledge.pageindex.store.os.replace", side_effect=OSError("boom")):
+        with pytest.raises(OSError, match="boom"):
+            store.rename("source", "destination")
+
+    assert (tmp_path / "source.json").read_bytes() == source_bytes
+    assert not (tmp_path / "destination.json").exists()

@@ -22,6 +22,7 @@ small reads in async would add noise without benefit.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections import OrderedDict
 from pathlib import Path
@@ -178,6 +179,29 @@ class NodeContentStore:
             # Directory not empty (foreign files) or already gone — leave it.
             pass
         return count
+
+    def rename_tree(self, src: str, dst: str) -> bool:
+        """Move all content and evict source/destination cache entries.
+
+        Returns:
+            False when the source directory is absent; True after moving it.
+
+        Raises:
+            ValueError: A name is invalid.
+            FileExistsError: Destination directory already exists.
+        """
+        src_dir = self._tree_dir(src)
+        dst_dir = self._tree_dir(dst)
+        if not src_dir.is_dir():
+            self._cache_evict_tree(src)
+            self._cache_evict_tree(dst)
+            return False
+        if dst_dir.exists():
+            raise FileExistsError(dst_dir)
+        os.replace(src_dir, dst_dir)
+        self._cache_evict_tree(src)
+        self._cache_evict_tree(dst)
+        return True
 
     def list_node_ids(self, tree_name: str) -> list[str]:
         """Return node ids that currently have a sidecar on disk, sorted."""

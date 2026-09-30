@@ -95,3 +95,19 @@ class JSONTreeStore:
             return True
         except FileNotFoundError:
             return False
+
+    def rename(self, src: str, dst: str) -> None:
+        """Move a tree JSON without overwriting another tree.
+
+        Raises:
+            ValueError: A name is invalid.
+            FileNotFoundError: Source JSON does not exist.
+            FileExistsError: Destination already exists.
+        """
+        src_path = self._path_for(src)
+        dst_path = self._path_for(dst)
+        if not src_path.is_file():
+            raise FileNotFoundError(src_path)
+        if dst_path.exists():
+            raise FileExistsError(dst_path)
+        os.replace(src_path, dst_path)
