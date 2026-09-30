@@ -32,8 +32,12 @@ def test_selector_ordinal_matches_sorted_zone() -> None:
         zones=[ZoneDefinition(zone_id="header-0", kind="header"), ZoneDefinition(zone_id="header-1", kind="header")]
     )
     selectors = [
-        type("Selector", (), {"zone_id": "header-0", "profile": "header", "kind": "zone", "ordinal": 0, "region": None})(),
-        type("Selector", (), {"zone_id": "header-1", "profile": "header", "kind": "zone", "ordinal": 1, "region": None})(),
+        type(
+            "Selector", (), {"zone_id": "header-0", "profile": "header", "kind": "zone", "ordinal": 0, "region": None}
+        )(),
+        type(
+            "Selector", (), {"zone_id": "header-1", "profile": "header", "kind": "zone", "ordinal": 1, "region": None}
+        )(),
     ]
     perception = PerceptionResult(
         image_id="img0",

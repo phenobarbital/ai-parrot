@@ -245,7 +245,11 @@ def _entity_texts(
         if shape.ocr_text:
             features.extend([f"ocr:{shape.ocr_text}", shape.ocr_text])
         reading = next(
-            (perception.ocr_readings.get(shape.shape_id) for perception in perceptions if perception.image_id == image_id),
+            (
+                perception.ocr_readings.get(shape.shape_id)
+                for perception in perceptions
+                if perception.image_id == image_id
+            ),
             None,
         )
         if reading and reading.text:
@@ -316,7 +320,10 @@ def _rule_zone_present(
             detail="zone region inspected: absent",
             observations=absent,
         )
-    if any(status == "ambiguous" for _, _, _, status in _zone_matches(binding.target_id, perceptions, definition, selectors)):
+    if any(
+        status == "ambiguous"
+        for _, _, _, status in _zone_matches(binding.target_id, perceptions, definition, selectors)
+    ):
         return _unassessed(binding, "ambiguous zone match")
     return _unassessed(binding, "zone visibility unknown")
 
@@ -336,7 +343,9 @@ def _rule_illumination(
             continue
         for observation in _rule_observations(observations, image_id, [shape.shape_id], "illumination"):
             if isinstance(observation.value, str):
-                states.append((observation.value.strip().lower(), _ref(image_id, observation.target_id, observation.source)))
+                states.append(
+                    (observation.value.strip().lower(), _ref(image_id, observation.target_id, observation.source))
+                )
     if not states:
         return _unassessed(binding, "illumination target not observed")
     distinct = {state for state, _ in states}

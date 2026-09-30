@@ -55,9 +55,7 @@ def registrable_slots(
     """Return on-fixture slots in rows carrying reliable evidence."""
     slots = list(perception.slots)
     on_shapes = {
-        shape.shape_id
-        for shape in [*perception.shapes, *added]
-        if shape.membership == FixtureMembership.ON_FIXTURE
+        shape.shape_id for shape in [*perception.shapes, *added] if shape.membership == FixtureMembership.ON_FIXTURE
     }
     on_rows = {slot.row_index for slot in slots if slot.anchor_shape_id in on_shapes}
     last_row = max(on_rows) if on_rows else None
@@ -74,11 +72,7 @@ def registrable_slots(
         for identification in idents
         if identification.image_id == perception.image_id
         and not identification.uncertain
-        and (
-            identification.occupancy in ("occupied", "empty")
-            or identification.product
-            or identification.brand
-        )
+        and (identification.occupancy in ("occupied", "empty") or identification.product or identification.brand)
     }
     evidence_rows = {
         slot.row_index
