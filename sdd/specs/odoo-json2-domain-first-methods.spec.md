@@ -64,6 +64,11 @@ present-but-deprecated in 19) does accept `lazy`.
   `formatted_read_group`; the Odoo 16–18 `read_group` call is unchanged.
 - G4. Unit coverage for both fixes in the existing test modules, runnable without
   network.
+- G6. `aggregate_records` exposes Odoo 19's `having` (a domain over the
+  aggregates, e.g. `[["__count", ">", 5]]` or `[["amount_total:sum", ">", 1000]]`)
+  as an optional parameter, forwarded to `formatted_read_group`; on Odoo ≤ 18 a
+  non-empty `having` raises `ValueError` instead of being silently dropped
+  (decided in §8 by the spec owner at approval).
 - G5. Ledger issue `c32c408ded92` is claimed at `/sdd-start` and closed by
   `/sdd-done` with `--resolved-by spec:FEAT-614`.
 
@@ -159,9 +164,11 @@ None. `_DOMAIN_FIRST_METHODS` is module-private (underscore) inside
 |---|---|---|---|
 | M1: JSON-2 domain-first mapping | yes | constant name, membership set, branch body, error text and test names fixed below | — |
 | M2: `aggregate_records` Odoo 19 kwargs | yes | drop `lazy` on 19+, `self.logger.debug` message, docstring + Field description text fixed below | — |
+| M3: `aggregate_records` `having` | yes | new trailing kwarg `having: Optional[list[Any]] = None`, Field text, `ValueError` text fixed below | — |
 
 M1 and M2 share no file and neither imports a symbol the other adds; they may be
-implemented and merged in either order or concurrently.
+implemented and merged in either order or concurrently. M3 edits the same three
+files as M2 (`toolkit.py`, `inputs.py`, `test_odoo_toolkit.py`), so it runs after M2.
 
 ### Module 1: JSON-2 domain-first mapping
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/transport/json2.py`
@@ -252,6 +259,65 @@ implemented and merged in either order or concurrently.
 
 ---
 
+### Module 3: `aggregate_records` — expose `having` (Odoo 19+)
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py`,
+  `packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py`
+  (+ tests in `packages/ai-parrot/tests/test_odoo_toolkit.py`)
+- **Responsibility**: let the LLM filter groups by aggregate value server-side.
+- **Depends on**: Module 2 (same files; M3 edits the Odoo 19 kwargs dict M2 reshapes).
+- **Decisions**:
+  - `having` is appended as the **last** keyword parameter so every existing
+    positional/keyword call keeps working (AC9).
+  - An empty or `None` `having` is a no-op on every version.
+  - On Odoo ≥ 19 a non-empty `having` becomes `kwargs["having"]`. JSON-2 forwards
+    it as a keyword; XML-RPC/JSON-RPC forward it through `execute_kw` kwargs. No
+    transport change is needed.
+  - On Odoo ≤ 18, or when the version is unknown (`None`, which routes to
+    `read_group`), a non-empty `having` raises `ValueError` **before** any RPC —
+    because `read_group` has no `having`, and silently returning unfiltered
+    groups would give the LLM a wrong answer.
+  - No client-side validation of the `having` terms: Odoo validates aggregate
+    specs and answers with an error the LLM can read.
+- **Interface Skeleton** *(signatures + docstrings only)*:
+  ```python
+  # packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py  (modifies toolkit.py:994-1058)
+  async def aggregate_records(
+      self, model: str, group_by: list[str], measures: Optional[list[str]] = None,
+      domain: Optional[list[Any]] = None, lazy: bool = False,
+      limit: Optional[int] = None, offset: int = 0, order: Optional[str] = None,
+      having: Optional[list[Any]] = None,                     # NEW — last, keyword-compatible
+  ) -> AggregateResult:
+      """...existing docstring, plus:
+          having: Optional domain over the aggregates, filtering groups after
+              aggregation (e.g. ``[["__count", ">", 5]]`` or
+              ``[["amount_total:sum", ">", 1000]]``). Odoo 19+ only.
+
+      Raises:
+          ValueError: When an unsupported aggregator name is used, or when a
+              non-empty ``having`` is given and the server is not Odoo 19+.
+      """
+  # ValueError text: "having requires Odoo 19+ (formatted_read_group); detected Odoo {odoo_version}. "
+  #                  "Filter the returned groups instead."
+
+  # packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py  (insert after the `order` Field, inputs.py:285)
+  class AggregateRecordsInput(_OdooBaseInput):
+      having: Optional[OdooDomain] = Field(
+          default=None,
+          description=(
+              "Odoo 19+ only. Domain over the aggregates to filter groups, e.g. "
+              "[['__count', '>', 5]] or [['amount_total:sum', '>', 1000]]. "
+              "Each aggregate referenced must also be listed in measures (except __count)."
+          ),
+      )
+  ```
+- **Tests to add** (`test_odoo_toolkit.py`, after the M2 tests):
+
+  | Test | Asserts |
+  |---|---|
+  | `test_aggregate_records_odoo_19_forwards_having` | version `19.0`, `measures=["amount_total:sum"]`, `having=[["amount_total:sum", ">", 1000]]`: kwargs `["having"] == having`, method `formatted_read_group` |
+  | `test_aggregate_records_odoo_19_omits_empty_having` | `having=[]` and `having=None`: `"having" not in kwargs` |
+  | `test_aggregate_records_having_rejected_before_odoo_19` | version `17.0`, non-empty `having`: `ValueError` matching `"having requires Odoo 19+"`, `execute_kw` never awaited |
+
 ## 4. Test Specification
 
 ### Unit Tests
@@ -268,6 +334,9 @@ implemented and merged in either order or concurrently.
 | `test_aggregate_records_odoo_17_still_sends_lazy` | M2 | 16–18 path unchanged |
 | `test_aggregate_records_calls_read_group_for_odoo_16_18` (existing, `:674`) | M2 | must keep passing |
 | `test_aggregate_records_allows_empty_group_by_global_aggregation` (existing, `:723`) | M2 | must keep passing |
+| `test_aggregate_records_odoo_19_forwards_having` | M3 | non-empty `having` forwarded on 19+ |
+| `test_aggregate_records_odoo_19_omits_empty_having` | M3 | `[]`/`None` → no `having` key |
+| `test_aggregate_records_having_rejected_before_odoo_19` | M3 | `ValueError` before any RPC on ≤ 18 |
 
 ### Integration Tests
 | Test | Description |
@@ -302,9 +371,12 @@ subsection are intentionally omitted.
 - [ ] AC4. On Odoo ≥ 19, `aggregate_records` calls `execute_kw(model, "formatted_read_group", [domain], kwargs)` with `"lazy" not in kwargs`, whatever the `lazy` argument; `lazy=True` produces one `self.logger.debug` line.
 - [ ] AC5. On Odoo ≤ 18, `aggregate_records` still calls `read_group` with `kwargs["lazy"] == lazy` and `kwargs["fields"]` as today.
 - [ ] AC6. `AggregateRecordsInput.lazy.description` and the `aggregate_records` docstring state that `lazy` is ignored on Odoo 19+.
-- [ ] AC7. `PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot/src pytest packages/ai-parrot/tests/test_odoo_json2_transport.py packages/ai-parrot/tests/test_odoo_toolkit.py -q` passes, including the seven new/amended tests in §4.
+- [ ] AC7. `PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot/src pytest packages/ai-parrot/tests/test_odoo_json2_transport.py packages/ai-parrot/tests/test_odoo_toolkit.py -q` passes, including the ten new/amended tests in §4.
 - [ ] AC8. `ruff check packages/ai-parrot-tools/src/parrot_tools/odoo/transport/json2.py packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py` is clean.
 - [ ] AC9. No public signature changes: `aggregate_records`, `execute_kw`, `AggregateResult`, `AggregateRecordsInput` field set.
+- [ ] AC11. `aggregate_records(..., having=H)` with non-empty `H` on Odoo ≥ 19 sends `kwargs["having"] == H` to `formatted_read_group`; `[]`/`None` sends no `having` key.
+- [ ] AC12. On Odoo ≤ 18 (or unknown version) a non-empty `having` raises `ValueError` mentioning "having requires Odoo 19+" and no `execute_kw` call is made.
+- [ ] AC13. `AggregateRecordsInput` gains `having: Optional[OdooDomain] = None`; `having` is the last parameter of `aggregate_records` (AC9 still holds for every pre-existing parameter).
 - [ ] AC10. Ledger: `issue:c32c408ded92` claimed at `/sdd-start` and closed by `/sdd-done FEAT-614` with `--resolved-by spec:FEAT-614`.
 
 ---
@@ -405,6 +477,8 @@ Verified against: `b6c6a9fd8`
 | `packages/ai-parrot/tests/test_odoo_json2_transport.py` | MODIFY (append tests after) | `async def test_execute_kw_unsupported_positional_args_raise_rpc_error():` | `test_odoo_json2_transport.py:141` | 1 |
 | `packages/ai-parrot/tests/test_odoo_toolkit.py` | MODIFY (amend test) | `async def test_aggregate_records_calls_formatted_read_group_for_odoo_19():` | `test_odoo_toolkit.py:700` | 1 |
 | `packages/ai-parrot/tests/test_odoo_toolkit.py` | MODIFY (insert new tests before) | `async def test_aggregate_records_rejects_invalid_aggregator():` | `test_odoo_toolkit.py:753` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py` | MODIFY (M3: insert `having` Field after) | `    order: Optional[str] = Field(default=None, description="Sort order for groups")` | `inputs.py:285` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py` | MODIFY (M3: signature — add `having` after this line) | `        order: Optional[str] = None,` followed by `    ) -> AggregateResult:` (the one-line anchor also occurs at `toolkit.py:414`, in `search_records`) | `toolkit.py:1003-1004` | 2 (ambiguous — use the 2-line context) |
 
 ---
 
@@ -422,7 +496,8 @@ Verified against: `b6c6a9fd8`
 ### Known Risks / Gotchas
 - **`_looks_like_ids([])` is `True`.** Any *other* method that reaches the generic tail with a single empty-list positional will still be sent as `ids: []`. This spec fixes the domain-first family explicitly and leaves the helper alone (Non-Goals); if a future toolkit method passes a domain positionally, add it to `_DOMAIN_FIRST_METHODS` rather than special-casing.
 - **Result-shape drift between `read_group` and `formatted_read_group`** (`__count`/`__extra_domain` vs `<field>_count`/`__domain`). Unchanged by this spec; the LLM already sees raw Odoo groups. Do not "normalise" as part of this fix.
-- **`having`** is accepted by `formatted_read_group` but not exposed by `aggregate_records`; not added here.
+- **`having` on Odoo ≤ 18.** `read_group` has no `having`; M3 raises `ValueError` rather than dropping the filter, because unfiltered groups would be a silently wrong answer. The LLM can filter the returned groups itself.
+- **`having` references an aggregate not in `measures`.** Odoo rejects it server-side with a readable error; the `having` Field description tells the LLM to list the aggregate in `measures`.
 - **Odoo 19 `read_group` is deprecated but present**, so an Odoo 19 instance reached through XML-RPC/JSON-RPC that still hits the `>= 19` branch is unaffected by this spec (it uses `formatted_read_group` too, positionally).
 - **Live verification needs staging credentials** (`ODOO_*` env vars for `pokemon.helpdesk.staging`, see the `odoo_hd` agent notes). Never commit them; the integration check in §4 is manual and recorded in the Completion Note, not a CI gate.
 
@@ -438,7 +513,7 @@ Verified against: `b6c6a9fd8`
 - [x] Should `_looks_like_ids` stop treating `[]` as ids so unknown domain-first methods fail loudly instead of sending `ids: []`? — *Resolved in spec*: no; out of scope (Non-Goals). The explicit `_DOMAIN_FIRST_METHODS` mapping covers every method the toolkit calls and the helper's current semantics keep `read`/`write`/`unlink` untouched.
 - [x] Does Odoo 19 `formatted_read_group` accept `lazy`? — *Resolved from upstream source*: no (`addons/web/models/models.py:802-811`); M2 drops it and documents the flag as Odoo 16–18 only.
 - [x] Should the mapping set include `web_read_group` / `formatted_read_grouping_sets` even though the toolkit does not call them yet? — *Resolved in spec*: yes, they are domain-first with the same shape and cost nothing; AC2 covers them.
-- [x] Should `aggregate_records` expose `having` for Odoo 19+ in a follow-up? — *Owner: Jesus Lara* (non-blocking; not part of this fix).: yes, expose having.
+- [x] Should `aggregate_records` expose `having` for Odoo 19+ in a follow-up? — *Owner: Jesus Lara* (non-blocking; not part of this fix).: yes, expose having. — *Routed*: folded into this feature as Module 3 (G6, AC11–AC13), as an independent task after M2.
 
 ---
 
@@ -457,8 +532,8 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 ## Worktree Strategy
 
 - **Isolation**: one feature worktree `feat-FEAT-614-odoo-json2-domain-first-methods` from `origin/dev`; the `sdd-coder` engine gives each task its own sub-worktree inside it. (With only two independent tasks this could also run as a single-task branch — `/sdd-task` decides.)
-- **Module dependency graph**: none. M1 (`json2.py` + transport tests) and M2 (`toolkit.py`, `inputs.py` + toolkit tests) share no file and neither imports a symbol the other adds → expected to run concurrently.
-- **Shared files**: none across modules.
+- **Module dependency graph**: M3 → M2 (both modify `toolkit.py`, `inputs.py`, `test_odoo_toolkit.py`). M1 (`json2.py` + transport tests) has no edge to either → runs concurrently with M2.
+- **Shared files**: `toolkit.py`, `models/inputs.py`, `tests/test_odoo_toolkit.py` (M2, M3 — serialized M2 then M3).
 - **Exclusive resources**: none (no extension rebuild, lockfile or migration).
 - **Cross-feature dependencies**: none. Note that FEAT-612 (`refactor-planogram-compliance`) is active on `dev` but touches no Odoo file.
 
@@ -469,3 +544,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-30 | Jesus Lara / Claude | Initial draft from ledger issue c32c408ded92; Odoo 19 `lazy` incompatibility added after upstream verification |
+| 0.2 | 2026-09-30 | Jesus Lara / Claude | Approved; §8 `having` answer routed into Module 3 (G6, AC11–AC13) |
