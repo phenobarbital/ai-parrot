@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -45,6 +45,7 @@ class IdentifyStrategy(str, Enum):
 
     FULL_IMAGE = "full_image"
     STRIPS = "strips"
+    SLOTS = "slots"  # opt-in: one padded crop per slot (FEAT-612)
 
 
 class Shape(BaseModel):
@@ -76,6 +77,34 @@ class Slot(BaseModel):
     inferred: bool = False
 
 
+class OcrReading(BaseModel):
+    """Local read keyed by an observed target id."""
+
+    text: str = ""
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class ReferenceImage(BaseModel):
+    """Per-run encoded reference with opaque prompt label and catalogue metadata."""
+
+    label: str  # opaque prompt label, e.g. "ref-0001" — never an expected placement
+    image: bytes  # encoded image bytes (loaded once per run)
+    catalog_key: str  # key of PlanogramCompliance.reference_images it came from
+    brand: Optional[str] = None
+
+
+class RuleObservation(BaseModel):
+    """Neutral crop-tied observation, not an expected-rule verdict."""
+
+    image_id: str
+    target_id: str  # observed zone/shape id, or "<image_id>:zone-region:<zone_id>" for an inspected region
+    kind: Literal["illumination", "visual_features", "zone_present"]
+    value: str | bool | List[str] | None = None
+    assessed: bool = False
+    source: ObservationSource
+    evidence: List[str] = Field(default_factory=list)
+
+
 class LegacyPayload(BaseModel):
     """What the legacy adapter carries between hooks."""
 
@@ -95,6 +124,7 @@ class PerceptionResult(BaseModel):
     detection_source: str = "cv"  # "cv" | "llm" | "legacy_llm"
     ocr_available: bool = False
     legacy: Optional[LegacyPayload] = None
+    ocr_readings: Dict[str, OcrReading] = Field(default_factory=dict)  # target id -> own-box local read
     errors: List[str] = Field(default_factory=list)
 
 
@@ -112,6 +142,7 @@ class Identification(BaseModel):
     evidence: List[str] = Field(default_factory=list)
     source: ObservationSource = ObservationSource.CV  # pipeline-owned
     uncertain: bool = False
+    reference_id: Optional[str] = None  # opaque reference label offered in THIS call, else None
 
 
 class AddedShape(BaseModel):
@@ -140,6 +171,7 @@ class IdentificationResult(BaseModel):
     image_id: str = "img0"
     identifications: List[Identification] = Field(default_factory=list)
     added: List[Shape] = Field(default_factory=list)  # accepted additions, pipeline-owned ids, source=LLM_ADDED
+    rule_observations: List[RuleObservation] = Field(default_factory=list)  # neutral, per-run evidence
     errors: List[str] = Field(default_factory=list)
 
 
@@ -156,6 +188,8 @@ class FacingStatus(str, Enum):
     CONFLICT = "conflict"
     NOT_ASSESSED = "not_assessed"
     NOT_VISIBLE = "not_visible"
+    EXPECTED_EMPTY = "expected_empty"  # expected-empty position observed empty (strict 1 / lenient 1)
+    UNEXPECTED_OCCUPIED = "unexpected_occupied"  # expected-empty position observed occupied (0 / 0)
 
 
 class AssessmentStatus(str, Enum):
@@ -186,6 +220,7 @@ class RuleOutcome(BaseModel):
     score: float = 1.0
     penalty: float = 0.0
     detail: Optional[str] = None
+    observations: List[ObservationRef] = Field(default_factory=list)  # deciding zone/rule evidence
 
 
 class PositionResult(BaseModel):
@@ -253,7 +288,7 @@ class CreditPolicy(BaseModel):
         strict: Dict[FacingStatus, float] = {}
         lenient: Dict[FacingStatus, float] = {}
         for status in FacingStatus:
-            if status is FacingStatus.MATCH:
+            if status in {FacingStatus.MATCH, FacingStatus.EXPECTED_EMPTY}:
                 strict[status] = 1.0
                 lenient[status] = 1.0
             elif status in {FacingStatus.INFERRED_PRESENT, FacingStatus.VARIANT_UNRESOLVED}:
@@ -276,6 +311,8 @@ class CreditPolicy(BaseModel):
             FacingStatus.EMPTY,
             FacingStatus.INFERRED_PRESENT,
             FacingStatus.VARIANT_UNRESOLVED,
+            FacingStatus.EXPECTED_EMPTY,
+            FacingStatus.UNEXPECTED_OCCUPIED,
         }
 
 
@@ -332,4 +369,7 @@ class CycleContext(BaseModel):
     credit_policy: CreditPolicy = Field(default_factory=CreditPolicy.default)
     evidence_weights: EvidenceWeights = Field(default_factory=EvidenceWeights)
     output_dir: Optional[Path] = None
+    layout: Any = None  # validated LayoutProfile (typed Any: avoids the slots/contracts import cycle)
+    reference_bank: List[ReferenceImage] = Field(default_factory=list)
+    images: Dict[str, Any] = Field(default_factory=dict)  # image_id -> PIL image, run-owned
     errors: List[str] = Field(default_factory=list)
