@@ -835,9 +835,7 @@ async def test_aggregate_records_having_rejected_before_odoo_19():
     toolkit = _make_toolkit(transport)
 
     with pytest.raises(ValueError, match="having requires Odoo 19"):
-        await toolkit.aggregate_records(
-            model="sale.order", group_by=["state"], having=[["__count", ">", 5]]
-        )
+        await toolkit.aggregate_records(model="sale.order", group_by=["state"], having=[["__count", ">", 5]])
 
     assert transport.execute_kw.await_count == 0
 
