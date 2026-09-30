@@ -231,7 +231,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -243,8 +243,9 @@
       "parallelism_notes": "composes perceive_image from TASK-3856 (stages/perceive.py), identify_image from TASK-3859 (stages/identify.py), compare_observations from TASK-3863 (stages/compare.py) inside types/ink_wall.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3864-ink-wall-cycle.md"
+      "completed_at": "2026-09-30T22:33:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3864-ink-wall-cycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3865",
@@ -253,7 +254,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -265,8 +266,9 @@
       "parallelism_notes": "composes perceive_image (TASK-3856, stages/perceive.py), identify_image (TASK-3859, stages/identify.py) and compare_observations (TASK-3863, stages/compare.py) inside types/product_on_shelves.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3865-product-on-shelves-cycle.md"
+      "completed_at": "2026-09-30T22:34:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3865-product-on-shelves-cycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3866",
@@ -275,7 +277,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -287,8 +289,9 @@
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/endcap_backlit_multitier.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3866-endcap-backlit-cycle.md"
+      "completed_at": "2026-09-30T22:34:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3866-endcap-backlit-cycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3867",
