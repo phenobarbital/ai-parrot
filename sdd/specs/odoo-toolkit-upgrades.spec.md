@@ -10,7 +10,7 @@ tags: [odoo, helpdesk, softhealer, json2, toolkit, structured-outputs, sla]
 **Feature ID**: FEAT-616
 **Date**: 2026-10-01
 **Author**: Jesus Lara (with Claude Fable 5.1)
-**Status**: draft
+**Status**: approved
 **Target version**: next `ai-parrot-tools` minor release (with a matching `ai-parrot` patch for the conf keys and the JSON-2 fix)
 
 > Source proposal: `sdd/proposals/odoo-toolkit-upgrades.proposal.md` (accepted 2026-10-01)
