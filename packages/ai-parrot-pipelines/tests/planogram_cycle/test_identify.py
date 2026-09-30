@@ -335,7 +335,9 @@ async def test_capped_references_reported(perception):
     ids = [slot.slot_id for slot in perception.slots]
     ctx = _ctx(StubAdapter(_answer([*ids, "img0:zone"])))
     ctx.layout = _layout(references=ReferencePolicy(max_per_call=2))
-    ctx.reference_bank = [ReferenceImage(label=f"ref-{index}", image=b"reference", catalog_key=str(index)) for index in range(7)]
+    ctx.reference_bank = [
+        ReferenceImage(label=f"ref-{index}", image=b"reference", catalog_key=str(index)) for index in range(7)
+    ]
     result = await identify_full_image(_image(), perception, ctx, vocabulary=[])
     assert len(ctx.vision.images[0]) == 3
     assert any("references: omitted" in error for error in result.errors)

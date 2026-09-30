@@ -361,7 +361,9 @@ def _area(target: Target, strip: DetectionBox, mark: Optional[int], perception: 
         if isinstance(target, Slot) and target.anchor_shape_id:
             anchor_reading = perception.ocr_readings.get(target.anchor_shape_id)
             anchor = next((shape for shape in perception.shapes if shape.shape_id == target.anchor_shape_id), None)
-            area["tag_text"] = (anchor_reading.text or None) if anchor_reading else (anchor.ocr_text if anchor else None)
+            area["tag_text"] = (
+                (anchor_reading.text or None) if anchor_reading else (anchor.ocr_text if anchor else None)
+            )
         return area
     ocr_text = None
     if isinstance(target, Shape):
@@ -437,7 +439,9 @@ async def _run_call(
         except VisionError as exc:
             retry_error = f"{perception.image_id}: identify_incomplete_retry_failed: {exc}"
     invalid_references = [
-        item for item in answer.existing_identifications if item.reference_id is not None and item.reference_id not in labels
+        item
+        for item in answer.existing_identifications
+        if item.reference_id is not None and item.reference_id not in labels
     ]
     if invalid_references:
         answer = answer.model_copy(
