@@ -25,7 +25,16 @@ from parrot_pipelines.planogram.comparison.definition import (
 
 logger = logging.getLogger(__name__)
 
-MIGRATED_TYPES = frozenset({"product_on_shelves", "ink_wall"})
+MIGRATED_TYPES = frozenset(
+    {
+        "product_on_shelves",
+        "graphic_panel_display",
+        "product_counter",
+        "endcap_no_shelves_promotional",
+        "endcap_backlit_multitier",
+        "ink_wall",
+    }
+)
 _NON_FACING_TYPES = frozenset({"fact_tag", "price_tag", "slot"})
 _ZONE_TYPES = frozenset(
     {
@@ -43,6 +52,7 @@ _ZONE_TYPES = frozenset(
         "text_overlay",
     }
 )
+_COUNTER_ZONE_TYPES = frozenset({"promotional_background", "background", "information_label", "label"})
 _PREFLIGHT_SQL = "SELECT * FROM troc.planograms_configurations WHERE is_active = TRUE ORDER BY config_name"
 
 
@@ -53,6 +63,7 @@ class ConversionReport(BaseModel):
     bindings: List[Dict[str, Any]] = Field(default_factory=list)
     unresolved: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
+    layout_profile: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PreflightRow(BaseModel):
@@ -88,6 +99,24 @@ def _zone_kind(product_type: str, name: str) -> str:
     if "poster" in text or "text_overlay" in text or "banner" in text:
         return "poster"
     return "header"
+
+
+def _extended_zone_kind(product_type: str, name: str, default: str) -> str:
+    """Zone kind for non-shelf types, using the FEAT-612 kinds."""
+    text = f"{product_type} {name}".casefold()
+    if "information" in text or "label" in text:
+        return "information_label"
+    if "backlit" in text:
+        return "backlit"
+    if "counter" in text:
+        return "counter"
+    if "advertis" in text:
+        return "advertisement"
+    if "poster" in text or "banner" in text or "text_overlay" in text:
+        return "poster"
+    if "box" in text:
+        return "box_stack"
+    return default
 
 
 class _BindingSet:
@@ -196,7 +225,7 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
                         "slot": slot,
                         "product": name,
                         "brand": product.get("brand") or brand,
-                        "descriptors": {},
+                        "descriptors": copy.deepcopy(product.get("descriptors") or {}),
                     }
                 )
             if first_facing:
@@ -226,44 +255,249 @@ def _endcap_rules(
     bindings.add("text_requirements", target, {"requirements": requirements})
 
 
+def _convert_ink(config: Dict[str, Any], report: ConversionReport, bindings: _BindingSet) -> Tuple[list, list]:
+    """Page-1 / slots layout -> native shelves with preserved source descriptors."""
+    source = config.get("slots_definition") or config
+    shelves = source.get("shelves") if isinstance(source, dict) else []
+    is_page1 = isinstance(source, dict) and (
+        "planogram" in source
+        or (bool(shelves) and isinstance(shelves[0], dict) and isinstance(shelves[0].get("products"), dict))
+    )
+    if not is_page1:
+        report.unresolved.append("ink_wall: no page-1/slots layout found")
+        return [], []
+    try:
+        definition = load_slots_definition(copy.deepcopy(source))
+    except SlotsDefinitionError as exc:
+        from parrot_pipelines.planogram.comparison.definition import _normalise_page1
+
+        try:
+            native = _normalise_page1(copy.deepcopy(source))
+        except SlotsDefinitionError as normalise_exc:
+            report.unresolved.append(f"ink_wall: invalid page-1/slots layout: {normalise_exc}")
+            return [], []
+        for shelf in native["shelves"]:
+            for facing in shelf["facings"]:
+                if not facing.get("descriptors", {}).get("display_name"):
+                    report.unresolved.append(f"{facing['facing_id']}: descriptors are required")
+        report.unresolved.append(f"candidate does not validate: {exc}")
+        return native["shelves"], native["zones"]
+    for facing in definition.all_facings():
+        if not facing.descriptors.described:
+            report.unresolved.append(f"{facing.facing_id}: descriptors are required")
+    return (
+        [shelf.model_dump(mode="json") for shelf in definition.shelves],
+        [zone.model_dump(mode="json") for zone in definition.zones],
+    )
+
+
+def _convert_zones_only(
+    config: Dict[str, Any], report: ConversionReport, bindings: _BindingSet, *, default_kind: str
+) -> Tuple[list, list]:
+    """Promotional / graphic-panel elements -> unowned zones."""
+    zones: List[Dict[str, Any]] = []
+    for index, shelf in enumerate(config.get("shelves") or [], start=1):
+        level = str(shelf.get("level") or f"shelf{index}")
+        for number, product in enumerate(shelf.get("products") or [], start=1):
+            name = str(product.get("name") or "").strip()
+            ptype = str(product.get("product_type") or "graphic").strip().lower()
+            zone_id = f"zone-{level}-{number}"
+            required = bool(product.get("mandatory", True))
+            zones.append(
+                {
+                    "zone_id": zone_id,
+                    "kind": _extended_zone_kind(ptype, name, default_kind),
+                    "shelf_id": None,
+                    "required": required,
+                }
+            )
+            bindings.add("zone_present", zone_id, {"name": name}, mandatory=required)
+            _product_rules(product, zone_id, bindings)
+    by_kind: Dict[str, List[str]] = {}
+    for zone in zones:
+        by_kind.setdefault(zone["kind"], []).append(zone["zone_id"])
+    for zone_ids in by_kind.values():
+        if len(zone_ids) > 1:
+            report.unresolved.append(f"zone selector required for {', '.join(zone_ids)}")
+    return [], zones
+
+
+def _convert_counter(config: Dict[str, Any], report: ConversionReport, bindings: _BindingSet) -> Tuple[list, list]:
+    """Product elements -> counter facings; background and label elements -> zones."""
+    shelf_id = "shelf-1"
+    facings: List[Dict[str, Any]] = []
+    zones: List[Dict[str, Any]] = []
+    slot = 0
+    zone_number = 0
+    elements = [product for shelf in config.get("shelves") or [] for product in shelf.get("products") or []]
+    for product in elements:
+        name = str(product.get("name") or "").strip()
+        ptype = str(product.get("product_type") or "product").strip().lower()
+        if ptype in _COUNTER_ZONE_TYPES:
+            zone_number += 1
+            zone_id = f"zone-counter-{zone_number}"
+            required = bool(product.get("mandatory", True))
+            zones.append(
+                {
+                    "zone_id": zone_id,
+                    "kind": _extended_zone_kind(ptype, name, "graphic"),
+                    "shelf_id": shelf_id,
+                    "required": required,
+                }
+            )
+            bindings.add("zone_present", zone_id, {"name": name}, mandatory=required)
+            _product_rules(product, zone_id, bindings)
+            continue
+        if not name:
+            report.unresolved.append("shelf-1 (counter): product without a name — cannot place it")
+            continue
+        count = _fixed_quantity(product)
+        if count is None:
+            report.unresolved.append(
+                f"shelf-1 (counter): '{name}' has quantity_range {product.get('quantity_range')!r} — "
+                "decide the exact number of facings (one placeholder facing was created)"
+            )
+            count = 1
+        first_facing: Optional[str] = None
+        for _ in range(count):
+            slot += 1
+            facing_id = f"{shelf_id}:{slot}"
+            first_facing = first_facing or facing_id
+            facings.append(
+                {
+                    "facing_id": facing_id,
+                    "shelf_id": shelf_id,
+                    "slot": slot,
+                    "product": name,
+                    "brand": product.get("brand") or config.get("brand"),
+                    "descriptors": copy.deepcopy(product.get("descriptors") or {}),
+                }
+            )
+        if first_facing:
+            _product_rules(product, first_facing, bindings)
+    if "scoring_weights" in config:
+        report.unresolved.append("scoring_weights: map to definition/profile weights")
+    return [{"shelf_id": shelf_id, "shelf_number": 1, "level": "counter", "facings": facings}], zones
+
+
+def _convert_backlit(config: Dict[str, Any], report: ConversionReport, bindings: _BindingSet) -> Tuple[list, list]:
+    """Backlit shelves -> candidate shelves/zones; sections require human spatial configuration."""
+    shelves, zones = _walk_shelves(config, report, bindings)
+    _endcap_rules(config, shelves, zones, bindings)
+    for shelf_id, source_shelf in zip((shelf["shelf_id"] for shelf in shelves), config.get("shelves") or []):
+        for section in source_shelf.get("sections") or []:
+            report.unresolved.append(
+                f"{shelf_id} section {section.get('id')}: configure a zone selector / section group"
+            )
+    return shelves, zones
+
+
 def convert_config(planogram_config: Dict[str, Any], *, planogram_type: str) -> ConversionReport:
-    """Build a candidate slots definition and rule bindings from a legacy config dict.
+    """Convert any registered type into a candidate definition and rule bindings.
 
     Args:
         planogram_config: The raw ``planogram_config`` dict (never mutated).
         planogram_type: The configuration's planogram type.
 
     Returns:
-        A ConversionReport. ``unresolved`` lists everything a human must decide.
+        A ConversionReport. ``unresolved`` lists every human decision and validation failure.
 
     Raises:
-        ValueError: When ``planogram_type`` is not ``"product_on_shelves"``.
+        ValueError: When ``planogram_type`` is not convertible.
     """
-    if planogram_type != "product_on_shelves":
-        raise ValueError(f"Only product_on_shelves configs are convertible, got '{planogram_type}'")
+    if planogram_type not in MIGRATED_TYPES:
+        raise ValueError(
+            f"Unsupported planogram_type '{planogram_type}'; convertible: {', '.join(sorted(MIGRATED_TYPES))}"
+        )
     config = copy.deepcopy(planogram_config)
     report = ConversionReport()
     bindings = _BindingSet()
-    shelves, zones = _walk_shelves(config, report, bindings)
-    _endcap_rules(config, shelves, zones, bindings)
+    if planogram_type == "product_on_shelves":
+        shelves, zones = _walk_shelves(config, report, bindings)
+        _endcap_rules(config, shelves, zones, bindings)
+    elif planogram_type == "ink_wall":
+        shelves, zones = _convert_ink(config, report, bindings)
+    elif planogram_type == "endcap_backlit_multitier":
+        shelves, zones = _convert_backlit(config, report, bindings)
+    elif planogram_type == "product_counter":
+        shelves, zones = _convert_counter(config, report, bindings)
+    else:
+        shelves, zones = _convert_zones_only(config, report, bindings, default_kind="graphic")
+    layout = copy.deepcopy(config.get("layout_profile") or {})
+    if "perception_mode" in config:
+        layout["perception_mode"] = config["perception_mode"]
+        report.warnings.append("perception_mode accepted and moved to layout_profile")
+    for zone_index, zone in enumerate(zones):
+        layout.setdefault("zone_selectors", []).append(
+            {"zone_id": zone["zone_id"], "kind": "zone", "ordinal": zone_index}
+        )
+    report.layout_profile = layout
+    for field in (
+        "roi_detection_prompt",
+        "object_identification_prompt",
+        "detection_model",
+        "confidence_threshold",
+        "detection_grid",
+    ):
+        if field in config:
+            report.warnings.append(f"{field} accepted and ignored for one release")
     report.candidate = {
         "version": "1",
-        "meta": {"source": "convert_config", "brand": config.get("brand"), "category": config.get("category")},
+        "meta": {
+            "source": "convert_config",
+            "planogram_type": planogram_type,
+            "brand": config.get("brand"),
+            "category": config.get("category"),
+        },
         "shelves": shelves,
         "zones": zones,
     }
     report.bindings = list(bindings.items.values())
+    _validate_candidate(report, config, planogram_type)
+    return report
+
+
+def _validate_candidate(report: ConversionReport, config: Dict[str, Any], planogram_type: str) -> None:
+    """Append candidate, binding, and layout validation failures to ``unresolved``."""
     try:
         definition = load_slots_definition(copy.deepcopy(report.candidate))
         validate_bindings(definition, {**config, "rule_bindings": report.bindings})
     except SlotsDefinitionError as exc:
-        report.warnings.append(f"candidate does not validate yet: {exc}")
-    return report
+        report.unresolved.append(f"candidate does not validate: {exc}")
+    problem = _layout_problem(
+        planogram_type,
+        {**config, "layout_profile": report.layout_profile},
+        "convert_config",
+    )
+    if problem:
+        report.unresolved.append(problem)
 
 
 def _decode(value: Any) -> Any:
     """JSON string -> object (other values unchanged)."""
     return json.loads(value) if isinstance(value, str) else value
+
+
+def _layout_problem(planogram_type: str, planogram_config: Dict[str, Any], config_name: str) -> Optional[str]:
+    """Resolve a type's layout defaults; return validation text when they cannot be resolved."""
+    from parrot_pipelines.planogram import types as planogram_types
+    from parrot_pipelines.planogram.layout import resolve_layout_profile
+
+    classes = {
+        "product_on_shelves": planogram_types.ProductOnShelves,
+        "graphic_panel_display": planogram_types.GraphicPanelDisplay,
+        "product_counter": planogram_types.ProductCounter,
+        "endcap_no_shelves_promotional": planogram_types.EndcapNoShelvesPromotional,
+        "endcap_backlit_multitier": planogram_types.EndcapBacklitMultitier,
+        "ink_wall": planogram_types.InkWall,
+    }
+    try:
+        resolve_layout_profile(
+            classes[planogram_type].default_layout_profile(), planogram_config, config_name=config_name
+        )
+    except ValueError as exc:
+        return f"invalid layout_profile: {exc}"
+    return None
 
 
 def check_row(row: Dict[str, Any]) -> PreflightRow:
@@ -273,12 +507,12 @@ def check_row(row: Dict[str, Any]) -> PreflightRow:
         row: One ``troc.planograms_configurations`` row as a dict.
 
     Returns:
-        The verdict; legacy types are always ``ok``.
+        The verdict; unknown types are never ``ok``.
     """
     ptype = row.get("planogram_type") or "product_on_shelves"
     verdict = PreflightRow(config_name=str(row.get("config_name", "")), planogram_type=ptype, ok=True)
     if ptype not in MIGRATED_TYPES:
-        return verdict
+        return verdict.model_copy(update={"ok": False, "problems": [f"unknown planogram_type '{ptype}'"]})
     problems: List[str] = []
     raw = row.get("slots_definition")
     if raw in (None, "", {}):
@@ -297,11 +531,16 @@ def check_row(row: Dict[str, Any]) -> PreflightRow:
             else:
                 try:
                     pg_config = _decode(row.get("planogram_config")) or {}
-                    validate_bindings(definition, pg_config)
                 except json.JSONDecodeError as exc:
                     problems.append(f"planogram_config is not valid JSON: {exc}")
-                except SlotsDefinitionError as exc:
-                    problems.append(f"invalid rule_bindings: {exc}")
+                else:
+                    try:
+                        validate_bindings(definition, pg_config)
+                    except SlotsDefinitionError as exc:
+                        problems.append(f"invalid rule_bindings: {exc}")
+                    problem = _layout_problem(ptype, pg_config, verdict.config_name)
+                    if problem:
+                        problems.append(problem)
     return verdict.model_copy(update={"ok": not problems, "problems": problems})
 
 
@@ -312,7 +551,7 @@ async def preflight(dsn: str) -> List[PreflightRow]:
         dsn: PostgreSQL DSN.
 
     Returns:
-        One PreflightRow per active configuration (legacy types are always ``ok``).
+        One PreflightRow per active configuration (unknown types are never ``ok``).
     """
     from asyncdb import AsyncDB  # lazy: importing this module must not need a DB driver
 
