@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T21:01:10+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-30T21:06:08+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-613",
       "feature": "pageindex-md-builder-fixes",
       "spec": "sdd/specs/pageindex-md-builder-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -25,8 +25,9 @@
       "discovered_from": "issue:8b6d7358c602",
       "assigned_to": "agent:sdd-fix",
       "started_at": "2026-09-30T21:05:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3882-fence-aware-md-parser.md"
+      "completed_at": "2026-09-30T21:06:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3882-fence-aware-md-parser.md",
+      "verification": "verified"
     }
   ]
 }

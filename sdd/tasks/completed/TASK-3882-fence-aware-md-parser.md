@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-613 — PageIndex md_builder — fence-aware heading parser
 **Spec**: `sdd/specs/pageindex-md-builder-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -411,8 +411,15 @@ UNTERMINATED = "# Top\n\n```\n## Later\n"
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Fable 5.1, interactive session)
+**Date**: 2026-09-30
+**Notes**: Added `_FENCE_RE` / `_fence_marker` and an `open_fence` state to the
+`parse_markdown_structure` loop (code commit bf4e4356c). Fenced lines are appended
+raw and never reach `_parse_header_level`; close requires same char, length >= opening,
+bare fence line. New `test_md_builder.py` carries 20 tests (spec matrix + a line_num
+guard + empty-line marker case). Validation: 105 passed across the five listed suites
+with `PYTHONPATH=packages/ai-parrot/src` (Cython `.so` copied from the main checkout).
+The `md_to_tree` integration test pads section bodies past `thin_tree`'s 50-token
+threshold, which the spec's fixture note did not anticipate.
 
-**Deviations from spec**: none
+**Deviations from spec**: none (test fixture padded for `thin_tree`; behaviour unchanged)
