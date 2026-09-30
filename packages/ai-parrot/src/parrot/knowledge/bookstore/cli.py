@@ -376,25 +376,38 @@ def card_cmd(book_id: str, refresh: bool, llm: Optional[str]) -> None:
 @click.option("--author", "authors", multiple=True, help="Replace the authors (repeatable).")
 @click.option("--topic", "topics", multiple=True, help="Replace the topics (repeatable).")
 @click.option("--summary", default=None, help="New summary.")
+@click.option("--clear-authors", is_flag=True, help="Remove all authors.")
+@click.option("--clear-topics", is_flag=True, help="Remove all topics.")
 def update_cmd(
     book_id: str,
     title: Optional[str],
     authors: tuple[str, ...],
     topics: tuple[str, ...],
     summary: Optional[str],
+    clear_authors: bool,
+    clear_topics: bool,
 ) -> None:
-    """Edit a book's ficha fields without re-indexing (marks the card as manual)."""
+    """Edit a book's ficha fields without re-indexing (marks the card as manual).
+
+    ``--clear-authors`` / ``--clear-topics`` remove the whole list.
+    """
     from .library import BookstoreError
 
-    if title is None and not authors and not topics and summary is None:
-        raise click.ClickException("Nothing to do — pass --title, --author, --topic or --summary")
+    if clear_authors and authors:
+        raise click.ClickException("--clear-authors cannot be combined with --author")
+    if clear_topics and topics:
+        raise click.ClickException("--clear-topics cannot be combined with --topic")
+    if title is None and not authors and not topics and summary is None and not clear_authors and not clear_topics:
+        raise click.ClickException(
+            "Nothing to do — pass --title, --author, --topic, --summary, --clear-authors or --clear-topics"
+        )
     store = _open_bookstore(require_exists=True, use_llm=False)
     try:
         card = store.update_card(
             book_id,
             title=title,
-            authors=list(authors) or None,
-            topics=list(topics) or None,
+            authors=[] if clear_authors else (list(authors) or None),
+            topics=[] if clear_topics else (list(topics) or None),
             summary=summary,
         )
     except BookstoreError as exc:
