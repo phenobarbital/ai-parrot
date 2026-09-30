@@ -713,12 +713,23 @@ def _validate_linked_sources(
                     }
                 )
     # Dependency cycles (derived `from`, join.with, union.sources) can never execute on any lane: report every
-    # member once. Missing references are already reported above, so only keys whose refs all exist are cycles.
+    # member once. Missing/self references are already reported above (and taint their transitive dependents), so
+    # only the remaining structurally-failed keys are cycle members.
     from parrot.outputs.a2ui.linked.executor import dependencies_of, execution_order
 
     _, failed = execution_order(sources)
+    tainted = {
+        key for key in sources if any(ref not in sources or ref == key for ref in dependencies_of(sources[key]))
+    }
+    changed = True
+    while changed:
+        changed = False
+        for key in sources:
+            if key not in tainted and any(ref in tainted for ref in dependencies_of(sources[key])):
+                tainted.add(key)
+                changed = True
     for key in failed:
-        if all(ref in sources for ref in dependencies_of(sources[key])):
+        if key not in tainted:
             issues.append(
                 {
                     "code": DATA_SOURCE_INVALID,

@@ -141,7 +141,7 @@ dlane.start();
 await new Promise((r) => setTimeout(r, 20));
 assert.equal(calls.length, 1, 'start fetches the shared parent exactly once; derived views are never fetched');
 const readyKeys = dupdates.filter((u) => u.status === 'ready').map((u) => u.key);
-assert.deepEqual(readyKeys, ['geo', 'by_country', 'top', 'by_licensee'], 'parent first, then its derived views (chain included)');
+assert.deepEqual(readyKeys, ['geo', 'by_country', 'by_licensee', 'top'], 'parent first, then its derived views (chain included)');
 const rowsOf = (key) => dupdates.filter((u) => u.status === 'ready' && u.key === key).at(-1).rows;
 assert.deepEqual(rowsOf('by_country'), [{ country: 'US', graduates: 30 }, { country: 'MX', graduates: 5 }], 'group_by drops the NULL key, sort desc');
 assert.deepEqual(rowsOf('by_licensee'), [{ licensee: 'a', graduates: 15 }, { licensee: 'b', graduates: 21 }]);
@@ -151,7 +151,7 @@ dupdates.length = 0;
 await dlane.refreshSource('by_licensee');
 assert.equal(calls.length, 1, 'refreshing a derived view re-fetches its parent once');
 assert.equal(calls[0].body.refresh, true);
-assert.deepEqual(dupdates.filter((u) => u.status === 'ready').map((u) => u.key), ['geo', 'by_country', 'top', 'by_licensee'], 'the cascade recomputes every derived view');
+assert.deepEqual(dupdates.filter((u) => u.status === 'ready').map((u) => u.key), ['geo', 'by_country', 'by_licensee', 'top'], 'the cascade recomputes every derived view');
 calls.length = 0;
 await dlane.refreshAll();
 assert.equal(calls.length, 1, 'refreshAll fetches only the query-slug source');
@@ -165,22 +165,60 @@ assert.deepEqual(dupdates.filter((u) => u.status !== 'loading').map((u) => [u.ke
   [['by_country', 'error'], ['by_licensee', 'error'], ['geo', 'unavailable'], ['top', 'error']], 'a parent failure takes its derived views down, snapshots kept');
 await assert.rejects(dlane.fetchPage('by_country'), /unknown source/);
 
-// --- the DSL port passes the shared golden fixtures (contract/fixtures/dsl) -------------------------------------------
-const { applyTransform } = await import('./dsl.js');
+// --- adversarial graphs: no deadlock, no stale joined frame, one fetch per parent per pass ------------------------------
+const withTimeout = (p, ms = 500) => Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms))]);
+const joinOps = (w) => ({ ops: [{ op: 'join', with: w, how: 'left', on: [{ left: 'k', right: 'k' }] }] });
+reset();
+let qv = 0;
+responder = (url) => (url.endsWith('/Q') ? [{ k: 1, qv: ++qv }] : [{ k: 1, v: url.split('/').pop() }]);
+const gupdates = [];
+const glatest = (key) => gupdates.filter((u) => u.status === 'ready' && u.key === key).at(-1)?.rows;
+// J (query) joins D (derived from P); P's cascade waits on D while J waits on D: must not deadlock.
+const graph = {
+  J: source({ slug: 'J', kind: 'query_slug', transform: joinOps('D') }),
+  P: source({ slug: 'P', kind: 'query_slug' }),
+  D: { kind: 'derived', from: 'P', target: '/D/rows', transform: { ops: [{ op: 'rename', mapping: { v: 'pv' } }] } },
+  Q: source({ slug: 'Q', kind: 'query_slug' }),
+  E: { kind: 'derived', from: 'P', target: '/E/rows', transform: joinOps('Q') },
+};
+const glane2 = createLane(graph, { baseUrl: 'https://h', token: 'T', onUpdate: (u) => gupdates.push(u) });
+glane2.start();
+await withTimeout(new Promise((resolve) => {
+  const tick = () => (gupdates.filter((u) => u.status === 'ready').length >= 5 ? resolve() : setTimeout(tick, 5));
+  tick();
+}));
+assert.deepEqual([...calls.map((c) => c.url.split('/').pop())].sort(), ['J', 'P', 'Q'], 'each source fetched once (J declared before P still joins P\'s fetch)');
+assert.equal(calls[0].url.split('/').pop(), 'P', 'dependencies first');
+assert.deepEqual(glatest('J'), [{ k: 1, v: 'J', pv: 'P' }]);
+assert.deepEqual(glatest('E'), [{ k: 1, v: 'P', qv: 1 }]);
+calls.length = 0;
+await withTimeout(glane2.refreshSource('Q'));
+assert.deepEqual(glatest('E'), [{ k: 1, v: 'P', qv: 2 }], 'a derived view joining a sibling is recomputed when the sibling changes');
+assert.equal(calls.length, 1);
+calls.length = 0;
+await withTimeout(glane2.refreshAll());
+assert.deepEqual(glatest('E'), [{ k: 1, v: 'P', qv: 3 }], 'refreshAll never leaves a derived join on a stale sibling frame');
+assert.deepEqual([...calls.map((c) => c.url.split('/').pop())].sort(), ['J', 'P', 'Q'], 'refreshAll: one fetch per query-slug source');
+assert.equal(calls[0].url.split('/').pop(), 'P', 'refreshAll: dependencies first');
+
+// --- the DSL port passes EVERY shared golden fixture (contract/fixtures/dsl), error fixtures included --------------------
+const { applyTransform, TransformError } = await import('./dsl.js');
 const fixtures = JSON.parse(process.env.DSL_FIXTURES);
 for (const fx of fixtures) {
+  if (fx.error) {
+    assert.throws(() => applyTransform(fx.input, { ops: fx.ops }, fx.frames ?? {}), (err) => err instanceof TransformError && err.opIndex === fx.error.op_index, `dsl fixture ${fx.name}`);
+    continue;
+  }
   const out = applyTransform(fx.input, { ops: fx.ops }, fx.frames ?? {});
   assert.deepEqual(out, fx.expected, `dsl fixture ${fx.name}: ${fx.description}`);
 }
-assert.ok(fixtures.length >= 10, 'the golden DSL fixtures were loaded');
+assert.ok(fixtures.length >= 19, 'every golden DSL fixture was loaded');
 console.log('linked.js: all assertions passed');
 """
 
 FIXTURES = (
     Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/outputs/a2ui/linked/contract/fixtures/dsl"
 )
-# Fixtures whose expectations depend on pandas dtype/datetime semantics the row-based JS port does not model.
-SKIPPED_FIXTURES = {"dtype_preservation.json", "tz_datetime_roundtrip.json"}
 
 
 def test_linked_js_contract(tmp_path: Path) -> None:
@@ -189,11 +227,7 @@ def test_linked_js_contract(tmp_path: Path) -> None:
         pytest.skip("node not found")
     for name in ("linked.js", "dsl.js"):
         shutil.copy(STATIC / name, tmp_path / name)
-    fixtures = [
-        {"name": path.name, **json.loads(path.read_text())}
-        for path in sorted(FIXTURES.glob("*.json"))
-        if path.name not in SKIPPED_FIXTURES
-    ]
+    fixtures = [{"name": path.name, **json.loads(path.read_text())} for path in sorted(FIXTURES.glob("*.json"))]
     (tmp_path / "test.mjs").write_text(HARNESS)
     result = subprocess.run(
         ["node", "test.mjs"],

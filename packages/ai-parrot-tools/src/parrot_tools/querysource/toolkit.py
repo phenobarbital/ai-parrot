@@ -408,10 +408,10 @@ class QuerysourceToolkit(AbstractToolkit):
     async def build_linked_dashboard(
         self,
         widgets: list[dict[str, Any]],
-        sources: dict[str, dict[str, Any]] | None = None,
         surface_id: str | None = None,
         title: str | None = None,
         snapshot: bool = True,
+        sources: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Emit ONE linked A2UI dashboard surface whose data sources are owned by the dashboard.
 

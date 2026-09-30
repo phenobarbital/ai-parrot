@@ -33,8 +33,9 @@ export function parseBinding(binding) {
 
 /**
  * Index the envelope: components by id, the linked sources, the baked snapshot rows per data-model root, and the
- * server-paged keys (query-slug sources bound by a DataTable). A derived view cannot hang off a paged key — its parent
- * frame is never loaded by the lane — so such a descriptor is rejected here rather than rendering an empty chart.
+ * server-paged keys. A key is paged (fetched only through `fetchPage`, never as a bounded lane frame) when it is a
+ * query-slug source read by DataTables ONLY: as soon as another widget binds it or a derived view is computed from
+ * it, the lane fetches its bounded frame like any shared source and the grid keeps paging on the server on its own.
  */
 export function planDashboard(envelope) {
   const byId = {};
@@ -44,15 +45,18 @@ export function planDashboard(envelope) {
   for (const [key, value] of Object.entries(envelope.dataModel ?? {})) {
     snapshot[key] = Array.isArray(value?.rows) ? value.rows : [];
   }
-  const pagedKeys = Object.values(byId)
-    .filter((node) => node.component === 'DataTable')
-    .map((node) => parseBinding(node.data)?.key)
-    .filter((key) => key && sources[key] && isQuerySlug(sources[key]));
-  for (const [key, source] of Object.entries(sources)) {
-    if (isDerived(source) && pagedKeys.includes(source.from)) {
-      throw new Error(`derived source '${key}' cannot be computed from the server-paged source '${source.from}'`);
-    }
-  }
+  const nodes = Object.values(byId);
+  const boundBy = (node) => parseBinding(node.component === 'KPICard' ? node.value : node.data)?.key;
+  const sharedKeys = new Set(nodes.filter((node) => node.component !== 'DataTable').map(boundBy).filter(Boolean));
+  for (const source of Object.values(sources)) if (isDerived(source)) sharedKeys.add(source.from);
+  const pagedKeys = [
+    ...new Set(
+      nodes
+        .filter((node) => node.component === 'DataTable')
+        .map(boundBy)
+        .filter((key) => key && sources[key] && isQuerySlug(sources[key]) && !sharedKeys.has(key)),
+    ),
+  ];
   return { byId, rootId: byId.root ? 'root' : (envelope.components?.[0]?.id ?? 'root'), sources, snapshot, pagedKeys };
 }
 

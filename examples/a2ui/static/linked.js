@@ -193,70 +193,92 @@ function lockedValues(source) {
 }
 
 export function createLane(sources, { baseUrl, token, onUpdate, pagedKeys = [] }) {
-  // Server-paged sources (the grid) are fetched only through `fetchPage`: start / refreshAll / refreshSource skip them,
-  // so the grid never costs a wasted bounded-frame fetch. A derived view cannot hang off a paged key (its frame is
-  // never loaded here) — `renderer.js` rejects that at plan time.
+  // Server-paged sources (a grid's own key) are fetched only through `fetchPage`: start / refreshAll / refreshSource
+  // skip them, so the grid never costs a wasted bounded-frame fetch. `renderer.js` never pages a key that another
+  // widget or a derived view also reads.
   const paged = new Set(pagedKeys);
   const deps = {};
   for (const key of Object.keys(sources)) deps[key] = dependenciesOf(sources[key]);
-  const { failed } = executionOrder(sources, deps);
-  /** Derived keys computed from `key`, in descriptor order — recomputed after every successful run of `key`. */
-  const derivedOf = (key) => Object.keys(sources).filter((d) => isDerived(sources[d]) && sources[d].from === key && !failed.has(d));
+  const { order: topological, failed } = executionOrder(sources, deps);
+
+  /**
+   * Every derived key that (transitively, through derived keys only) depends on `key` — via `from`, `join.with` or
+   * `union.sources` — in topological order. Recomputed after every run of `key` (the cascade); a query-slug dependent
+   * is re-fetched only by an explicit refresh, exactly like the Python executor.
+   */
+  function derivedDependents(key) {
+    const affected = new Set();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const d of Object.keys(sources)) {
+        if (affected.has(d) || failed.has(d) || !isDerived(sources[d])) continue;
+        if (deps[d].some((ref) => ref === key || affected.has(ref))) {
+          affected.add(d);
+          changed = true;
+        }
+      }
+    }
+    return topological.filter((d) => affected.has(d));
+  }
 
   const overrides = {};
   const frames = {};
-  const inFlight = {};
+  const inFlight = {}; // the frame phase of the run in flight per key — NEVER its cascade
+  const lastFailed = new Set(); // keys whose last frame phase failed: dependents never retry them on their own
   const refreshing = {};
 
   /**
-   * Ensure `key` has a frame before a dependent runs — cycle-safe via `resolving`. A run already in flight for `key`
-   * is JOINED, never duplicated: a parent shared by N derived views / joins is fetched once per pass.
+   * Ensure `key` has a frame before a dependent runs — cycle-safe via `resolving`. A frame phase already in flight
+   * for `key` is JOINED, never duplicated, and a key that just failed is not retried by each dependent.
    */
   async function ensureFrame(key, resolving) {
-    if (frames[key] !== undefined) return;
     const active = inFlight[key];
-    if (active) {
-      await active;
-      if (frames[key] !== undefined) return;
-    }
-    await runSource(key, false, resolving);
+    if (active) await active; // a refresh in flight: wait for the fresh frame rather than reading the stale one
+    if (frames[key] !== undefined || lastFailed.has(key)) return;
+    await framePhase(key, false, resolving);
   }
 
-  /**
-   * Run `key` (always a fresh execution — an explicit refresh or a param change must hit QuerySource again),
-   * serialised after any run of the same key still in flight and registered so `ensureFrame` can join it.
-   */
-  function runSource(key, forceRefresh, resolving = new Set()) {
+  /** The joinable part of a run: produce `frames[key]` (always a fresh execution), serialised per key. */
+  function framePhase(key, forceRefresh, resolving) {
     const previous = inFlight[key];
+    let outcome = false;
     const started = previous ? previous.then(() => execute(key, forceRefresh, resolving)) : execute(key, forceRefresh, resolving);
-    const run = started.finally(() => {
-      if (inFlight[key] === run) delete inFlight[key];
-    });
+    const run = started
+      .then((ready) => {
+        outcome = ready;
+      })
+      .finally(() => {
+        if (inFlight[key] === run) delete inFlight[key];
+      });
     inFlight[key] = run;
-    return run;
+    return run.then(() => outcome);
   }
 
-  /** A source that produced no frame takes its derived views down with it (Python: `data_stage` propagation). */
-  function reportDerivedFailed(key, resolving) {
-    for (const d of derivedOf(key)) {
-      if (resolving.has(d)) continue;
-      onUpdate({ key: d, rows: null, status: 'error', snapshotAt: null });
-      reportDerivedFailed(d, resolving);
+  /** Run `key`, then its derived dependents (the cascade) — OUTSIDE the joinable frame phase, so no deadlock. */
+  async function runSource(key, forceRefresh, resolving = new Set()) {
+    const ready = await framePhase(key, forceRefresh, resolving);
+    const dependents = derivedDependents(key).filter((d) => !resolving.has(d));
+    if (!ready) {
+      for (const d of dependents) onUpdate({ key: d, rows: null, status: 'error', snapshotAt: null });
+      return;
     }
+    // Recompute (overwrite) each view in topological order; a consumer joining a view mid-cascade waits in ensureFrame.
+    for (const d of dependents) await framePhase(d, false, resolving);
   }
 
+  /** Fetch/transform (query_slug) or compute (derived) `frames[key]`; reports through onUpdate; never throws. */
   async function execute(key, forceRefresh, resolving) {
     const src = sources[key];
-    if (!src) return;
+    if (!src) return false;
     if (resolving.has(key) || failed.has(key)) {
       // A real cycle, or a sibling reference that names nothing: never fetch, never blank the
       // snapshot — just report the error (TS twin of the Python executor's failed-source outcome).
       onUpdate({ key, rows: null, status: 'error', snapshotAt: null });
-      return;
+      return false;
     }
     resolving.add(key);
     onUpdate({ key, rows: null, status: 'loading', snapshotAt: null });
-    let ready = false;
     try {
       for (const ref of deps[key]) {
         if (ref in sources) await ensureFrame(ref, resolving);
@@ -279,32 +301,59 @@ export function createLane(sources, { baseUrl, token, onUpdate, pagedKeys = [] }
         rows = applyTransform(base, src.transform, frames);
       }
       frames[key] = rows;
+      lastFailed.delete(key);
       onUpdate({ key, rows, status: 'ready', snapshotAt: new Date().toISOString() });
-      ready = true;
+      return true;
     } catch (err) {
       // A 404 (SourceUnavailable) is the only outcome the UI must word differently ("unavailable",
       // never "denied" — AC10); every other failure (a network error, a TransformError, ...) reports the same generic
       // 'error' status — the snapshot is never blanked either way (rows stays null).
+      lastFailed.add(key);
       const status = err instanceof SourceUnavailable ? 'unavailable' : 'error';
       onUpdate({ key, rows: null, status, snapshotAt: null });
+      return false;
     } finally {
       resolving.delete(key);
     }
-    if (!ready) {
-      reportDerivedFailed(key, resolving);
-      return;
-    }
-    // Cascade: every derived view of this key is recomputed from the fresh frame (sequential, descriptor order).
-    for (const d of derivedOf(key)) {
-      if (resolving.has(d)) continue; // `d` is the one that asked for this frame (ensureFrame) — it continues itself
-      delete frames[d];
-      await runSource(d, false, resolving);
-    }
+  }
+
+  function refreshSource(key) {
+    if (!(key in sources) || failed.has(key) || paged.has(key)) return Promise.resolve();
+    const src = sources[key];
+    if (isDerived(src)) return refreshSource(src.from); // a derived view refreshes through its parent
+    if (refreshing[key]) return refreshing[key];
+
+    refreshing[key] = (async () => {
+      lastFailed.delete(key);
+      await runSource(key, true); // the cascade recomputes this key's derived views
+      // Then every query-slug source that (transitively, through any kind) depends on `key`, dependencies first.
+      const affected = new Set([key]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const k of topological) {
+          if (!affected.has(k) && deps[k].some((ref) => affected.has(ref))) {
+            affected.add(k);
+            changed = true;
+          }
+        }
+      }
+      for (const dependent of topological) {
+        if (dependent !== key && affected.has(dependent) && isQuerySlug(sources[dependent]) && !paged.has(dependent)) {
+          lastFailed.delete(dependent);
+          await runSource(dependent, true);
+        }
+      }
+    })().finally(() => {
+      delete refreshing[key];
+    });
+    return refreshing[key];
   }
 
   return {
     start() {
-      for (const key of Object.keys(sources)) {
+      // Dependencies first, so a dependent declared before its parent joins that one fetch instead of issuing its own.
+      for (const key of [...topological, ...Object.keys(sources).filter((k) => failed.has(k))]) {
         if (paged.has(key)) continue;
         if (failed.has(key)) {
           onUpdate({ key, rows: null, status: 'error', snapshotAt: null });
@@ -322,17 +371,27 @@ export function createLane(sources, { baseUrl, token, onUpdate, pagedKeys = [] }
       const src = sources[source];
       if (!src || failed.has(source) || !isQuerySlug(src) || (src.locked ?? []).includes(name)) return;
       overrides[source] = { ...(overrides[source] ?? {}), [name]: value };
+      lastFailed.delete(source);
       delete frames[source]; // force a re-fetch even if a sibling already cached this frame
       await runSource(source, false);
     },
     async refreshAll() {
       // Sequential, in dependency order — a single deterministic pass, same shape as the Python
       // reference executor's `execute_sources` loop (dependencies first). Derived views follow through the cascade.
-      const { order } = executionOrder(sources, deps);
-      for (const key of order) {
-        if (paged.has(key) || isDerived(sources[key])) continue;
-        delete frames[key];
-        await runSource(key, true);
+      // Every query-slug source is fetched exactly once (dependencies first, no cascade yet), then every derived
+      // view is recomputed once in topological order — one fetch per source per pass.
+      for (const key of topological) {
+        if (paged.has(key) || isDerived(sources[key]) || failed.has(key)) continue;
+        lastFailed.delete(key);
+        await framePhase(key, true, new Set());
+      }
+      for (const key of topological) {
+        if (!isDerived(sources[key]) || failed.has(key)) continue;
+        if (frames[sources[key].from] === undefined) {
+          onUpdate({ key, rows: null, status: 'error', snapshotAt: null });
+          continue;
+        }
+        await framePhase(key, false, new Set());
       }
     },
     /**
@@ -372,26 +431,6 @@ export function createLane(sources, { baseUrl, token, onUpdate, pagedKeys = [] }
       const total = Number(counted[0]?.total);
       return { rows, total: Number.isFinite(total) ? total : rows.length };
     },
-    refreshSource(key) {
-      if (!(key in sources) || failed.has(key) || paged.has(key)) return Promise.resolve();
-      const src = sources[key];
-      if (isDerived(src)) return this.refreshSource(src.from); // a derived view refreshes through its parent
-      if (refreshing[key]) return refreshing[key];
-
-      refreshing[key] = (async () => {
-        delete frames[key];
-        await runSource(key, true); // the cascade recomputes this key's derived views
-        const { order } = executionOrder(sources, deps);
-        for (const dependent of order) {
-          if (dependent !== key && !isDerived(sources[dependent]) && deps[dependent].includes(key)) {
-            delete frames[dependent];
-            await runSource(dependent, true);
-          }
-        }
-      })().finally(() => {
-        delete refreshing[key];
-      });
-      return refreshing[key];
-    },
+    refreshSource,
   };
 }

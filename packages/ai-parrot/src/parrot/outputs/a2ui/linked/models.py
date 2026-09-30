@@ -270,10 +270,18 @@ class LinkedSources(RootModel[dict[str, LinkedSource]]):
     @model_validator(mode="before")
     @classmethod
     def _default_kind(cls, value: Any) -> Any:
-        """Descriptors written before the ``derived`` kind existed carry no ``kind``: they are ``query_slug``."""
+        """Descriptors written before the ``derived`` kind existed carry no ``kind``: they are ``query_slug``.
+
+        A kind-less descriptor that carries ``from`` can only be a derived view, so it is tagged as such — the
+        validation error then names the derived shape instead of "from: extra forbidden".
+        """
         if isinstance(value, dict):
             return {
-                key: ({"kind": "query_slug", **src} if isinstance(src, dict) and "kind" not in src else src)
+                key: (
+                    {"kind": "derived" if "from" in src else "query_slug", **src}
+                    if isinstance(src, dict) and "kind" not in src
+                    else src
+                )
                 for key, src in value.items()
             }
         return value

@@ -177,9 +177,10 @@ function aggregateValues(fn, values, opIndex, opName) {
     case 'count':
       return values.length;
     case 'min':
-      return values.length > 0 ? Math.min(...values) : null;
+      // Plain `<` comparison: numbers AND strings (ISO dates order lexically), like pandas min/max on any dtype.
+      return values.length > 0 ? values.reduce((a, b) => (b < a ? b : a)) : null;
     case 'max':
-      return values.length > 0 ? Math.max(...values) : null;
+      return values.length > 0 ? values.reduce((a, b) => (b > a ? b : a)) : null;
     default:
       throw new TransformError(`${opName}: unsupported aggregate function ${fn}`, null, opIndex);
   }

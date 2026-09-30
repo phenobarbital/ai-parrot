@@ -74,7 +74,7 @@ Refresh semantics, identical on the Python executor, the admin UI lane and the e
 |---|---|---|
 | Mount / save-time snapshot | fetched in dependency order, once per pass however many widgets read it | computed after its parent, from the parent's full frame |
 | Refresh the dashboard (`refreshAll`, `POST …/refresh {}`) | re-fetched | recomputed through the parent's cascade; never fetched |
-| Refresh one shared source (`refreshSource(k)`) | re-fetched, then its `join`/`union` dependents | every derived view of `k` recomputed |
+| Refresh one shared source (`refreshSource(k)`) | re-fetched, then every query-slug source that (transitively) depends on `k` | every derived view that depends on `k` — through `from`, `join.with` or `union.sources` — recomputed in dependency order |
 | Refresh a derived widget (`refreshSource(d)`) | its parent is refreshed | recomputed by the cascade |
 | `setParam` / `{"params": {"d": {…}}}` | applied when declared and unlocked | ignored (`source d: ignored params […]` warning); broadcast params never reach derived keys |
 | Failure | `error` / `unavailable`, snapshot kept | a parent failure marks its derived views `error` (Python: `data_stage`); a `TransformError` fails only that view and blocks save-time snapshots (502 `data_stage`) |

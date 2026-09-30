@@ -41,7 +41,12 @@ describe('derived dashboard parity — order, fetches, params and rows', () => {
     });
     await lane.refreshAll();
     expect(fetched).toEqual(DFX.expected_fetches.map((key: string) => DFX.sources[key].slug));
-    expect(readyOrder).toEqual(DFX.expected_order);
+    // refreshAll fetches every query-slug source first, then computes the derived views: a valid interleaving of the
+    // Python order — every key exactly once, and never before one of its dependencies.
+    expect([...readyOrder].sort()).toEqual([...DFX.expected_order].sort());
+    for (const key of readyOrder) {
+      for (const ref of dependenciesOf(DFX.sources[key])) expect(readyOrder.indexOf(ref)).toBeLessThan(readyOrder.indexOf(key));
+    }
     for (const key of Object.keys(DFX.expected_rows)) expect(rows[key]).toEqual(DFX.expected_rows[key]);
     // Every param addressed to a derived key is ignored: no fetch, no override.
     for (const fxCase of DFX.param_cases.filter((c: any) => DFX.sources[c.source].kind === 'derived')) {

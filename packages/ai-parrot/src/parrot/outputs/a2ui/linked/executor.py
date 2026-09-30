@@ -195,25 +195,39 @@ async def _run_source(
     overrides: Mapping[str, Any],
     frames: Mapping[str, "pd.DataFrame"],
     *,
+    sources: Mapping[str, LinkedSource],
     principal: Any,
     pctx: "PermissionContext | None",
     guard: Any | None,
     max_fetch_rows: int,
-) -> tuple["pd.DataFrame", list[str]]:
-    """Produce ``key``'s frame: fetch + transform (query_slug) or transform the parent's frame (derived)."""
+) -> "pd.DataFrame":
+    """Produce ``key``'s frame: fetch + transform (query_slug) or transform the parent's frame (derived).
+
+    ``overrides`` are the already-derived QuerySource conditions for a query_slug source (see
+    :func:`_conditions_for`) and are unused for a derived one.
+    """
     from parrot.outputs.a2ui.linked.dsl import apply_transform
 
     if isinstance(src, DerivedDataSource):
-        # A derived view takes no params: every override is ignored (reported, never applied). Its base is the
-        # parent's FULL fetched frame (bounded by max_fetch_rows), never the parent's ≤500-row snapshot.
+        # Its base is the parent's FULL fetched frame (bounded by max_fetch_rows), never the parent's ≤500-row snapshot.
         base = frames[src.from_]
-        frame = await asyncio.to_thread(apply_transform, base, src.transform, frames=dict(frames))
-        return frame, sorted(overrides)
+        parent = sources.get(src.from_)
+        if isinstance(parent, LinkedDataSource):
+            cap = min(parent.request.limit or max_fetch_rows, max_fetch_rows)
+            if len(base) >= cap:
+                logger.warning(
+                    "derived source %r aggregates a parent (%r) frame that hit its fetch cap (%d rows): the result "
+                    "may be partial — aggregate in the parent's request instead",
+                    key,
+                    src.from_,
+                    cap,
+                )
+        return await asyncio.to_thread(apply_transform, base, src.transform, frames=dict(frames))
 
     from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource
     from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
 
-    conditions, ignored = _conditions_for(src, overrides, max_fetch_rows=max_fetch_rows)
+    conditions = overrides
     inner = QuerySlugSource(
         src.slug,
         prefetch_schema_enabled=False,
@@ -230,7 +244,7 @@ async def _run_source(
         logger.warning("linked source %r: ref transform %s skipped in Python", key, src.transform.ref.name)
     elif src.transform is not None:
         frame = await asyncio.to_thread(apply_transform, frame, src.transform, frames=dict(frames))
-    return frame, ignored
+    return frame
 
 
 def _describe(src: LinkedSource) -> str:
@@ -264,19 +278,35 @@ async def execute_sources(
     for key in order:
         src = sources[key]
         overrides = (param_overrides or {}).get(key, {})
-        if any(ref not in frames for ref in dependencies_of(src)):
-            # A dependency that was in `order` but failed at run time (fetch/transform error): never run this one.
-            outcomes[key] = SourceOutcome(key=key, error="data_stage", ignored_params=sorted(overrides))
+        if isinstance(src, DerivedDataSource):
+            # A derived view takes no params: every override is ignored (reported, never applied).
+            conditions: dict[str, Any] = {}
+            ignored = sorted(overrides)
+        else:
+            conditions, ignored = _conditions_for(src, overrides, max_fetch_rows=max_fetch_rows)
+        broken = [ref for ref in dependencies_of(src) if ref not in frames]
+        if broken:
+            # A dependency that was in `order` but failed at run time (fetch/transform error): never run this one,
+            # and carry the dependency's own error code so the caller sees the root cause (404/503, not data_stage).
+            code = next((outcomes[ref].error for ref in broken if outcomes.get(ref) and outcomes[ref].error), None)
+            outcomes[key] = SourceOutcome(key=key, error=code or "data_stage", ignored_params=ignored)
             continue
-        ignored: list[str] = []
         try:
-            frame, ignored = await _run_source(
-                key, src, overrides, frames, principal=principal, pctx=pctx, guard=guard, max_fetch_rows=max_fetch_rows
+            frame = await _run_source(
+                key,
+                src,
+                conditions,
+                frames,
+                sources=sources,
+                principal=principal,
+                pctx=pctx,
+                guard=guard,
+                max_fetch_rows=max_fetch_rows,
             )
         except Exception as exc:  # noqa: BLE001 — data errors never fail siblings
             status, code = map_query_error(exc)
             logger.warning("linked source %r (%s) failed: %s → %s", key, _describe(src), exc, status)
-            outcomes[key] = SourceOutcome(key=key, error=code, ignored_params=ignored or sorted(overrides))
+            outcomes[key] = SourceOutcome(key=key, error=code, ignored_params=ignored)
             continue
         frames[key] = frame
         rows = frame_to_records(frame)

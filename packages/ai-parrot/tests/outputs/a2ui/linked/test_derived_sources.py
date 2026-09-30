@@ -144,18 +144,25 @@ async def test_execute_derived_from_full_parent_frame(fake_qs, linked_source) ->
 
 
 async def test_execute_derived_parent_failure_propagates(fake_qs, linked_source) -> None:
-    """A parent that fails at fetch time never runs its derived views (``data_stage``); siblings still run."""
+    """A parent that fails at fetch time never runs its derived views, which carry the parent's own error code;
+    siblings still run, and a failed query_slug source reports only its locked/undeclared overrides as ignored."""
+    from querysource.exceptions import QueryAccessDenied
+
     calls, registry = fake_qs
-    registry[linked_source.slug] = RuntimeError("boom")
+    registry[linked_source.slug] = QueryAccessDenied()
     other = linked_source.model_copy(update={"slug": "other_slug", "target": "/other/rows"})
     registry["other_slug"] = pd.DataFrame({"a": [1]})
     sources = {"activity": linked_source, "by_program": _derived("activity", "by_program"), "other": other}
 
-    outcome = await execute_sources(sources)
+    outcome = await execute_sources(
+        sources, param_overrides={"activity": {"firstdate": "2026-01-01", "nope": 1}, "by_program": {"z": 1}}
+    )
 
-    assert outcome.outcomes["activity"].error == "data_stage"
-    assert outcome.outcomes["by_program"].error == "data_stage"
+    assert outcome.outcomes["activity"].error == "query_not_found"
+    assert outcome.outcomes["activity"].ignored_params == ["nope"]  # the declared `firstdate` was applied
+    assert outcome.outcomes["by_program"].error == "query_not_found"  # the root cause, not a generic data_stage
     assert outcome.outcomes["by_program"].rows is None
+    assert outcome.outcomes["by_program"].ignored_params == ["z"]
     assert outcome.outcomes["other"].error is None
 
 
@@ -286,12 +293,24 @@ def test_validate_derived_ok(linked_source) -> None:
 
 
 def test_validate_derived_bad_parent(linked_source) -> None:
-    """``from`` must name a sibling; self-reference and unknown keys are DATA_SOURCE_INVALID."""
+    """``from`` must name a sibling; self-reference and unknown keys are ONE DATA_SOURCE_INVALID each (never an
+    extra "cycle" issue), and a dependent of a broken parent is not reported as a cycle."""
     activity = linked_source.model_dump(mode="json", by_alias=True)
     unknown = {"activity": activity, "view": _derived("missing", "view").model_dump(mode="json", by_alias=True)}
-    assert "DATA_SOURCE_INVALID" in _codes(_validation_envelope(unknown))
+    assert _codes(_validation_envelope(unknown)) == ["DATA_SOURCE_INVALID"]
     self_ref = {"activity": activity, "view": _derived("view", "view").model_dump(mode="json", by_alias=True)}
-    assert "DATA_SOURCE_INVALID" in _codes(_validation_envelope(self_ref))
+    assert _codes(_validation_envelope(self_ref)) == ["DATA_SOURCE_INVALID"]
+    ghost_parent = dict(activity, transform={"ops": [{"op": "union", "sources": ["ghost"]}]})
+    chained = {"activity": ghost_parent, "view": _derived("activity", "view").model_dump(mode="json", by_alias=True)}
+    issues = _codes(_validation_envelope(chained))
+    assert issues == ["DATA_SOURCE_INVALID"], "only the ghost union reference is reported, never a cycle"
+
+
+def test_linked_sources_kindless_from_is_derived() -> None:
+    """A kind-less descriptor carrying ``from`` is tagged derived, so its validation error names the derived shape."""
+    with pytest.raises(ValidationError) as exc_info:
+        LinkedSources.model_validate({"view": {"from": "activity", "target": "/view/rows"}})
+    assert "derived" in str(exc_info.value) and "transform" in str(exc_info.value)
 
 
 def test_validate_derived_parent_with_ref_rejected(linked_source, monkeypatch) -> None:

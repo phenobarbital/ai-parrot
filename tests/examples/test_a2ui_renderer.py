@@ -20,7 +20,6 @@ UI_NODE_MODULES = ROOT / "packages" / "ai-parrot-server" / "ui" / "node_modules"
 
 from ._envelope import real_envelope  # noqa: E402
 
-
 HARNESS = r"""
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -61,9 +60,9 @@ assert.equal(parseBinding(undefined), null);
 assert.equal(label(null), 'Unassigned');
 assert.equal(kpiText([{ total: 17572 }], 'total'), '17,572');
 assert.equal(kpiText([], 'total'), '—');
-const broken = JSON.parse(JSON.stringify(envelope));
-broken.metadata.extensions.parrot_data_sources.bad = { kind: 'derived', from: 'graduates', target: '/bad/rows', transform: { ops: [{ op: 'limit', n: 1 }] } };
-assert.throws(() => planDashboard(broken), /server-paged source 'graduates'/, 'a derived view over the paged grid is rejected');
+const shared = JSON.parse(JSON.stringify(envelope));
+shared.metadata.extensions.parrot_data_sources.bad = { kind: 'derived', from: 'graduates', target: '/bad/rows', transform: { ops: [{ op: 'limit', n: 1 }] } };
+assert.deepEqual(planDashboard(shared).pagedKeys, [], 'a grid source that also feeds a derived view is no longer paged: the lane fetches its bounded frame');
 
 // --- fake QuerySource ----------------------------------------------------------------------------------------------
 const canon = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
@@ -219,7 +218,11 @@ def test_renderer_against_real_envelope(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         timeout=120,
-        env={"PATH": "/usr/bin:/bin:/usr/local/bin", "UI_NODE_MODULES": str(UI_NODE_MODULES), "ENVELOPE": str(envelope_path)},
+        env={
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+            "UI_NODE_MODULES": str(UI_NODE_MODULES),
+            "ENVELOPE": str(envelope_path),
+        },
     )
     assert result.returncode == 0, f"renderer test failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
     assert "all assertions passed" in result.stdout
