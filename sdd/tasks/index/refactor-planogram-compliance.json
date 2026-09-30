@@ -395,7 +395,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -406,8 +406,9 @@
       "parallelism_notes": "plan.py drops the legacy_perceive path removed from types/abstract.py by TASK-3870; also edits contracts.py (LegacyPayload removal) after TASK-3854's additions to the same file.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3871-orchestrator-cutover.md"
+      "completed_at": "2026-09-30T22:58:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3871-orchestrator-cutover.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3872",
