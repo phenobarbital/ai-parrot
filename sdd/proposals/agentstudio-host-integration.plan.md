@@ -44,7 +44,7 @@ written:
 ## Order and milestones
 
 ```
-M1  storage W0–W1 (schema, repositories, partition hook)   ║  FEAT-605 W0–W1 (scope seam, host mount hooks, /me)  ║  toolkits W1–W2
+M1  storage W0–W1 (schema, repositories, identity refs)   ║  FEAT-605 early subset W0.1–W0.3 + W1.1–W1.5  ║  toolkits W1 (resolver, policy code)
 M2  storage W2 (services, runtime)  →  FEAT-605 W2 (access service)
 M3  storage W3 (handler switch)     →  FEAT-605 W3 (agents, drafts, skills, assistant), per-file after storage
 M4  storage W4 + FEAT-605 W4 (route matrix, docs) + toolkits W4 (scope binding)  →  release (1.0.7 or next)
@@ -57,30 +57,53 @@ What we build meanwhile, **without waiting on parrot**:
   schema form) against the current contract with a mock — starts now.
 - FieldSync: mount + per-programme settings on FEAT-605 W0.1/W0.2 (dev only);
   merge and flag-on only after the release is on PyPI.
-- FieldSync: read-only domain toolkits on toolkits W1–W2.
+- FieldSync: read-only domain toolkits once toolkit discovery + policy land; tenant binding after toolkits W4.
 
 Who implements the parrot specs is open — we can take tasks in parrot under
 your review, the same way as FEAT-609.
 
-## Decisions we need from you
+## Response to the review (R1–R10, 2026-09-30)
+
+Every finding is treated as a **correctness requirement**, fixed in its owning
+spec with the regression case you listed added to the test spec and ACs.
+
+| # | Finding | Fixed in | How |
+|---|---|---|---|
+| R1 | MCP stdio / `command` in `params` still executes | TOOLKITS (policy) + STORAGE (gate) | Host-owned `TenantToolingPolicy`, deny-by-default, applied to the final normalised config (after `hydrate_mcp`) on every write, activation and build via `StudioToolingGate` → `enforce_tenant_tooling`; built-ins behind an allow-list |
+| R2 | Studio instances in `_bots` reachable by `get_bot` | STORAGE | Separate `StudioRuntimeCache`; `get_bot` refuses `studio:`/`studio-agent:`; `add_bot` refuses Studio instances; warm-cache test |
+| R3 | Overrides / vault names keyed by bare name | STORAGE (scheme) + TOOLKITS (consumer) | Immutable `studio-agent:<agent_id>` ref in override keys, vault names and caches **now**; legacy keeps bare names |
+| R4 | Assistant session not partitioned | FEAT-605 + STORAGE | Session, instance cache and `chatbot_id` keyed by (tenant, user); explicit `user_id`/`session_id` on `ask`; runtime `chatbot_id = str(agent_id)` |
+| R5 | Builder drops stored config | STORAGE | Explicit definition → constructor map; no `config`/`startup_config` path; model precedence settled; test on real constructor/LLM settings |
+| R6 | Standalone tools and options bypass scope | TOOLKITS | Gate at top of `AbstractTool.execute` before resources; options wrapped; `ensure_tool_scope` |
+| R7 | `confirming_tools` not enforced | TOOLKITS | Fail-closed approval token; direct execute → 403 `confirmation_required` |
+| R8 | Minimal mount lacks lifecycle | STORAGE (hooks) + FEAT-605 (mount) | `add_studio_runtime_hooks` (storage first), expiry sweep, per-instance cleanup, leases for in-flight calls, shutdown |
+| R9 | Migration integrity / DDL | STORAGE | Final DDL, checksum excludes trailer + `MANIFEST.json`, advisory lock, PG ≥ 14, constraints on catalogue/drafts; `search_path` claim removed |
+| R10 | Service signatures / concurrency | STORAGE | Signatures match handlers; `StudioWriteGuard` under `FOR UPDATE`; `expected_version` only on listed routes; atomic activation; build snapshot; real asyncdb transaction API |
+| — | Found while fixing R4 | FEAT-605 | Assistant called `ask` without `user_id`/`session_id` → `anonymous` + random session |
+
+**Sequencing, corrected:** the truly independent early subset is FEAT-605
+W0.1–W0.3 + W1.1–W1.5 (incl. the plain-host D1 draft-overwrite and D3 takeover
+fixes, now independent of the storage conversion). Toolkit discovery proceeds
+alone; scope binding/enforcement waits for FEAT-605 W2.1 + storage runtime
+identity. **No tenant-ready release until every spec's release gate is met.**
+Phase 2 (BYOK + vault credentials/user overrides off DocumentDB) is now a
+committed module/task set in STORAGE (M11–M12), not an open question.
+
+## Product decisions still open
 
 | # | Decision | Our recommendation |
 |---|---|---|
-| 1 | Package shape and order (storage → FEAT-605 v0.2; toolkits in parallel); two specs or merge 1+2? | Keep separate; storage first |
-| 2 | Declarative-only on the tenant path; the assistant stops emitting Python there | Yes |
-| 3 | Host seam API (`view_wrapper`, `studio_routes=False`, `setup_registry_only`, `/me`) | As in FEAT-605 v0.2 |
-| 4 | Cross-pod sync by row `version` re-read (no LISTEN/NOTIFY; works through PgBouncer) | Yes; LISTEN later as an optimisation |
-| 5 | Host toolkit registration: declarative registry + mandatory prefix; never shadow built-ins | Yes |
-| 6 | Release train: ship FEAT-605 W0–W1 early, the rest in lockstep with storage W3 | Yes |
-| 7 | BYOK and toolkit secrets move from DocumentDB to Postgres (phase 2) | Yes |
-| 8 | Shared handler files merge storage W3 first, per file. Exempt the small gates (FEAT-605 W1.3 `/tools/{slug}/execute`; toolkits W2–W3 in `tooling_store.py` / `testing.py` / `toolkits.py`) so they can land earlier? | Exempt W1.3; keep toolkits behind storage W3 |
-| 9 | New `PATCH /agents/{name}` (storage §2.9a): name immutable (`name_immutable`), `bot_class` not updatable, `not_studio_agent` for legacy agents | Yes |
+| 1 | Package shape: three specs, storage first, coordinated tenant release | Keep (as you suggested) |
+| 2 | Host seam API (`view_wrapper`, `studio_routes=False`, `setup_registry_only` + runtime hooks, `/me`) | As in FEAT-605 |
+| 3 | Cross-pod sync by row `version` re-read, with the snapshot/in-flight guarantees stated in STORAGE | Yes; LISTEN later only as an optimisation |
+| 4 | Host toolkit registration: declarative registry + mandatory prefix; never shadow built-ins | Yes |
+| 5 | Test chat has no HITL channel yet → host writes unavailable there until one exists | Accept for v1 |
+| 6 | Does `TenantToolingPolicy` also apply to the GLOBAL (plain-host) partition? | Opt-in (`apply_to_global=False` default) |
+| 7 | `PATCH /agents/{name}`: name immutable, `bot_class` not updatable | Yes |
+| 8 | Release train for the early subset: a preview release (not tenant-ready) vs. holding everything for one lockstep release; still 1.0.7? | Preview release of the early subset, clearly labelled not tenant-ready; tenant-ready only in the lockstep release |
 
-All three specs share an identical "Cross-spec contract (package)" section
-(X1–X16): the one place to check names, tables, routes and error codes.
-
-Each spec ends with its own smaller Open Questions, each with a
-recommendation.
+Each spec's Open Questions section is now split into **resolved correctness
+requirements** and **product questions**.
 
 ## Out of scope for this package
 
