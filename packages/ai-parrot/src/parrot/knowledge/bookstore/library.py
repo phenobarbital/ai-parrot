@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.pageindex.content_store import NodeContentStore
-from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, _REPLACED_MARKER
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit, REPLACED_MARKER
 
 from .carding import (
     derive_toc,
@@ -71,7 +71,7 @@ _STAGING_MAX_AGE_S = 3600
 
 def _is_reserved_tree_name(name: str) -> bool:
     """Identify reserved staging and replacement tree names."""
-    return _STAGING_MARKER in name or _REPLACED_MARKER in name
+    return _STAGING_MARKER in name or REPLACED_MARKER in name
 
 
 def _other_endpoint(relation: BookRelation, anchor: str) -> Optional[str]:
@@ -270,25 +270,42 @@ class Bookstore:
         """Return a temporary tree name using an eight-hex-character suffix."""
         return f"{slug}{_STAGING_MARKER}{secrets.token_hex(4)}"
 
+    @staticmethod
+    def _scan_reserved_trees(trees_dir: Path) -> list[tuple[str, bool, float]]:
+        """Blocking scan: ``(tree_name, live_tree_exists, mtime)`` for each reserved tree."""
+        found: list[tuple[str, bool, float]] = []
+        if not trees_dir.is_dir():
+            return found
+        for tree_path in trees_dir.glob("*.json"):
+            name = tree_path.stem
+            if not _is_reserved_tree_name(name):
+                continue
+            live_name = name.split(REPLACED_MARKER, maxsplit=1)[0]
+            try:
+                mtime = tree_path.stat().st_mtime
+            except OSError:
+                continue
+            found.append((name, (trees_dir / f"{live_name}.json").is_file(), mtime))
+        return found
+
     async def _sweep_reserved_trees(self, scope: str) -> None:
         """Restore interrupted swaps and sweep staging trees older than one hour."""
         location = self._location(scope)
-        if not location.trees_dir.is_dir():
+        reserved = await asyncio.to_thread(self._scan_reserved_trees, location.trees_dir)
+        if not reserved:
             return
 
         toolkit = self._toolkit(scope)
-        for tree_path in list(location.trees_dir.glob("*.json")):
-            tree_name = tree_path.stem
+        for tree_name, live_exists, mtime in reserved:
             try:
-                if _REPLACED_MARKER in tree_name:
-                    live_name = tree_name.split(_REPLACED_MARKER, maxsplit=1)[0]
-                    if not (location.trees_dir / f"{live_name}.json").is_file():
+                if REPLACED_MARKER in tree_name:
+                    live_name = tree_name.split(REPLACED_MARKER, maxsplit=1)[0]
+                    if not live_exists:
                         await toolkit.rename_tree(tree_name, live_name)
                     else:
                         await toolkit.delete_tree(tree_name)
                 elif _STAGING_MARKER in tree_name:
-                    age = time.time() - tree_path.stat().st_mtime
-                    if age > _STAGING_MAX_AGE_S:
+                    if time.time() - mtime > _STAGING_MAX_AGE_S:
                         await toolkit.delete_tree(tree_name)
             except Exception:  # noqa: BLE001 — crash recovery is best-effort
                 logger.warning("Failed to sweep reserved tree %r", tree_name, exc_info=True)
@@ -1127,8 +1144,8 @@ class Bookstore:
                 period=draft.period,
             )
             await toolkit.rename_tree(staging, slug, overwrite=status == "updated")
-        except Exception:
-            # Never leave a half-imported staging tree behind an errored add.
+        except BaseException:  # noqa: BLE001 — includes CancelledError so a cancelled ingest cleans up
+            # Never leave a half-imported staging tree behind an errored or cancelled add.
             try:
                 await toolkit.delete_tree(staging)
             except Exception:  # noqa: BLE001 — best-effort cleanup

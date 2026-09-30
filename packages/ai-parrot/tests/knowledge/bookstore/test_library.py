@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 import os
 import time
@@ -12,7 +13,7 @@ import pytest
 from parrot.knowledge.bookstore.carding import disambiguate_title
 from parrot.knowledge.bookstore.config import LibraryLocation
 from parrot.knowledge.bookstore.library import (
-    _REPLACED_MARKER,
+    REPLACED_MARKER,
     _STAGING_MARKER,
     _STAGING_MAX_AGE_S,
     Bookstore,
@@ -750,7 +751,7 @@ async def test_reindex_card_draft_and_swap_failures_keep_old_book(
 async def test_sweep_restores_orphaned_replaced_tree(store: Bookstore, book_md: Path) -> None:
     """Restore backup when its live tree is absent."""
     card, _ = await store.add_book(book_md)
-    backup = f"{card.book_id}{_REPLACED_MARKER}deadbeef"
+    backup = f"{card.book_id}{REPLACED_MARKER}deadbeef"
     toolkit = store._toolkit("project")
     await toolkit.rename_tree(card.book_id, backup)
 
@@ -784,7 +785,7 @@ async def test_all_taken_slugs_ignores_reserved_names(store: Bookstore, book_md:
     """Ignore staging and replacement names."""
     toolkit = store._toolkit("project")
     await toolkit.create_tree(f"book{_STAGING_MARKER}deadbeef")
-    await toolkit.create_tree(f"book{_REPLACED_MARKER}deadbeef")
+    await toolkit.create_tree(f"book{REPLACED_MARKER}deadbeef")
 
     assert "book" not in store._all_taken_slugs()
 
@@ -807,3 +808,20 @@ async def test_reindex_roundtrip_markdown(store: Bookstore, book_md: Path) -> No
     assert updated.book_id == card.book_id
     assert any(entry["title"] == "Replacement Chapter" for entry in toc["entries"])
     assert await store.search_book(updated.book_id, "atomic swap roundtrip")
+
+
+@pytest.mark.asyncio
+async def test_cancelled_ingest_cleans_up_staging_tree(monkeypatch, store: Bookstore, book_md: Path) -> None:
+    """A cancelled ingest must not leak its ``--staging-`` tree."""
+    toolkit = store._toolkit("project")
+
+    async def cancelled(*args, **kwargs):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(toolkit, "insert_markdown", cancelled)
+
+    with pytest.raises(asyncio.CancelledError):
+        await store.add_book(book_md)
+
+    trees_dir = store._location("project").trees_dir
+    assert not list(trees_dir.glob(f"*{_STAGING_MARKER}*.json"))

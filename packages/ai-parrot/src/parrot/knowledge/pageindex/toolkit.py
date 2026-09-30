@@ -47,7 +47,8 @@ from .utils import find_node_by_id
 logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
 _MAX_TREES_HARD_CAP = 10
-_REPLACED_MARKER = "--replaced-"
+REPLACED_MARKER = "--replaced-"
+_REPLACED_MARKER = REPLACED_MARKER  # backwards-compatible alias
 
 
 class PageIndexToolkit(AbstractToolkit):
