@@ -15,6 +15,7 @@ Per-tree storage is split into two artefacts:
 This matches the upstream PageIndex contract: vectorless retrieval over
 a hierarchical index, with bodies fetched on demand by node_id.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -41,7 +42,6 @@ from .tree_ops import (
     splice_subtree,
 )
 from .utils import find_node_by_id
-
 
 logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
@@ -107,14 +107,10 @@ class PageIndexToolkit(AbstractToolkit):
         super().__init__(**kwargs)
         self._adapter = adapter
         self._light_adapter: Optional[PageIndexLLMAdapter] = (
-            PageIndexLLMAdapter(client=adapter.client, model=lightweight_model)
-            if lightweight_model
-            else None
+            PageIndexLLMAdapter(client=adapter.client, model=lightweight_model) if lightweight_model else None
         )
         self._store = JSONTreeStore(storage_dir)
-        self._content_store = NodeContentStore(
-            storage_dir, cache_size=content_cache_size
-        )
+        self._content_store = NodeContentStore(storage_dir, cache_size=content_cache_size)
         self._reranker = reranker
         self._model = model or adapter.model
         self._default_bm25_k = default_bm25_k
@@ -130,6 +126,7 @@ class PageIndexToolkit(AbstractToolkit):
         if use_vec_rank or use_embedding_walk:
             from parrot.conf import EMBEDDING_DEFAULT_MODEL
             from parrot.embeddings.registry import EmbeddingRegistry
+
             emb_model_name = embedding_model or EMBEDDING_DEFAULT_MODEL
             self._embedding_store = NodeEmbeddingStore(
                 storage_dir=storage_dir,
@@ -152,6 +149,7 @@ class PageIndexToolkit(AbstractToolkit):
                         wrapper = registry.get_or_create_sync(name, "huggingface", **kw)
                         _raw_model = wrapper.model  # underlying SentenceTransformer
                     import numpy as _np
+
                     result = _raw_model.encode(texts, convert_to_numpy=True)
                     return _np.asarray(result, dtype=_np.float32)
 
@@ -253,11 +251,10 @@ class PageIndexToolkit(AbstractToolkit):
             return
         try:
             from parrot.knowledge.pageindex.okf.projection import project_sidecars
+
             project_sidecars(tree, tree_name, self._content_store)
         except Exception:
-            logger.exception(
-                "OKF sidecar projection failed for tree %r — skipping", tree_name
-            )
+            logger.exception("OKF sidecar projection failed for tree %r — skipping", tree_name)
 
     async def _run_t3_classification(
         self,
@@ -311,9 +308,8 @@ class PageIndexToolkit(AbstractToolkit):
             try:
                 if self._adapter is not None:
                     from parrot.knowledge.pageindex.okf.migrate import _classify_type
-                    result: str = await _classify_type(
-                        node, self._adapter, cache, force_reclassify=False
-                    )
+
+                    result: str = await _classify_type(node, self._adapter, cache, force_reclassify=False)
                     node["type"] = result
                 else:
                     node["type"] = ConceptType.SECTION.value
@@ -553,9 +549,7 @@ class PageIndexToolkit(AbstractToolkit):
             use_vec=self._use_vec_rank,
         )
         if categories or metadata_filter:
-            results = self._apply_filters(
-                tree_name, results, categories, metadata_filter
-            )
+            results = self._apply_filters(tree_name, results, categories, metadata_filter)
         return results[:top_k]
 
     def _apply_filters(
@@ -577,9 +571,7 @@ class PageIndexToolkit(AbstractToolkit):
                     continue
             if metadata_filter:
                 node_meta = node.get("metadata") or {}
-                if not all(
-                    node_meta.get(k) == v for k, v in metadata_filter.items()
-                ):
+                if not all(node_meta.get(k) == v for k, v in metadata_filter.items()):
                     continue
             filtered.append(cand)
         return filtered
@@ -616,12 +608,7 @@ class PageIndexToolkit(AbstractToolkit):
             title = node.get("title") or "Section"
             body = self._content_store.load(tree_name, cand["node_id"])
             if not body:
-                body = (
-                    node.get("text")
-                    or node.get("summary")
-                    or node.get("prefix_summary")
-                    or ""
-                )
+                body = node.get("text") or node.get("summary") or node.get("prefix_summary") or ""
             if body:
                 parts.append(f"## {title}\n{body}")
         return "\n\n".join(parts)
@@ -677,7 +664,7 @@ class PageIndexToolkit(AbstractToolkit):
         if not tree_names:
             return {"status": "empty", "scoped_results": []}
 
-        effective = tree_names[: max_trees]
+        effective = tree_names[:max_trees]
         if len(tree_names) > max_trees:
             logger.debug(
                 "search_documents_scoped: capping tree_names from %d to %d",
@@ -712,11 +699,7 @@ class PageIndexToolkit(AbstractToolkit):
                 title = node.get("title") or "Section"
                 body = self._content_store.load(tree_name, node_id)
                 if not body:
-                    body = (
-                        node.get("summary")
-                        or node.get("prefix_summary")
-                        or ""
-                    )
+                    body = node.get("summary") or node.get("prefix_summary") or ""
                 if body:
                     context_parts.append(f"## {title}\n{body}")
 
@@ -1022,14 +1005,12 @@ class PageIndexToolkit(AbstractToolkit):
 
         async def _process_dir(dir_path: Path, parent_id: Optional[str]) -> None:
             files = [
-                p for p in sorted(dir_path.iterdir())
-                if p.is_file()
-                and not p.name.startswith(".")
-                and fnmatch.fnmatch(p.name, glob_pattern)
+                p
+                for p in sorted(dir_path.iterdir())
+                if p.is_file() and not p.name.startswith(".") and fnmatch.fnmatch(p.name, glob_pattern)
             ]
             subdirs = (
-                [p for p in sorted(dir_path.iterdir())
-                 if p.is_dir() and not p.name.startswith(".")]
+                [p for p in sorted(dir_path.iterdir()) if p.is_dir() and not p.name.startswith(".")]
                 if recursive
                 else []
             )
@@ -1149,10 +1130,8 @@ class PageIndexToolkit(AbstractToolkit):
             save_key = new_id
             structure = tree.get("structure", [])
             from parrot.knowledge.pageindex.utils import structure_to_list as _stl
-            is_okf = any(
-                n.get("concept_id") and n.get("type")
-                for n in _stl(structure)
-            )
+
+            is_okf = any(n.get("concept_id") and n.get("type") for n in _stl(structure))
             if is_okf:
                 inserted = find_node_by_id(structure, new_id)
                 if inserted is not None:
@@ -1162,6 +1141,7 @@ class PageIndexToolkit(AbstractToolkit):
                             from parrot.knowledge.pageindex.okf.projection import (
                                 flatten_concept_id_for_filename,
                             )
+
                             save_key = flatten_concept_id_for_filename(cid)
                         except ImportError:
                             pass
@@ -1247,6 +1227,7 @@ class PageIndexToolkit(AbstractToolkit):
 
 # ---- module-level helpers ----------------------------------------------
 
+
 def _pop_node_field(subtree: Any, field: str) -> dict[str, str]:
     """Remove ``field`` from every node and return ``{node_id: value}``.
 
@@ -1287,6 +1268,7 @@ def _strip_keys_in_place(subtree: Any, keys: tuple[str, ...]) -> None:
     build-time scratch fields like ``token_count`` and ``line_num``
     have no consumer at retrieval time and would bloat the JSON.
     """
+
     def _walk(node: Any) -> None:
         if isinstance(node, dict):
             for k in keys:

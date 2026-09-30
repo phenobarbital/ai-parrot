@@ -1,4 +1,5 @@
 """Tests for parrot.knowledge.pageindex.toolkit.PageIndexToolkit (in-toolkit surface)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,21 +25,23 @@ def _adapter() -> MagicMock:
     a.client.ask = AsyncMock(return_value=client_response)
     a.client.default_model = "test-model"
     a.ask = AsyncMock(return_value="cot analysis")
-    a.ask_structured = AsyncMock(return_value=IngestedMarkdown(
-        title="Synthetic Doc",
-        summary="A short summary.",
-        markdown=(
-            "# Synthetic Doc\n\n"
-            "Top level introduction to the synthetic document with "
-            "enough text to clear the thinning threshold of the parser.\n\n"
-            "## Section A\n"
-            "Section A covers the first half of the document with "
-            "additional descriptive content that makes the node visible.\n\n"
-            "## Section B\n"
-            "Section B covers the second half of the document with "
-            "the remaining descriptive content for the synthetic example.\n"
-        ),
-    ))
+    a.ask_structured = AsyncMock(
+        return_value=IngestedMarkdown(
+            title="Synthetic Doc",
+            summary="A short summary.",
+            markdown=(
+                "# Synthetic Doc\n\n"
+                "Top level introduction to the synthetic document with "
+                "enough text to clear the thinning threshold of the parser.\n\n"
+                "## Section A\n"
+                "Section A covers the first half of the document with "
+                "additional descriptive content that makes the node visible.\n\n"
+                "## Section B\n"
+                "Section B covers the second half of the document with "
+                "the remaining descriptive content for the synthetic example.\n"
+            ),
+        )
+    )
     return a
 
 
@@ -50,6 +53,7 @@ def _stub_tiktoken(monkeypatch):
     def _approx(text: str, model: str = "gpt-4o") -> int:
         # Use char count so even short snippets clear thin_tree's 50-token gate.
         return max(1, len(text or ""))
+
     monkeypatch.setattr("parrot.knowledge.pageindex.utils.count_tokens", _approx)
     monkeypatch.setattr("parrot.knowledge.pageindex.md_builder.count_tokens", _approx)
 
@@ -107,8 +111,10 @@ async def test_create_tree_rejects_duplicate(toolkit: PageIndexToolkit):
 async def test_insert_markdown_then_search(monkeypatch, toolkit: PageIndexToolkit):
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_search,
     )
     await toolkit.create_tree("kb")
     md = (
@@ -128,7 +134,11 @@ async def test_insert_markdown_then_search(monkeypatch, toolkit: PageIndexToolki
     assert result["new_node_ids"]
 
     hits = await toolkit.search(
-        "kb", "installer admin", top_k=3, use_llm_walk=False, use_bm25=True,
+        "kb",
+        "installer admin",
+        top_k=3,
+        use_llm_walk=False,
+        use_bm25=True,
     )
     assert hits, "BM25 should return at least one match"
     titles = [h["title"] for h in hits]
@@ -183,12 +193,12 @@ async def test_import_pdf_splices_into_tree(monkeypatch, toolkit: PageIndexToolk
             "doc_name": "fake_compliance.pdf",
             "doc_description": "stubbed compliance document",
             "structure": [
-                {"title": "Article 1 — Subject matter",
-                 "node_id": "0000",
-                 "summary": "Scope of the regulation."},
-                {"title": "Article 5 — Principles",
-                 "node_id": "0001",
-                 "summary": "Lawful, fair and transparent processing."},
+                {"title": "Article 1 — Subject matter", "node_id": "0000", "summary": "Scope of the regulation."},
+                {
+                    "title": "Article 5 — Principles",
+                    "node_id": "0001",
+                    "summary": "Lawful, fair and transparent processing.",
+                },
             ],
             "_node_markdown": {
                 "0000": "# Article 1\n\nFull markdown body of article 1.",
@@ -197,7 +207,8 @@ async def test_import_pdf_splices_into_tree(monkeypatch, toolkit: PageIndexToolk
         }
 
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.build_page_index", fake_build_page_index,
+        "parrot.knowledge.pageindex.toolkit.build_page_index",
+        fake_build_page_index,
     )
 
     await toolkit.create_tree("compliance")
@@ -231,15 +242,9 @@ def _fake_build_pdf(monkeypatch):
         return {
             "doc_name": "demo.pdf",
             "structure": [
-                {"title": "Article 1",
-                 "node_id": "0000",
-                 "summary": "Scope."},
-                {"title": "Article 5",
-                 "node_id": "0001",
-                 "summary": "Principles."},
-                {"title": "Article 32",
-                 "node_id": "0002",
-                 "summary": "Security."},
+                {"title": "Article 1", "node_id": "0000", "summary": "Scope."},
+                {"title": "Article 5", "node_id": "0001", "summary": "Principles."},
+                {"title": "Article 32", "node_id": "0002", "summary": "Security."},
             ],
             "_node_markdown": {
                 "0000": "# Article 1\nVERBATIM_BODY_OF_ARTICLE_1.\n",
@@ -247,12 +252,15 @@ def _fake_build_pdf(monkeypatch):
                 "0002": "# Article 32\nVERBATIM_BODY_OF_ARTICLE_32.\n",
             },
         }
+
     monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.build_page_index", _build)
 
 
 @pytest.mark.asyncio
 async def test_toolkit_import_pdf_persists_sidecar(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -274,7 +282,9 @@ async def test_toolkit_import_pdf_persists_sidecar(
 
 @pytest.mark.asyncio
 async def test_toolkit_retrieve_returns_markdown_not_summary(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -282,8 +292,10 @@ async def test_toolkit_retrieve_returns_markdown_not_summary(
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -295,7 +307,9 @@ async def test_toolkit_retrieve_returns_markdown_not_summary(
 
 @pytest.mark.asyncio
 async def test_toolkit_retrieve_falls_back_to_summary_when_no_content(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -303,8 +317,10 @@ async def test_toolkit_retrieve_falls_back_to_summary_when_no_content(
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -320,7 +336,9 @@ async def test_toolkit_retrieve_falls_back_to_summary_when_no_content(
 
 @pytest.mark.asyncio
 async def test_toolkit_tag_node_set_merge(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -338,7 +356,9 @@ async def test_toolkit_tag_node_set_merge(
 
 @pytest.mark.asyncio
 async def test_toolkit_tag_node_metadata_shallow_merge(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -356,7 +376,9 @@ async def test_toolkit_tag_node_metadata_shallow_merge(
 
 @pytest.mark.asyncio
 async def test_toolkit_delete_node_removes_sidecar(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -377,7 +399,9 @@ async def test_toolkit_delete_node_removes_sidecar(
 
 @pytest.mark.asyncio
 async def test_toolkit_search_filters_by_categories(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -385,8 +409,10 @@ async def test_toolkit_search_filters_by_categories(
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -413,7 +439,9 @@ async def test_toolkit_search_filters_by_categories(
 
 @pytest.mark.asyncio
 async def test_toolkit_search_filters_by_metadata(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -421,8 +449,10 @@ async def test_toolkit_search_filters_by_metadata(
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -431,7 +461,9 @@ async def test_toolkit_search_filters_by_metadata(
     by_title = {n["title"]: n["node_id"] for n in tree["structure"]}
 
     await toolkit.tag_node(
-        "compliance", by_title["Article 5"], metadata={"tsc": "CC7.2"},
+        "compliance",
+        by_title["Article 5"],
+        metadata={"tsc": "CC7.2"},
     )
 
     results = await toolkit.search(
@@ -454,7 +486,9 @@ async def test_tag_node_unknown_id_raises(toolkit: PageIndexToolkit):
 
 @pytest.mark.asyncio
 async def test_delete_tree_clears_sidecar_and_json(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     pdf = tmp_path / "demo.pdf"
     pdf.write_bytes(b"%PDF-1.4 stub")
@@ -474,10 +508,13 @@ async def test_delete_tree_clears_sidecar_and_json(
 
 @pytest.mark.asyncio
 async def test_insert_markdown_persists_sidecar_and_strips_text(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -510,6 +547,7 @@ async def test_insert_markdown_persists_sidecar_and_strips_text(
         elif isinstance(node, list):
             for item in node:
                 _walk(item)
+
     _walk(persisted["structure"])
 
     # Sidecar directory exists and contains at least the leaf-node bodies.
@@ -523,10 +561,12 @@ async def test_insert_markdown_persists_sidecar_and_strips_text(
 
 @pytest.mark.asyncio
 async def test_insert_markdown_retrieve_returns_body(
-    monkeypatch, toolkit: PageIndexToolkit,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -549,10 +589,13 @@ async def test_insert_markdown_retrieve_returns_body(
 
 @pytest.mark.asyncio
 async def test_import_folder_persists_sidecars(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -593,6 +636,7 @@ async def test_import_folder_persists_sidecars(
         elif isinstance(node, list):
             for item in node:
                 _walk(item)
+
     _walk(persisted["structure"])
 
     content_dir = tmp_path / "docs"
@@ -602,10 +646,13 @@ async def test_import_folder_persists_sidecars(
 
 @pytest.mark.asyncio
 async def test_add_node_creates_root_leaf_atomically(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -644,10 +691,13 @@ async def test_add_node_creates_root_leaf_atomically(
 
 @pytest.mark.asyncio
 async def test_add_node_under_existing_parent(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -681,10 +731,12 @@ async def test_add_node_under_existing_parent(
 
 @pytest.mark.asyncio
 async def test_add_node_then_retrieve_returns_body(
-    monkeypatch, toolkit: PageIndexToolkit,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -709,10 +761,13 @@ async def test_add_node_rejects_empty_title(toolkit: PageIndexToolkit):
 
 @pytest.mark.asyncio
 async def test_update_node_content_overwrites_sidecar(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -732,10 +787,12 @@ async def test_update_node_content_overwrites_sidecar(
 
 @pytest.mark.asyncio
 async def test_update_node_content_marks_bm25_dirty(
-    monkeypatch, toolkit: PageIndexToolkit,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
@@ -752,7 +809,11 @@ async def test_update_node_content_marks_bm25_dirty(
     assert engine._dirty is True
     # New token is now findable; old one is not.
     hits = await toolkit.search(
-        "kb", "alpha_v2", top_k=3, use_llm_walk=False, use_bm25=True,
+        "kb",
+        "alpha_v2",
+        top_k=3,
+        use_llm_walk=False,
+        use_bm25=True,
     )
     assert any(h["node_id"] == res["node_id"] for h in hits)
 
@@ -766,22 +827,30 @@ async def test_update_node_content_unknown_id_raises(toolkit: PageIndexToolkit):
 
 @pytest.mark.asyncio
 async def test_update_node_renames_and_resummarizes(
-    monkeypatch, toolkit: PageIndexToolkit,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
     res = await toolkit.add_node(
-        "kb", title="Old Title", body="b", summary="Old summary",
+        "kb",
+        title="Old Title",
+        body="b",
+        summary="Old summary",
     )
     node_id = res["node_id"]
 
     result = await toolkit.update_node(
-        "kb", node_id, title="New Title", summary="New summary",
+        "kb",
+        node_id,
+        title="New Title",
+        summary="New summary",
     )
     assert result["title"] == "New Title"
     assert result["summary"] == "New summary"
@@ -794,17 +863,22 @@ async def test_update_node_renames_and_resummarizes(
 
 @pytest.mark.asyncio
 async def test_update_node_partial_update(
-    monkeypatch, toolkit: PageIndexToolkit,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
 ):
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
         "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
     res = await toolkit.add_node(
-        "kb", title="Keep Title", body="b", summary="Old summary",
+        "kb",
+        title="Keep Title",
+        body="b",
+        summary="Old summary",
     )
     node_id = res["node_id"]
     await toolkit.update_node("kb", node_id, summary="Replaced")
@@ -831,7 +905,8 @@ async def test_update_node_unknown_id_raises(toolkit: PageIndexToolkit):
 
 @pytest.mark.asyncio
 async def test_create_tree_wipes_orphan_content_dir(
-    toolkit: PageIndexToolkit, tmp_path: Path,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     # Simulate a stale content directory from a prior tree of the same name.
     orphan_dir = tmp_path / "compliance"
@@ -846,6 +921,7 @@ async def test_create_tree_wipes_orphan_content_dir(
 # ---------------------------------------------------------------------------
 # search_documents_scoped — multi-tree fan-out (ported from the old toolkit)
 # ---------------------------------------------------------------------------
+
 
 async def _seed_scoped_tree(
     monkeypatch,
@@ -862,16 +938,15 @@ async def _seed_scoped_tree(
         return {
             "doc_name": doc_name,
             "structure": [
-                {"title": "Section A", "node_id": "0000",
-                 "summary": f"Summary A for {tree_name}"},
-                {"title": "Section B", "node_id": "0001",
-                 "summary": f"Summary B for {tree_name}"},
+                {"title": "Section A", "node_id": "0000", "summary": f"Summary A for {tree_name}"},
+                {"title": "Section B", "node_id": "0001", "summary": f"Summary B for {tree_name}"},
             ],
             "_node_markdown": {
                 "0000": f"# Section A\n{body_token}_A\n",
                 "0001": f"# Section B\n{body_token}_B\n",
             },
         }
+
     monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.build_page_index", _build)
     await toolkit.create_tree(tree_name, doc_name=doc_name)
     await toolkit.import_pdf(tree_name, str(pdf))
@@ -887,17 +962,22 @@ async def test_search_documents_scoped_empty_returns_empty(
 
 @pytest.mark.asyncio
 async def test_search_documents_scoped_single_tree(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "kb1", "policy.md", "TOKEN1")
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="found it", node_list=["0000"])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search",
+        fake_search,
     )
     result = await toolkit.search_documents_scoped(
-        tree_names=["kb1"], query="anything",
+        tree_names=["kb1"],
+        query="anything",
     )
     assert result["status"] == "ok"
     assert len(result["scoped_results"]) == 1
@@ -912,7 +992,9 @@ async def test_search_documents_scoped_single_tree(
 
 @pytest.mark.asyncio
 async def test_search_documents_scoped_multiple_trees_fan_out(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "kb1", "a.md", "ALPHA")
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "kb2", "b.md", "BETA")
@@ -920,11 +1002,14 @@ async def test_search_documents_scoped_multiple_trees_fan_out(
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="t", node_list=["0001"])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search",
+        fake_search,
     )
     result = await toolkit.search_documents_scoped(
-        tree_names=["kb1", "kb3"], query="q",
+        tree_names=["kb1", "kb3"],
+        query="q",
     )
     assert result["status"] == "ok"
     tree_names = [e["tree_name"] for e in result["scoped_results"]]
@@ -933,20 +1018,27 @@ async def test_search_documents_scoped_multiple_trees_fan_out(
 
 @pytest.mark.asyncio
 async def test_search_documents_scoped_missing_tree_skipped(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path, caplog,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
+    caplog,
 ):
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "real", "real.md", "X")
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="t", node_list=["0000"])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search",
+        fake_search,
     )
 
     import logging
+
     with caplog.at_level(logging.WARNING, logger="parrot.knowledge.pageindex"):
         result = await toolkit.search_documents_scoped(
-            tree_names=["real", "ghost"], query="q",
+            tree_names=["real", "ghost"],
+            query="q",
         )
     assert result["status"] == "ok"
     assert [e["tree_name"] for e in result["scoped_results"]] == ["real"]
@@ -958,24 +1050,31 @@ async def test_search_documents_scoped_all_missing_returns_empty(
     toolkit: PageIndexToolkit,
 ):
     result = await toolkit.search_documents_scoped(
-        tree_names=["ghost-1", "ghost-2"], query="q",
+        tree_names=["ghost-1", "ghost-2"],
+        query="q",
     )
     assert result == {"status": "empty", "scoped_results": []}
 
 
 @pytest.mark.asyncio
 async def test_search_documents_scoped_include_tree_context(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "kb", "doc.md", "X")
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search",
+        fake_search,
     )
     result = await toolkit.search_documents_scoped(
-        tree_names=["kb"], query="q", include_tree_context=True,
+        tree_names=["kb"],
+        query="q",
+        include_tree_context=True,
     )
     entry = result["scoped_results"][0]
     assert "tree_context" in entry
@@ -984,20 +1083,31 @@ async def test_search_documents_scoped_include_tree_context(
 
 @pytest.mark.asyncio
 async def test_search_documents_scoped_respects_max_trees(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     for i in range(5):
         await _seed_scoped_tree(
-            monkeypatch, toolkit, tmp_path, f"kb{i}", f"d{i}.md", f"T{i}",
+            monkeypatch,
+            toolkit,
+            tmp_path,
+            f"kb{i}",
+            f"d{i}.md",
+            f"T{i}",
         )
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search",
+        fake_search,
     )
     result = await toolkit.search_documents_scoped(
-        tree_names=[f"kb{i}" for i in range(5)], query="q", max_trees=2,
+        tree_names=[f"kb{i}" for i in range(5)],
+        query="q",
+        max_trees=2,
     )
     assert len(result["scoped_results"]) == 2
     assert [e["tree_name"] for e in result["scoped_results"]] == ["kb0", "kb1"]
@@ -1005,7 +1115,9 @@ async def test_search_documents_scoped_respects_max_trees(
 
 @pytest.mark.asyncio
 async def test_search_documents_scoped_falls_back_to_summary_when_no_sidecar(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+    monkeypatch,
+    toolkit: PageIndexToolkit,
+    tmp_path: Path,
 ):
     await _seed_scoped_tree(monkeypatch, toolkit, tmp_path, "kb", "d.md", "BODY")
     # Wipe the sidecar for node 0000 — retrieve must fall back to summary.
@@ -1014,8 +1126,10 @@ async def test_search_documents_scoped_falls_back_to_summary_when_no_sidecar(
 
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
+
     monkeypatch.setattr(
-        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search",
+        fake_search,
     )
     result = await toolkit.search_documents_scoped(tree_names=["kb"], query="q")
     entry = result["scoped_results"][0]
@@ -1027,9 +1141,7 @@ async def test_search_documents_scoped_falls_back_to_summary_when_no_sidecar(
 
 
 @pytest.mark.asyncio
-async def test_insert_markdown_t3_classifies_in_okf_tree(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path
-):
+async def test_insert_markdown_t3_classifies_in_okf_tree(monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path):
     """In an OKF-migrated tree, insert_markdown runs T3 for new untyped nodes.
 
     T3 only activates when the tree already has at least one typed node
@@ -1052,10 +1164,7 @@ async def test_insert_markdown_t3_classifies_in_okf_tree(
         }
     ]
 
-    md = (
-        "# OKF Node\n\n"
-        "This is a short description of the OKF node being inserted for testing purposes.\n"
-    )
+    md = "# OKF Node\n\n" "This is a short description of the OKF node being inserted for testing purposes.\n"
     await toolkit.insert_markdown("okf_test", md)
     tree = await toolkit.get_tree("okf_test")
     nodes = structure_to_list(tree.get("structure", []))
@@ -1063,9 +1172,7 @@ async def test_insert_markdown_t3_classifies_in_okf_tree(
     new_nodes = [n for n in nodes if n.get("title") != "Seed"]
     assert new_nodes, "Expected new nodes after insert_markdown"
     for node in new_nodes:
-        assert node.get("type") is not None, (
-            f"Node {node.get('node_id')!r} missing type after T3 step"
-        )
+        assert node.get("type") is not None, f"Node {node.get('node_id')!r} missing type after T3 step"
     # With a mock adapter, the fallback is Section.
     assert all(n.get("type") == ConceptType.SECTION.value for n in new_nodes)
 
@@ -1128,9 +1235,7 @@ async def test_rename_tree_basic(toolkit: PageIndexToolkit, tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_rename_tree_refuses_existing_dst_without_overwrite(
-    toolkit: PageIndexToolkit, tmp_path: Path
-) -> None:
+async def test_rename_tree_refuses_existing_dst_without_overwrite(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
     """Reject collisions without mutating either tree."""
     src_node = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     dst_node = await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
@@ -1143,9 +1248,7 @@ async def test_rename_tree_refuses_existing_dst_without_overwrite(
 
 
 @pytest.mark.asyncio
-async def test_rename_tree_overwrite_replaces_and_removes_backup(
-    toolkit: PageIndexToolkit, tmp_path: Path
-) -> None:
+async def test_rename_tree_overwrite_replaces_and_removes_backup(toolkit: PageIndexToolkit, tmp_path: Path) -> None:
     """Replace destination contents and remove its backup JSON."""
     node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
     await _seed_rename_tree(toolkit, "destination", "DESTINATION_BODY")
@@ -1267,9 +1370,7 @@ async def test_rename_tree_refuses_inside_batch(toolkit: PageIndexToolkit) -> No
 
 
 @pytest.mark.asyncio
-async def test_delete_node_cleans_up_concept_id_sidecar(
-    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path
-):
+async def test_delete_node_cleans_up_concept_id_sidecar(monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path):
     """delete_node removes concept_id-keyed sidecar when node has concept_id."""
     # Create a tree with an OKF-enriched node.
     await toolkit.create_tree("cleanup_test")
