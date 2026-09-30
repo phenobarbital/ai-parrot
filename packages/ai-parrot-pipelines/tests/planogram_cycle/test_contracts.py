@@ -13,7 +13,6 @@ from parrot_pipelines.planogram.contracts import (
     IdentificationResult,
     IdentificationResponse,
     IdentifyStrategy,
-    LegacyPayload,
     ObservationRef,
     ObservationSource,
     OcrReading,
@@ -251,8 +250,7 @@ def test_new_fields_default_empty() -> None:
 
 
 def test_historical_values_still_parse() -> None:
-    """Historical enum and legacy payload values remain deserializable."""
+    """Historical enum values remain deserializable."""
     assert ObservationSource("legacy_llm") is ObservationSource.LEGACY_LLM
     assert AssessmentStatus("legacy_unmeasured") is AssessmentStatus.LEGACY_UNMEASURED
     assert EvidenceWeights().legacy_llm == 0.5
-    assert PerceptionResult(legacy=LegacyPayload()).legacy is not None

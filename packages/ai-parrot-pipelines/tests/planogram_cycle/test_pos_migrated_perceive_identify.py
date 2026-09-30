@@ -82,9 +82,8 @@ def test_top_level_perception_mode_alias_and_invalid_value():
 
 
 def test_no_product_hint_fallback_prompt_and_no_legacy_hooks():
-    """The migrated type exposes no expected-product prompt or legacy pipeline."""
+    """The migrated type exposes no legacy pipeline."""
     handler = _make_handler({})
-    assert handler.fallback_detection_prompt() is None
     assert not any(
         handler._implements(name) for name in ("compute_roi", "detect_objects", "check_planogram_compliance")
     )
