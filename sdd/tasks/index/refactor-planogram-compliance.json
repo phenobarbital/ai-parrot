@@ -600,7 +600,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -610,8 +610,9 @@
       "parallelism_notes": "Exclusive: rewrites packages/ai-parrot-pipelines/pyproject.toml and uv.lock. Depends on TASK-3873 deleting planogram/legacy.py, the last pytesseract importer in the pipelines package.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3881-release-packaging.md"
+      "completed_at": "2026-09-30T21:48:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3881-release-packaging.md",
+      "verification": "verified"
     }
   ]
 }
