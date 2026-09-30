@@ -35,7 +35,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports IdentifyStrategy (incl. new SLOTS) from TASK-3854 (planogram/contracts.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3855-layout-profile.md"
+      "completed_at": "2026-09-30T21:56:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3855-layout-profile.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3856",
@@ -159,7 +160,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -169,8 +170,9 @@
       "parallelism_notes": "reads Descriptors.attributes and FacingDefinition.expected_occupancy added by TASK-3860 (comparison/definition.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3861-shared-identity-resolution.md"
+      "completed_at": "2026-09-30T21:56:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3861-shared-identity-resolution.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3862",
@@ -179,7 +181,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -190,8 +192,9 @@
       "parallelism_notes": "uses FacingStatus.EXPECTED_EMPTY/UNEXPECTED_OCCUPIED and RuleOutcome.observations from TASK-3854 (contracts.py); scores expected_occupancy and virtual zone shelves from TASK-3860 (definition.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3862-scoring-empty-zone-units.md"
+      "completed_at": "2026-09-30T21:56:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3862-scoring-empty-zone-units.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3863",
