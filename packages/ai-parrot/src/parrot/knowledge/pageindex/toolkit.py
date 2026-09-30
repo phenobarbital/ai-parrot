@@ -504,8 +504,12 @@ class PageIndexToolkit(AbstractToolkit):
             except Exception:
                 logger.exception("Failed to delete replacement backup tree %r", backup)
 
-        tree = self._load_tree(dst)
-        self._project_okf_sidecars(dst, tree)
+        # The swap is committed: a projection failure must not look like a failed rename.
+        try:
+            tree = self._load_tree(dst)
+            self._project_okf_sidecars(dst, tree)
+        except Exception:
+            logger.exception("Tree %r was renamed to %r but OKF sidecar projection failed", src, dst)
         return {"src": src, "dst": dst, "replaced": replaced}
 
     async def get_tree(self, tree_name: str) -> dict[str, Any]:

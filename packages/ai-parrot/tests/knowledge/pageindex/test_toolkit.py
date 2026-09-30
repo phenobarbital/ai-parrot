@@ -1278,6 +1278,26 @@ async def test_rename_tree_overwrite_removes_backup_dir_with_embeddings(
 
 
 @pytest.mark.asyncio
+async def test_rename_tree_post_swap_reload_failure_is_not_a_rename_failure(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path
+) -> None:
+    """A reload/projection error after the committed swap is logged, not raised."""
+    node_id = await _seed_rename_tree(toolkit, "source", "SOURCE_BODY")
+
+    def boom(name: str):
+        raise RuntimeError("injected reload failure")
+
+    monkeypatch.setattr(toolkit, "_load_tree", boom)
+
+    result = await toolkit.rename_tree("source", "destination")
+
+    assert result == {"src": "source", "dst": "destination", "replaced": False}
+    assert (tmp_path / "destination.json").exists()
+    assert not (tmp_path / "source.json").exists()
+    assert (tmp_path / "destination" / f"{node_id}.md").read_text() == "SOURCE_BODY"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["backup_json", "backup_content", "publish_content", "publish_json"])
 async def test_rename_tree_overwrite_rolls_back_on_failure(
     monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path, failure: str
