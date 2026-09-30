@@ -382,6 +382,7 @@ class QuerysourceToolkit(AbstractToolkit):
         )
         source = self._build_linked_source(widget, detail, transform=transform)
         self.logger.info("qs_build_linked_surface %s tenant=%s key=%s snapshot=%s", slug, tenant, key, snapshot)
+        self._warn_manual_without_snapshot([widget], snapshot)
         execution = await execute_sources({key: source}, pctx=None, guard=None, probe=not snapshot)
         outcome = execution.outcomes[key]
         if outcome.error:
@@ -457,15 +458,7 @@ class QuerysourceToolkit(AbstractToolkit):
             detail = await self.describe_slug(widget.slug, tenant=widget.tenant)
             sources[widget.key] = self._build_linked_source(widget, detail)
         self.logger.info("qs_build_linked_dashboard %d widgets snapshot=%s", len(parsed), snapshot)
-        if not snapshot:
-            manual = [w.key for w in parsed if (w.refresh or {}).get("policy") == "manual"]
-            if manual:
-                # The admin lane never runs a `manual` source on mount, so without a snapshot it renders empty.
-                self.logger.warning(
-                    "qs_build_linked_dashboard: widget(s) %s use refresh.policy='manual' without a snapshot; "
-                    "they render empty until refreshed",
-                    ", ".join(manual),
-                )
+        self._warn_manual_without_snapshot(parsed, snapshot)
         execution = await execute_sources(sources, pctx=None, guard=None, probe=not snapshot)
         # Sources fail independently; report every failure, not just the first in widget order.
         failures = [
@@ -491,6 +484,17 @@ class QuerysourceToolkit(AbstractToolkit):
             "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
             "artifacts": [{"type": "a2ui_linked_surface", "surface_id": envelope.surface_id, "sources": list(sources)}],
         }
+
+    def _warn_manual_without_snapshot(self, widgets: list[DashboardWidget], snapshot: bool) -> None:
+        """The admin lane never runs a ``manual`` source on mount, so without a snapshot it renders empty."""
+        if snapshot:
+            return
+        manual = [w.key for w in widgets if (w.refresh or {}).get("policy") == "manual"]
+        if manual:
+            self.logger.warning(
+                "linked source(s) %s use refresh.policy='manual' without a snapshot; they render empty until refreshed",
+                ", ".join(manual),
+            )
 
     @staticmethod
     def _dashboard_layout(

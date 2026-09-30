@@ -1,14 +1,15 @@
-"""A2UI finance example client — open the dashboard, or run a headless check whose EXPECTED values come from the backend.
+"""A2UI finance example client — open the dashboard, or run a headless check whose EXPECTED values come from the
+backend.
 
 Run: ENV=prod python examples/a2ui_finance/finance_client.py --check --base-url http://localhost:5001
      python examples/a2ui_finance/finance_client.py --open --base-url http://localhost:5001
 
 ``--check`` logs in, fetches the (definition-only) envelope, verifies it ships no rows, replays exactly the requests the
 browser lane sends (each source's own conditions, ``querylimit`` capped at 5000, the v2 services route) and compares
-the answers with values computed IN-PROCESS through ``DatasetManager`` (``add_query`` + ``materialize`` over the same
-slugs, aggregated with pandas). Finance data drifts daily, so nothing is hard-coded. It also exercises the grid's
-server paging. Exit 0 only when every check passes. ``--no-expect`` prints the values without computing expectations
-(no DatasetManager / QuerySource needed on the client side).
+the answers with values computed IN-PROCESS through ``DatasetManager`` (``add_query`` + ``materialize`` of the RAW rows
+of the same slugs, aggregated with pandas — never the same aggregate query the lane sends). Finance data drifts daily,
+so nothing is hard-coded. It also exercises the grid's server paging. Exit 0 only when every check passes.
+``--no-expect`` prints the values without computing expectations (no DatasetManager / QuerySource needed client-side).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
+import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -48,11 +50,25 @@ GRID_PAGE = 20
 KPI_KEYS = ["kpi_rev_actual", "kpi_rev_budget", "kpi_rev_variance", "kpi_ebitda_variance"]
 GROUP_KEYS = {"by_division": "division", "by_project": "project", "trend": "snapshot_date"}
 EXPECTED_KEYS = [widget["key"] for widget in WIDGETS]
-TREND_FIELDS = ["snapshot_date", "sum(rev_actual) AS rev_actual", "sum(rev_budget) AS rev_budget"]
+
+
+def _missing(value: Any) -> bool:
+    """True for None / NaN / NaT (JSON ``null`` on the lane side, pandas missing values on the backend side)."""
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def close(actual: Any, expected: Any) -> bool:
-    """Money values compared with a tolerance (JSON floats vs pandas float64)."""
+    """Money values compared with a tolerance (JSON floats vs pandas float64); two missing values are equal.
+
+    SQL ``sum()`` over an all-NULL column is NULL and pandas ``sum(min_count=1)`` is NaN, so both sides agree.
+    """
+    if _missing(actual) or _missing(expected):
+        return _missing(actual) and _missing(expected)
     try:
         return math.isclose(float(actual), float(expected), rel_tol=1e-6, abs_tol=0.01)
     except (TypeError, ValueError):
@@ -60,39 +76,47 @@ def close(actual: Any, expected: Any) -> bool:
 
 
 def label(value: Any) -> str:
-    """Normalise a group label (a date from JSON vs a Timestamp from pandas) to a comparable string."""
-    if value is None:
+    """Normalise a group label to a comparable string: any missing value is ``""``, dates keep ``YYYY-MM-DD``."""
+    if _missing(value):
         return ""
     text = str(value)
     return text[:10] if len(text) >= 10 and text[4] == "-" and text[7] == "-" else text
 
 
-def _expected_from_frames(latest: Any, trend: Any) -> dict[str, Any]:
-    """Aggregate the two DatasetManager frames into the values every widget must show."""
-    rev_actual = float(latest["rev_actual"].sum())
-    rev_budget = float(latest["rev_budget"].sum())
-    ebitda_variance = float(latest["ebitda_actual"].sum() - latest["ebitda_budget"].sum())
-    by_division = latest.groupby("division", dropna=False)[["rev_actual", "rev_budget"]].sum().sort_index()
-    by_project = latest.groupby("project", dropna=False)[["rev_actual"]].sum().sort_index()
+def _num(value: Any) -> float | None:
+    """A pandas aggregate as a JSON-comparable number (``None`` when missing)."""
+    return None if _missing(value) else float(value)
+
+
+def _expected_from_frames(latest: pd.DataFrame, snapshots: pd.DataFrame) -> dict[str, Any]:
+    """Aggregate the RAW DatasetManager frames into the values every widget must show (pandas, never SQL)."""
+    money = ["rev_actual", "rev_budget", "ebitda_actual", "ebitda_budget"]
+    totals = latest[money].sum(min_count=1)
+    rev_actual, rev_budget = _num(totals["rev_actual"]), _num(totals["rev_budget"])
+    ebitda_actual, ebitda_budget = _num(totals["ebitda_actual"]), _num(totals["ebitda_budget"])
+    by_division = latest.groupby("division", dropna=False)[["rev_actual", "rev_budget"]].sum(min_count=1)
+    by_project = latest.groupby("project", dropna=False)[["rev_actual"]].sum(min_count=1)
+    trend = snapshots.groupby("snapshot_date", dropna=False)[["rev_actual", "rev_budget"]].sum(min_count=1)
+
+    def diff(a: float | None, b: float | None) -> float | None:
+        return None if a is None or b is None else a - b
+
     return {
         "kpis": {
             "kpi_rev_actual": ("rev_actual", rev_actual),
             "kpi_rev_budget": ("rev_budget", rev_budget),
-            "kpi_rev_variance": ("rev_variance", rev_actual - rev_budget),
-            "kpi_ebitda_variance": ("ebitda_variance", ebitda_variance),
+            "kpi_rev_variance": ("rev_variance", diff(rev_actual, rev_budget)),
+            "kpi_ebitda_variance": ("ebitda_variance", diff(ebitda_actual, ebitda_budget)),
         },
         "groups": {
             "by_division": {
-                label(name): {"rev_actual": float(row.rev_actual), "rev_budget": float(row.rev_budget)}
+                label(name): {"rev_actual": _num(row.rev_actual), "rev_budget": _num(row.rev_budget)}
                 for name, row in by_division.iterrows()
             },
-            "by_project": {label(name): {"rev_actual": float(row.rev_actual)} for name, row in by_project.iterrows()},
+            "by_project": {label(name): {"rev_actual": _num(row.rev_actual)} for name, row in by_project.iterrows()},
             "trend": {
-                label(row["snapshot_date"]): {
-                    "rev_actual": float(row["rev_actual"]),
-                    "rev_budget": float(row["rev_budget"]),
-                }
-                for _, row in trend.iterrows()
+                label(name): {"rev_actual": _num(row.rev_actual), "rev_budget": _num(row.rev_budget)}
+                for name, row in trend.iterrows()
             },
         },
         "grid_total": int(len(latest)),
@@ -114,13 +138,15 @@ async def expected_values(manager: Any | None = None) -> dict[str, Any]:
         manager = DatasetManager(generate_guide=False)
     manager.add_query("latest", query_slug=LATEST_SLUG, description="latest finance snapshot")
     manager.add_query("snapshots", query_slug=SNAPSHOTS_SLUG, description="all finance snapshots")
+    # Raw rows only (the slugs' stored 7-column projection): every expectation is aggregated here in pandas, so a
+    # wrong aggregation on the QuerySource side is caught instead of being replayed as its own expectation.
     latest = await manager.materialize("latest")
-    trend = await manager.materialize(
-        "snapshots", fields=list(TREND_FIELDS), grouping=["snapshot_date"], ordering=["snapshot_date"]
-    )
+    snapshots = await manager.materialize("snapshots")
     if latest is None or len(latest) == 0:
         raise CheckError(f"DatasetManager returned no rows for {LATEST_SLUG}")
-    return _expected_from_frames(latest, trend)
+    if snapshots is None or len(snapshots) == 0:
+        raise CheckError(f"DatasetManager returned no rows for {SNAPSHOTS_SLUG}")
+    return _expected_from_frames(latest, snapshots)
 
 
 def evaluate(rows: dict[str, list[dict[str, Any]]], expected: dict[str, Any]) -> list[str]:
@@ -133,7 +159,7 @@ def evaluate(rows: dict[str, list[dict[str, Any]]], expected: dict[str, Any]) ->
             failures.append(f"{key}: no '{column}' value")
             continue
         if not close(actual, value):
-            failures.append(f"{key}: expected {value:.2f}, got {actual}")
+            failures.append(f"{key}: expected {value}, got {actual}")
     for key, column in GROUP_KEYS.items():
         want = expected["groups"][key]
         got = {label(row.get(column)): row for row in rows.get(key, [])}
@@ -143,7 +169,7 @@ def evaluate(rows: dict[str, list[dict[str, Any]]], expected: dict[str, Any]) ->
         for name, values in want.items():
             for measure, value in values.items():
                 if not close(got[name].get(measure), value):
-                    failures.append(f"{key}[{name}].{measure}: expected {value:.2f}, got {got[name].get(measure)}")
+                    failures.append(f"{key}[{name}].{measure}: expected {value}, got {got[name].get(measure)}")
     return failures
 
 
@@ -189,6 +215,8 @@ async def check_grid(
     if expected_total is not None and total != expected_total:
         failures.append(f"{GRID_KEY}: total {total} != DatasetManager row count {expected_total}")
     if total > GRID_PAGE:
+        # (division, project) is unique within the latest snapshot (the table's PK is snapshot_date, division,
+        # project and the slug pins snapshot_date), so the ordering is total and an equal key IS a repeated row.
         second_page, _ = page_bodies(source, offset=GRID_PAGE, limit=GRID_PAGE)
         second = await post_query(session, base_url, token, source, second_page)
         if rows and second and all(rows[-1].get(c) == second[0].get(c) for c in page["ordering"]):
@@ -211,8 +239,14 @@ async def check_grid(
 
 async def check(base_url: str, user: str, password: str, *, expect: bool = True, manager: Any | None = None) -> int:
     """Run the headless check; return 0 only if login, envelope shape, values and grid paging all pass."""
+    expected: dict[str, Any] | None = None
+    if expect:
+        try:
+            expected = await expected_values(manager)
+        except Exception as exc:  # noqa: BLE001 - DatasetManager/QuerySource failures are reported, never a traceback
+            logger.error("check failed while computing expectations through DatasetManager: %s", exc)
+            return 1
     try:
-        expected = await expected_values(manager) if expect else None
         async with aiohttp.ClientSession() as session:
             token = await login(session, base_url, user, password)
             envelope = await fetch_dashboard(session, base_url, token)
@@ -232,9 +266,6 @@ async def check(base_url: str, user: str, password: str, *, expect: bool = True,
             failures += await check_grid(session, base_url, token, sources[GRID_KEY], expected_total)
     except (CheckError, aiohttp.ClientError) as exc:
         logger.error("check failed: %s", exc)
-        return 1
-    except Exception as exc:  # noqa: BLE001 - DatasetManager/QuerySource failures are reported, never a traceback
-        logger.error("check failed while computing expectations: %s", exc)
         return 1
     for failure in failures:
         logger.error("MISMATCH %s", failure)

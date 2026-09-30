@@ -180,6 +180,24 @@ def _conditions_for(
     return conditions, ignored
 
 
+#: Exception class names QuerySource / asyncdb raise for a query that ran fine but matched no row.
+_EMPTY_RESULT_NAMES = frozenset({"DataNotFound", "NoDataFound"})
+
+
+def is_empty_result(exc: BaseException) -> bool:
+    """True when ``exc`` (or a cause within ``_MAX_CAUSE_DEPTH``) is QuerySource's "no rows" signal."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    depth = 0
+    while current is not None and depth < _MAX_CAUSE_DEPTH and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in _EMPTY_RESULT_NAMES:
+            return True
+        current = current.__cause__ or current.__context__
+        depth += 1
+    return False
+
+
 def _needs_full_fetch(src: LinkedDataSource) -> bool:
     """True when a probe cannot stand in for the real fetch: ``pivot`` output columns depend on the data."""
     if src.transform is None or not src.transform.ops:
@@ -204,8 +222,12 @@ async def execute_sources(
     frame is kept in ``frames`` for that validation, and the outcome carries ``rows=None`` — a probe is never
     a snapshot (``data_model_patch`` skips it). ``join``/``union`` on one-row sibling frames keep the column
     set and dtypes, which is all axis validation reads; a ``pivot`` derives its columns from the data, so a
-    pivoting source falls back to the full fetch. ``ref`` transforms are skipped in Python either way.
+    pivoting source falls back to the full fetch. ``ref`` transforms are skipped in Python either way. A probe
+    that matches no row (QuerySource raises ``DataNotFound``, the HTTP lanes see a 204) is NOT a failure: the
+    source gets an empty, column-less frame and its axes go unvalidated (the renderer treats it as zero rows).
     """
+    import pandas as pd
+
     from parrot.outputs.a2ui.linked.dsl import apply_transform, frame_to_records
     from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource
     from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource, to_qs_principal
@@ -236,6 +258,11 @@ async def execute_sources(
             elif src.transform is not None:
                 frame = await asyncio.to_thread(apply_transform, frame, src.transform, frames=dict(frames))
         except Exception as exc:  # noqa: BLE001 — data errors never fail siblings
+            if probe and is_empty_result(exc):
+                logger.warning("linked source %r (%s): probe matched no row; columns left unvalidated", key, src.slug)
+                frames[key] = pd.DataFrame()
+                outcomes[key] = SourceOutcome(key=key, ignored_params=ignored)
+                continue
             status, code = map_query_error(exc)
             logger.warning("linked source %r (%s, tenant=%s) failed: %s → %s", key, src.slug, src.tenant, exc, status)
             outcomes[key] = SourceOutcome(key=key, error=code, ignored_params=ignored)

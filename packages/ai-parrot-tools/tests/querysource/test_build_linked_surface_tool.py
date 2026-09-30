@@ -176,3 +176,15 @@ def test_toolkit_build_conditions_matches_derive():
         payload.pop("querylimit")
         payload.pop("refresh", None)
         assert payload == derive_conditions(SourceRequest.model_validate(request), locked=locked)
+
+
+async def test_manual_policy_warns_without_snapshot(fake_core_qs, caplog):
+    """A manual-refresh surface without a snapshot renders empty in the admin lane, so the toolkit warns."""
+    toolkit = QuerysourceToolkit(dsn="postgres://fake")
+    with caplog.at_level("WARNING"):
+        await toolkit.build_linked_surface(
+            "epson_field_activity",
+            {"component": "Chart", "type": "bar", "x": "day", "y": ["visits"]},
+            refresh={"policy": "manual"},
+        )
+    assert any("manual" in record.message and "epson_field_activity" in record.message for record in caplog.records)

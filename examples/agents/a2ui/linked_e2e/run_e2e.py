@@ -464,6 +464,9 @@ async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
     )
     v_status, v3_rows = await _qs_post(ctx, f"/api/v3/queries/{ACTIVITY_SLUG}", payload)
     check(results, "s5.v3_route", v_status == 200 and v3_rows is not None, f"{v_status} rows={len(v3_rows or [])}")
+    # The browser lane now posts single slugs to the v2 services route: it must answer the same rows.
+    s_status, v2_rows = await _qs_post(ctx, f"/api/v2/services/queries/{ACTIVITY_SLUG}", payload)
+    check(results, "s5.v2_route", s_status == 200 and v2_rows is not None, f"{s_status} rows={len(v2_rows or [])}")
     if tenant_rows is not None and v3_rows is not None:
         check(
             results,
@@ -471,6 +474,8 @@ async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
             _canon(tenant_rows) == _canon(v3_rows),
             f"tenant={len(tenant_rows)} v3={len(v3_rows)}",
         )
+    if v2_rows is not None and v3_rows is not None:
+        check(results, "s5.v2_equals_v3", _canon(v2_rows) == _canon(v3_rows), f"v2={len(v2_rows)} v3={len(v3_rows)}")
     refreshed: dict[str, list | None] = {}
     for label, tenant in (("default", None), ("public", "public")):
         component = {

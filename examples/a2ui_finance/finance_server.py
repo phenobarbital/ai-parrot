@@ -19,6 +19,8 @@ from typing import Any
 
 from aiohttp import web
 
+from parrot.outputs.a2ui.linked.executor import is_empty_result
+
 HERE = Path(__file__).resolve().parent
 POLESTAR_EXAMPLE = HERE.parent / "a2ui"
 sys.path.insert(0, str(HERE))
@@ -55,20 +57,29 @@ async def check_slugs(app: web.Application) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("slug check skipped: %s", exc)
         return
-    for slug in (SNAPSHOTS_SLUG, LATEST_SLUG):
-        try:
-            await toolkit.describe_slug(slug)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("slug %r is not available: %s", slug, exc)
-            logger.warning("run: ENV=prod python examples/a2ui_finance/seed_finance.py --yes")
-            return
+    missing: list[str] = []
+    try:
+        for slug in (SNAPSHOTS_SLUG, LATEST_SLUG):
+            try:
+                await toolkit.describe_slug(slug)
+            except Exception as exc:  # noqa: BLE001
+                missing.append(slug)
+                logger.warning("slug %r is not available: %s", slug, exc)
+    finally:
+        await toolkit._close()
+    if missing:
+        logger.warning("run: ENV=prod python examples/a2ui_finance/seed_finance.py --yes")
+        return
     try:
         manager = DatasetManager(generate_guide=False)
         manager.add_query("finance_latest", query_slug=LATEST_SLUG, description="latest finance snapshot")
         frame = await manager.materialize("finance_latest", querylimit=1)
         logger.info("DatasetManager probe of %r ok: columns %s", LATEST_SLUG, list(frame.columns))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("DatasetManager cannot run %r (the --check client will fail too): %s", LATEST_SLUG, exc)
+        if is_empty_result(exc):
+            logger.warning("%r ran but matched no row: is troc.finance_projection empty?", LATEST_SLUG)
+        else:
+            logger.warning("DatasetManager cannot run %r (the --check client will fail too): %s", LATEST_SLUG, exc)
 
 
 async def index_handler(request: web.Request) -> web.FileResponse:

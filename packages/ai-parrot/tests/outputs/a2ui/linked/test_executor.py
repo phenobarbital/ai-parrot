@@ -265,6 +265,31 @@ async def test_probe_join_on_one_row_siblings_keeps_columns(fake_qs):
     assert {"id", "val", "extra"} <= set(outcome.frames["left"].columns)
 
 
+async def test_probe_empty_result_is_not_a_failure(fake_qs, linked_source):
+    """A probe that matches no row (QuerySource DataNotFound) yields an empty frame, not a data_stage error."""
+    from querysource.exceptions import DataNotFound
+
+    fake_qs.registry[linked_source.slug] = DataNotFound("no rows")
+
+    outcome = await execute_sources({"activity": linked_source}, probe=True)
+
+    result = outcome.outcomes["activity"]
+    assert result.error is None and result.rows is None
+    assert list(outcome.frames["activity"].columns) == []
+    # ...but the same empty result is still a failure for a real (snapshot) fetch, as before.
+    outcome = await execute_sources({"activity": linked_source})
+    assert outcome.outcomes["activity"].error == "data_stage"
+
+
+async def test_probe_null_row_keeps_the_column(fake_qs, linked_source):
+    """A one-row probe whose value is NULL still exposes the column (dtype object) for axis validation."""
+    fake_qs.registry[linked_source.slug] = pd.DataFrame([{"day": "2026-01-01", "visits": None}])
+
+    outcome = await execute_sources({"activity": linked_source}, probe=True)
+
+    assert list(outcome.frames["activity"].columns) == ["day", "visits"]
+
+
 async def test_binary_cells_serialised(fake_qs, linked_source):
     """bytea cells never crash ujson: valid UTF-8 → text, anything else → base64."""
     fake_qs.registry[linked_source.slug] = pd.DataFrame({"blob": [b"\xfa\x01", b"abc", None], "n": [1, 2, 3]})

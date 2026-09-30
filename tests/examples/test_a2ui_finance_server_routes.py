@@ -130,9 +130,62 @@ async def test_check_slugs_warns_and_never_raises(
         async def describe_slug(self, slug: str) -> None:
             raise RuntimeError(f"{slug} missing")
 
+        async def _close(self) -> None:
+            return None
+
     fake_tools = types.ModuleType("parrot_tools.querysource.toolkit")
     fake_tools.QuerysourceToolkit = Toolkit
     monkeypatch.setitem(sys.modules, "parrot_tools.querysource.toolkit", fake_tools)
     with caplog.at_level("WARNING"):
         await finance_server.check_slugs(web.Application())
     assert any("seed_finance.py --yes" in record.message for record in caplog.records)
+    assert sum("is not available" in record.message for record in caplog.records) == 2, "both slugs are checked"
+
+
+@pytest.mark.asyncio
+async def test_check_slugs_runs_the_dataset_manager_probe(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With both slugs present the startup check materialises the latest slug through DatasetManager (querylimit=1)."""
+    import pandas as pd
+
+    class Toolkit:
+        closed = False
+
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def describe_slug(self, slug: str) -> None:
+            return None
+
+        async def _close(self) -> None:
+            Toolkit.closed = True
+
+    class Manager:
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        def add_query(self, name: str, query_slug: str, **_: Any) -> str:
+            Manager.calls.append(("add_query", {"name": name, "query_slug": query_slug}))
+            return name
+
+        async def materialize(self, name: str, **params: Any) -> pd.DataFrame:
+            Manager.calls.append(("materialize", {"name": name, **params}))
+            return pd.DataFrame([{"division": "North"}])
+
+    fake_tools = types.ModuleType("parrot_tools.querysource.toolkit")
+    fake_tools.QuerysourceToolkit = Toolkit
+    fake_dm = types.ModuleType("parrot.tools.dataset_manager.tool")
+    fake_dm.DatasetManager = Manager
+    monkeypatch.setitem(sys.modules, "parrot_tools.querysource.toolkit", fake_tools)
+    monkeypatch.setitem(sys.modules, "parrot.tools.dataset_manager.tool", fake_dm)
+    with caplog.at_level("INFO"):
+        await finance_server.check_slugs(web.Application())
+    assert Toolkit.closed
+    assert Manager.calls == [
+        ("add_query", {"name": "finance_latest", "query_slug": finance_server.LATEST_SLUG}),
+        ("materialize", {"name": "finance_latest", "querylimit": 1}),
+    ]
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]

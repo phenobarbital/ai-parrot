@@ -1,4 +1,5 @@
-"""A2UI finance example — finance_client.py (--check against a fake server + fake DatasetManager) and seed_finance.py."""
+"""A2UI finance example — finance_client.py (--check against a fake server + fake DatasetManager) and
+seed_finance.py."""
 
 from __future__ import annotations
 
@@ -21,41 +22,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples" / "a2ui_
 import finance_client  # noqa: E402
 import seed_finance  # noqa: E402
 
+
+def _row(date: str, division: str | None, project: str | None, ra: float, rb: float, ea: float, eb: float) -> dict:
+    return {
+        "snapshot_date": date,
+        "division": division,
+        "project": project,
+        "rev_actual": ra,
+        "rev_budget": rb,
+        "ebitda_actual": ea,
+        "ebitda_budget": eb,
+    }
+
+
 LATEST = pd.DataFrame(
     [
-        {
-            "snapshot_date": "2026-09-02",
-            "division": "North",
-            "project": "Alpha",
-            "rev_actual": 100.0,
-            "rev_budget": 90.0,
-            "ebitda_actual": 20.0,
-            "ebitda_budget": 25.0,
-        },
-        {
-            "snapshot_date": "2026-09-02",
-            "division": "North",
-            "project": "Beta",
-            "rev_actual": 50.0,
-            "rev_budget": 60.0,
-            "ebitda_actual": 5.0,
-            "ebitda_budget": 4.0,
-        },
-        {
-            "snapshot_date": "2026-09-02",
-            "division": "South",
-            "project": "Gamma",
-            "rev_actual": 70.0,
-            "rev_budget": 70.0,
-            "ebitda_actual": 10.0,
-            "ebitda_budget": 12.0,
-        },
+        _row("2026-09-02", "North", "Alpha", 100.0, 90.0, 20.0, 25.0),
+        _row("2026-09-02", "North", "Beta", 50.0, 60.0, 5.0, 4.0),
+        _row("2026-09-02", "South", "Gamma", 70.0, 70.0, 10.0, 12.0),
     ]
 )
-TREND = pd.DataFrame(
+#: Raw history: the 2026-09-01 day sums to 200 / 210, the latest day is LATEST.
+SNAPSHOTS = pd.DataFrame(
     [
-        {"snapshot_date": "2026-09-01", "rev_actual": 200.0, "rev_budget": 210.0},
-        {"snapshot_date": "2026-09-02", "rev_actual": 220.0, "rev_budget": 220.0},
+        _row("2026-09-01", "North", "Alpha", 130.0, 140.0, 1.0, 1.0),
+        _row("2026-09-01", "South", "Gamma", 70.0, 70.0, 1.0, 1.0),
+        *LATEST.to_dict(orient="records"),
     ]
 )
 
@@ -67,11 +59,11 @@ def canon(value: Any) -> str:
 class FakeDatasetManager:
     """Stand-in for DatasetManager: records add_query / materialize calls and answers canned frames."""
 
-    def __init__(self, latest: pd.DataFrame = LATEST, trend: pd.DataFrame = TREND) -> None:
+    def __init__(self, latest: pd.DataFrame = LATEST, snapshots: pd.DataFrame = SNAPSHOTS) -> None:
         self.queries: dict[str, str] = {}
         self.materialized: list[tuple[str, dict[str, Any]]] = []
         self.latest = latest
-        self.trend = trend
+        self.snapshots = snapshots
 
     def add_query(self, name: str, query_slug: str, **_: Any) -> str:
         self.queries[name] = query_slug
@@ -79,7 +71,7 @@ class FakeDatasetManager:
 
     async def materialize(self, name: str, force_refresh: bool = False, **params: Any) -> pd.DataFrame:
         self.materialized.append((name, params))
-        return self.latest if name == "latest" else self.trend
+        return self.latest if name == "latest" else self.snapshots
 
 
 class FakeResponse:
@@ -187,8 +179,7 @@ class TestExpectedValues:
         expected = await finance_client.expected_values(manager)
         assert manager.queries == {"latest": finance_client.LATEST_SLUG, "snapshots": finance_client.SNAPSHOTS_SLUG}
         assert [name for name, _ in manager.materialized] == ["latest", "snapshots"]
-        trend_params = manager.materialized[1][1]
-        assert trend_params["grouping"] == ["snapshot_date"] and trend_params["ordering"] == ["snapshot_date"]
+        assert all(params == {} for _, params in manager.materialized), "raw rows only: pandas does the aggregation"
         assert expected["kpis"]["kpi_rev_actual"] == ("rev_actual", 220.0)
         assert expected["kpis"]["kpi_rev_variance"] == ("rev_variance", 0.0)
         assert expected["kpis"]["kpi_ebitda_variance"][1] == pytest.approx(-6.0)
@@ -201,6 +192,37 @@ class TestExpectedValues:
     async def test_empty_latest_frame_is_an_error(self) -> None:
         with pytest.raises(finance_client.CheckError):
             await finance_client.expected_values(FakeDatasetManager(latest=LATEST.iloc[0:0]))
+        with pytest.raises(finance_client.CheckError):
+            await finance_client.expected_values(FakeDatasetManager(snapshots=SNAPSHOTS.iloc[0:0]))
+
+    @pytest.mark.asyncio
+    async def test_null_labels_and_all_null_sums_match_the_lane(self) -> None:
+        """A NULL division/project groups under "" on both sides; an all-NULL money column is None, like SQL."""
+        latest = pd.DataFrame(
+            [
+                _row("2026-09-02", None, "Alpha", 100.0, None, None, None),
+                _row("2026-09-02", "South", None, 70.0, None, None, None),
+            ]
+        )
+        expected = await finance_client.expected_values(FakeDatasetManager(latest=latest, snapshots=latest))
+        assert set(expected["groups"]["by_division"]) == {"", "South"}
+        assert set(expected["groups"]["by_project"]) == {"Alpha", ""}
+        assert expected["kpis"]["kpi_rev_budget"] == ("rev_budget", None)
+        assert expected["kpis"]["kpi_rev_variance"] == ("rev_variance", None)
+        rows = {
+            "kpi_rev_actual": [{"rev_actual": 170.0}],
+            "kpi_rev_budget": [{"rev_budget": None}],
+            "kpi_rev_variance": [{"rev_variance": None}],
+            "kpi_ebitda_variance": [{"ebitda_variance": None}],
+            "by_division": [
+                {"division": None, "rev_actual": 100.0, "rev_budget": None},
+                {"division": "South", "rev_actual": 70.0, "rev_budget": None},
+            ],
+            "by_project": [{"project": "Alpha", "rev_actual": 100.0}, {"project": None, "rev_actual": 70.0}],
+            "trend": [{"snapshot_date": "2026-09-02T00:00:00", "rev_actual": 170.0, "rev_budget": None}],
+        }
+        assert finance_client.evaluate(rows, expected) == []
+        assert finance_client.label(float("nan")) == "" and finance_client.label(pd.NaT) == ""
 
 
 class TestClientCheck:
@@ -294,10 +316,21 @@ class TestClientArgParsing:
 class FakeConn:
     """A recording asyncpg connection stand-in for the seed."""
 
-    def __init__(self, *, unique_index: bool, existing: bool, program_row: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        unique_index: bool,
+        existing: bool,
+        program_row: bool = True,
+        parser_row: bool = True,
+        owner: str | None = None,
+    ) -> None:
         self.unique_index = unique_index
         self.existing = existing
         self.program_row = program_row
+        self.parser_row = parser_row
+        self.owner = owner  # program_slug an existing row of the slug belongs to (None: no row)
+        self.parser_program: str | None = None
         self.executed: list[str] = []
         self.upserts: list[tuple[Any, ...]] = []
         self.in_tx = False
@@ -328,7 +361,10 @@ class FakeConn:
         if sql == seed_finance.PROGRAM_ID_SQL:
             return 42 if self.program_row else None
         if sql == seed_finance.PARSER_SQL:
-            return "pgSQLParser"
+            self.parser_program = args[0]
+            return "pgSQLParser" if self.parser_row else None
+        if sql == seed_finance.OWNER_SQL:
+            return self.owner
         raise AssertionError(sql)
 
     async def close(self) -> None:
@@ -346,6 +382,7 @@ class TestSeed:
         assert (
             seed_finance.SNAPSHOTS_SLUG in out and seed_finance.LATEST_SLUG in out and '"program_slug": "troc"' in out
         )
+        assert "copied from an existing row" in out, "unresolved program_id/parser are marked, never shown as null"
 
     def test_accepts_yes_flag(self) -> None:
         with patch("asyncpg.connect", side_effect=ConnectionError("No DB")):
@@ -358,6 +395,7 @@ class TestSeed:
         result = await seed_finance.seed(conn)
         assert result == {seed_finance.SNAPSHOTS_SLUG: expected, seed_finance.LATEST_SLUG: expected}
         assert conn.executed.count("SELECT:lock") == 2 and conn.executed.count("UPSERT") == 2
+        assert conn.parser_program == "troc", "the parser is copied from a sibling slug of the SAME program"
         for values in conn.upserts:
             row = dict(zip(seed_finance.COLUMNS, values, strict=True))
             assert row["program_slug"] == "troc" and row["program_id"] == 42 and row["provider"] == "db"
@@ -365,13 +403,32 @@ class TestSeed:
             assert row["fields"] == seed_finance.FIELDS
 
     @pytest.mark.asyncio
-    async def test_program_id_override_and_missing_program(self) -> None:
+    async def test_explicit_program_id_and_parser_override_the_lookup(self) -> None:
+        conn = FakeConn(unique_index=True, existing=False, program_row=False, parser_row=False)
+        await seed_finance.seed(conn, program="other", program_id=7, parser="MyParser")
+        rows = [dict(zip(seed_finance.COLUMNS, v, strict=True)) for v in conn.upserts]
+        assert all(r["program_id"] == 7 and r["parser"] == "MyParser" and r["program_slug"] == "other" for r in rows)
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_program_id_or_parser_writes_nothing(self) -> None:
+        """An invalid row (NULL program_id, unknown parser) is never written."""
         conn = FakeConn(unique_index=True, existing=False, program_row=False)
-        await seed_finance.seed(conn, program="other", program_id=7)
-        assert all(dict(zip(seed_finance.COLUMNS, v, strict=True))["program_id"] == 7 for v in conn.upserts)
-        conn = FakeConn(unique_index=True, existing=False, program_row=False)
-        await seed_finance.seed(conn)
-        assert all(dict(zip(seed_finance.COLUMNS, v, strict=True))["program_id"] is None for v in conn.upserts)
+        with pytest.raises(RuntimeError, match="program-id"):
+            await seed_finance.seed(conn)
+        assert conn.upserts == []
+        conn = FakeConn(unique_index=True, existing=False, parser_row=False)
+        with pytest.raises(RuntimeError, match="parser"):
+            await seed_finance.seed(conn)
+        assert conn.upserts == []
+
+    @pytest.mark.asyncio
+    async def test_refuses_to_take_over_another_programs_slug(self) -> None:
+        conn = FakeConn(unique_index=True, existing=True, owner="polestar")
+        with pytest.raises(RuntimeError, match="belongs to program 'polestar'"):
+            await seed_finance.seed(conn)
+        assert conn.upserts == []
+        conn = FakeConn(unique_index=True, existing=True, owner="troc")
+        assert set((await seed_finance.seed(conn)).values()) == {"updated"}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(("existing", "expected"), [(False, "inserted"), (True, "updated")])

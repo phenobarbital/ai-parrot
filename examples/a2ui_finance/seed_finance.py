@@ -61,7 +61,7 @@ SLUGS: dict[str, tuple[str, str]] = {
     ),
 }
 
-# A single-column, non-partial UNIQUE index on public.queries(query_slug) — exactly what ON CONFLICT (query_slug) needs.
+# A single-column, non-partial UNIQUE index on public.queries(query_slug): what ON CONFLICT (query_slug) needs.
 UNIQUE_SLUG_INDEX_SQL = """
 SELECT 1
 FROM pg_index i
@@ -71,8 +71,16 @@ JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = i.indkey[0]
 WHERE n.nspname = 'public' AND c.relname = 'queries' AND a.attname = 'query_slug'
   AND i.indisunique AND i.indnatts = 1 AND i.indpred IS NULL
 """
-PROGRAM_ID_SQL = "SELECT program_id FROM public.queries WHERE program_slug = $1 AND program_id IS NOT NULL LIMIT 1"
-PARSER_SQL = "SELECT parser FROM public.queries WHERE provider = 'db' AND parser IS NOT NULL LIMIT 1"
+PROGRAM_ID_SQL = (
+    "SELECT program_id FROM public.queries WHERE program_slug = $1 AND program_id IS NOT NULL "
+    "ORDER BY updated_at DESC NULLS LAST, query_slug LIMIT 1"
+)
+# The parser of a sibling slug of the SAME program (its provider is the Postgres one the finance SQL needs).
+PARSER_SQL = (
+    "SELECT parser FROM public.queries WHERE program_slug = $1 AND provider = 'db' AND parser IS NOT NULL "
+    "ORDER BY updated_at DESC NULLS LAST, query_slug LIMIT 1"
+)
+OWNER_SQL = "SELECT program_slug FROM public.queries WHERE query_slug = $1"
 
 COLUMNS = (
     "query_slug",
@@ -109,7 +117,7 @@ VALUES ({_PLACEHOLDERS}, now(), now())
 """
 
 
-def rows_for(program: str, program_id: int | None, parser: str | None) -> list[tuple[Any, ...]]:
+def rows_for(program: str, program_id: Any, parser: Any) -> list[tuple[Any, ...]]:
     """The two ``public.queries`` rows, in ``COLUMNS`` order."""
     return [
         (slug, description, query_raw, FIELDS, program_id, program, "db", parser, False, False, 3600)
@@ -122,18 +130,44 @@ async def has_unique_slug_index(conn: asyncpg.Connection) -> bool:
     return await conn.fetchval(UNIQUE_SLUG_INDEX_SQL) is not None
 
 
-async def resolve_defaults(conn: asyncpg.Connection, program: str, program_id: int | None) -> tuple[int | None, str]:
-    """Resolve ``program_id`` (from an existing row of ``program`` unless given) and the ``db`` provider's parser."""
+async def resolve_defaults(
+    conn: asyncpg.Connection, program: str, program_id: int | None, parser: str | None
+) -> tuple[int, str]:
+    """Resolve ``program_id`` and ``parser`` from a sibling slug of ``program`` unless given explicitly.
+
+    Raises:
+        RuntimeError: When either value cannot be resolved — an invalid row is never written.
+    """
     if program_id is None:
         program_id = await conn.fetchval(PROGRAM_ID_SQL, program)
         if program_id is None:
-            logger.warning("no existing public.queries row for program %r; program_id stays NULL", program)
-    parser = await conn.fetchval(PARSER_SQL)
-    return program_id, str(parser) if parser else None
+            raise RuntimeError(
+                f"no public.queries row for program {program!r} to copy program_id from; pass --program-id"
+            )
+    if parser is None:
+        parser = await conn.fetchval(PARSER_SQL, program)
+        if not parser:
+            raise RuntimeError(f"no provider='db' row for program {program!r} to copy the parser from; pass --parser")
+    return int(program_id), str(parser)
+
+
+async def refuse_foreign_slug(conn: asyncpg.Connection, slug: str, program: str) -> None:
+    """Never take over a slug that already belongs to another program.
+
+    Raises:
+        RuntimeError: When ``slug`` exists under a different ``program_slug``.
+    """
+    owner = await conn.fetchval(OWNER_SQL, slug)
+    if owner is not None and owner != program:
+        raise RuntimeError(f"slug {slug!r} already belongs to program {owner!r}; refusing to overwrite it")
 
 
 async def seed(
-    conn: asyncpg.Connection | None = None, *, program: str = PROGRAM, program_id: int | None = None
+    conn: asyncpg.Connection | None = None,
+    *,
+    program: str = PROGRAM,
+    program_id: int | None = None,
+    parser: str | None = None,
 ) -> dict[str, str]:
     """Upsert both slugs; return ``{slug: 'inserted' | 'updated'}``.
 
@@ -145,12 +179,14 @@ async def seed(
         conn = await asyncpg.connect(default_dsn)
     try:
         async with conn.transaction():
-            program_id, parser = await resolve_defaults(conn, program, program_id)
+            program_id, parser = await resolve_defaults(conn, program, program_id, parser)
+            logger.info("writing program_slug=%s program_id=%s parser=%s", program, program_id, parser)
             unique = await has_unique_slug_index(conn)
             outcome: dict[str, str] = {}
             for values in rows_for(program, program_id, parser):
                 slug = values[0]
                 await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", slug)
+                await refuse_foreign_slug(conn, slug, program)
                 if unique:
                     inserted = await conn.fetchval(UPSERT_SQL, *values)
                     outcome[slug] = "inserted" if inserted else "updated"
@@ -174,17 +210,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="print the rows that would be written and exit")
     parser.add_argument("--program", default=PROGRAM, help=f"program_slug of the new rows (default: {PROGRAM})")
     parser.add_argument("--program-id", type=int, default=None, help="program_id (default: copied from the program)")
+    parser.add_argument("--parser", default=None, help="QuerySource parser name (default: copied from the program)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     if args.dry_run:
-        for values in rows_for(args.program, args.program_id, None):
+        unresolved = "<copied from an existing row of the program at --yes time>"
+        for values in rows_for(args.program, args.program_id or unresolved, args.parser or unresolved):
             sys.stdout.write(json.dumps(dict(zip(COLUMNS, values, strict=True)), indent=2, default=str) + "\n")
         return 0
     if not args.yes:
         logger.error("Refusing to write %s to production public.queries without --yes.", ", ".join(SLUGS))
         return 2
     try:
-        result = asyncio.run(seed(program=args.program, program_id=args.program_id))
+        result = asyncio.run(seed(program=args.program, program_id=args.program_id, parser=args.parser))
     except Exception as exc:  # noqa: BLE001 - CLI boundary: report and exit non-zero
         logger.error("Seed failed: %s", exc)
         return 1

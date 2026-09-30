@@ -198,9 +198,10 @@ class TestClientCheck:
         """A 204 answers zero rows: the by-course pie is then empty, which the value check reports as a mismatch."""
         server = FakeServer(real_envelope(), empty="polestar_graduates_by_course")
         code, out = await run_check(server, capsys, expect=False)
-        assert code == 0 and "by_course" not in out.split("OK:")[0].split("kpi_multi")[1]
+        assert code == 0, "a 204 is zero rows, never an error"
+        assert "by_course | " not in out, "no pie slice is printed for an empty frame"
         code, _ = await run_check(server, capsys)
-        assert code == 1
+        assert code == 1, "...but the verified map then reports the missing slices"
 
     def test_query_url_rule(self) -> None:
         assert client.query_url("http://h/", "s", None) == "http://h/api/v2/services/queries/s"

@@ -74,7 +74,11 @@ export function chartOption(node, rows) {
     legend: ys.length > 1 ? {} : undefined,
     xAxis: { type: 'category', data: rows.map((row) => label(row[x])), axisLabel: { interval: 0, rotate: 45 } },
     yAxis: { type: 'value' },
-    series: ys.map((column) => ({ name: column, type: node.type === 'line' ? 'line' : 'bar', data: rows.map((row) => Number(row[column])) })),
+    series: ys.map((column) => ({
+      name: column,
+      type: node.type === 'line' ? 'line' : 'bar',
+      data: rows.map((row) => Number(row[column])),
+    })),
   };
 }
 

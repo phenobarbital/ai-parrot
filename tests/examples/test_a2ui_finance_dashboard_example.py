@@ -93,4 +93,5 @@ def test_default_envelope_is_definition_only() -> None:
     sources = envelope["metadata"]["extensions"]["parrot_data_sources"]
     assert set(sources) == {widget["key"] for widget in finance_dashboard.WIDGETS}
     assert all(envelope["dataModel"][key] == {"rows": []} for key in sources)
-    assert "snapshot_at" not in sources["trend"] or sources["trend"]["snapshot_at"] is None
+    assert all(source.get("snapshot_at") is None for source in sources.values())
+    assert all(source["snapshot_truncated"] is False for source in sources.values())

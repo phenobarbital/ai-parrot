@@ -17,6 +17,8 @@ DatasetManager, LLM clients, or the satellite renderers.
 
 from __future__ import annotations
 
+import logging
+
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -453,6 +455,8 @@ def build_graph(
     )
 
 
+logger = logging.getLogger(__name__)
+
 _LINKED_SOURCES_KEY = "parrot_data_sources"
 
 
@@ -487,12 +491,19 @@ def _validate_axes(component: dict[str, Any], sources: Mapping[str, Any], frames
         raise ValueError(f"source '{key}' has no frame")
     frame = frames[key]
     columns = list(frame.columns)
+    if not columns:
+        # A definition-only probe that matched no row (executor.is_empty_result): nothing to validate against.
+        logger.warning("source '%s' returned no columns; axes of %s left unvalidated", key, component.get("id"))
+        return
 
     def validate_column(prop: str, column: Any, *, numeric: bool = False) -> None:
         if not isinstance(column, str) or column not in frame.columns:
             raise ValueError(f"{prop} '{column}' not in source '{key}' columns {columns}")
-        if numeric and not (pd.api.types.is_numeric_dtype(frame[column]) or pd.api.types.is_bool_dtype(frame[column])):
-            raise ValueError(f"{prop} '{column}' in source '{key}' is not numeric (dtype {frame[column].dtype})")
+        series = frame[column]
+        if numeric and not (pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series)):
+            if series.isna().all():
+                return  # a one-row probe whose value is NULL carries no dtype; pandas types it object
+            raise ValueError(f"{prop} '{column}' in source '{key}' is not numeric (dtype {series.dtype})")
 
     if component_type == "Chart":
         validate_column("x", component.get("x"))
