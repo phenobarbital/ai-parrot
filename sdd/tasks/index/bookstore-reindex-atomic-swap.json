@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T22:00:44.513374+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-30T23:08:32+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -56,7 +56,7 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "Calls PageIndexToolkit.rename_tree and imports _REPLACED_MARKER created by TASK-3887. Owns library.py and test_library.py, including their local store/book_md fixtures.",
       "assigned_to": null,
       "started_at": "2026-09-30T22:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3888-bookstore-staging-reindex.md"
+      "completed_at": "2026-09-30T23:08:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3888-bookstore-staging-reindex.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3889",
