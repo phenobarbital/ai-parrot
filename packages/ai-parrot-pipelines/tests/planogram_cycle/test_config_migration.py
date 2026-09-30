@@ -2,18 +2,23 @@
 
 import copy
 import json
+import sys
+import types
 
 import pytest
 
 from parrot_pipelines.planogram.comparison.definition import load_slots_definition, validate_bindings
 from parrot_pipelines.planogram.migration import (
+    MIGRATED_TYPES,
     _PREFLIGHT_SQL,
     ConversionReport,
     PreflightRow,
     _main,
     check_row,
     convert_config,
+    preflight,
 )
+from parrot_pipelines.planogram.plan import PlanogramCompliance
 
 
 @pytest.fixture
@@ -56,6 +61,87 @@ def legacy_config() -> dict:
     }
 
 
+@pytest.fixture
+def ink_page1() -> dict:
+    """Minimal page-1 ink layout with no source descriptors."""
+    return {
+        "planogram": {"planogram": "Ink"},
+        "shelves": [
+            {"shelf_number": 1, "products": {"p1": {"position": 1, "slot": 1, "product": "INK-1"}}}
+        ],
+    }
+
+
+@pytest.fixture
+def promo_config() -> dict:
+    """Promotional zones, including one optional zone."""
+    return {
+        "shelves": [
+            {
+                "level": "header",
+                "products": [
+                    {"name": "Backlit", "product_type": "backlit_panel"},
+                    {"name": "Poster", "product_type": "lower_poster", "mandatory": False},
+                ],
+            }
+        ]
+    }
+
+
+@pytest.fixture
+def panel_config() -> dict:
+    """Two same-kind graphics require explicit selector review."""
+    return {
+        "shelves": [
+            {"level": "top", "products": [{"name": "Graphic A", "product_type": "graphic"}]},
+            {"level": "bottom", "products": [{"name": "Graphic B", "product_type": "graphic"}]},
+        ]
+    }
+
+
+@pytest.fixture
+def counter_config() -> dict:
+    """Product plus background and information-label zones."""
+    return {
+        "shelves": [
+            {
+                "products": [
+                    {
+                        "name": "P-100",
+                        "product_type": "product",
+                        "quantity_range": [1, 1],
+                        "descriptors": {"display_name": "Product 100"},
+                    },
+                    {"name": "Backdrop", "product_type": "promotional_background"},
+                    {"name": "Details", "product_type": "information_label"},
+                ]
+            }
+        ],
+        "scoring_weights": {"product": 0.5},
+    }
+
+
+@pytest.fixture
+def backlit_config() -> dict:
+    """Backlit product shelf with a source section requiring spatial review."""
+    return {
+        "shelves": [
+            {
+                "level": "middle",
+                "sections": [{"id": "section-1"}],
+                "products": [
+                    {
+                        "name": "P-1",
+                        "product_type": "product",
+                        "quantity_range": [1, 1],
+                        "descriptors": {"display_name": "Product 1"},
+                    }
+                ],
+            }
+        ]
+    }
+
+
 def _convert(config) -> ConversionReport:
     return convert_config(config, planogram_type="product_on_shelves")
 
@@ -74,7 +160,7 @@ def test_fixed_quantity_seeds_facings_and_range_is_unresolved(legacy_config):
         ("shelf-2:2", 2, "ES-400"),
         ("shelf-2:3", 3, "RR-60"),
     ]
-    assert len(report.unresolved) == 1 and "RR-60" in report.unresolved[0]
+    assert any("RR-60" in item for item in report.unresolved)
     assert any("slot order taken from list order" in w for w in report.warnings)
     assert all(f["descriptors"] == {} for f in middle["facings"])  # never invents descriptors / prices
 
@@ -116,10 +202,10 @@ def test_fact_tags_are_not_facings(legacy_config):
     assert "Tag" not in products
 
 
-def test_candidate_validates_once_described(legacy_config):
-    """The only validation warning is the missing descriptors; once described it loads and binds."""
+def test_candidate_validation_failure_is_unresolved(legacy_config):
+    """Missing descriptors are a blocking unresolved item, never merely a warning."""
     report = _convert(legacy_config)
-    assert any("zero described positions" in w for w in report.warnings)
+    assert any("zero described positions" in item for item in report.unresolved)
     for shelf in report.candidate["shelves"]:
         for facing in shelf["facings"]:
             facing["descriptors"] = {"display_name": facing["product"]}
@@ -127,13 +213,13 @@ def test_candidate_validates_once_described(legacy_config):
     assert len(validate_bindings(definition, {"rule_bindings": report.bindings})) == len(report.bindings)
 
 
-def test_non_pos_type_rejected():
+def test_unknown_type_rejected():
     with pytest.raises(ValueError):
-        convert_config({}, planogram_type="graphic_panel_display")
+        convert_config({}, planogram_type="tv_wall")
 
 
-def test_check_row_legacy_type_is_ok():
-    assert check_row({"config_name": "x", "planogram_type": "product_counter"}).ok
+def test_check_row_counter_without_definition_is_not_ready():
+    assert not check_row({"config_name": "x", "planogram_type": "product_counter"}).ok
 
 
 def test_check_row_flags_missing_and_invalid_definition(legacy_config):
@@ -190,6 +276,131 @@ def test_cli_convert_refuses_to_overwrite_input(tmp_path, legacy_config):
 
 def test_cli_convert_exit_zero_when_fully_resolved(tmp_path, legacy_config):
     legacy_config["shelves"][1]["products"][1]["quantity_range"] = [1, 1]
+    for shelf in legacy_config["shelves"]:
+        for product in shelf["products"]:
+            if product.get("product_type") == "product":
+                product["descriptors"] = {"display_name": product["name"]}
     source = tmp_path / "config.json"
     source.write_text(json.dumps(legacy_config))
     assert _main(["convert", str(source), "--out", str(tmp_path / "c.json")]) == 0
+
+
+def test_migrated_types_match_registry():
+    assert MIGRATED_TYPES == set(PlanogramCompliance._PLANOGRAM_TYPES)
+
+
+@pytest.mark.parametrize(
+    ("ptype", "fixture_name"),
+    [
+        ("product_on_shelves", "legacy_config"),
+        ("ink_wall", "ink_page1"),
+        ("endcap_backlit_multitier", "backlit_config"),
+        ("endcap_no_shelves_promotional", "promo_config"),
+        ("graphic_panel_display", "panel_config"),
+        ("product_counter", "counter_config"),
+    ],
+)
+def test_every_type_converts_without_mutation(ptype, fixture_name, request):
+    config = request.getfixturevalue(fixture_name)
+    before = copy.deepcopy(config)
+    report = convert_config(config, planogram_type=ptype)
+    assert config == before
+    assert report.candidate["shelves"] or report.candidate["zones"]
+
+
+def test_conversion_is_deterministic(promo_config):
+    assert convert_config(promo_config, planogram_type="endcap_no_shelves_promotional").model_dump() == convert_config(
+        promo_config, planogram_type="endcap_no_shelves_promotional"
+    ).model_dump()
+
+
+def test_zone_only_candidate_has_zones_and_mandatory_presence(promo_config):
+    report = convert_config(promo_config, planogram_type="endcap_no_shelves_promotional")
+    assert report.candidate["shelves"] == [] and report.candidate["zones"]
+    assert any(binding["kind"] == "zone_present" and binding["mandatory"] for binding in report.bindings)
+
+
+def test_optional_zone_stays_optional(promo_config):
+    report = convert_config(promo_config, planogram_type="endcap_no_shelves_promotional")
+    optional = next(zone for zone in report.candidate["zones"] if zone["required"] is False)
+    binding = next(binding for binding in report.bindings if binding["target_id"] == optional["zone_id"])
+    assert binding["mandatory"] is False
+
+
+def test_repeated_same_kind_zones_need_selector(panel_config):
+    report = convert_config(panel_config, planogram_type="graphic_panel_display")
+    assert any("selector" in item for item in report.unresolved)
+
+
+def test_backlit_sections_are_unresolved(backlit_config):
+    report = convert_config(backlit_config, planogram_type="endcap_backlit_multitier")
+    assert any("section-1" in item for item in report.unresolved)
+
+
+def test_counter_products_become_facings_and_labels_zones(counter_config):
+    report = convert_config(counter_config, planogram_type="product_counter")
+    assert report.candidate["shelves"][0]["facings"][0]["product"] == "P-100"
+    assert any(zone["kind"] == "information_label" for zone in report.candidate["zones"])
+
+
+def test_counter_scoring_weights_are_unresolved(counter_config):
+    report = convert_config(counter_config, planogram_type="product_counter")
+    assert any("scoring_weights" in item for item in report.unresolved)
+
+
+def test_ink_page1_never_invents_descriptors(ink_page1):
+    report = convert_config(ink_page1, planogram_type="ink_wall")
+    facing = report.candidate["shelves"][0]["facings"][0]
+    assert facing["facing_id"] == "p001_f1" and facing["descriptors"] == {}
+    assert any("descriptors" in item for item in report.unresolved)
+
+
+def test_top_level_perception_mode_moves_to_layout_profile(promo_config):
+    promo_config["perception_mode"] = "cv"
+    report = convert_config(promo_config, planogram_type="endcap_no_shelves_promotional")
+    assert report.layout_profile["perception_mode"] == "cv"
+
+
+def test_check_row_unknown_type_not_ready():
+    verdict = check_row({"config_name": "x", "planogram_type": "tv_wall"})
+    assert not verdict.ok and "tv_wall" in verdict.problems[0]
+
+
+def test_check_row_invalid_layout_not_ready():
+    verdict = check_row(
+        {
+            "config_name": "x",
+            "planogram_type": "product_on_shelves",
+            "slots_definition": {"shelves": [], "zones": [{"zone_id": "z", "kind": "header"}]},
+            "planogram_config": {"layout_profile": {"no_such_key": 1}, "rule_bindings": []},
+        }
+    )
+    assert not verdict.ok and any("invalid layout_profile" in problem for problem in verdict.problems)
+
+
+@pytest.mark.asyncio
+async def test_preflight_issues_single_select(monkeypatch):
+    calls = []
+
+    class Connection:
+        async def fetch_all(self, sql):
+            calls.append(sql)
+            return []
+
+    class Context:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class AsyncDB:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def connection(self):
+            return Context()
+
+    monkeypatch.setitem(sys.modules, "asyncdb", types.SimpleNamespace(AsyncDB=AsyncDB))
+    assert await preflight("postgresql://example") == []
+    assert calls == [_PREFLIGHT_SQL]
