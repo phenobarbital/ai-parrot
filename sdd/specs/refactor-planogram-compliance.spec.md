@@ -10,7 +10,7 @@ tags: [planogram, compliance, refactor, opencv, ocr, e2e]
 **Feature ID**: FEAT-612
 **Date**: 2026-09-30
 **Author**: Jesus Lara (with Codex)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-pipelines 1.1.0
 **Source**: `sdd/proposals/refactor-planogram-compliance.brainstorm.md`, Option A.
 
