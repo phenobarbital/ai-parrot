@@ -16,7 +16,7 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Independent store primitives; owns store.py, content_store.py and their two test files. No shared mutable test configuration.",
       "assigned_to": null,
       "started_at": "2026-09-30T22:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3886-pageindex-store-rename-primitives.md"
+      "completed_at": "2026-09-30T22:53:27+00:00",
+      "file": "sdd/tasks/completed/TASK-3886-pageindex-store-rename-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3887",
@@ -74,7 +75,7 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -82,8 +83,9 @@
       "parallelism_notes": "Uses existing disambiguate_title and _stem_to_title; owns carding.py and a new test_title_fallback.py. Separate test file avoids overlap with the staging task’s test_library.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T22:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3889-bookstore-title-fallback.md"
+      "completed_at": "2026-09-30T22:53:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3889-bookstore-title-fallback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3890",
@@ -92,7 +94,7 @@
       "feature_id": "FEAT-615",
       "feature": "bookstore-reindex-atomic-swap",
       "spec": "sdd/specs/bookstore-reindex-atomic-swap.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -100,8 +102,9 @@
       "parallelism_notes": "Consumes existing Bookstore.update_card support for empty lists; owns cli.py and test_cli.py. No new symbol dependency or shared-resource mutation.",
       "assigned_to": null,
       "started_at": "2026-09-30T22:40:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3890-bookstore-cli-clear-card-lists.md"
+      "completed_at": "2026-09-30T22:53:33+00:00",
+      "file": "sdd/tasks/completed/TASK-3890-bookstore-cli-clear-card-lists.md",
+      "verification": "verified"
     }
   ]
 }
