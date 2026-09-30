@@ -113,9 +113,7 @@ def _reject_unknown_shape_keys(overrides: Dict[str, Any]) -> List[str]:
     for index, item in enumerate(overrides.get("shape_profiles") or []):
         if isinstance(item, dict):
             unknown.extend(
-                f"layout_profile.shape_profiles.{index}.{key}"
-                for key in item
-                if key not in ShapeProfile.model_fields
+                f"layout_profile.shape_profiles.{index}.{key}" for key in item if key not in ShapeProfile.model_fields
             )
     return unknown
 

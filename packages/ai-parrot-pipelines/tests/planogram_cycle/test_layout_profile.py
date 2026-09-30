@@ -99,23 +99,25 @@ def test_duplicate_selector_and_profile_names_rejected(defaults: LayoutProfile) 
     with pytest.raises(ValueError, match="shape_profiles"):
         resolve_layout_profile(
             defaults,
-            {
-                "layout_profile": {
-                    "shape_profiles": [PRICE_TAG_PROFILE.model_dump(), PRICE_TAG_PROFILE.model_dump()]
-                }
-            },
+            {"layout_profile": {"shape_profiles": [PRICE_TAG_PROFILE.model_dump(), PRICE_TAG_PROFILE.model_dump()]}},
             config_name="cfg",
         )
 
 
 def test_top_level_perception_mode_alias(defaults: LayoutProfile) -> None:
     """The legacy mode alias is accepted only when it agrees with the profile."""
-    assert resolve_layout_profile(defaults, {"perception_mode": "llm_detector"}, config_name="c").perception_mode == "llm_detector"
-    assert resolve_layout_profile(
-        defaults,
-        {"perception_mode": "cv", "layout_profile": {"perception_mode": "cv"}},
-        config_name="c",
-    ).perception_mode == "cv"
+    assert (
+        resolve_layout_profile(defaults, {"perception_mode": "llm_detector"}, config_name="c").perception_mode
+        == "llm_detector"
+    )
+    assert (
+        resolve_layout_profile(
+            defaults,
+            {"perception_mode": "cv", "layout_profile": {"perception_mode": "cv"}},
+            config_name="c",
+        ).perception_mode
+        == "cv"
+    )
     with pytest.raises(ValueError, match="perception_mode"):
         resolve_layout_profile(
             defaults,
