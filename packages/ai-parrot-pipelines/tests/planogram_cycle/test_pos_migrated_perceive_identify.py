@@ -85,7 +85,9 @@ def test_no_product_hint_fallback_prompt_and_no_legacy_hooks():
     """The migrated type exposes no expected-product prompt or legacy pipeline."""
     handler = _make_handler({})
     assert handler.fallback_detection_prompt() is None
-    assert not any(handler._implements(name) for name in ("compute_roi", "detect_objects", "check_planogram_compliance"))
+    assert not any(
+        handler._implements(name) for name in ("compute_roi", "detect_objects", "check_planogram_compliance")
+    )
 
 
 def test_module_imports_no_grid_execution():

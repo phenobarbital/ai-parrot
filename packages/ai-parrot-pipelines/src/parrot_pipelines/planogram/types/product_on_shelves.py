@@ -173,9 +173,11 @@ class ProductOnShelves(AbstractPlanogramType):
         self._ensure_layout(ctx)
         by_image = {perception.image_id: perception for perception in perceptions}
         corroborated = [
-            self._corroborate_with_fact_tags(by_image[result.image_id], result, ctx.definition)
-            if result.image_id in by_image
-            else result
+            (
+                self._corroborate_with_fact_tags(by_image[result.image_id], result, ctx.definition)
+                if result.image_id in by_image
+                else result
+            )
             for result in identifications
         ]
         return compare_observations(perceptions, corroborated, ctx, self._cycle_description())
@@ -192,9 +194,11 @@ class ProductOnShelves(AbstractPlanogramType):
         ]
         if not tags or not perception.slots:
             return result
-        catalogue = {
-            facing.product.casefold() for facing in definition.all_facings() if facing.product
-        } if definition else set()
+        catalogue = (
+            {facing.product.casefold() for facing in definition.all_facings() if facing.product}
+            if definition
+            else set()
+        )
         readings = getattr(perception, "ocr_readings", None) or {}
         reads = {identification.shape_id: identification for identification in result.identifications}
         slot_of: Dict[str, Slot] = {}

@@ -24,6 +24,7 @@ from parrot_pipelines.planogram.contracts import (
 )
 from parrot_pipelines.planogram.types.product_on_shelves import ProductOnShelves
 
+
 def _definition(with_header: bool = True):
     """Build a compact slots definition with two products and an optional backlit zone."""
     shelves = []
