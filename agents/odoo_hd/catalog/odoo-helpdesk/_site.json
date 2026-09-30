@@ -1,0 +1,14 @@
+{
+  "site": "odoo-helpdesk",
+  "base_url": "https://pokemon.helpdesk.staging.trocdigital.io",
+  "title": "Odoo Helpdesk (staging)",
+  "description": "TROC helpdesk on Odoo 19 — Softhealer All-in-One Helpdesk.",
+  "aliases": [
+    "odoo",
+    "helpdesk",
+    "odoo helpdesk",
+    "pokemon.helpdesk.staging.trocdigital.io"
+  ],
+  "created_at": "2026-09-30T18:45:10.895236Z",
+  "updated_at": null
+}
