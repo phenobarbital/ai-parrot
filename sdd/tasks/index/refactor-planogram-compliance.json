@@ -502,7 +502,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -517,8 +517,9 @@
       "parallelism_notes": "tests the hooks of TASK-3866..3869 (types/*.py), the base helpers removed by TASK-3870 (types/abstract.py) and adapter-mediated illumination through run() from TASK-3871 (plan.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3876-type-test-suites-rewrite.md"
+      "completed_at": "2026-09-30T23:18:36+00:00",
+      "file": "sdd/tasks/completed/TASK-3876-type-test-suites-rewrite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3877",
@@ -555,7 +556,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -566,8 +567,9 @@
       "parallelism_notes": "runner consumes the final PlanogramCompliance.run result contract from TASK-3871 (plan.py) and validates fixture configs with check_row from TASK-3877 (migration.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3878-live-e2e-harness-core.md"
+      "completed_at": "2026-09-30T23:18:38+00:00",
+      "file": "sdd/tasks/completed/TASK-3878-live-e2e-harness-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3879",

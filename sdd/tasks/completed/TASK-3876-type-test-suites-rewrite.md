@@ -446,10 +446,5 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Merged cleanly via sdd-worker orchestration; lint clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
