@@ -300,7 +300,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -312,8 +312,9 @@
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/endcap_no_shelves_promotional.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3867-endcap-promotional-cycle.md"
+      "completed_at": "2026-09-30T22:43:15+00:00",
+      "file": "sdd/tasks/completed/TASK-3867-endcap-promotional-cycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3868",
@@ -322,7 +323,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -334,8 +335,9 @@
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/graphic_panel_display.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3868-graphic-panel-cycle.md"
+      "completed_at": "2026-09-30T22:43:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3868-graphic-panel-cycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3869",
@@ -344,7 +346,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -356,8 +358,9 @@
       "parallelism_notes": "composes perceive_image (TASK-3856), identify_image (TASK-3859) and compare_observations (TASK-3863) inside types/product_counter.py.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3869-product-counter-cycle.md"
+      "completed_at": "2026-09-30T22:43:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3869-product-counter-cycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3870",
