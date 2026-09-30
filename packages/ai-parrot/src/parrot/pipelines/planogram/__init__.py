@@ -2,8 +2,6 @@
 from importlib import import_module
 
 __all__ = (
-    "PlanogramCompliancePipeline",
-    "RetailDetector",
     "PlanogramCompliance",
     "AbstractPlanogramType",
 )
