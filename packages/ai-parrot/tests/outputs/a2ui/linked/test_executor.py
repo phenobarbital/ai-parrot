@@ -11,7 +11,8 @@ import pytest
 
 from parrot.auth.permission import build_principal_context
 from parrot.outputs.a2ui.linked import Join, JoinKey, LinkedDataSource, Select, SourceRequest, TransformSpec
-from parrot.outputs.a2ui.linked.executor import ERROR_STATUS, execute_sources, map_query_error
+from parrot.outputs.a2ui.linked.executor import ERROR_STATUS, PROBE_FETCH_ROWS, execute_sources, map_query_error
+from parrot.outputs.a2ui.linked.models import Pivot
 from parrot.tools.dataset_manager.sources import query_slug as qsmod
 
 pytestmark = pytest.mark.asyncio
@@ -202,6 +203,66 @@ async def test_snapshot_rows_truncated(fake_qs, linked_source):
     result = outcome.outcomes["activity"]
     assert result.truncated is True
     assert len(result.rows) == 2
+
+
+async def test_probe_fetches_one_row_and_never_a_snapshot(fake_qs, linked_source):
+    """probe=True runs the slug with querylimit=1, keeps the frame for axis checks, but yields no rows."""
+    fake_qs.registry[linked_source.slug] = pd.DataFrame({"a": [1]})
+
+    outcome = await execute_sources({"activity": linked_source}, probe=True)
+
+    _, conditions, _ = fake_qs.single_calls[0]
+    assert conditions["querylimit"] == PROBE_FETCH_ROWS == 1
+    result = outcome.outcomes["activity"]
+    assert result.error is None and result.rows is None and result.snapshot_at is None
+    assert list(outcome.frames["activity"].columns) == ["a"]
+    assert outcome.data_model_patch() == {}
+
+
+async def test_probe_ignores_request_limit(fake_qs, linked_source):
+    """A request.limit (e.g. a 500-row grid) still probes with one row."""
+    limited = linked_source.model_copy(update={"request": SourceRequest(limit=500)})
+    fake_qs.registry[limited.slug] = pd.DataFrame({"a": [1]})
+
+    await execute_sources({"activity": limited}, probe=True)
+
+    _, conditions, _ = fake_qs.single_calls[0]
+    assert conditions["querylimit"] == 1
+
+
+async def test_probe_pivot_source_falls_back_to_full_fetch(fake_qs, linked_source):
+    """pivot output columns depend on the data, so a pivoting source is fetched in full even under probe."""
+    pivoting = linked_source.model_copy(
+        update={"transform": TransformSpec(ops=[Pivot(index=["a"], columns="k", values="v")])}
+    )
+    fake_qs.registry[pivoting.slug] = pd.DataFrame({"a": [1, 1], "k": ["x", "y"], "v": [1, 2]})
+
+    outcome = await execute_sources({"activity": pivoting}, probe=True, max_fetch_rows=77)
+
+    _, conditions, _ = fake_qs.single_calls[0]
+    assert conditions["querylimit"] == 77
+    assert outcome.outcomes["activity"].rows is None
+    assert set(outcome.frames["activity"].columns) >= {"a", "x", "y"}
+
+
+async def test_probe_join_on_one_row_siblings_keeps_columns(fake_qs):
+    """A join under probe still produces the joined column set (what axis validation reads)."""
+    right = LinkedDataSource(slug="right_slug", conditions={}, request=SourceRequest(), target="/right/rows")
+    left = LinkedDataSource(
+        slug="left_slug",
+        conditions={},
+        request=SourceRequest(),
+        target="/left/rows",
+        transform=TransformSpec(ops=[Join(with_="right", on=[JoinKey(left="id", right="id")])]),
+    )
+    fake_qs.registry["left_slug"] = pd.DataFrame({"id": [1], "val": [10]})
+    fake_qs.registry["right_slug"] = pd.DataFrame({"id": [1], "extra": [20]})
+
+    outcome = await execute_sources({"left": left, "right": right}, probe=True)
+
+    assert all(conditions["querylimit"] == 1 for _, conditions, _ in fake_qs.single_calls)
+    assert outcome.outcomes["left"].error is None
+    assert {"id", "val", "extra"} <= set(outcome.frames["left"].columns)
 
 
 async def test_binary_cells_serialised(fake_qs, linked_source):

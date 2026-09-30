@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Mapping
 from pydantic import BaseModel, Field
 
 from parrot.outputs.a2ui.linked.conditions import derive_conditions
-from parrot.outputs.a2ui.linked.models import Join, LinkedDataSource, Union_
+from parrot.outputs.a2ui.linked.models import Join, LinkedDataSource, Pivot, Union_
 
 if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
@@ -40,6 +40,9 @@ _TENANT_CODE_MAP: dict[str, tuple[int, str]] = {
 
 #: Bounded walk of exc -> __cause__ -> __context__ (TASK-3779 chains errors as RuntimeError(...) from error).
 _MAX_CAUSE_DEPTH = 5
+
+#: ``querylimit`` of a probe execution: one row is enough to learn a source's columns and dtypes.
+PROBE_FETCH_ROWS = 1
 
 
 class SourceOutcome(BaseModel):
@@ -177,6 +180,13 @@ def _conditions_for(
     return conditions, ignored
 
 
+def _needs_full_fetch(src: LinkedDataSource) -> bool:
+    """True when a probe cannot stand in for the real fetch: ``pivot`` output columns depend on the data."""
+    if src.transform is None or not src.transform.ops:
+        return False
+    return any(isinstance(op, Pivot) for op in src.transform.ops)
+
+
 async def execute_sources(
     sources: Mapping[str, LinkedDataSource],
     *,
@@ -185,8 +195,17 @@ async def execute_sources(
     guard: Any | None = None,
     max_snapshot_rows: int | None = None,
     max_fetch_rows: int = 5000,
+    probe: bool = False,
 ) -> ExecutionOutcome:
-    """Fetch + transform every source (siblings first); per-source failure isolation (spec §3 M5)."""
+    """Fetch + transform every source (siblings first); per-source failure isolation (spec §3 M5).
+
+    ``probe=True`` is the definition-only mode used by the surface builders: every source runs with
+    ``querylimit=PROBE_FETCH_ROWS`` (one row) so its columns and dtypes can be validated, the transformed
+    frame is kept in ``frames`` for that validation, and the outcome carries ``rows=None`` — a probe is never
+    a snapshot (``data_model_patch`` skips it). ``join``/``union`` on one-row sibling frames keep the column
+    set and dtypes, which is all axis validation reads; a ``pivot`` derives its columns from the data, so a
+    pivoting source falls back to the full fetch. ``ref`` transforms are skipped in Python either way.
+    """
     from parrot.outputs.a2ui.linked.dsl import apply_transform, frame_to_records
     from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource
     from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource, to_qs_principal
@@ -197,7 +216,8 @@ async def execute_sources(
     outcomes: dict[str, SourceOutcome] = {k: SourceOutcome(key=k, error=code) for k, code in failed.items()}
     for key in order:
         src = sources[key]
-        conditions, ignored = _conditions_for(src, (param_overrides or {}).get(key, {}), max_fetch_rows=max_fetch_rows)
+        cap = PROBE_FETCH_ROWS if probe and not _needs_full_fetch(src) else max_fetch_rows
+        conditions, ignored = _conditions_for(src, (param_overrides or {}).get(key, {}), max_fetch_rows=cap)
         inner = QuerySlugSource(
             src.slug,
             prefetch_schema_enabled=False,
@@ -221,6 +241,9 @@ async def execute_sources(
             outcomes[key] = SourceOutcome(key=key, error=code, ignored_params=ignored)
             continue
         frames[key] = frame
+        if probe:
+            outcomes[key] = SourceOutcome(key=key, ignored_params=ignored)
+            continue
         rows = frame_to_records(frame)
         truncated = False
         if max_snapshot_rows is not None and len(rows) > max_snapshot_rows:

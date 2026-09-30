@@ -350,7 +350,7 @@ class QuerysourceToolkit(AbstractToolkit):
         component: dict[str, Any],
         request: dict[str, Any] | None = None,
         tenant: str | None = None,
-        snapshot: bool = True,
+        snapshot: bool = False,
         surface_id: str | None = None,
         target_key: str | None = None,
         refresh: dict[str, Any] | None = None,
@@ -363,8 +363,12 @@ class QuerysourceToolkit(AbstractToolkit):
         ``filter``, ``fields``, ``ordering``, ``grouping``, ``limit``, and
         ``offset`` in the ``qs_execute_slug`` grammar. Relative dates use UDF
         keywords (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH,
-        LAST_YEAR); ``@variables`` are rejected. The slug always executes once
-        to validate columns. ``snapshot=True`` embeds up to 500 current rows.
+        LAST_YEAR); ``@variables`` are rejected. By default (``snapshot=False``)
+        the surface is definition-only: the slug is only probed with
+        ``querylimit=1`` to validate columns and dtypes, the envelope carries no
+        rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only
+        when viewers cannot fetch for themselves (share links, offline export):
+        it runs the full query and embeds up to 500 current rows.
         ``refresh`` accepts ``policy`` (on_mount, manual, interval) and
         ``interval_seconds``; ``transform`` accepts the linked transform DSL.
         """
@@ -378,7 +382,7 @@ class QuerysourceToolkit(AbstractToolkit):
         )
         source = self._build_linked_source(widget, detail, transform=transform)
         self.logger.info("qs_build_linked_surface %s tenant=%s key=%s snapshot=%s", slug, tenant, key, snapshot)
-        execution = await execute_sources({key: source}, pctx=None, guard=None)
+        execution = await execute_sources({key: source}, pctx=None, guard=None, probe=not snapshot)
         outcome = execution.outcomes[key]
         if outcome.error:
             raise QuerysourceToolkitError(f"query '{slug}' failed while building the linked surface: {outcome.error}")
@@ -409,14 +413,18 @@ class QuerysourceToolkit(AbstractToolkit):
         widgets: list[dict[str, Any]],
         surface_id: str | None = None,
         title: str | None = None,
-        snapshot: bool = True,
+        snapshot: bool = False,
     ) -> dict[str, Any]:
         """Emit ONE linked A2UI dashboard surface.
 
         Each widget ``{key, slug, component, request?, tenant?, section?, refresh?}`` gets its own source, so each
         refreshes independently; KPIs, charts and tables are laid out in rows. Components are Chart, DataTable or
-        KPICard without bindings; a KPICard names its aggregate column in ``value``. Raises InvalidConditionsError on
-        bad/duplicate keys or grammar; QuerysourceToolkitError when a source fails to execute.
+        KPICard without bindings; a KPICard names its aggregate column in ``value``. By default (``snapshot=False``)
+        the dashboard is definition-only: every slug is only probed with ``querylimit=1`` to validate columns and
+        dtypes, the envelope carries no rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only when
+        viewers cannot fetch for themselves (share links, offline export): it runs every query in full and embeds up
+        to 500 rows per source. Raises InvalidConditionsError on bad/duplicate keys or grammar;
+        QuerysourceToolkitError when a source fails to execute.
         """
         from parrot.outputs.a2ui.builders import build_linked_surface as _build
         from parrot.outputs.a2ui.linked.executor import execute_sources
@@ -449,7 +457,16 @@ class QuerysourceToolkit(AbstractToolkit):
             detail = await self.describe_slug(widget.slug, tenant=widget.tenant)
             sources[widget.key] = self._build_linked_source(widget, detail)
         self.logger.info("qs_build_linked_dashboard %d widgets snapshot=%s", len(parsed), snapshot)
-        execution = await execute_sources(sources, pctx=None, guard=None)
+        if not snapshot:
+            manual = [w.key for w in parsed if (w.refresh or {}).get("policy") == "manual"]
+            if manual:
+                # The admin lane never runs a `manual` source on mount, so without a snapshot it renders empty.
+                self.logger.warning(
+                    "qs_build_linked_dashboard: widget(s) %s use refresh.policy='manual' without a snapshot; "
+                    "they render empty until refreshed",
+                    ", ".join(manual),
+                )
+        execution = await execute_sources(sources, pctx=None, guard=None, probe=not snapshot)
         # Sources fail independently; report every failure, not just the first in widget order.
         failures = [
             f"'{key}' ({sources[key].slug}): {outcome.error if outcome is not None else 'no outcome'}"
