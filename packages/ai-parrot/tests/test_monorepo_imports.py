@@ -4,36 +4,42 @@ Validates import paths work correctly in both the pre-migration flat layout
 and the post-migration monorepo layout. Tests that require the monorepo
 layout use try/except with pytest.skip for graceful degradation.
 """
+
 import importlib
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Core package imports (must work in any layout)
 # ---------------------------------------------------------------------------
+
 
 class TestCoreImports:
     """Verify core parrot imports work without sub-packages."""
 
     def test_import_parrot(self):
         import parrot
+
         assert hasattr(parrot, "__version__")
 
     def test_import_bots(self):
         from parrot.bots import Chatbot, Agent
+
         assert Chatbot is not None
         assert Agent is not None
 
     def test_import_abstract_loader(self):
         from parrot.loaders.abstract import AbstractLoader
+
         assert AbstractLoader is not None
 
     def test_import_document(self):
         from parrot.loaders import Document
+
         assert Document is not None
 
     def test_import_tools_base(self):
         from parrot.tools import AbstractTool, AbstractToolkit
+
         assert AbstractTool is not None
         assert AbstractToolkit is not None
 
@@ -42,29 +48,35 @@ class TestCoreImports:
 # Direct submodule imports (work in both layouts)
 # ---------------------------------------------------------------------------
 
+
 class TestDirectSubmoduleImports:
     """Verify direct submodule imports always work."""
 
     def test_tools_pythonrepl(self):
         from parrot.tools.pythonrepl import PythonREPLTool
+
         assert PythonREPLTool is not None
 
     def test_tools_agent(self):
         from parrot.tools.agent import AgentTool
+
         assert AgentTool is not None
 
     def test_tools_openapi(self):
         from parrot.tools.openapitoolkit import OpenAPIToolkit
+
         assert OpenAPIToolkit is not None
 
     def test_loaders_abstract(self):
         from parrot.loaders.abstract import AbstractLoader
+
         assert AbstractLoader is not None
 
 
 # ---------------------------------------------------------------------------
 # Monorepo-specific: parrot_tools package
 # ---------------------------------------------------------------------------
+
 
 class TestParrotToolsPackage:
     """Verify parrot_tools package when installed."""
@@ -101,6 +113,7 @@ class TestParrotToolsPackage:
 # Monorepo-specific: parrot_loaders package
 # ---------------------------------------------------------------------------
 
+
 class TestParrotLoadersPackage:
     """Verify parrot_loaders package when installed."""
 
@@ -133,6 +146,7 @@ class TestParrotLoadersPackage:
 # Discovery system
 # ---------------------------------------------------------------------------
 
+
 class TestDiscovery:
     """Verify tool discovery works."""
 
@@ -156,6 +170,7 @@ class TestDiscovery:
 # ---------------------------------------------------------------------------
 # Monorepo-specific: parrot_pipelines package
 # ---------------------------------------------------------------------------
+
 
 class TestParrotPipelinesPackage:
     """Verify parrot_pipelines package when installed."""
