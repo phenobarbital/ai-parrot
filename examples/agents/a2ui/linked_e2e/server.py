@@ -6,7 +6,8 @@ ENV must be a live target (`staging` or `dev`); production is always refused.
 
 Guard modes (spec §2 S1 negatives):
     policy  the example policies/ dir (allows the public epson_* slugs)            → normal lane
-    deny    an empty temporary policy dir: a real guard that denies every source  → 403 "Data source not permitted"
+    deny    a temporary policy dir holding ONLY the uri allow: HTTP passes the ABAC middleware, but the guard
+            denies every data source                                                → 403 "Data source not permitted"
     none    no guard at all (PARROT_PBAC_POLICY_DIR → a nonexistent dir)          → 403 "... data-plane guard"
 """
 
@@ -24,6 +25,16 @@ HERE = Path(__file__).resolve().parent
 LIVE_ENVS: tuple[str, ...] = ("staging", "dev")
 POLICY_DIR = HERE / "policies"
 GUARD_MODES = ("policy", "deny", "none")
+#: deny mode's only policy: reach the HTTP endpoints, but no source/slug grant (so the guard denies).
+DENY_MODE_URI_POLICY = """version: "1.0"
+policies:
+  - name: deny_mode_allow_uri_authenticated
+    effect: allow
+    resources: ["uri:*"]
+    actions: ["uri:read", "uri:write", "uri:create", "uri:delete"]
+    subjects: { groups: ["*"] }
+    priority: 1
+"""
 NO_POLICY_DIR = HERE / "_no_policies_here"
 logger = logging.getLogger("examples.a2ui.linked_e2e.server")
 
@@ -62,11 +73,13 @@ def create_app(guard_mode: str = "policy", *, policy_dir: str | Path | None = No
     app = web.Application()
     QuerySource(lazy=False).setup(app)  # 1. /api/v3/queries + /api/v1/{tenant}/queries
     if guard_mode != "none":
-        pdir = (
-            Path(policy_dir or POLICY_DIR)
-            if guard_mode == "policy"
-            else Path(tempfile.mkdtemp(prefix="linked-e2e-deny-"))
-        )
+        if guard_mode == "policy":
+            pdir = Path(policy_dir or POLICY_DIR)
+        else:
+            # navigator-auth >= 0.28.3 enforces uri:* on every authenticated request, so an EMPTY dir would
+            # 428 at the middleware before the data-plane guard could answer its 403. Allow URIs only.
+            pdir = Path(tempfile.mkdtemp(prefix="linked-e2e-deny-"))
+            (pdir / "uri-only.yaml").write_text(DENY_MODE_URI_POLICY, encoding="utf-8")
         guard = setup_dataplane_guard(app, policy_dir=str(pdir))  # 2. BEFORE BotManager: its hook reuses it
         logger.info(
             "data-plane guard=%s mode=%s policy_dir=%s", type(guard).__name__ if guard else None, guard_mode, pdir
