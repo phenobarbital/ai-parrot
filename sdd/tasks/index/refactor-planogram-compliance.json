@@ -578,7 +578,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -588,8 +588,9 @@
       "parallelism_notes": "imports LiveCase/GroundTruth/run_case/compare_ground_truth from TASK-3878 (examples/planogram/e2e/models.py, runner.py) and needs its .gitignore negations to be committable.",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3879-live-e2e-cases-readme.md"
+      "completed_at": "2026-09-30T23:21:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3879-live-e2e-cases-readme.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3880",
