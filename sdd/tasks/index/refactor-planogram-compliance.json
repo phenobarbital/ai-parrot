@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T21:16:57+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-30T23:29:47+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -599,7 +599,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -613,8 +613,9 @@
       "parallelism_notes": "documents the handler/config contract of TASK-3872, the APIs removed by TASK-3873/TASK-3874, converter usage from TASK-3877 (migration.py) and the harness from TASK-3879 (examples/planogram/e2e/README.md).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3880-cycle-docs-runbook.md"
+      "completed_at": "2026-09-30T23:29:47+00:00",
+      "file": "sdd/tasks/completed/TASK-3880-cycle-docs-runbook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3881",
