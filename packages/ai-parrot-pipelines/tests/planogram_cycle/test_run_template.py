@@ -23,6 +23,8 @@ from parrot_pipelines.planogram.contracts import (
     Shape,
     ShapeKind,
 )
+from parrot_pipelines.planogram.layout import LayoutProfile
+from parrot_pipelines.planogram.perception.profiles import PRICE_TAG_PROFILE
 from parrot_pipelines.planogram.plan import PlanogramCompliance
 from parrot_pipelines.planogram.types.abstract import AbstractPlanogramType
 
@@ -53,6 +55,11 @@ ADDITIVE_KEYS = {
     "renders",
     "errors",
 }
+_DEFINITION = {
+    "shelves": [{"shelf_id": "shelf_1", "shelf_number": 1, "facings": [{
+        "facing_id": "f1", "shelf_id": "shelf_1", "slot": 1, "product": "A", "descriptors": {"display_name": "A"},
+    }]}]
+}
 
 
 def _result(status=ComplianceStatus.COMPLIANT, score=1.0) -> ComplianceResult:
@@ -70,13 +77,16 @@ def _result(status=ComplianceStatus.COMPLIANT, score=1.0) -> ComplianceResult:
 class _StubCycleType(AbstractPlanogramType):
     """Migrated-style stub: records calls, returns canned contract objects."""
 
-    uses_enhanced_image: ClassVar[bool] = False
-    min_usable_shapes: ClassVar[int] = 0
     fail_on: ClassVar[Set[str]] = set()
     on_fixture_shapes: ClassVar[int] = 2
     empty_results: ClassVar[bool] = False
     perceive_delay: ClassVar[float] = 0.0
     seen_ids: ClassVar[List[str]] = []
+    seen_refs: ClassVar[List[List[Any]]] = []
+
+    @classmethod
+    def default_layout_profile(cls) -> LayoutProfile:
+        return LayoutProfile(shape_profiles=[PRICE_TAG_PROFILE], min_usable_shapes=0)
 
     async def perceive(self, image, image_id, ctx):
         type(self).seen_ids.append(image_id)
@@ -106,6 +116,7 @@ class _StubCycleType(AbstractPlanogramType):
         return PerceptionResult(image_id=image_id, image_size=image.size, shapes=shapes, detection_source="cv")
 
     async def identify(self, image, perception, ctx):
+        type(self).seen_refs.append(list(ctx.reference_bank))
         idents = [
             Identification(shape_id=s.shape_id, image_id=perception.image_id, product="A", evidence=["x"])
             for s in perception.shapes
@@ -148,14 +159,14 @@ def pipeline(monkeypatch, fake_vision_client):
     monkeypatch.setitem(PlanogramCompliance._PLANOGRAM_TYPES, "stub_cycle", _StubCycleType)
     for name, value in (
         ("fail_on", set()),
-        ("min_usable_shapes", 0),
         ("on_fixture_shapes", 2),
         ("empty_results", False),
         ("perceive_delay", 0.0),
         ("seen_ids", []),
+        ("seen_refs", []),
     ):
         monkeypatch.setattr(_StubCycleType, name, value)
-    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={})
+    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={"layout_profile": {}}, slots_definition=_DEFINITION)
     return PlanogramCompliance(planogram_config=config, llm=fake_vision_client)
 
 
@@ -198,35 +209,18 @@ async def test_run_preserves_eight_keys_for_every_type(
         planogram_config={"brand": "X", "category": "Y", "aisle": {"name": "a"}, "shelves": []},
         roi_detection_prompt="roi",
         object_identification_prompt="objects",
-        slots_definition=definition if cls.requires_slots_definition else None,
+        slots_definition=definition,
     )
     pipe = PlanogramCompliance(planogram_config=config, llm=fake_vision_client)
     handler = pipe._type_handler
-    migrated = handler._implements("perceive")
-    if migrated:
-        handler.perceive = AsyncMock(
-            return_value=PerceptionResult(image_id="img0", image_size=synthetic_shelf_image.size, detection_source="cv")
-        )
-        handler.identify = AsyncMock(return_value=IdentificationResult(image_id="img0"))
-        handler.compare = AsyncMock(
-            return_value=ComparisonResult(
-                compliance_results=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)],
-                assessment_status=AssessmentStatus.INCONCLUSIVE,
-            )
-        )
-    else:
-        handler.compute_roi = AsyncMock(return_value=(None, None, None, None, []))
-        handler.detect_objects = AsyncMock(return_value=([], []))
-        handler.check_planogram_compliance = MagicMock(return_value=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)])
+    handler.perceive = AsyncMock(return_value=PerceptionResult(image_id="img0", image_size=synthetic_shelf_image.size, detection_source="cv"))
+    handler.identify = AsyncMock(return_value=IdentificationResult(image_id="img0"))
+    handler.compare = AsyncMock(return_value=ComparisonResult(compliance_results=[_result(ComplianceStatus.NON_COMPLIANT, 0.4)], assessment_status=AssessmentStatus.INCONCLUSIVE))
     result = await pipe.run(synthetic_shelf_image)
     assert LEGACY_KEYS <= set(result)
     assert result["compliance_results"] is result["step3_compliance_results"]
-    if migrated:
-        assert result["assessment_status"] == AssessmentStatus.INCONCLUSIVE
-        assert result["detection_source"] == "cv"
-    else:
-        assert result["assessment_status"] == AssessmentStatus.LEGACY_UNMEASURED
-        assert result["detection_source"] == "legacy_llm"
+    assert result["assessment_status"] == AssessmentStatus.INCONCLUSIVE
+    assert result["detection_source"] == "cv"
 
 
 async def test_run_single_image_keeps_sfx_filename_rule(pipeline, synthetic_shelf_image, tmp_path):
@@ -281,7 +275,7 @@ async def test_run_image_id_length_mismatch_raises(pipeline, synthetic_shelf_ima
 async def test_run_fallback_sets_detection_source_llm(
     pipeline, synthetic_shelf_image, fake_vision_client, inline_executor
 ):
-    _StubCycleType.min_usable_shapes = 3  # 2 on-fixture (+1 off-fixture that must not count)
+    pipeline._layout = pipeline._layout.model_copy(update={"min_usable_shapes": 3})
     detections = Detections(
         detections=[
             Detection(label="zone", confidence=0.9, bbox=BoundingBox(x1=0.1, y1=0.0, x2=0.9, y2=0.1)),
@@ -293,14 +287,14 @@ async def test_run_fallback_sets_detection_source_llm(
     result = await pipeline.run(synthetic_shelf_image)
     assert result["detection_source"] == "llm"
     perception = result["detections"][0]
-    assert perception["slots"] == []
+    assert perception["slots"]
     assert all(s["source"] == "llm" for s in perception["shapes"])
     assert all(s["membership"] == "on_fixture" for s in perception["shapes"])
     assert len(fake_vision_client.calls_to("ask_to_image")) == 1
 
 
 async def test_run_fallback_not_triggered_at_threshold(pipeline, synthetic_shelf_image, fake_vision_client):
-    _StubCycleType.min_usable_shapes = 2
+    pipeline._layout = pipeline._layout.model_copy(update={"min_usable_shapes": 2})
     result = await pipeline.run(synthetic_shelf_image)
     assert result["detection_source"] == "cv"
     assert fake_vision_client.calls_to("ask_to_image") == []
@@ -309,7 +303,7 @@ async def test_run_fallback_not_triggered_at_threshold(pipeline, synthetic_shelf
 async def test_run_fallback_failure_populates_errors(
     pipeline, synthetic_shelf_image, fake_vision_client, inline_executor
 ):
-    _StubCycleType.min_usable_shapes = 5
+    pipeline._layout = pipeline._layout.model_copy(update={"min_usable_shapes": 5})
     fake_vision_client.queue("ask_to_image", RuntimeError("503"))
     result = await pipeline.run(synthetic_shelf_image)
     assert result["detection_source"] == "cv"  # original perception kept
@@ -355,7 +349,7 @@ async def test_empty_compliance_results_never_compliant(pipeline, synthetic_shel
 
 def test_constructor_passes_config_backend(fake_vision_client, monkeypatch):
     monkeypatch.setitem(PlanogramCompliance._PLANOGRAM_TYPES, "stub_cycle", _StubCycleType)
-    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={}, llm_backend="anthropic:claude-x")
+    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={}, slots_definition=_DEFINITION, llm_backend="anthropic:claude-x")
     fake_client = MagicMock(client_name="Claude", model="claude-x")
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(PlanogramCompliance, "_get_llm", lambda self, provider, model, **kw: fake_client)
@@ -365,7 +359,7 @@ def test_constructor_passes_config_backend(fake_vision_client, monkeypatch):
     assert (pipe.cpu_workers, pipe.llm_concurrency, pipe.llm_timeout) == (3, 2, 9.0)
 
 
-async def test_ocr_is_disabled_by_default_and_can_be_enabled(
+async def test_ocr_auto_by_default_and_can_be_disabled(
     pipeline, synthetic_shelf_image, fake_vision_client, monkeypatch
 ):
     created = 0
@@ -379,14 +373,14 @@ async def test_ocr_is_disabled_by_default_and_can_be_enabled(
 
     monkeypatch.setattr(plan_module, "OcrReader", _AvailableOcr)
 
-    disabled_result = await pipeline.run(synthetic_shelf_image)
-    assert pipeline.enabled_ocr is False
-    assert disabled_result["ocr_available"] is False
-    assert created == 0
+    auto_result = await pipeline.run(synthetic_shelf_image)
+    assert pipeline.enabled_ocr is None
+    assert auto_result["ocr_available"] is True
+    assert created == 1
 
-    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={})
-    enabled_pipeline = PlanogramCompliance(planogram_config=config, llm=fake_vision_client, enabled_ocr=True)
-    enabled_result = await enabled_pipeline.run(synthetic_shelf_image)
-    assert enabled_pipeline.enabled_ocr is True
-    assert enabled_result["ocr_available"] is True
+    config = PlanogramConfig(planogram_type="stub_cycle", planogram_config={}, slots_definition=_DEFINITION)
+    disabled_pipeline = PlanogramCompliance(planogram_config=config, llm=fake_vision_client, enabled_ocr=False)
+    disabled_result = await disabled_pipeline.run(synthetic_shelf_image)
+    assert disabled_pipeline.enabled_ocr is False
+    assert disabled_result["ocr_available"] is False
     assert created == 1

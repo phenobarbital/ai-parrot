@@ -21,13 +21,16 @@ from .contracts import (
     PerceptionResult,
     RenderRecord,
     ShapeKind,
+    Slot,
 )
 from .perception.executor import CpuExecutor
-from .perception.membership import assign_membership, usable_shapes
 from .perception.ocr import OcrReader
 from .identification.detector import GENERIC_DETECTION_PROMPT, llm_detect_shapes
 from .identification.vision import VisionAdapter
-from .comparison.definition import load_slots_definition, validate_bindings
+from .comparison.definition import SlotsDefinition, SlotsDefinitionError, definition_coverage, load_slots_definition, validate_bindings
+from .identification.references import load_reference_bank
+from .layout import LayoutProfile, resolve_layout_profile, validate_zone_selectors
+from .stages.perceive import count_usable_targets, rebuild_geometry
 from parrot.models.detections import (
     DetectionBox,
     ShelfRegion,
@@ -43,6 +46,11 @@ from .types import (
 )
 
 ImageInput = Union[str, Path, Image.Image]
+MIGRATION_RUNBOOK = "docs/pipelines/planogram-cycle-migration.md"
+_PRODUCT_TYPE_BY_KIND: Dict[ShapeKind, str] = {
+    ShapeKind.PRODUCT: "product", ShapeKind.BOX: "product_box", ShapeKind.FACT_TAG: "fact_tag",
+    ShapeKind.PRICE_TAG: "price_tag", ShapeKind.ZONE: "promotional_graphic", ShapeKind.UNKNOWN: "unknown",
+}
 
 
 class PlanogramCompliance(AbstractPipeline):
@@ -78,7 +86,7 @@ class PlanogramCompliance(AbstractPipeline):
         llm_concurrency: int = 4,
         llm_timeout: float = 120.0,
         vision_cache_dir: Optional[Path] = None,
-        enabled_ocr: bool = False,
+        enabled_ocr: Optional[bool] = None,
         **kwargs: Any,
     ):
         """Build the pipeline and its planogram type composable.
@@ -100,6 +108,14 @@ class PlanogramCompliance(AbstractPipeline):
             ValueError: Unknown planogram type, or a configuration the type rejects.
             TypeError: The type implements neither contract.
         """
+        config_name = planogram_config.config_name
+        ptype = getattr(planogram_config, "planogram_type", None) or "product_on_shelves"
+        composable_cls = self._PLANOGRAM_TYPES.get(ptype)
+        if composable_cls is None:
+            available = ", ".join(sorted(self._PLANOGRAM_TYPES))
+            raise ValueError(f"Unknown planogram_type '{ptype}'. Available types: {available}")
+        if planogram_config.slots_definition is None:
+            raise ValueError(f"PlanogramConfig {config_name!r} ({ptype}) has no slots_definition; convert it as described in {MIGRATION_RUNBOOK}")
         super().__init__(
             llm=llm,
             llm_provider=llm_provider,
@@ -112,8 +128,12 @@ class PlanogramCompliance(AbstractPipeline):
         self.llm_timeout = llm_timeout
         self.vision_cache_dir = vision_cache_dir
         self.enabled_ocr = enabled_ocr
-        self._definition: Any = None
+        self._layout: LayoutProfile = resolve_layout_profile(
+            composable_cls.default_layout_profile(), planogram_config.planogram_config or {}, config_name=config_name
+        )
+        self._definition: Optional[SlotsDefinition] = None
         self._bindings: List[Any] = []
+        self._definition_path: Optional[Path] = None
         self.planogram_config = planogram_config
 
         # Endcap geometry defaults
@@ -123,13 +143,40 @@ class PlanogramCompliance(AbstractPipeline):
 
         self.reference_images = planogram_config.reference_images or {}
 
-        # Resolve composable type handler (validate_contract() runs in AbstractPlanogramType.__init__)
-        ptype = getattr(planogram_config, "planogram_type", None) or "product_on_shelves"
-        composable_cls = self._PLANOGRAM_TYPES.get(ptype)
-        if composable_cls is None:
-            available = ", ".join(sorted(self._PLANOGRAM_TYPES.keys()))
-            raise ValueError(f"Unknown planogram_type '{ptype}'. " f"Available types: {available}")
+        source = planogram_config.slots_definition
+        if isinstance(source, dict):
+            self._definition, self._bindings = self._load_definition(source)
+        else:
+            self._definition_path = Path(source)
+            if not self._definition_path.is_file():
+                raise ValueError(f"PlanogramConfig {config_name!r}: slots_definition path {self._definition_path} does not exist; convert it as described in {MIGRATION_RUNBOOK}")
         self._type_handler = composable_cls(pipeline=self, config=planogram_config)
+
+    def _load_definition(self, source: Union[Dict[str, Any], str, Path]) -> Tuple[SlotsDefinition, List[Any]]:
+        """Load and validate a definition, bindings, and layout zone selectors."""
+        config_name = self.planogram_config.config_name
+        try:
+            definition = load_slots_definition(source)
+            bindings = validate_bindings(definition, self.planogram_config.planogram_config or {})
+            validate_zone_selectors(self._layout, definition, config_name=config_name)
+        except (SlotsDefinitionError, ValueError) as exc:
+            raise SlotsDefinitionError(f"PlanogramConfig {config_name!r}: {exc}") from exc
+        return definition, bindings
+
+    async def _ensure_definition(self) -> Tuple[SlotsDefinition, List[Any]]:
+        """Return the cached definition, loading a configured path off the event loop once."""
+        if self._definition is None:
+            self._definition, self._bindings = await asyncio.to_thread(self._load_definition, self._definition_path)
+        return self._definition, list(self._bindings)
+
+    def _make_ocr(self) -> Optional[OcrReader]:
+        """Create OCR unless explicitly disabled."""
+        if self.enabled_ocr is False:
+            return None
+        reader = OcrReader()
+        if self.enabled_ocr is True and not reader.available:
+            self.logger.warning("enabled_ocr=True but rapidocr is not installed; text is read by the vision model")
+        return reader
 
     async def run(
         self,
@@ -158,31 +205,31 @@ class PlanogramCompliance(AbstractPipeline):
         inputs, single_sfx = self._normalize_inputs(image, image_id)
         out_dir = Path(output_dir) if output_dir else None
         self.logger.info("Planogram cycle: %d image(s), type=%s", len(inputs), type(self._type_handler).__name__)
-        ctx = await self._build_context(out_dir)
-        images: Dict[str, Image.Image] = {}
+        definition, bindings = await self._ensure_definition()
+        ctx = await self._build_context(out_dir, definition, bindings)
         ids: List[str] = []
         perceptions: List[PerceptionResult] = []
         identifications: List[IdentificationResult] = []
         try:
+            if self._layout.references.enabled and self.reference_images:
+                ctx.reference_bank = await load_reference_bank(self.reference_images, ctx)
             for img_id, source in inputs:
-                # A single legacy call without image_id keeps today's unsuffixed debug filename;
-                # migrated types (own perceive hook) always receive the normalised id.
-                legacy_unsuffixed = single_sfx == "" and not self._type_handler._implements("perceive")
-                hook_id = "" if legacy_unsuffixed else img_id
                 try:
-                    img, perception = await self._perceive_one(source, hook_id, ctx)
+                    img, perception = await self._perceive_one(source, img_id, ctx)
+                    ctx.images[img_id] = img
                     identification = await self._type_handler.identify(img, perception, ctx)
                 except Exception as exc:  # noqa: BLE001 - isolate one failed photo
                     self.logger.error("Image %s failed: %s", img_id, exc)
                     ctx.errors.append(f"{img_id}: {exc}")
+                    ctx.images.pop(img_id, None)
                     continue
-                images[img_id] = img
                 ids.append(img_id)
                 perceptions.append(perception)
                 identifications.append(identification)
             comparison = await self._compare(perceptions, identifications, ctx)
-            renders = await self._render_all(ids, images, perceptions, identifications, out_dir, single_sfx)
+            renders = await self._render_all(ids, ctx.images, perceptions, identifications, out_dir, single_sfx)
         finally:
+            ctx.images.clear()
             await ctx.executor.aclose()
             closer = getattr(ctx.vision, "aclose", None)
             if callable(closer):
@@ -214,13 +261,10 @@ class PlanogramCompliance(AbstractPipeline):
             raise ValueError(f"image_id entries must be unique, got {ids}")
         return list(zip(ids, sources, strict=True)), None
 
-    async def _build_context(self, output_dir: Optional[Path]) -> CycleContext:
+    async def _build_context(
+        self, output_dir: Optional[Path], definition: SlotsDefinition, bindings: List[Any]
+    ) -> CycleContext:
         """Create the per-run shared services."""
-        handler = self._type_handler
-        if handler.requires_slots_definition and self._definition is None:
-            source = self.planogram_config.slots_definition
-            self._definition = await asyncio.to_thread(load_slots_definition, source)
-            self._bindings = validate_bindings(self._definition, self.planogram_config.planogram_config)
         vision = VisionAdapter(
             self.llm,
             self.resolved_backend,
@@ -231,54 +275,53 @@ class PlanogramCompliance(AbstractPipeline):
         return CycleContext(
             vision=vision,
             executor=CpuExecutor(max_workers=self.cpu_workers),
-            ocr=OcrReader() if self.enabled_ocr else None,
-            definition=self._definition,
-            bindings=list(self._bindings),
+            ocr=self._make_ocr(),
+            definition=definition,
+            bindings=bindings,
             credit_policy=CreditPolicy.default(),
             evidence_weights=EvidenceWeights(),
             output_dir=output_dir,
             errors=[],
+            layout=self._layout,
+            reference_bank=[],
+            images={},
         )
 
     async def _perceive_one(
         self, source: ImageInput, image_id: str, ctx: CycleContext
     ) -> Tuple[Image.Image, PerceptionResult]:
-        """Load one image (untouched unless the type wants enhancement), perceive, apply the fallback."""
-        handler = self._type_handler
-        img = await asyncio.to_thread(self.open_image, source, enhance=handler.uses_enhanced_image)
-        perception = await handler.perceive(img, image_id, ctx)
+        """Load one untouched image, perceive it, and apply the bounded fallback."""
+        img = await asyncio.to_thread(self.open_image, source, enhance=False)
+        perception = await self._type_handler.perceive(img, image_id, ctx)
         perception = await self._fallback_if_needed(img, perception, ctx)
         return img, perception
 
     async def _fallback_if_needed(
         self, img: Image.Image, perception: PerceptionResult, ctx: CycleContext
     ) -> PerceptionResult:
-        """LLM-detector fallback when usable on-fixture shapes are under the type threshold.
-
-        Off-fixture and uncertain shapes never count toward the threshold. Fallback perceptions carry no
-        slots: the type treats every on-fixture shape as its own slot. A failed fallback keeps the original
-        shapes and records an error — never a silent empty result.
-        """
-        handler = self._type_handler
-        threshold = handler.min_usable_shapes
-        if threshold <= 0 or perception.legacy is not None:
+        """Use at most one generic detector fallback and rebuild its geometry."""
+        layout = self._layout
+        threshold = layout.min_usable_shapes
+        if threshold <= 0 or layout.perception_mode == "llm_detector":
             return perception
-        if len(usable_shapes(perception.shapes)) >= threshold:
+        if count_usable_targets(perception, layout) >= threshold:
             return perception
         self.logger.warning("Image %s: usable shapes under %d — LLM detector fallback", perception.image_id, threshold)
         bgr = np.ascontiguousarray(np.asarray(img.convert("RGB"))[:, :, ::-1])
-        prompt = handler.fallback_detection_prompt() or GENERIC_DETECTION_PROMPT
-        shapes = await llm_detect_shapes(bgr, perception.image_id, ctx, prompt=prompt)
+        try:
+            shapes = await llm_detect_shapes(bgr, perception.image_id, ctx, prompt=GENERIC_DETECTION_PROMPT)
+        except Exception as exc:  # noqa: BLE001
+            ctx.errors.append(f"llm_detector {perception.image_id}: {exc}")
+            shapes = []
         if not shapes:
             message = f"{perception.image_id}: LLM detector fallback produced no shapes; perception kept as is"
             ctx.errors.append(message)
             return perception.model_copy(update={"errors": [*perception.errors, message]})
-        zones = [s for s in shapes if s.kind == ShapeKind.ZONE] or list(perception.zones)
-        others = [s for s in shapes if s.kind != ShapeKind.ZONE]
-        others = assign_membership(others, zones, perception.image_size)
-        return perception.model_copy(
-            update={"shapes": others, "zones": zones, "slots": [], "detection_source": ObservationSource.LLM.value}
-        )
+        zones = [shape for shape in shapes if shape.kind == ShapeKind.ZONE] or list(perception.zones)
+        merged = [*zones, *(shape for shape in shapes if shape.kind != ShapeKind.ZONE)]
+        source = ObservationSource.LLM.value if all(shape.source == ObservationSource.LLM for shape in merged) else "mixed"
+        rebuilt = await rebuild_geometry(img, merged, perception.image_id, ctx, detection_source=source)
+        return rebuilt.model_copy(update={"errors": [*perception.errors, *rebuilt.errors]})
 
     async def _compare(
         self, perceptions: List[PerceptionResult], identifications: List[IdentificationResult], ctx: CycleContext
@@ -289,11 +332,11 @@ class PlanogramCompliance(AbstractPipeline):
         return ComparisonResult(
             compliance_results=[],
             overall_compliance_score=0.0,
-            strict_compliance_score=None,
+            strict_compliance_score=0.0,
             overall_compliant=False,
-            coverage=None,
-            definition_coverage=None,
-            evidence_quality=None,
+            coverage=0.0,
+            definition_coverage=definition_coverage(ctx.definition)[0] if ctx.definition is not None else None,
+            evidence_quality=0.0,
             assessment_status=AssessmentStatus.INCONCLUSIVE,
             errors=["no image could be processed"],
         )
@@ -326,20 +369,27 @@ class PlanogramCompliance(AbstractPipeline):
     def _render_inputs(
         self, perception: PerceptionResult, identification: IdentificationResult
     ) -> Tuple[List[IdentifiedProduct], List[ShelfRegion]]:
-        """(identified_products, shelf_regions) of ONE image for rendering and the legacy result keys."""
-        if perception.legacy is not None:
-            return list(perception.legacy.identified_products), list(perception.legacy.shelf_regions)
-        boxes: Dict[str, DetectionBox] = {s.shape_id: s.box for s in perception.shapes}
-        boxes.update({s.slot_id: s.box for s in perception.slots})
-        boxes.update({s.shape_id: s.box for s in identification.added})
+        """Build render inputs from observed shapes, slots, rows, and zones."""
+        shapes = {shape.shape_id: shape for shape in [*perception.shapes, *perception.zones, *identification.added]}
+        slots = {slot.slot_id: slot for slot in perception.slots}
         products: List[IdentifiedProduct] = []
         for ident in identification.identifications:
-            box = boxes.get(ident.shape_id)
-            if box is None:
+            shape = shapes.get(ident.shape_id)
+            slot = slots.get(ident.shape_id)
+            if shape is not None:
+                box = shape.box
+                product_type = _PRODUCT_TYPE_BY_KIND[shape.kind]
+            elif slot is not None:
+                box = slot.box
+                anchor = shapes.get(slot.anchor_shape_id or "")
+                product_type = "product_box" if anchor is not None and anchor.kind == ShapeKind.BOX else "product"
+            else:
                 continue
+            if ident.occupancy == "empty":
+                product_type = "empty_slot"
             products.append(
                 IdentifiedProduct(
-                    product_type="product",
+                    product_type=product_type,
                     product_model=ident.product,
                     brand=ident.brand,
                     confidence=ident.raw_confidence,
@@ -347,7 +397,34 @@ class PlanogramCompliance(AbstractPipeline):
                     ocr_text=ident.text,
                 )
             )
-        return products, []
+        return products, self._observed_regions(perception)
+
+    @staticmethod
+    def _observed_regions(perception: PerceptionResult) -> List[ShelfRegion]:
+        """Create row and zone regions only from observed geometry."""
+        rows: Dict[int, List[Slot]] = {}
+        for slot in perception.slots:
+            rows.setdefault(slot.row_index, []).append(slot)
+        regions: List[ShelfRegion] = []
+        for row_index, row_slots in sorted(rows.items()):
+            boxes = [slot.box for slot in row_slots]
+            regions.append(
+                ShelfRegion(
+                    shelf_id=f"{perception.image_id}:row{row_index}",
+                    level=f"row{row_index}",
+                    bbox=DetectionBox(
+                        x1=min(box.x1 for box in boxes), y1=min(box.y1 for box in boxes),
+                        x2=max(box.x2 for box in boxes), y2=max(box.y2 for box in boxes),
+                        confidence=min(box.confidence for box in boxes),
+                    ),
+                    objects=boxes,
+                )
+            )
+        regions.extend(
+            ShelfRegion(shelf_id=zone.shape_id, level=zone.profile or "zone", bbox=zone.box, is_background=True)
+            for zone in perception.zones
+        )
+        return regions
 
     def _assemble(
         self,
