@@ -510,10 +510,5 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Merged cleanly via sdd-worker orchestration; lint clean. TASK-3870 note: tests/planogram_cycle/test_ink_wall.py:171 reads InkWall._LEGACY_CONTRACT which TASK-3870 deleted (no task owns that file; needs follow-up). test_endcap_no_shelves_promotional.py 2 failures pre-exist.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any

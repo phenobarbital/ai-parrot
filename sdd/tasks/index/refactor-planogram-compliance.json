@@ -369,7 +369,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -384,8 +384,9 @@
       "parallelism_notes": "validate_contract turns strict in types/abstract.py only after every registered type defines perceive/identify/compare/default_layout_profile: TASK-3864 (types/ink_wall.py), TASK-3865 (types/product_on_shelves.py), TASK-3866 (types/endcap_backlit_multitier.py), TASK-3867 (types/endcap_no_shelves_promotional.py), TASK-3868 (types/graphic_panel_display.py), TASK-3869 (types/product_counter.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3870-strict-type-contract.md"
+      "completed_at": "2026-09-30T22:53:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3870-strict-type-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3871",
@@ -522,7 +523,7 @@
       "feature_id": "FEAT-612",
       "feature": "refactor-planogram-compliance",
       "spec": "sdd/specs/refactor-planogram-compliance.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -539,8 +540,9 @@
       "parallelism_notes": "validates layout via resolve_layout_profile from TASK-3855 (layout.py) and definitions via the schema of TASK-3860 (definition.py); readiness calls default_layout_profile of each type: TASK-3864 (types/ink_wall.py), TASK-3865 (types/product_on_shelves.py), TASK-3866 (types/endcap_backlit_multitier.py), TASK-3867 (types/endcap_no_shelves_promotional.py), TASK-3868 (types/graphic_panel_display.py), TASK-3869 (types/product_counter.py).",
       "assigned_to": null,
       "started_at": "2026-09-30T21:34:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3877-six-type-migration.md"
+      "completed_at": "2026-09-30T22:53:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3877-six-type-migration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3878",
