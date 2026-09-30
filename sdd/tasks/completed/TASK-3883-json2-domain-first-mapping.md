@@ -294,8 +294,8 @@ See the four tests in the blueprint. All existing tests in the module must still
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: gpt-5.6-terra (codex, MCP seat)
+**Date**: 2026-09-30
+**Notes**: Added module-level `_DOMAIN_FIRST_METHODS` and routed `_build_body` through it; 4 new transport tests. 64 tests pass (run from scratch copy: in-repo conftest fails locally on `parrot.utils` import, pre-existing env issue).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
