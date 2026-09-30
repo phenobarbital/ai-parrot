@@ -13,7 +13,7 @@ tags: [bookstore, pageindex, ingest, reindex, atomicity]
 **Feature ID**: FEAT-615
 **Date**: 2026-09-30
 **Author**: Jesus Lara (spec drafted by Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Source**: ledger `issue:759176f0cf1a` (tech_debt/minor, discovered from `spec:bookstore-reindex-identity`)
 
@@ -60,7 +60,7 @@ bookstore — hence a feature, not a hotfix.
   and only then invalidates the graph.
 - G3: `PageIndexToolkit` gains a general `rename_tree(src, dst, *, overwrite=False)`
   that moves a tree (JSON + content dir + embedding matrix) and keeps every
-  in-memory cache and OKF sidecar consistent; it is **not** an LLM tool.
+  in-memory cache and OKF sidecar consistent; it is exposed as an LLM tool (`pageindex_rename_tree`).
 - G4: Leftovers from a crashed process (staging / replaced trees) are
   recovered or swept on the next ingest, never surfacing as books.
 - G5: `disambiguate_title` never returns an empty title.
@@ -155,7 +155,7 @@ Bookstore.add_book
 | `JSONTreeStore` | extends | new `rename(src, dst)` (no overwrite; toolkit orchestrates) |
 | `NodeContentStore` | extends | new `rename_tree(src, dst)` + cache eviction |
 | `NodeEmbeddingStore.invalidate_tree` | uses | called for `src` before the dir move |
-| `PageIndexToolkit` | extends | new `rename_tree`; `exclude_tools = ("rename_tree",)` |
+| `PageIndexToolkit` | extends | new `rename_tree`, exposed through normal tool discovery |
 | `okf.projection.project_sidecars` | uses (via `_project_okf_sidecars`) | re-project after rename |
 | `Bookstore.add_book` | modifies | staging-then-swap ordering |
 | `Bookstore._all_taken_slugs` | modifies | ignore reserved names |
@@ -184,7 +184,7 @@ class NodeContentStore:
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: store rename primitives | yes | signatures below; `os.replace`; `FileExistsError` if dst present; `FileNotFoundError` if src JSON absent | — |
-| M2: `PageIndexToolkit.rename_tree` | yes | 6-step algorithm in §2; return dict shape below; `exclude_tools` | — |
+| M2: `PageIndexToolkit.rename_tree` | yes | 6-step algorithm in §2; return dict shape below; normal tool discovery | — |
 | M3: Bookstore staging-then-swap + sweep | no | — | ordering across ingest/carding/graph/catalog and recovery rules need care; keep on the thinking model |
 | M4: `disambiguate_title` empty-title fallback | yes | `title = title.strip() or _stem_to_title(stem) or stem or "Untitled"` at function entry | — |
 | M5: CLI `--clear-authors` / `--clear-topics` | yes | flags below; mutually exclusive with `--author`/`--topic` → `ClickException` | — |
@@ -222,7 +222,7 @@ class NodeContentStore:
 
 ### Module 2: `PageIndexToolkit.rename_tree`
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py`
-- **Responsibility**: Orchestrate a (optionally overwriting) tree rename with rollback and full cache/OKF/embedding consistency. Programmatic API only.
+- **Responsibility**: Orchestrate a (optionally overwriting) tree rename with rollback and full cache/OKF/embedding consistency. Programmatic API and exposed LLM tool.
 - **Depends on**: Module 1
 - **Interface Skeleton**:
   ```python
@@ -230,10 +230,10 @@ class NodeContentStore:
   class PageIndexToolkit(AbstractToolkit):  # verified: toolkit.py:50
       name = "pageindex"            # verified: toolkit.py:85
       tool_prefix = "pageindex"     # verified: toolkit.py:86
-      exclude_tools = ("rename_tree",)  # NEW — AbstractToolkit.exclude_tools verified: parrot/tools/toolkit.py:240
+      # Keep rename_tree exposed through normal AbstractToolkit discovery.
 
       async def rename_tree(self, src: str, dst: str, *, overwrite: bool = False) -> dict[str, Any]:
-          """Rename tree ``src`` to ``dst`` (JSON, sidecar dir, embeddings) — not an LLM tool.
+          """Rename tree ``src`` to ``dst`` (JSON, sidecar dir, embeddings).
 
           With ``overwrite=True`` an existing ``dst`` is first moved to a
           ``<dst>--replaced-<hex>`` backup, restored if the move of ``src``
@@ -326,7 +326,7 @@ class NodeContentStore:
 | `test_rename_tree_overwrite_rolls_back_on_failure` | M2 | monkeypatch 2nd move to raise → original dst restored, exception propagates |
 | `test_rename_tree_invalidates_search_engine_cache` | M2 | pre-built `_search[dst]` does not serve old content |
 | `test_rename_tree_reprojects_okf_sidecars` | M2 | OKF-enriched tree: sidecar frontmatter URI names dst |
-| `test_rename_tree_not_exposed_as_tool` | M2 | `"rename_tree"` absent from `list_tool_names()` |
+| `test_rename_tree_exposed_as_tool` | M2 | `"pageindex_rename_tree"` present in `list_tool_names()` |
 | `test_rename_tree_refuses_inside_batch` | M2 | `ValueError` inside `_batch(src)` |
 | `test_reindex_failed_ingest_keeps_old_book` | M3 | re-index with ingest forced to fail → old tree/toc/section readable, card unchanged, relations+judgements+communities intact |
 | `test_reindex_success_swaps_tree_same_book_id` | M3 | new content under same `book_id`; graph invalidated; no reserved trees left |
@@ -363,7 +363,7 @@ Reuse `store` / `book_md` fixtures from `tests/knowledge/bookstore/conftest.py`
       the graph only after the swap.
 - [ ] No `--staging-` / `--replaced-` tree remains after any successful or
       failed `add_book` in the same process.
-- [ ] `PageIndexToolkit.rename_tree` exists, is excluded from generated tools,
+- [ ] `PageIndexToolkit.rename_tree` exists, is exposed in generated tools,
       and restores `dst` when the swap fails.
 - [ ] OKF sidecars of a renamed enriched tree reference the new tree name.
 - [ ] `disambiguate_title` never returns an empty string.
@@ -474,7 +474,7 @@ def disambiguate_title(title: str, taken: set[str], *, toc_entries: list[TocEntr
 - ~~`NodeContentStore.evict_tree` (public)~~ — only private `_cache_evict_tree`
 - ~~`NodeEmbeddingStore.rename_tree`~~ — do not add; invalidate + rebuild instead
 - ~~`Bookstore.reindex_book`~~ — re-index is `add_book` with an existing path/sha
-- ~~`PageIndexToolkit.exclude_tools`~~ — not set today (inherits `()`); M2 sets it
+- ~~`PageIndexToolkit.exclude_tools`~~ — not set today (inherits `()`); keep rename_tree exposed
 - ~~a lock/`fcntl` layer in bookstore~~ — none; concurrency is out of scope
 
 ### Edit Sites (Blueprint Anchors)
@@ -562,10 +562,10 @@ None.
 
 ## 8. Open Questions
 
-- [ ] Staging sweep age threshold: 1 h hard-coded constant, or configurable via
-      bookstore config? Default in this spec: constant `_STAGING_MAX_AGE_S = 3600`. — *Owner: Jesus Lara*
-- [ ] Should `rename_tree` ever be exposed as an LLM tool (e.g. non-overwriting
-      only)? This spec excludes it. — *Owner: Jesus Lara*
+- [x] Staging sweep age threshold: 1 h hard-coded constant, or configurable via
+      bookstore config? Default in this spec: constant `_STAGING_MAX_AGE_S = 3600`. — *Owner: Jesus Lara*: 1h hard constant
+- [x] Should `rename_tree` ever be exposed as an LLM tool (e.g. non-overwriting
+      only)? — *Owner: Jesus Lara*: Yes, exposed. Retain `overwrite=False` by default; expose the full signature.
 - [x] Hotfix or feature? — *Resolved by user*: feature — touches
       `PageIndexToolkit` (new rename capability) and requires a temporary tree.
 
@@ -587,3 +587,5 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-30 | Claude (for Jesus Lara) | Initial draft from ledger issue:759176f0cf1a |
+
+| 0.2 | 2026-09-30 | Codex (for Jesus Lara) | Confirm rename_tree as an exposed LLM tool; align goals, interfaces and acceptance tests; record fixed 1h sweep decision |
