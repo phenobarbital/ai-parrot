@@ -45,7 +45,7 @@ members = [
 constraints = [
     { name = "asyncdb", specifier = ">=2.16.2" },
     { name = "navconfig", specifier = ">=2.5.2" },
-    { name = "navigator-auth", specifier = ">=0.28.0" },
+    { name = "navigator-auth", specifier = ">=0.28.3" },
     { name = "navigator-session", specifier = ">=1.0.1" },
     { name = "opentelemetry-instrumentation", specifier = ">=0.60b0" },
     { name = "opentelemetry-instrumentation-aiohttp-client", specifier = ">=0.60b0" },
@@ -933,7 +933,7 @@ requires-dist = [
     { name = "msgraph-sdk", marker = "extra == 'msgraph'", specifier = ">=1.8.0" },
     { name = "navconfig", extras = ["default"], specifier = ">=2.5.2" },
     { name = "navigator-api", extras = ["google", "locale", "uvloop"], specifier = ">=3.2.2" },
-    { name = "navigator-auth", specifier = ">=0.28.0" },
+    { name = "navigator-auth", specifier = ">=0.28.3" },
     { name = "navigator-eventbus", specifier = ">=0.2.1" },
     { name = "navigator-eventbus", extras = ["grpc"], marker = "extra == 'grpc'" },
     { name = "navigator-session", specifier = ">=1.0.1" },
@@ -9372,7 +9372,7 @@ uvloop = [
 
 [[package]]
 name = "navigator-auth"
-version = "0.28.2"
+version = "0.28.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiogoogle" },
@@ -9395,11 +9395,11 @@ dependencies = [
     { name = "python-slugify" },
     { name = "rncryptor" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fd/3d/5dce4fa3163b55584d5fcb3b455c916f1950d1f1c8865efc5dcc1455a407/navigator_auth-0.28.2.tar.gz", hash = "sha256:a49bb0d1acd3a0a581c61cc159cacb09ab82a4eb1adcd465959f19c479a7ff90", size = 858252, upload-time = "2026-09-25T16:19:49.494Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bb/75/d027b8e1b50e370b51119c450c5159434948dc283530169fdddc92531259/navigator_auth-0.28.3.tar.gz", hash = "sha256:36613171bb2266f3b9115d46e7fc529ab54e34ab081fd07c23930138fad91b91", size = 859051, upload-time = "2026-09-30T00:10:46.639Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/69/78352f98b61bb4b1e614a0df04bd17b24bdb1f53ea1fb5d404e0af8e7b45/navigator_auth-0.28.2-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:c95b1a2e913c856d166a31e6db4ebaf3561d323a276273ef78e74c9bdeb773b4", size = 2747551, upload-time = "2026-09-25T16:19:44.696Z" },
-    { url = "https://files.pythonhosted.org/packages/91/b7/627367a7d16fcb6e52661a539714e5ae18a5d459db19b147ef6752337249/navigator_auth-0.28.2-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:fcd5fa4369091c3e6f386b26a89b949d9d26c3390b6f1874b4934fac4fc80157", size = 2815781, upload-time = "2026-09-25T16:19:45.823Z" },
-    { url = "https://files.pythonhosted.org/packages/c1/f0/9ad2a486102ff8548a679a554fd0185c607bbffefc26372921ec06fd5d70/navigator_auth-0.28.2-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:78f9b29dcd0e7515c3a80500f963087807b9eba703b7f39e1014811d3ee486f3", size = 2755401, upload-time = "2026-09-25T16:19:46.9Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/3f/7545995bc1385fd32bfc98a96db954789dc95d0da6341940dd6487f4c321/navigator_auth-0.28.3-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:c6716d5a970903d947c33871e83794e45fe09f3aa965c10d0fe29e2edffb138f", size = 2747758, upload-time = "2026-09-30T00:10:41.11Z" },
+    { url = "https://files.pythonhosted.org/packages/89/a9/fdd3964fe588917141bab2ac0b5c36addefc1d48ef96f759afda3f2b2369/navigator_auth-0.28.3-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:d6b23b1b9dca5a4be4fea8bca6376eb6adafcfa4e7d3dca2262955bef3e76534", size = 2815988, upload-time = "2026-09-30T00:10:42.354Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/f7/a807b76cd529b96127cced9d9653709091a551a094a3f8c1b18adf37906f/navigator_auth-0.28.3-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:63cea9f9db1ac2a17850d56c231bf16d5dd37af9af725a7f773a5f246b09d3f5", size = 2755608, upload-time = "2026-09-30T00:10:43.658Z" },
 ]
 
 [[package]]

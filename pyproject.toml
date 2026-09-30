@@ -172,7 +172,7 @@ constraint-dependencies = [
     # build on Python 3.13+, older navconfig/asyncdb have a stalled-asyncio bug.
     "navconfig>=2.5.2",
     "asyncdb>=2.16.2",
-    "navigator-auth>=0.28.0",
+    "navigator-auth>=0.28.3",
     "navigator-session>=1.0.1",
     # Keep the shared runtime on the Protobuf 6.31 line. This is required by
     # the pinned ortools/flowtask path and is supported by the Google SDKs.
