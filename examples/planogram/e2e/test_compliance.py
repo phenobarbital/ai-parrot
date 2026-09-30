@@ -22,7 +22,7 @@ async def test_live_compliance(case: "LiveCase") -> None:
     outcome = await harness.run_case(case)
     violations = outcome.get("violations", [])
     assert violations == [], (
-        f"Ground-truth violations found ({len(violations)}):\n" +
-        "\n".join(f"  - {v}" for v in violations) +
-        f"\nSee report: {outcome.get('report_path')}"
+        f"Ground-truth violations found ({len(violations)}):\n"
+        + "\n".join(f"  - {v}" for v in violations)
+        + f"\nSee report: {outcome.get('report_path')}"
     )
