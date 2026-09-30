@@ -18,10 +18,20 @@ export class QuerySourceHttpError extends Error {
   }
 }
 
-/** `/api/v3/queries/{slug}` or `/api/v1/{tenant}/queries/{slug}` (spec G3, AC4). */
-export function queryUrl(baseUrl: string, slug: string, tenant: string | null | undefined): string {
+/**
+ * Route rule (spec G3, AC4): a tenant store is always `/api/v1/{tenant}/queries/{slug}`; otherwise a single
+ * query-slug goes to `/api/v2/services/queries/{slug}` (QueryService, the optimised single-query handler) and only
+ * a MultiQuery pipeline slug (`is_multiquery`) needs `/api/v3/queries/{slug}` (the MultiQS pipeline handler).
+ */
+export function queryUrl(
+  baseUrl: string,
+  slug: string,
+  tenant: string | null | undefined,
+  isMultiquery = false,
+): string {
   const s = encodeURIComponent(slug);
-  return tenant ? `${baseUrl}/api/v1/${encodeURIComponent(tenant)}/queries/${s}` : `${baseUrl}/api/v3/queries/${s}`;
+  if (tenant) return `${baseUrl}/api/v1/${encodeURIComponent(tenant)}/queries/${s}`;
+  return isMultiquery ? `${baseUrl}/api/v3/queries/${s}` : `${baseUrl}/api/v2/services/queries/${s}`;
 }
 
 export function querySourceHeaders(): HeadersInit {
@@ -31,5 +41,6 @@ export function querySourceHeaders(): HeadersInit {
 export async function postQuery(url: string, body: Record<string, unknown>, headers: HeadersInit): Promise<unknown> {
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) throw new QuerySourceHttpError(res.status, `QuerySource ${res.status}`);
+  if (res.status === 204) return null; // QuerySource's "Empty Result": zero rows, no body to parse
   return res.json();
 }

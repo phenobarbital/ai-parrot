@@ -46,8 +46,16 @@ class FakeResponse:
 class FakeServer:
     """A stateful stand-in for the example server + QuerySource, answering per request body like the real one."""
 
-    def __init__(self, envelope: dict[str, Any], *, overrides: dict[str, Any] | None = None, missing: str | None = None):
+    def __init__(
+        self,
+        envelope: dict[str, Any],
+        *,
+        overrides: dict[str, Any] | None = None,
+        missing: str | None = None,
+        empty: str | None = None,
+    ):
         self.envelope = envelope
+        self.empty = empty  # a slug that answers 204 "Empty Result"
         self.sources = envelope["metadata"]["extensions"]["parrot_data_sources"]
         self.by_conditions = {canon(src["conditions"]): key for key, src in self.sources.items()}
         self.posts: list[dict[str, Any]] = []
@@ -77,10 +85,13 @@ class FakeServer:
             assert json == {"username": "admin", "password": "pw"}
             return FakeResponse(200, {"token": "JWT"})
         assert headers and headers["Authorization"] == "Bearer JWT"
+        assert "/api/v2/services/queries/" in url, f"single slugs go to the v2 services route, got {url}"
         body = dict(json or {})
         self.posts.append(body)
         if self.missing and self.missing in url:
             return FakeResponse(404, {})
+        if self.empty and self.empty in url:
+            return FakeResponse(204, None)
         conds = {k: v for k, v in body.items() if k not in {"querylimit", "_offset", "refresh"}}
         key = self.by_conditions.get(canon(conds))
         if key and key != "graduates":
@@ -181,6 +192,21 @@ class TestClientCheck:
         server = FakeServer(real_envelope(), missing="polestar_graduates_by_course")
         code, _ = await run_check(server, capsys)
         assert code == 1
+
+    @pytest.mark.asyncio
+    async def test_204_is_an_empty_frame_not_an_error(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A 204 answers zero rows: the by-course pie is then empty, which the value check reports as a mismatch."""
+        server = FakeServer(real_envelope(), empty="polestar_graduates_by_course")
+        code, out = await run_check(server, capsys, expect=False)
+        assert code == 0 and "by_course" not in out.split("OK:")[0].split("kpi_multi")[1]
+        code, _ = await run_check(server, capsys)
+        assert code == 1
+
+    def test_query_url_rule(self) -> None:
+        assert client.query_url("http://h/", "s", None) == "http://h/api/v2/services/queries/s"
+        assert client.query_url("http://h", "s", None, True) == "http://h/api/v3/queries/s"
+        assert client.query_url("http://h", "s", "acme") == "http://h/api/v1/acme/queries/s"
+        assert client.query_url("http://h", "s", "acme", True) == "http://h/api/v1/acme/queries/s"
 
     @pytest.mark.asyncio
     async def test_missing_source_fails(self, capsys: pytest.CaptureFixture[str]) -> None:

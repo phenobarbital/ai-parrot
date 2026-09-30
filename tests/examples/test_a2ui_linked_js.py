@@ -35,8 +35,10 @@ const source = (over = {}) => ({
 });
 
 // --- routes -------------------------------------------------------------------------------------------------------
-assert.equal(queryUrl('https://h/', 'a b', null), 'https://h/api/v3/queries/a%20b');
+assert.equal(queryUrl('https://h/', 'a b', null), 'https://h/api/v2/services/queries/a%20b', 'single slug → v2 services');
+assert.equal(queryUrl('https://h', 's', null, true), 'https://h/api/v3/queries/s', 'MultiQuery pipeline slug → v3');
 assert.equal(queryUrl('https://h', 's', 'acme'), 'https://h/api/v1/acme/queries/s');
+assert.equal(queryUrl('https://h', 's', 'acme', true), 'https://h/api/v1/acme/queries/s', 'tenant wins over is_multiquery');
 
 // --- deriveConditions never emits lane-time keys --------------------------------------------------------------------
 const derived = deriveConditions({ placeholders: { refresh: true, querylimit: 1, a: 1 }, filter: {}, fields: [], ordering: [], grouping: [] }, {});
@@ -56,6 +58,15 @@ assert.ok(!('refresh' in calls[0].body));
 reset();
 responder = () => new Response('nope', { status: 404 });
 await assert.rejects(fetchSource(source(), {}, { baseUrl: 'https://h', token: 'T' }), SourceUnavailable);
+reset();
+await fetchSource(source({ is_multiquery: true }), {}, { baseUrl: 'https://h', token: 'T' });
+assert.equal(calls[0].url, 'https://h/api/v3/queries/polestar_graduates_directory', 'fetchSource routes a MultiQuery slug to v3');
+reset();
+await fetchSource(source(), {}, { baseUrl: 'https://h', token: 'T' });
+assert.equal(calls[0].url, 'https://h/api/v2/services/queries/polestar_graduates_directory', 'fetchSource routes a single slug to v2');
+reset();
+responder = () => new Response(null, { status: 204 });
+assert.deepEqual(await fetchSource(source(), {}, { baseUrl: 'https://h', token: 'T' }), [], 'a 204 Empty Result is zero rows, not an error');
 
 // --- lane: refreshSource is ONE request for its own key; refreshAll one per source ------------------------------------
 const sources = { a: source({ request: { ...source().request, fields: ['count(*) as total'] } }), b: source(), c: source() };

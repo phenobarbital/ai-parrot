@@ -70,7 +70,11 @@ export async function fetchSource(
   if (body.refresh !== true) delete body.refresh;
   let payload: unknown;
   try {
-    payload = await postQuery(queryUrl(opts.baseUrl, src.slug, src.tenant ?? null), body, opts.headers);
+    payload = await postQuery(
+      queryUrl(opts.baseUrl, src.slug, src.tenant ?? null, src.is_multiquery === true),
+      body,
+      opts.headers,
+    );
   } catch (err) {
     if (err instanceof QuerySourceHttpError && err.status === 404) throw new SourceUnavailable(src.slug);
     throw err;

@@ -16,7 +16,7 @@ function makeSource(overrides: Partial<LinkedDataSource> = {}): LinkedDataSource
 }
 
 describe('fetchSource', () => {
-  it('posts to /api/v3/queries/{slug} with querylimit when tenant is null', async () => {
+  it('posts to /api/v2/services/queries/{slug} with querylimit when tenant is null', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([{ a: 1 }])));
     const src = makeSource();
     const rows = await fetchSource(src, { region: 'east' }, {
@@ -25,7 +25,7 @@ describe('fetchSource', () => {
     });
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, init] = spy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/api/v3/queries/sales_by_region');
+    expect(url).toBe('/api/v2/services/queries/sales_by_region');
     expect(init.method).toBe('POST');
     expect(init.headers).toEqual({ Authorization: 'Bearer tok123' });
     const body = JSON.parse(init.body as string);
@@ -40,6 +40,26 @@ describe('fetchSource', () => {
     await fetchSource(src, {}, { baseUrl: '', headers: {} });
     const [url] = spy.mock.calls[0] as [string];
     expect(url).toBe('/api/v1/acme/queries/sales_by_region');
+  });
+
+  it('routes to /api/v3/queries/{slug} only for a MultiQuery pipeline slug', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([])));
+    await fetchSource(makeSource({ is_multiquery: true }), {}, { baseUrl: '', headers: {} });
+    const [url] = spy.mock.calls[0] as [string];
+    expect(url).toBe('/api/v3/queries/sales_by_region');
+  });
+
+  it('a tenant store wins over is_multiquery', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([])));
+    await fetchSource(makeSource({ tenant: 'acme', is_multiquery: true }), {}, { baseUrl: '', headers: {} });
+    const [url] = spy.mock.calls[0] as [string];
+    expect(url).toBe('/api/v1/acme/queries/sales_by_region');
+  });
+
+  it('a 204 "Empty Result" yields zero rows without parsing a body', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const rows = await fetchSource(makeSource(), {}, { baseUrl: '', headers: {} });
+    expect(rows).toEqual([]);
   });
 
   it('maps a 404 to SourceUnavailable, never "denied"', async () => {

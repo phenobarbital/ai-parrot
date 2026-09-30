@@ -10,12 +10,16 @@ export class SourceUnavailable extends Error {
   }
 }
 
-export function queryUrl(baseUrl, slug, tenant) {
+/**
+ * Route rule (same as the admin UI's `queryUrl`): a tenant store is always `/api/v1/{tenant}/queries/{slug}`;
+ * otherwise a single query-slug goes to `/api/v2/services/queries/{slug}` (QueryService, the optimised single-query
+ * handler) and only a MultiQuery pipeline slug (`is_multiquery`) needs `/api/v3/queries/{slug}` (MultiQS).
+ */
+export function queryUrl(baseUrl, slug, tenant, isMultiquery = false) {
   const base = baseUrl.replace(/\/$/, '');
   const s = encodeURIComponent(slug);
-  return tenant
-    ? `${base}/api/v1/${encodeURIComponent(tenant)}/queries/${s}`
-    : `${base}/api/v3/queries/${s}`;
+  if (tenant) return `${base}/api/v1/${encodeURIComponent(tenant)}/queries/${s}`;
+  return isMultiquery ? `${base}/api/v3/queries/${s}` : `${base}/api/v2/services/queries/${s}`;
 }
 
 /**
@@ -49,7 +53,7 @@ export async function fetchSource(src, conditions, { baseUrl, token, maxFetchRow
   // deriveConditions never emits `limit` (TASK-3770/TASK-3793); the lane re-applies request.limit bounded by the cap (S8/AC17)
   const body = { ...conditions, querylimit: Math.min(src.request.limit ?? cap, cap) };
   if (body.refresh !== true) delete body.refresh;
-  const res = await fetch(queryUrl(baseUrl, src.slug, src.tenant ?? null), {
+  const res = await fetch(queryUrl(baseUrl, src.slug, src.tenant ?? null, src.is_multiquery === true), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
@@ -58,6 +62,7 @@ export async function fetchSource(src, conditions, { baseUrl, token, maxFetchRow
     if (res.status === 404) throw new SourceUnavailable(src.slug);
     throw new Error(`QuerySource ${res.status}`);
   }
+  if (res.status === 204) return []; // QuerySource's "Empty Result": zero rows, no body to parse
   return selectFrame(await res.json(), src);
 }
 

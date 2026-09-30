@@ -754,6 +754,8 @@ Linked surfaces carry data-source descriptors in `metadata.extensions.parrot_dat
 
 The renderer lane fetches data using the viewer's JWT authentication, applying DSL transforms locally when present, and follows a scheduler policy for refresh. Renderer modules referenced by `transform.ref` must be loaded with proper CSP configuration.
 
+Route rule: a single query-slug is fetched from `POST /api/v2/services/queries/{slug}` (the optimised single-query handler); a descriptor with a `tenant` uses `/api/v1/{tenant}/queries/{slug}`; only `is_multiquery` descriptors go to `/api/v3/queries/{slug}` (the MultiQS pipeline handler). Tool-built envelopes are definition-only by default (`rows: []`, `snapshot_at: null`), so the lane's on-mount fetch is the only execution of each query.
+
 Loading states include active fetch indicators, "unavailable" for denied requests, and "data as of" timestamps for share-token views. See [../outputs/a2ui-linked-surfaces.md](../outputs/a2ui-linked-surfaces.md) for complete details.
 
 **Datasets** (six lazy `QuerySlugSource`s registered with `add_query`, never eagerly fetched): `msl` → `flex_msl_brian_bi`, `finance` → `Finance_results_bi`, `hours` → `flex_hours_query_pbi`, `employees` → `flex_empolyees_brian_bi` (the typo is real), `region_utilization` → `fm_regions_avg_employees_html`, `rep_utilization` → `fm_rep_utilization`.

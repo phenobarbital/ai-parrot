@@ -8,6 +8,8 @@ A linked surface is an A2UI envelope that carries data-source descriptors in `me
 
 When a surface includes a snapshot (≤ 500 rows), it is indistinguishable from a regular baked surface to renderers that don't understand the `parrot_data_sources` extension. This ensures backward compatibility with existing renderers.
 
+Tool-built envelopes (`qs_build_linked_surface`, `qs_build_linked_dashboard`) are **definition-only by default**: every source ships with `rows: []` and `snapshot_at: null`, the builder only *probes* each slug with `querylimit=1` to validate the bound columns and dtypes, and the renderer fetches the rows on mount. This avoids running every query twice (once to bake a snapshot nobody displays, once when the surface mounts). Pass `snapshot=True` only when viewers cannot fetch for themselves (share links, offline export). Persisting a surface through `POST /api/v1/ui/surfaces` still takes a full snapshot at save time (`ensure_snapshot`).
+
 ## 2. Wire format — `metadata.extensions.parrot_data_sources`
 
 The `parrot_data_sources` extension is a mapping keyed by data-model root keys, where each value is a `LinkedDataSource` descriptor:
@@ -38,14 +40,21 @@ The `request` field contains the canonical representation of conditions:
 
 ## 3. Fetch path and errors
 
-Renderers fetch linked data by making authenticated requests to QuerySource endpoints:
+Renderers fetch linked data by making authenticated requests to QuerySource endpoints. The route rule (identical in
+the admin UI lane, the vanilla example lane and the example Python client) is:
 
 ```
-POST /api/v3/queries/{slug}                     # no tenant (used by the renderer when no tenant is set)
-POST /api/v1/{tenant}/queries/{slug}            # tenant store (used by the renderer when a tenant is set)
-POST /api/v1/queries/{schema}/{slug}            # alias, querysource >= 5.1.2
-POST /api/v2/services/queries/{slug}            # service route
+POST /api/v2/services/queries/{slug}            # DEFAULT for a single query-slug without a tenant: QueryService,
+                                                #   the optimised single-query handler
+POST /api/v1/{tenant}/queries/{slug}            # tenant store (used whenever the descriptor sets a tenant)
+POST /api/v3/queries/{slug}                     # ONLY when `is_multiquery` is true: the MultiQS pipeline handler
+                                                #   (slower; meant for data pipelines, not single queries)
+POST /api/v1/queries/{schema}/{slug}            # alias of the tenant route, querysource >= 5.1.2
 ```
+
+All four routes accept the same JSON body (`fields`, `filter`, `grouping`, `ordering`, `querylimit`, `_offset`, …)
+and answer an empty result with **HTTP 204** (`x-status: Empty Result`, no body): every lane renders that as zero
+rows, never as an error.
 
 With JWT authentication from the viewer's session. The request includes:
 - `refresh: true` only on a manual refresh; the field is omitted otherwise (never sent as false)
@@ -71,8 +80,9 @@ Linked surfaces support three refresh policies:
 While hidden (e.g., in a non-active tab), refresh is paused automatically.
 
 Snapshots embed up to 500 rows directly in the envelope:
+- Tool-built envelopes carry none by default (`snapshot=False`, see §1): the renderer fetches on mount
 - `snapshot_truncated: true` indicates truncation occurred
-- Once persisted, snapshots are mandatory (AC16)
+- Once persisted, snapshots are mandatory (AC16): the pin lane takes one at save time
 - `GET` requests never execute queries; they return the stored snapshot
 - While `snapshot_at` is null, show a loading state
 

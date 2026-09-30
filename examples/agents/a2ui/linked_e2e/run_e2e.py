@@ -445,6 +445,8 @@ def _qs_rows(body: Any) -> list | None:
 
 async def _qs_post(ctx: E2EContext, path: str, payload: dict) -> tuple[int, list | None]:
     async with ctx.session.post(f"{ctx.base_url}{path}", headers=ctx.headers(), json=payload) as resp:
+        if resp.status == 204:  # QuerySource's "Empty Result": zero rows, no body to parse
+            return resp.status, []
         return resp.status, _qs_rows(await resp.json(content_type=None))
 
 

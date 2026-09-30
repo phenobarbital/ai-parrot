@@ -50,10 +50,17 @@ def emit(line: str = "") -> None:
     sys.stdout.write(line + "\n")
 
 
-def query_url(base_url: str, slug: str, tenant: str | None) -> str:
-    """Build the QuerySource URL with the same rule as linked.js (v3 without a tenant, v1 with one)."""
+def query_url(base_url: str, slug: str, tenant: str | None, is_multiquery: bool = False) -> str:
+    """Build the QuerySource URL with the same rule as linked.js.
+
+    A tenant store is always ``/api/v1/{tenant}/queries/{slug}``; otherwise a single query-slug goes to
+    ``/api/v2/services/queries/{slug}`` (QueryService, the optimised single-query handler) and only a MultiQuery
+    pipeline slug needs ``/api/v3/queries/{slug}`` (MultiQS).
+    """
     base = base_url.rstrip("/")
-    return f"{base}/api/v1/{tenant}/queries/{slug}" if tenant else f"{base}/api/v3/queries/{slug}"
+    if tenant:
+        return f"{base}/api/v1/{tenant}/queries/{slug}"
+    return f"{base}/api/v3/queries/{slug}" if is_multiquery else f"{base}/api/v2/services/queries/{slug}"
 
 
 async def login(session: aiohttp.ClientSession, base_url: str, user: str, password: str) -> str:
@@ -126,12 +133,18 @@ def page_bodies(
 async def post_query(
     session: aiohttp.ClientSession, base_url: str, token: str, source: dict[str, Any], body: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """POST one query for ``source``; a 404 or any non-200 is a hard failure, never an empty frame."""
-    url = query_url(base_url, source["slug"], source.get("tenant"))
+    """POST one query for ``source``; a 404 or any non-2xx is a hard failure, never an empty frame.
+
+    QuerySource answers an empty result with HTTP 204 (``x-status: Empty Result``) and no body: that IS an
+    empty frame.
+    """
+    url = query_url(base_url, source["slug"], source.get("tenant"), source.get("is_multiquery") is True)
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     async with session.post(url, json=body, headers=headers) as resp:
         if resp.status == 404:
             raise CheckError(f"source '{source['slug']}' is unavailable (HTTP 404)")
+        if resp.status == 204:
+            return []
         if resp.status != 200:
             raise CheckError(f"source '{source['slug']}' failed: HTTP {resp.status}")
         return select_frame(await resp.json(), source)
