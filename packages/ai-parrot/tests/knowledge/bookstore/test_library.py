@@ -794,7 +794,9 @@ async def test_reindex_roundtrip_markdown(store: Bookstore, book_md: Path) -> No
     """Read and search changed markdown under the same ID."""
     card, _ = await store.add_book(book_md)
     book_md.write_text(
-        SAMPLE_MARKDOWN + "\n## Replacement Chapter\n\nAtomic swap roundtrip phrase.\n",
+        SAMPLE_MARKDOWN + "\n## Replacement Chapter\n"
+        "Atomic swap roundtrip phrase with plenty of descriptive content to clear the "
+        "thinning threshold of the markdown parser and keep this node visible.\n",
         encoding="utf-8",
     )
 
