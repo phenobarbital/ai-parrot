@@ -60,7 +60,9 @@ class TestAbstractPlanogramType:
         with pytest.raises(TypeError):
             AbstractPlanogramType(pipeline=mock_pipeline, config=planogram_config_obj)
 
-    def test_missing_cycle_hooks_rejected(self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+    def test_missing_cycle_hooks_rejected(
+        self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig
+    ) -> None:
         """A subclass implementing only perceive() is rejected by the strict contract."""
 
         class IncompleteType(AbstractPlanogramType):
@@ -128,13 +130,18 @@ class TestPlanogramComplianceRegistry:
 
     def test_unknown_type_raises_valueerror(self) -> None:
         """Unknown types fail with the configured key in their message."""
-        config = PlanogramConfig(planogram_type="nonexistent_type", planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION)
+        config = PlanogramConfig(
+            planogram_type="nonexistent_type", planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION
+        )
         with pytest.raises(ValueError, match="Unknown planogram_type 'nonexistent_type'"):
             PlanogramCompliance(planogram_config=config)
 
     def test_default_type_is_product_on_shelves(self) -> None:
         """Omitting the type preserves the established default."""
-        assert PlanogramConfig(planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type == "product_on_shelves"
+        assert (
+            PlanogramConfig(planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type
+            == "product_on_shelves"
+        )
 
 
 class TestPlanogramConfigType:
@@ -146,11 +153,19 @@ class TestPlanogramConfigType:
 
     def test_planogram_type_default(self) -> None:
         """The default stays product_on_shelves."""
-        assert PlanogramConfig(planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type == "product_on_shelves"
+        assert (
+            PlanogramConfig(planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type
+            == "product_on_shelves"
+        )
 
     def test_planogram_type_explicit(self) -> None:
         """An explicit type is retained."""
-        assert PlanogramConfig(planogram_type="tv_wall", planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type == "tv_wall"
+        assert (
+            PlanogramConfig(
+                planogram_type="tv_wall", planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION
+            ).planogram_type
+            == "tv_wall"
+        )
 
     def test_planogram_type_serialization(self) -> None:
         """The type survives Pydantic serialisation."""
@@ -177,7 +192,9 @@ class TestProductOnShelves:
 class TestRenderColors:
     """The surviving rendering helper remains covered."""
 
-    def test_product_on_shelves_default_colors(self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+    def test_product_on_shelves_default_colors(
+        self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig
+    ) -> None:
         """ProductOnShelves returns the default colour scheme."""
         assert ProductOnShelves(mock_pipeline, planogram_config_obj).get_render_colors()["roi"] == (0, 255, 0)
 
@@ -225,4 +242,9 @@ class TestBackwardsCompatibility:
 
     def test_config_without_type_uses_default(self) -> None:
         """Legacy configs without planogram_type retain the default handler."""
-        assert PlanogramConfig(planogram_config={"brand": "Test", "shelves": []}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type == "product_on_shelves"
+        assert (
+            PlanogramConfig(
+                planogram_config={"brand": "Test", "shelves": []}, slots_definition=_MIN_SLOTS_DEFINITION
+            ).planogram_type
+            == "product_on_shelves"
+        )

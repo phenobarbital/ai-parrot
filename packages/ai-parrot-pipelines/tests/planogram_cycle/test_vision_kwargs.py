@@ -42,18 +42,20 @@ def _definition() -> dict:
 
 
 @pytest.mark.parametrize("model", ["claude-sonnet-5", None])
-async def test_illumination_evidence_uses_pipeline_backend(model, monkeypatch, fake_vision_client, synthetic_shelf_image):
+async def test_illumination_evidence_uses_pipeline_backend(
+    model, monkeypatch, fake_vision_client, synthetic_shelf_image
+):
     """Illumination uses the run-local adapter, forwarding a pinned model only when configured."""
     config = PlanogramConfig(
         planogram_type="graphic_panel_display",
         planogram_config={
             "rule_bindings": [
-                    {
-                        "rule_id": "illumination",
-                        "kind": "illumination",
-                        "target_id": "Zone-A",
-                        "params": {"required": "on"},
-                    },
+                {
+                    "rule_id": "illumination",
+                    "kind": "illumination",
+                    "target_id": "Zone-A",
+                    "params": {"required": "on"},
+                },
                 {"rule_id": "zone_present", "kind": "zone_present", "target_id": "Zone-A"},
             ]
         },
@@ -88,8 +90,7 @@ async def test_illumination_evidence_uses_pipeline_backend(model, monkeypatch, f
         assert kwargs["no_memory"] is True and kwargs.get("structured_output") is not None
         assert (kwargs.get("model") == model) if model else ("model" not in kwargs)
     assert any(
-        outcome.rule_id == "illumination" and outcome.assessed
-        for outcome in result["shelf_scores"][0].rule_results
+        outcome.rule_id == "illumination" and outcome.assessed for outcome in result["shelf_scores"][0].rule_results
     )
 
 

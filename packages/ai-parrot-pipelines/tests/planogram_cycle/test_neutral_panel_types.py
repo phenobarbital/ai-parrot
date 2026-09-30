@@ -50,7 +50,19 @@ def _definition() -> dict[str, Any]:
     return {
         "shelves": [
             {"shelf_id": "header", "shelf_number": 0, "facings": []},
-            {"shelf_id": "s1", "shelf_number": 1, "facings": [{"facing_id": "s1_f1", "shelf_id": "s1", "slot": 1, "product": "P-100", "descriptors": {"display_name": "P-100"}}]},
+            {
+                "shelf_id": "s1",
+                "shelf_number": 1,
+                "facings": [
+                    {
+                        "facing_id": "s1_f1",
+                        "shelf_id": "s1",
+                        "slot": 1,
+                        "product": "P-100",
+                        "descriptors": {"display_name": "P-100"},
+                    }
+                ],
+            },
         ],
         "zones": [{"zone_id": "Zone-A", "kind": "backlit", "shelf_id": "header", "required": True}],
     }
@@ -67,20 +79,35 @@ def _handler(type_class: type[Any]) -> Any:
 def _adapter(fake: Any, model: str | None) -> VisionAdapter:
     """Bind the fake to the configured backend under the Claude kwargs policy."""
     fake.client_name = "claude"
-    return VisionAdapter(fake, ResolvedBackend(provider="anthropic", model=model, origin="config"), semaphore=asyncio.Semaphore(2), repair_retries=0)
+    return VisionAdapter(
+        fake,
+        ResolvedBackend(provider="anthropic", model=model, origin="config"),
+        semaphore=asyncio.Semaphore(2),
+        repair_retries=0,
+    )
 
 
 def _context(fake: Any, model: str | None, type_class: type[Any]) -> CycleContext:
     """Build the run-local service context used by an identify hook."""
     return CycleContext(
-        vision=_adapter(fake, model), executor=_InlineExecutor(), ocr=_NoOcr(), definition=load_slots_definition(_definition()),
-        bindings=[RuleBinding(rule_id="illumination", kind="illumination", target_id="Zone-A")], layout=type_class.default_layout_profile(),
+        vision=_adapter(fake, model),
+        executor=_InlineExecutor(),
+        ocr=_NoOcr(),
+        definition=load_slots_definition(_definition()),
+        bindings=[RuleBinding(rule_id="illumination", kind="illumination", target_id="Zone-A")],
+        layout=type_class.default_layout_profile(),
     )
 
 
 def _perception() -> PerceptionResult:
     """Return one observed synthetic zone, driving identification and illumination evidence."""
-    zone = Shape(shape_id="img0:zone0", image_id="img0", kind=ShapeKind.ZONE, box=DetectionBox(x1=20, y1=20, x2=380, y2=120, confidence=1.0), membership=FixtureMembership.ON_FIXTURE)
+    zone = Shape(
+        shape_id="img0:zone0",
+        image_id="img0",
+        kind=ShapeKind.ZONE,
+        box=DetectionBox(x1=20, y1=20, x2=380, y2=120, confidence=1.0),
+        membership=FixtureMembership.ON_FIXTURE,
+    )
     return PerceptionResult(image_id="img0", image_size=(400, 400), zones=[zone])
 
 
@@ -95,8 +122,14 @@ def test_type_source_has_no_direct_provider_calls(name: str) -> None:
 async def test_identify_calls_forward_backend_model(name: str, model: str | None, fake_vision_client: Any) -> None:
     """Every provider call uses adapter-normalised backend kwargs without definition labels."""
     type_class = _TYPES[name]
-    fake_vision_client.queue("ask_to_image", {"existing_identifications": [{"shape_id": "img0:zone0", "occupancy": "occupied"}]}, {"illumination": "on"})
-    await _handler(type_class).identify(Image.new("RGB", (400, 400), "white"), _perception(), _context(fake_vision_client, model, type_class))
+    fake_vision_client.queue(
+        "ask_to_image",
+        {"existing_identifications": [{"shape_id": "img0:zone0", "occupancy": "occupied"}]},
+        {"illumination": "on"},
+    )
+    await _handler(type_class).identify(
+        Image.new("RGB", (400, 400), "white"), _perception(), _context(fake_vision_client, model, type_class)
+    )
     calls = fake_vision_client.calls_to("ask_to_image")
     assert calls
     for call in calls:
@@ -110,5 +143,10 @@ async def test_identify_calls_forward_backend_model(name: str, model: str | None
 async def test_compare_never_calls_vision(name: str) -> None:
     """Empty evidence is non-compliant and comparison remains provider-free."""
     type_class = _TYPES[name]
-    context = CycleContext(vision=_RaisingVision(), definition=load_slots_definition(_definition()), bindings=[RuleBinding(rule_id="illumination", kind="illumination", target_id="Zone-A")], layout=type_class.default_layout_profile())
+    context = CycleContext(
+        vision=_RaisingVision(),
+        definition=load_slots_definition(_definition()),
+        bindings=[RuleBinding(rule_id="illumination", kind="illumination", target_id="Zone-A")],
+        layout=type_class.default_layout_profile(),
+    )
     assert (await _handler(type_class).compare([], [], context)).overall_compliant is False
