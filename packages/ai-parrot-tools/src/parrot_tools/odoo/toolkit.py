@@ -20,7 +20,6 @@ import asyncio
 import base64
 import binascii
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -78,14 +77,10 @@ from .models.envelopes import (
 )
 from .models.entities import (
     AccountMove,
-    CrmLead,
     HrEmployee,
     HrLeave,
-    ProductProduct,
-    ProductTemplate,
     ResPartner,
     SaleOrder,
-    StockPicking,
 )
 from .models.inputs import (
     AggregateRecordsInput,
@@ -1326,18 +1321,18 @@ class OdooToolkit(AbstractToolkit):
         hints: list[str] = []
         if required_fields:
             hints.append(
-                f"Required non-readonly fields: "
+                "Required non-readonly fields: "
                 + ", ".join(f["name"] for f in required_fields)
             )
         if many2one:
             hints.append(
-                f"Many2one fields accept an integer id: "
+                "Many2one fields accept an integer id: "
                 + ", ".join(f["name"] for f in many2one[:5])
                 + ("..." if len(many2one) > 5 else "")
             )
         if one2many:
             hints.append(
-                f"One2many fields use ORM commands [(0,0,{{...}}), ...]: "
+                "One2many fields use ORM commands [(0,0,{...}), ...]: "
                 + ", ".join(f["name"] for f in one2many[:3])
             )
 
@@ -1381,9 +1376,8 @@ class OdooToolkit(AbstractToolkit):
             self.logger.debug("check_access_rights failed for %s: %s", model, exc)
 
         # Fetch ir.model.access rules for the model
-        acl_rules: list[dict[str, Any]] = []
         try:
-            acl_rules = await self._execute(
+            await self._execute(
                 "ir.model.access",
                 "search_read",
                 [[("model_id.model", "=", model)]],
@@ -1661,7 +1655,7 @@ class OdooToolkit(AbstractToolkit):
             warnings.append(
                 f"Method {method!r} mutates Odoo data. Ensure you have write permissions."
             )
-        elif method.startswith("action_") or method.startswith("_"):
+        elif method.startswith(("action_", "_")):
             method_safety = "side_effect"
             warnings.append(
                 f"Method {method!r} may trigger business logic side-effects."
@@ -2042,10 +2036,8 @@ class OdooToolkit(AbstractToolkit):
         })
 
         # Optionally fetch live model list for improved classification
-        live_models: set[str] = set()
         try:
-            catalog = await self.schema_catalog(limit=500)
-            live_models = {m["model"] for m in catalog.models}
+            await self.schema_catalog(limit=500)
         except OdooError:
             pass
 
