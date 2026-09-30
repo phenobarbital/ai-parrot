@@ -1,0 +1,920 @@
+{
+ "stages": [
+  {
+   "id": 4,
+   "name": "New",
+   "sequence": 0,
+   "is_done_button_visible": false,
+   "is_cancel_button_visible": false,
+   "sh_next_stage": [
+    22,
+    "Open"
+   ],
+   "sh_group_ids": [],
+   "mail_template_ids": [],
+   "company_id": false
+  },
+  {
+   "id": 22,
+   "name": "Open",
+   "sequence": 1,
+   "is_done_button_visible": false,
+   "is_cancel_button_visible": false,
+   "sh_next_stage": [
+    23,
+    "Pending close"
+   ],
+   "sh_group_ids": [],
+   "mail_template_ids": [],
+   "company_id": false
+  },
+  {
+   "id": 23,
+   "name": "Pending close",
+   "sequence": 2,
+   "is_done_button_visible": false,
+   "is_cancel_button_visible": false,
+   "sh_next_stage": [
+    24,
+    "Pending reminder"
+   ],
+   "sh_group_ids": [],
+   "mail_template_ids": [],
+   "company_id": false
+  },
+  {
+   "id": 24,
+   "name": "Pending reminder",
+   "sequence": 3,
+   "is_done_button_visible": false,
+   "is_cancel_button_visible": false,
+   "sh_next_stage": [
+    21,
+    "Closed"
+   ],
+   "sh_group_ids": [],
+   "mail_template_ids": [],
+   "company_id": false
+  },
+  {
+   "id": 21,
+   "name": "Closed",
+   "sequence": 4,
+   "is_done_button_visible": false,
+   "is_cancel_button_visible": false,
+   "sh_next_stage": false,
+   "sh_group_ids": [],
+   "mail_template_ids": [],
+   "company_id": false
+  }
+ ],
+ "stage_xmlids": [
+  {
+   "id": 64946,
+   "module": "__export__",
+   "name": "helpdesk_stages_22_15fc4c90",
+   "res_id": 22
+  },
+  {
+   "id": 64947,
+   "module": "__export__",
+   "name": "helpdesk_stages_23_8b4ea026",
+   "res_id": 23
+  },
+  {
+   "id": 64948,
+   "module": "__export__",
+   "name": "helpdesk_stages_24_ca62fb21",
+   "res_id": 24
+  },
+  {
+   "id": 48675,
+   "module": "sh_all_in_one_helpdesk",
+   "name": "new_stage",
+   "res_id": 4
+  },
+  {
+   "id": 49563,
+   "module": "troc_helpdesk",
+   "name": "helpdesk_stage_apple_closed",
+   "res_id": 21
+  }
+ ],
+ "fields:sh.ticket.alarm": {
+  "name": {
+   "readonly": true,
+   "required": false,
+   "string": "Name",
+   "type": "char"
+  },
+  "type": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "email",
+     "Email"
+    ],
+    [
+     "popup",
+     "Popup"
+    ]
+   ],
+   "string": "Type",
+   "type": "selection"
+  },
+  "sh_remind_before": {
+   "readonly": false,
+   "required": false,
+   "string": "Reminder Before",
+   "type": "integer"
+  },
+  "sh_reminder_unit": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "Hour(s)",
+     "Hour(s)"
+    ],
+    [
+     "Minute(s)",
+     "Minute(s)"
+    ],
+    [
+     "Second(s)",
+     "Second(s)"
+    ]
+   ],
+   "string": "Reminder Unit",
+   "type": "selection"
+  },
+  "company_id": {
+   "readonly": false,
+   "relation": "res.company",
+   "required": false,
+   "string": "Company",
+   "type": "many2one"
+  }
+ },
+ "fields:helpdesk.priority": {
+  "sequence": {
+   "readonly": false,
+   "required": false,
+   "string": "Sequence",
+   "type": "integer"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "color": {
+   "readonly": false,
+   "required": false,
+   "string": "Color",
+   "type": "char"
+  }
+ },
+ "fields:sh.helpdesk.ticket.type": {
+  "name": {
+   "readonly": false,
+   "required": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "sla_count": {
+   "readonly": true,
+   "required": false,
+   "string": "Sla Count",
+   "type": "integer"
+  }
+ },
+ "fields:helpdesk.category": {
+  "sequence": {
+   "readonly": false,
+   "required": false,
+   "string": "Sequence",
+   "type": "integer"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "team_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.team",
+   "required": false,
+   "string": "Support Team",
+   "type": "many2one"
+  },
+  "company_id": {
+   "readonly": false,
+   "relation": "res.company",
+   "required": false,
+   "string": "Company",
+   "type": "many2one"
+  },
+  "is_helpdesk_manager": {
+   "readonly": true,
+   "required": false,
+   "string": "Is Helpdesk Manager",
+   "type": "boolean"
+  }
+ },
+ "fields:helpdesk.tags": {
+  "name": {
+   "readonly": false,
+   "required": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "color": {
+   "readonly": false,
+   "required": false,
+   "string": "Color Index",
+   "type": "integer"
+  }
+ },
+ "fields:sh.helpdesk.ticket.extra_fields": {
+  "ticket_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": true,
+   "string": "Ticket",
+   "type": "many2one"
+  },
+  "field_name": {
+   "readonly": false,
+   "required": true,
+   "string": "Field Name",
+   "type": "char"
+  },
+  "name": {
+   "readonly": false,
+   "required": false,
+   "string": "Name",
+   "type": "char"
+  },
+  "value": {
+   "readonly": false,
+   "required": false,
+   "string": "Value",
+   "type": "text"
+  }
+ },
+ "fields:dynamic.form.submission": {
+  "name": {
+   "readonly": true,
+   "required": true,
+   "string": "Submission ID",
+   "type": "char"
+  },
+  "form_id": {
+   "readonly": false,
+   "relation": "dynamic.form",
+   "required": true,
+   "string": "Form",
+   "type": "many2one"
+  },
+  "form_name": {
+   "readonly": true,
+   "required": false,
+   "string": "Form Name",
+   "type": "char"
+  },
+  "form_data": {
+   "readonly": false,
+   "required": true,
+   "string": "Form Data (JSON)",
+   "type": "text"
+  },
+  "parsed_data": {
+   "readonly": true,
+   "required": false,
+   "string": "Parsed Data",
+   "type": "html"
+  },
+  "formatted_json_data": {
+   "readonly": true,
+   "required": false,
+   "string": "Formatted JSON Data",
+   "type": "text"
+  },
+  "state": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "draft",
+     "Draft"
+    ],
+    [
+     "submitted",
+     "Submitted"
+    ],
+    [
+     "processed",
+     "Processed"
+    ],
+    [
+     "error",
+     "Error"
+    ]
+   ],
+   "string": "State",
+   "type": "selection"
+  },
+  "target_model": {
+   "readonly": true,
+   "required": false,
+   "string": "Model",
+   "type": "char"
+  },
+  "target_record_id": {
+   "readonly": false,
+   "required": false,
+   "string": "Target Record ID",
+   "type": "integer"
+  },
+  "target_record_name": {
+   "readonly": false,
+   "required": false,
+   "string": "Target Record Name",
+   "type": "char"
+  },
+  "ip_address": {
+   "readonly": false,
+   "required": false,
+   "string": "IP Address",
+   "type": "char"
+  },
+  "user_agent": {
+   "readonly": false,
+   "required": false,
+   "string": "User Agent",
+   "type": "char"
+  },
+  "referrer": {
+   "readonly": false,
+   "required": false,
+   "string": "Referrer URL",
+   "type": "char"
+  },
+  "session_id": {
+   "readonly": false,
+   "required": false,
+   "string": "Session ID",
+   "type": "char"
+  },
+  "attachment_ids": {
+   "readonly": false,
+   "relation": "ir.attachment",
+   "required": false,
+   "string": "Attachments",
+   "type": "many2many"
+  },
+  "processing_error": {
+   "readonly": false,
+   "required": false,
+   "string": "Processing Error",
+   "type": "text"
+  },
+  "processed_date": {
+   "readonly": false,
+   "required": false,
+   "string": "Processed Date",
+   "type": "datetime"
+  },
+  "helpdesk_ticket_id": {
+   "readonly": true,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "string": "Helpdesk ticket",
+   "type": "many2one"
+  }
+ },
+ "fields:dynamic.form": {
+  "name": {
+   "readonly": false,
+   "required": true,
+   "string": "Form Name",
+   "type": "char"
+  },
+  "description": {
+   "readonly": false,
+   "required": false,
+   "string": "Description",
+   "type": "text"
+  },
+  "active": {
+   "readonly": false,
+   "required": false,
+   "string": "Active",
+   "type": "boolean"
+  },
+  "target_model_id": {
+   "readonly": false,
+   "relation": "ir.model",
+   "required": true,
+   "string": "Target Model",
+   "type": "many2one"
+  },
+  "model_name": {
+   "readonly": true,
+   "required": false,
+   "string": "Model",
+   "type": "char"
+  },
+  "embed_type": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "javascript",
+     "JavaScript Widget"
+    ],
+    [
+     "iframe",
+     "iFrame"
+    ]
+   ],
+   "string": "Embed Type",
+   "type": "selection"
+  },
+  "embed_code": {
+   "readonly": true,
+   "required": false,
+   "string": "Embed Code",
+   "type": "text"
+  },
+  "public_url": {
+   "readonly": true,
+   "required": false,
+   "string": "Public URL",
+   "type": "char"
+  },
+  "theme": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "light",
+     "Light Theme"
+    ],
+    [
+     "dark",
+     "Dark Theme"
+    ],
+    [
+     "blue",
+     "Blue Theme"
+    ],
+    [
+     "green",
+     "Green Theme"
+    ],
+    [
+     "purple",
+     "Purple Theme"
+    ],
+    [
+     "orange",
+     "Orange Theme"
+    ],
+    [
+     "custom",
+     "Custom CSS"
+    ]
+   ],
+   "string": "Theme",
+   "type": "selection"
+  },
+  "layout": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "standard",
+     "Standard Layout"
+    ],
+    [
+     "card",
+     "Card Layout"
+    ],
+    [
+     "minimal",
+     "Minimal Layout"
+    ],
+    [
+     "split",
+     "Split Layout"
+    ],
+    [
+     "wizard",
+     "Wizard/Step Layout"
+    ],
+    [
+     "inline",
+     "Inline Layout"
+    ],
+    [
+     "grid",
+     "Grid Layout (2 Columns)"
+    ],
+    [
+     "sidebar",
+     "Sidebar Layout"
+    ],
+    [
+     "tabbed",
+     "Tabbed Layout"
+    ],
+    [
+     "accordion",
+     "Accordion Layout"
+    ],
+    [
+     "compact",
+     "Compact Layout"
+    ],
+    [
+     "modern",
+     "Modern Layout"
+    ]
+   ],
+   "string": "Form Layout",
+   "type": "selection"
+  },
+  "position": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "center",
+     "Center"
+    ],
+    [
+     "left",
+     "Left Sidebar"
+    ],
+    [
+     "right",
+     "Right Sidebar"
+    ],
+    [
+     "full",
+     "Full Width"
+    ],
+    [
+     "modal",
+     "Modal Popup"
+    ]
+   ],
+   "string": "Position",
+   "type": "selection"
+  },
+  "header_layout": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "centered",
+     "Centered (Logo Above)"
+    ],
+    [
+     "split",
+     "Split (Logo Left, Content Right)"
+    ],
+    [
+     "split-reverse",
+     "Split Reverse (Content Left, Logo Right)"
+    ],
+    [
+     "inline",
+     "Inline (Logo, Title, Description in Row)"
+    ],
+    [
+     "stacked",
+     "Stacked (All Elements Stacked)"
+    ],
+    [
+     "minimal",
+     "Minimal (Title Only with Border)"
+    ],
+    [
+     "banner",
+     "Banner (Large Banner Style)"
+    ],
+    [
+     "compact",
+     "Compact (Logo and Title Side by Side)"
+    ]
+   ],
+   "string": "Header Layout",
+   "type": "selection"
+  },
+  "hide_header": {
+   "readonly": false,
+   "required": false,
+   "string": "Hide Header",
+   "type": "boolean"
+  },
+  "custom_css": {
+   "readonly": false,
+   "required": false,
+   "string": "Custom CSS",
+   "type": "text"
+  },
+  "logo": {
+   "readonly": false,
+   "required": false,
+   "string": "Logo",
+   "type": "binary"
+  },
+  "primary_color": {
+   "readonly": false,
+   "required": false,
+   "string": "Primary Color",
+   "type": "char"
+  },
+  "secondary_color": {
+   "readonly": false,
+   "required": false,
+   "string": "Secondary Color",
+   "type": "char"
+  },
+  "background_style": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "gradient",
+     "Gradient (Theme Default)"
+    ],
+    [
+     "solid",
+     "Solid Color"
+    ],
+    [
+     "image",
+     "Background Image"
+    ],
+    [
+     "pattern",
+     "Pattern"
+    ]
+   ],
+   "string": "Background Style",
+   "type": "selection"
+  },
+  "background_color": {
+   "readonly": false,
+   "required": false,
+   "string": "Background Color",
+   "type": "char"
+  },
+  "background_gradient": {
+   "readonly": false,
+   "required": false,
+   "string": "Background Gradient",
+   "type": "text"
+  },
+  "background_image": {
+   "readonly": false,
+   "required": false,
+   "string": "Background Image",
+   "type": "binary"
+  },
+  "background_image_url": {
+   "readonly": false,
+   "required": false,
+   "string": "Background Image URL",
+   "type": "char"
+  },
+  "show_progress_bar": {
+   "readonly": false,
+   "required": false,
+   "string": "Show Progress Bar",
+   "type": "boolean"
+  },
+  "show_submit_button": {
+   "readonly": false,
+   "required": false,
+   "string": "Show Submit Button",
+   "type": "boolean"
+  },
+  "submit_button_text": {
+   "readonly": false,
+   "required": false,
+   "string": "Submit Button Text",
+   "type": "char"
+  },
+  "success_message": {
+   "readonly": false,
+   "required": false,
+   "string": "Success Message",
+   "type": "text"
+  },
+  "error_message": {
+   "readonly": false,
+   "required": false,
+   "string": "Error Message",
+   "type": "text"
+  },
+  "enable_captcha": {
+   "readonly": false,
+   "required": false,
+   "string": "Enable reCAPTCHA",
+   "type": "boolean"
+  },
+  "captcha_site_key": {
+   "readonly": false,
+   "required": false,
+   "string": "reCAPTCHA Site Key",
+   "type": "char"
+  },
+  "captcha_secret_key": {
+   "readonly": false,
+   "required": false,
+   "string": "reCAPTCHA Secret Key",
+   "type": "char"
+  },
+  "rate_limit": {
+   "readonly": false,
+   "required": false,
+   "string": "Rate Limit (submissions per hour)",
+   "type": "integer"
+  },
+  "enable_email_notifications": {
+   "readonly": false,
+   "required": false,
+   "string": "Enable Email Notifications",
+   "type": "boolean"
+  },
+  "admin_email": {
+   "readonly": false,
+   "required": false,
+   "string": "Admin Email",
+   "type": "char"
+  },
+  "send_confirmation_email": {
+   "readonly": false,
+   "required": false,
+   "string": "Send Confirmation Email to User",
+   "type": "boolean"
+  },
+  "user_email_field_id": {
+   "readonly": false,
+   "relation": "dynamic.form.field",
+   "required": false,
+   "string": "User Email Field",
+   "type": "many2one"
+  },
+  "confirmation_email_template_id": {
+   "readonly": false,
+   "relation": "mail.template",
+   "required": false,
+   "string": "Confirmation Email Template",
+   "type": "many2one"
+  },
+  "notification_email_template_id": {
+   "readonly": false,
+   "relation": "mail.template",
+   "required": false,
+   "string": "Admin Notification Template",
+   "type": "many2one"
+  },
+  "view_count": {
+   "readonly": false,
+   "required": false,
+   "string": "View Count",
+   "type": "integer"
+  },
+  "submission_count": {
+   "readonly": false,
+   "required": false,
+   "string": "Submission Count",
+   "type": "integer"
+  },
+  "conversion_rate": {
+   "readonly": true,
+   "required": false,
+   "string": "Conversion Rate (%)",
+   "type": "float"
+  },
+  "field_count": {
+   "readonly": true,
+   "required": false,
+   "string": "Field Count",
+   "type": "integer"
+  },
+  "mapping_count": {
+   "readonly": true,
+   "required": false,
+   "string": "Mapping Count",
+   "type": "integer"
+  },
+  "active_field_count": {
+   "readonly": true,
+   "required": false,
+   "string": "Active Fields",
+   "type": "integer"
+  },
+  "status": {
+   "readonly": true,
+   "required": false,
+   "selection": [
+    [
+     "draft",
+     "Draft"
+    ],
+    [
+     "ready",
+     "Ready to Publish"
+    ],
+    [
+     "published",
+     "Published"
+    ]
+   ],
+   "string": "Status",
+   "type": "selection"
+  },
+  "is_ready": {
+   "readonly": true,
+   "required": false,
+   "string": "Ready to Publish",
+   "type": "boolean"
+  },
+  "last_submission_date": {
+   "readonly": true,
+   "required": false,
+   "string": "Last Submission",
+   "type": "datetime"
+  },
+  "field_ids": {
+   "readonly": false,
+   "relation": "dynamic.form.field",
+   "required": false,
+   "string": "Form Fields",
+   "type": "one2many"
+  },
+  "submission_ids": {
+   "readonly": false,
+   "relation": "dynamic.form.submission",
+   "required": false,
+   "string": "Submissions",
+   "type": "one2many"
+  },
+  "field_mapping_ids": {
+   "readonly": false,
+   "relation": "dynamic.form.field.mapping",
+   "required": false,
+   "string": "Field Mappings",
+   "type": "one2many"
+  },
+  "email_notification_ids": {
+   "readonly": false,
+   "relation": "dynamic.form.email.notification",
+   "required": false,
+   "string": "Email Notifications",
+   "type": "one2many"
+  },
+  "token": {
+   "readonly": false,
+   "required": false,
+   "string": "Security Token",
+   "type": "char"
+  },
+  "security_token": {
+   "readonly": false,
+   "required": false,
+   "string": "Enhanced Security Token",
+   "type": "char"
+  },
+  "is_published": {
+   "readonly": false,
+   "required": false,
+   "string": "Published",
+   "type": "boolean"
+  },
+  "helpdesk_category_id": {
+   "readonly": false,
+   "relation": "helpdesk.category",
+   "required": false,
+   "string": "Helpdesk category",
+   "type": "many2one"
+  },
+  "navapi_credential_id": {
+   "readonly": false,
+   "relation": "troc.navapi.credential",
+   "required": false,
+   "string": "Default Navigator Credential",
+   "type": "many2one"
+  }
+ }
+}

@@ -1,0 +1,80 @@
+{
+ "by_stage": {
+  "New": 22,
+  "Open": 4,
+  "Pending close": 10,
+  "Pending reminder": 0,
+  "Closed": 6
+ },
+ "api_user_groups": [
+  "Helpdesk / Support Manager",
+  "Helpdesk SLA Policy",
+  "Helpdesk Ticket Alarm"
+ ],
+ "extra_field_names_ticket_68": [
+  [
+   "organization_id",
+   "Organization Id"
+  ],
+  [
+   "owner",
+   "Owner"
+  ],
+  [
+   "poke_ops_market",
+   "Poke Ops Market"
+  ],
+  [
+   "state_name",
+   "State"
+  ],
+  [
+   "poke_door_not_open",
+   "Reason the door don't open"
+  ],
+  [
+   "poke_other_issues",
+   "Please describe the issue if not in the dropdown"
+  ],
+  [
+   "poke_locationid",
+   "Location Id"
+  ],
+  [
+   "poke_location_address",
+   "Street/Address"
+  ],
+  [
+   "poke_location_city",
+   "City"
+  ],
+  [
+   "poke_location_region",
+   "County/Region"
+  ],
+  [
+   "poke_location_state",
+   "State/Province"
+  ],
+  [
+   "poke_location_zipcode",
+   "Zip-PostalCode"
+  ],
+  [
+   "poke_location_country",
+   "Country"
+  ],
+  [
+   "poke_kiosk_merchandised",
+   "Was the kiosk able to be merchandised?"
+  ],
+  [
+   "attachments",
+   "Add an attachment ..."
+  ],
+  [
+   "field_26",
+   "Kiosk Number"
+  ]
+ ]
+}

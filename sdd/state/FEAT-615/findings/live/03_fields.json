@@ -1,0 +1,2839 @@
+{
+ "helpdesk.category": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "sequence": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Sequence",
+   "type": "integer"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  },
+  "team_id": {
+   "help": "Team that owns tickets in this category. Used by Navigator webhook to route tickets.",
+   "readonly": false,
+   "relation": "sh.helpdesk.team",
+   "required": false,
+   "store": true,
+   "string": "Support Team",
+   "type": "many2one"
+  },
+  "company_id": {
+   "help": "Leave empty to share this category across every company. Set it to scope the category (and its name) to a single company \u2014 the Navigator webhook prefers a company-specific match before falling back to a shared/global category of the same name.",
+   "readonly": false,
+   "relation": "res.company",
+   "required": false,
+   "store": true,
+   "string": "Company",
+   "type": "many2one"
+  },
+  "is_helpdesk_manager": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Is Helpdesk Manager",
+   "type": "boolean"
+  }
+ },
+ "helpdesk.priority": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "sequence": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Sequence",
+   "type": "integer"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "color": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Color",
+   "type": "char"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "helpdesk.stages": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "mail_template_ids": {
+   "readonly": false,
+   "relation": "mail.template",
+   "required": false,
+   "store": true,
+   "string": "Mail Template",
+   "type": "many2many"
+  },
+  "sh_next_stage": {
+   "readonly": false,
+   "relation": "helpdesk.stages",
+   "required": false,
+   "store": true,
+   "string": "Next Stage",
+   "type": "many2one"
+  },
+  "sh_group_ids": {
+   "readonly": false,
+   "relation": "res.groups",
+   "required": false,
+   "store": true,
+   "string": "Groups",
+   "type": "many2many"
+  },
+  "is_cancel_button_visible": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Is Cancel Button Visible ?",
+   "type": "boolean"
+  },
+  "is_done_button_visible": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Is Resolved Button Visible ?",
+   "type": "boolean"
+  },
+  "sequence": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Sequence",
+   "type": "integer"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  },
+  "company_id": {
+   "help": "Leave empty to share this stage across every company's pipeline. Set it to scope the stage to a single company \u2014 the kanban column list (_read_group_stage_ids) and the Navigator webhook's state/state_name resolution both prefer a company-specific match before falling back to a shared/global stage of the same name.",
+   "readonly": false,
+   "relation": "res.company",
+   "required": false,
+   "store": true,
+   "string": "Company",
+   "type": "many2one"
+  }
+ },
+ "helpdesk.sub.type": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "helpdesk.subcategory": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "sequence": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Sequence",
+   "type": "integer"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Sub Category Name",
+   "type": "char"
+  },
+  "parent_category_id": {
+   "readonly": false,
+   "relation": "helpdesk.category",
+   "required": true,
+   "store": true,
+   "string": "Parent Category",
+   "type": "many2one"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "helpdesk.tags": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "color": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Color Index",
+   "type": "integer"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.reassign.wizard": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "ticket_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": true,
+   "store": true,
+   "string": "Ticket",
+   "type": "many2one"
+  },
+  "new_user_id": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": true,
+   "store": true,
+   "string": "Assign To",
+   "type": "many2one"
+  },
+  "team_member_ids": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": false,
+   "string": "Team Member",
+   "type": "many2many"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.sla": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "sh_team_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.team",
+   "required": true,
+   "store": true,
+   "string": "Helpdesk Team",
+   "type": "many2one"
+  },
+  "sh_ticket_type_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket.type",
+   "required": false,
+   "store": true,
+   "string": "Ticket Type",
+   "type": "many2one"
+  },
+  "sh_sla_target_type": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "reaching_stage",
+     "Reaching Stage"
+    ],
+    [
+     "assign_to",
+     "Assigned To"
+    ]
+   ],
+   "store": true,
+   "string": "SLA Target Type",
+   "type": "selection"
+  },
+  "sh_sla_target_type_selection": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "reaching_stage",
+     "Reaching Stage"
+    ]
+   ],
+   "store": true,
+   "string": "SLA Target Type",
+   "type": "selection"
+  },
+  "sh_stage_id": {
+   "readonly": false,
+   "relation": "helpdesk.stages",
+   "required": false,
+   "store": true,
+   "string": "Reach Stage",
+   "type": "many2one"
+  },
+  "sh_days": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Days",
+   "type": "integer"
+  },
+  "sh_hours": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Hours",
+   "type": "integer"
+  },
+  "sh_minutes": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Minutes",
+   "type": "integer"
+  },
+  "company_id": {
+   "readonly": false,
+   "relation": "res.company",
+   "required": false,
+   "store": true,
+   "string": "Company",
+   "type": "many2one"
+  },
+  "sla_ticket_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sla Ticket Count",
+   "type": "integer"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.sla.analysis": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "sh_sla_status_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.sla.status",
+   "required": false,
+   "store": true,
+   "string": "SLA Status",
+   "type": "many2one"
+  },
+  "sh_sla_status_deadline": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Deadline",
+   "type": "datetime"
+  },
+  "sh_sla_status_reached": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Reached",
+   "type": "datetime"
+  },
+  "sh_helpdesk_ticket_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "store": true,
+   "string": "Ticket",
+   "type": "many2one"
+  },
+  "sh_reached_duration": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Reached Duration",
+   "type": "float"
+  },
+  "sh_late_duration": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Late Duration",
+   "type": "float"
+  },
+  "sh_sla_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.sla",
+   "required": false,
+   "store": true,
+   "string": "SLA",
+   "type": "many2one"
+  },
+  "sh_ticket_stage_id": {
+   "readonly": false,
+   "relation": "helpdesk.stages",
+   "required": false,
+   "store": true,
+   "string": "Ticket Stage",
+   "type": "many2one"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.sla.status": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "sh_ticket_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "store": true,
+   "string": "Ticket",
+   "type": "many2one"
+  },
+  "sh_sla_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.sla",
+   "required": true,
+   "store": true,
+   "string": "Sh Sla",
+   "type": "many2one"
+  },
+  "sh_sla_stage_id": {
+   "readonly": true,
+   "relation": "helpdesk.stages",
+   "required": false,
+   "store": true,
+   "string": "Reach Stage",
+   "type": "many2one"
+  },
+  "sh_deadline": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "SLA Deadline",
+   "type": "datetime"
+  },
+  "sh_status": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "sla_failed",
+     "Failed"
+    ],
+    [
+     "sla_passed",
+     "Passed"
+    ],
+    [
+     "sh_partially_passed",
+     "Partially Passed"
+    ]
+   ],
+   "store": true,
+   "string": "Status",
+   "type": "selection"
+  },
+  "color": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Color Index",
+   "type": "integer"
+  },
+  "sh_done_sla_date": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "SLA Done Date",
+   "type": "datetime"
+  },
+  "sh_exceeded_hours": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Exceeded Hours",
+   "type": "float"
+  },
+  "sh_create_date": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Create Date",
+   "type": "datetime"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.team": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "alias_id": {
+   "help": "The email address associated with this channel. New emails received will automatically create new tickets assigned to the team.",
+   "readonly": false,
+   "relation": "mail.alias",
+   "required": true,
+   "store": true,
+   "string": "Alias",
+   "type": "many2one"
+  },
+  "alias_name": {
+   "help": "The name of the email alias, e.g. 'jobs' if you want to catch emails for <jobs@example.odoo.com>",
+   "readonly": false,
+   "required": false,
+   "store": false,
+   "string": "Alias Name",
+   "type": "char"
+  },
+  "alias_domain_id": {
+   "readonly": false,
+   "relation": "mail.alias.domain",
+   "required": false,
+   "store": false,
+   "string": "Alias",
+   "type": "many2one"
+  },
+  "alias_domain": {
+   "help": "Email domain e.g. 'example.com' in 'odoo@example.com'",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Alias Domain Name",
+   "type": "char"
+  },
+  "alias_defaults": {
+   "help": "A Python dictionary that will be evaluated to provide default values when creating new records for this alias.",
+   "readonly": true,
+   "required": true,
+   "store": false,
+   "string": "Default Values",
+   "type": "text"
+  },
+  "alias_email": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Email Alias",
+   "type": "char"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "team_head": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": true,
+   "store": true,
+   "string": "Team Head",
+   "type": "many2one"
+  },
+  "team_members": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Team Members",
+   "type": "many2many"
+  },
+  "sh_resource_calendar_id": {
+   "readonly": false,
+   "relation": "resource.calendar",
+   "required": true,
+   "store": true,
+   "string": "Working Schedule",
+   "type": "many2one"
+  },
+  "sla_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sla Count",
+   "type": "integer"
+  },
+  "alias_user_id": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Alias User",
+   "type": "many2one"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  },
+  "category_ids": {
+   "help": "Categories routed to this team.",
+   "readonly": false,
+   "relation": "helpdesk.category",
+   "required": false,
+   "store": true,
+   "string": "Categories",
+   "type": "one2many"
+  },
+  "alias_full_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Alias Email",
+   "type": "char"
+  },
+  "alias_model_id": {
+   "help": "The model (Odoo Document Kind) to which this alias corresponds. Any incoming email that does not reply to an existing record will cause the creation of a new record of this model (e.g. a Project Task)",
+   "readonly": false,
+   "relation": "ir.model",
+   "required": true,
+   "store": false,
+   "string": "Aliased Model",
+   "type": "many2one"
+  },
+  "alias_force_thread_id": {
+   "help": "Optional ID of a thread (record) to which all incoming messages will be attached, even if they did not reply to it. If set, this will disable the creation of new records completely.",
+   "readonly": false,
+   "required": false,
+   "store": false,
+   "string": "Record Thread ID",
+   "type": "integer"
+  },
+  "alias_parent_model_id": {
+   "help": "Parent model holding the alias. The model holding the alias reference is not necessarily the model given by alias_model_id (example: project (parent_model) and task (model))",
+   "readonly": false,
+   "relation": "ir.model",
+   "required": false,
+   "store": false,
+   "string": "Parent Model",
+   "type": "many2one"
+  },
+  "alias_parent_thread_id": {
+   "help": "ID of the parent record holding the alias (example: project holding the task creation alias)",
+   "readonly": false,
+   "required": false,
+   "store": false,
+   "string": "Parent Record Thread ID",
+   "type": "integer"
+  },
+  "alias_contact": {
+   "help": "Policy to post a message on the document using the mailgateway.\n- everyone: everyone can post\n- partners: only authenticated partners\n- followers: only followers of the related document or members of following channels\n",
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "everyone",
+     "Everyone"
+    ],
+    [
+     "partners",
+     "Authenticated Partners"
+    ],
+    [
+     "followers",
+     "Followers only"
+    ],
+    [
+     "employees",
+     "Authenticated Employees"
+    ]
+   ],
+   "store": false,
+   "string": "Alias Contact Security",
+   "type": "selection"
+  },
+  "alias_incoming_local": {
+   "readonly": false,
+   "required": false,
+   "store": false,
+   "string": "Local-part based incoming detection",
+   "type": "boolean"
+  },
+  "alias_bounced_content": {
+   "help": "If set, this content will automatically be sent out to unauthorized users instead of the default message.",
+   "readonly": false,
+   "required": false,
+   "store": false,
+   "string": "Custom Bounced Message",
+   "type": "html"
+  },
+  "alias_status": {
+   "help": "Alias status assessed on the last message received.",
+   "readonly": true,
+   "required": false,
+   "selection": [
+    [
+     "not_tested",
+     "Not Tested"
+    ],
+    [
+     "valid",
+     "Valid"
+    ],
+    [
+     "invalid",
+     "Invalid"
+    ]
+   ],
+   "store": false,
+   "string": "Alias Status",
+   "type": "selection"
+  }
+ },
+ "sh.helpdesk.ticket": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "message_is_follower": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Is Follower",
+   "type": "boolean"
+  },
+  "message_follower_ids": {
+   "readonly": false,
+   "relation": "mail.followers",
+   "required": false,
+   "store": true,
+   "string": "Followers",
+   "type": "one2many"
+  },
+  "message_partner_ids": {
+   "readonly": false,
+   "relation": "res.partner",
+   "required": false,
+   "store": false,
+   "string": "Followers (Partners)",
+   "type": "many2many"
+  },
+  "message_ids": {
+   "readonly": false,
+   "relation": "mail.message",
+   "required": false,
+   "store": true,
+   "string": "Messages",
+   "type": "one2many"
+  },
+  "has_message": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Has Message",
+   "type": "boolean"
+  },
+  "message_needaction": {
+   "help": "If checked, new messages require your attention.",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Action Needed",
+   "type": "boolean"
+  },
+  "message_needaction_counter": {
+   "help": "Number of messages requiring action",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Number of Actions",
+   "type": "integer"
+  },
+  "message_has_error": {
+   "help": "If checked, some messages have a delivery error.",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Message Delivery error",
+   "type": "boolean"
+  },
+  "message_has_error_counter": {
+   "help": "Number of messages with delivery error",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Number of errors",
+   "type": "integer"
+  },
+  "message_attachment_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Attachment Count",
+   "type": "integer"
+  },
+  "rating_ids": {
+   "readonly": false,
+   "relation": "rating.rating",
+   "required": false,
+   "store": true,
+   "string": "Ratings",
+   "type": "one2many"
+  },
+  "website_message_ids": {
+   "help": "Website communication history",
+   "readonly": false,
+   "relation": "mail.message",
+   "required": false,
+   "store": true,
+   "string": "Website Messages",
+   "type": "one2many"
+  },
+  "message_has_sms_error": {
+   "help": "If checked, some messages have a delivery error.",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "SMS Delivery error",
+   "type": "boolean"
+  },
+  "email_cc": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Email cc",
+   "type": "char"
+  },
+  "activity_ids": {
+   "readonly": false,
+   "relation": "mail.activity",
+   "required": false,
+   "store": true,
+   "string": "Activities",
+   "type": "one2many"
+  },
+  "activity_state": {
+   "help": "Status based on activities\nOverdue: Due date is already passed\nToday: Activity date is today\nPlanned: Future activities.",
+   "readonly": true,
+   "required": false,
+   "selection": [
+    [
+     "overdue",
+     "Overdue"
+    ],
+    [
+     "today",
+     "Today"
+    ],
+    [
+     "planned",
+     "Planned"
+    ]
+   ],
+   "store": false,
+   "string": "Activity State",
+   "type": "selection"
+  },
+  "activity_user_id": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": false,
+   "string": "Responsible User",
+   "type": "many2one"
+  },
+  "activity_type_id": {
+   "readonly": false,
+   "relation": "mail.activity.type",
+   "required": false,
+   "store": false,
+   "string": "Next Activity Type",
+   "type": "many2one"
+  },
+  "activity_type_icon": {
+   "help": "Font awesome icon e.g. fa-tasks",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Activity Type Icon",
+   "type": "char"
+  },
+  "activity_date_deadline": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Next Activity Deadline",
+   "type": "date"
+  },
+  "my_activity_date_deadline": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "My Activity Deadline",
+   "type": "date"
+  },
+  "activity_summary": {
+   "readonly": false,
+   "required": false,
+   "store": false,
+   "string": "Next Activity Summary",
+   "type": "char"
+  },
+  "activity_exception_decoration": {
+   "help": "Type of the exception activity on record.",
+   "readonly": true,
+   "required": false,
+   "selection": [
+    [
+     "warning",
+     "Alert"
+    ],
+    [
+     "danger",
+     "Error"
+    ]
+   ],
+   "store": false,
+   "string": "Activity Exception Decoration",
+   "type": "selection"
+  },
+  "activity_exception_icon": {
+   "help": "Icon to indicate an exception activity.",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Icon",
+   "type": "char"
+  },
+  "activity_calendar_event_id": {
+   "readonly": true,
+   "relation": "calendar.event",
+   "required": false,
+   "store": false,
+   "string": "Next Activity Calendar Event",
+   "type": "many2one"
+  },
+  "access_url": {
+   "help": "Customer Portal URL",
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Portal Access URL",
+   "type": "char"
+  },
+  "access_token": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Security Token",
+   "type": "char"
+  },
+  "access_warning": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Access warning",
+   "type": "text"
+  },
+  "enable_manual_add_timesheet": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Manual Add Timesheet",
+   "type": "boolean"
+  },
+  "name": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "company_id": {
+   "readonly": false,
+   "relation": "res.company",
+   "required": false,
+   "store": true,
+   "string": "Company",
+   "type": "many2one"
+  },
+  "state": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "customer_replied",
+     "Customer Replied"
+    ],
+    [
+     "staff_replied",
+     "Staff Replied"
+    ]
+   ],
+   "store": true,
+   "string": "Replied Status",
+   "type": "selection"
+  },
+  "active": {
+   "help": "If unchecked, it will allow you to hide the product without removing it.",
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Active",
+   "type": "boolean"
+  },
+  "ticket_from_website": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Ticket From Website",
+   "type": "boolean"
+  },
+  "ticket_from_portal": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Ticket From Portal",
+   "type": "boolean"
+  },
+  "cancel_reason": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Cancel Reason",
+   "type": "char"
+  },
+  "tag_ids": {
+   "readonly": false,
+   "relation": "helpdesk.tags",
+   "required": false,
+   "store": true,
+   "string": "Tags",
+   "type": "many2many"
+  },
+  "priority": {
+   "readonly": false,
+   "relation": "helpdesk.priority",
+   "required": false,
+   "store": true,
+   "string": "Priority",
+   "type": "many2one"
+  },
+  "stage_id": {
+   "readonly": false,
+   "relation": "helpdesk.stages",
+   "required": false,
+   "store": true,
+   "string": "Stage",
+   "type": "many2one"
+  },
+  "ticket_type": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket.type",
+   "required": false,
+   "store": true,
+   "string": "Ticket Type",
+   "type": "many2one"
+  },
+  "team_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.team",
+   "required": false,
+   "store": true,
+   "string": "Team",
+   "type": "many2one"
+  },
+  "team_head": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Team Head",
+   "type": "many2one"
+  },
+  "user_id": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Assigned User",
+   "type": "many2one"
+  },
+  "subject_id": {
+   "readonly": false,
+   "relation": "helpdesk.sub.type",
+   "required": false,
+   "store": true,
+   "string": "Ticket Subject Type",
+   "type": "many2one"
+  },
+  "category_id": {
+   "readonly": false,
+   "relation": "helpdesk.category",
+   "required": false,
+   "store": true,
+   "string": "Category",
+   "type": "many2one"
+  },
+  "sub_category_id": {
+   "readonly": false,
+   "relation": "helpdesk.subcategory",
+   "required": false,
+   "store": true,
+   "string": "Sub Category",
+   "type": "many2one"
+  },
+  "sub_category_id_domain": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Sub category domain",
+   "type": "char"
+  },
+  "partner_id": {
+   "readonly": false,
+   "relation": "res.partner",
+   "required": true,
+   "store": true,
+   "string": "Partner",
+   "type": "many2one"
+  },
+  "person_name": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Person Name",
+   "type": "char"
+  },
+  "email": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Email",
+   "type": "char"
+  },
+  "close_date": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Close Date",
+   "type": "datetime"
+  },
+  "close_by": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Closed By",
+   "type": "many2one"
+  },
+  "cancel_date": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Cancelled Date",
+   "type": "datetime"
+  },
+  "cancel_by": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Cancelled By",
+   "type": "many2one"
+  },
+  "replied_date": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Replied Date",
+   "type": "datetime"
+  },
+  "product_ids": {
+   "readonly": false,
+   "relation": "product.product",
+   "required": false,
+   "store": true,
+   "string": "Products",
+   "type": "many2many"
+  },
+  "comment": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Comment",
+   "type": "text"
+  },
+  "description": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Description",
+   "type": "html"
+  },
+  "color": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Color Index",
+   "type": "integer"
+  },
+  "priority_new": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "1",
+     "Very Low"
+    ],
+    [
+     "2",
+     "Low"
+    ],
+    [
+     "3",
+     "Normal"
+    ],
+    [
+     "4",
+     "High"
+    ],
+    [
+     "5",
+     "Very High"
+    ],
+    [
+     "6",
+     "Excellent"
+    ]
+   ],
+   "store": true,
+   "string": "Customer Rating",
+   "type": "selection"
+  },
+  "customer_comment": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Customer Comment",
+   "type": "text"
+  },
+  "attachment_ids": {
+   "readonly": false,
+   "relation": "ir.attachment",
+   "required": false,
+   "store": true,
+   "string": "Attachments",
+   "type": "many2many"
+  },
+  "category_bool": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Category Setting",
+   "type": "boolean"
+  },
+  "sub_category_bool": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Sub Category Setting",
+   "type": "boolean"
+  },
+  "rating_bool": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Rating Setting",
+   "type": "boolean"
+  },
+  "ticket_allocated": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Allocated",
+   "type": "boolean"
+  },
+  "sh_user_ids": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Assign Multi Users",
+   "type": "many2many"
+  },
+  "sh_user_ids_domain": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "users domain",
+   "type": "char"
+  },
+  "sh_display_multi_user": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sh Display Multi User",
+   "type": "boolean"
+  },
+  "sh_display_product": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sh Display Product",
+   "type": "boolean"
+  },
+  "sh_status": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "sla_failed",
+     "Failed"
+    ],
+    [
+     "sla_passed",
+     "Passed"
+    ],
+    [
+     "sh_partially_passed",
+     "Partially Passed"
+    ]
+   ],
+   "store": true,
+   "string": "Status",
+   "type": "selection"
+  },
+  "sh_status_boolean": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sh Status Boolean",
+   "type": "boolean"
+  },
+  "sh_days_to_reach": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "SLA reached duration",
+   "type": "float"
+  },
+  "sh_days_to_late": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "SLA late duration",
+   "type": "float"
+  },
+  "sh_due_date": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Reminder Due Date",
+   "type": "datetime"
+  },
+  "sh_ticket_alarm_ids": {
+   "readonly": false,
+   "relation": "sh.ticket.alarm",
+   "required": false,
+   "store": true,
+   "string": "Ticket Reminders",
+   "type": "many2many"
+  },
+  "sh_ticket_report_url": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sh Ticket Report Url",
+   "type": "char"
+  },
+  "report_token": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Access Token",
+   "type": "char"
+  },
+  "portal_ticket_url_wp": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Portal Ticket Url Wp",
+   "type": "char"
+  },
+  "mobile_no": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Mobile",
+   "type": "char"
+  },
+  "email_subject": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Subject",
+   "type": "char"
+  },
+  "sh_merge_ticket_ids": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "store": true,
+   "string": "Merge Tickets",
+   "type": "many2many"
+  },
+  "sh_merge_ticket_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sh Merge Ticket Count",
+   "type": "integer"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  },
+  "helpdesk_stage_history_line": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket.stage.info",
+   "required": false,
+   "store": true,
+   "string": "Stage History Line",
+   "type": "one2many"
+  },
+  "done_stage_boolean": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Done Stage",
+   "type": "boolean"
+  },
+  "cancel_stage_boolean": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Cancel Stage",
+   "type": "boolean"
+  },
+  "reopen_stage_boolean": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Reopened Stage",
+   "type": "boolean"
+  },
+  "closed_stage_boolean": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Closed Stage",
+   "type": "boolean"
+  },
+  "open_boolean": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Open Ticket",
+   "type": "boolean"
+  },
+  "cancel_button_boolean": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Cancel Button",
+   "type": "boolean"
+  },
+  "done_button_boolean": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Done Button",
+   "type": "boolean"
+  },
+  "form_url": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Form Url",
+   "type": "char"
+  },
+  "sh_sla_policy_ids": {
+   "readonly": false,
+   "relation": "sh.helpdesk.sla",
+   "required": false,
+   "store": true,
+   "string": "Helpdesk SLA Policies",
+   "type": "many2many"
+  },
+  "sh_sla_status_ids": {
+   "readonly": false,
+   "relation": "sh.helpdesk.sla.status",
+   "required": false,
+   "store": true,
+   "string": "Helpdesk SLA Status",
+   "type": "one2many"
+  },
+  "sh_sla_deadline": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "SLA Deadline",
+   "type": "datetime"
+  },
+  "sh_sale_order_ids": {
+   "readonly": false,
+   "relation": "sale.order",
+   "required": false,
+   "store": true,
+   "string": "Orders",
+   "type": "many2many"
+  },
+  "sale_order_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Order",
+   "type": "integer"
+  },
+  "sh_purchase_order_ids": {
+   "readonly": false,
+   "relation": "purchase.order",
+   "required": false,
+   "store": true,
+   "string": "Orders",
+   "type": "many2many"
+  },
+  "purchase_order_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Purchase Order",
+   "type": "integer"
+  },
+  "sh_invoice_ids": {
+   "readonly": false,
+   "relation": "account.move",
+   "required": false,
+   "store": true,
+   "string": "Invoices",
+   "type": "many2many"
+  },
+  "invoice_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Invoice",
+   "type": "integer"
+  },
+  "start_time": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Start Time",
+   "type": "datetime"
+  },
+  "end_time": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "End Time",
+   "type": "datetime"
+  },
+  "total_time": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Total Time",
+   "type": "char"
+  },
+  "timehseet_ids": {
+   "readonly": false,
+   "relation": "account.analytic.line",
+   "required": false,
+   "store": true,
+   "string": "Timesheets",
+   "type": "one2many"
+  },
+  "duration": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Real Duration",
+   "type": "float"
+  },
+  "ticket_running": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Ticket Running",
+   "type": "boolean"
+  },
+  "ticket_run": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Ticket run",
+   "type": "boolean"
+  },
+  "sh_lead_ids": {
+   "readonly": false,
+   "relation": "crm.lead",
+   "required": false,
+   "store": true,
+   "string": "Leads/Opportunities",
+   "type": "many2many"
+  },
+  "lead_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Lead",
+   "type": "integer"
+  },
+  "opportunity_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Opportunity",
+   "type": "integer"
+  },
+  "task_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Tasks",
+   "type": "integer"
+  },
+  "task_ids": {
+   "readonly": false,
+   "relation": "project.task",
+   "required": false,
+   "store": true,
+   "string": "Task",
+   "type": "many2many"
+  },
+  "dynamic_form_submission_id": {
+   "readonly": false,
+   "relation": "dynamic.form.submission",
+   "required": false,
+   "store": true,
+   "string": "Form submission",
+   "type": "many2one"
+  },
+  "dynamic_form_unmapped_data": {
+   "help": "Answers from dynamic forms that have no field mapping to ticket columns.",
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Dynamic form (unmapped)",
+   "type": "json"
+  },
+  "dynamic_form_unmapped_html": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Dynamic form (unmapped)",
+   "type": "html"
+  },
+  "dynamic_form_unmapped_search_text": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Dynamic form extras (search)",
+   "type": "char"
+  },
+  "extra_field_ids": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket.extra_fields",
+   "required": false,
+   "store": true,
+   "string": "Extra Field",
+   "type": "one2many"
+  },
+  "extra_field_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Extra Field Count",
+   "type": "integer"
+  },
+  "assignee_on_leave": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Assignee Out of Office",
+   "type": "boolean"
+  },
+  "category_id_domain": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Category Id Domain",
+   "type": "char"
+  }
+ },
+ "sh.helpdesk.ticket.extra_fields": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "ticket_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": true,
+   "store": true,
+   "string": "Ticket",
+   "type": "many2one"
+  },
+  "field_name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Field Name",
+   "type": "char"
+  },
+  "name": {
+   "help": "Human-readable label for Field Name. Set from the webhook payload's explicit extra_fields[].name \u2014 never derived or guessed. Left equal to Field Name when the payload doesn't supply one.",
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "value": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Value",
+   "type": "text"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.ticket.mass.update.wizard": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "helpdesks_ticket_ids": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "store": true,
+   "string": "Helpdesks Ticket",
+   "type": "many2many"
+  },
+  "check_team_id": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Team ",
+   "type": "boolean"
+  },
+  "team_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.team",
+   "required": false,
+   "store": true,
+   "string": "Team",
+   "type": "many2one"
+  },
+  "check_assign_to": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Assign To ",
+   "type": "boolean"
+  },
+  "assign_to": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Assign To",
+   "type": "many2one"
+  },
+  "check_sh_display_multi_user": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Check Sh Display Multi User",
+   "type": "boolean"
+  },
+  "check_assign_to_multiuser": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Assign Multi User",
+   "type": "boolean"
+  },
+  "ticket_update_type": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "add",
+     "Add"
+    ],
+    [
+     "replace",
+     "Replace"
+    ]
+   ],
+   "store": true,
+   "string": "Ticket Type Update ",
+   "type": "selection"
+  },
+  "assign_to_multiuser": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Assign Multi Users",
+   "type": "many2many"
+  },
+  "sh_user_ids_domain": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "users domain",
+   "type": "char"
+  },
+  "check_helpdesks_state": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Stage",
+   "type": "boolean"
+  },
+  "helpdesk_stages": {
+   "readonly": false,
+   "relation": "helpdesk.stages",
+   "required": false,
+   "store": true,
+   "string": "Stages",
+   "type": "many2one"
+  },
+  "check_add_remove": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Add/Remove",
+   "type": "boolean"
+  },
+  "followers": {
+   "readonly": false,
+   "relation": "res.partner",
+   "required": false,
+   "store": true,
+   "string": "Followers",
+   "type": "many2many"
+  },
+  "ticket_follower_update_type": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "add",
+     "Add"
+    ],
+    [
+     "remove",
+     "Remove"
+    ]
+   ],
+   "store": true,
+   "string": "Ticket Type Update",
+   "type": "selection"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.ticket.merge.ticket.wizard": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "sh_user_id": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Assigned User",
+   "type": "many2one"
+  },
+  "ticket_type": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket.type",
+   "required": false,
+   "store": true,
+   "string": "Ticket Type",
+   "type": "many2one"
+  },
+  "sh_partner_id": {
+   "readonly": true,
+   "relation": "res.partner",
+   "required": true,
+   "store": true,
+   "string": "Partner",
+   "type": "many2one"
+  },
+  "sh_priority": {
+   "readonly": false,
+   "relation": "helpdesk.priority",
+   "required": false,
+   "store": true,
+   "string": "Priority",
+   "type": "many2one"
+  },
+  "sh_ticket_alarm_ids": {
+   "readonly": false,
+   "relation": "sh.ticket.alarm",
+   "required": false,
+   "store": true,
+   "string": "Ticket Reminder",
+   "type": "many2many"
+  },
+  "sh_helpdesk_ticket_ids": {
+   "readonly": true,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "store": true,
+   "string": "Tickets",
+   "type": "many2many"
+  },
+  "sh_team_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.team",
+   "required": false,
+   "store": true,
+   "string": "Team",
+   "type": "many2one"
+  },
+  "sh_user_ids": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Assign Multi Users",
+   "type": "many2many"
+  },
+  "sh_team_head_id": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Team Head",
+   "type": "many2one"
+  },
+  "sh_subject_id": {
+   "readonly": false,
+   "relation": "helpdesk.sub.type",
+   "required": false,
+   "store": true,
+   "string": "Subject",
+   "type": "many2one"
+  },
+  "sh_helpdesk_tags": {
+   "readonly": false,
+   "relation": "helpdesk.tags",
+   "required": false,
+   "store": true,
+   "string": "Tags",
+   "type": "many2many"
+  },
+  "sh_merge_history": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Merge History",
+   "type": "boolean"
+  },
+  "sh_select_type": {
+   "readonly": false,
+   "required": true,
+   "selection": [
+    [
+     "new",
+     "New"
+    ],
+    [
+     "existing",
+     "Existing"
+    ]
+   ],
+   "store": true,
+   "string": "Type",
+   "type": "selection"
+  },
+  "sh_existing_ticket": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "store": true,
+   "string": "Select Ticket",
+   "type": "many2one"
+  },
+  "sh_check_multi_user": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "sh_check_multi_user",
+   "type": "boolean"
+  },
+  "sh_select_merge_type": {
+   "readonly": false,
+   "required": false,
+   "selection": [
+    [
+     "close",
+     "Close other Tickets"
+    ],
+    [
+     "cancel",
+     "Cancel other Tickets"
+    ],
+    [
+     "done",
+     "Done other Tickets"
+    ],
+    [
+     "remove",
+     "Remove other Tickets"
+    ],
+    [
+     "do_nothing",
+     "Do Nothing"
+    ]
+   ],
+   "store": true,
+   "string": "Merge Type",
+   "type": "selection"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.ticket.stage.info": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "stage_task_id": {
+   "readonly": false,
+   "relation": "sh.helpdesk.ticket",
+   "required": false,
+   "store": true,
+   "string": "Stage task",
+   "type": "many2one"
+  },
+  "stage_name": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Stage Name",
+   "type": "char"
+  },
+  "date_in": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Date In",
+   "type": "datetime"
+  },
+  "date_in_by": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Date In By",
+   "type": "many2one"
+  },
+  "date_out": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Date Out",
+   "type": "datetime"
+  },
+  "date_out_by": {
+   "readonly": false,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Date Out By",
+   "type": "many2one"
+  },
+  "day_diff": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Day Diff",
+   "type": "integer"
+  },
+  "time_diff": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Time Diff",
+   "type": "float"
+  },
+  "total_time_diff": {
+   "readonly": false,
+   "required": false,
+   "store": true,
+   "string": "Total Time Diff",
+   "type": "float"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.ticket.type": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "name": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Name",
+   "type": "char"
+  },
+  "sla_count": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Sla Count",
+   "type": "integer"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ },
+ "sh.helpdesk.webhook.error_dedupe": {
+  "id": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "ID",
+   "type": "integer"
+  },
+  "display_name": {
+   "readonly": true,
+   "required": false,
+   "store": false,
+   "string": "Display Name",
+   "type": "char"
+  },
+  "key": {
+   "readonly": false,
+   "required": true,
+   "store": true,
+   "string": "Key",
+   "type": "char"
+  },
+  "create_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Created by",
+   "type": "many2one"
+  },
+  "create_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Created on",
+   "type": "datetime"
+  },
+  "write_uid": {
+   "readonly": true,
+   "relation": "res.users",
+   "required": false,
+   "store": true,
+   "string": "Last Updated by",
+   "type": "many2one"
+  },
+  "write_date": {
+   "readonly": true,
+   "required": false,
+   "store": true,
+   "string": "Last Updated on",
+   "type": "datetime"
+  }
+ }
+}

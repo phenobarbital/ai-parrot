@@ -1,0 +1,616 @@
+{
+ "schema_version": "1.0",
+ "feat_id": "FEAT-615",
+ "mode": "enrichment",
+ "summary_oneline": "Add a typed OdooHelpdeskToolkit (subclass of OdooToolkit) for the Softhealer sh_all_in_one_helpdesk + TROC layer on Odoo 19: ticket CRUD, assignment, stage transitions via Softhealer action_* methods, comments, SLA policies, reference-data lookups, with Pydantic inputs and result envelopes.",
+ "localization": [
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py",
+   "symbol": "OdooToolkit",
+   "lines": "172-292",
+   "role": "base toolkit: config fallback, lazy auth, `_execute` RPC chokepoint, `_read_one`, `_get_fields_metadata`",
+   "evidence": [
+    "F002"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py",
+   "symbol": "_DEFAULT_KNOWN_MODELS",
+   "lines": "149-160",
+   "role": "static model list used by `list_models` — has no helpdesk models",
+   "evidence": [
+    "F002"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py",
+   "symbol": "OdooToolkit.confirm_sale_order",
+   "lines": "792-800",
+   "role": "action-then-read-back pattern to copy for ticket transitions",
+   "evidence": [
+    "F003"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py",
+   "symbol": "OdooToolkit.search_records",
+   "lines": "406-455",
+   "role": "generic search with smart-field fallback and `SearchResult` envelope",
+   "evidence": [
+    "F003"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py",
+   "symbol": "_OdooBaseInput",
+   "lines": "14-24",
+   "role": "base for every tool input schema (`extra=\"ignore\"`)",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/envelopes.py",
+   "symbol": "CreateResult",
+   "lines": "52-84",
+   "role": "result envelope conventions (`success/record/record_id/model/message`)",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/entities.py",
+   "symbol": "_OdooEntity",
+   "lines": "19-31",
+   "role": "entity base (`extra=\"allow\"`, `Many2one` alias) for a `HelpdeskTicket` entity",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/__init__.py",
+   "symbol": "__all__",
+   "lines": "",
+   "role": "re-export point for new helpdesk models",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/__init__.py",
+   "symbol": "__all__",
+   "lines": "",
+   "role": "package export point for a new toolkit class",
+   "evidence": [
+    "F004"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/transport/json2.py",
+   "symbol": "Json2Transport._build_body",
+   "lines": "90-162",
+   "role": "JSON-2 positional→named mapping; `[[id]]` action calls work, `get_views`/`read_group` family do not (until FEAT-614)",
+   "evidence": [
+    "F005",
+    "F021"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/transport/json2.py",
+   "symbol": "Json2Transport._headers",
+   "lines": "60-65",
+   "role": "bearer API key + `X-Odoo-Database` header (empty accepted by staging)",
+   "evidence": [
+    "F005",
+    "F012"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/tools/decorators.py",
+   "symbol": "tool_schema",
+   "lines": "39-55",
+   "role": "per-tool input schema decorator",
+   "evidence": [
+    "F011"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/src/parrot/tools/decorators.py",
+   "symbol": "requires_permission",
+   "lines": "9-38",
+   "role": "permission gate for write tools (`odoo.write`)",
+   "evidence": [
+    "F011",
+    "F003"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/smart_fields.py",
+   "symbol": "select_smart_fields",
+   "lines": "1-40",
+   "role": "pure field scorer reusable for default ticket fields",
+   "evidence": [
+    "F011"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot/tests/test_odoo_toolkit.py",
+   "symbol": "_fake_transport",
+   "lines": "57-90",
+   "role": "AsyncMock transport fixture to reuse in helpdesk tests",
+   "evidence": [
+    "F009"
+   ]
+  },
+  {
+   "path": "packages/ai-parrot-tools/src/parrot_tools/zammad.py",
+   "symbol": "ZammadToolkit",
+   "lines": "141-330",
+   "role": "naming precedent for helpdesk-shaped tools (create/get/list/update/close/search ticket)",
+   "evidence": [
+    "F008"
+   ]
+  },
+  {
+   "path": "sdd/specs/odoo-fieldservice-toolkit.spec.md",
+   "symbol": "OdooFieldServiceToolkit",
+   "lines": "60-200",
+   "role": "approved-but-unimplemented precedent: subclass OdooToolkit, three-module models, HITL gating",
+   "evidence": [
+    "F007"
+   ]
+  },
+  {
+   "path": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
+   "symbol": "FEAT-614",
+   "lines": "1-140",
+   "role": "in-flight change on the same files; prerequisite for aggregate/stats tools",
+   "evidence": [
+    "F006",
+    "F021"
+   ]
+  }
+ ],
+ "constraints": [
+  {
+   "statement": "All Odoo I/O must go through `OdooToolkit._execute` (transport-agnostic); no direct aiohttp calls in a helpdesk layer.",
+   "evidence": [
+    "F002",
+    "F005"
+   ],
+   "implication": "helpdesk tools are thin wrappers over `_execute` + Pydantic validation."
+  },
+  {
+   "statement": "Tools are discovered by reflection over public `async def` methods; `@tool_schema` + docstring define the LLM schema; writes use `@requires_permission(\"odoo.write\")`.",
+   "evidence": [
+    "F003",
+    "F007",
+    "F011"
+   ],
+   "implication": "a subclass auto-registers its methods as `odoo_<name>`; private helpers must be underscore-prefixed."
+  },
+  {
+   "statement": "Models follow the entities / inputs / envelopes split with `_OdooEntity(extra=allow)`, `_OdooBaseInput(extra=ignore)` and envelope classes.",
+   "evidence": [
+    "F004"
+   ],
+   "implication": "helpdesk `HelpdeskTicket`, `*Input`, `*Result` classes go into the same three modules (or siblings re-exported from `models/__init__`)."
+  },
+  {
+   "statement": "On this tenant the ticket lifecycle is `stage_id` over 5 linear stages chained by `sh_next_stage`; `state` means reply direction; stage ids are instance-specific; Softhealer done/cancel button flags are off on every stage.",
+   "evidence": [
+    "F015",
+    "F016",
+    "F017"
+   ],
+   "implication": "transition tools must resolve stages by name / `sh_next_stage`, and the `action_done`/`action_cancel` paths may be no-ops here — writing `stage_id` may be the effective transition."
+  },
+  {
+   "statement": "JSON-2 cannot map `get_views` and (until FEAT-614) the `read_group` family; `[[id]]` action calls and `search_read/search_count/read/write/create/name_search` work.",
+   "evidence": [
+    "F005",
+    "F021",
+    "F006"
+   ],
+   "implication": "stats tools depend on FEAT-614; view-driven discovery must read `ir.ui.view.arch_db`."
+  },
+  {
+   "statement": "FEAT-614 edits `toolkit.py`, `models/inputs.py`, `test_odoo_toolkit.py` concurrently.",
+   "evidence": [
+    "F006"
+   ],
+   "implication": "sequence the helpdesk feature after FEAT-614 or keep it in new files only."
+  },
+  {
+   "statement": "`ODOO_HELPDESK_*` env keys (URL/USER/PASSWORD/APIKEY, no DATABASE) are not read anywhere in the code; `OdooToolkit` only knows `ODOO_*` via `parrot.conf`; JSON-2 works with an empty database.",
+   "evidence": [
+    "F008",
+    "F002",
+    "F012"
+   ],
+   "implication": "the helpdesk toolkit needs either explicit constructor args from the agent or new `ODOO_HELPDESK_*` conf keys; `database` must be allowed empty for JSON-2."
+  },
+  {
+   "statement": "The staging tenant is TROC-customised (extra_fields bag, dynamic-form origin, reassign wizard, `assignee_on_leave`, webhook dedupe); 0 SLA policies exist.",
+   "evidence": [
+    "F013",
+    "F015",
+    "F018",
+    "F019"
+   ],
+   "implication": "SLA-related outputs cannot be validated end-to-end on staging without creating a policy; extra fields need a generic `dict` projection."
+  },
+  {
+   "statement": "Tests for the Odoo toolkit live in `packages/ai-parrot/tests/` with an AsyncMock transport and assert exact `execute_kw` tuples.",
+   "evidence": [
+    "F009"
+   ],
+   "implication": "helpdesk tests follow the same fixture; no network in unit tests."
+  }
+ ],
+ "investigation": null,
+ "enrichment": {
+  "new": [
+   "`parrot_tools/odoo/helpdesk.py` — `OdooHelpdeskToolkit(OdooToolkit)` (name TBD, U1) with helpdesk tools grouped as: ticket read (`get_ticket`, `search_tickets`/`list_tickets`, `get_ticket_history`, `get_ticket_messages`, `get_ticket_extra_fields`), ticket write (`create_ticket`, `update_ticket`, `assign_ticket`/`take_ticket`/`reassign_ticket`, `add_ticket_comment`/`reply_ticket`), transitions (`move_ticket_stage`, `resolve_ticket`, `close_ticket`, `cancel_ticket`, `reopen_ticket`, `approve_ticket`), SLA (`list_sla_policies`, `create_sla_policy`, `update_sla_policy`, `get_ticket_sla_status`), reference data (`list_stages`, `list_teams`, `list_categories`, `list_priorities`, `list_ticket_types`, `list_tags`), optional stats (`ticket_stats` — gated on FEAT-614).",
+   "Entities: `HelpdeskTicket`, `HelpdeskStage`, `HelpdeskTeam`, `HelpdeskCategory`, `HelpdeskPriority`, `HelpdeskSla`, `HelpdeskSlaStatus`, `HelpdeskStageInfo` (all `_OdooEntity`).",
+   "Inputs: one `_OdooBaseInput` per tool (`CreateTicketInput`, `SearchTicketsInput`, `MoveTicketStageInput`, `AssignTicketInput`, `AddTicketCommentInput`, `CreateSlaPolicyInput`, …) with stage/team/category accepted by id **or** name.",
+   "Envelopes: `TicketResult`, `TicketListResult`, `TicketTransitionResult` (from_stage/to_stage/method_used), `TicketCommentResult`, `SlaPolicyResult`, `SlaStatusResult`, `HelpdeskReferenceResult`, `TicketStatsResult`.",
+   "Tests: `packages/ai-parrot/tests/test_odoo_helpdesk_toolkit.py` (AsyncMock transport) + optional live smoke script under `examples/`."
+  ],
+  "modified": [
+   {
+    "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/__init__.py",
+    "change": "re-export the helpdesk models",
+    "evidence": [
+     "F004"
+    ]
+   },
+   {
+    "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/__init__.py",
+    "change": "export the new toolkit class",
+    "evidence": [
+     "F004"
+    ]
+   },
+   {
+    "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py",
+    "change": "(optional, U1=c) either nothing — subclass lives in its own module — or `_DEFAULT_KNOWN_MODELS` extension / helpdesk methods added in place",
+    "evidence": [
+     "F002",
+     "F007"
+    ]
+   },
+   {
+    "path": "packages/ai-parrot/src/parrot/conf.py",
+    "change": "(U4) optional `ODOO_HELPDESK_*` keys or a documented explicit-args contract",
+    "evidence": [
+     "F008",
+     "F002"
+    ]
+   }
+  ],
+  "untouched": [
+   "`parrot/interfaces/odoointerface.py` and `parrot/clients/base.py`",
+   "XML-RPC / JSON-RPC transports; `Json2Transport._build_body` beyond what FEAT-614 already does",
+   "Existing generic CRUD / partner / sales / invoice / shell tools",
+   "Odoo-side customisation (no changes to `troc_helpdesk` / Softhealer modules)",
+   "Dynamic-form / NavAPI submission flow (read-only linkage via `dynamic_form_submission_id`)"
+  ],
+  "patterns": [
+   {
+    "pattern": "subclass `OdooToolkit`, tools auto-register, all Odoo I/O via `_execute`",
+    "evidence": [
+     "F007",
+     "F002"
+    ]
+   },
+   {
+    "pattern": "action-then-read-back: call `action_*` with `[[id]]`, then `_read_one` → entity",
+    "evidence": [
+     "F003",
+     "F017"
+    ]
+   },
+   {
+    "pattern": "per-model default field constants + `select_smart_fields` fallback",
+    "evidence": [
+     "F003",
+     "F011"
+    ]
+   },
+   {
+    "pattern": "`@requires_permission(\"odoo.write\")` on every mutating tool; optional HITL for destructive transitions (cancel/merge) as FEAT-216 planned",
+    "evidence": [
+     "F003",
+     "F007"
+    ]
+   }
+  ],
+  "risks": [
+   {
+    "risk": "Softhealer `action_done/action_closed/action_cancel/action_open` side effects are unverified (no staging write performed); on this tenant their guard flags are all False.",
+    "evidence": [
+     "F016",
+     "F017"
+    ],
+    "mitigation": "verify with a throwaway staging ticket at spec time (U3); fall back to `write({'stage_id': …})` + explicit `close_date/close_by` only if the actions are inert."
+   },
+   {
+    "risk": "File overlap with FEAT-614 (`toolkit.py`, `inputs.py`, `test_odoo_toolkit.py`).",
+    "evidence": [
+     "F006"
+    ],
+    "mitigation": "new modules only, or base the worktree after FEAT-614 merges."
+   },
+   {
+    "risk": "Stats/aggregation tools break over JSON-2 until FEAT-614.",
+    "evidence": [
+     "F021"
+    ],
+    "mitigation": "depend_on FEAT-614 or use N×`search_count`."
+   },
+   {
+    "risk": "`state` field naming will mislead the LLM (reply direction, not lifecycle).",
+    "evidence": [
+     "F015"
+    ],
+    "mitigation": "entity exposes `replied_status` alias and a derived `lifecycle` (`stage_name` + booleans)."
+   },
+   {
+    "risk": "SLA behaviour unobservable on staging (0 policies).",
+    "evidence": [
+     "F018"
+    ],
+    "mitigation": "unit-test against fields_get shape; live validation needs one policy created (U3)."
+   },
+   {
+    "risk": "Tenant-specific reference data (kiosk categories, stage ids) hard-coded by accident.",
+    "evidence": [
+     "F016",
+     "F019"
+    ],
+    "mitigation": "resolve by name at runtime; never hard-code ids."
+   }
+  ]
+ },
+ "confidence_map": [
+  {
+   "id": "C1",
+   "statement": "The helpdesk is Softhealer `sh_all_in_one_helpdesk` 19.0.0.0.1 with TROC layers `troc_helpdesk` 19.0.1.32.0, `dynamic_form_helpdesk`, `troc_helpdesk_dynamic_forms`.",
+   "evidence": [
+    "F013"
+   ],
+   "confidence": "high",
+   "reasoning": "read from `ir.module.module` on the live instance."
+  },
+  {
+   "id": "C2",
+   "statement": "Odoo 19.0-20260324 is reached over JSON-2 with the API key as bearer and an empty database header.",
+   "evidence": [
+    "F012",
+    "F005"
+   ],
+   "confidence": "high",
+   "reasoning": "live `context_get` and `server_info` succeeded."
+  },
+  {
+   "id": "C3",
+   "statement": "`OdooToolkit` extension point is a subclass with tools auto-registered by reflection and all I/O through `_execute`.",
+   "evidence": [
+    "F002",
+    "F003",
+    "F007"
+   ],
+   "confidence": "high",
+   "reasoning": "code read + FEAT-216 precedent."
+  },
+  {
+   "id": "C4",
+   "statement": "Ticket lifecycle on the tenant is `stage_id` across New→Open→Pending close→Pending reminder→Closed; `state` is reply direction.",
+   "evidence": [
+    "F015",
+    "F016"
+   ],
+   "confidence": "high",
+   "reasoning": "fields_get selection + stage rows + samples."
+  },
+  {
+   "id": "C5",
+   "statement": "Transition methods available are `action_approve/reply/done/closed/cancel/open`, `action_take_ticket`, `action_open_reassign`, plus mass-update/merge wizards.",
+   "evidence": [
+    "F017"
+   ],
+   "confidence": "high",
+   "reasoning": "parsed from `ir.ui.view.arch_db` of the installed form views."
+  },
+  {
+   "id": "C6",
+   "statement": "Calling those `action_*` methods over JSON-2 with `[[ticket_id]]` will work like `confirm_sale_order` and produce the intended stage change.",
+   "evidence": [
+    "F003",
+    "F005",
+    "F016"
+   ],
+   "confidence": "medium",
+   "reasoning": "mapping verified for `[[id]]`; effects unverified and guard flags are False on all stages."
+  },
+  {
+   "id": "C7",
+   "statement": "SLA policies are `sh.helpdesk.sla` records (team, days/hours/minutes, target reaching_stage|assign_to) and per-ticket status lives in `sh.helpdesk.sla.status`.",
+   "evidence": [
+    "F018"
+   ],
+   "confidence": "high",
+   "reasoning": "fields_get on both models."
+  },
+  {
+   "id": "C8",
+   "statement": "Creating a policy via `create` is enough to 'define an SLA'; attachment to tickets is automatic by team/type.",
+   "evidence": [
+    "F018"
+   ],
+   "confidence": "low",
+   "reasoning": "0 policies on staging; Softhealer assignment logic not observable."
+  },
+  {
+   "id": "C9",
+   "statement": "Helpdesk models must be added to the entities/inputs/envelopes split and re-exported; the test fixture is `_fake_transport`.",
+   "evidence": [
+    "F004",
+    "F009"
+   ],
+   "confidence": "high",
+   "reasoning": "direct reads."
+  },
+  {
+   "id": "C10",
+   "statement": "FEAT-614 must land first for any aggregate/stats helpdesk tool and overlaps the same files.",
+   "evidence": [
+    "F006",
+    "F021"
+   ],
+   "confidence": "high",
+   "reasoning": "422 reproduced live; spec lists the files."
+  },
+  {
+   "id": "C11",
+   "statement": "`ODOO_HELPDESK_*` keys are unused by the framework; an agent must pass explicit args or new conf keys are needed.",
+   "evidence": [
+    "F008",
+    "F002"
+   ],
+   "confidence": "high",
+   "reasoning": "grep across packages found no reader."
+  },
+  {
+   "id": "C12",
+   "statement": "TROC extra fields (`field_name → value`) and dynamic-form linkage are the tenant's main ticket payload and belong in the ticket entity as a dict projection.",
+   "evidence": [
+    "F019",
+    "F015"
+   ],
+   "confidence": "medium",
+   "reasoning": "observed on 3 sampled tickets; generality across tenants unknown."
+  },
+  {
+   "id": "C13",
+   "statement": "The `odoo_hd` agent that already uses this instance lives outside this repository.",
+   "evidence": [
+    "F008",
+    "F006"
+   ],
+   "confidence": "medium",
+   "reasoning": "absence in repo grep; ledger attribution only."
+  }
+ ],
+ "unknowns": [
+  {
+   "id": "U1",
+   "question": "Packaging: subclass `OdooHelpdeskToolkit(OdooToolkit)` in `parrot_tools/odoo/helpdesk.py` (FEAT-216 precedent), a reusable `OdooHelpdeskMixin` composed as `class X(OdooHelpdeskMixin, OdooToolkit)`, or methods added directly to `OdooToolkit`?",
+   "blocks_claims": [
+    "C3"
+   ],
+   "plausible_answers": [
+    "subclass (recommended — precedent, isolated files, no FEAT-614 overlap)",
+    "mixin (only if helpdesk tools must be attachable to other Odoo toolkits such as fieldservice)",
+    "in-place methods on OdooToolkit (widens every Odoo agent's tool surface)"
+   ],
+   "ask_user": true,
+   "user_answer": "subclass OdooHelpdeskToolkit(OdooToolkit) in parrot_tools/odoo/helpdesk.py"
+  },
+  {
+   "id": "U2",
+   "question": "Which tool groups are in scope for v1?",
+   "blocks_claims": [
+    "C5",
+    "C7"
+   ],
+   "plausible_answers": [
+    "tickets read+write+transitions+comments (core)",
+    "+ assignment (take/reassign/multi-assign)",
+    "+ SLA policy CRUD and per-ticket SLA status",
+    "+ reference-data lookups (stages/teams/categories/priorities/types/tags)",
+    "+ stats (depends on FEAT-614)",
+    "+ merge / mass-update wizards",
+    "+ timesheet start/stop"
+   ],
+   "ask_user": true,
+   "user_answer": "ALL groups in v1: assignment (take/reassign/multi-assign); SLA policy CRUD + per-ticket SLA status; reference-data lookups; stats (after FEAT-614) + merge/mass-update wizards + timesheet start/stop"
+  },
+  {
+   "id": "U3",
+   "question": "Transition semantics and validation: should transitions call Softhealer's `action_done/closed/cancel/open` (server side effects, wizard risk) or write `stage_id` directly (predictable, resolves by stage name), and may the spec phase create/mutate a throwaway ticket on staging to verify?",
+   "blocks_claims": [
+    "C6",
+    "C8"
+   ],
+   "plausible_answers": [
+    "call action_* and verify on staging with a throwaway ticket (recommended)",
+    "write stage_id directly, record close_date/close_by ourselves",
+    "both: action_* first, stage_id fallback when the guard flag is False"
+   ],
+   "ask_user": true,
+   "user_answer": "call Softhealer action_* with [[id]]; the spec phase may create and mutate a throwaway ticket on staging to verify effects"
+  },
+  {
+   "id": "U4",
+   "question": "Configuration contract: add `ODOO_HELPDESK_*` keys to `parrot.conf` (URL/USER/APIKEY, database optional) as the toolkit's default, or keep explicit constructor args only (agent passes them)?",
+   "blocks_claims": [
+    "C11",
+    "C2"
+   ],
+   "plausible_answers": [
+    "new ODOO_HELPDESK_* conf keys as defaults for the helpdesk toolkit",
+    "explicit args only, documented in the toolkit docstring",
+    "reuse ODOO_* and point them at the helpdesk instance"
+   ],
+   "ask_user": true,
+   "user_answer": "new ODOO_HELPDESK_* conf keys (URL/USER/APIKEY, DATABASE optional/empty for JSON-2) as toolkit defaults"
+  },
+  {
+   "id": "U5",
+   "question": "TROC-specific payload: expose `extra_field_ids` as a typed `dict[str,str]` and dynamic-form linkage on the ticket entity in v1, or keep v1 vendor-generic (Softhealer only)?",
+   "blocks_claims": [
+    "C12"
+   ],
+   "plausible_answers": [
+    "include extra_fields dict + submission link (read-only) in v1",
+    "defer to a TROC-specific follow-up"
+   ],
+   "ask_user": true,
+   "user_answer": null
+  }
+ ],
+ "recommended_next_command": {
+  "command": "sdd-spec",
+  "rationale": "Localization is high-confidence, the subclass-vs-mixin fork already has an in-repo precedent (FEAT-216), and the remaining unknowns are product decisions answerable in Q&A rather than architectural exploration."
+ },
+ "overall_confidence": "medium",
+ "meta": {
+  "findings_used": [
+   "F001",
+   "F002",
+   "F003",
+   "F004",
+   "F005",
+   "F006",
+   "F007",
+   "F008",
+   "F009",
+   "F010",
+   "F011",
+   "F012",
+   "F013",
+   "F014",
+   "F015",
+   "F016",
+   "F017",
+   "F018",
+   "F019",
+   "F020",
+   "F021"
+  ],
+  "findings_unused": [],
+  "notes": "Wall time exceeded the default 300s budget because live-instance discovery (≈45 RPC calls) is outside the budget profile; every planned query ran, so truncated=false. No write was performed on staging. Overall confidence is medium because transition side effects (C6) and SLA assignment (C8) are unverified without a staging write."
+ }
+}
