@@ -16,16 +16,17 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; creates storage/__init__.py and storage/models.py, which every later storage task imports (StudioPartition, records, errors)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3922-storage-models.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:46:26+00:00",
+      "file": "sdd/tasks/completed/TASK-3922-storage-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3923",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; sole FEAT-621 writer of core bots/stores/local.py and tools/spec.py; TASK-3927 imports agent_tooling_ref/toolkit_override_vault_name from it, TASK-3940 relies on the _agents_dir KB hook",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3923-core-hooks-kb-dir-tooling-ref.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:46:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3923-core-hooks-kb-dir-tooling-ref.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3924",
@@ -52,16 +54,17 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits the dependency manifest packages/ai-parrot-server/pyproject.toml (package-data); no dependency (the storage directory imports as an implicit namespace package until TASK-3922's package marker merges); first writer of storage/migrate.py and MANIFEST.json (TASK-3926, -31, -32, -33 serialize after it)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3924-studio-migration-files-manifest.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:47:37+00:00",
+      "file": "sdd/tasks/completed/TASK-3924-studio-migration-files-manifest.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3925",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -79,9 +82,10 @@
       "parallel": true,
       "parallelism_notes": "imports StudioStorageError from TASK-3922 (storage/models.py); creates storage/repositories.py, which TASK-3926 (apply) imports and TASK-3928/08/09 extend",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3925-storage-transaction-primitives.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:48:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3925-storage-transaction-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3926",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,9 +104,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot-server/pyproject.toml ([project.scripts]) and creates tests/studio/storage/conftest.py that later storage tests load; extends storage/migrate.py after TASK-3924 (list_migrations, constants); imports studio_transaction/_exec from TASK-3925 (storage/repositories.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3926-migrations-ledger-apply-cli.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:50:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3926-migrations-ledger-apply-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3927",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -120,9 +125,10 @@
       "parallel": true,
       "parallelism_notes": "imports toolkit_override_vault_name and agent_tooling_ref from TASK-3923 (core tools/spec.py); first FEAT-621 writer of tooling_store.py, toolkit_overrides.py, toolkit_persistence.py and handlers/agent.py (TASK-3934, -25, -33 follow)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3927-tooling-identity-plumbing.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:52:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3927-tooling-identity-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3928",
@@ -131,7 +137,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -141,9 +147,10 @@
       "parallel": true,
       "parallelism_notes": "extends storage/repositories.py after TASK-3925 (studio_transaction/_exec); its tests use the studio_pool fixture from TASK-3926 (conftest.py, applied migrations); models from TASK-3922 arrive transitively",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3928-agent-repository.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:55:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3928-agent-repository.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3929",
@@ -152,7 +159,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -161,9 +168,10 @@
       "parallel": true,
       "parallelism_notes": "extends storage/repositories.py after TASK-3928 (same file; joins through StudioAgentRepository's partition predicate and row mappers)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3929-asset-tooling-repositories.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:56:39+00:00",
+      "file": "sdd/tasks/completed/TASK-3929-asset-tooling-repositories.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3930",
@@ -172,7 +180,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -181,9 +189,10 @@
       "parallel": true,
       "parallelism_notes": "extends storage/repositories.py after TASK-3929 (same file); defines StudioRepositories that TASK-3931/11/12 import",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3930-draft-catalog-repositories.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T02:58:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3930-draft-catalog-repositories.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3931",
@@ -192,7 +201,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -201,9 +210,10 @@
       "parallel": true,
       "parallelism_notes": "mirrors the method set of the five repositories and the StudioRepositories container from TASK-3930 (storage/repositories.py); creates storage/testing.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3931-inmemory-studio-repositories.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T03:07:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3931-inmemory-studio-repositories.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3932",
@@ -212,7 +222,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -222,9 +232,10 @@
       "parallel": true,
       "parallelism_notes": "maps read_ledger/LedgerState from TASK-3926 (storage/migrate.py) to a backend and builds StudioRepositories from TASK-3930 (storage/repositories.py); first FEAT-621 writer of studio/__init__.py and studio/_base.py (TASK-3944 follows on _base.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3932-backend-selection-partition-hook.md"
+      "started_at": "2026-10-01T02:45:20+00:00",
+      "completed_at": "2026-10-01T03:10:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3932-backend-selection-partition-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3933",
