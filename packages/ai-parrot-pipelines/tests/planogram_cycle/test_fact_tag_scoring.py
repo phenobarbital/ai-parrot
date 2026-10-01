@@ -85,7 +85,9 @@ def _run(bindings, outcomes):
     return shelves, final
 
 
-FAILED = RuleOutcome(rule_id="fact_tag_present:s1_f1", assessed=True, passed=False, score=0.0, detail="fact tag not observed")
+FAILED = RuleOutcome(
+    rule_id="fact_tag_present:s1_f1", assessed=True, passed=False, score=0.0, detail="fact tag not observed"
+)
 BINDING = RuleBinding(rule_id="fact_tag_present:s1_f1", kind="fact_tag_present", target_id="s1_f1", mandatory=False)
 
 
