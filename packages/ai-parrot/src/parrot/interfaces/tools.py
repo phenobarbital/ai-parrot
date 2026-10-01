@@ -12,6 +12,7 @@ from parrot.mcp import MCPServerConfig
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.discovery import discover_from_registry, resolve_class
 from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
+from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject
 
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
@@ -185,8 +186,39 @@ class ToolInterface:
         except (ImportError, AttributeError):
             return None
 
-    async def apply_tooling_specs(self) -> list[str]:
+    def bind_tooling_policy(self, policy: "TenantToolingPolicy | None", subject: "ToolingSubject") -> None:
+        """Bind the build-time tenant tooling policy for the next ``configure()`` (FEAT-622, RC-9).
+
+        Raises:
+            RuntimeError: tooling was already applied; a late binding would police nothing.
+        """
+        if getattr(self, "_tooling_applied", False):
+            raise RuntimeError("bind_tooling_policy() called after tooling specs were applied")
+        self._tooling_policy = policy
+        self._tooling_subject = subject
+
+    def _resolve_tooling_binding(
+        self,
+        tooling_policy: "TenantToolingPolicy | None",
+        tooling_subject: "ToolingSubject | None",
+    ) -> "tuple[TenantToolingPolicy | None, ToolingSubject | None]":
+        """Explicit kwargs win over the bound values; a tenant subject without policy gets ``deny_all()``."""
+        policy = tooling_policy if tooling_policy is not None else getattr(self, "_tooling_policy", None)
+        subject = tooling_subject if tooling_subject is not None else getattr(self, "_tooling_subject", None)
+        if subject is None:
+            return None, None
+        if policy is None and subject.tenant is not None:
+            policy = TenantToolingPolicy.deny_all()
+        return policy, subject
+
+    async def apply_tooling_specs(
+        self,
+        *,
+        tooling_policy: "TenantToolingPolicy | None" = None,
+        tooling_subject: "ToolingSubject | None" = None,
+    ) -> list[str]:
         """Hydrate and register pending toolkit / MCP specs once (FEAT-593). Never raises."""
+        policy, subject = self._resolve_tooling_binding(tooling_policy, tooling_subject)
         toolkits: list[ToolkitSpec] = list(getattr(self, "_pending_toolkit_specs", None) or [])
         mcp_specs: list[AgentMCPServerSpec] = list(getattr(self, "_pending_mcp_specs", None) or [])
         self._tooling_revision = tooling_revision(toolkits, mcp_specs)
@@ -197,6 +229,8 @@ class ToolInterface:
         registered: list[str] = []
         for spec in toolkits:
             try:
+                if policy is not None:
+                    policy.check_tool(spec.slug, subject=subject)
                 cls = self._resolve_spec_class(spec.slug)
                 if cls is None:
                     self.logger.warning("Toolkit spec '%s': unknown slug, skipped", spec.slug)
@@ -243,15 +277,21 @@ class ToolInterface:
                 tools = self.tool_manager.register_toolkit(instance)
                 self._capture_knowledge_toolkit(instance)
                 registered.extend(tool.name for tool in tools)
+            except TenantToolingRefused as exc:
+                self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
             except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
                 self.logger.warning("Toolkit spec '%s' skipped: %s", spec.slug, type(exc).__name__)
 
         for mspec in mcp_specs:
             try:
                 kwargs = await hydrate_mcp(mspec)
+                if policy is not None:
+                    kwargs = policy.resolve_mcp(kwargs, subject=subject)
                 config = MCPServerConfig(**kwargs)
                 if hasattr(self, "add_mcp_server"):
                     registered.extend(await self.add_mcp_server(config))
+            except TenantToolingRefused as exc:
+                self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
             except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
                 self.logger.warning("MCP server spec '%s' skipped: %s", mspec.name, type(exc).__name__)
 

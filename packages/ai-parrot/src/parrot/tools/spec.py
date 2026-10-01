@@ -186,6 +186,10 @@ async def hydrate_mcp(spec: AgentMCPServerSpec) -> dict[str, Any]:
     """Return ``MCPServerConfig`` kwargs with headers/auth_config/env restored from the vault."""
     base = spec.model_dump(exclude={"params", "secret_refs", "vault_owner"}, exclude_none=True)
     base.update(spec.params)
+    foreign = sorted(field for field in spec.secret_refs if field not in MCP_SECRET_FIELDS)
+    if foreign:
+        # FEAT-622: vault values may fill only headers/auth_config/env; never transport/command/etc.
+        raise ValueError(f"MCP secret_refs may only reference {MCP_SECRET_FIELDS}: {foreign}")
     grouped_fields: dict[str, list[str]] = {}
     for field, vault_name in spec.secret_refs.items():
         grouped_fields.setdefault(vault_name, []).append(field)
