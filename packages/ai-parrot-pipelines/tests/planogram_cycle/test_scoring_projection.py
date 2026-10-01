@@ -365,3 +365,113 @@ def test_overall_score_is_unweighted_shelf_mean():
     assert result.shelf_scores[0].lenient_score == pytest.approx(1.0)
     assert result.shelf_scores[1].lenient_score == pytest.approx(0.0)
     assert result.overall_compliance_score == pytest.approx(0.5)  # not the facing-weighted 0.25
+
+
+# --------------------------------------------------------------------------- FEAT-612 expected-empty / zone-only
+
+
+def _empty_definition(n_occupied: int, n_empty: int):
+    """One shelf 'top': n_occupied described facings then n_empty expected-empty facings (no product)."""
+    facings = []
+    for idx in range(1, n_occupied + 1):
+        facings.append(
+            {
+                "facing_id": f"top_f{idx}",
+                "shelf_id": "top",
+                "slot": idx,
+                "product": f"TOP-{idx}",
+                "brand": BRAND,
+                "descriptors": {"display_name": f"Product top {idx}"},
+            }
+        )
+    for idx in range(n_occupied + 1, n_occupied + n_empty + 1):
+        facings.append({"facing_id": f"top_f{idx}", "shelf_id": "top", "slot": idx, "expected_occupancy": "empty"})
+    data = {
+        "version": "1",
+        "shelves": [{"shelf_id": "top", "shelf_number": 1, "level": "top", "facings": facings}],
+        "zones": [],
+    }
+    return load_slots_definition(data)
+
+
+def test_expected_empty_observed_empty_is_full_credit_and_not_occupied():
+    definition = _empty_definition(1, 1)
+    reg, idents = _observe("img0", {"top_f1": _obs("img0", "", "TOP-1"), "top_f2": _obs("img0", "", None, empty=True)})
+    result = _run(definition, _description(["top"]), [reg], idents)
+    by_id = {p.facing_id: p for p in result.position_results}
+    assert by_id["top_f2"].status == FacingStatus.EXPECTED_EMPTY
+    assert (by_id["top_f2"].strict_credit, by_id["top_f2"].lenient_credit) == (1.0, 1.0)
+    assert result.shelf_scores[0].occupied_facings == 1
+    assert result.detected_products == 1
+    assert result.overall_compliant is True
+
+
+def test_expected_empty_observed_occupied_is_violation():
+    definition = _empty_definition(1, 1)
+    reg, idents = _observe("img0", {"top_f1": _obs("img0", "", "TOP-1"), "top_f2": _obs("img0", "", "X")})
+    result = _run(definition, _description(["top"]), [reg], idents)
+    by_id = {p.facing_id: p for p in result.position_results}
+    assert by_id["top_f2"].status == FacingStatus.UNEXPECTED_OCCUPIED
+    assert (by_id["top_f2"].strict_credit, by_id["top_f2"].lenient_credit) == (0.0, 0.0)
+    assert result.shelf_scores[0].coverage == 1.0
+    assert result.shelf_scores[0].occupied_facings == 2
+    assert result.compliance_results[0].unexpected_products == ["X"]
+    assert result.compliance_results[0].compliance_status == ComplianceStatus.NON_COMPLIANT
+
+
+def test_expected_empty_unseen_and_conflict():
+    definition = _empty_definition(0, 1)
+    unseen = _run(definition, _description(["top"]), [], [])
+    assert unseen.position_results[0].status == FacingStatus.NOT_VISIBLE
+    assert unseen.compliance_results[0].missing_products == []
+    assert unseen.overall_compliant is False
+
+    reg0, id0 = _observe("img0", {"top_f1": _obs("img0", "", "X")})
+    reg1, id1 = _observe("img1", {"top_f1": _obs("img1", "", None, empty=True)})
+    conflict = _run(definition, _description(["top"]), [reg0, reg1], id0 + id1)
+    assert conflict.position_results[0].status == FacingStatus.CONFLICT
+    assert conflict.assessment_status == AssessmentStatus.INCONCLUSIVE
+
+
+def test_only_expected_empty_positions_score_one_and_are_compliant():
+    definition = _empty_definition(0, 2)
+    reg, idents = _observe(
+        "img0",
+        {"top_f1": _obs("img0", "", None, empty=True), "top_f2": _obs("img0", "", None, empty=True)},
+    )
+    result = _run(definition, _description(["top"]), [reg], idents)
+    assert result.overall_compliance_score == pytest.approx(1.0)
+    assert result.detected_products == 0
+    assert result.compliance_results[0].expected_products == []
+    assert result.overall_compliant is True
+
+
+def test_zone_only_run_coverage_evidence_and_threshold():
+    zones = [{"zone_id": "zone_backlit", "kind": "backlit", "shelf_id": "header", "required": True}]
+    definition = _definition([("header", "header", 0)], zones=zones)
+    bindings = validate_bindings(
+        definition, {"rule_bindings": [{"rule_id": "zone", "kind": "zone_present", "target_id": "zone_backlit"}]}
+    )
+    description = _description(["header"], endcap=True)
+    # no rule assessed -> coverage 0.0, evidence 0.0, inconclusive, not compliant
+    unassessed = {"zone": RuleOutcome(rule_id="zone", assessed=False)}
+    result = _run(definition, description, [], [], bindings, unassessed)
+    assert result.coverage == 0.0 and result.evidence_quality == 0.0
+    assert result.assessment_status == AssessmentStatus.INCONCLUSIVE
+    assert result.overall_compliant is False
+    # assessed and passed -> coverage 1.0
+    obs = [
+        __import__("parrot_pipelines.planogram.contracts", fromlist=["ObservationRef"]).ObservationRef(
+            image_id="img0", shape_id="s", source=ObservationSource("cv"), raw_confidence=0.9
+        )
+    ]
+    passed = {"zone": RuleOutcome(rule_id="zone", assessed=True, passed=True, score=1.0, observations=obs)}
+    result = _run(definition, description, [], [], bindings, passed)
+    assert result.coverage == 1.0
+    assert result.evidence_quality == pytest.approx(EvidenceWeights().weight_for(ObservationSource("cv")))
+    assert result.assessment_status == AssessmentStatus.COMPLETE
+    assert result.overall_compliant is True
+    # below threshold on lenient_score -> not compliant
+    failed = {"zone": RuleOutcome(rule_id="zone", assessed=True, passed=False, score=0.0)}
+    result = _run(definition, description, [], [], bindings, failed)
+    assert result.compliance_results[0].compliance_status != ComplianceStatus.COMPLIANT

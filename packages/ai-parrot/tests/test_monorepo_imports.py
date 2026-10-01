@@ -4,36 +4,42 @@ Validates import paths work correctly in both the pre-migration flat layout
 and the post-migration monorepo layout. Tests that require the monorepo
 layout use try/except with pytest.skip for graceful degradation.
 """
+
 import importlib
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # Core package imports (must work in any layout)
 # ---------------------------------------------------------------------------
+
 
 class TestCoreImports:
     """Verify core parrot imports work without sub-packages."""
 
     def test_import_parrot(self):
         import parrot
+
         assert hasattr(parrot, "__version__")
 
     def test_import_bots(self):
         from parrot.bots import Chatbot, Agent
+
         assert Chatbot is not None
         assert Agent is not None
 
     def test_import_abstract_loader(self):
         from parrot.loaders.abstract import AbstractLoader
+
         assert AbstractLoader is not None
 
     def test_import_document(self):
         from parrot.loaders import Document
+
         assert Document is not None
 
     def test_import_tools_base(self):
         from parrot.tools import AbstractTool, AbstractToolkit
+
         assert AbstractTool is not None
         assert AbstractToolkit is not None
 
@@ -42,29 +48,35 @@ class TestCoreImports:
 # Direct submodule imports (work in both layouts)
 # ---------------------------------------------------------------------------
 
+
 class TestDirectSubmoduleImports:
     """Verify direct submodule imports always work."""
 
     def test_tools_pythonrepl(self):
         from parrot.tools.pythonrepl import PythonREPLTool
+
         assert PythonREPLTool is not None
 
     def test_tools_agent(self):
         from parrot.tools.agent import AgentTool
+
         assert AgentTool is not None
 
     def test_tools_openapi(self):
         from parrot.tools.openapitoolkit import OpenAPIToolkit
+
         assert OpenAPIToolkit is not None
 
     def test_loaders_abstract(self):
         from parrot.loaders.abstract import AbstractLoader
+
         assert AbstractLoader is not None
 
 
 # ---------------------------------------------------------------------------
 # Monorepo-specific: parrot_tools package
 # ---------------------------------------------------------------------------
+
 
 class TestParrotToolsPackage:
     """Verify parrot_tools package when installed."""
@@ -101,6 +113,7 @@ class TestParrotToolsPackage:
 # Monorepo-specific: parrot_loaders package
 # ---------------------------------------------------------------------------
 
+
 class TestParrotLoadersPackage:
     """Verify parrot_loaders package when installed."""
 
@@ -133,6 +146,7 @@ class TestParrotLoadersPackage:
 # Discovery system
 # ---------------------------------------------------------------------------
 
+
 class TestDiscovery:
     """Verify tool discovery works."""
 
@@ -157,6 +171,7 @@ class TestDiscovery:
 # Monorepo-specific: parrot_pipelines package
 # ---------------------------------------------------------------------------
 
+
 class TestParrotPipelinesPackage:
     """Verify parrot_pipelines package when installed."""
 
@@ -177,3 +192,90 @@ class TestParrotPipelinesPackage:
             pytest.skip("parrot_pipelines not installed")
         assert PlanogramConfig is not None
         assert PlanogramCompliance is not None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-612: removed legacy planogram pipeline / detector APIs
+# ---------------------------------------------------------------------------
+
+_REMOVED_PIPELINE_NAMES = ("PlanogramCompliancePipeline", "RetailDetector")
+
+
+class TestPlanogramLegacyRemoval:
+    """Surviving planogram exports resolve; removed legacy names and proxy modules do not (AC14)."""
+
+    @pytest.fixture(autouse=True)
+    def _require_pipelines(self):
+        try:
+            import parrot_pipelines  # noqa: F401
+        except ImportError:
+            pytest.skip("parrot_pipelines not installed")
+
+    def test_surviving_package_exports_resolve(self):
+        from parrot_pipelines.planogram import AbstractPlanogramType, InkWall, PlanogramCompliance
+
+        assert AbstractPlanogramType is not None
+        assert InkWall is not None
+        assert PlanogramCompliance.__name__ == "PlanogramCompliance"
+
+    def test_surviving_core_proxy_exports_resolve(self):
+        import parrot_pipelines.planogram as pkg
+        from parrot.pipelines.planogram import AbstractPlanogramType, PlanogramCompliance
+
+        assert PlanogramCompliance is pkg.PlanogramCompliance
+        assert AbstractPlanogramType is pkg.AbstractPlanogramType
+
+    @pytest.mark.parametrize("name", _REMOVED_PIPELINE_NAMES)
+    def test_removed_names_not_importable_from_package(self, name):
+        import parrot_pipelines.planogram as planogram
+
+        assert name not in planogram.__all__
+        with pytest.raises(AttributeError):
+            getattr(planogram, name)
+
+    @pytest.mark.parametrize("name", _REMOVED_PIPELINE_NAMES)
+    def test_removed_names_not_importable_from_core_proxy(self, name):
+        import parrot.pipelines.planogram as proxy
+
+        assert name not in proxy.__all__
+        with pytest.raises(ImportError):
+            exec(f"from parrot.pipelines.planogram import {name}", {})
+
+    @pytest.mark.parametrize(
+        "module",
+        [
+            "parrot_pipelines.planogram.legacy",
+            "parrot_pipelines.detector",
+            "parrot.pipelines.planogram.legacy",
+            "parrot.pipelines.detector",
+        ],
+    )
+    def test_removed_modules_raise_import_error(self, module):
+        with pytest.raises(ImportError):
+            importlib.import_module(module)
+
+    def test_registry_has_no_removed_entries(self):
+        from parrot_pipelines import PIPELINE_REGISTRY
+
+        for name in ("AbstractDetector", "PlanogramCompliancePipeline", "RetailDetector"):
+            assert name not in PIPELINE_REGISTRY
+        for path in PIPELINE_REGISTRY.values():
+            module = path.rsplit(".", 1)[0]
+            assert ".legacy" not in module
+            assert module != "parrot_pipelines.detector"
+
+    def test_pipelines_source_has_no_heavy_legacy_imports(self):
+        """Static guard: no pipelines module imports pytesseract / torch / ultralytics at any indentation."""
+        import re
+        from pathlib import Path
+
+        import parrot_pipelines
+
+        pattern = re.compile(r"^\s*(import|from)\s+(pytesseract|torch|ultralytics)\b")
+        root = Path(parrot_pipelines.__file__).parent
+        offenders = []
+        for py in root.rglob("*.py"):
+            for lineno, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+                if pattern.match(line):
+                    offenders.append(f"{py}:{lineno}")
+        assert not offenders, offenders

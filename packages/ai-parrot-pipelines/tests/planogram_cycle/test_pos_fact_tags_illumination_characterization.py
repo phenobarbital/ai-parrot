@@ -1,256 +1,382 @@
-"""Characterization tests: fact-tag OCR, corroboration, shelf assignment, illumination — as they behave TODAY (FEAT-574)."""
+"""Regression tests: illumination evidence, fact-tag corroboration and row registration on the cycle (FEAT-612)."""
 
 from __future__ import annotations
 
 import logging
-from types import SimpleNamespace
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 from unittest.mock import MagicMock
 
 import pytest
 
-from parrot.models.detections import DetectionBox, IdentifiedProduct, ShelfRegion
+from parrot.models.detections import AisleConfig, DetectionBox, PlanogramDescription, ShelfConfig
 from parrot_pipelines.models import PlanogramConfig
-from parrot_pipelines.planogram.types import ProductOnShelves
-
-RAW_CONFIG = {
-    "brand": "TestBrand",
-    "category": "Scanners",
-    "aisle": {"name": "Electronics > Test", "lighting_conditions": "normal"},
-    "shelves": [
-        {
-            "level": "header",
-            "height_ratio": 0.2,
-            "is_background": True,
-            "products": [{"name": "TestBrand Backlit", "product_type": "promotional_graphic"}],
-        },
-        {
-            "level": "top",
-            "height_ratio": 0.4,
-            "products": [{"name": "ES-400", "product_type": "product"}, {"name": "RR-60", "product_type": "product"}],
-        },
-        {"level": "bottom", "height_ratio": 0.4, "products": [{"name": "DS-770", "product_type": "product"}]},
-    ],
-}
-
-
-#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise the legacy
-#: methods directly, so any valid minimal definition satisfies construction.
-_MIN_SLOTS_DEFINITION = {
-    "shelves": [
-        {
-            "shelf_id": "shelf_1",
-            "shelf_number": 1,
-            "facings": [
-                {
-                    "facing_id": "f1",
-                    "shelf_id": "shelf_1",
-                    "slot": 1,
-                    "product": "P",
-                    "descriptors": {"display_name": "P"},
-                }
-            ],
-        }
-    ]
-}
+from parrot_pipelines.planogram import plan as plan_module
+from parrot_pipelines.planogram.comparison.definition import RuleBinding, load_slots_definition
+from parrot_pipelines.planogram.contracts import (
+    AssessmentStatus,
+    ComparisonResult,
+    CreditPolicy,
+    CycleContext,
+    EvidenceWeights,
+    FacingStatus,
+    FixtureMembership,
+    Identification,
+    IdentificationResult,
+    ObservationSource,
+    PerceptionResult,
+    RuleObservation,
+    Shape,
+    ShapeKind,
+    Slot,
+)
+from parrot_pipelines.planogram.plan import PlanogramCompliance
+from parrot_pipelines.planogram.types.product_on_shelves import ProductOnShelves
 
 
-def box(x1: int, y1: int, x2: int, y2: int) -> DetectionBox:
-    """A detection box with confidence 0.9."""
-    return DetectionBox(x1=x1, y1=y1, x2=x2, y2=y2, confidence=0.9)
+class _RaisingVision:
+    """Any attribute access or call proves compare() tried to use the vision adapter (AC8)."""
+
+    def __getattr__(self, name: str) -> Any:
+        raise AssertionError(f"compare() must not touch vision ({name})")
 
 
-def prod(
-    model: Optional[str],
-    ptype: str = "product",
-    b: Optional[DetectionBox] = None,
-    shelf_location: Optional[str] = None,
-    **extra: Any,
-) -> IdentifiedProduct:
-    """An identified product."""
-    return IdentifiedProduct(
-        product_type=ptype, product_model=model, confidence=0.9, detection_box=b, shelf_location=shelf_location, **extra
-    )
+def definition(shelves: Dict[str, List[str]], zones: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
+    """Raw definition: ``{"top": ["P-100", "P-200"], ...}`` in top-to-bottom order; generic labels only."""
+    rows = []
+    for number, (level, products) in enumerate(shelves.items()):
+        facings = [
+            {
+                "facing_id": f"{level}:{slot}",
+                "shelf_id": level,
+                "slot": slot,
+                "product": product,
+                "brand": "Acme",
+                "descriptors": {"display_name": product, "identifiers": [product]},
+            }
+            for slot, product in enumerate(products, start=1)
+        ]
+        rows.append({"shelf_id": level, "shelf_number": number, "level": level, "facings": facings})
+    return {"shelves": rows, "zones": list(zones)}
 
 
-def regions() -> List[ShelfRegion]:
-    """header (background) y∈[0,200), top y∈[200,500), bottom y∈[500,1000)."""
-    return [
-        ShelfRegion(shelf_id="h", level="header", bbox=box(0, 0, 800, 200), is_background=True),
-        ShelfRegion(shelf_id="t", level="top", bbox=box(0, 200, 800, 500)),
-        ShelfRegion(shelf_id="b", level="bottom", bbox=box(0, 500, 800, 1000)),
-    ]
-
-
-@pytest.fixture
-def handler(fake_vision_client: Any) -> ProductOnShelves:
-    """Real ProductOnShelves; the SAME fake is both roi_client and llm (refactor-proof)."""
-    config = PlanogramConfig(
-        config_name="c",
-        planogram_type="product_on_shelves",
-        planogram_config=RAW_CONFIG,
-        roi_detection_prompt="roi",
-        object_identification_prompt="objects",
-        slots_definition=_MIN_SLOTS_DEFINITION,
-    )
+def handler(raw_definition: Dict[str, Any], threshold: Optional[float] = None) -> ProductOnShelves:
+    """ProductOnShelves over a MagicMock pipeline with a minimal migrated configuration."""
     pipeline = MagicMock()
-    pipeline.logger = logging.getLogger("test.pos.helpers")
-    pipeline.roi_client = fake_vision_client
-    pipeline.llm = fake_vision_client
-    pipeline._downscale_image = MagicMock(side_effect=lambda img, **kw: img)
+    pipeline.logger = logging.getLogger("test.pos.regression")
+    pipeline.reference_images = {}
+    config = MagicMock()
+    config.planogram_config = {"brand": "Acme"}
+    config.slots_definition = raw_definition
+    if threshold is None:
+        config.get_planogram_description.side_effect = ValueError("no legacy shelves")
+    else:
+        config.get_planogram_description.return_value = PlanogramDescription(
+            brand="Acme",
+            category="generic",
+            aisle=AisleConfig(name="aisle"),
+            shelves=[
+                ShelfConfig(level=shelf["level"], products=[], compliance_threshold=threshold)
+                for shelf in raw_definition["shelves"]
+            ],
+        )
     return ProductOnShelves(pipeline=pipeline, config=config)
 
 
-# --------------------------------------------------------------------------- Part 2: illumination and fact-tag OCR
+def ctx(raw_definition: Dict[str, Any], bindings: Sequence[Dict[str, Any]] = ()) -> CycleContext:
+    """Deterministic context: default credits/weights, POS default layout, vision that raises."""
+    return CycleContext(
+        definition=load_slots_definition(raw_definition),
+        bindings=[RuleBinding(**binding) for binding in bindings],
+        credit_policy=CreditPolicy.default(),
+        evidence_weights=EvidenceWeights(),
+        layout=ProductOnShelves.default_layout_profile(),
+        vision=_RaisingVision(),
+    )
 
 
-@pytest.mark.parametrize(
-    "answer,expected",
-    [
-        ("The panel is dull.\nLIGHT_OFF", "illumination_status: OFF"),
-        ("Uniform glow.\nLIGHT_ON", "illumination_status: ON"),
-        ("no verdict at all", "illumination_status: ON"),  # anything without LIGHT_OFF ⇒ ON (:247)
-        ("", "illumination_status: ON"),
-    ],
+def observe(
+    rows: List[List[Optional[str]]],
+    image_id: str = "img0",
+    membership: FixtureMembership = FixtureMembership.ON_FIXTURE,
+    extra_shapes: Sequence[Shape] = (),
+) -> tuple[PerceptionResult, IdentificationResult]:
+    """One product shape + slot per cell; ``None`` = observed empty; row 0 is the top row."""
+    shapes: List[Shape] = []
+    slots: List[Slot] = []
+    idents: List[Identification] = []
+    for r, row in enumerate(rows):
+        for s, label in enumerate(row, start=1):
+            shape_id = f"{image_id}:p{r}_{s}"
+            slot_id = f"{image_id}:r{r}:s{s}"
+            box = DetectionBox(
+                x1=20 + 150 * (s - 1), y1=100 + 200 * r, x2=150 + 150 * (s - 1), y2=250 + 200 * r, confidence=0.9
+            )
+            shapes.append(
+                Shape(
+                    shape_id=shape_id,
+                    image_id=image_id,
+                    kind=ShapeKind.PRODUCT,
+                    box=box,
+                    row_index=r,
+                    slot_index=s,
+                    membership=membership,
+                )
+            )
+            slots.append(
+                Slot(slot_id=slot_id, image_id=image_id, row_index=r, slot_index=s, box=box, anchor_shape_id=shape_id)
+            )
+            idents.append(
+                Identification(
+                    shape_id=slot_id,
+                    image_id=image_id,
+                    product=label,
+                    brand="Acme" if label else None,
+                    occupancy="occupied" if label else "empty",
+                    raw_confidence=0.9,
+                    evidence=[f"reads {label}"] if label else ["empty slot"],
+                )
+            )
+    perception = PerceptionResult(
+        image_id=image_id,
+        image_size=(1000, 1000),
+        shapes=[*shapes, *extra_shapes],
+        slots=slots,
+        zones=[shape for shape in extra_shapes if shape.kind == ShapeKind.ZONE],
+        row_count=len(rows),
+    )
+    return perception, IdentificationResult(image_id=image_id, identifications=idents)
+
+
+def zone_shape(image_id: str = "img0", ocr_text: Optional[str] = None) -> Shape:
+    """A header zone above the product rows."""
+    return Shape(
+        shape_id=f"{image_id}:zone",
+        image_id=image_id,
+        kind=ShapeKind.ZONE,
+        box=DetectionBox(x1=10, y1=5, x2=600, y2=80, confidence=0.9),
+        ocr_text=ocr_text,
+        membership=FixtureMembership.ON_FIXTURE,
+    )
+
+
+async def _compare(h: ProductOnShelves, c: CycleContext, *images: Any) -> ComparisonResult:
+    """Run compare() over ``(perception, identification)`` pairs."""
+    return await h.compare([p for p, _ in images], [i for _, i in images], c)
+
+
+def with_observations(ident: IdentificationResult, observations: Sequence[RuleObservation]) -> IdentificationResult:
+    """Attach rule observations to an identification result."""
+    return ident.model_copy(update={"rule_observations": list(observations)})
+
+
+def illumination(value: Optional[str], image_id: str = "img0", assessed: bool = True) -> RuleObservation:
+    """An illumination observation of the header zone."""
+    return RuleObservation(
+        image_id=image_id,
+        target_id=f"{image_id}:zone",
+        kind="illumination",
+        value=value,
+        assessed=assessed,
+        source=ObservationSource.LLM,
+    )
+
+
+HEADER_ZONE = {"zone_id": "zone_backlit", "kind": "backlit", "shelf_id": "header", "required": True}
+
+
+LEGACY_KEYS = (
+    "step3_compliance_results",
+    "compliance_results",
+    "overall_compliance_score",
+    "overall_compliant",
+    "identified_products",
+    "shelf_regions",
+    "rendered_image",
+    "overlay_path",
 )
-async def test_check_illumination_answer_parsing(
-    handler, fake_vision_client, synthetic_shelf_image, answer: str, expected: str
-) -> None:
-    """LIGHT_OFF anywhere in the answer ⇒ OFF; everything else ⇒ ON."""
-    fake_vision_client.queue("ask_to_image", answer)
-    assert await handler._check_illumination(synthetic_shelf_image) == expected
-    call = fake_vision_client.calls_to("ask_to_image")[0]
-    assert call["kwargs"]["no_memory"] is True and call["kwargs"]["max_tokens"] == 128  # never assert "model"
+PRESENT = {FacingStatus.MATCH, FacingStatus.INFERRED_PRESENT, FacingStatus.VARIANT_UNRESOLVED}
+ZONE_BINDING = {"rule_id": "zone", "kind": "zone_present", "target_id": "zone_backlit"}
 
 
-async def test_check_illumination_failure_returns_none(handler, fake_vision_client, synthetic_shelf_image) -> None:
-    """LLM failure ⇒ None (caller skips the penalty), never an exception."""
-    fake_vision_client.queue("ask_to_image", RuntimeError("503"))
-    assert await handler._check_illumination(synthetic_shelf_image) is None
+def _status(result: ComparisonResult) -> Dict[str, FacingStatus]:
+    """Facing id to status."""
+    return {position.facing_id: position.status for position in result.position_results}
 
 
-async def test_check_illumination_crop_precedence(handler, fake_vision_client, synthetic_shelf_image) -> None:
-    """zone_bbox (pixels) wins over roi.bbox (fractions) which wins over the full image."""
-    zone = box(100, 0, 700, 200)
-    roi = SimpleNamespace(bbox=SimpleNamespace(x1=0.0, y1=0.0, x2=0.5, y2=0.5))
-    await handler._check_illumination(synthetic_shelf_image, zone_bbox=zone, roi=roi)
-    await handler._check_illumination(synthetic_shelf_image, roi=roi)
-    await handler._check_illumination(synthetic_shelf_image)
-    sizes = [c["image_size"] for c in fake_vision_client.calls_to("ask_to_image")]
-    assert sizes == [(600, 200), (400, 500), (800, 1000)]
-
-    await handler._check_illumination(synthetic_shelf_image, planogram_description=SimpleNamespace(brand="TestBrand"))
-    prompts = [c["prompt"] for c in fake_vision_client.calls_to("ask_to_image")]
-    assert "a TestBrand backlit" in prompts[-1]
-    assert "a backlit" in prompts[0]
-
-
-async def test_ocr_fact_tags_strip_per_foreground_shelf(handler, fake_vision_client, synthetic_shelf_image) -> None:
-    """No detected tags: one call per NON-background shelf, fixed strip at the shelf's bottom edge."""
-    fake_vision_client.queue("ask_to_image", "ES-400, 'rr-60'", "UNKNOWN")
-    products = [prod("ES-400", b=box(100, 250, 300, 480)), prod("DS-770", b=box(350, 600, 500, 950))]
-    got = await handler._ocr_fact_tags(
-        products, synthetic_shelf_image, handler.config.get_planogram_description(), shelf_regions=regions()
+def tag_shape(text: str, x1: int = 30, x2: int = 120, image_id: str = "img0", row: int = 0) -> Shape:
+    """A fact tag just under the product row ``row``."""
+    y1 = 255 + 200 * row
+    return Shape(
+        shape_id=f"{image_id}:tag:{text}",
+        image_id=image_id,
+        kind=ShapeKind.FACT_TAG,
+        box=DetectionBox(x1=x1, y1=y1, x2=x2, y2=y1 + 20, confidence=0.9),
+        ocr_text=text,
+        membership=FixtureMembership.ON_FIXTURE,
     )
-    assert got == {"top": ["ES-400", "RR-60"]}  # upper-cased, quotes stripped, UNKNOWN shelf absent
-    calls = fake_vision_client.calls_to("ask_to_image")
-    assert len(calls) == 2  # header is background ⇒ skipped
-    assert calls[0]["image_size"] == (460, 75)  # x: [100-30, 500+30]; y: [500-55, 500+20]
-    assert calls[1]["image_size"] == (460, 55)  # y: [945, 1000] clamped to the image
-    assert "ES-400, RR-60, DS-770" in calls[0]["prompt"]
 
 
-async def test_ocr_fact_tags_detected_tags_refine_rows(handler, fake_vision_client, synthetic_shelf_image) -> None:
-    """Detected fact tags set the y-span (±pad) and receive the raw OCR text."""
-    tag = prod(None, "fact_tag", b=box(120, 470, 180, 490), shelf_location="top")
-    fake_vision_client.queue("ask_to_image", "ES-400")
-    got = await handler._ocr_fact_tags(
-        [tag], synthetic_shelf_image, handler.config.get_planogram_description(), shelf_regions=[regions()[1]]
-    )
-    assert got == {"top": ["ES-400"]} and tag.ocr_text == "ES-400"
-    assert fake_vision_client.calls_to("ask_to_image")[0]["image_size"] == (120, 30)
-
-
-async def test_ocr_fact_tags_isolates_shelf_failure(handler, fake_vision_client, synthetic_shelf_image) -> None:
-    """An exception on one shelf is logged; the other shelf is still read."""
-    fake_vision_client.queue("ask_to_image", RuntimeError("boom"), "DS-770")
-    got = await handler._ocr_fact_tags(
-        [], synthetic_shelf_image, handler.config.get_planogram_description(), shelf_regions=regions()
-    )
-    assert got == {"bottom": ["DS-770"]}
-
-
-# --------------------------------------------------------------------------- Part 3: corroboration and assignment
-
-
-def test_corroborate_injects_missing_expected_model(handler) -> None:
-    """OCR'd model expected on the shelf but not detected ⇒ synthetic product injected in place."""
-    products = [prod("ES-400", shelf_location="top")]
-    handler._corroborate_products_with_fact_tags(
-        products, {"top": ["ES-400", "RR-60", "RR-60"]}, handler.config.get_planogram_description()
-    )
-    assert [p.product_model for p in products] == ["ES-400", "RR-60"]  # no duplicate within one run
-    injected = products[-1]
-    assert (injected.product_type, injected.shelf_location, injected.confidence) == ("product", "top", 0.85)
-    assert injected.visual_features == ["fact_tag_confirmed:RR-60"] and injected.ocr_text == "fact_tag_ocr:RR-60"
-
-
-@pytest.mark.parametrize(
-    "ocr_model,reason",
-    [
-        ("REWARDS", "cannot be normalised"),
-        ("ZZ-999", "not expected on this shelf"),
-        ("DS-770", "belongs to another shelf"),
-    ],
-)
-def test_corroborate_skip_rules(handler, ocr_model: str, reason: str) -> None:
-    """Each skip rule prevents an injection."""
-    products: List[IdentifiedProduct] = []
-    handler._corroborate_products_with_fact_tags(
-        products, {"top": [ocr_model]}, handler.config.get_planogram_description()
-    )
-    assert products == [], reason
-
-
-def test_assign_products_default_max_overlap(handler) -> None:
-    """Default mode: the shelf with the largest vertical overlap wins; structural types are untouched."""
-    a = prod("ES-400", b=box(100, 250, 300, 480))  # fully inside 'top'
-    straddle = prod("RR-60", b=box(320, 400, 480, 900))  # 100 px in top, 400 px in bottom
-    gap = prod(None, "gap", b=box(0, 250, 50, 300), shelf_location="untouched")
-    handler._assign_products_to_shelves([a, straddle, gap], regions())
-    assert (a.shelf_location, straddle.shelf_location, gap.shelf_location) == ("top", "bottom", "untouched")
-
-
-def test_assign_products_promotional_and_missing_box(handler) -> None:
-    """Promos prefer the background shelf when their centre is inside it; box-less products get the middle shelf."""
-    backlit = prod("TestBrand Backlit", "promotional_graphic", b=box(100, 20, 700, 180))
-    low_graphic = prod("Comparison table", "promotional_graphic", b=box(100, 700, 700, 900))
-    boxless = prod("ES-400")
-    boxless_valid = prod("DS-770", shelf_location="bottom")
-    handler._assign_products_to_shelves([backlit, low_graphic, boxless, boxless_valid], regions())
-    assert backlit.shelf_location == "header"
-    assert low_graphic.shelf_location == "bottom"  # centre below the background shelf ⇒ spatial
-    assert boxless_valid.shelf_location == "bottom"  # valid LLM location kept
-    assert boxless.shelf_location == "bottom"  # foreground = [top, bottom], len // 2 = 1
-
-
-def test_assign_products_y1_mode_uses_centre_bottom_up(handler) -> None:
-    """use_y1_assignment=True: bbox CENTRE decides (bottom→top), bbox y1 is only the secondary hint."""
-    by_centre = prod("RR-60", b=box(320, 400, 480, 900))  # centre y=650 ⇒ bottom
-    handler._assign_products_to_shelves([by_centre], regions(), use_y1_assignment=True)
-    assert by_centre.shelf_location == "bottom"
-
-    gapped = [
-        ShelfRegion(shelf_id="t", level="top", bbox=box(0, 200, 800, 450)),
-        ShelfRegion(shelf_id="b", level="bottom", bbox=box(0, 550, 800, 1000)),
+def _header_ctx(required: str = "on") -> tuple[Dict[str, Any], CycleContext]:
+    """Zone-only header definition with one illumination rule."""
+    raw = definition({"header": []}, zones=[HEADER_ZONE])
+    bindings = [
+        ZONE_BINDING,
+        {"rule_id": "ill", "kind": "illumination", "target_id": "zone_backlit", "params": {"required": required}},
     ]
-    by_y1 = prod("ES-400", b=box(100, 440, 300, 560))  # centre 500 in the gap, y1 440 inside 'top'
-    handler._assign_products_to_shelves([by_y1], gapped, use_y1_assignment=True)
-    assert by_y1.shelf_location == "top"
+    return raw, ctx(raw, bindings)
 
 
-def test_assign_products_no_shelves_is_noop(handler) -> None:
-    """No shelves ⇒ nothing assigned, returns None."""
-    p = prod("ES-400", b=box(1, 1, 5, 5), shelf_location="keep")
-    assert handler._assign_products_to_shelves([p], []) is None
-    assert p.shelf_location == "keep"
+def _outcome(result: ComparisonResult, rule_id: str = "ill") -> Any:
+    """The rule outcome of the first shelf."""
+    return {o.rule_id: o for o in result.shelf_scores[0].rule_results}[rule_id]
+
+
+@pytest.mark.parametrize("value,passed", [("on", True), ("off", False)])
+async def test_illumination_rule_follows_observation(value: str, passed: bool) -> None:
+    raw, c = _header_ctx()
+    perception, ident = observe([], extra_shapes=[zone_shape()])
+    result = await _compare(handler(raw), c, (perception, with_observations(ident, [illumination(value)])))
+    outcome = _outcome(result)
+    assert outcome.assessed is True
+    assert outcome.passed is passed
+    assert (result.compliance_results[0].compliance_status.value == "compliant") is passed
+
+
+async def test_illumination_without_observation_is_unassessed() -> None:
+    raw, c = _header_ctx()
+    result = await _compare(handler(raw), c, observe([], extra_shapes=[zone_shape()]))
+    assert _outcome(result).assessed is False
+    assert result.compliance_results[0].assessment.assessment_status == "inconclusive"
+    assert result.compliance_results[0].compliance_status.value != "compliant"
+    assert result.overall_compliant is False
+
+
+async def test_unknown_illumination_observation_is_unassessed_not_failed() -> None:
+    raw, c = _header_ctx()
+    perception, ident = observe([], extra_shapes=[zone_shape()])
+    ident = with_observations(ident, [illumination(None, assessed=False)])
+    result = await _compare(handler(raw), c, (perception, ident))
+    assert _outcome(result).assessed is False
+    assert _outcome(result).passed is None
+    assert result.assessment_status == AssessmentStatus.INCONCLUSIVE
+
+
+async def test_conflicting_illumination_across_photos_is_unassessed() -> None:
+    raw, c = _header_ctx()
+    images = []
+    for image_id, value in (("img0", "on"), ("img1", "off")):
+        perception, ident = observe([], image_id=image_id, extra_shapes=[zone_shape(image_id)])
+        images.append((perception, with_observations(ident, [illumination(value, image_id)])))
+    result = await _compare(handler(raw), c, *images)
+    outcome = _outcome(result)
+    assert outcome.assessed is False
+    assert "conflict" in (outcome.detail or "")
+    assert result.compliance_results[0].compliance_status.value != "compliant"
+
+
+async def test_fact_tag_never_makes_an_unseen_product_present() -> None:
+    raw = definition({"top": ["P-100", "P-200"]})
+    perception, ident = observe([["P-100"]], extra_shapes=[tag_shape("P-200", x1=170, x2=260)])
+    result = await _compare(handler(raw), ctx(raw), (perception, ident))
+    positions = {p.facing_id: p for p in result.position_results}
+    assert positions["top:2"].status not in PRESENT
+    assert positions["top:2"].lenient_credit == 0.0
+    assert result.compliance_results[0].compliance_status.value != "compliant"
+
+
+async def test_fact_tag_corroborates_an_observed_facing() -> None:
+    raw = definition({"top": ["P-100", "P-200"]})
+    without = await _compare(handler(raw), ctx(raw), observe([["unreadable", "P-200"]]))
+    tagged = observe([["unreadable", "P-200"]], extra_shapes=[tag_shape("P-100")])
+    with_tag = await _compare(handler(raw), ctx(raw), tagged)
+    assert _status(without)["top:1"] != FacingStatus.MATCH
+    position = {p.facing_id: p for p in with_tag.position_results}["top:1"]
+    assert position.status == FacingStatus.MATCH
+    assert 0.0 < position.lenient_credit and position.strict_credit <= position.lenient_credit
+    assert {s.value for s in (_status(with_tag)["top:2"],)} == {"match"}
+
+
+async def test_fact_tag_for_unknown_product_changes_nothing() -> None:
+    raw = definition({"top": ["P-100", "P-200"], "bottom": ["P-300"]})
+    rows = [["unreadable", "P-200"]]
+    baseline = await _compare(handler(raw), ctx(raw), observe(rows))
+    tagged = await _compare(handler(raw), ctx(raw), observe(rows, extra_shapes=[tag_shape("UNKNOWN-LABEL")]))
+    assert [p.model_dump() for p in tagged.position_results] == [p.model_dump() for p in baseline.position_results]
+
+
+async def test_fact_tag_naming_another_shelf_product_never_credits_this_facing() -> None:
+    raw = definition({"top": ["P-100", "P-200"], "bottom": ["P-300"]})
+    rows = [["unreadable", "P-200"]]
+    tagged = await _compare(handler(raw), ctx(raw), observe(rows, extra_shapes=[tag_shape("P-300")]))
+    positions = {p.facing_id: p for p in tagged.position_results}
+    assert positions["top:1"].status not in (FacingStatus.MATCH, FacingStatus.INFERRED_PRESENT)
+    assert positions["top:1"].lenient_credit == 0.0
+    assert positions["bottom:1"].status not in PRESENT  # the other shelf's facing is never made present by a tag
+    assert tagged.compliance_results[0].compliance_status.value != "compliant"
+
+
+async def test_observed_rows_register_to_definition_shelves_in_order() -> None:
+    raw = definition({"top": ["P-100", "P-200"], "bottom": ["P-300"]})
+    result = await _compare(handler(raw), ctx(raw), observe([["P-100", "P-200"], ["P-300"]]))
+    shelf_of = {p.facing_id: p.shelf_id for p in result.position_results}
+    assert shelf_of == {"top:1": "top", "top:2": "top", "bottom:1": "bottom"}
+    assert set(_status(result).values()) == {FacingStatus.MATCH}
+
+
+async def test_more_observed_rows_than_shelves_never_register() -> None:
+    raw = definition({"top": ["P-100"]})
+    result = await _compare(handler(raw), ctx(raw), observe([["P-100"], ["P-100"]]))
+    assert _status(result) == {"top:1": FacingStatus.NOT_VISIBLE}
+    assert result.compliance_results[0].compliance_status.value != "compliant"
+
+
+async def test_off_fixture_shapes_never_register() -> None:
+    raw = definition({"top": ["P-100", "P-200"]})
+    observed = observe([["P-100", "P-200"]], membership=FixtureMembership.OFF_FIXTURE)
+    result = await _compare(handler(raw), ctx(raw), observed)
+    assert result.detected_products == 0
+    assert all(status not in PRESENT for status in _status(result).values())
+    assert result.overall_compliant is False
+
+
+class _InlineExecutor:
+    """CpuExecutor stand-in that runs CPU helpers inline (the real one is covered by test_cpu_executor.py)."""
+
+    def __init__(self, max_workers: int = 2) -> None:
+        self.max_workers = max_workers
+
+    async def run(self, fn: Any, *args: Any) -> Any:
+        return fn(*args)
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def test_run_round_trip_returns_legacy_keys_measured(
+    monkeypatch: pytest.MonkeyPatch, fake_vision_client: Any, synthetic_shelf_image: Any
+) -> None:
+    monkeypatch.setattr(plan_module, "CpuExecutor", _InlineExecutor)
+    raw = definition({"top": ["P-100", "P-200"]})
+    perception, ident = observe([["P-100", "P-200"]])
+
+    async def _perceive(self: Any, image: Any, image_id: str, c: Any) -> PerceptionResult:
+        return perception.model_copy(update={"image_id": image_id})
+
+    async def _identify(self: Any, image: Any, p: PerceptionResult, c: Any) -> IdentificationResult:
+        return ident
+
+    monkeypatch.setattr(ProductOnShelves, "perceive", _perceive)
+    monkeypatch.setattr(ProductOnShelves, "identify", _identify)
+    config = PlanogramConfig(
+        config_name="pos-regression",
+        planogram_type="product_on_shelves",
+        planogram_config={"brand": "Acme", "category": "generic", "aisle": {"name": "a"}, "shelves": []},
+        slots_definition=raw,
+    )
+    result = await PlanogramCompliance(planogram_config=config, llm=fake_vision_client).run(synthetic_shelf_image)
+    assert set(LEGACY_KEYS) <= set(result)
+    assert result["compliance_results"] is result["step3_compliance_results"]
+    assert result["assessment_status"] == AssessmentStatus.COMPLETE.value
+    assert "legacy" not in str(result["assessment_status"]) and "legacy" not in str(result["detection_source"])
+    assert result["overall_compliant"] is True
+    assert fake_vision_client.calls_to("ask") == []

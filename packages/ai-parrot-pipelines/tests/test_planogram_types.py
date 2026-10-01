@@ -1,86 +1,17 @@
-"""Tests for the Planogram Compliance Modular composable pattern (FEAT-048)."""
+"""Registry, strict cycle contract, and compatibility tests for planogram types."""
 
 import logging
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from parrot.pipelines.planogram.plan import PlanogramCompliance
 from parrot.pipelines.planogram.types.abstract import AbstractPlanogramType
 from parrot.pipelines.planogram.types.product_on_shelves import ProductOnShelves
-from parrot.pipelines.planogram.plan import PlanogramCompliance
-from parrot.pipelines.models import PlanogramConfig, EndcapGeometry
-from parrot.models.detections import (
-    DetectionBox,
-    ShelfRegion,
-    IdentifiedProduct,
-)
-from parrot.models.compliance import ComplianceResult, ComplianceStatus
+from parrot.pipelines.models import EndcapGeometry, PlanogramConfig
+from parrot_pipelines.planogram.contracts import ComparisonResult, IdentificationResult, PerceptionResult
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sample_planogram_config():
-    """Minimal PlanogramConfig for testing."""
-    return {
-        "brand": "TestBrand",
-        "category": "TestCategory",
-        "aisle": {"name": "Electronics > Test", "lighting_conditions": "normal"},
-        "shelves": [
-            {
-                "level": "header",
-                "height_ratio": 0.2,
-                "products": [
-                    {
-                        "name": "TestBrand Logo",
-                        "product_type": "promotional_graphic",
-                        "mandatory": True,
-                        "visual_features": ["illuminated logo"],
-                    }
-                ],
-                "allow_extra_products": False,
-                "compliance_threshold": 0.9,
-            },
-            {
-                "level": "main_shelf",
-                "height_ratio": 0.6,
-                "products": [
-                    {
-                        "name": "Product A",
-                        "product_type": "product",
-                        "mandatory": True,
-                    },
-                    {
-                        "name": "Product B",
-                        "product_type": "product",
-                        "mandatory": True,
-                    },
-                ],
-                "allow_extra_products": False,
-                "compliance_threshold": 0.8,
-            },
-            {
-                "level": "bottom",
-                "height_ratio": 0.2,
-                "products": [
-                    {
-                        "name": "Promo Card",
-                        "product_type": "promotional_graphic",
-                    }
-                ],
-                "allow_extra_products": True,
-                "compliance_threshold": 0.7,
-            },
-        ],
-    }
-
-
-#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise legacy methods
-#: directly, so a minimal valid definition satisfies construction.
 _MIN_SLOTS_DEFINITION = {
     "shelves": [
         {
@@ -91,8 +22,8 @@ _MIN_SLOTS_DEFINITION = {
                     "facing_id": "f1",
                     "shelf_id": "shelf_1",
                     "slot": 1,
-                    "product": "P",
-                    "descriptors": {"display_name": "P"},
+                    "product": "P-100",
+                    "descriptors": {"display_name": "P-100"},
                 }
             ],
         }
@@ -101,424 +32,219 @@ _MIN_SLOTS_DEFINITION = {
 
 
 @pytest.fixture
-def planogram_config_obj(sample_planogram_config):
-    """PlanogramConfig Pydantic model instance."""
+def planogram_config_obj() -> PlanogramConfig:
+    """Build a minimal valid migrated configuration."""
     return PlanogramConfig(
         config_name="test_planogram",
         planogram_type="product_on_shelves",
-        planogram_config=sample_planogram_config,
-        roi_detection_prompt="Detect the endcap for {brand}.",
-        object_identification_prompt="Identify products.",
+        planogram_config={},
         slots_definition=_MIN_SLOTS_DEFINITION,
     )
 
 
 @pytest.fixture
-def mock_pipeline(planogram_config_obj):
-    """A mock PlanogramCompliance pipeline for composable tests."""
+def mock_pipeline(planogram_config_obj: PlanogramConfig) -> MagicMock:
+    """Build the parent reference used by composable type tests."""
     pipeline = MagicMock(spec=PlanogramCompliance)
     pipeline.logger = logging.getLogger("test.planogram")
     pipeline.planogram_config = planogram_config_obj
     pipeline.reference_images = {}
-    pipeline.llm = MagicMock()
-    pipeline.roi_client = pipeline.llm  # same object until TASK-3432 removes roi_client
-    pipeline.resolved_backend = MagicMock(provider="google", model=None)
-    pipeline._json = MagicMock()
-    pipeline._downscale_image = MagicMock()
-    pipeline.left_margin_ratio = 0.01
-    pipeline.right_margin_ratio = 0.03
     return pipeline
 
 
-@pytest.fixture
-def product_on_shelves(mock_pipeline, planogram_config_obj):
-    """ProductOnShelves composable instance."""
-    return ProductOnShelves(pipeline=mock_pipeline, config=planogram_config_obj)
-
-
-@pytest.fixture
-def sample_shelf_regions():
-    """Three sample shelf regions for assignment tests."""
-    return [
-        ShelfRegion(
-            shelf_id="virtual_header",
-            level="header",
-            bbox=DetectionBox(x1=100, y1=0, x2=500, y2=100, confidence=1.0),
-        ),
-        ShelfRegion(
-            shelf_id="virtual_main_shelf",
-            level="main_shelf",
-            bbox=DetectionBox(x1=100, y1=100, x2=500, y2=400, confidence=1.0),
-        ),
-        ShelfRegion(
-            shelf_id="virtual_bottom",
-            level="bottom",
-            bbox=DetectionBox(x1=100, y1=400, x2=500, y2=500, confidence=1.0),
-        ),
-    ]
-
-
-@pytest.fixture
-def sample_db_row(sample_planogram_config):
-    """Sample DB row for handler hydration tests."""
-    return {
-        "planogram_id": 1,
-        "config_name": "test_config",
-        "planogram_type": "product_on_shelves",
-        "planogram_config": sample_planogram_config,
-        "roi_detection_prompt": "Detect...",
-        "object_identification_prompt": "Identify...",
-        "reference_images": {},
-        "confidence_threshold": 0.25,
-        "detection_model": "yolo11l.pt",
-        "aspect_ratio": 1.35,
-        "left_margin_ratio": 0.01,
-        "right_margin_ratio": 0.03,
-        "top_margin_ratio": 0.02,
-        "bottom_margin_ratio": 0.05,
-        "inter_shelf_padding": 0.02,
-        "width_margin_percent": 0.25,
-        "height_margin_percent": 0.30,
-        "top_margin_percent": 0.05,
-        "side_margin_percent": 0.05,
-        "is_active": True,
-    }
-
-
-# ===================================================================
-# 1. ABC Contract Tests
-# ===================================================================
-
-
 class TestAbstractPlanogramType:
+    """The strict four-member migrated type contract."""
 
-    def test_cannot_instantiate_directly(self, mock_pipeline, planogram_config_obj):
-        """AbstractPlanogramType is ABC and cannot be instantiated."""
-        with pytest.raises(TypeError, match="abstract"):
+    def test_cannot_instantiate_directly(self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+        """AbstractPlanogramType cannot be instantiated."""
+        with pytest.raises(TypeError):
             AbstractPlanogramType(pipeline=mock_pipeline, config=planogram_config_obj)
 
-    def test_abstract_methods_enforced(self, mock_pipeline, planogram_config_obj):
-        """Subclass missing abstract methods raises TypeError."""
+    def test_missing_cycle_hooks_rejected(
+        self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig
+    ) -> None:
+        """A subclass implementing only perceive() is rejected by the strict contract."""
 
         class IncompleteType(AbstractPlanogramType):
-            async def compute_roi(self, img):
-                pass
+            @classmethod
+            def default_layout_profile(cls) -> Any:
+                return ProductOnShelves.default_layout_profile()
 
-            # Missing: detect_objects_roi, detect_objects, check_planogram_compliance
+            async def perceive(self, image: Any, image_id: str, ctx: Any) -> PerceptionResult:
+                return PerceptionResult(image_id=image_id, image_size=image.size)
 
-        with pytest.raises(TypeError, match="abstract"):
+        with pytest.raises(TypeError):
             IncompleteType(pipeline=mock_pipeline, config=planogram_config_obj)
 
-    def test_default_render_colors(self, mock_pipeline, planogram_config_obj):
-        """get_render_colors returns dict with expected keys."""
+    def test_default_render_colors(self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+        """get_render_colors returns RGB tuples for the five keys."""
 
         class CompleteType(AbstractPlanogramType):
-            async def compute_roi(self, img):
-                pass
+            @classmethod
+            def default_layout_profile(cls) -> Any:
+                return ProductOnShelves.default_layout_profile()
 
-            async def detect_objects_roi(self, img, roi):
-                pass
+            async def perceive(self, image: Any, image_id: str, ctx: Any) -> PerceptionResult:
+                return PerceptionResult(image_id=image_id, image_size=image.size)
 
-            async def detect_objects(self, img, roi, m):
-                pass
+            async def identify(self, image: Any, perception: PerceptionResult, ctx: Any) -> IdentificationResult:
+                return IdentificationResult(image_id=perception.image_id)
 
-            def check_planogram_compliance(self, p, d):
-                pass
+            async def compare(self, perceptions: Any, identifications: Any, ctx: Any) -> ComparisonResult:
+                return ComparisonResult()
 
-        t = CompleteType(pipeline=mock_pipeline, config=planogram_config_obj)
-        colors = t.get_render_colors()
-        assert isinstance(colors, dict)
-        expected_keys = {"roi", "detection", "product", "compliant", "non_compliant"}
-        assert set(colors.keys()) == expected_keys
-        # Values should be RGB tuples
-        for k, v in colors.items():
-            assert isinstance(v, tuple) and len(v) == 3, f"{k} is not an RGB tuple"
-
-
-# ===================================================================
-# 2. Registry & Delegation Tests
-# ===================================================================
+        colors = CompleteType(pipeline=mock_pipeline, config=planogram_config_obj).get_render_colors()
+        assert set(colors) == {"roi", "detection", "product", "compliant", "non_compliant"}
+        assert all(isinstance(value, tuple) and len(value) == 3 for value in colors.values())
 
 
 class TestPlanogramComplianceRegistry:
+    """Registry dispatch remains backwards-compatible while containing only migrated types."""
 
-    def test_registry_contains_product_on_shelves(self):
-        """Registry has product_on_shelves entry."""
-        assert "product_on_shelves" in PlanogramCompliance._PLANOGRAM_TYPES
+    def test_registry_contains_product_on_shelves(self) -> None:
+        """The default type resolves to ProductOnShelves."""
         assert PlanogramCompliance._PLANOGRAM_TYPES["product_on_shelves"] is ProductOnShelves
 
-    @patch("parrot.pipelines.planogram.plan.AbstractPipeline.__init__", return_value=None)
-    def test_resolves_product_on_shelves(self, mock_init, planogram_config_obj):
-        """PlanogramCompliance resolves ProductOnShelves from planogram_type."""
-        # Mock AbstractPipeline init to avoid LLM setup
-        pc = PlanogramCompliance.__new__(PlanogramCompliance)
-        pc.logger = logging.getLogger("test")
-        pc.planogram_config = planogram_config_obj
-        pc.reference_images = {}
-        pc.left_margin_ratio = 0.01
-        pc.right_margin_ratio = 0.03
-        # Manually resolve type handler
-        ptype = planogram_config_obj.planogram_type
-        composable_cls = PlanogramCompliance._PLANOGRAM_TYPES[ptype]
-        pc._type_handler = composable_cls(pipeline=pc, config=planogram_config_obj)
-        assert isinstance(pc._type_handler, ProductOnShelves)
+    def test_registry_is_exactly_the_six_types(self) -> None:
+        """No legacy or unregistered types remain in the public registry."""
+        assert set(PlanogramCompliance._PLANOGRAM_TYPES) == {
+            "product_on_shelves",
+            "graphic_panel_display",
+            "product_counter",
+            "endcap_no_shelves_promotional",
+            "endcap_backlit_multitier",
+            "ink_wall",
+        }
 
-    def test_unknown_type_raises_valueerror(self):
-        """Unknown planogram_type raises ValueError with available types."""
+    @patch("parrot.pipelines.planogram.plan.AbstractPipeline.__init__", return_value=None)
+    def test_resolves_product_on_shelves(self, mock_init: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+        """The registry class instantiates from the configured type key."""
+        pipeline = PlanogramCompliance.__new__(PlanogramCompliance)
+        pipeline.logger = logging.getLogger("test")
+        pipeline.planogram_config = planogram_config_obj
+        pipeline.reference_images = {}
+        pipeline._type_handler = PlanogramCompliance._PLANOGRAM_TYPES[planogram_config_obj.planogram_type](
+            pipeline=pipeline, config=planogram_config_obj
+        )
+        assert isinstance(pipeline._type_handler, ProductOnShelves)
+
+    def test_unknown_type_raises_valueerror(self) -> None:
+        """Unknown types fail with the configured key in their message."""
         config = PlanogramConfig(
-            planogram_type="nonexistent_type",
-            planogram_config={},
-            roi_detection_prompt="",
-            object_identification_prompt="",
+            planogram_type="nonexistent_type", planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION
         )
         with pytest.raises(ValueError, match="Unknown planogram_type 'nonexistent_type'"):
             PlanogramCompliance(planogram_config=config)
 
-    def test_default_type_is_product_on_shelves(self):
-        """Missing planogram_type defaults to product_on_shelves."""
-        config = PlanogramConfig(
-            planogram_config={},
-            roi_detection_prompt="",
-            object_identification_prompt="",
+    def test_default_type_is_product_on_shelves(self) -> None:
+        """Omitting the type preserves the established default."""
+        assert (
+            PlanogramConfig(planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type
+            == "product_on_shelves"
         )
-        assert config.planogram_type == "product_on_shelves"
-
-
-# ===================================================================
-# 3. PlanogramConfig Tests
-# ===================================================================
 
 
 class TestPlanogramConfigType:
+    """PlanogramConfig serialises the public type setting."""
 
-    def test_planogram_type_field_exists(self):
-        """PlanogramConfig has planogram_type field."""
-        config = PlanogramConfig(
-            planogram_config={},
-            roi_detection_prompt="",
-            object_identification_prompt="",
+    def test_planogram_type_field_exists(self) -> None:
+        """PlanogramConfig exposes the type field."""
+        assert hasattr(PlanogramConfig(planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION), "planogram_type")
+
+    def test_planogram_type_default(self) -> None:
+        """The default stays product_on_shelves."""
+        assert (
+            PlanogramConfig(planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION).planogram_type
+            == "product_on_shelves"
         )
-        assert hasattr(config, "planogram_type")
 
-    def test_planogram_type_default(self):
-        """Default planogram_type is product_on_shelves."""
-        config = PlanogramConfig(
-            planogram_config={},
-            roi_detection_prompt="",
-            object_identification_prompt="",
+    def test_planogram_type_explicit(self) -> None:
+        """An explicit type is retained."""
+        assert (
+            PlanogramConfig(
+                planogram_type="tv_wall", planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION
+            ).planogram_type
+            == "tv_wall"
         )
-        assert config.planogram_type == "product_on_shelves"
 
-    def test_planogram_type_explicit(self):
-        """Explicit planogram_type is stored correctly."""
-        config = PlanogramConfig(
-            planogram_type="tv_wall",
-            planogram_config={},
-            roi_detection_prompt="",
-            object_identification_prompt="",
-        )
-        assert config.planogram_type == "tv_wall"
-
-    def test_planogram_type_serialization(self):
-        """planogram_type survives serialization round-trip."""
-        config = PlanogramConfig(
-            planogram_type="ink_wall",
-            planogram_config={},
-            roi_detection_prompt="",
-            object_identification_prompt="",
-        )
-        data = config.model_dump()
-        assert data["planogram_type"] == "ink_wall"
-
-
-# ===================================================================
-# 4. ProductOnShelves Tests
-# ===================================================================
+    def test_planogram_type_serialization(self) -> None:
+        """The type survives Pydantic serialisation."""
+        config = PlanogramConfig(planogram_type="ink_wall", planogram_config={}, slots_definition=_MIN_SLOTS_DEFINITION)
+        assert config.model_dump()["planogram_type"] == "ink_wall"
 
 
 class TestProductOnShelves:
+    """Construction retains the handler and parent/config references."""
 
-    def test_implements_contract(self, product_on_shelves):
-        """ProductOnShelves can be instantiated (all abstract methods implemented)."""
-        assert isinstance(product_on_shelves, AbstractPlanogramType)
-        assert isinstance(product_on_shelves, ProductOnShelves)
+    def test_implements_contract(self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+        """ProductOnShelves fulfils the abstract contract."""
+        assert isinstance(ProductOnShelves(mock_pipeline, planogram_config_obj), AbstractPlanogramType)
 
-    def test_pipeline_reference(self, product_on_shelves, mock_pipeline):
-        """Composable stores pipeline reference correctly."""
-        assert product_on_shelves.pipeline is mock_pipeline
+    def test_pipeline_reference(self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+        """The handler preserves its pipeline reference."""
+        assert ProductOnShelves(mock_pipeline, planogram_config_obj).pipeline is mock_pipeline
 
-    def test_config_reference(self, product_on_shelves, planogram_config_obj):
-        """Composable stores config reference correctly."""
-        assert product_on_shelves.config is planogram_config_obj
-
-    def test_virtual_shelves_generation(self, product_on_shelves):
-        """_generate_virtual_shelves produces correct number of shelves."""
-        roi_bbox = DetectionBox(x1=100, y1=100, x2=900, y2=900, confidence=1.0)
-        image_size = (1000, 1000)
-        planogram_desc = product_on_shelves.config.get_planogram_description()
-
-        shelves = product_on_shelves._generate_virtual_shelves(roi_bbox, image_size, planogram_desc)
-        assert len(shelves) == 3  # header, main_shelf, bottom
-        assert shelves[0].level == "header"
-        assert shelves[1].level == "main_shelf"
-        assert shelves[2].level == "bottom"
-
-    def test_assign_products_to_shelves(self, product_on_shelves, sample_shelf_regions):
-        """Products are assigned to shelves based on spatial position."""
-        products = [
-            IdentifiedProduct(
-                detection_box=DetectionBox(x1=200, y1=50, x2=300, y2=90, confidence=0.9),
-                product_model="Logo",
-                confidence=0.9,
-                product_type="promotional_graphic",
-            ),
-            IdentifiedProduct(
-                detection_box=DetectionBox(x1=200, y1=200, x2=300, y2=300, confidence=0.9),
-                product_model="Product A",
-                confidence=0.9,
-                product_type="product",
-            ),
-            IdentifiedProduct(
-                detection_box=DetectionBox(x1=200, y1=420, x2=300, y2=480, confidence=0.9),
-                product_model="Promo",
-                confidence=0.9,
-                product_type="promotional_graphic",
-            ),
-        ]
-
-        product_on_shelves._assign_products_to_shelves(products, sample_shelf_regions)
-
-        assert products[0].shelf_location == "header"
-        assert products[1].shelf_location == "main_shelf"
-        assert products[2].shelf_location == "bottom"
-
-    def test_default_shelf_configs(self, product_on_shelves):
-        """_get_default_shelf_configs returns 3 shelves."""
-        defaults = product_on_shelves._get_default_shelf_configs()
-        assert len(defaults) == 3
-        assert defaults[0]["level"] == "header"
-        assert defaults[1]["level"] == "middle"
-        assert defaults[2]["level"] == "bottom"
-
-    def test_looks_like_box(self, product_on_shelves):
-        """_looks_like_box detects box-like visual features."""
-        assert product_on_shelves._looks_like_box(["product packaging visible"]) is True
-        assert product_on_shelves._looks_like_box(["cardboard box"]) is True
-        assert product_on_shelves._looks_like_box(["a box of ink"]) is True
-        assert product_on_shelves._looks_like_box(["active display"]) is False
-        assert product_on_shelves._looks_like_box(None) is False
-        assert product_on_shelves._looks_like_box([]) is False
-
-    def test_normalize_ocr_text(self, product_on_shelves):
-        """_normalize_ocr_text cleans OCR strings."""
-        result = product_on_shelves._normalize_ocr_text("HISENSE™")
-        assert "hisense" in result
-        assert product_on_shelves._normalize_ocr_text("") == ""
-        result = product_on_shelves._normalize_ocr_text("Hello—World")
-        assert "hello" in result
-        assert "world" in result
-
-    def test_calculate_visual_feature_match(self, product_on_shelves):
-        """Visual feature matching scores correctly."""
-        # Perfect match
-        score = product_on_shelves._calculate_visual_feature_match(
-            ["illuminated logo"], ["illuminated logo on display"]
-        )
-        assert score > 0.0
-
-        # No match
-        score = product_on_shelves._calculate_visual_feature_match(["tiger image"], ["blue background"])
-        assert score == 0.0
-
-        # Empty expected = 1.0
-        assert product_on_shelves._calculate_visual_feature_match([], ["anything"]) == 1.0
-
-        # Empty detected = 0.0
-        assert product_on_shelves._calculate_visual_feature_match(["something"], []) == 0.0
-
-    def test_base_model_from_str(self, product_on_shelves):
-        """_base_model_from_str extracts model identifiers."""
-        assert product_on_shelves._base_model_from_str("ET-2800 Printer") == "et-2800"
-        assert product_on_shelves._base_model_from_str("", brand="test") == ""
-
-    def test_canonical_keys(self, product_on_shelves):
-        """Canonical key extraction for expected and found products."""
-        # Expected key
-        sp = MagicMock()
-        sp.product_type = "product"
-        sp.name = "ET-2800"
-        ek = product_on_shelves._canonical_expected_key(sp, brand="epson")
-        assert ek[0] == "product"
-
-        # Found key
-        p = MagicMock()
-        p.product_type = "product"
-        p.product_model = "ET-2800 Printer"
-        p.confidence = 0.9
-        p.visual_features = None
-        fk = product_on_shelves._canonical_found_key(p, brand="epson")
-        assert fk[0] == "product"
-        assert isinstance(fk[2], float)
-
-
-# ===================================================================
-# 5. Rendering Color Tests
-# ===================================================================
+    def test_config_reference(self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig) -> None:
+        """The handler preserves its configuration reference."""
+        assert ProductOnShelves(mock_pipeline, planogram_config_obj).config is planogram_config_obj
 
 
 class TestRenderColors:
+    """The surviving rendering helper remains covered."""
 
-    def test_product_on_shelves_default_colors(self, product_on_shelves):
-        """ProductOnShelves returns default color scheme."""
-        colors = product_on_shelves.get_render_colors()
-        assert "roi" in colors
-        assert "compliant" in colors
-        assert colors["roi"] == (0, 255, 0)
-
-
-# ===================================================================
-# 6. Handler Hydration Tests
-# ===================================================================
+    def test_product_on_shelves_default_colors(
+        self, mock_pipeline: MagicMock, planogram_config_obj: PlanogramConfig
+    ) -> None:
+        """ProductOnShelves returns the default colour scheme."""
+        assert ProductOnShelves(mock_pipeline, planogram_config_obj).get_render_colors()["roi"] == (0, 255, 0)
 
 
 class TestHandlerHydration:
+    """Database configuration hydration keeps the type default and explicit values."""
 
-    def test_build_planogram_config_includes_type(self, sample_db_row):
-        """_build_planogram_config includes planogram_type from DB row."""
+    def _row(self) -> dict[str, Any]:
+        return {
+            "planogram_id": 1,
+            "config_name": "test",
+            "planogram_type": "product_on_shelves",
+            "planogram_config": {},
+            "reference_images": {},
+            "slots_definition": _MIN_SLOTS_DEFINITION,
+        }
+
+    def test_build_planogram_config_includes_type(self) -> None:
+        """A persisted type is transferred to PlanogramConfig."""
         from parrot.handlers.planogram_compliance import PlanogramComplianceHandler
 
         handler = MagicMock(spec=PlanogramComplianceHandler)
         handler._build_planogram_config = PlanogramComplianceHandler._build_planogram_config.__get__(handler)
+        handler._decode_json_column.side_effect = lambda value: value
         handler.logger = logging.getLogger("test")
-
-        config = handler._build_planogram_config(sample_db_row)
+        config = handler._build_planogram_config(self._row())
         assert config.planogram_type == "product_on_shelves"
+        assert isinstance(config.endcap_geometry, EndcapGeometry)
 
-    def test_build_planogram_config_default_type(self, sample_db_row):
-        """DB row without planogram_type defaults to product_on_shelves."""
+    def test_build_planogram_config_default_type(self) -> None:
+        """A missing persisted type receives the public default."""
         from parrot.handlers.planogram_compliance import PlanogramComplianceHandler
 
-        row = {k: v for k, v in sample_db_row.items() if k != "planogram_type"}
         handler = MagicMock(spec=PlanogramComplianceHandler)
         handler._build_planogram_config = PlanogramComplianceHandler._build_planogram_config.__get__(handler)
+        handler._decode_json_column.side_effect = lambda value: value
         handler.logger = logging.getLogger("test")
-
-        config = handler._build_planogram_config(row)
-        assert config.planogram_type == "product_on_shelves"
-
-
-# ===================================================================
-# 7. Integration / Backwards Compatibility
-# ===================================================================
+        row = self._row()
+        row.pop("planogram_type")
+        assert handler._build_planogram_config(row).planogram_type == "product_on_shelves"
 
 
 class TestBackwardsCompatibility:
+    """The public default remains stable for existing configurations."""
 
-    def test_config_without_type_uses_default(self):
-        """Config without planogram_type uses product_on_shelves default."""
-        config = PlanogramConfig(
-            planogram_config={"brand": "Test", "shelves": []},
-            roi_detection_prompt="",
-            object_identification_prompt="",
+    def test_config_without_type_uses_default(self) -> None:
+        """Legacy configs without planogram_type retain the default handler."""
+        assert (
+            PlanogramConfig(
+                planogram_config={"brand": "Test", "shelves": []}, slots_definition=_MIN_SLOTS_DEFINITION
+            ).planogram_type
+            == "product_on_shelves"
         )
-        assert config.planogram_type == "product_on_shelves"

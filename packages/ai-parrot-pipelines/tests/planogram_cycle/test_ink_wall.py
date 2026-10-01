@@ -16,6 +16,7 @@ from parrot.models.detections import DetectionBox
 from parrot_pipelines import PIPELINE_REGISTRY
 from parrot_pipelines.models import PlanogramConfig
 from parrot_pipelines.planogram import plan as plan_module
+from parrot_pipelines.planogram.comparison import identity as identity_module
 from parrot_pipelines.planogram.comparison.definition import load_slots_definition
 from parrot_pipelines.planogram.contracts import (
     CreditPolicy,
@@ -26,12 +27,14 @@ from parrot_pipelines.planogram.contracts import (
     Identification,
     IdentificationResponse,
     IdentificationResult,
+    IdentifyStrategy,
     PerceptionResult,
     Shape,
     ShapeKind,
     Slot,
 )
 from parrot_pipelines.planogram.plan import PlanogramCompliance
+from parrot_pipelines.planogram.perception.slots import AnchorRule
 from parrot_pipelines.planogram.types import InkWall
 from parrot_pipelines.planogram.types.ink_wall import resolve_identity
 
@@ -170,7 +173,7 @@ def test_ink_wall_is_registered_everywhere():
     import parrot_pipelines.planogram as pkg
 
     assert pkg.InkWall is InkWall
-    assert not any(InkWall._implements(InkWall.__new__(InkWall), n) for n in InkWall._LEGACY_CONTRACT)
+    assert {"perceive", "identify", "compare", "default_layout_profile"} <= set(InkWall.__dict__)
 
 
 def test_ink_wall_requires_slots_definition(fake_vision_client):
@@ -221,11 +224,30 @@ def test_resolve_identity_unknown_brand_is_unresolved():
 
 def test_resolve_identity_never_reads_expected_facing():
     """The signature has no facing / slot argument: the same reading resolves the same way everywhere."""
-    assert list(inspect.signature(resolve_identity).parameters) == ["identification", "definition"]
+    parameters = list(inspect.signature(resolve_identity).parameters)
+    assert parameters[:2] == ["identification", "definition"]
+    assert not any(key in parameter for parameter in parameters for key in ("facing", "slot", "expected"))
     definition = load_slots_definition(_definition_dict())
     first = resolve_identity(_ident(brand="Acme", text="A32"), definition)
     again = resolve_identity(_ident(brand="Acme", text="A32").model_copy(update={"shape_id": "other"}), definition)
     assert first == again == ("ACME-3-2", ["ACME-3-2"])
+
+
+def test_resolve_identity_alias_is_shared_function():
+    """Historical import path re-exports the shared resolver."""
+    assert resolve_identity is identity_module.resolve_identity
+
+
+def test_default_layout_profile_is_fresh_and_ink_shaped():
+    """Ink layout defaults have no shared mutable state."""
+    first, second = InkWall.default_layout_profile(), InkWall.default_layout_profile()
+    assert first is not second and first.shape_profiles[0] is not second.shape_profiles[0]
+    assert first.anchor_rule == AnchorRule.TAG_BELOW_PRODUCT and first.fill_gaps and first.untagged_bottom_row
+    assert first.identify_strategy == IdentifyStrategy.STRIPS and first.perception_mode == "cv"
+    assert (first.min_usable_shapes, first.min_row_items) == (8, 4)
+    assert first.required_descriptor_fields == ["family", "xl"]
+    first.descriptor_fields.append("mutated")
+    assert "mutated" not in InkWall.default_layout_profile().descriptor_fields
 
 
 def test_registrable_slots_keep_rows_with_occupancy_only():
@@ -287,6 +309,71 @@ async def test_ink_wall_perceive_synthetic(synthetic_ink_wall, synthetic_slots_d
     assert all(s.inferred for s in rows[3])
     tag_ids = {s.shape_id for s in perception.shapes}
     assert all(s.anchor_shape_id in tag_ids for s in perception.slots if not s.inferred)
+
+
+async def test_ink_hooks_resolve_layout_when_ctx_has_none(
+    fake_vision_client, synthetic_ink_wall, synthetic_slots_definition
+):
+    """A context without layout gets the resolved ink profile and configuration overrides."""
+    config = PlanogramConfig(
+        planogram_type="ink_wall",
+        planogram_config={"brand": "Acme", "layout_profile": {"min_row_items": 3}},
+        slots_definition=synthetic_slots_definition,
+    )
+    handler = PlanogramCompliance(planogram_config=config, llm=fake_vision_client)._type_handler
+    ctx = _ctx()
+
+    await handler.perceive(synthetic_ink_wall, "img0", ctx)
+
+    assert ctx.layout.min_row_items == 3
+    assert ctx.layout.anchor_rule == AnchorRule.TAG_BELOW_PRODUCT
+
+
+class _RaisingVision:
+    """Fails if compare reaches the vision service."""
+
+    def __getattr__(self, name):
+        raise AssertionError(f"compare accessed vision.{name}")
+
+
+async def test_compare_never_calls_vision(fake_vision_client):
+    """Compare is pure even when the context vision service fails on access."""
+    definition_dict = _definition_dict(price=12.99)
+    definition = load_slots_definition(definition_dict)
+    config = PlanogramConfig(
+        planogram_type="ink_wall", planogram_config={"brand": "Acme"}, slots_definition=definition_dict
+    )
+    handler = PlanogramCompliance(planogram_config=config, llm=fake_vision_client)._type_handler
+    tag = Shape(
+        shape_id="img0:tag:11",
+        image_id="img0",
+        kind=ShapeKind.PRICE_TAG,
+        box=DetectionBox(x1=10, y1=10, x2=70, y2=30, confidence=0.9),
+        row_index=0,
+        slot_index=1,
+        ocr_text="$9.99",
+        membership=FixtureMembership.ON_FIXTURE,
+    )
+    slot = Slot(
+        slot_id="img0:r0:s1",
+        image_id="img0",
+        row_index=0,
+        slot_index=1,
+        box=tag.box,
+        anchor_shape_id=tag.shape_id,
+    )
+    perception = PerceptionResult(image_id="img0", image_size=(100, 100), shapes=[tag], slots=[slot], row_count=1)
+    identifications = IdentificationResult(
+        image_id="img0",
+        identifications=[Identification(shape_id=slot.slot_id, image_id="img0", text="A11", brand="Acme")],
+    )
+    ctx = _ctx(definition)
+    ctx.vision = _RaisingVision()
+
+    comparison = await handler.compare([perception], [identifications], ctx)
+
+    assert comparison.position_results
+    assert fake_vision_client.calls_to("ask_to_image") == []
 
 
 async def test_ink_wall_end_to_end_synthetic(

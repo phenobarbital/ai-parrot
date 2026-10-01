@@ -43,37 +43,63 @@ class PlanogramConfig(BaseModel):
 
     planogram_type: str = Field(
         default="product_on_shelves",
-        description="Type of planogram composable to use (e.g. product_on_shelves, ink_wall, tv_wall)",
+        description=(
+            "Registered planogram type: product_on_shelves, ink_wall, endcap_backlit_multitier, "
+            "endcap_no_shelves_promotional, graphic_panel_display or product_counter"
+        ),
     )
 
     # Core planogram configuration
     planogram_config: Dict[str, Any] = Field(
-        description="Planogram configuration dictionary (gets converted to PlanogramDescription)"
+        description=(
+            "Planogram configuration dictionary (converted to PlanogramDescription); may carry 'layout_profile' "
+            "overrides of the type's default LayoutProfile and 'rule_bindings'"
+        )
     )
 
     # ROI Detection prompt
     roi_detection_prompt: Optional[str] = Field(
-        default=None, description="Prompt for ROI detection (legacy adapter path only; optional since FEAT-574)"
+        default=None,
+        description=(
+            "Prompt for ROI detection. Accepted and ignored since ai-parrot-pipelines 1.1.0 (FEAT-612); "
+            "kept one release for stored rows"
+        ),
     )
 
     # Object identification prompt
     object_identification_prompt: Optional[str] = Field(
-        default=None, description="Prompt for object identification (legacy adapter path only; optional since FEAT-574)"
+        default=None,
+        description=(
+            "Prompt for object identification. Accepted and ignored since ai-parrot-pipelines 1.1.0 (FEAT-612); "
+            "kept one release for stored rows"
+        ),
     )
 
     # Reference images — supports single image or list of images per product
     reference_images: Dict[str, Union[str, Path, List[str], List[Path], Image.Image]] = Field(
         default_factory=dict,
         description=(
-            "Reference images for object identification. "
-            "Supports a single image path/object or a list of images per product key."
+            "Local reference images per catalogue key: a path, a list of paths or a PIL image. Loaded once per run "
+            "into the identification reference bank (opaque labels; never used as expected placement)."
         ),
     )
 
     # Optional: Additional detection parameters
-    confidence_threshold: float = Field(default=0.25, description="YOLO detection confidence threshold")
+    confidence_threshold: float = Field(
+        default=0.25,
+        description=(
+            "YOLO detection confidence threshold. Accepted and ignored since ai-parrot-pipelines 1.1.0 (FEAT-612); "
+            "kept one release for stored rows"
+        ),
+    )
 
-    detection_model: str = Field(default="yolo11l.pt", description="YOLO model to use for detection")
+    detection_model: str = Field(
+        default="yolo11l.pt",
+        description=(
+            "YOLO model to use for detection. Accepted and ignored since ai-parrot-pipelines 1.1.0 (FEAT-612); "
+            "kept one release for stored rows"
+        ),
+    )
 
     endcap_geometry: EndcapGeometry = Field(
         default_factory=EndcapGeometry, description="Endcap geometry and margin configuration"
@@ -83,15 +109,18 @@ class PlanogramConfig(BaseModel):
     detection_grid: Optional[DetectionGridConfig] = Field(
         default=None,
         description=(
-            "Detection grid configuration. "
-            "When None or grid_type='no_grid', pipeline uses current single-image behavior."
+            "Detection grid configuration. Accepted and ignored since ai-parrot-pipelines 1.1.0 (FEAT-612); "
+            "kept one release for stored rows"
         ),
     )
 
     # Slots definition (FEAT-574): dict (JSONB row value) or a path to a JSON file.
     slots_definition: Optional[Union[Dict[str, Any], str, Path]] = Field(
         default=None,
-        description="Shelves/slots/products definition for migrated types: a dict or a path to a JSON file",
+        description=(
+            "Shelves/slots/zones definition (dict or JSON file path). Required at runtime; convert legacy rows as "
+            "described in docs/pipelines/planogram-cycle-migration.md"
+        ),
     )
 
     # LLM backend (FEAT-574): "provider:model" — the LLMFactory.create format.
