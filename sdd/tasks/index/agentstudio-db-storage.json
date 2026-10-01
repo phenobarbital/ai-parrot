@@ -94,7 +94,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot-server/pyproject.toml ([project.scripts]) and creates tests/studio/storage/conftest.py that later storage tests load; extends storage/migrate.py after TASK-3924 (list_migrations, constants); imports studio_transaction/_exec from TASK-3925 (storage/repositories.py)",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3926-migrations-ledger-apply-cli.md"
+      "completed_at": "2026-10-01T02:50:44+00:00",
+      "file": "sdd/tasks/completed/TASK-3926-migrations-ledger-apply-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3927",

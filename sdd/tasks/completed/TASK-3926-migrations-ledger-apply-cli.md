@@ -307,10 +307,8 @@ def no_subprocess(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: Implemented per blueprint; 11 real-PG tests pass against PG17. LedgerState gained an optional skills_name_unique_index field and a separate warnings() method (host-created unique index on ai_skills_catalog(name) alone) so a warning never blocks complete_for. IMPORTANT FINDING (contradicts spec §2.5a): asyncdb 2.16.2 pg.execute() SWALLOWS UniqueViolation/FK/NotNull errors (return inside finally) and returns the PREVIOUS statement's result with error=None; inside a transaction that leaves it aborted and commit() silently becomes a rollback. fetch_one/fetch_all do raise (ProviderError, __cause__ = asyncpg error). Hence _exec cannot detect those violations; repositories that must map them (StudioNameConflict, FK) need fetch_one/INSERT...RETURNING (or equivalent). Tests use a CTE-on-fetch_one helper. Affects TASK-3928+.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
