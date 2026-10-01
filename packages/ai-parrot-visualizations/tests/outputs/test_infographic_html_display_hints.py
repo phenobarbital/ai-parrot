@@ -72,3 +72,9 @@ def test_chart_without_right_axis_is_single_dict():
     assert isinstance(option["yAxis"], dict)
     assert option["yAxis"]["name"] == "Fallback"
     assert all("yAxisIndex" not in s for s in option["series"])
+
+
+def test_stacked_right_axis_series_not_stacked_into_left_total():
+    option = _renderer()._build_echarts_option(_chart(stacked=True))
+    assert option["series"][0]["stack"] == "total"
+    assert "stack" not in option["series"][1]

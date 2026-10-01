@@ -402,7 +402,7 @@ class _Converter:
             value = item.get("value")
             properties: dict[str, Any] = {"label": item.get("label") or ""}
             try:
-                properties["value"] = float(value) / 100
+                properties["value"] = round(float(value) / 100, 6)
                 properties["format"] = "percent"
             except (TypeError, ValueError):
                 properties["value"] = value

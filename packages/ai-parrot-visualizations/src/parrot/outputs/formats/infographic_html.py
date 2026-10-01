@@ -1043,7 +1043,9 @@ class InfographicHTMLRenderer(BaseRenderer):
 
                 if right_axis and getattr(s, "axis", None) == "right":
                     item["yAxisIndex"] = 1
-                if block.stacked:
+                if block.stacked and not item.get("yAxisIndex"):
+                    # Right-axis series sit on their own scale and are never stacked
+                    # into the left total (matches the admin UI's AppChart).
                     item["stack"] = "total"
                 option["series"].append(item)
 
