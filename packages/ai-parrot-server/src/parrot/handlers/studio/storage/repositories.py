@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, AsyncIterator, Sequence
 from uuid import UUID
@@ -431,3 +432,43 @@ class StudioToolingRepository:
                     rec.vault_owner,
                     conflict=True,
                 )
+
+
+@dataclass(frozen=True)
+class StudioRepositories:
+    """The five repositories sharing one pool."""
+
+    pool: Any
+    agents: StudioAgentRepository
+    assets: StudioAssetRepository
+    tooling: StudioToolingRepository
+    drafts: "StudioDraftRepository"
+    skills: "StudioSkillCatalogRepository"
+
+
+def build_studio_repositories(pool: Any) -> StudioRepositories:
+    """Build every repository over ``pool`` (the host's ``app["database"]``)."""
+    from .catalog_repository import StudioSkillCatalogRepository
+    from .draft_repository import StudioDraftRepository
+
+    return StudioRepositories(
+        pool,
+        StudioAgentRepository(pool),
+        StudioAssetRepository(pool),
+        StudioToolingRepository(pool),
+        StudioDraftRepository(pool),
+        StudioSkillCatalogRepository(pool),
+    )
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy re-export (``draft_repository`` / ``catalog_repository`` import this module's helpers, so it cannot be imported eagerly)."""
+    if name == "StudioSkillCatalogRepository":
+        from .catalog_repository import StudioSkillCatalogRepository
+
+        return StudioSkillCatalogRepository
+    if name == "StudioDraftRepository":
+        from .draft_repository import StudioDraftRepository
+
+        return StudioDraftRepository
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
