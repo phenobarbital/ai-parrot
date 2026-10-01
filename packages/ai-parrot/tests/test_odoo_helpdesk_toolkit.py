@@ -20,7 +20,7 @@ if "parrot.utils" not in sys.modules:
     _utils_stub.cPrint = lambda *args, **kwargs: None
     sys.modules["parrot.utils"] = _utils_stub
 
-from parrot.interfaces.odoointerface import OdooConfig  # noqa: E402
+from parrot.interfaces.odoointerface import OdooConfig, OdooRPCError  # noqa: E402
 from parrot_tools.odoo import OdooHelpdeskToolkit, OdooToolkit  # noqa: E402
 from parrot_tools.odoo.helpdesk import TICKET_MODEL  # noqa: E402
 from parrot_tools.odoo.models.helpdesk_envelopes import TicketListResult, TicketResult  # noqa: E402
@@ -519,3 +519,122 @@ async def test_list_ticket_alarms_envelope():
     ]
     result = await _make_helpdesk_toolkit(transport).list_ticket_alarms()
     assert result.total == 1 and result.alarms[0].name == "Reminder"
+
+
+# ── M9: stats, wizards, timer ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_ticket_stats_odoo19_formatted_read_group():
+    """Odoo 19 ticket statistics use formatted_read_group and normalize false keys."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [[{"stage_id": [4, "New"], "__count": 22}, {"stage_id": False, "__count": 1}]]
+    result = await toolkit.ticket_stats()
+    assert transport.execute_kw.await_args.args == (
+        TICKET_MODEL,
+        "formatted_read_group",
+        [[]],
+        {"groupby": ["stage_id"], "aggregates": ["__count"]},
+    )
+    assert [(group.key, group.count) for group in result.groups] == [(4, 22), (None, 1)]
+    assert result.total == 23 and result.source_method == "formatted_read_group"
+
+
+@pytest.mark.asyncio
+async def test_ticket_stats_odoo17_read_group():
+    """Odoo 17 ticket statistics use the compatible read_group shape."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "17.0"}
+    transport.execute_kw.return_value = [{"stage_id": [4, "New"], "stage_id_count": 3}]
+    result = await _make_helpdesk_toolkit(transport).ticket_stats()
+    assert transport.execute_kw.await_args.args == (
+        TICKET_MODEL,
+        "read_group",
+        [[]],
+        {"groupby": ["stage_id"], "fields": ["id:count"], "lazy": False},
+    )
+    assert result.source_method == "read_group" and result.total == 3
+
+
+@pytest.mark.asyncio
+async def test_ticket_stats_fallback_search_count():
+    """Stage aggregation failures fall back to one search_count per configured stage."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [
+        OdooRPCError("unsupported aggregate"),
+        [STAGES_ROWS[0], STAGES_ROWS[2]],
+        7,
+        2,
+    ]
+    result = await toolkit.ticket_stats()
+    assert result.source_method == "search_count" and [(group.key, group.count) for group in result.groups] == [(4, 7), (21, 2)]
+    assert transport.execute_kw.await_args_list[2].args == (TICKET_MODEL, "search_count", [[("stage_id", "=", 4)]], None)
+
+
+@pytest.mark.asyncio
+async def test_merge_tickets_wizard_calls():
+    """Merge creates the verified wizard values and checks the target postcondition."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [
+        [{"id": 1, "partner_id": [7, "Ada"]}],
+        [1],
+        None,
+        [{"id": 3, "sh_merge_ticket_count": 2}],
+    ]
+    result = await toolkit.merge_tickets([2, 3], into_ticket_id=3)
+    assert transport.execute_kw.await_args_list[1].args == (
+        "sh.helpdesk.ticket.merge.ticket.wizard",
+        "create",
+        [
+            {
+                "sh_helpdesk_ticket_ids": [[6, 0, [2, 3]]],
+                "sh_select_type": "existing",
+                "sh_select_merge_type": "close",
+                "sh_merge_history": True,
+                "sh_partner_id": 7,
+                "sh_existing_ticket": 3,
+            }
+        ],
+        None,
+    )
+    assert transport.execute_kw.await_args_list[2].args == (
+        "sh.helpdesk.ticket.merge.ticket.wizard",
+        "action_merge_tickets",
+        [[1]],
+        None,
+    )
+    assert result.applied is True and result.result_ticket_id == 3
+
+
+@pytest.mark.asyncio
+async def test_mass_update_tickets_wizard_calls():
+    """Mass updates enable only the selected stage control and invoke update_record."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [[2], None]
+    result = await toolkit.mass_update_tickets([1, 3], stage=22)
+    assert transport.execute_kw.await_args_list[0].args == (
+        "sh.helpdesk.ticket.mass.update.wizard",
+        "create",
+        [{"helpdesks_ticket_ids": [[6, 0, [1, 3]]], "check_helpdesks_state": True, "helpdesk_stages": 22}],
+        None,
+    )
+    assert transport.execute_kw.await_args_list[1].args == (
+        "sh.helpdesk.ticket.mass.update.wizard",
+        "update_record",
+        [[2]],
+        None,
+    )
+    assert result.applied is True
+
+
+@pytest.mark.asyncio
+async def test_start_ticket_timer_surfaces_config_error_as_warning():
+    """Tenant timer configuration errors are structured warnings rather than RPC failures."""
+    transport = _fake_transport()
+    transport.execute_kw.side_effect = OdooRPCError("Please Set Default Project from configuration!")
+    result = await _make_helpdesk_toolkit(transport).start_ticket_timer(1)
+    assert result.running is False and "Default Project" in result.warnings[0]
