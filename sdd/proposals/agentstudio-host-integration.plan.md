@@ -89,9 +89,9 @@ identity. **No tenant-ready release until every spec's release gate is met.**
 Phase 2 (BYOK + vault credentials/user overrides off DocumentDB) is now a
 committed module/task set in STORAGE (M11–M12), not an open question.
 
-## Product decisions still open
+## Product decisions (approved 2026-09-30)
 
-| # | Decision | Our recommendation |
+| # | Decision | Outcome |
 |---|---|---|
 | 1 | Package shape: three specs, storage first, coordinated tenant release | Keep (as you suggested) |
 | 2 | Host seam API (`view_wrapper`, `studio_routes=False`, `setup_registry_only` + runtime hooks, `/me`) | As in FEAT-605 |
@@ -100,10 +100,12 @@ committed module/task set in STORAGE (M11–M12), not an open question.
 | 5 | Test chat has no HITL channel yet → host writes unavailable there until one exists | Accept for v1 |
 | 6 | Does `TenantToolingPolicy` also apply to the GLOBAL (plain-host) partition? | Opt-in (`apply_to_global=False` default) |
 | 7 | `PATCH /agents/{name}`: name immutable, `bot_class` not updatable | Yes |
-| 8 | Release train for the early subset: a preview release (not tenant-ready) vs. holding everything for one lockstep release; still 1.0.7? | Preview release of the early subset, clearly labelled not tenant-ready; tenant-ready only in the lockstep release |
+| 8 | Release train for the early subset: a preview release (not tenant-ready) vs. holding everything for one lockstep release; still 1.0.7? | **Not a spec decision — non-blocking.** The maintainer picks version numbers and release grouping once the specs are built; only the release gate (no tenant-ready release before every gate) is binding |
 
-Each spec's Open Questions section is now split into **resolved correctness
-requirements** and **product questions**.
+All recommendations above were adopted. Every spec's remaining questions are
+resolved or deferred as explicit non-blocking follow-ups; the three specs are
+marked **approved** and ready for `/sdd-task` (feature IDs reserved by the
+maintainer).
 
 ## Out of scope for this package
 

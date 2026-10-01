@@ -20,7 +20,7 @@ tags: [agentstudio, toolkits, multi-tenant, host-integration, tool-scope, toolin
 **Feature ID**: FEAT-TBD (provisional; reserved on approval)
 **Date**: 2026-09-30
 **Author**: Juan Ruffato (with Claude), for review by Jesus Lara
-**Status**: draft (v0.2.1, revised after Jesus's review of 2026-09-30 and reconciled with the package)
+**Status**: approved (v0.2.2, 2026-09-30) — open questions resolved or deferred as non-blocking; ready for `/sdd-task`. Feature ID to be reserved by the maintainer.
 **Target version**: ai-parrot 1.0.7 + ai-parrot-server 1.0.7 (lockstep)
 **Inputs**: FieldSync `sdd/proposals/fieldsync-agent-toolkits.brainstorm.md`
 (upstream asks U1 and U2, F1–F3, Q1–Q3, Q10); FieldSync
@@ -1243,44 +1243,44 @@ fail-closed (M8).
 
 ### Product questions (for Jesus)
 
-- [ ] **Q1: Host registration mechanism.** Should parrot honour a declarative
+- [x] **Q1: Host registration mechanism.** **Decided 2026-09-30 (Juan, with Jesus's go-ahead; revisit in PR #1524 if needed): recommendation adopted.** Should parrot honour a declarative
   `plugins.tools.TOOL_REGISTRY` (+ `HOST_TOOL_PREFIX`), or offer a
   programmatic `register_host_toolkits(app, {...})` hook?
   *Recommendation: the declarative registry.* It needs no app, so bot build
   and the catalogue work at import time, and it matches `parrot_tools`. No
   runtime mutation either way. — *Owner: Jesus*
-- [ ] **Q3: Walk fallback lifetime.** Should the resolver keep walking a
+- [x] **Q3: Walk fallback lifetime.** **Decided 2026-09-30 (Juan, with Jesus's go-ahead; revisit in PR #1524 if needed): recommendation adopted.** Should the resolver keep walking a
   `plugins.tools` that has no `TOOL_REGISTRY`?
   *Recommendation: keep it one minor version, with a deprecation warning,
   then require the registry.* — *Owner: Jesus*
-- [ ] **Q4: Toolkit methods on `/tools/{slug}/execute`.** Today only
+- [x] **Q4: Toolkit methods on `/tools/{slug}/execute`.** **Decided 2026-09-30 (Juan, with Jesus's go-ahead; revisit in PR #1524 if needed): recommendation adopted.** Today only
   `AbstractTool` classes run there.
   *Recommendation: keep it that way in this spec.* FieldSync does not mount
   execute (FieldSync P6). A `{slug}.{method}` form can be a follow-up; it would inherit
   M3b and the M8 execute refusal unchanged. — *Owner: Jesus*
-- [ ] **Q7: Default access for built-ins.** Should `parrot_tools` toolkits
+- [x] **Q7: Default access for built-ins.** **Decided 2026-09-30 (Juan, with Jesus's go-ahead; revisit in PR #1524 if needed): recommendation adopted.** Should `parrot_tools` toolkits
   that have no `read_tools` stay `access=None` ("unknown"), or default to
   `"write"`?
   *Recommendation: `None` now,* so no confirmation behaviour changes for the
   GLOBAL partition. Tenant availability of built-ins is already governed by
   `builtin_tools` (R1). Only host toolkits default to `"write"`. — *Owner: Jesus*
-- [ ] **Q8: Conventions that are not enforced.** Should Pydantic return
+- [x] **Q8: Conventions that are not enforced.** **Decided 2026-09-30 (Juan, with Jesus's go-ahead; revisit in PR #1524 if needed): recommendation adopted.** Should Pydantic return
   types and row caps (`max_rows` + `truncated`) be enforced by the resolver,
   or documented only?
   *Recommendation: document them, and enforce only the prefix and the
   read/write marker.* Return-type enforcement would reject existing
   `str`/`dict` tools. — *Owner: Jesus*
-- [ ] **Q9: Scheduler and A2A principal.** Should a separate feature give
+- [x] **Q9: Scheduler and A2A principal.** **Deferred 2026-09-30 — non-blocking follow-up:** a separate feature; until it exists tenant-bound tools refuse (`no_context`). Should a separate feature give
   schedulers/A2A a principal carrying a stamped tenant? Until it exists they
   refuse (`no_context`, RC-5 below). — *Owner: Jesus / Juan*
-- [ ] **P-Q1: Built-ins a tenant host should allow.** Which built-ins, if
+- [x] **P-Q1: Built-ins a tenant host should allow.** **Moved to the host:** FieldSync decides its `builtin_tools` list in its own mount spec; parrot's default stays `deny_all()` (none). Which built-ins, if
   any, should FieldSync list in `builtin_tools` (e.g. `wiki`, `infographic`,
   `dataset_manager`)? Default is none. — *Owner: Juan (host), Jesus (review)*
-- [ ] **P-Q2: Approval channel for Studio test chat.** Which HITL channel
+- [x] **P-Q2: Approval channel for Studio test chat.** **Deferred 2026-09-30 — non-blocking follow-up:** until a HITL channel exists, host write tools are refused in test chat, by design. Which HITL channel
   (`HumanInteractionManager` backend) should Studio offer so host write tools
   are usable in test chat? Until one exists they are refused, by design. —
   *Owner: Jesus*
-- [ ] **P-Q3: Policy for the GLOBAL partition.** Should single-tenant hosts
+- [x] **P-Q3: Policy for the GLOBAL partition.** **Decided 2026-09-30 (Juan, with Jesus's go-ahead; revisit in PR #1524 if needed): recommendation adopted.** opt-in (`apply_to_global=False`) with a deprecation note; the host-guide statement in §2 applies. Should single-tenant hosts
   also get `deny_all()` by default (`apply_to_global=True`), which would change
   today's behaviour for existing deployments?
   *Recommendation: opt-in (`False`) in 1.0.7, with a deprecation note.* —
