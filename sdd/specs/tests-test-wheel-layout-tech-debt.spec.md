@@ -157,11 +157,11 @@ which **passes 21/21 standalone**.
 |---|---|---|---|---|
 | **F1 tenant double** | 18 | `tests/unit/test_api_feat300.py` (9), `tests/unit/test_feat300_review_fixes.py` (6), `tests/test_form_uid_integration.py` (3) | `_make_request()` (`test_api_feat300.py:125`) never stubs `request.get("tenant")`; `MagicMock(spec=web.Request).get()` returns a truthy MagicMock, so `_get_tenant()` resolves garbage → handler 404s. `_tenant_request()` (`:173`) already fixes it for 6 of 31 call sites. `test_form_uid_integration.py:43` is a second, independent double with the same gap. | **test** — fold the patch into `_make_request`, delete the wrapper |
 | **F2 registry pollution + contract drift** | 8 + 3 | `tests/integration/test_form_controls_contract.py` (2 own), `tests/unit/api/test_form_controls_endpoint.py` (1 own) | Both fixtures call `_REGISTRY.clear()` (`registry.py:91`) and never restore it, so every later test in the session sees an empty/partial control registry — the sole cause of the 8 `KeyError: 'text' / 'number' / …` and `assert 'text' in {'cap_test', 'compat_test'}` failures. Their own 3 failures are separate: `form_controls_response_schema.json` forbids fields the endpoint now returns (`Additional properties are not allowed ('supported_effects', …)`). | **test fixture** — snapshot/restore `_REGISTRY`; regenerate the schema from the endpoint |
-| **F3 coverage gaps** | 2 | `tests/unit/test_field_helpers.py` (1), `tests/unit/test_controls_registry.py` (1) | `_FIELD_SCHEMA_SNIPPETS` (`field_helpers.py:15`) lacks entries for newer `FieldType` members (`audio`, `search`, `masked`, `ai_capture`, `tree_select`, …). **Verified**: with `controls.builtin` imported, all 45 `FieldType` values DO register — so this is a snippets gap, not a registry gap. | **product** — add the missing snippets |
-| **F4 pinned-constant drift** | 6 | `tests/unit/test_version_and_docs.py` (1), `tests/unit/test_init_imports_metadata_only.py` (1), `tests/unit/test_core_models.py` (1), `tests/test_edit_toolkit.py` (2), `tests/integration/test_msteams_import_compat.py` (1) | Tests assert literals the product grew past: `'1.0.6' == '0.9.0'`, `'1.0.6' == '0.3.0'`, `45 == 32`, `22 == 15`, `60 < 50`. | **test** — derive from the source of truth, never re-pin a new literal |
+| **F3 snippet coverage gap** | 1 | `tests/unit/test_field_helpers.py` (1) | `_FIELD_SCHEMA_SNIPPETS` (`field_helpers.py:15`) holds **34** of the **45** `FieldType` values. Exactly 11 are missing, measured at spec time: `ai_capture`, `audio`, `color_picker`, `credit_card`, `cron`, `emoji`, `masked`, `place`, `search`, `signature_pad`, `tree_select`. **Verified**: with `controls.builtin` imported all 45 DO register, so this is a snippets gap, not a registry gap. | **product** — add the 11 missing snippets |
+| **F4 pinned-constant drift** | 7 | `tests/unit/test_version_and_docs.py` (1), `tests/unit/test_init_imports_metadata_only.py` (1), `tests/unit/test_core_models.py` (1), `tests/unit/test_controls_registry.py` (1), `tests/test_edit_toolkit.py` (2), `tests/integration/test_msteams_import_compat.py` (1) | Tests assert literals the product grew past: `'1.0.6' == '0.9.0'`, `'1.0.6' == '0.3.0'`, `assert len(controls) == 32` (got 45, `test_controls_registry.py:180`), `22 == 15`, `60 < 50`. | **test** — derive from the source of truth, never re-pin a new literal |
 | **F5 isolation & harness** | 3 | `tests/unit/ui/test_ui_imports.py` (1), `tests/unit/test_venue_service.py` (1), `tests/unit/test_deterministic_integration.py` (1) | `parrot_formdesigner.ui` transitively imports `.api` (a real layering regression); `test_duplicate_location_raises` leaks DB state (`23505 unique violation` escaping instead of the expected error). | **mixed** — the `ui → api` break is **product**, the other two are **test** |
 
-Totals: 18 + 11 + 2 + 6 + 3 = 40 (of which 8, inside F2, are pollution-only).
+Totals: 18 + 11 + 1 + 7 + 3 = 40 (of which 8, inside F2, are pollution-only).
 
 ### Integration Points
 
@@ -257,24 +257,26 @@ Totals: 18 + 11 + 2 + 6 + 3 = 40 (of which 8, inside F2, are pollution-only).
 - **Touches no `src/`.** `FormAPIHandler._get_tenant()` (`handlers.py:270-295`)
   is correct; FEAT-421 rewrote it deliberately and the double lagged.
 
-### Module 4: formdesigner F3 — schema-snippet coverage (2 failures)
+### Module 4: formdesigner F3 — schema-snippet coverage (1 failure)
 
 - **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/tools/field_helpers.py`
 - **Responsibility**: every `FieldType` member has an entry in
-  `_FIELD_SCHEMA_SNIPPETS` (`field_helpers.py:15`). Product gap — the tests are
-  the contract and stay as they are.
+  `_FIELD_SCHEMA_SNIPPETS` (`field_helpers.py:15`). The dict holds 34 of 45;
+  add exactly these 11: `ai_capture`, `audio`, `color_picker`, `credit_card`,
+  `cron`, `emoji`, `masked`, `place`, `search`, `signature_pad`, `tree_select`.
+  Product gap — the test is the contract and stays as it is.
 - **Verified at spec time**: importing `parrot_formdesigner.controls.builtin`
   registers all **45** `FieldType` values with zero missing, so the control
   registry is NOT the gap — `controls/builtin.py` needs no change. The gap is
   the snippets dict that seeds it.
 - **Depends on**: nothing.
 
-### Module 5: formdesigner F4 — pinned-constant drift (6 failures)
+### Module 5: formdesigner F4 — pinned-constant drift (7 failures)
 
 - **Path**: `…/tests/unit/test_version_and_docs.py:11`,
   `…/tests/unit/test_init_imports_metadata_only.py`,
-  `…/tests/unit/test_core_models.py`, `…/tests/test_edit_toolkit.py`,
-  `…/tests/integration/test_msteams_import_compat.py`
+  `…/tests/unit/test_core_models.py`, `…/tests/unit/test_controls_registry.py`,
+  `…/tests/test_edit_toolkit.py`, `…/tests/integration/test_msteams_import_compat.py`
 - **Responsibility**: replace each hardcoded literal with a derivation from the
   source of truth (`importlib.metadata.version`, `len(FieldType)`, the registry
   itself). **No test may re-pin a fresh literal** — that only resets the clock.
