@@ -137,7 +137,7 @@
       "feature_id": "FEAT-623",
       "feature": "infographic-a2ui-display-hints",
       "spec": "sdd/specs/infographic-a2ui-display-hints.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -147,8 +147,9 @@
       "parallelism_notes": "Emits ColumnDef{header,type}; validates only once TASK-3994 adds ColumnDef.type (models/infographic.py).",
       "assigned_to": null,
       "started_at": "2026-10-01T03:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4000-build-table-typed-columns.md"
+      "completed_at": "2026-10-01T03:16:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4000-build-table-typed-columns.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4001",

@@ -226,10 +226,10 @@ def _column_def(header: str, col_type: Optional[str]) -> Dict[str, Any]:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet 5.5, fallback sequential loop — parrot-sdd-coder unavailable)
+**Date**: 2026-09-30
+**Notes**: _column_type_for (pandas.api.types, bool first) + _column_def; every column emitted as ColumnDef dict, type omitted when unknown, format never. Duplicate column names (df[c] is a DataFrame) yield no type. 52 tests pass. Observed: running test_infographic_sections.py together with the whole unit/tools -k infographic set fails 5 tests (module-pop pollution from test_infographic_build_block's sys.modules juggling); the file passes alone (19) — not caused by this change.
 
 **Deviations from spec**: none
