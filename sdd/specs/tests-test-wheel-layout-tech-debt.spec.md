@@ -10,7 +10,7 @@ tags: [test-scope, merge-tier, pytest, conftest, formdesigner, tech-debt, ledger
 **Feature ID**: FEAT-618
 **Date**: 2026-10-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.7
 
 > **Slug note.** The slug `tests-test-wheel-layout-tech-debt` is inherited
