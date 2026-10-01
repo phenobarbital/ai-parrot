@@ -16,14 +16,14 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; owns comparison/definition.py, contracts.py and core compliance.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T11:17:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4003-fact-tag-contracts.md"
     },
@@ -34,14 +34,14 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; creates comparison/tags.py and edits types/product_on_shelves.py only",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T11:17:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4004-tag-helpers-module.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallel": true,
       "parallelism_notes": "needs the fact_tag_present RuleKind from TASK-4003 (comparison/definition.py) and imports slot_above/tag_text/tag_price from TASK-4004 (comparison/tags.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T11:17:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4005-fact-tag-rule-evaluation.md"
     },
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallel": true,
       "parallelism_notes": "writes ShelfScore.info_results / ShelfAssessment.info_results added by TASK-4003 (contracts.py, compliance.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T11:17:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4006-fact-tag-info-routing.md"
     },
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallel": true,
       "parallelism_notes": "its candidates must pass validate_bindings with the fact_tag_present kind from TASK-4003 (comparison/definition.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T11:17:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4007-converter-fact-tag-bindings.md"
     },
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -124,7 +124,7 @@
       "parallel": true,
       "parallelism_notes": "documents evaluation from TASK-4005 (rules.py), info_results routing from TASK-4006 (scoring.py) and the converter output of TASK-4007 (migration.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T11:17:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4008-fact-tag-docs-and-harness.md"
     }
