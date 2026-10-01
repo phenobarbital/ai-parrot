@@ -49,3 +49,49 @@ def test_helpdesk_stage_and_sla_optional_fields():
     assert stage.tenant_stage_field is True
     assert sla.sh_team_id == [1, "Compliance"]
     assert sla.sh_days == 0
+
+
+from parrot_tools.odoo.models.helpdesk_inputs import (  # noqa: E402
+    CreateSlaPolicyInput,
+    CreateTicketInput,
+    MassUpdateTicketsInput,
+    UpdateTicketInput,
+)
+
+
+def test_create_ticket_input_requires_partner_ref():
+    """Require a customer reference when creating a ticket."""
+    import pytest
+
+    with pytest.raises(ValueError, match="partner_id, partner_email or partner_name"):
+        CreateTicketInput(subject="x")
+    assert CreateTicketInput(subject="x", partner_email="a@b.c").partner_email == "a@b.c"
+
+
+def test_create_sla_policy_input_validators():
+    """Validate SLA duration and stage requirements."""
+    import pytest
+
+    with pytest.raises(ValueError, match="days, hours or minutes"):
+        CreateSlaPolicyInput(name="Policy", team="Compliance")
+    with pytest.raises(ValueError, match="stage is required"):
+        CreateSlaPolicyInput(name="Policy", team="Compliance", hours=1)
+    policy = CreateSlaPolicyInput(name="Policy", team="Compliance", hours=1, stage="Closed")
+    assert policy.hours == 1
+
+
+def test_mass_update_input_requires_change():
+    """Require a mass-update operation in addition to ticket ids."""
+    import pytest
+
+    with pytest.raises(ValueError, match="at least one change"):
+        MassUpdateTicketsInput(ticket_ids=[1])
+    assert MassUpdateTicketsInput(ticket_ids=[1], stage="Open").stage == "Open"
+
+
+def test_update_ticket_input_has_no_lifecycle_fields():
+    """Keep lifecycle, assignment, and SLA updates out of the ticket patch schema."""
+    forbidden = {"stage", "stage_id", "assignee", "user_id", "sh_user_ids"}
+    fields = set(UpdateTicketInput.model_fields)
+    assert not fields & forbidden
+    assert not any(field.startswith("sh_sla") for field in fields)
