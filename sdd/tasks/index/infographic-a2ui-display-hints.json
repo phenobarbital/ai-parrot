@@ -35,7 +35,7 @@
       "feature_id": "FEAT-623",
       "feature": "infographic-a2ui-display-hints",
       "spec": "sdd/specs/infographic-a2ui-display-hints.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "Needs ColumnDef.type/format, ChartDataSeries.axis, ChartBlock.y_axis_labels, HeroCardBlock.format/unit from TASK-3994 (models/infographic.py); sole owner of adapters/infographic.py.",
       "assigned_to": null,
       "started_at": "2026-10-01T03:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3995-infographic-adapter-lossless-lowering.md"
+      "completed_at": "2026-10-01T03:09:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3995-infographic-adapter-lossless-lowering.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3996",

@@ -359,11 +359,11 @@ def _target_text(target: Any) -> str | None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet 5.5, fallback sequential loop — parrot-sdd-coder unavailable)
+**Date**: 2026-09-30
+**Notes**: Progress -> one Column{Text,Row{KPICard}} / Row in current section; value/100 + format percent + 'vs N% target'; hero 0 preserved + format/unit; table type/format; chart seriesAxes/yAxisLabels; docstring corrected. infographic_lowered.json untouched (not adapter output). 135 tests pass. display_hints_response() fixture in the adapter test module is reused by TASK-3997.
 
 **Deviations from spec**:
 - `infographic_lowered.json` is NOT regenerated, because it is not adapter output (spec §6 drift).
