@@ -178,3 +178,49 @@ def test_detect_shelf_edges_synthetic_and_blank():  # AC-9
 def test_public_functions_are_picklable():  # AC-10
     for fn in (group_rows, detect_shelf_edges, build_slots, strip_box, to_strip_norm, from_strip_norm):
         pickle.dumps(fn)
+
+
+def _product(x1: int, y1: int, x2: int, y2: int) -> ShapeCandidate:
+    return ShapeCandidate(profile="product_box", kind="box", x1=x1, y1=y1, x2=x2, y2=y2, score=0.9)
+
+
+def _shelf_rows(cartons):
+    """Three printers above a row of cartons (a two-shelf ``SHAPE_IS_SLOT`` fixture)."""
+    printers = [_product(348, 406, 595, 569), _product(591, 386, 850, 583), _product(850, 381, 1135, 573)]
+    return [printers, cartons]
+
+
+def _shape_slots(cartons, **options):
+    return build_slots(_shelf_rows(cartons), (W, H), image_id="img", rule=AnchorRule.SHAPE_IS_SLOT, **options)
+
+
+def test_shape_is_slot_fills_an_empty_column_between_two_cartons():
+    """A column the row above has and this row leaves free becomes one inferred, anchor-less slot."""
+    cartons = [_product(349, 682, 655, 988), _product(792, 675, 1138, 990)]
+    row = [s for s in _shape_slots(cartons, fill_gaps=True) if s.row_index == 1]
+    assert [(s.slot_index, s.inferred) for s in row] == [(1, False), (2, True), (3, False)]
+    hole = row[1]
+    assert hole.anchor_shape_id is None
+    assert (hole.box.x1, hole.box.y1, hole.box.x2, hole.box.y2) == (655, 675, 792, 990)
+    assert len([s for s in _shape_slots(cartons, fill_gaps=False) if s.row_index == 1]) == 2
+
+
+def test_shape_is_slot_fills_an_empty_column_at_the_row_end():
+    cartons = [_product(349, 682, 600, 988), _product(605, 675, 845, 990)]
+    row = [s for s in _shape_slots(cartons, fill_gaps=True) if s.row_index == 1]
+    assert [s.inferred for s in row] == [False, False, True]
+    assert (row[2].box.x1, row[2].box.x2) == (850, 1135)
+
+
+def test_shape_is_slot_leaves_wide_slots_and_full_rows_alone():
+    """A wide carton under two printers hides no column, and the fullest row is never filled."""
+    wide = [_product(349, 682, 850, 988), _product(860, 675, 1138, 990)]
+    slots = _shape_slots(wide, fill_gaps=True)
+    assert not [s for s in slots if s.inferred]
+    assert len(slots) == 5
+
+
+def test_shape_is_slot_ignores_a_sliver_between_cartons():
+    cartons = [_product(349, 682, 700, 988), _product(750, 675, 1138, 990)]
+    assert not [s for s in _shape_slots(cartons, fill_gaps=True) if s.inferred]
+
