@@ -437,10 +437,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: Prefix/view_wrapper/idempotent mount, install_startup_hook_once, BotManager.setup(studio_routes=), setup_registry_only. New tests + test_scaffold pass. ruff unavailable.
+**Mutation evidence**: 
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
