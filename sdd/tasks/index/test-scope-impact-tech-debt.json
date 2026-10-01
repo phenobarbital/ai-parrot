@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-01T01:35:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-01T01:39:32+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -58,7 +58,7 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -69,8 +69,9 @@
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
       "started_at": "2026-10-01T01:37:45.699010+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3921-core-detection-docs.md"
+      "completed_at": "2026-10-01T01:39:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3921-core-detection-docs.md",
+      "verification": "verified"
     }
   ]
 }
