@@ -132,6 +132,7 @@ def project_compliance(
             resolved_facings=score.expected_facings - len(unresolved_ids),
             unresolved_facing_ids=unresolved_ids,
             rule_results=[o.model_dump(mode="json") for o in score.rule_results],
+            info_results=[o.model_dump(mode="json") for o in score.info_results],
         )
         results.append(
             ComplianceResult(
