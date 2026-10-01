@@ -207,10 +207,8 @@ class StudioDraftService:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: services/drafts.py StudioDraftService: python_drafts_allowed (tenant None AND STUDIO_PYTHON_DRAFTS), save_bundle (validate_new phase=write; create or guarded update), get/list/delete/update_visibility, activate (one tx: lock draft -> status draft/validated else StudioVersionConflict -> validate_new phase=activate -> insert via _insert_with_children or replace: lock target with target_guard, update_definition + _replace_children -> set_status activated -> post-commit best-effort vault clean-up of removed slugs). 14 tests x memory/postgres where parametrised + concurrent activation on PG (one success, one version_conflict): 29 pass; storage suite 216 pass. Mutations RED: status check, python-drafts tenant clause, target_guard, activate phase (via phase-spy test), cleanup call, draft lock/guard, post-children version.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
