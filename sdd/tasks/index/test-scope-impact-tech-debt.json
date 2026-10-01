@@ -36,7 +36,7 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -46,7 +46,7 @@
       "parallelism_notes": "Modifies the same file as TASK-3919 (packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/policy.py), and its generator reproduces source_fanin's direct count from TASK-3919 (impact.py#source_fanin).",
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T01:31:49.021209+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3920-regenerate-core-paths.md"
     },
