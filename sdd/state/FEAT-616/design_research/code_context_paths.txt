@@ -1,0 +1,13 @@
+packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py
+packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py
+packages/ai-parrot-tools/src/parrot_tools/odoo/models/envelopes.py
+packages/ai-parrot-tools/src/parrot_tools/odoo/models/entities.py
+packages/ai-parrot-tools/src/parrot_tools/odoo/models/__init__.py
+packages/ai-parrot-tools/src/parrot_tools/odoo/__init__.py
+packages/ai-parrot-tools/src/parrot_tools/odoo/transport/json2.py
+packages/ai-parrot/src/parrot/tools/decorators.py
+packages/ai-parrot-tools/src/parrot_tools/odoo/smart_fields.py
+packages/ai-parrot/tests/test_odoo_toolkit.py
+packages/ai-parrot-tools/src/parrot_tools/zammad.py
+sdd/specs/odoo-fieldservice-toolkit.spec.md
+sdd/specs/odoo-json2-domain-first-methods.spec.md

@@ -35,6 +35,21 @@ def _looks_like_ids(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, int) for item in value)
 
 
+#: ORM methods whose first positional ``execute_kw`` argument is a search domain.
+#: ``Json2Transport._build_body`` maps ``args[0]`` of these to the JSON-2 ``domain`` key.
+_DOMAIN_FIRST_METHODS: frozenset[str] = frozenset(
+    {
+        "search",
+        "search_read",
+        "search_count",
+        "read_group",
+        "formatted_read_group",
+        "web_read_group",
+        "formatted_read_grouping_sets",
+    }
+)
+
+
 class Json2Transport(AbstractOdooTransport):
     """Async transport for Odoo's External JSON-2 API."""
 
@@ -92,11 +107,16 @@ class Json2Transport(AbstractOdooTransport):
         args: list[Any] | None,
         kwargs: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Translate legacy ``execute_kw`` args into JSON-2 named arguments."""
+        """Translate legacy ``execute_kw`` args into JSON-2 named arguments.
+
+        Domain-first methods (``_DOMAIN_FIRST_METHODS``) map ``args[0]`` (an
+        empty list when absent) to ``body["domain"]``; more than one positional
+        argument raises ``OdooRPCError``.
+        """
         args = args or []
         body = dict(kwargs or {})
 
-        if method in {"search", "search_read", "search_count"}:
+        if method in _DOMAIN_FIRST_METHODS:
             if len(args) > 1:
                 raise OdooRPCError(f"JSON-2 transport cannot map positional args for method {method!r}.")
             body.setdefault("domain", args[0] if args else [])

@@ -528,7 +528,7 @@ def _main(argv: Optional[list[str]] = None) -> int:
 
     api_key = os.environ.get(LIVE_API_KEY_ENV)
     if not api_key:
-        print(f"{LIVE_API_KEY_ENV} must be set by the spawning mcp-agent adapter", file=sys.stderr)
+        print("PARROT_E2E_LIVE_API_KEY must be set by the spawning mcp-agent adapter", file=sys.stderr)
         return 2
 
     logging.basicConfig(level=logging.INFO)

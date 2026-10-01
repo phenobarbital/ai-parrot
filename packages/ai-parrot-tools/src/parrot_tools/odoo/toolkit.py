@@ -20,7 +20,6 @@ import asyncio
 import base64
 import binascii
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -78,14 +77,10 @@ from .models.envelopes import (
 )
 from .models.entities import (
     AccountMove,
-    CrmLead,
     HrEmployee,
     HrLeave,
-    ProductProduct,
-    ProductTemplate,
     ResPartner,
     SaleOrder,
-    StockPicking,
 )
 from .models.inputs import (
     AggregateRecordsInput,
@@ -1001,6 +996,7 @@ class OdooToolkit(AbstractToolkit):
         limit: Optional[int] = None,
         offset: int = 0,
         order: Optional[str] = None,
+        having: Optional[list[Any]] = None,
     ) -> AggregateResult:
         """Group and aggregate records server-side using read_group (Odoo 16-18)
         or formatted_read_group (Odoo 19+).
@@ -1015,15 +1011,22 @@ class OdooToolkit(AbstractToolkit):
                 aggregators: sum, avg, min, max, count, count_distinct.
             domain: Optional domain filter.
             lazy: When True, only the first group_by level is resolved.
+                Honoured on Odoo 16-18 (``read_group``) only; Odoo 19+
+                ``formatted_read_group`` has no lazy mode and the flag is
+                ignored (a debug log line records that).
             limit: Max number of groups to return.
             offset: Groups to skip.
             order: Sort order string.
+            having: Optional domain over the aggregates, filtering groups after
+                aggregation (e.g. ``[[\"__count\", \">\", 5]]`` or
+                ``[[\"amount_total:sum\", \">\", 1000]]``). Odoo 19+ only.
 
         Returns:
             AggregateResult with groups list and metadata.
 
         Raises:
-            ValueError: When an unsupported aggregator name is used.
+            ValueError: When an unsupported aggregator name is used, or when a
+                non-empty ``having`` is given and the server is not Odoo 19+.
         """
         # Validate and parse measure specs
         parsed_measures: list[tuple[str, str]] = []
@@ -1041,12 +1044,24 @@ class OdooToolkit(AbstractToolkit):
         odoo_version = await self._get_odoo_major_version()
         use_formatted = odoo_version is not None and odoo_version >= 19
 
+        if having and not use_formatted:
+            # read_group (Odoo <= 18) has no ``having``; dropping it would return unfiltered groups.
+            raise ValueError(
+                f"having requires Odoo 19+ (formatted_read_group); detected Odoo {odoo_version}. "
+                "Filter the returned groups instead."
+            )
+
         if use_formatted:
             # Odoo 19+ formatted_read_group
+            # formatted_read_group (Odoo 19+) has no ``lazy`` parameter — sending it is rejected.
             kwargs: dict[str, Any] = {
                 "groupby": group_by,
-                "lazy": lazy,
             }
+            if lazy:
+                self.logger.debug(
+                    "aggregate_records: lazy=True ignored — formatted_read_group (Odoo %s) has no lazy mode",
+                    odoo_version,
+                )
             if parsed_measures:
                 kwargs["aggregates"] = [f"{f}:{a}" for f, a in parsed_measures]
             if limit is not None:
@@ -1055,6 +1070,8 @@ class OdooToolkit(AbstractToolkit):
                 kwargs["offset"] = offset
             if order:
                 kwargs["order"] = order
+            if having:
+                kwargs["having"] = having
             groups = await self._execute(model, "formatted_read_group", [domain], kwargs)
         else:
             # Odoo 16-18 read_group — fields must include group_by columns AND measure specs
@@ -1304,18 +1321,18 @@ class OdooToolkit(AbstractToolkit):
         hints: list[str] = []
         if required_fields:
             hints.append(
-                f"Required non-readonly fields: "
+                "Required non-readonly fields: "
                 + ", ".join(f["name"] for f in required_fields)
             )
         if many2one:
             hints.append(
-                f"Many2one fields accept an integer id: "
+                "Many2one fields accept an integer id: "
                 + ", ".join(f["name"] for f in many2one[:5])
                 + ("..." if len(many2one) > 5 else "")
             )
         if one2many:
             hints.append(
-                f"One2many fields use ORM commands [(0,0,{{...}}), ...]: "
+                "One2many fields use ORM commands [(0,0,{...}), ...]: "
                 + ", ".join(f["name"] for f in one2many[:3])
             )
 
@@ -1359,9 +1376,8 @@ class OdooToolkit(AbstractToolkit):
             self.logger.debug("check_access_rights failed for %s: %s", model, exc)
 
         # Fetch ir.model.access rules for the model
-        acl_rules: list[dict[str, Any]] = []
         try:
-            acl_rules = await self._execute(
+            await self._execute(
                 "ir.model.access",
                 "search_read",
                 [[("model_id.model", "=", model)]],
@@ -1639,7 +1655,7 @@ class OdooToolkit(AbstractToolkit):
             warnings.append(
                 f"Method {method!r} mutates Odoo data. Ensure you have write permissions."
             )
-        elif method.startswith("action_") or method.startswith("_"):
+        elif method.startswith(("action_", "_")):
             method_safety = "side_effect"
             warnings.append(
                 f"Method {method!r} may trigger business logic side-effects."
@@ -2020,10 +2036,8 @@ class OdooToolkit(AbstractToolkit):
         })
 
         # Optionally fetch live model list for improved classification
-        live_models: set[str] = set()
         try:
-            catalog = await self.schema_catalog(limit=500)
-            live_models = {m["model"] for m in catalog.models}
+            await self.schema_catalog(limit=500)
         except OdooError:
             pass
 
