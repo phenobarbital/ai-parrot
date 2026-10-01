@@ -71,7 +71,7 @@ def create_app(guard_mode: str = "policy", *, policy_dir: str | Path | None = No
     from agent import EpsonLinkedAgent  # noqa: E402 — sibling example module (examples/ is not a package)
 
     app = web.Application()
-    QuerySource(lazy=False).setup(app)  # 1. /api/v3/queries + /api/v1/{tenant}/queries
+    QuerySource(lazy=False).setup(app)  # 1. /api/v2/services/queries + /api/v3/queries + /api/v1/{tenant}/queries
     if guard_mode != "none":
         if guard_mode == "policy":
             pdir = Path(policy_dir or POLICY_DIR)

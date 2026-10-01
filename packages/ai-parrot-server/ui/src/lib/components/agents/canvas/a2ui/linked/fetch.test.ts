@@ -1,4 +1,5 @@
-// FEAT-598 (TASK-3794): fetchSource URL rule, 404 → SourceUnavailable, refresh boolean, querylimit (AC4/AC10/AC17).
+// FEAT-598 (TASK-3794): fetchSource URL rule (v2 QS by default, v3 MultiQS only for is_multiquery, v1 tenant),
+// 404 → SourceUnavailable, 204 → [], refresh boolean, querylimit (AC4/AC10/AC17).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FrameSelectionError, fetchSource, SourceUnavailable } from './fetch';
 import type { LinkedDataSource } from './types';
@@ -16,7 +17,7 @@ function makeSource(overrides: Partial<LinkedDataSource> = {}): LinkedDataSource
 }
 
 describe('fetchSource', () => {
-  it('posts to /api/v3/queries/{slug} with querylimit when tenant is null', async () => {
+  it('posts to /api/v2/services/queries/{slug} (plain QS, never MultiQS) with querylimit when tenant is null', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([{ a: 1 }])));
     const src = makeSource();
     const rows = await fetchSource(src, { region: 'east' }, {
@@ -25,7 +26,7 @@ describe('fetchSource', () => {
     });
     expect(spy).toHaveBeenCalledTimes(1);
     const [url, init] = spy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/api/v3/queries/sales_by_region');
+    expect(url).toBe('/api/v2/services/queries/sales_by_region');
     expect(init.method).toBe('POST');
     expect(init.headers).toEqual({ Authorization: 'Bearer tok123' });
     const body = JSON.parse(init.body as string);
@@ -40,6 +41,28 @@ describe('fetchSource', () => {
     await fetchSource(src, {}, { baseUrl: '', headers: {} });
     const [url] = spy.mock.calls[0] as [string];
     expect(url).toBe('/api/v1/acme/queries/sales_by_region');
+  });
+
+  it('routes to /api/v3/queries/{slug} (MultiQS) only when is_multiquery is true', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify([])));
+    await fetchSource(makeSource({ is_multiquery: true } as never), {}, { baseUrl: '', headers: {} });
+    expect((spy.mock.calls[0] as [string])[0]).toBe('/api/v3/queries/sales_by_region');
+
+    spy.mockClear();
+    await fetchSource(makeSource({ is_multiquery: false } as never), {}, { baseUrl: '', headers: {} });
+    expect((spy.mock.calls[0] as [string])[0]).toBe('/api/v2/services/queries/sales_by_region');
+  });
+
+  it('the tenant route wins over is_multiquery (kind-aware tenant handler)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([])));
+    await fetchSource(makeSource({ tenant: 'acme', is_multiquery: true } as never), {}, { baseUrl: '', headers: {} });
+    expect((spy.mock.calls[0] as [string])[0]).toBe('/api/v1/acme/queries/sales_by_region');
+  });
+
+  it('treats a 204 Empty Result as zero rows, not an error', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    const rows = await fetchSource(makeSource(), {}, { baseUrl: '', headers: {} });
+    expect(rows).toEqual([]);
   });
 
   it('maps a 404 to SourceUnavailable, never "denied"', async () => {
