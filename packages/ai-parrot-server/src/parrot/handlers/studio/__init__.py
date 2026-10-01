@@ -68,6 +68,13 @@ class _Registrar:
             self.app.router.add_view(f"{self.base}{path}", target)
 
 
+def _register_me(reg: _Registrar) -> None:
+    # Capabilities (FEAT-605): the literal /me goes before every dynamic top-level route.
+    from .me import StudioCapabilitiesHandler
+
+    reg.add("/me", StudioCapabilitiesHandler)
+
+
 def _register_agents(reg: _Registrar) -> None:
     # Agent lifecycle (FEAT-467 TASK-2512): create/list/read/reload/delete.
     from .agents import StudioAgentReloadHandler, StudioAgentsHandler
@@ -198,6 +205,7 @@ def setup_studio_routes(
     mounted.add(base)
     reg = _Registrar(app, base, view_wrapper)
     for register in (
+        _register_me,
         _register_agents,
         _register_drafts,
         _register_files,
