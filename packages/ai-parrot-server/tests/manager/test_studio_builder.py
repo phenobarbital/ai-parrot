@@ -277,3 +277,16 @@ async def test_only_identity_assets_feed_identity_kwargs(configure, root):
     snap = _snapshot(assets=[("kb", "role.md", "kb file called role.md"), ("identity", "goal.md", "  the goal  ")])
     bot, _ = await _builder(root).build(snap, web.Application(), part=GLOBAL)
     assert bot.goal == "the goal" and bot.role != "kb file called role.md"
+
+
+async def test_failed_rebuild_keeps_a_version_directory_other_entries_use(configure, root):
+    snap = _snapshot(assets=[("kb", "k.md", "kb body")])
+    bot, directory = await _builder(root).build(snap, web.Application(), part=GLOBAL)    # e.g. the live base entry
+    configure.side_effect = RuntimeError("session build exploded")
+    with pytest.raises(AgentReloadError):                                                 # e.g. a session build
+        await _builder(root).build(snap, web.Application(), part=GLOBAL)
+    assert (bot._get_agent_kb_directory() / "k.md").read_text() == "kb body" and directory.exists()
+
+
+def test_runtime_dir_property(root):
+    assert _builder(root).runtime_dir == root

@@ -54,6 +54,11 @@ class StudioAgentBuilder:
     def __init__(self, registry: "AgentRegistry", runtime_dir: Path, tooling_gate: StudioToolingGate) -> None:
         self._registry, self._root, self._gate = registry, runtime_dir, tooling_gate
 
+    @property
+    def runtime_dir(self) -> Path:
+        """Root of the versioned asset directories (``<root>/<agent_id>/v<version>``)."""
+        return self._root
+
     async def build(
         self, snapshot: StudioAgentSnapshot, app: "web.Application", *, part: StudioPartition
     ) -> tuple["AbstractBot", Path]:
@@ -69,6 +74,7 @@ class StudioAgentBuilder:
             phase="build",
         )
         directory = self._root / str(rec.agent_id) / f"v{rec.version}"
+        shared = directory.exists()          # another entry (base/session) of this version already uses it
         bot: "AbstractBot | None" = None
         try:
             self._check_class(part, rec.definition.bot_class, app)
@@ -78,7 +84,7 @@ class StudioAgentBuilder:
             self._stamp_and_bind(bot, snapshot, app, part, directory)
             await bot.configure(app)
         except BaseException as exc:
-            await self._discard(bot, directory, label=f"{rec.name}@v{rec.version}")
+            await self._discard(bot, None if shared else directory, label=f"{rec.name}@v{rec.version}")
             if isinstance(exc, StudioToolingRefused) or not isinstance(exc, Exception):
                 raise
             from .manager import AgentReloadError
@@ -168,10 +174,11 @@ class StudioAgentBuilder:
         if guard is not None:
             bot.tool_manager.set_confirmation_guard(guard)
 
-    async def _discard(self, bot: "AbstractBot | None", directory: Path, *, label: str) -> None:
-        """Clean the half-built instance exactly once and remove its directory. Never raises."""
+    async def _discard(self, bot: "AbstractBot | None", directory: Path | None, *, label: str) -> None:
+        """Clean the half-built instance exactly once and remove the directory it created. Never raises."""
         if bot is not None:
             from .manager import cleanup_bot_instance
 
             await asyncio.shield(cleanup_bot_instance(bot, label=label))
-        shutil.rmtree(directory, ignore_errors=True)
+        if directory is not None:
+            shutil.rmtree(directory, ignore_errors=True)
