@@ -52,6 +52,25 @@ Migration happens before deployment.
 6. Run `python -m parrot_pipelines.planogram.migration preflight --dsn "$PLANOGRAM_DSN"` until every
    active row is ready, then deploy.
 
+### Whole-table runner
+
+`python -m parrot_pipelines.planogram.migration_runner` runs the same sequence over every active
+row from one work directory; the `/planogram-migrate` command drives it with the human review in
+between. The DSN comes from `--dsn` or, by default, `querysource.conf.default_dsn` of the active
+`ENV`; `target` shows the resolved host and database without credentials.
+
+| Subcommand | Writes to the database | What it does |
+|---|---|---|
+| `alter [--yes]` | only with `--yes` | Prints, or applies, the ALTER script. |
+| `export --dir D` | no | One file per active row in `D/original/`; never overwrites an export. |
+| `convert --dir D` | no | Candidates in `D/candidates/`; reviewed candidates are kept unless `--force`. |
+| `render --dir D` | no | `D/apply.sql` from candidates with an empty `unresolved` list that pass the preflight checks. |
+| `apply --dir D --yes` | yes | Runs `D/apply.sql`: one transaction, aborted when a row changed since the export. |
+| `preflight` | no | Same report as `migration preflight`. |
+
+Exit codes match the converter: `0` ready, `2` unresolved or not-ready rows, `1` usage, I/O or
+database failure.
+
 ## Rollback
 
 Redeploy the prior runtime and retain the exported original row content. This release deletes no
