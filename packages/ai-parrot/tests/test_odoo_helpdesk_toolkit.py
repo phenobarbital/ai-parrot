@@ -22,6 +22,7 @@ if "parrot.utils" not in sys.modules:
 
 from parrot.interfaces.odoointerface import OdooConfig  # noqa: E402
 from parrot_tools.odoo import OdooHelpdeskToolkit, OdooToolkit  # noqa: E402
+from parrot_tools.odoo.helpdesk import TICKET_MODEL  # noqa: E402
 from parrot_tools.odoo.models.helpdesk_envelopes import TicketListResult, TicketResult  # noqa: E402
 
 ROLES_ROW = [
@@ -248,3 +249,112 @@ async def test_get_ticket_loads_extra_fields_and_lifecycle():
     assert isinstance(result, TicketResult)
     assert result.ticket.extra_fields == {"serial": "A1"}
     assert result.ticket.lifecycle.role == "new"
+
+
+# ── M6: writes, comments, assignment ─────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_resolves_refs_and_calls_create():
+    """Ticket creation resolves named references before the create RPC."""
+    transport = _fake_transport()
+    ticket = {"id": 70, "name": "HD-70", "stage_id": [4, "New"], "state": "customer_replied"}
+    transport.execute_kw.side_effect = [
+        [{"id": 15, "name": "Black Screen"}],
+        [{"id": 3, "name": "High"}],
+        70,
+        [ticket],
+        [],
+        STAGES_ROWS,
+        [{"company_id": [1, "Company"]}],
+        ROLES_ROW,
+    ]
+    toolkit = _make_helpdesk_toolkit(transport)
+    result = await toolkit.create_ticket(subject="x", partner_id=2243, category="Black Screen", priority="High")
+    create_call = transport.execute_kw.await_args_list[2]
+    assert create_call.args == (
+        TICKET_MODEL,
+        "create",
+        [{"partner_id": 2243, "state": "customer_replied", "email_subject": "x", "category_id": 15, "priority": 3}],
+        None,
+    )
+    assert isinstance(result, TicketResult)
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_creates_partner_when_email_unknown():
+    """An unmatched customer email creates the partner with that email as its name."""
+    transport = _fake_transport()
+    transport.execute_kw.side_effect = [[], 99]
+    toolkit = _make_helpdesk_toolkit(transport)
+    assert await toolkit._find_or_create_partner(None, "a@b.c", None) == 99
+    assert transport.execute_kw.await_args_list[1].args == (
+        "res.partner",
+        "create",
+        [{"name": "a@b.c", "email": "a@b.c"}],
+        None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_ticket_rejects_lifecycle_fields():
+    """The descriptive patch surface excludes lifecycle and assignment fields."""
+    import inspect
+
+    toolkit = _make_helpdesk_toolkit()
+    assert not {"stage", "assignee", "user_id", "stage_id"} & set(inspect.signature(toolkit.update_ticket).parameters)
+    with pytest.raises(ValueError, match="nothing to update"):
+        await toolkit.update_ticket(ticket_id=1)
+
+
+@pytest.mark.asyncio
+async def test_add_ticket_comment_reports_reopen():
+    """A public comment reports the observed Closed-to-Open stage change."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [
+        [{"id": 1, "stage_id": [21, "Closed"]}],
+        [2268],
+        [{"id": 1, "stage_id": [22, "Open"]}],
+    ]
+    result = await toolkit.add_ticket_comment(ticket_id=1, body="hi", internal=False)
+    assert result.reopened is True and result.message_id == 2268 and result.stage_after == "Open"
+    call = transport.execute_kw.await_args_list[1]
+    assert call.args[:3] == (TICKET_MODEL, "message_post", [[1]])
+    assert call.args[3]["subtype_xmlid"] == "mail.mt_comment"
+
+
+@pytest.mark.asyncio
+async def test_take_assign_reassign_call_tuples():
+    """Take, direct assignment, and reassign-wizard RPCs use verified tuples."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    toolkit._assignment_result = AsyncMock()
+
+    await toolkit.take_ticket(1)
+    assert transport.execute_kw.await_args_list[0].args == (TICKET_MODEL, "action_take_ticket", [[1]], None)
+
+    transport.execute_kw.reset_mock()
+    await toolkit.assign_ticket(1, 2103, [2241])
+    assert transport.execute_kw.await_args_list[0].args == (
+        TICKET_MODEL,
+        "write",
+        [[1], {"user_id": 2103, "sh_user_ids": [[6, 0, [2241]]]}],
+        None,
+    )
+
+    transport.execute_kw.reset_mock()
+    transport.execute_kw.side_effect = [3, True]
+    await toolkit.reassign_ticket(1, 2103)
+    assert transport.execute_kw.await_args_list[0].args == (
+        "sh.helpdesk.reassign.wizard",
+        "create",
+        [{"ticket_id": 1, "new_user_id": 2103}],
+        None,
+    )
+    assert transport.execute_kw.await_args_list[1].args == (
+        "sh.helpdesk.reassign.wizard",
+        "action_confirm",
+        [[3]],
+        None,
+    )

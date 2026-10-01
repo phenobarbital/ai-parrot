@@ -15,20 +15,32 @@ from parrot.conf import (
     ODOO_HELPDESK_VERIFY_SSL,
 )
 from parrot.interfaces.odoointerface import OdooConfig, OdooError
-from parrot.tools.decorators import tool_schema
+from parrot.tools.decorators import requires_permission, tool_schema
 from parrot_tools.odoo.helpdesk_normalize import extra_fields_to_dict, normalize_ticket
-from parrot_tools.odoo.models.envelopes import FieldSelectionMetadata, ModelInfo, ModelOperations, ModelsResult
+from parrot_tools.odoo.models.envelopes import (
+    BinaryFieldResult,
+    FieldSelectionMetadata,
+    ModelInfo,
+    ModelOperations,
+    ModelsResult,
+)
 from parrot_tools.odoo.models.helpdesk_entities import HelpdeskMessage, HelpdeskStageInfo, HelpdeskTicket
 from parrot_tools.odoo.models.helpdesk_envelopes import (
     HelpdeskReferenceItem,
     HelpdeskReferenceResult,
     TicketExtraFieldsResult,
     TicketHistoryResult,
+    TicketAssignmentResult,
+    TicketCommentResult,
     TicketListResult,
     TicketMessagesResult,
     TicketResult,
 )
 from parrot_tools.odoo.models.helpdesk_inputs import (
+    AddTicketCommentInput,
+    AssignTicketInput,
+    AttachToTicketInput,
+    CreateTicketInput,
     GetTicketExtraFieldsInput,
     GetTicketHistoryInput,
     GetTicketInput,
@@ -36,6 +48,9 @@ from parrot_tools.odoo.models.helpdesk_inputs import (
     ListMyTicketsInput,
     ListReferenceInput,
     SearchTicketsInput,
+    ReassignTicketInput,
+    TakeTicketInput,
+    UpdateTicketInput,
 )
 from parrot_tools.odoo.toolkit import OdooToolkit, _DEFAULT_KNOWN_MODELS
 from parrot_tools.odoo.transport.base import AbstractOdooTransport
@@ -558,3 +573,205 @@ class OdooHelpdeskToolkit(OdooToolkit):
         """Return TROC extra-field values and labels for a ticket."""
         fields, labels = extra_fields_to_dict(await self._extra_rows(ticket_id))
         return TicketExtraFieldsResult(ticket_id=ticket_id, fields=fields, labels=labels, count=len(fields))
+
+    # ── Ticket writes, comments, attachments (FEAT-616 M6) ─────────────────
+    async def _find_or_create_partner(self, partner_id: int | None, email: str | None, name: str | None) -> int:
+        """Resolve a customer by id, email, name, or create one."""
+        if partner_id:
+            return partner_id
+        domain = [("email", "=ilike", email)] if email else [("name", "=", name)]
+        rows = await self._execute("res.partner", "search_read", [domain], {"fields": ["id"], "limit": 1}) or []
+        if rows:
+            return int(rows[0]["id"])
+        created = await self._execute("res.partner", "create", [{"name": name or email, "email": email}])
+        return int(created[0] if isinstance(created, list) else created)
+
+    @requires_permission("odoo.write")
+    @tool_schema(CreateTicketInput)
+    async def create_ticket(
+        self,
+        subject: str,
+        partner_id: Optional[int] = None,
+        partner_email: Optional[str] = None,
+        partner_name: Optional[str] = None,
+        description: Optional[str] = None,
+        category: Optional[int | str] = None,
+        sub_category: Optional[int | str] = None,
+        priority: Optional[int | str] = None,
+        team: Optional[int | str] = None,
+        ticket_type: Optional[int | str] = None,
+        tags: Optional[list[int | str]] = None,
+        assignee: Optional[int | str] = None,
+        email: Optional[str] = None,
+        mobile_no: Optional[str] = None,
+        person_name: Optional[str] = None,
+        due_date: Optional[str] = None,
+        replied_status: str = "customer_replied",
+    ) -> TicketResult:
+        """Create a helpdesk ticket with resolved references."""
+        values: dict[str, Any] = {
+            "partner_id": await self._find_or_create_partner(partner_id, partner_email, partner_name),
+            "state": replied_status,
+            "email_subject": subject,
+        }
+        if description:
+            values["description"] = description if "<" in description else f"<p>{description}</p>"
+        for kind, field, value in (
+            ("category", "category_id", category),
+            ("sub_category", "sub_category_id", sub_category),
+            ("priority", "priority", priority),
+            ("team", "team_id", team),
+            ("ticket_type", "ticket_type", ticket_type),
+            ("user", "user_id", assignee),
+        ):
+            if value is not None:
+                values[field] = await self._resolve_ref(kind, value)
+        if tags is not None:
+            values["tag_ids"] = [[6, 0, await self._resolve_refs("tag", tags)]]
+        for field, value in (("email", email), ("mobile_no", mobile_no), ("person_name", person_name), ("sh_due_date", due_date)):
+            if value is not None:
+                values[field] = value
+        new_id = await self._execute(TICKET_MODEL, "create", [values])
+        ticket_id = int(new_id[0] if isinstance(new_id, list) else new_id)
+        self.logger.info("create_ticket: created %s #%s", TICKET_MODEL, ticket_id)
+        return TicketResult(ticket=await self._load_ticket(ticket_id), url=self._ticket_url(ticket_id))
+
+    @requires_permission("odoo.write")
+    @tool_schema(UpdateTicketInput)
+    async def update_ticket(
+        self,
+        ticket_id: int,
+        subject: Optional[str] = None,
+        description: Optional[str] = None,
+        comment: Optional[str] = None,
+        customer_comment: Optional[str] = None,
+        email: Optional[str] = None,
+        email_cc: Optional[str] = None,
+        mobile_no: Optional[str] = None,
+        person_name: Optional[str] = None,
+        due_date: Optional[str] = None,
+        category: Optional[int | str] = None,
+        sub_category: Optional[int | str] = None,
+        priority: Optional[int | str] = None,
+        team: Optional[int | str] = None,
+        ticket_type: Optional[int | str] = None,
+        tags: Optional[list[int | str]] = None,
+    ) -> TicketResult:
+        """Patch descriptive ticket fields without lifecycle or assignment changes."""
+        patch: dict[str, Any] = {}
+        for field, value in (
+            ("email_subject", subject),
+            ("description", description),
+            ("comment", comment),
+            ("customer_comment", customer_comment),
+            ("email", email),
+            ("email_cc", email_cc),
+            ("mobile_no", mobile_no),
+            ("person_name", person_name),
+            ("sh_due_date", due_date),
+        ):
+            if value is not None:
+                patch[field] = value
+        for kind, field, value in (
+            ("category", "category_id", category),
+            ("sub_category", "sub_category_id", sub_category),
+            ("priority", "priority", priority),
+            ("team", "team_id", team),
+            ("ticket_type", "ticket_type", ticket_type),
+        ):
+            if value is not None:
+                patch[field] = await self._resolve_ref(kind, value)
+        if tags is not None:
+            patch["tag_ids"] = [[6, 0, await self._resolve_refs("tag", tags)]]
+        if not patch:
+            raise ValueError("nothing to update")
+        await self._execute(TICKET_MODEL, "write", [[ticket_id], patch])
+        return TicketResult(ticket=await self._load_ticket(ticket_id), url=self._ticket_url(ticket_id))
+
+    @requires_permission("odoo.write")
+    @tool_schema(AddTicketCommentInput)
+    async def add_ticket_comment(
+        self, ticket_id: int, body: str, internal: bool = True, attachment_ids: Optional[list[int]] = None
+    ) -> TicketCommentResult:
+        """Post an internal note or public comment and report whether it reopened the ticket."""
+        before = await self._read_one(TICKET_MODEL, ticket_id, ["stage_id"])
+        kwargs: dict[str, Any] = {
+            "body": body,
+            "message_type": "comment",
+            "subtype_xmlid": "mail.mt_note" if internal else "mail.mt_comment",
+        }
+        if attachment_ids:
+            kwargs["attachment_ids"] = attachment_ids
+        message_id = await self._execute(TICKET_MODEL, "message_post", [[ticket_id]], kwargs)
+        after = await self._read_one(TICKET_MODEL, ticket_id, ["stage_id"])
+        stage_after = (after.get("stage_id") or [None, None])[1]
+        return TicketCommentResult(
+            ticket_id=ticket_id,
+            message_id=int(message_id[0] if isinstance(message_id, list) else message_id),
+            internal=internal,
+            reopened=before.get("stage_id") != after.get("stage_id"),
+            stage_after=stage_after,
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(AttachToTicketInput)
+    async def attach_to_ticket(
+        self,
+        ticket_id: int,
+        name: str,
+        source: str,
+        mimetype: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> BinaryFieldResult:
+        """Attach a URL or base64 file to a ticket as ``ir.attachment``."""
+        return await self.attach_document(
+            res_model=TICKET_MODEL,
+            res_id=ticket_id,
+            name=name,
+            source=source,
+            mimetype=mimetype,
+            description=description,
+        )
+
+    # ── Assignment ──────────────────────────────────────────────────────────
+    async def _assignment_result(self, ticket_id: int, method_used: str) -> TicketAssignmentResult:
+        """Return an assignment result after loading the updated ticket."""
+        ticket = await self._load_ticket(ticket_id, include_extra=False)
+        return TicketAssignmentResult(
+            ticket_id=ticket_id,
+            assignee=ticket.user_id,
+            additional_assignees=list(ticket.sh_user_ids or []),
+            method_used=method_used,
+            ticket=ticket,
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(AssignTicketInput)
+    async def assign_ticket(
+        self, ticket_id: int, assignee: int | str, additional_assignees: Optional[list[int | str]] = None
+    ) -> TicketAssignmentResult:
+        """Assign a primary user and optionally replace additional assignees."""
+        values: dict[str, Any] = {"user_id": await self._resolve_ref("user", assignee)}
+        if additional_assignees is not None:
+            values["sh_user_ids"] = [[6, 0, await self._resolve_refs("user", additional_assignees)]]
+        await self._execute(TICKET_MODEL, "write", [[ticket_id], values])
+        return await self._assignment_result(ticket_id, "write")
+
+    @requires_permission("odoo.write")
+    @tool_schema(TakeTicketInput)
+    async def take_ticket(self, ticket_id: int) -> TicketAssignmentResult:
+        """Assign the ticket to the connected user through ``action_take_ticket``."""
+        await self._execute(TICKET_MODEL, "action_take_ticket", [[ticket_id]])
+        return await self._assignment_result(ticket_id, "action_take_ticket")
+
+    @requires_permission("odoo.write")
+    @tool_schema(ReassignTicketInput)
+    async def reassign_ticket(self, ticket_id: int, new_assignee: int | str) -> TicketAssignmentResult:
+        """Reassign a ticket through the Softhealer transient wizard."""
+        new_user = await self._resolve_ref("user", new_assignee)
+        wizard = await self._execute(
+            "sh.helpdesk.reassign.wizard", "create", [{"ticket_id": ticket_id, "new_user_id": new_user}]
+        )
+        wizard_id = int(wizard[0] if isinstance(wizard, list) else wizard)
+        await self._execute("sh.helpdesk.reassign.wizard", "action_confirm", [[wizard_id]])
+        return await self._assignment_result(ticket_id, "reassign_wizard")
