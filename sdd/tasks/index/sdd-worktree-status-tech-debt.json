@@ -35,7 +35,7 @@
       "feature_id": "FEAT-619",
       "feature": "sdd-worktree-status-tech-debt",
       "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "Modifies the same two files TASK-3915 modifies (scripts/sdd/worktree_status.py, tests/sdd_scripts/test_worktree_status.py); serialized after it by file overlap.",
       "assigned_to": null,
       "started_at": "2026-10-01T00:34:24+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3916-fail-closed-health-and-index-read.md"
+      "completed_at": "2026-10-01T00:36:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3916-fail-closed-health-and-index-read.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3917",
