@@ -74,6 +74,9 @@ brainstorm, which renders the walkthrough's `02_envelope_v1.json`.
   magnitudes.
 - Embedding `StructuredTableConfig`/`StructuredChartConfig` in blocks was
   rejected; see the brainstorm, Option C.
+- Carrying `ColumnDef.align`/`width`/`color` over the wire. They stay
+  HTML-lane only and are documented as lossy in the A2UI lane (§8 Q3).
+  Extending `TableColumn` is a **follow-up**, see §8.
 - navigator-svelte changes. It already honours every hint, and its polish
   work is a separate feature in that repo.
 
@@ -131,7 +134,7 @@ AppChart` (layerchart).
 | `parrot.tools.infographic_toolkit._build_table_block` | modifies | typed `ColumnDef`s from dtypes |
 | `parrot.bots.prompts` / `parrot.models.infographic_templates` | modifies | teach the optional fields |
 | admin UI `a2ui-chart-adapter.ts`, `infographic-types.ts`, `InfographicChartBlock.svelte`, `charts/chart-contract.ts` + `AppChart.svelte` | modifies | dual axis (stop rule §7) |
-| admin UI `a2ui-format.ts` | reference | unchanged unless §8 Q2 says to pin the locale |
+| admin UI `a2ui-format.ts` | modifies | the reference semantics; pins `'en-US'` on both `Intl.NumberFormat`s (§8 Q2) |
 | `tests/ui/_vitest.run_vitest` (ai-parrot-server) | uses | runs the TS parity suite from pytest (FEAT-598 pattern) |
 | `examples/agents/a2ui/*` | modifies | raw numbers + hints |
 | `KPICardComponent` lowering (`catalog/parrot/kpicard.py`) | uses | already carries `format`/`unit`/`comparisonPeriod` to extensions; unchanged |
@@ -242,7 +245,8 @@ signature is unchanged.
     through unchanged (a str or a number). It uses an explicit `None` check
     instead of `or ""`, so `0` survives (codex S7).
   - Correct the module docstring: the sectioning policy, the mapping table
-    row for `progress`, and the "Known lossy degradations" list.
+    row for `progress`, and the "Known lossy degradations" list. The lossy
+    list now names `ColumnDef.align`/`width`/`color` (HTML-lane only, §8 Q3).
 - **Depends on**: M1
 - **Interface Skeleton**:
   ```python
@@ -264,8 +268,11 @@ signature is unchanged.
   `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_format_parity.py`.
 - **Responsibility**: Align `format_cell` with `formatA2UIValue` for
   `format ∈ {percent, currency, number}`, using `formatA2UIValue` as the
-  reference. One JSON fixture file is read by both suites; the FEAT-598
-  linked-contract pattern is the precedent.
+  reference. `formatA2UIValue` pins `'en-US'` on `ONE_DECIMAL_FMT` and
+  `CURRENCY_FMT` instead of the browser locale (`undefined`), so every lane
+  writes the same string in every browser (§8 Q2). One JSON fixture file is
+  read by both suites; the FEAT-598 linked-contract pattern is the
+  precedent.
 - **Depends on**: none
 - **Exact strings (fixture seed, en-US)**:
 
@@ -431,7 +438,7 @@ signature is unchanged.
 
 - [ ] **Wire unchanged**: no new catalog component, no new `KPICard`/`Chart`/`DataTable` property, no catalog version bump. *(Constraint: no wire vocabulary change.)*
 - [ ] **Additive models**: every pre-existing infographic test and payload validates unchanged (string hero values, `List[str]` columns, series without `axis`).
-- [ ] **Lockstep lanes (en-US)**: for every fixture row, `format_cell` and `formatA2UIValue` return the same string under an **en-US** locale. This is enforced by pytest and by vitest run from pytest, and the vitest run pins `en-US`. Parity under other browser locales depends on §8 Q2 (codex S6).
+- [ ] **Lockstep lanes**: for every fixture row, `format_cell` and `formatA2UIValue` return the same string. This is enforced by pytest and by vitest run from pytest. `formatA2UIValue` pins `'en-US'`, so parity holds regardless of the browser locale; a vitest case runs under a non-English default locale to prove it (codex S6).
 - [ ] **Never guess**: no hint is emitted unless declared by the block or derived from a DataFrame dtype. No label or magnitude inference is added anywhere.
 - [ ] **Deterministic adapter**: same input → byte-identical envelope. The golden file is regenerated on purpose, and its diff is limited to the progress group plus forwarded hints. The section count is unchanged.
 - [ ] **One-way import rule (G8)**: the adapter still imports only the a2ui core and `parrot.models.infographic`.
@@ -565,6 +572,7 @@ Verified against: `bc15cdf9c`
 | `packages/ai-parrot/src/parrot/outputs/a2ui/format_contract/fixtures/display_format.json` | CREATE | — | — | — |
 | `packages/ai-parrot-visualizations/tests/outputs/test_format_cell_parity.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-format.parity.test.ts` | CREATE | — | — | — |
+| `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-format.ts` | MODIFY | `const ONE_DECIMAL_FMT = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });` and `const CURRENCY_FMT = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' });` | `:16-17` | 1 each |
 | `packages/ai-parrot-server/tests/ui/test_vitest_a2ui_format_parity.py` | CREATE | — | — | — |
 | `packages/ai-parrot-visualizations/src/parrot/outputs/formats/infographic_html.py` | MODIFY | `value = escape(block.value)` | `:747` | 1 |
 | `packages/ai-parrot-visualizations/src/parrot/outputs/formats/infographic_html.py` | MODIFY | `def _render_table(self, block: TableBlock) -> str:` | `:1190` | 1 |
@@ -602,9 +610,9 @@ Verified against: `bc15cdf9c`
   trailing `.0`, and `number` gets 1 decimal. This changes `ssr_html`,
   `interactive_html` and PDF output for KPI and DataTable cells that
   declare those formats. Update their tests on purpose (§8 Q1).
-- **Locale**: `formatA2UIValue` uses `Intl.NumberFormat(undefined, …)`,
-  which is the browser's locale. Parity holds only under en-US; the vitest
-  run must pin `en-US` (§8 Q2).
+- **Locale**: `formatA2UIValue` used `Intl.NumberFormat(undefined, …)`, the
+  browser's locale. It is now pinned to `'en-US'` (§8 Q2). This is a
+  visible change for admin UI users on non-English browsers, by decision.
 - **No sectioning change, on purpose**: more than one section renders as
   tabs in both A2UI renderers, so `progress` becomes a group inside the
   current section. Renderers that lay out top-level KPI cards in a grid
@@ -647,9 +655,10 @@ Verified against: `bc15cdf9c`
 - [x] Compact currency — *Resolved in brainstorm*: No. A hand-written headline stays a string. Any future need is a separate `notation` prop, never a `format` value.
 - [x] Admin UI `seriesAxes` — *Resolved in brainstorm*: In this feature, as its own module (M5), with the §7 stop rule added at spec time after AppChart was found to have no axis concept.
 - [x] Target in `comparisonPeriod` or `delta` — *Resolved in brainstorm*: `comparisonPeriod`, worded `vs N% target`, and omitted when there is no target.
-- [ ] Q1: Is changing `format_cell`'s currency/percent/number output acceptable for existing `ssr_html`/PDF consumers? — *Owner: Jesús*
-- [ ] Q2: Should `formatA2UIValue` pin `'en-US'` instead of `undefined` (the browser locale), so live UI matches the HTML/PDF lanes for non-English browsers? This is a behaviour change in the admin UI. — *Owner: Jesús*
-- [ ] Q3: `ColumnDef.align`/`width`/`color` have no `DataTable.columns[]` counterpart on the wire (`TableColumn` = name/type/title/format). Should we drop them in the A2UI lane (documented as lossy; alignment follows `type`), or extend `TableColumn` (a wire change, against the non-goal)? Recommended: drop them and document it in the adapter's lossy list (codex S5). — *Owner: Jesús*
+- [x] Q1: Is changing `format_cell`'s currency/percent/number output acceptable for existing `ssr_html`/PDF consumers? — *Owner: Jesús; answered by Juan, 2026-09-30*: Yes.
+- [x] Q2: Should `formatA2UIValue` pin `'en-US'` instead of `undefined` (the browser locale)? — *Owner: Jesús; answered by Juan, 2026-09-30*: Yes. Pinned in M3.
+- [x] Q3: `ColumnDef.align`/`width`/`color` on the wire? — *Owner: Jesús; answered by Juan, 2026-09-30*: Leave them as they are for now. They are dropped in the A2UI lane and documented as lossy (M2). Extending `TableColumn` is a follow-up.
+- [ ] **Follow-up (not this feature)**: extend `TableColumn` with `align`/`width`/`color`, so `ColumnDef`'s styling survives the A2UI lane. This is a wire change: catalog + both renderers. — *Owner: Jesús*
 
 ---
 
@@ -703,4 +712,4 @@ Summary: **8** confirmed · **0** rejected · **2** escalated.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-09-30 | Juan Rodriguez + Claude | Initial draft from the accepted brainstorm; M5 stop rule and §8 Q1–Q3 added after spec-time verification; codex design research folded in (§9), progress-as-group decision |
+| 0.1 | 2026-09-30 | Juan Rodriguez + Claude | Initial draft from the accepted brainstorm; M5 stop rule and §8 Q1–Q3 added after spec-time verification; codex design research folded in (§9), progress-as-group decision; §8 Q1–Q3 answered (en-US pin, align/width/color follow-up) |
