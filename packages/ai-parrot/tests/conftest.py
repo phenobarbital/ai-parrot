@@ -757,6 +757,64 @@ def fake_parrot_bots(monkeypatch):
     monkeypatch.setitem(sys.modules, "parrot.models.crew", models_crew_module)
 
 
+
+# ---------------------------------------------------------------------------
+# FEAT-617 / issue:c3c59277ef77 — a test module may not keep another's imports
+# ---------------------------------------------------------------------------
+# Several modules in this tree install stand-ins at MODULE scope and never restore
+# them, e.g. tests/integration/test_spatial_transport.py:95-96 does
+#
+#     sys.modules["aiohttp"] = types.ModuleType("aiohttp")
+#
+# so the real aiohttp is gone for every file collected afterwards. Delta-debugging
+# identified 8 such modules; between them they caused 13 of this tree's 18 collection
+# errors ("cannot import name 'FormData' from 'aiohttp' (unknown location)",
+# "module 'aiohttp.web' has no attribute 'Application'", and the parrot._imports /
+# parrot.registry variants). The tell is always the same: a types.ModuleType stub has
+# no __file__.
+#
+# Rather than rewrite eight modules, scope the damage: snapshot sys.modules around
+# each test module's import and put back exactly the real modules that module
+# REPLACED. Only genuine module objects are restored (a name the module merely ADDED
+# is left in place, since nothing was shadowed), and the original object is restored
+# rather than re-imported, so any reference captured meanwhile stays valid.
+#
+# The polluting modules need their stand-ins only while they load a target by path at
+# import time -- they keep direct references afterwards -- so restoring once their
+# collection finishes leaves their own tests working.
+
+_MODULE_SNAPSHOTS: Dict[str, Dict[str, Any]] = {}
+
+
+def _real_module_snapshot() -> Dict[str, Any]:
+    """Identity map of every sys.modules entry that is currently a REAL module."""
+    snap = {}
+    for name, module in list(sys.modules.items()):
+        if module is not None and getattr(module, "__file__", None) is not None:
+            snap[name] = module
+    return snap
+
+
+def pytest_collectstart(collector):  # noqa: D401
+    """Snapshot the real modules in play before a test module is imported."""
+    if type(collector).__name__ == "Module":
+        _MODULE_SNAPSHOTS[collector.nodeid] = _real_module_snapshot()
+
+
+def pytest_collectreport(report):  # noqa: D401
+    """Undo any real module the just-collected test module replaced with a stub."""
+    snapshot = _MODULE_SNAPSHOTS.pop(report.nodeid, None)
+    if not snapshot:
+        return
+    for name, original in snapshot.items():
+        current = sys.modules.get(name)
+        if current is original or current is None:
+            continue
+        # The entry changed. Restore only if what replaced it is a bare stand-in --
+        # a real re-import (different object, still a real module) is left alone.
+        if getattr(current, "__file__", None) is None:
+            sys.modules[name] = original
+
 _install_navconfig_stub()
 _install_navigator_stubs()
 # NOTE (FEAT-268): _install_parrot_stubs() used to be called unconditionally
