@@ -213,6 +213,15 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         except ValueError as exc:
             return self._error(str(exc), status=400, code="invalid_path")
 
+        user = await self._get_user()
+        existing = await self._get_draft_row(save_request.name)
+        if (
+            existing is not None
+            and str(existing.owner_user_id) != str(user.user_id)
+            and not user.is_superuser
+        ):
+            return self._name_taken(save_request.name)
+
         file_path.write_text(save_request.source)
 
         # Pure static analysis — NEVER imports/executes the draft.
@@ -220,7 +229,6 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         base_class = detect_base_class(save_request.source) if report.passed else None
         status = "validated" if report.passed else "failed"
 
-        user = await self._get_user()
         await self._upsert_draft_row(
             name=save_request.name,
             file_path=str(file_path),
