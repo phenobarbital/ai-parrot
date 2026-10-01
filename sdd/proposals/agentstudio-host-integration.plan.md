@@ -5,9 +5,9 @@
 
 | # | Spec | What it is | Status |
 |---|---|---|---|
-| 1 | `sdd/specs/agentstudio-db-storage.spec.md` | Studio state in Postgres (new `navigator.ai_agents` + child tables); cross-pod sync; migrations; BYOK phase 2 | new, FEAT-TBD |
+| 1 | `sdd/specs/agentstudio-db-storage.spec.md` | Studio state in Postgres (new `navigator.ai_agents` + child tables); cross-pod sync; migrations; BYOK phase 2 | new, FEAT-621 |
 | 2 | `sdd/specs/agentstudio-tenant-visibility.spec.md` | **Your FEAT-605, revised to v0.2** on top of #1 — see its "v0.2 changes" table for the diff | revision |
-| 3 | `sdd/specs/agentstudio-host-toolkits.spec.md` | Host toolkits in every Studio path + agent/caller scope for tools | new, FEAT-TBD |
+| 3 | `sdd/specs/agentstudio-host-toolkits.spec.md` | Host toolkits in every Studio path + agent/caller scope for tools | new, FEAT-622 |
 
 IDs are not reserved: you reserve them if you approve.
 

@@ -4,7 +4,7 @@
 # - type: hotfix              → base_branch MUST be: main
 type: feature
 base_branch: dev
-feature_id: FEAT-TBD  # PROVISIONAL — reserved on approval
+feature_id: FEAT-622
 # projects: parts of the codebase this doc concerns. Use `packages/*` dir names
 #   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
 #   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
@@ -17,7 +17,7 @@ tags: [agentstudio, toolkits, multi-tenant, host-integration, tool-scope, toolin
 
 # Feature Specification: Agent Studio — Host Toolkits
 
-**Feature ID**: FEAT-TBD (provisional; reserved on approval)
+**Feature ID**: FEAT-622
 **Date**: 2026-09-30
 **Author**: Juan Ruffato (with Claude), for review by Jesus Lara
 **Status**: approved (v0.2.2, 2026-09-30) — open questions resolved or deferred as non-blocking; ready for `/sdd-task`. Feature ID to be reserved by the maintainer.

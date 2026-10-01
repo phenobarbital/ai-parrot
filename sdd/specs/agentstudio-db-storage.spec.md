@@ -4,7 +4,7 @@
 # - type: hotfix              → base_branch MUST be: main
 type: feature
 base_branch: dev
-feature_id: FEAT-TBD  # PROVISIONAL — reserved on approval
+feature_id: FEAT-621
 # projects: parts of the codebase this doc concerns.
 projects: [ai-parrot-server, ai-parrot]
 # tags: free-form kebab-case keywords for organizing specs.
@@ -15,7 +15,7 @@ tags: [agentstudio, multi-tenant, storage, postgres, migrations, registry, byok]
 
 # Feature Specification: Agent Studio — Database-Backed Storage
 
-**Feature ID**: FEAT-TBD (provisional; reserved on approval)
+**Feature ID**: FEAT-621
 **Date**: 2026-09-30
 **Author**: Juan Ruffato (host owner, FieldSync), with Claude; for review by Jesus Lara (ai-parrot owner)
 **Status**: approved (v0.2.2, 2026-09-30) — open questions resolved or deferred as non-blocking; ready for `/sdd-task`. Feature ID to be reserved by the maintainer.
