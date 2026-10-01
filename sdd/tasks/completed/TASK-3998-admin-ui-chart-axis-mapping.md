@@ -294,10 +294,10 @@ unchanged.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet 5.5, fallback sequential loop — parrot-sdd-coder unavailable)
+**Date**: 2026-09-30
+**Notes**: seriesAxes -> ChartSeriesItem.axis (only exact left/right), yAxisLabels -> y_axis_labels (non-strings -> null); vitest cases + pytest wrapper pass.
 
 **Deviations from spec**: none | describe if any
