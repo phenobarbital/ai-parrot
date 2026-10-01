@@ -56,7 +56,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 1,
@@ -67,8 +67,9 @@
       "parallelism_notes": "Depends on TASK-3975: check_tool() calls get_toolkit_resolver().entry() from parrot/tools/resolver.py. Creates parrot/tools/tooling_policy.py and tests/tools/test_tooling_policy.py, touched by no other Wave 1 task.",
       "assigned_to": null,
       "started_at": "2026-10-01T02:46:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3977-tenant-tooling-policy-core.md"
+      "completed_at": "2026-10-01T02:49:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3977-tenant-tooling-policy-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3978",
