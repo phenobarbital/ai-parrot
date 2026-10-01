@@ -16,14 +16,14 @@
       "feature_id": "FEAT-619",
       "feature": "sdd-worktree-status-tech-debt",
       "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies. Shares scripts/sdd/worktree_status.py and tests/sdd_scripts/test_worktree_status.py with TASK-3916 and TASK-3917, which depend on it (chain 3915 -> 3916 -> 3917) so the three never run concurrently.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T00:31:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3915-non-sdd-worktree-reports.md"
     },
@@ -37,7 +37,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-3915"],
+      "depends_on": [
+        "TASK-3915"
+      ],
       "parallel": true,
       "parallelism_notes": "Modifies the same two files TASK-3915 modifies (scripts/sdd/worktree_status.py, tests/sdd_scripts/test_worktree_status.py); serialized after it by file overlap.",
       "assigned_to": null,
@@ -55,7 +57,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-3916"],
+      "depends_on": [
+        "TASK-3916"
+      ],
       "parallel": true,
       "parallelism_notes": "Modifies the same two files as TASK-3915/TASK-3916 (file overlap), and renders WorktreeHealth.dirty_unknown / unpushed_unknown which TASK-3916 creates in scripts/sdd/worktree_status.py.",
       "assigned_to": null,
