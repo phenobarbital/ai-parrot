@@ -56,7 +56,9 @@ def lifecycle_from_record(
     """Derive the lifecycle block from ``stage_id`` + the computed booleans (+ next stage and company role)."""
     stage_id = _m2o_id(record.get("stage_id"))
     nxt = (stages or {}).get(stage_id or -1, {}).get("sh_next_stage") if stage_id is not None else None
-    role = next((key for key in _ROLE_KEYS if stage_roles and stage_roles.get(key) == stage_id and stage_id is not None), None)
+    role = next(
+        (key for key in _ROLE_KEYS if stage_roles and stage_roles.get(key) == stage_id and stage_id is not None), None
+    )
     return HelpdeskLifecycle(
         stage_id=stage_id,
         stage_name=_m2o_name(record.get("stage_id")),
