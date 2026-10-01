@@ -3,6 +3,7 @@
 Merges, in order: built-in explicit entries, ``parrot_tools.TOOL_REGISTRY`` and the host's declared
 ``plugins.tools.TOOL_REGISTRY`` (prefixed by ``HOST_TOOL_PREFIX``). Never mutates any registry.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -14,6 +15,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from parrot.tools.discovery import discover_from_walk, resolve_class
+from parrot.tools.toolkit import AbstractToolkit
 
 logger = logging.getLogger("parrot.tools.resolver")
 
@@ -94,9 +96,7 @@ class ToolkitResolver:
             declared = None
         if isinstance(declared, dict):
             for slug, dotted in declared.items():
-                entries.setdefault(
-                    slug.lower(), ToolkitEntry(slug=slug, dotted_path=dotted, source="parrot_tools")
-                )
+                entries.setdefault(slug.lower(), ToolkitEntry(slug=slug, dotted_path=dotted, source="parrot_tools"))
         self._add_host_entries(entries)
         return entries
 
@@ -140,7 +140,7 @@ class ToolkitResolver:
         except (ImportError, AttributeError, ValueError) as exc:
             return f"class cannot be imported: {exc}"
         tool_prefix = getattr(cls, "tool_prefix", None)
-        if tool_prefix is not None and tool_prefix != prefix.rstrip("_"):
+        if issubclass(cls, AbstractToolkit) and tool_prefix != prefix.rstrip("_"):
             return f"tool_prefix {tool_prefix!r} != {prefix.rstrip('_')!r}"
         return None
 

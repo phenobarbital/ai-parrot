@@ -1,4 +1,5 @@
 """Build-hook plumbing for the tenant tooling policy (FEAT-622 M7, RC-9)."""
+
 import asyncio
 import logging
 from uuid import uuid4
@@ -86,6 +87,23 @@ async def test_unbound_bot_builds_as_today():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("apply_to_global", [False, True])
+@pytest.mark.parametrize("binding", ["bound", "explicit"])
+async def test_global_policy_requires_opt_in(apply_to_global: bool, binding: str) -> None:
+    """GLOBAL MCP builds retain legacy behavior unless the resolved policy opts in."""
+    bot = _Bot()
+    policy = TenantToolingPolicy(apply_to_global=apply_to_global)
+    subject = _subject(tenant=None)
+    if binding == "bound":
+        bot.bind_tooling_policy(policy, subject)
+        await bot.apply_tooling_specs()
+    else:
+        bot.bind_tooling_policy(TenantToolingPolicy.deny_all(), _subject())
+        await bot.apply_tooling_specs(tooling_policy=policy, tooling_subject=subject)
+    assert len(bot.added) == (0 if apply_to_global else 1)
+
+
+@pytest.mark.asyncio
 async def test_bound_policy_is_used_when_no_kwargs():
     """A bound permissive policy (not deny_all) is honoured: distinguishes binding from the deny_all default."""
     bot = _Bot()
@@ -119,10 +137,12 @@ async def test_real_add_mcp_server_path_never_spawns(monkeypatch):
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _spawn)
     connects: list[object] = []
-    bot = _RealBot([
-        AgentMCPServerSpec(name="a", transport="stdio", command="/bin/sh", args=["-c", "x"]),
-        AgentMCPServerSpec(name="b", url="https://mcp.host/api/x", params={"transport": "stdio", "command": "sh"}),
-    ])
+    bot = _RealBot(
+        [
+            AgentMCPServerSpec(name="a", transport="stdio", command="/bin/sh", args=["-c", "x"]),
+            AgentMCPServerSpec(name="b", url="https://mcp.host/api/x", params={"transport": "stdio", "command": "sh"}),
+        ]
+    )
     orig = bot.tool_manager.add_mcp_server
 
     async def _spy(config, *a, **k):
@@ -153,13 +173,19 @@ async def test_build_refuses_foreign_vault_name_without_vault_read(vault_reads, 
     """Foreign vault name / wrong owner at build: toolkit and MCP specs refused, zero vault reads."""
     agent_id = uuid4()
     subject = ToolingSubject(tenant="acme", agent_id=agent_id, actor=None, phase="build")
-    bot = _RealBot([AgentMCPServerSpec(
-        name="m", url="https://mcp.host/api/x", secret_refs={"headers": "mcp_agent_m_studio-agent:OTHER"},
-        vault_owner="u1",
-    )])
-    bot._pending_toolkit_specs = [ToolkitSpec(
-        slug="wiki", secret_refs={"token": "toolkit_wiki_studio-agent:OTHER"}, vault_owner="u1"
-    )]
+    bot = _RealBot(
+        [
+            AgentMCPServerSpec(
+                name="m",
+                url="https://mcp.host/api/x",
+                secret_refs={"headers": "mcp_agent_m_studio-agent:OTHER"},
+                vault_owner="u1",
+            )
+        ]
+    )
+    bot._pending_toolkit_specs = [
+        ToolkitSpec(slug="wiki", secret_refs={"token": "toolkit_wiki_studio-agent:OTHER"}, vault_owner="u1")
+    ]
     policy = TenantToolingPolicy(mcp_endpoints=("https://mcp.host/api/",), builtin_tools=frozenset({"wiki"}))
     with caplog.at_level(logging.ERROR, logger="test_tooling_policy_build_hook"):
         assert await bot.apply_tooling_specs(tooling_policy=policy, tooling_subject=subject, tooling_owner="u1") == []
@@ -173,10 +199,14 @@ async def test_build_accepts_own_vault_name_and_owner(vault_reads):
     agent_id = uuid4()
     subject = ToolingSubject(tenant="acme", agent_id=agent_id, actor=None, phase="build")
     bot = _Bot()
-    bot._pending_mcp_specs = [AgentMCPServerSpec(
-        name="m", url="https://mcp.host/api/x",
-        secret_refs={"headers": f"mcp_agent_m_studio-agent:{agent_id}"}, vault_owner="u1",
-    )]
+    bot._pending_mcp_specs = [
+        AgentMCPServerSpec(
+            name="m",
+            url="https://mcp.host/api/x",
+            secret_refs={"headers": f"mcp_agent_m_studio-agent:{agent_id}"},
+            vault_owner="u1",
+        )
+    ]
     policy = TenantToolingPolicy(mcp_endpoints=("https://mcp.host/api/",))
     await bot.apply_tooling_specs(tooling_policy=policy, tooling_subject=subject, tooling_owner="u1")
     assert len(bot.added) == 1 and len(vault_reads) == 1
@@ -188,10 +218,15 @@ async def test_refused_spec_performs_zero_vault_reads(vault_reads):
     agent_id = uuid4()
     subject = ToolingSubject(tenant="acme", agent_id=agent_id, actor=None, phase="build")
     bot = _Bot()
-    bot._pending_mcp_specs = [AgentMCPServerSpec(
-        name="e", transport="stdio", command="sh",
-        secret_refs={"headers": f"mcp_agent_e_studio-agent:{agent_id}"}, vault_owner="u1",
-    )]
+    bot._pending_mcp_specs = [
+        AgentMCPServerSpec(
+            name="e",
+            transport="stdio",
+            command="sh",
+            secret_refs={"headers": f"mcp_agent_e_studio-agent:{agent_id}"},
+            vault_owner="u1",
+        )
+    ]
     await bot.apply_tooling_specs(
         tooling_policy=TenantToolingPolicy.deny_all(), tooling_subject=subject, tooling_owner="u1"
     )

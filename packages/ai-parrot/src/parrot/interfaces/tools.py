@@ -210,6 +210,8 @@ class ToolInterface:
         subject = tooling_subject if tooling_subject is not None else getattr(self, "_tooling_subject", None)
         if subject is None:
             return None, None
+        if subject.tenant is None and (policy is None or not policy.apply_to_global):
+            return None, subject
         if policy is None and subject.tenant is not None:
             policy = TenantToolingPolicy.deny_all()
         return policy, subject

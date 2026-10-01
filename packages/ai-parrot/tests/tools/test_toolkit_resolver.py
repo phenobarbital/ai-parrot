@@ -1,5 +1,8 @@
 """M1 unit tests for ToolkitResolver (FEAT-622)."""
+
 import logging
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -61,11 +64,28 @@ def test_resolver_walk_fallback_without_registry(host_plugins):
     assert resolver.resolve("tp_probe_tool") is not None
 
 
-def test_resolver_no_host_package_is_not_an_error():
+def test_resolver_no_host_package_is_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """ImportError on plugins.tools -> no host entries (rule 4)."""
     resolver = get_toolkit_resolver()
+    monkeypatch.setitem(sys.modules, "plugins.tools", None)
     resolver.reload()
-    assert not [e for e in resolver.entries() if e.source in {"host", "walk"}]
+    try:
+        assert not [e for e in resolver.entries() if e.source in {"host", "walk"}]
+    finally:
+        resolver.reload()
+
+
+def test_resolver_rejects_missing_toolkit_prefix(host_plugins: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Inherited None is invalid for a toolkit, while standalone tools need no prefix."""
+    probe = host_plugins / "probe.py"
+    probe.write_text(probe.read_text().replace('tool_prefix = "tp"', ""))
+    resolver = get_toolkit_resolver()
+    with caplog.at_level(logging.ERROR, logger="parrot.tools.resolver"):
+        assert resolver.entry("tp_probe") is None
+        assert resolver.entry("tp_probe_tool").source == "host"
+    errors = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(errors) == 1
+    assert "tool_prefix None" in errors[0].getMessage()
 
 
 def test_tenant_bound_host_entry_unavailable_before_enforcement(host_plugins):
