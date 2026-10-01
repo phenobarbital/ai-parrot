@@ -982,10 +982,11 @@ class AgentTalk(BaseView):
         Configure tool manager and MCP servers from request data.
 
         Used by PATCH to persist a user's ToolManager into the session.
-        The resulting ToolManager is saved under '{agent_name}_tool_manager'.
+        The resulting ToolManager is saved under '{tooling_ref}_tool_manager'.
         """
+        ref = agent_tooling_ref(agent)
         try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=agent.name)
+            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=ref)
         except ValueError as exc:
             return self.error(str(exc), status=400)
 

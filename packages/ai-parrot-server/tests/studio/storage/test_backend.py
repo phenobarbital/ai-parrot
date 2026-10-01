@@ -1,4 +1,5 @@
 """FEAT-621 M4 — backend matrix (§2.2) and partition hook."""
+
 import asyncio
 import os
 
@@ -64,6 +65,8 @@ CASES = [
     ("database", True, _state(upto=REQ - 1), "unavailable"),
     ("auto", True, _state(drift=2), "unavailable"),
     ("auto", True, _state(server=130000), "unavailable"),
+    ("auto", True, _state(present=False, server=130000), "unavailable"),
+    ("database", True, _state(present=False, server=130000), "unavailable"),
     ("auto", True, RuntimeError("boom"), "unavailable"),
 ]
 
@@ -123,7 +126,7 @@ def test_require_for_tenant_on_filesystem_raises():
 def test_hook_registered_once(monkeypatch):
     app = web.Application()
     setup_studio_routes(app)
-    monkeypatch.setattr(app.router, "add_view", lambda *a, **k: None)   # re-registering routes is out of scope
+    monkeypatch.setattr(app.router, "add_view", lambda *a, **k: None)  # re-registering routes is out of scope
     monkeypatch.setattr(app.router, "add_route", lambda *a, **k: None)
     setup_studio_routes(app)
     assert app.on_startup.count(be.resolve_studio_storage) == 1

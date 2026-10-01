@@ -1,4 +1,5 @@
 """FEAT-621 M1 — migration file format and manifest (AC1, AC2; CI gate)."""
+
 import re
 from pathlib import Path
 
@@ -61,6 +62,6 @@ def test_unstamped_body_change_is_detected(tmp_path: Path, monkeypatch: pytest.M
     target.write_bytes(target.read_bytes().replace(b"agent_id ", b"agent_idx", 1))
     manifest = (tmp_path / "MANIFEST.json").read_text()
     stamp_migrations(tmp_path)
-    assert (tmp_path / "MANIFEST.json").read_text() != manifest   # stamping repairs drift
-    stamped = [m for m in (tmp_path / "0002_ai_agents.sql",)][0].read_bytes()
+    assert (tmp_path / "MANIFEST.json").read_text() != manifest  # stamping repairs drift
+    stamped = target.read_bytes()
     assert body_checksum(stamped) in stamped.decode()

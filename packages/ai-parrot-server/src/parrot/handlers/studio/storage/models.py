@@ -1,4 +1,5 @@
 """Agent Studio storage types (spec §2.4). Records are frozen; payloads are Pydantic."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,17 +10,25 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from parrot.handlers.studio.models import CreateAgentRequest
-from parrot.tools.config_schema import is_secret_name
-from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec
+from parrot.tools.config_schema import build_schema_envelope, is_secret_name, secret_paths
+from parrot.tools.spec import MCP_SECRET_FIELDS, AgentMCPServerSpec, ToolkitSpec
 
 STUDIO_KEY_PREFIX: Final = "studio:"
 STUDIO_TOOLING_REF_PREFIX: Final = "studio-agent:"
 STUDIO_MODEL_PARAM_KEYS: Final = frozenset({"temperature", "max_tokens", "top_k", "top_p"})
 STUDIO_TENANT_CONFIG_KEYS: Final[frozenset[str]] = frozenset()
-STUDIO_FORBIDDEN_CONFIG_KEYS: Final = frozenset({
-    "llm", "model", "model_config", "chatbot_id", "name",
-    "mcp_servers", "toolkits", "vector_store_config",
-})
+STUDIO_FORBIDDEN_CONFIG_KEYS: Final = frozenset(
+    {
+        "llm",
+        "model",
+        "model_config",
+        "chatbot_id",
+        "name",
+        "mcp_servers",
+        "toolkits",
+        "vector_store_config",
+    }
+)
 STUDIO_RESERVED_CONFIG_KEYS: Final = frozenset({"tenant", "created_by", "visibility", "allowed_groups"})
 RESERVED_CONFIG_KEY_MESSAGE: Final = "reserved_config_key"
 
@@ -57,7 +66,7 @@ class StudioAgentKey:
         """Parse a qualified key; raise ``ValueError`` on a malformed one."""
         if not qualified.startswith(STUDIO_KEY_PREFIX):
             raise ValueError(f"not a studio key: {qualified!r}")
-        tenant, sep, name = qualified[len(STUDIO_KEY_PREFIX):].partition(":")
+        tenant, sep, name = qualified[len(STUDIO_KEY_PREFIX) :].partition(":")
         if not sep or not tenant or not name or ":" in name:
             raise ValueError(f"malformed studio key: {qualified!r}")
         return cls(None if tenant == "-" else tenant, name)
@@ -145,6 +154,30 @@ class StudioAssetInput(BaseModel):
     content_type: str = "text/markdown"
 
 
+def _named_secret_paths(value: Any, prefix: str = "") -> list[str]:
+    """Find secret-like names inside mappings and arrays, including unknown toolkit parameters."""
+    found: list[str] = []
+    items = value.items() if isinstance(value, dict) else enumerate(value) if isinstance(value, list) else ()
+    for key, child in items:
+        path = f"{prefix}.{key}" if prefix else str(key)
+        if isinstance(value, dict) and is_secret_name(str(key)):
+            found.append(path)
+        else:
+            found.extend(_named_secret_paths(child, path))
+    return found
+
+
+def _toolkit_secret_paths(spec: ToolkitSpec) -> list[str]:
+    """Inspect the same toolkit classes and x-secret schemas used by the Tools tab, without constructing them."""
+    from ..tooling_store import _EXPLICIT, _resolve_toolkit_class
+
+    cls = _EXPLICIT.get(spec.slug) or _resolve_toolkit_class(spec.slug)
+    if cls is None:
+        return []  # Optional/unavailable toolkits still get recursive name checks.
+    schema = build_schema_envelope(spec.slug, cls).schema_
+    return secret_paths(schema, spec.params)
+
+
 def _secret_fields_of(label: str, spec: ToolkitSpec | AgentMCPServerSpec) -> list[str]:
     """Names of the secret-bearing fields set on ``spec``."""
     found: list[str] = []
@@ -152,7 +185,12 @@ def _secret_fields_of(label: str, spec: ToolkitSpec | AgentMCPServerSpec) -> lis
         found.append(f"{label}.secret_refs")
     if spec.vault_owner:
         found.append(f"{label}.vault_owner")
-    found.extend(f"{label}.params.{key}" for key in spec.params if is_secret_name(str(key)))
+    paths = set(_named_secret_paths(spec.params))
+    if isinstance(spec, AgentMCPServerSpec):
+        paths.update(field for field in MCP_SECRET_FIELDS if field in spec.params)
+    elif spec.params:
+        paths.update(_toolkit_secret_paths(spec))
+    found.extend(f"{label}.params.{path}" for path in sorted(paths))
     return found
 
 

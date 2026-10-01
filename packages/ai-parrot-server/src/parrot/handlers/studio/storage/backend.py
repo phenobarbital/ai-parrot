@@ -1,4 +1,5 @@
 """Studio storage backend selection (spec §2.2, §2.7a)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -40,7 +41,7 @@ class StudioStorage:
         if self.backend != "database":
             return None
         if self._services is None:
-            from .services import build_studio_services   # W2 (TASK-3933); lazy by design
+            from .services import build_studio_services  # W2 (TASK-3933); lazy by design
 
             self._services = build_studio_services(self.app, self.repos)
         return self._services
@@ -59,7 +60,7 @@ async def _probe(pool: Any) -> migrate.LedgerState | Exception:
     try:
         async with pool.acquire() as conn:
             return await migrate.read_ledger(conn)
-    except Exception as exc:   # noqa: BLE001 — any probe failure means the DB cannot be trusted
+    except Exception as exc:  # noqa: BLE001 — any probe failure means the DB cannot be trusted
         return exc
 
 
@@ -73,6 +74,8 @@ def _resolve(setting: str, pool: Any, state: migrate.LedgerState | Exception | N
         return "unavailable", "PARROT_STUDIO_STORAGE=database but no database pool"
     if isinstance(state, Exception):
         return "unavailable", f"schema probe failed: {state!r}"
+    if state.server_version_num < migrate.STUDIO_MIN_SERVER_VERSION_NUM:
+        return "unavailable", f"PostgreSQL >= 14 required (server_version_num={state.server_version_num})"
     manifest = {m.version: m.checksum for m in migrate.list_migrations()}
     if not state.present:
         if setting == "auto":
@@ -102,7 +105,7 @@ async def ensure_studio_storage(app: web.Application) -> StudioStorage:
         else:
             logger.info("Studio storage backend: %s", backend)
         repos = build_studio_repositories(pool) if backend == "database" else None
-        storage = StudioStorage(backend, reason, repos, app)   # type: ignore[arg-type]
+        storage = StudioStorage(backend, reason, repos, app)  # type: ignore[arg-type]
         app[STUDIO_STORAGE_APP_KEY] = storage
         return storage
 

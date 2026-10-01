@@ -1,9 +1,10 @@
 """FEAT-621 M2 — DB-free model tests."""
+
 from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from parrot.handlers.studio._base import STUDIO_SLUG_RE
 from parrot.handlers.studio.models import CreateAgentRequest
@@ -42,9 +43,17 @@ def test_partition_from_scope() -> None:
 
 def test_definition_from_create_request() -> None:
     req = CreateAgentRequest(
-        name="sales", persist=True,
-        config={"temperature": 0.3, "max_tokens": 10, "top_k": 4, "top_p": 0.5,
-                "system_prompt": "hi", "tools": ["x"], "extra": 1},
+        name="sales",
+        persist=True,
+        config={
+            "temperature": 0.3,
+            "max_tokens": 10,
+            "top_k": 4,
+            "top_p": 0.5,
+            "system_prompt": "hi",
+            "tools": ["x"],
+            "extra": 1,
+        },
     )
     d = StudioAgentDefinition.from_create_request(req)
     assert d.model_params.temperature == 0.3 and d.system_prompt == "hi" and d.tools == ["x"]
@@ -53,8 +62,21 @@ def test_definition_from_create_request() -> None:
     assert "persist" not in d.model_dump() and "name" not in d.model_dump()
 
 
-@pytest.mark.parametrize("key", ["llm", "model", "model_config", "chatbot_id", "name", "mcp_servers",
-                                 "toolkits", "vector_store_config", "tools", "temperature"])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "llm",
+        "model",
+        "model_config",
+        "chatbot_id",
+        "name",
+        "mcp_servers",
+        "toolkits",
+        "vector_store_config",
+        "tools",
+        "temperature",
+    ],
+)
 def test_definition_rejects_reserved_and_overwritten_keys(key: str) -> None:
     with pytest.raises(ValidationError):
         StudioAgentDefinition(config={key: 1})
@@ -91,3 +113,36 @@ def test_bundle_rejects_secret_fields() -> None:
         _bundle(toolkits=[ToolkitSpec(slug="jira", params={"api_key": "s"})])
     with pytest.raises(ValidationError):
         _bundle(mcp_servers=[AgentMCPServerSpec(name="m", secret_refs={"headers": "v"})])
+
+
+@pytest.mark.parametrize("field", ["headers", "auth_config", "env"])
+def test_bundle_rejects_mcp_secret_containers(field: str) -> None:
+    with pytest.raises(ValidationError, match="secret-bearing"):
+        _bundle(mcp_servers=[AgentMCPServerSpec(name="docs", params={field: {"value": "canary"}})])
+
+
+def test_bundle_rejects_nested_secret_names() -> None:
+    with pytest.raises(ValidationError, match="connection.0.password"):
+        _bundle(toolkits=[ToolkitSpec(slug="unavailable", params={"connection": [{"password": "canary"}]})])
+
+
+def test_bundle_uses_toolkit_secret_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    from parrot.handlers.studio import tooling_store
+
+    class Connection(BaseModel):
+        value: str = Field(json_schema_extra={"x-secret": True})
+
+    class Config(BaseModel):
+        connections: list[Connection]
+        label: str = "public"
+
+    class Toolkit:
+        config_model = Config
+
+        def __init__(self) -> None:
+            raise AssertionError("Bundle validation must not instantiate toolkits")
+
+    monkeypatch.setitem(tooling_store._EXPLICIT, "review_schema", Toolkit)
+    with pytest.raises(ValidationError, match="connections.0.value"):
+        _bundle(toolkits=[ToolkitSpec(slug="review_schema", params={"connections": [{"value": "canary"}]})])
+    assert _bundle(toolkits=[ToolkitSpec(slug="review_schema", params={"label": "public"})]).toolkits

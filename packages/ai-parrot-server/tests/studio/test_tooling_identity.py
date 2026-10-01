@@ -1,4 +1,5 @@
 """FEAT-621 M13 — legacy identities byte-identical, ref-keyed identities for Studio agents (AC12)."""
+
 from __future__ import annotations
 
 import json
@@ -19,6 +20,30 @@ from parrot.handlers.toolkit_persistence import ToolkitConfigService, UserToolki
 from parrot.tools.spec import NormalizedTooling, ToolkitSpec
 
 REF = "studio-agent:0b0c7c8e-1111-4222-8333-444455556666"
+
+
+@pytest.mark.parametrize("ref", ["sales", REF])
+async def test_patch_tool_manager_uses_chat_identity(ref: str) -> None:
+    """PATCH and subsequent chat share a key even without persisted overrides."""
+    from navigator_session.data import SessionData
+
+    request = make_mocked_request("PATCH", "/agents/chat/sales", app=web.Application())
+    session = SessionData(data={"session": {"user_id": "u1"}})
+    request["NAV_SESSION"] = session
+    handler = agent_module.AgentTalk(request)
+    handler._apply_user_toolkit_overrides = AsyncMock(side_effect=lambda agent, session, manager: manager)
+    handler._bootstrap_jira_oauth_session = AsyncMock()
+    handler._restore_user_mcp_servers = AsyncMock()
+    bot = SimpleNamespace(name="sales", _tooling_ref=ref, enable_mcp_restore=True)
+
+    manager = await handler._setup_agent_tools(bot, {"tools": []}, session)
+
+    assert session[f"{ref}_tool_manager"] is manager
+    handler._restore_user_mcp_servers.assert_awaited_once_with(
+        tool_manager=manager, request_session=session, agent_name=bot.name
+    )
+    if ref != "sales":
+        assert "sales_tool_manager" not in session
 
 
 def _unwrap(method):
@@ -58,7 +83,11 @@ async def test_load_sets_tooling_ref_to_name_for_legacy_sources() -> None:
 def _state(ref: str) -> tooling_store.ToolingState:
     return tooling_store.ToolingState(
         tooling=NormalizedTooling(toolkits=[ToolkitSpec(slug="jira")]),
-        editable=True, reason=None, owner="owner-1", source="database", tooling_ref=ref,
+        editable=True,
+        reason=None,
+        owner="owner-1",
+        source="database",
+        tooling_ref=ref,
     )
 
 
@@ -108,7 +137,9 @@ def _install_store(monkeypatch, ref: str | None) -> None:
             pass
 
         async def load(self, name):
-            state = SimpleNamespace(tooling=SimpleNamespace(toolkits=[ToolkitSpec(slug="jira", user_overridable=["token"])]))
+            state = SimpleNamespace(
+                tooling=SimpleNamespace(toolkits=[ToolkitSpec(slug="jira", user_overridable=["token"])])
+            )
             if ref is not None:
                 state.tooling_ref = ref
             return state
@@ -133,7 +164,9 @@ async def test_override_keys_use_tooling_ref(monkeypatch, ref, expected) -> None
     monkeypatch.setattr(overrides, "delete_vault_credential", deleted)
 
     session = {f"{expected}_toolkit_overrides_rev": "old", "URL-NAME_toolkit_overrides_rev": "url"}
-    put = await _unwrap(overrides.StudioUserToolkitOverrideHandler.put)(_handler("PUT", {"params": {"token": "s"}}, session))
+    put = await _unwrap(overrides.StudioUserToolkitOverrideHandler.put)(
+        _handler("PUT", {"params": {"token": "s"}}, session)
+    )
     assert put.status == 200
     loader.assert_awaited_with("user-1", expected)
     stored.assert_awaited_once_with("user-1", f"toolkit_jira_{expected}_user", {"token": "s"})
@@ -182,7 +215,9 @@ async def test_apply_overrides_session_keys_use_ref(monkeypatch, tooling_ref, ex
 
     monkeypatch.setattr(agent_module, "ToolkitConfigService", Svc)
     agent = SimpleNamespace(
-        name="sales", _pending_toolkit_specs=[], tool_manager=SimpleNamespace(clone=lambda: "BASE"),
+        name="sales",
+        _pending_toolkit_specs=[],
+        tool_manager=SimpleNamespace(clone=lambda: "BASE"),
     )
     if tooling_ref is not None:
         agent._tooling_ref = tooling_ref
@@ -205,7 +240,7 @@ class _FakeDb:
     docs = [
         {"_id": 1, "user_id": "u1", "agent_id": REF, "slug": "jira", "params": {}, "secret_refs": {}},
         {"_id": 2, "user_id": "u2", "agent_id": REF, "slug": "jira", "params": {}, "secret_refs": {}},
-        {"_id": 3, "agent_id": REF},   # malformed (no user_id/slug): skipped, still deleted
+        {"_id": 3, "agent_id": REF},  # malformed (no user_id/slug): skipped, still deleted
     ]
     calls: list = []
 
@@ -291,7 +326,10 @@ async def test_mcp_helper_session_key_matches_override_write_key(monkeypatch) ->
     """A bot whose ``_tooling_ref`` differs from its name: the write key and the read key are the same."""
     monkeypatch.setattr(agent_module, "ToolkitConfigService", _RefSvc)
     bot = SimpleNamespace(
-        name="sales", _tooling_ref=REF, _pending_toolkit_specs=[], tool_manager=SimpleNamespace(clone=lambda: "BASE"),
+        name="sales",
+        _tooling_ref=REF,
+        _pending_toolkit_specs=[],
+        tool_manager=SimpleNamespace(clone=lambda: "BASE"),
     )
     session = _Session(seed="x")
     await agent_module.AgentTalk._apply_user_toolkit_overrides(
@@ -318,7 +356,7 @@ async def test_mcp_helper_legacy_key_unchanged() -> None:
     app = web.Application()
     app["bot_manager"] = SimpleNamespace(get_bot=AsyncMock(return_value=legacy))
     request = make_mocked_request("GET", "/x", app=app)
-    request.session = session = _Session(seed="x")   # non-empty: an empty session is falsy
+    request.session = session = _Session(seed="x")  # non-empty: an empty session is falsy
     manager = await mcp_helper._get_tool_manager(request, "sales")
     assert isinstance(manager, ToolManager) and session["sales_tool_manager"] is manager
 
@@ -327,5 +365,5 @@ def test_no_name_based_tool_manager_keys_left() -> None:
     import inspect
 
     source = inspect.getsource(agent_module)
-    assert "f\"{agent.name}_tool_manager\"" not in source
-    assert "f\"{agent_name}_tool_manager\"" not in source
+    assert 'f"{agent.name}_tool_manager"' not in source
+    assert 'f"{agent_name}_tool_manager"' not in source
