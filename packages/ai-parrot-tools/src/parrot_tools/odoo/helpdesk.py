@@ -1,4 +1,5 @@
 """Typed helpdesk tools for Softhealer ``sh_all_in_one_helpdesk`` on Odoo 19."""
+
 from __future__ import annotations
 
 import logging
@@ -77,18 +78,76 @@ class OdooHelpdeskToolkit(OdooToolkit):
     )
 
     _TICKET_LIST_FIELDS = [
-        "id", "name", "email_subject", "stage_id", "state", "priority", "team_id", "user_id", "sh_user_ids",
-        "category_id", "sub_category_id", "ticket_type", "partner_id", "create_date", "close_date", "sh_sla_deadline",
+        "id",
+        "name",
+        "email_subject",
+        "stage_id",
+        "state",
+        "priority",
+        "team_id",
+        "user_id",
+        "sh_user_ids",
+        "category_id",
+        "sub_category_id",
+        "ticket_type",
+        "partner_id",
+        "create_date",
+        "close_date",
+        "sh_sla_deadline",
     ]
     _TICKET_DEFAULT_FIELDS = [
-        "id", "name", "description", "comment", "customer_comment", "email", "email_cc", "email_subject",
-        "mobile_no", "person_name", "partner_id", "stage_id", "team_id", "team_head", "user_id", "category_id",
-        "sub_category_id", "ticket_type", "subject_id", "priority", "company_id", "sh_user_ids", "tag_ids",
-        "sh_sla_policy_ids", "sh_sla_status_ids", "sh_ticket_alarm_ids", "attachment_ids", "timehseet_ids",
-        "priority_new", "state", "open_boolean", "done_stage_boolean", "closed_stage_boolean", "cancel_stage_boolean",
-        "reopen_stage_boolean", "done_button_boolean", "cancel_button_boolean", "close_date", "close_by", "cancel_date",
-        "cancel_by", "cancel_reason", "replied_date", "sh_due_date", "sh_sla_deadline", "sh_status", "create_date",
-        "write_date", "ticket_from_portal", "ticket_from_website", "ticket_running", "dynamic_form_submission_id",
+        "id",
+        "name",
+        "description",
+        "comment",
+        "customer_comment",
+        "email",
+        "email_cc",
+        "email_subject",
+        "mobile_no",
+        "person_name",
+        "partner_id",
+        "stage_id",
+        "team_id",
+        "team_head",
+        "user_id",
+        "category_id",
+        "sub_category_id",
+        "ticket_type",
+        "subject_id",
+        "priority",
+        "company_id",
+        "sh_user_ids",
+        "tag_ids",
+        "sh_sla_policy_ids",
+        "sh_sla_status_ids",
+        "sh_ticket_alarm_ids",
+        "attachment_ids",
+        "timehseet_ids",
+        "priority_new",
+        "state",
+        "open_boolean",
+        "done_stage_boolean",
+        "closed_stage_boolean",
+        "cancel_stage_boolean",
+        "reopen_stage_boolean",
+        "done_button_boolean",
+        "cancel_button_boolean",
+        "close_date",
+        "close_by",
+        "cancel_date",
+        "cancel_by",
+        "cancel_reason",
+        "replied_date",
+        "sh_due_date",
+        "sh_sla_deadline",
+        "sh_status",
+        "create_date",
+        "write_date",
+        "ticket_from_portal",
+        "ticket_from_website",
+        "ticket_running",
+        "dynamic_form_submission_id",
     ]
     _REF_MODELS: dict[str, tuple[str, str]] = {
         "stage": ("helpdesk.stages", "name"),
@@ -124,8 +183,15 @@ class OdooHelpdeskToolkit(OdooToolkit):
             verify_ssl=verify_ssl if verify_ssl is not None else ODOO_HELPDESK_VERIFY_SSL,
         )
         super().__init__(
-            url=resolved.url, database=resolved.database, username=resolved.username, password=resolved.password,
-            timeout=resolved.timeout, verify_ssl=resolved.verify_ssl, protocol=protocol, transport=transport, **kwargs,
+            url=resolved.url,
+            database=resolved.database,
+            username=resolved.username,
+            password=resolved.password,
+            timeout=resolved.timeout,
+            verify_ssl=resolved.verify_ssl,
+            protocol=protocol,
+            transport=transport,
+            **kwargs,
         )
         self.config = resolved
         self._ref_cache: dict[tuple[str, str], int] = {}
@@ -164,8 +230,19 @@ class OdooHelpdeskToolkit(OdooToolkit):
         """Return cached helpdesk stages keyed by id."""
         if self._stages_cache is None:
             rows = await self._execute(
-                "helpdesk.stages", "search_read", [[]],
-                {"fields": ["name", "sequence", "sh_next_stage", "is_done_button_visible", "is_cancel_button_visible"], "order": "sequence, id"},
+                "helpdesk.stages",
+                "search_read",
+                [[]],
+                {
+                    "fields": [
+                        "name",
+                        "sequence",
+                        "sh_next_stage",
+                        "is_done_button_visible",
+                        "is_cancel_button_visible",
+                    ],
+                    "order": "sequence, id",
+                },
             )
             self._stages_cache = {int(row["id"]): row for row in rows or []}
         return self._stages_cache
@@ -176,11 +253,17 @@ class OdooHelpdeskToolkit(OdooToolkit):
             transport = await self._ensure_transport()
             users = await self._execute("res.users", "read", [[transport.uid]], {"fields": ["company_id"]}) or []
             company_id = (users[0].get("company_id") or [1])[0] if users else 1
-            companies = await self._execute("res.company", "read", [[company_id]], {"fields": list(_STAGE_ROLE_FIELDS)}) or []
+            companies = (
+                await self._execute("res.company", "read", [[company_id]], {"fields": list(_STAGE_ROLE_FIELDS)}) or []
+            )
             company = companies[0] if companies else {}
             names = {
-                "new_stage_id": "new", "reopen_stage_id": "reopen", "done_stage_id": "done",
-                "cancel_stage_id": "cancel", "close_stage_id": "close", "sh_staff_replied_stage_id": "staff_replied",
+                "new_stage_id": "new",
+                "reopen_stage_id": "reopen",
+                "done_stage_id": "done",
+                "cancel_stage_id": "cancel",
+                "close_stage_id": "close",
+                "sh_staff_replied_stage_id": "staff_replied",
                 "sh_customer_replied_stage_id": "customer_replied",
             }
             self._stage_roles = {
@@ -199,10 +282,15 @@ class OdooHelpdeskToolkit(OdooToolkit):
 
     async def _extra_rows(self, ticket_id: int) -> list[dict[str, Any]]:
         """Fetch TROC extra-field rows for a ticket."""
-        return await self._execute(
-            "sh.helpdesk.ticket.extra_fields", "search_read", [[("ticket_id", "=", ticket_id)]],
-            {"fields": ["field_name", "name", "value"], "limit": 500},
-        ) or []
+        return (
+            await self._execute(
+                "sh.helpdesk.ticket.extra_fields",
+                "search_read",
+                [[("ticket_id", "=", ticket_id)]],
+                {"fields": ["field_name", "name", "value"], "limit": 500},
+            )
+            or []
+        )
 
     async def _load_ticket(self, ticket_id: int, include_extra: bool = True) -> HelpdeskTicket:
         """Read and normalize one ticket, including optional TROC extra fields."""
@@ -223,7 +311,9 @@ class OdooHelpdeskToolkit(OdooToolkit):
             operations = ModelOperations()
             for operation in ("read", "write", "create", "unlink"):
                 try:
-                    allowed = await self._execute(technical_name, "check_access_rights", [operation], {"raise_exception": False})
+                    allowed = await self._execute(
+                        technical_name, "check_access_rights", [operation], {"raise_exception": False}
+                    )
                 except OdooError:
                     allowed = False
                 setattr(operations, operation, bool(allowed))
@@ -232,14 +322,29 @@ class OdooHelpdeskToolkit(OdooToolkit):
 
     async def _reference(self, model: str, fields: list[str], limit: int, order: str = "id") -> HelpdeskReferenceResult:
         """Fetch named reference records and preserve requested fields in ``extra``."""
-        rows = await self._execute(model, "search_read", [[]], {"fields": ["id", "name", *fields], "limit": limit, "order": order}) or []
-        items = [HelpdeskReferenceItem(id=int(row["id"]), name=str(row.get("name") or ""), extra={key: row.get(key) for key in fields}) for row in rows]
+        rows = (
+            await self._execute(
+                model, "search_read", [[]], {"fields": ["id", "name", *fields], "limit": limit, "order": order}
+            )
+            or []
+        )
+        items = [
+            HelpdeskReferenceItem(
+                id=int(row["id"]), name=str(row.get("name") or ""), extra={key: row.get(key) for key in fields}
+            )
+            for row in rows
+        ]
         return HelpdeskReferenceResult(kind=model, items=items, total=len(items))
 
     @tool_schema(ListReferenceInput)
     async def list_helpdesk_stages(self, limit: int = 100) -> HelpdeskReferenceResult:
         """List helpdesk stages ordered by sequence with transition flags."""
-        return await self._reference("helpdesk.stages", ["sequence", "sh_next_stage", "is_done_button_visible", "is_cancel_button_visible"], limit, "sequence, id")
+        return await self._reference(
+            "helpdesk.stages",
+            ["sequence", "sh_next_stage", "is_done_button_visible", "is_cancel_button_visible"],
+            limit,
+            "sequence, id",
+        )
 
     @tool_schema(ListReferenceInput)
     async def list_helpdesk_teams(self, limit: int = 100) -> HelpdeskReferenceResult:
@@ -250,12 +355,22 @@ class OdooHelpdeskToolkit(OdooToolkit):
     async def list_helpdesk_categories(self, limit: int = 100) -> HelpdeskReferenceResult:
         """List categories with their team and child subcategories."""
         result = await self._reference("helpdesk.category", ["team_id"], limit)
-        rows = await self._execute("helpdesk.subcategory", "search_read", [[]], {"fields": ["id", "name", "parent_category_id"], "limit": 500}) or []
+        rows = (
+            await self._execute(
+                "helpdesk.subcategory",
+                "search_read",
+                [[]],
+                {"fields": ["id", "name", "parent_category_id"], "limit": 500},
+            )
+            or []
+        )
         children: dict[int, list[dict[str, Any]]] = {}
         for row in rows:
             parent = row.get("parent_category_id")
             if isinstance(parent, (list, tuple)) and parent:
-                children.setdefault(int(parent[0]), []).append({"id": int(row["id"]), "name": str(row.get("name") or "")})
+                children.setdefault(int(parent[0]), []).append(
+                    {"id": int(row["id"]), "name": str(row.get("name") or "")}
+                )
         for item in result.items:
             item.extra["subcategories"] = children.get(item.id, [])
         return result
@@ -276,36 +391,72 @@ class OdooHelpdeskToolkit(OdooToolkit):
         return await self._reference("helpdesk.tags", ["color"], limit)
 
     @tool_schema(GetTicketInput)
-    async def get_ticket(self, ticket_id: int, include_extra_fields: bool = True, include_history: bool = False) -> TicketResult:
+    async def get_ticket(
+        self, ticket_id: int, include_extra_fields: bool = True, include_history: bool = False
+    ) -> TicketResult:
         """Read one ticket; use ``get_ticket_history`` separately when history is required."""
         _ = include_history
         ticket = await self._load_ticket(ticket_id, include_extra=include_extra_fields)
         return TicketResult(ticket=ticket, url=self._ticket_url(ticket_id))
 
-    async def _ticket_list(self, clauses: list[Any], fields: list[str], limit: int, offset: int, order: str) -> TicketListResult:
+    async def _ticket_list(
+        self, clauses: list[Any], fields: list[str], limit: int, offset: int, order: str
+    ) -> TicketListResult:
         """Run the shared ticket list/count/normalization sequence."""
-        records = await self._execute(TICKET_MODEL, "search_read", [clauses], {"fields": fields, "limit": limit, "offset": offset, "order": order}) or []
+        records = (
+            await self._execute(
+                TICKET_MODEL,
+                "search_read",
+                [clauses],
+                {"fields": fields, "limit": limit, "offset": offset, "order": order},
+            )
+            or []
+        )
         total = int(await self._execute(TICKET_MODEL, "search_count", [clauses]) or 0)
         stages, roles = await self._stage_map(), await self._company_stage_config()
         return TicketListResult(
-            tickets=[normalize_ticket(record, None, stages, roles) for record in records], total=total,
-            limit=limit, offset=offset, fields=fields,
+            tickets=[normalize_ticket(record, None, stages, roles) for record in records],
+            total=total,
+            limit=limit,
+            offset=offset,
+            fields=fields,
             metadata=FieldSelectionMetadata(fields_returned=len(fields), field_selection_method="requested"),
         )
 
     @tool_schema(SearchTicketsInput)
     async def search_tickets(
-        self, query: Optional[str] = None, stage: Optional[int | str] = None, team: Optional[int | str] = None,
-        assignee: Optional[int | str] = None, category: Optional[int | str] = None, priority: Optional[int | str] = None,
-        ticket_type: Optional[int | str] = None, partner_id: Optional[int] = None, created_after: Optional[str] = None,
-        created_before: Optional[str] = None, only_open: bool = False, domain: Optional[list[Any]] = None,
-        fields: Optional[list[str]] = None, limit: int = 50, offset: int = 0, order: str = "id desc",
+        self,
+        query: Optional[str] = None,
+        stage: Optional[int | str] = None,
+        team: Optional[int | str] = None,
+        assignee: Optional[int | str] = None,
+        category: Optional[int | str] = None,
+        priority: Optional[int | str] = None,
+        ticket_type: Optional[int | str] = None,
+        partner_id: Optional[int] = None,
+        created_after: Optional[str] = None,
+        created_before: Optional[str] = None,
+        only_open: bool = False,
+        domain: Optional[list[Any]] = None,
+        fields: Optional[list[str]] = None,
+        limit: int = 50,
+        offset: int = 0,
+        order: str = "id desc",
     ) -> TicketListResult:
         """Search tickets by text, references, dates, and open/closed lifecycle state."""
         clauses: list[Any] = []
         if query:
-            clauses.extend(["|", "|", ("name", "ilike", query), ("email_subject", "ilike", query), ("email", "ilike", query)])
-        for field, kind, value in (("stage_id", "stage", stage), ("team_id", "team", team), ("user_id", "user", assignee), ("category_id", "category", category), ("priority", "priority", priority), ("ticket_type", "ticket_type", ticket_type)):
+            clauses.extend(
+                ["|", "|", ("name", "ilike", query), ("email_subject", "ilike", query), ("email", "ilike", query)]
+            )
+        for field, kind, value in (
+            ("stage_id", "stage", stage),
+            ("team_id", "team", team),
+            ("user_id", "user", assignee),
+            ("category_id", "category", category),
+            ("priority", "priority", priority),
+            ("ticket_type", "ticket_type", ticket_type),
+        ):
             if value is not None:
                 clauses.append((field, "=", await self._resolve_ref(kind, value)))
         if partner_id is not None:
@@ -320,7 +471,9 @@ class OdooHelpdeskToolkit(OdooToolkit):
             clauses.extend(domain)
         use_fields = fields or self._TICKET_LIST_FIELDS
         result = await self._ticket_list(clauses, use_fields, limit, offset, order)
-        result.metadata = FieldSelectionMetadata(fields_returned=len(use_fields), field_selection_method="requested" if fields else "auto")
+        result.metadata = FieldSelectionMetadata(
+            fields_returned=len(use_fields), field_selection_method="requested" if fields else "auto"
+        )
         return result
 
     @tool_schema(ListMyTicketsInput)
@@ -331,27 +484,71 @@ class OdooHelpdeskToolkit(OdooToolkit):
         if only_open:
             clauses.append(("stage_id", "not in", await self._closed_stage_ids()))
         result = await self._ticket_list(clauses, self._TICKET_LIST_FIELDS, limit, 0, "id desc")
-        result.metadata = FieldSelectionMetadata(fields_returned=len(self._TICKET_LIST_FIELDS), field_selection_method="auto")
+        result.metadata = FieldSelectionMetadata(
+            fields_returned=len(self._TICKET_LIST_FIELDS), field_selection_method="auto"
+        )
         return result
 
     @tool_schema(GetTicketHistoryInput)
     async def get_ticket_history(self, ticket_id: int) -> TicketHistoryResult:
         """List ticket stage-history records ordered chronologically."""
-        rows = await self._execute(
-            "sh.helpdesk.ticket.stage.info", "search_read", [[("stage_task_id", "=", ticket_id)]],
-            {"fields": ["stage_task_id", "stage_name", "date_in", "date_out", "date_in_by", "date_out_by", "day_diff", "time_diff", "total_time_diff"], "order": "date_in, id"},
-        ) or []
-        return TicketHistoryResult(ticket_id=ticket_id, lines=[HelpdeskStageInfo.model_validate(row) for row in rows], total=len(rows))
+        rows = (
+            await self._execute(
+                "sh.helpdesk.ticket.stage.info",
+                "search_read",
+                [[("stage_task_id", "=", ticket_id)]],
+                {
+                    "fields": [
+                        "stage_task_id",
+                        "stage_name",
+                        "date_in",
+                        "date_out",
+                        "date_in_by",
+                        "date_out_by",
+                        "day_diff",
+                        "time_diff",
+                        "total_time_diff",
+                    ],
+                    "order": "date_in, id",
+                },
+            )
+            or []
+        )
+        return TicketHistoryResult(
+            ticket_id=ticket_id, lines=[HelpdeskStageInfo.model_validate(row) for row in rows], total=len(rows)
+        )
 
     @tool_schema(GetTicketMessagesInput)
-    async def get_ticket_messages(self, ticket_id: int, limit: int = 20, include_notifications: bool = False) -> TicketMessagesResult:
+    async def get_ticket_messages(
+        self, ticket_id: int, limit: int = 20, include_notifications: bool = False
+    ) -> TicketMessagesResult:
         """List messages on a ticket, optionally including notification-only messages."""
         domain: list[Any] = [("model", "=", TICKET_MODEL), ("res_id", "=", ticket_id)]
         if not include_notifications:
             domain.append(("message_type", "!=", "notification"))
-        rows = await self._execute("mail.message", "search_read", [domain], {"fields": ["message_type", "subtype_id", "date", "author_id", "body"], "limit": limit, "order": "id desc"}) or []
+        rows = (
+            await self._execute(
+                "mail.message",
+                "search_read",
+                [domain],
+                {
+                    "fields": ["message_type", "subtype_id", "date", "author_id", "body"],
+                    "limit": limit,
+                    "order": "id desc",
+                },
+            )
+            or []
+        )
         messages = [
-            HelpdeskMessage(id=int(row["id"]), date=row.get("date"), author_id=row.get("author_id"), message_type=row.get("message_type"), subtype=(row.get("subtype_id") or [None, None])[1], body=str(row.get("body") or ""), is_internal=(row.get("subtype_id") or [None, None])[1] == "Note")
+            HelpdeskMessage(
+                id=int(row["id"]),
+                date=row.get("date"),
+                author_id=row.get("author_id"),
+                message_type=row.get("message_type"),
+                subtype=(row.get("subtype_id") or [None, None])[1],
+                body=str(row.get("body") or ""),
+                is_internal=(row.get("subtype_id") or [None, None])[1] == "Note",
+            )
             for row in rows
         ]
         return TicketMessagesResult(ticket_id=ticket_id, messages=messages, total=len(messages))

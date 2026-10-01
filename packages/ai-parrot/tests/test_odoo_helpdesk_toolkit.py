@@ -1,4 +1,5 @@
 """Unit tests for OdooHelpdeskToolkit with an AsyncMock transport."""
+
 from __future__ import annotations
 
 import sys
@@ -23,26 +24,78 @@ from parrot.interfaces.odoointerface import OdooConfig  # noqa: E402
 from parrot_tools.odoo import OdooHelpdeskToolkit, OdooToolkit  # noqa: E402
 from parrot_tools.odoo.models.helpdesk_envelopes import TicketListResult, TicketResult  # noqa: E402
 
-ROLES_ROW = [{"id": 1, "new_stage_id": [4, "New"], "reopen_stage_id": [22, "Open"], "done_stage_id": False, "cancel_stage_id": False, "close_stage_id": [21, "Closed"], "sh_staff_replied_stage_id": [22, "Open"], "sh_customer_replied_stage_id": False}]
-STAGES_ROWS = [{"id": 4, "name": "New", "sequence": 0, "sh_next_stage": [22, "Open"], "is_done_button_visible": False, "is_cancel_button_visible": False}, {"id": 22, "name": "Open", "sequence": 1, "sh_next_stage": [21, "Closed"], "is_done_button_visible": False, "is_cancel_button_visible": False}, {"id": 21, "name": "Closed", "sequence": 4, "sh_next_stage": False, "is_done_button_visible": False, "is_cancel_button_visible": False}]
+ROLES_ROW = [
+    {
+        "id": 1,
+        "new_stage_id": [4, "New"],
+        "reopen_stage_id": [22, "Open"],
+        "done_stage_id": False,
+        "cancel_stage_id": False,
+        "close_stage_id": [21, "Closed"],
+        "sh_staff_replied_stage_id": [22, "Open"],
+        "sh_customer_replied_stage_id": False,
+    }
+]
+STAGES_ROWS = [
+    {
+        "id": 4,
+        "name": "New",
+        "sequence": 0,
+        "sh_next_stage": [22, "Open"],
+        "is_done_button_visible": False,
+        "is_cancel_button_visible": False,
+    },
+    {
+        "id": 22,
+        "name": "Open",
+        "sequence": 1,
+        "sh_next_stage": [21, "Closed"],
+        "is_done_button_visible": False,
+        "is_cancel_button_visible": False,
+    },
+    {
+        "id": 21,
+        "name": "Closed",
+        "sequence": 4,
+        "sh_next_stage": False,
+        "is_done_button_visible": False,
+        "is_cancel_button_visible": False,
+    },
+]
 
 
 def _fake_transport(uid: int = 2241) -> MagicMock:
     """Build a deterministic fake Odoo transport."""
     transport = MagicMock()
-    transport.config = OdooConfig(url="https://odoo.example.com", database="testdb", username="admin", password="secret", timeout=10, verify_ssl=False)
+    transport.config = OdooConfig(
+        url="https://odoo.example.com",
+        database="testdb",
+        username="admin",
+        password="secret",
+        timeout=10,
+        verify_ssl=False,
+    )
     transport.uid = uid
     transport.name = "json2"
     transport.authenticate = AsyncMock(return_value=uid)
     transport.execute_kw = AsyncMock(return_value=None)
-    transport.version = AsyncMock(return_value={"server_serie": "19.0", "server_version": "19.0+e", "protocol_version": 1})
+    transport.version = AsyncMock(
+        return_value={"server_serie": "19.0", "server_version": "19.0+e", "protocol_version": 1}
+    )
     transport.close = AsyncMock(return_value=None)
     return transport
 
 
 def _make_helpdesk_toolkit(transport: MagicMock | None = None) -> OdooHelpdeskToolkit:
     """Build a toolkit with dedicated helpdesk configuration."""
-    return OdooHelpdeskToolkit(url="https://odoo.example.com", database="", username="hd", password="key", timeout=30, transport=transport or _fake_transport())
+    return OdooHelpdeskToolkit(
+        url="https://odoo.example.com",
+        database="",
+        username="hd",
+        password="key",
+        timeout=30,
+        transport=transport or _fake_transport(),
+    )
 
 
 def test_init_uses_helpdesk_keys_not_generic_odoo_keys(monkeypatch):
@@ -57,7 +110,12 @@ def test_init_uses_helpdesk_keys_not_generic_odoo_keys(monkeypatch):
     monkeypatch.setattr(base, "ODOO_URL", "https://generic.example.com")
     monkeypatch.setattr(base, "ODOO_DATABASE", "prod")
     toolkit = OdooHelpdeskToolkit()
-    assert (toolkit.config.url, toolkit.config.username, toolkit.config.password, toolkit.config.database) == ("https://hd.example.com", "hd-user", "hd-key", "")
+    assert (toolkit.config.url, toolkit.config.username, toolkit.config.password, toolkit.config.database) == (
+        "https://hd.example.com",
+        "hd-user",
+        "hd-key",
+        "",
+    )
 
 
 def test_init_keeps_empty_database_when_generic_database_is_set(monkeypatch):
@@ -83,7 +141,12 @@ def test_init_explicit_args_win(monkeypatch):
 
     monkeypatch.setattr(hd, "ODOO_HELPDESK_URL", "configured")
     toolkit = OdooHelpdeskToolkit(url="explicit", database="db", username="user", password="key")
-    assert (toolkit.config.url, toolkit.config.database, toolkit.config.username, toolkit.config.password) == ("explicit", "db", "user", "key")
+    assert (toolkit.config.url, toolkit.config.database, toolkit.config.username, toolkit.config.password) == (
+        "explicit",
+        "db",
+        "user",
+        "key",
+    )
 
 
 def test_confirming_tools_is_union_with_base():
@@ -174,7 +237,13 @@ async def test_get_ticket_loads_extra_fields_and_lifecycle():
     """Ticket reads normalize extra fields and the company-derived lifecycle role."""
     transport = _fake_transport()
     ticket = {"id": 9, "name": "HD-9", "stage_id": [4, "New"], "state": "customer_replied"}
-    transport.execute_kw.side_effect = [[ticket], [{"field_name": "serial", "name": "Serial", "value": "A1"}], STAGES_ROWS, [{"company_id": [1, "Company"]}], ROLES_ROW]
+    transport.execute_kw.side_effect = [
+        [ticket],
+        [{"field_name": "serial", "name": "Serial", "value": "A1"}],
+        STAGES_ROWS,
+        [{"company_id": [1, "Company"]}],
+        ROLES_ROW,
+    ]
     result = await _make_helpdesk_toolkit(transport).get_ticket(9)
     assert isinstance(result, TicketResult)
     assert result.ticket.extra_fields == {"serial": "A1"}
