@@ -54,7 +54,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -65,8 +65,9 @@
       "parallelism_notes": "needs the fact_tag_present RuleKind from TASK-4003 (comparison/definition.py) and imports slot_above/tag_text/tag_price from TASK-4004 (comparison/tags.py)",
       "assigned_to": null,
       "started_at": "2026-10-01T11:17:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4005-fact-tag-rule-evaluation.md"
+      "completed_at": "2026-10-01T11:30:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4005-fact-tag-rule-evaluation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4006",
@@ -75,7 +76,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -85,8 +86,9 @@
       "parallelism_notes": "writes ShelfScore.info_results / ShelfAssessment.info_results added by TASK-4003 (contracts.py, compliance.py)",
       "assigned_to": null,
       "started_at": "2026-10-01T11:17:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4006-fact-tag-info-routing.md"
+      "completed_at": "2026-10-01T11:30:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4006-fact-tag-info-routing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4007",
@@ -95,7 +97,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -105,8 +107,9 @@
       "parallelism_notes": "its candidates must pass validate_bindings with the fact_tag_present kind from TASK-4003 (comparison/definition.py)",
       "assigned_to": null,
       "started_at": "2026-10-01T11:17:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4007-converter-fact-tag-bindings.md"
+      "completed_at": "2026-10-01T11:30:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4007-converter-fact-tag-bindings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4008",
