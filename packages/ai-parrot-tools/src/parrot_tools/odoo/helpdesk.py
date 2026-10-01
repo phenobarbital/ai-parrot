@@ -1038,15 +1038,16 @@ class OdooHelpdeskToolkit(OdooToolkit):
     @tool_schema(GetTicketSlaStatusInput)
     async def get_ticket_sla_status(self, ticket_id: int) -> SlaStatusResult:
         """Return a ticket's overall SLA status, deadline, and per-policy status rows."""
-        ticket = await self._read_one(
-            TICKET_MODEL, ticket_id, ["sh_status", "sh_sla_deadline", "sh_sla_policy_ids"]
+        ticket = await self._read_one(TICKET_MODEL, ticket_id, ["sh_status", "sh_sla_deadline", "sh_sla_policy_ids"])
+        rows = (
+            await self._execute(
+                "sh.helpdesk.sla.status",
+                "search_read",
+                [[("sh_ticket_id", "=", ticket_id)]],
+                {"fields": self._SLA_STATUS_FIELDS},
+            )
+            or []
         )
-        rows = await self._execute(
-            "sh.helpdesk.sla.status",
-            "search_read",
-            [[("sh_ticket_id", "=", ticket_id)]],
-            {"fields": self._SLA_STATUS_FIELDS},
-        ) or []
         return SlaStatusResult(
             ticket_id=ticket_id,
             overall_status=ticket.get("sh_status") or None,
@@ -1057,10 +1058,13 @@ class OdooHelpdeskToolkit(OdooToolkit):
     @tool_schema(ListTicketAlarmsInput)
     async def list_ticket_alarms(self, limit: int = 50) -> TicketAlarmListResult:
         """List ticket alarm configurations from ``sh.ticket.alarm``."""
-        rows = await self._execute(
-            "sh.ticket.alarm",
-            "search_read",
-            [[]],
-            {"fields": ["id", "name", "type", "sh_remind_before", "sh_reminder_unit"], "limit": limit},
-        ) or []
+        rows = (
+            await self._execute(
+                "sh.ticket.alarm",
+                "search_read",
+                [[]],
+                {"fields": ["id", "name", "type", "sh_remind_before", "sh_reminder_unit"], "limit": limit},
+            )
+            or []
+        )
         return TicketAlarmListResult(alarms=[HelpdeskTicketAlarm.model_validate(row) for row in rows], total=len(rows))
