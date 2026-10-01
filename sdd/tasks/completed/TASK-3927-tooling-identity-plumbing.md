@@ -287,10 +287,8 @@ class ToolkitConfigService:             # :28 ; COLLECTION :14
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: As blueprint; 9 new tests, existing tooling_store/toolkit_overrides/toolkit_config tests pass unmodified; studio suite has no new failures vs baseline. Deviations in detail: toolkit_overrides.py resolves the ref through a small _tooling_ref(name) helper that falls back to the URL name when the loaded state has no tooling_ref (the existing test fake returns a SimpleNamespace without it); purge_agent uses DocumentDb.delete_many (delete removes one doc). NOTE for later Studio tasks: other readers of the session key f'{agent_name}_tool_manager' (agent.py ~1613/2125/2276, mcp_helper.py:93) still key by agent name while _apply_user_toolkit_overrides now writes it under the ref; identical for legacy agents, but must be aligned for Studio agents.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

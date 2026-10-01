@@ -116,7 +116,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,9 @@
       "parallelism_notes": "imports toolkit_override_vault_name and agent_tooling_ref from TASK-3923 (core tools/spec.py); first FEAT-621 writer of tooling_store.py, toolkit_overrides.py, toolkit_persistence.py and handlers/agent.py (TASK-3934, -25, -33 follow)",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3927-tooling-identity-plumbing.md"
+      "completed_at": "2026-10-01T02:52:59+00:00",
+      "file": "sdd/tasks/completed/TASK-3927-tooling-identity-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3928",
