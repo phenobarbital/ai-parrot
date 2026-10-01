@@ -87,6 +87,12 @@ def setup_studio_routes(app: web.Application) -> None:
     # left over from a prior registry outage (spec §7 "Dual-write drift").
     app.on_startup.append(reconcile_skills_catalog)
 
+    from .storage.backend import resolve_studio_storage
+
+    if not app.get("_astudio_storage_hook_installed"):
+        app["_astudio_storage_hook_installed"] = True
+        app.on_startup.append(resolve_studio_storage)
+
     # BYOK — per-user LLM API keys (FEAT-467 TASK-2516).
     from .byok import StudioKeysHandler
 

@@ -161,6 +161,16 @@ class StudioBaseView(BaseView):
             return await session_attr()
         return session_attr
 
+    async def _studio_partition(self) -> Any:
+        """Storage partition for this request: GLOBAL here; FEAT-605 v0.2 W2.1 overrides it (X5)."""
+        from .storage.models import StudioPartition
+
+        return StudioPartition.GLOBAL
+
+    def _studio_storage(self) -> Any:
+        """The resolved ``StudioStorage`` memoised on the app."""
+        return self.request.app["studio_storage"]
+
     async def _get_user(self) -> StudioUser:
         """Resolve the authenticated caller's identity from the session.
 
