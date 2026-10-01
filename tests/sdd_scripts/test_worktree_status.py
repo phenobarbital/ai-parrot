@@ -124,6 +124,69 @@ def _discover_with_fake_worktree(
     return [r for r in reports if r.feature_id == "FEAT-550"]
 
 
+def _discover_with_branches(
+    tmp_path: Path,
+    branches: list[str],
+    *,
+    registered: set[str] | None = None,
+    status_out: str = "",
+    log_out: str = "",
+):
+    """Run ``discover_worktree_reports`` over several fake worktrees at once.
+
+    Every branch gets a directory under ``tmp_path/.claude/worktrees/<flattened>``
+    carrying a ``.git`` marker file (a real worktree has one; a bare directory
+    such as an sdd-coder ``--pool`` container does not). The primary checkout
+    (``tmp_path`` itself, on ``dev``) is always the first porcelain block, so
+    tests can assert it is never self-reported.
+
+    Args:
+        tmp_path: pytest tmp dir standing in for the primary checkout.
+        branches: branch names to materialize as worktrees.
+        registered: branches that appear in ``git worktree list --porcelain``.
+            Defaults to all of them; anything excluded is an orphan directory.
+        status_out: fake ``git status --porcelain`` stdout.
+        log_out: fake ``git log`` stdout.
+
+    Returns:
+        The full, unfiltered report list.
+    """
+    registered = set(branches) if registered is None else registered
+    worktree_root = tmp_path / ".claude" / "worktrees"
+    worktree_root.mkdir(parents=True, exist_ok=True)
+
+    porcelain = f"worktree {tmp_path}\nHEAD aaa000\nbranch refs/heads/dev\n\n"
+    paths: dict[str, Path] = {}
+    for branch in branches:
+        wt_path = worktree_root / branch.replace("/", "-")
+        wt_path.mkdir(parents=True, exist_ok=True)
+        (wt_path / ".git").write_text(f"gitdir: {tmp_path}/.git/worktrees/{wt_path.name}\n")
+        paths[branch] = wt_path
+        if branch in registered:
+            porcelain += f"worktree {wt_path}\nHEAD bbb111\nbranch refs/heads/{branch}\n\n"
+
+    def fake_git(*args, cwd):
+        if args[:2] == ("worktree", "list"):
+            return _completed(porcelain)
+        if args[:2] == ("status", "--porcelain"):
+            return _completed(status_out)
+        if args and args[0] == "log":
+            return _completed(log_out)
+        if args[:1] == ("rev-parse",):
+            for branch, wt_path in paths.items():
+                if Path(cwd) == wt_path:
+                    return _completed(f"{branch}\n")
+            return _completed("dev\n")
+        return _completed("")
+
+    with (
+        patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
+        patch("scripts.sdd.worktree_status.WORKTREE_ROOT", str(worktree_root)),
+        patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+    ):
+        return discover_worktree_reports(tmp_path)
+
+
 # ---------------------------------------------------------------------------
 # TestParseBranch
 # ---------------------------------------------------------------------------
@@ -345,6 +408,112 @@ class TestDiscover:
         assert report.tasks[0].status == "done"
         assert report.health.dirty_count == 0
         assert report.health.unpushed_count == 0
+
+
+# ---------------------------------------------------------------------------
+# TestNonSddWorktrees
+# ---------------------------------------------------------------------------
+
+
+class TestNonSddWorktrees:
+    """FEAT-619 / issue:07b75dc7dfae — non-SDD worktrees reach --json."""
+
+    def test_non_sdd_branch_is_reported(self, tmp_path):
+        """A chore-* worktree under WORKTREE_ROOT yields a health-only report."""
+        reports = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        assert len(reports) == 1
+        report = reports[0]
+        assert report.flow_type == "non-sdd"
+        assert report.feature_slug == "chore-ruff-config"
+        assert report.branch == "chore-ruff-config"
+        assert report.feature_id is None
+        assert report.tasks == []
+        assert report.index_found is False
+        assert report.ready_for_done is False
+
+    def test_non_sdd_report_carries_health(self, tmp_path):
+        """The health signals are the whole point of the row — they are populated."""
+        reports = _discover_with_branches(
+            tmp_path,
+            ["chore-ruff-config"],
+            status_out=" M a.py\n?? b.py\n",
+            log_out="abc1234 one\n",
+        )
+        assert reports[0].health.dirty_count == 2
+        assert reports[0].health.unpushed_count == 1
+
+    def test_primary_checkout_is_not_reported(self, tmp_path):
+        """repo_root is itself a porcelain entry but must never self-report."""
+        reports = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        assert all(r.worktree_path != str(tmp_path) for r in reports)
+        assert all(r.branch != "dev" for r in reports)
+
+    def test_pool_sub_worktree_is_not_reported(self, tmp_path):
+        """sdd-coder attempt worktrees stay out of the panel."""
+        pool_branch = "feat-FEAT-616-odoo-toolkit-upgrades--TASK-3891-a1-4c8992efd3f44e8a81cc4f0c713c8677"
+        reports = _discover_with_branches(tmp_path, [pool_branch, "chore-ruff-config"])
+        assert [r.branch for r in reports] == ["chore-ruff-config"]
+
+    def test_orphan_directory_without_git_is_not_reported(self, tmp_path):
+        """A bare directory under WORKTREE_ROOT is not a worktree.
+
+        Without a ``.git`` of its own, ``git rev-parse`` run inside it walks up
+        to the primary checkout and reports ITS branch — which would surface a
+        bogus row per sdd-coder ``--pool`` container directory.
+        """
+        worktree_root = tmp_path / ".claude" / "worktrees"
+        reports_before = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        (worktree_root / "feat-FEAT-616-odoo-toolkit-upgrades--pool").mkdir(parents=True, exist_ok=True)
+        reports_after = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        assert [r.branch for r in reports_after] == [r.branch for r in reports_before] == ["chore-ruff-config"]
+
+    def test_sdd_worktree_still_reported_alongside(self, tmp_path, sample_index):
+        """Adding non-SDD rows must not regress normal feature discovery."""
+        branches = ["feat-FEAT-550-token-budget-bedrock", "chore-ruff-config"]
+        worktree_root = tmp_path / ".claude" / "worktrees"
+        idx_dir = worktree_root / "feat-FEAT-550-token-budget-bedrock" / "sdd" / "tasks" / "index"
+        idx_dir.mkdir(parents=True, exist_ok=True)
+        (idx_dir / "token-budget-bedrock.json").write_text(json.dumps(sample_index))
+
+        reports = _discover_with_branches(tmp_path, branches)
+        by_branch = {r.branch: r for r in reports}
+        feature = by_branch["feat-FEAT-550-token-budget-bedrock"]
+        assert feature.flow_type == "feature"
+        assert feature.feature_id == "FEAT-550"
+        assert len(feature.tasks) == 2
+        assert by_branch["chore-ruff-config"].flow_type == "non-sdd"
+
+    def test_order_is_deterministic(self, tmp_path):
+        """Repeated scans of unchanged state return identical, sorted order."""
+        branches = ["fix-codeql-pipeline", "chore-ruff-config", "sdd-close-feat-537-human-gate"]
+        first = [r.branch for r in _discover_with_branches(tmp_path, branches)]
+        second = [r.branch for r in _discover_with_branches(tmp_path, branches)]
+        assert first == second
+        assert first == sorted(first)
+
+    def test_non_sdd_excluded_from_reconcile(self, tmp_path):
+        """--reconcile output is unchanged by the presence of non-SDD rows."""
+        sdd_report = WorktreeReport(
+            feature_slug="token-budget-bedrock",
+            feature_id="FEAT-550",
+            flow_type="feature",
+            worktree_path="/repo/.claude/worktrees/feat-FEAT-550-token-budget-bedrock",
+            branch="feat-FEAT-550-token-budget-bedrock",
+            tasks=[WorktreeTaskStatus(id="TASK-3132", status="done")],
+            index_found=True,
+        )
+        non_sdd = WorktreeReport(
+            feature_slug="chore-ruff-config",
+            feature_id=None,
+            flow_type="non-sdd",
+            worktree_path="/repo/.claude/worktrees/chore-ruff-config",
+            branch="chore-ruff-config",
+            tasks=[],
+            index_found=False,
+        )
+        without = reconcile_reports(tmp_path, [sdd_report])
+        with_non_sdd = reconcile_reports(tmp_path, [sdd_report, non_sdd])
+        assert with_non_sdd == without
 
 
 # ---------------------------------------------------------------------------

@@ -57,7 +57,9 @@ class WorktreeReport(BaseModel):
 
     feature_slug: str
     feature_id: str | None = None
-    flow_type: Literal["feature", "hotfix"]
+    #: ``"non-sdd"`` marks a worktree under WORKTREE_ROOT whose branch is not an
+    #: SDD branch: health only, no tasks, never ready_for_done (FEAT-582 §8).
+    flow_type: Literal["feature", "hotfix", "non-sdd"]
     worktree_path: str
     branch: str
     base_branch: str = "dev"
@@ -212,6 +214,23 @@ def _check_health(wt_path: Path, base_branch: str) -> WorktreeHealth:
 # ---------------------------------------------------------------------------
 
 
+def _is_under_worktree_root(path: Path, worktree_root: Path) -> bool:
+    """Return True when ``path`` is ``worktree_root`` itself or nested inside it.
+
+    Both arguments must already be resolved — the caller resolves once and
+    passes the result, so a symlinked ``.claude/worktrees`` cannot make this
+    silently return False for every candidate.
+
+    Args:
+        path: A resolved worktree path.
+        worktree_root: The resolved ``repo_root / WORKTREE_ROOT``.
+
+    Returns:
+        Whether ``path`` lives in the SDD worktree pool.
+    """
+    return path == worktree_root or worktree_root in path.parents
+
+
 def _parse_porcelain(output: str) -> list[tuple[Path, str | None]]:
     """Parse ``git worktree list --porcelain`` into [(path, branch_or_None)].
 
@@ -263,7 +282,7 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
     # Scan WORKTREE_ROOT for orphan directories. WORKTREE_ROOT is relative
     # (".claude/worktrees") and must be resolved against repo_root, not the
     # process's current working directory (which may itself be a worktree).
-    worktree_root = repo_root / WORKTREE_ROOT
+    worktree_root = (repo_root / WORKTREE_ROOT).resolve()
     orphan_paths: list[Path] = []
     if worktree_root.exists():
         for entry in worktree_root.iterdir():
@@ -275,7 +294,9 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 
     reports: list[WorktreeReport] = []
 
-    for wt_path in all_worktree_paths:
+    # Sorted, not set order: the output of a status tool must be screen-diffable
+    # run to run (issue:f3dabdbe09a8).
+    for wt_path in sorted(all_worktree_paths):
         # Try to get branch from git porcelain
         branch = None
         for path, b in git_worktrees:
@@ -285,6 +306,15 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 
         # If not found in porcelain, try to get it from git
         if branch is None:
+            # Only a real worktree carries its own ``.git`` (a file pointing at
+            # the admin dir). Without this check, ``git rev-parse`` run inside a
+            # plain directory under WORKTREE_ROOT — an sdd-coder ``--pool``
+            # container, or a leftover directory whose worktree was removed —
+            # walks UP to the primary checkout and reports ITS branch, which
+            # used to be harmless (``dev`` never parsed as an SDD branch) but
+            # would now surface dozens of bogus non-SDD rows.
+            if not (wt_path / ".git").exists():
+                continue
             branch_proc = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=wt_path)
             if branch_proc.returncode == 0:
                 branch = branch_proc.stdout.strip()
@@ -292,10 +322,37 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
                 # Detached HEAD or error
                 continue
 
-        # Parse branch name
+        # sdd-coder pool sub-worktrees are task-level attempts nested inside a
+        # feature worktree (FEAT-549), not worktrees in their own right. They
+        # live UNDER WORKTREE_ROOT, so the containment guard below does not
+        # exclude them, and _parse_branch() returns None for them exactly as it
+        # does for a non-SDD branch — hence the explicit test here.
+        if _POOL_SUB_WORKTREE_RE.search(branch):
+            continue
+
         parsed = _parse_branch(branch)
         if parsed is None:
-            # Not an SDD branch
+            # Non-SDD branch (chore-*, fix-*, a detached "HEAD", a branch whose
+            # name does not match the SDD patterns). FEAT-582 §8 resolved these
+            # to appear in the Worktrees panel, health only. Only those under
+            # WORKTREE_ROOT qualify: the primary checkout is itself a porcelain
+            # entry and must never report itself (issue:07b75dc7dfae).
+            if not _is_under_worktree_root(wt_path, worktree_root):
+                continue
+            reports.append(
+                WorktreeReport(
+                    feature_slug=branch,
+                    feature_id=None,
+                    flow_type="non-sdd",
+                    worktree_path=str(wt_path),
+                    branch=branch,
+                    base_branch="dev",
+                    health=_check_health(wt_path, "dev"),
+                    tasks=[],
+                    index_found=False,
+                    ready_for_done=False,
+                )
+            )
             continue
 
         slug, feature_id, flow_type = parsed
@@ -327,7 +384,9 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
             )
         )
 
-    return reports
+    # Stable output contract: identical underlying state yields identical
+    # --json array order and table row order (issue:f3dabdbe09a8).
+    return sorted(reports, key=lambda r: (r.branch, r.worktree_path))
 
 
 # ---------------------------------------------------------------------------
@@ -494,8 +553,12 @@ def reconcile_reports(
         One :class:`ReconciledFeature` per dev index, plus one per
         worktree-only feature, in index-filename order.
     """
-    by_feature_id = {r.feature_id: r for r in reports if r.feature_id}
-    by_slug = {r.feature_slug: r for r in reports}
+    # Non-SDD worktrees carry no per-spec index and never belong on the task
+    # board (FEAT-582 §8: Worktrees panel only). Filter them explicitly rather
+    # than relying on index_found=False to exclude them by accident.
+    sdd_reports = [r for r in reports if r.flow_type != "non-sdd"]
+    by_feature_id = {r.feature_id: r for r in sdd_reports if r.feature_id}
+    by_slug = {r.feature_slug: r for r in sdd_reports}
 
     reconciled: list[ReconciledFeature] = []
     matched: set[str] = set()
@@ -506,7 +569,7 @@ def reconcile_reports(
             matched.add(report.branch)
         reconciled.append(reconcile_feature(dev_index, report))
 
-    for report in reports:
+    for report in sdd_reports:
         if report.branch in matched or not report.index_found:
             continue
         reconciled.append(reconcile_feature(None, report))
