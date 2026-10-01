@@ -184,6 +184,16 @@ def _align_row(
         free_mapping, free_anchors = _assign_any_order(idents, facings)
         return round(max(best, SCORE_SAME_PRODUCT * free_anchors), 4), free_mapping, free_anchors
 
+    # A full row none of whose slots the evidence could place (another brand on every facing) still
+    # stands on these facings: report each slot where it is instead of leaving the shelf unseen.
+    if n == m and not mapping:
+        unplaced = {
+            identification.shape_id: facings[k].facing_id
+            for k, identification in enumerate(idents)
+            if identification is not None
+        }
+        return round(best, 4), unplaced, anchors
+
     # A full row holding only this shelf's own products in another order is a shuffled shelf, not a
     # shifted one: register it position by position so every facing reports what stands on it.
     if n == m and len(mapping) < n:

@@ -290,3 +290,16 @@ def test_a_free_order_shelf_reports_a_foreign_slot_on_the_facing_left_over():
     ]
     registration = register_image("img", slots, idents, definition)
     assert [registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)] == ["s1_f2", "s1_f1", "s1_f3"]
+
+
+def test_a_full_row_of_another_brand_is_still_registered_to_its_facings():
+    """Foreign products on every facing are reported on those facings, not dropped as unseen."""
+    definition = _definition(shelves=2, per_shelf=3)
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    idents = [
+        _ident(slot, f"P1-{slot.slot_index}", "Alpha") if slot.row_index == 0 else _ident(slot, None, "Gamma")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert not registration.ambiguous
+    assert [registration.assignments.get(f"img:t1:{idx}") for idx in (1, 2, 3)] == ["s2_f1", "s2_f2", "s2_f3"]
