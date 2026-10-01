@@ -77,14 +77,14 @@
       "feature_id": "FEAT-619",
       "feature": "sdd-worktree-status-tech-debt",
       "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Documentation only: touches the six .claude/.agent/.agents markdown copies of sdd-status and sdd-next, which no other task in this feature declares. Shares no file with the code chain, so it runs in wave 1 alongside TASK-3915.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T00:38:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3918-sdd-status-next-doc-twins.md"
     }
