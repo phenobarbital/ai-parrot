@@ -392,7 +392,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -403,8 +403,9 @@
       "parallelism_notes": "sets bot._agents_dir for the KB hook from TASK-3923 (core stores/local.py); runs StudioToolingGate(phase='build') from TASK-3933 (services/_common.py); models from TASK-3922 arrive transitively; creates manager/studio_builder.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3940-studio-agent-builder.md"
+      "completed_at": "2026-10-01T22:48:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3940-studio-agent-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3941",

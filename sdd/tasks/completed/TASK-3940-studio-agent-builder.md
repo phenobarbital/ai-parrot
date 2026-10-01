@@ -235,10 +235,8 @@ class StudioAgentBuilder:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: manager/studio_builder.py StudioAgentBuilder(registry, runtime_dir, tooling_gate).build(snapshot, app, *, part): gate(phase=build, actor None) on normalised tooling -> tenant class allowlist (StudioClassAllowlist.from_app) -> BotConfig(origin=factory, model=None, config/startup_config empty) + kwargs per the §2.7 map (chatbot_id=str(agent_id), llm, model_config from non-None model_params, description, created_by, identity kwargs from identity assets, definition.config) -> registry.create_agent_factory (never registers) -> KB/skills written under runtime_dir/<agent_id>/v<version>/ , bot._agents_dir set -> stamps (_studio_key = StudioAgentKey object, _studio_version, _studio_agent_id, _tooling_ref) -> bind_tooling_policy(get_tenant_tooling_policy(app), ToolingSubject(phase=build), owner=record.owner) -> confirmation guard -> configure. Failure: half-built bot cleaned once through cleanup_bot_instance (TASK-3941, executed first for that reason), directory removed; StudioToolingRefused and CancelledError propagate, anything else becomes AgentReloadError. Decisions: _studio_key holds the StudioAgentKey (not the qualified string) - consumers read .qualified; KB is written under the dir name LocalKBMixin derives (agent_id attr else name) so the core hook finds it, skills under <name>/skills; owner= passed to bind_tooling_policy (optional kwarg of the merged core hook). 16 tests pass; 17 mutations RED (4 needed extra assertions, added).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
