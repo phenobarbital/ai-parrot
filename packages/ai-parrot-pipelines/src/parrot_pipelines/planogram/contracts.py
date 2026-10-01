@@ -243,6 +243,7 @@ class ShelfScore(BaseModel):
     occupied_facings: int = 0  # unique merged expected facings with any occupied observation
     occupied_fraction: float = 0.0
     rule_results: List[RuleOutcome] = Field(default_factory=list)
+    info_results: List[RuleOutcome] = Field(default_factory=list)  # informative outcomes; never read by scoring/status
 
 
 class CreditPolicy(BaseModel):
