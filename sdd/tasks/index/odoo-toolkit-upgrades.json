@@ -116,7 +116,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,9 @@
       "parallelism_notes": "Needs TASK-3895: imports StatsGroup from models/helpdesk_envelopes.py (and HelpdeskTicket/HelpdeskLifecycle via the re-exports).",
       "assigned_to": null,
       "started_at": "2026-09-30T23:25:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3896-helpdesk-normalize.md"
+      "completed_at": "2026-10-01T00:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3896-helpdesk-normalize.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3897",
