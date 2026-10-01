@@ -200,7 +200,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -212,9 +212,10 @@
       "parallelism_notes": "Imports RequestScope/scope_grants/normalize_visibility from TASK-3956 (handlers/scope.py); extends StudioBaseView._scope/_opted_in/_get_user from TASK-3959 (same file studio/_base.py); edits studio/models.py after TASK-3960 added StudioCapabilities there (same file).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3964-studio-access-service.md",
-      "wave_label": "W2.1"
+      "completed_at": "2026-10-01T21:57:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3964-studio-access-service.md",
+      "wave_label": "W2.1",
+      "verification": "verified"
     },
     {
       "id": "TASK-3965",

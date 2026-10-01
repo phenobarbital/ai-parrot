@@ -485,8 +485,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5.5), single-task mode
+**Date**: 2026-10-01
+**Notes**: Implemented access.py, `_base.py` (`_studio_partition` override, `_access`, `_check_record_access`, `_tenant_required`), request models, and test_access.py (10 tests). Tenant lookups go through `app["studio_storage"].repos`; legacy lookups use BotModel/registry, StudioDraft, SkillCatalogEntry. 403 body code: `forbidden`. Mutation checks for all 4 AC guards plus groups_not_allowed and reserved keys went RED and were restored by editing.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
