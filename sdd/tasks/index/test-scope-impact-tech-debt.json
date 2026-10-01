@@ -58,7 +58,7 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -68,7 +68,7 @@
       "parallelism_notes": "Must state the regenerated CORE_PATHS entry count, which only exists after TASK-3920 runs its generator against policy.py.",
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T01:37:45.699010+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3921-core-detection-docs.md"
     }
