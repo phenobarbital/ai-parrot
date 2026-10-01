@@ -35,7 +35,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -43,8 +43,9 @@
       "parallelism_notes": "no dependency; sole FEAT-621 writer of core bots/stores/local.py and tools/spec.py; TASK-3927 imports agent_tooling_ref/toolkit_override_vault_name from it, TASK-3940 relies on the _agents_dir KB hook",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3923-core-hooks-kb-dir-tooling-ref.md"
+      "completed_at": "2026-10-01T02:46:48+00:00",
+      "file": "sdd/tasks/completed/TASK-3923-core-hooks-kb-dir-tooling-ref.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3924",
