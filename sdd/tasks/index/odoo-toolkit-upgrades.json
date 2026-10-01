@@ -223,7 +223,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -233,8 +233,9 @@
       "parallelism_notes": "Needs TASK-3900: same two files (helpdesk.py, test_odoo_helpdesk_toolkit.py); append anchors are list_ticket_alarms and test_list_ticket_alarms_envelope from TASK-3900. Uses _closed_stage_ids from TASK-3897 (transitively done).",
       "assigned_to": null,
       "started_at": "2026-09-30T23:25:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3901-helpdesk-stats-wizards-timer.md"
+      "completed_at": "2026-10-01T00:33:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3901-helpdesk-stats-wizards-timer.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3902",
