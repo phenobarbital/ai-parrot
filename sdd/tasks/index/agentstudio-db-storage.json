@@ -413,7 +413,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -423,8 +423,9 @@
       "parallelism_notes": "imports STUDIO_KEY_PREFIX/STUDIO_TOOLING_REF_PREFIX from TASK-3922 (storage/models.py); first FEAT-621 writer of manager/manager.py (TASK-3943 follows); TASK-3942 imports cleanup_bot_instance",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3941-manager-studio-guards.md"
+      "completed_at": "2026-10-01T22:43:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3941-manager-studio-guards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3942",

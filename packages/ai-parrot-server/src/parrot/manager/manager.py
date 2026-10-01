@@ -183,6 +183,28 @@ class ReloadResult(BaseModel):
 
 _REGISTRY_ONLY_APP_KEY = "_bot_manager_registry_only"
 
+_STUDIO_PREFIXES = ("studio:", "studio-agent:")
+_cleanup_logger = logging.getLogger("Parrot.Manager")
+
+
+async def cleanup_bot_instance(bot: "AbstractBot", *, label: str) -> bool:
+    """Run ``bot.cleanup()`` with ``BOT_CLEANUP_TIMEOUT`` and exception isolation. Never raises.
+
+    Shared by :meth:`BotManager._safe_cleanup` (name-guarded) and the Studio runtime (identity-guarded).
+
+    Returns:
+        ``True`` when the cleanup completed, ``False`` on timeout or exception.
+    """
+    try:
+        await asyncio.wait_for(bot.cleanup(), timeout=BOT_CLEANUP_TIMEOUT)
+    except asyncio.TimeoutError:
+        _cleanup_logger.warning("BotManager: cleanup of bot '%s' timed out after %ds", label, BOT_CLEANUP_TIMEOUT)
+        return False
+    except Exception:  # noqa: BLE001 — teardown must not raise
+        _cleanup_logger.exception("BotManager: cleanup of bot '%s' raised an unexpected exception", label)
+        return False
+    return True
+
 class BotManager:
     """BotManager.
 
@@ -739,7 +761,13 @@ class BotManager:
         return chatbot
 
     def add_bot(self, bot: AbstractBot) -> None:
-        """Add a Bot to the manager."""
+        """Add a Bot to the manager.
+
+        Raises:
+            ValueError: ``bot`` is a Studio instance (``_studio_key``); those live in ``StudioRuntimeCache`` only.
+        """
+        if getattr(bot, "_studio_key", None) is not None:
+            raise ValueError("Studio agents live in StudioRuntimeCache, never in BotManager._bots")
         self._bots[bot.name] = bot
         # Store the class definition for future instance creation
         self._botdef[bot.name] = bot.__class__
@@ -766,6 +794,9 @@ class BotManager:
             AgentAccessDenied: When ``request`` is provided and the caller's
                 subject does not match the bot's PBAC policies.
         """
+        # Studio ids (qualified keys, session ids, tooling refs) never resolve here: before _bots/_botdef/registry.
+        if isinstance(name, str) and name.startswith(_STUDIO_PREFIXES):
+            return None
         # Handle new instance creation
         if new:
             # FEAT-153: Enforce PBAC on the base name BEFORE constructing the new
@@ -1740,20 +1771,7 @@ class BotManager:
         if name in self._cleaned_up:
             self.logger.debug("BotManager: bot '%s' already cleaned up", name)
             return True
-        try:
-            await asyncio.wait_for(bot.cleanup(), timeout=BOT_CLEANUP_TIMEOUT)
-        except asyncio.TimeoutError:
-            self.logger.warning(
-                "BotManager: cleanup of bot '%s' timed out after %ds",
-                name,
-                BOT_CLEANUP_TIMEOUT,
-            )
-            return False
-        except Exception:  # noqa: BLE001 — teardown must not raise
-            self.logger.exception(
-                "BotManager: cleanup of bot '%s' raised an unexpected exception",
-                name,
-            )
+        if not await cleanup_bot_instance(bot, label=name):
             return False
         self._cleaned_up.add(name)
         return True

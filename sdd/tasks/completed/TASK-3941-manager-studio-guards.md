@@ -200,10 +200,8 @@ async def cleanup_bot_instance(bot: "AbstractBot", *, label: str) -> bool:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: Executed before TASK-3940 (both only depend on earlier tasks) so the builder can reuse cleanup_bot_instance. manager.py: module-level cleanup_bot_instance(bot, *, label) (timeout + exception isolation, never raises; same log messages/logger name), _safe_cleanup keeps its name guard and records the name only on success; get_bot returns None first for studio:/studio-agent: names (new=True or not) before touching _bots/_botdef/registry; add_bot raises ValueError for an instance with _studio_key. Prefixes are a local tuple asserted equal to the models constants. 11 new tests + tests/manager (52) + studio lifecycle/files/drafts (77) pass; 6 mutations RED. Note: packages/ai-parrot/tests/manager/test_bot_cleanup_lifecycle.py fails at COLLECTION with a metaclass conflict inside parrot.bots.abstract (untouched by this task) when run with the server src on PYTHONPATH.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
