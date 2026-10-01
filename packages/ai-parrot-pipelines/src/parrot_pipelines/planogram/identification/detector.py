@@ -122,9 +122,11 @@ def _pixels(detection: Any, size: Tuple[int, int]) -> Tuple[int, int, int, int]:
 class FixtureRoi(BaseModel):
     """Region of interest of one image: the fixture, and its header panel when the model located it."""
 
-    fixture: PixelBox
+    fixture: Optional[PixelBox] = None  # None: the prompt names no fixture box, detection sees the whole image
     panel: Optional[PixelBox] = None
     panel_text: Optional[str] = None
+    #: ``(label, box, text)`` of the ROI components the layout declares as zones (``roi_zone_labels``).
+    zones: List[Tuple[str, PixelBox, Optional[str]]] = Field(default_factory=list)
 
 
 def render_roi_prompt(template: Optional[str], *, brand: str = "", tags: Sequence[str] = ()) -> Optional[str]:
@@ -190,12 +192,21 @@ async def detect_roi(image: np.ndarray, image_id: str, ctx: CycleContext) -> Opt
         logger.warning("ROI detection failed for %s: %s", image_id, exc)
         ctx.errors.append(f"roi {image_id}: {exc}")
         return None
+    zone_labels = [label.strip().lower() for label in getattr(ctx.layout, "roi_zone_labels", None) or []]
+    zones = [
+        (label, box, next((d.content.strip() for d in answer.detections if _roi_label(d) == label and d.content), None))
+        for label, box in ((label, _best(answer.detections, (label,), (width, height))) for label in zone_labels)
+        if box is not None
+    ]
     fixture = _best(answer.detections, ROI_FIXTURE_LABELS, (width, height))
     if (
         fixture is None
         or fixture[2] - fixture[0] < ROI_MIN_SIDE * width
         or fixture[3] - fixture[1] < ROI_MIN_SIDE * height
     ):
+        if zones:
+            logger.debug("detect_roi[%s]: no fixture box, zones=%s", image_id, [label for label, _, _ in zones])
+            return FixtureRoi(zones=zones)
         ctx.errors.append(f"roi {image_id}: no usable fixture box; detection ran on the whole image")
         return None
     panel = _best(answer.detections, ROI_PANEL_LABELS, (width, height))
@@ -225,7 +236,7 @@ async def detect_roi(image: np.ndarray, image_id: str, ctx: CycleContext) -> Opt
     )
     texts = [d.content.strip() for d in answer.detections if _roi_label(d) in ROI_TEXT_LABELS and d.content]
     logger.debug("detect_roi[%s]: fixture=%s panel=%s", image_id, padded, panel)
-    return FixtureRoi(fixture=padded, panel=panel, panel_text=" ".join(texts) or None)
+    return FixtureRoi(fixture=padded, panel=panel, panel_text=" ".join(texts) or None, zones=zones)
 
 
 def downscale_and_encode(image: np.ndarray, max_side: int = MAX_SIDE) -> bytes:
@@ -316,7 +327,7 @@ async def llm_detect_shapes(image: np.ndarray, image_id: str, ctx: CycleContext,
     roi = await detect_roi(image, image_id, ctx)
     if roi is None:
         return await _detect_shapes(image, image_id, ctx, prompt=prompt)
-    left, top, right, bottom = roi.fixture
+    left, top, right, bottom = roi.fixture or (0, 0, image.shape[1], image.shape[0])
     shapes = await _detect_shapes(np.ascontiguousarray(image[top:bottom, left:right]), image_id, ctx, prompt=prompt)
     shapes = [
         shape.model_copy(
@@ -347,7 +358,20 @@ async def llm_detect_shapes(image: np.ndarray, image_id: str, ctx: CycleContext,
             source=ObservationSource.LLM,
         )
         shapes = [panel, *shapes]
-    return shapes
+    # Zones the ROI prompt locates by name are observations of their own, next to the detector's.
+    named = [
+        Shape(
+            shape_id=f"{image_id}:roi:{label}",
+            image_id=image_id,
+            kind=ShapeKind.ZONE,
+            box=DetectionBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3], confidence=1.0),
+            profile="roi",
+            ocr_text=text,
+            source=ObservationSource.LLM,
+        )
+        for label, box, text in roi.zones
+    ]
+    return [*named, *shapes]
 
 
 async def _detect_shapes(image: np.ndarray, image_id: str, ctx: CycleContext, *, prompt: str) -> List[Shape]:

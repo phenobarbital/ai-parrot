@@ -388,3 +388,37 @@ async def test_detector_reads_box_2d_answers_into_source_pixels():
     shapes = await llm_detect_shapes(image, "img0", _ctx(StubAdapter(answer)), prompt="p")
     box = shapes[0].box
     assert (box.x1, box.y1, box.x2, box.y2) == (500, 100, 1500, 500) and shapes[0].kind == ShapeKind.PRODUCT
+
+
+async def test_named_roi_zones_are_observed_zones_without_a_fixture_box():
+    from parrot_pipelines.planogram.identification.detector import RoiDetections
+
+    class Layout:
+        roi_zone_labels = ["top_zone", "bottom_zone", "missing_zone"]
+
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = RoiDetections.model_validate(
+        {
+            "detections": [
+                {
+                    "label": "top_zone",
+                    "confidence": 0.9,
+                    "box_2d": [200, 300, 400, 700],
+                    "content": "Hello. Light: OFF",
+                },
+                {"label": "middle_zone", "confidence": 0.9, "box_2d": [400, 300, 700, 700], "content": "Table"},
+                {"label": "bottom_zone", "confidence": 0.9, "box_2d": [600, 300, 900, 700]},
+            ]
+        }
+    )
+    adapter = StubAdapter(roi, Detections(detections=[_det(0.3, 0.0, 0.7, 0.2, label="zone", content="SIGN")]))
+    ctx = _roi_ctx(adapter).model_copy(update={"layout": Layout()})
+
+    shapes = await llm_detect_shapes(image, "img0", ctx, prompt="p")
+
+    assert [shape.shape_id for shape in shapes[:2]] == ["img0:roi:top_zone", "img0:roi:bottom_zone"]
+    top = shapes[0]
+    assert top.kind == ShapeKind.ZONE and top.ocr_text == "Hello. Light: OFF"
+    assert (top.box.x1, top.box.y1, top.box.x2, top.box.y2) == (600, 200, 1400, 400)
+    # No fixture label: the detector saw the whole image, and nothing is reported as an error.
+    assert (shapes[2].box.x1, shapes[2].box.x2) == (600, 1400) and not ctx.errors
