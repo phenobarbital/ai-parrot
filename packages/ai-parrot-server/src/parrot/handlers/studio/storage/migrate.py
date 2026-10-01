@@ -1,12 +1,19 @@
 """Studio schema migrations: file format, checksum and listing (spec §2.12). Never imported at startup."""
 from __future__ import annotations
 
+import argparse
+import asyncio
 import hashlib
 import json
+import logging
 import re
+import sys
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
+from typing import Any, Mapping
+
+logger = logging.getLogger("Parrot.AgentStudio.Storage")
 
 STUDIO_SCHEMA_REQUIRED: int = 5
 STUDIO_SCHEMA_REQUIRED_PHASE2: int = 8
@@ -119,3 +126,161 @@ def stamp_migrations(directory: Path | None = None) -> None:
         "migrations": entries,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+_SKILLS_NAME_UNIQUE_SQL = (
+    "SELECT count(*) AS n FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid "
+    "AND a.attnum = i.indkey[0] WHERE i.indrelid = to_regclass('navigator.ai_skills_catalog') "
+    "AND i.indisunique AND i.indnatts = 1 AND i.indpred IS NULL AND a.attname = 'name'"
+)
+
+
+@dataclass(frozen=True)
+class LedgerState:
+    """What the (read-only) probe found: ledger presence, applied versions and server version."""
+
+    present: bool
+    applied: dict[int, str]
+    server_version_num: int
+    skills_name_unique_index: bool = False
+
+    def complete_for(self, required: int, manifest: Mapping[int, str]) -> bool:
+        """True iff the ledger is present and every version 1..required is there with the manifest checksum."""
+        return self.present and not self.problems(required, manifest)
+
+    def problems(self, required: int, manifest: Mapping[int, str]) -> list[str]:
+        """Human-readable problems: 'server < 14', 'missing N', 'drift N', 'unknown N'."""
+        found: list[str] = []
+        if self.server_version_num < STUDIO_MIN_SERVER_VERSION_NUM:
+            found.append(f"server < 14 (server_version_num={self.server_version_num})")
+        found.extend(f"missing {v}" for v in range(1, required + 1) if v not in self.applied)
+        found.extend(
+            f"drift {v}" for v, digest in sorted(self.applied.items()) if v in manifest and manifest[v] != digest
+        )
+        found.extend(f"unknown {v}" for v in sorted(self.applied) if v not in manifest)
+        return found
+
+    def warnings(self) -> list[str]:
+        """Non-fatal findings (do not affect ``complete_for``)."""
+        if self.skills_name_unique_index:
+            return [
+                "host-created unique index on navigator.ai_skills_catalog(name) alone: "
+                "per-tenant skill names will conflict across tenants until it is dropped"
+            ]
+        return []
+
+
+def _first_value(row: Any) -> Any:
+    """First column of an asyncdb/asyncpg row (Record, mapping or sequence)."""
+    if hasattr(row, "values"):
+        return next(iter(row.values()))
+    return row[0]
+
+
+async def read_ledger(conn: Any) -> LedgerState:
+    """SHOW server_version_num; to_regclass(...); SELECT version, checksum ... Never DDL."""
+    num = int(_first_value(await conn.fetch_one("SHOW server_version_num")))
+    reg = _first_value(await conn.fetch_one("SELECT to_regclass('navigator.ai_studio_migrations')"))
+    if reg is None:
+        return LedgerState(False, {}, num)
+    rows = await conn.fetch_all("SELECT version, checksum FROM navigator.ai_studio_migrations ORDER BY version")
+    applied = {int(r["version"]): r["checksum"] for r in (rows or [])}
+    dup = await conn.fetch_one(_SKILLS_NAME_UNIQUE_SQL)
+    return LedgerState(True, applied, num, bool(dup and _first_value(dup)))
+
+
+async def apply_studio_migrations(pool: Any, *, dry_run: bool = False) -> list[int]:
+    """Per pending file: studio_transaction → body (advisory lock first) → re-read ledger → skip if
+    recorded → trailer → commit. Returns versions applied (or pending, when ``dry_run``). Never called at startup."""
+    from .repositories import _exec, studio_transaction   # local: repositories imports models only
+
+    async with pool.acquire() as conn:
+        state = await read_ledger(conn)
+    if state.server_version_num < STUDIO_MIN_SERVER_VERSION_NUM:
+        raise RuntimeError(
+            f"PostgreSQL >= {STUDIO_MIN_SERVER_VERSION_NUM // 10000} required "
+            f"(server_version_num={state.server_version_num}, minimum {STUDIO_MIN_SERVER_VERSION_NUM})"
+        )
+    pending = [m for m in list_migrations() if m.version not in state.applied]
+    if dry_run:
+        return [m.version for m in pending]
+    applied: list[int] = []
+    for mig in pending:
+        async with studio_transaction(pool) as conn:
+            await _exec(conn, mig.body.decode("utf-8"))
+            if mig.version in (await read_ledger(conn)).applied:
+                logger.info("studio migration %s already recorded by another runner", mig.name)
+                continue
+            await _exec(conn, mig.trailer.decode("utf-8"))
+            applied.append(mig.version)
+            logger.info("applied studio migration %s", mig.name)
+    return applied
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="parrot-studio-migrate", description="Apply Agent Studio schema migrations.")
+    parser.add_argument("--dsn", help="PostgreSQL DSN (required except with --stamp)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="list pending versions, change nothing")
+    mode.add_argument("--verify", action="store_true", help="report missing/drifted/unknown versions; exit 1 on any")
+    mode.add_argument("--print", dest="print_", action="store_true", help="emit pending files (body + trailer)")
+    mode.add_argument("--stamp", action="store_true", help="release tooling: rewrite trailers and MANIFEST.json")
+    return parser
+
+
+async def _run(args: argparse.Namespace) -> int:
+    from asyncdb import AsyncPool
+
+    pool = AsyncPool("pg", dsn=args.dsn)
+    await pool.connect()
+    try:
+        if args.verify:
+            return await _verify(pool)
+        if args.print_:
+            return await _print_pending(pool)
+        versions = await apply_studio_migrations(pool, dry_run=args.dry_run)
+        label = "pending" if args.dry_run else "applied"
+        print(f"{label}: {versions}")
+        return 0
+    finally:
+        await pool.close()
+
+
+async def _verify(pool: Any) -> int:
+    manifest = {m.version: m.checksum for m in list_migrations()}
+    async with pool.acquire() as conn:
+        state = await read_ledger(conn)
+    problems = state.problems(STUDIO_SCHEMA_REQUIRED, manifest)
+    if not state.present:
+        problems.insert(0, "ledger absent")
+    for line in state.warnings():
+        print(f"warning: {line}")
+    for line in problems:
+        print(f"problem: {line}")
+    return 1 if problems else 0
+
+
+async def _print_pending(pool: Any) -> int:
+    async with pool.acquire() as conn:
+        state = await read_ledger(conn)
+    for mig in list_migrations():
+        if mig.version not in state.applied:
+            sys.stdout.write(mig.body.decode() + mig.trailer.decode())
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI: --dsn, --dry-run, --verify, --print, --stamp."""
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    if args.stamp:
+        stamp_migrations()
+        print("stamped")
+        return 0
+    if not args.dsn:
+        parser.error("--dsn is required")
+    return asyncio.run(_run(args))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -86,6 +86,7 @@ all = [
 
 [project.scripts]
 parrot-fs = "parrot.autonomous.transport.filesystem.cli:main"
+parrot-studio-migrate = "parrot.handlers.studio.storage.migrate:main"
 
 # Protected stores for navigator-session vault rotation / migration
 # (navigator-vault CLI). See navigator_session/vault/registry.py.
