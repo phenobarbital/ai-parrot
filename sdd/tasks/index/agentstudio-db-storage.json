@@ -373,7 +373,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -381,8 +381,9 @@
       "parallelism_notes": "no dependency (pure bookkeeping over UUID/str keys); creates manager/studio_cache.py imported by TASK-3942",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3939-studio-runtime-cache.md"
+      "completed_at": "2026-10-01T22:39:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3939-studio-runtime-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3940",
