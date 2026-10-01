@@ -17,7 +17,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -25,10 +25,11 @@
       "parallelism_notes": "No dependency: creates handlers/scope.py and edits ui_surfaces_scope.py, which no other FEAT-605 task touches; can run alongside TASK-3958 (docs).",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3956-request-scope-seam.md",
+      "completed_at": "2026-10-01T02:46:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3956-request-scope-seam.md",
       "wave_label": "W0.1",
-      "early_subset": true
+      "early_subset": true,
+      "verification": "verified"
     },
     {
       "id": "TASK-3957",

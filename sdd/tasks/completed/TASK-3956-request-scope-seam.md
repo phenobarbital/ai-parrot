@@ -424,10 +424,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback)
+**Date**: 2026-09-30
+**Notes**: Created parrot.handlers.scope (RequestScope, resolvers, scope_grants primitive); ui_surfaces_scope now aliases. test_request_scope (new) + FEAT-535 suites pass unchanged. ruff unavailable in worktree venv.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
