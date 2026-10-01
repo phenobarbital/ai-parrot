@@ -222,7 +222,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -233,8 +233,9 @@
       "parallelism_notes": "maps read_ledger/LedgerState from TASK-3926 (storage/migrate.py) to a backend and builds StudioRepositories from TASK-3930 (storage/repositories.py); first FEAT-621 writer of studio/__init__.py and studio/_base.py (TASK-3944 follows on _base.py)",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3932-backend-selection-partition-hook.md"
+      "completed_at": "2026-10-01T03:10:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3932-backend-selection-partition-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3933",

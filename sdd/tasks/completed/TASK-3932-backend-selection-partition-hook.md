@@ -289,10 +289,8 @@ async def resolve_studio_storage(app: web.Application) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5, resumed session)
+**Date**: 2026-09-30
+**Notes**: backend.py implements the §2.2 matrix as a pure `_resolve(setting, pool, state)` plus a read-only `_probe` (a probe exception maps to `unavailable`); ensure_studio_storage is lock-guarded and memoised; hook registered once per app; `_studio_partition`/`_studio_storage` added to StudioBaseView. 29 tests pass (matrix pure + via probe, memoised/locked, tenant-on-filesystem, hook-once (mutation-checked), partition default, real-PG case). Wider studio suite: only baseline failures. ruff not installed in venv; not run. An invalid PARROT_STUDIO_STORAGE value logs ERROR and falls back to auto.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
