@@ -94,7 +94,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "Needs TASK-3893: helpdesk_envelopes.py imports HelpdeskTicket/HelpdeskSla/... from models/helpdesk_entities.py. Needs TASK-3894: models/__init__.py re-exports helpdesk_inputs classes and it appends to tests/test_odoo_helpdesk_models.py after TASK-3894's block.",
       "assigned_to": null,
       "started_at": "2026-09-30T23:25:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3895-helpdesk-envelopes-exports.md"
+      "completed_at": "2026-10-01T00:06:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3895-helpdesk-envelopes-exports.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3896",
