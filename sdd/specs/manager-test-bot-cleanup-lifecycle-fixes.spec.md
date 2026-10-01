@@ -10,7 +10,7 @@ tags: [test-infrastructure, conftest, sys-modules, merge-gate, collection-errors
 **Feature ID**: FEAT-617
 **Date**: 2026-10-01
 **Author**: Jesus Lara (via /sdd-fix, ledger issue:c3c59277ef77)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.x
 
 ---
@@ -372,15 +372,37 @@ class SkillFileToolkit(AbstractToolkit):
 
 ## 8. Open Questions
 
-- [ ] **Q1** — Which test hangs in `packages/ai-parrot-integrations/tests`? Reproduction
-  in flight at spec time (past 72% with no stall, vs the reported 40%); the hang may
-  be environment- or network-dependent rather than deterministic. If it does not
-  reproduce, M3 ships the `pytest-timeout` guard anyway and AC7 is satisfied by the
-  completed bounded run. — *Owner: implementer*
-- [ ] **Q2** — Should the `pytest-timeout` default live in shared pytest config (every
-  developer run) or only in the sweep invocation? Spec leans **sweep-only** to avoid
-  flaking slow local integration tests. — *Owner: Jesus*
-- [ ] **Q3** — The `navigator`/`asyncdb`/`querysource` stubs exist because those packages
-  are not guaranteed installed. If they are in fact always present in CI, the stubs
-  could be deleted outright rather than made conditional. Out of scope here; M1 is
-  safe either way. — *Owner: Jesus*
+- [x] **Q1 — RESOLVED (2026-10-01): the hang does not reproduce.** A full bounded
+  run of `packages/ai-parrot-integrations/tests/` on `dev` @ `72e238df2`
+  completed in **260.8s** — `30 failed, 2257 passed, 67 skipped`, no stall (the
+  issue reported a freeze at ~40% with 3+ min of zero log growth). The suite also
+  collects cleanly (2354 tests, 0 errors). The original hang was therefore
+  environment- or network-dependent, consistent with the issue's own guess of an
+  ungated live call. **Consequence for M3**: it ships as a *precaution*, not a
+  repair — there is no identified hanging test to gate. AC7 is satisfied by this
+  completed bounded run.
+  *Note*: the 30 integration failures are pre-existing and out of scope (§1
+  Non-Goals scopes this feature to `packages/ai-parrot/tests/`); they are not
+  collection errors and do not affect AC1.
+
+- [x] **Q2 — RESOLVED (2026-10-01, Jesus): sweep invocation only.** The
+  `pytest-timeout` default lives on the broad merge-tier sweep invocation, **not**
+  in shared pytest config. A global default would risk flaking legitimately slow
+  suites (the voice/browser tests above run for minutes by design). Developer
+  `pytest` runs stay unaffected.
+
+- [ ] **Q3 — OPEN (not blocking).** The `navigator` / `asyncdb` / `querysource`
+  stubs exist because those packages are not guaranteed installed. If they are in
+  fact always present in CI, the stubs could be deleted outright rather than made
+  conditional. Deliberately out of scope: M1 is correct either way, since
+  `_stub_if_absent` is a no-op whenever the real module resolves. — *Owner: Jesus*
+
+---
+
+## 9. Decisions Log
+
+| Date | Decision | Rationale |
+|---|---|---|
+| 2026-10-01 | Implement all 4 modules (M1–M4) | Full unblock of AC1; partial scopes leave the gate blocked |
+| 2026-10-01 | `pytest-timeout` scoped to the sweep invocation | Avoid flaking slow local suites (Q2) |
+| 2026-10-01 | Delete `test_cryptoquant_integration.py` | `find packages -name '*cryptoquant*'` is empty — the toolkit is gone, so the test covers nothing. Lands on a feature branch under PR review |
