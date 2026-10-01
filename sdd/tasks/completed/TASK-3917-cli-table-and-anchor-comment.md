@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-619 — worktree_status Tech-Debt Drain (FEAT-582 follow-up)
 **Spec**: `sdd/specs/sdd-worktree-status-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-3916
@@ -334,8 +334,31 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Opus 5 (`/sdd-fix issue:07b75dc7dfae`)
+**Date**: 2026-10-01
+**Notes**: Implemented exactly as blueprinted. 3 new `TestCli` methods plus a
+`_run_table` helper on that class. Suite: 53 → 56 passing; `ruff check` clean.
+The multi-line import form was used (the single-line form with the corrected
+trailing comment exceeded 120 columns).
 
-**Deviations from spec**: none | describe if any
+One blueprint assertion was wrong and was corrected during implementation, not
+the code: `test_feature_id_printed_once_per_row` first asserted
+`row.count("FEAT-550") == 1` over the WHOLE row, which fails at 2 — because the
+**Branch** column legitimately contains `feat-FEAT-550-token-budget-bedrock`.
+`issue:4456385c283c` is about the Name column duplicating the Feature column,
+not about the branch. The assertion now targets the Name column (the first 40
+characters, the f-string width): it must equal the slug and must not contain
+the id, while the id must appear later in the row.
+
+Verified by rendering the real checkout's table: 32 rows, each with exactly one
+`FEAT-NNN` in its Feature column, 19 rows marked ` (non-SDD)` with `-` for
+Feature and `0/0` tasks, and live `dirty:N, unpushed:N, live:N` health strings.
+
+Known, deliberately unchanged: names longer than the 40-column Name field
+overflow and push the row (e.g.
+`fix/98205ecd666b-remove-extracted-finance-tests (non-SDD)`). This is the
+pre-existing f-string padding behaviour for long SDD slugs too; adding
+truncation would hide information in a tool whose job is to show it, and was
+listed as out of scope.
+
+**Deviations from spec**: none.
