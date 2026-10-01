@@ -1,5 +1,6 @@
 """Offline tests for stage-2 identification strategies (FEAT-574, Module 12)."""
 
+import asyncio
 import math
 
 import numpy as np
@@ -15,7 +16,9 @@ from parrot_pipelines.planogram.contracts import (
     Identification,
     IdentificationResponse,
     ObservationSource,
+    OcrReading,
     PerceptionResult,
+    ReferenceImage,
     Shape,
     ShapeKind,
     Slot,
@@ -24,10 +27,13 @@ from parrot_pipelines.planogram.identification.identify import (
     IDENTIFY_PROMPT_VERSION,
     build_identify_prompt,
     identify_full_image,
+    identify_slots,
     identify_strips,
     validate_response,
 )
 from parrot_pipelines.planogram.identification.vision import VisionError
+from parrot_pipelines.planogram.layout import LayoutProfile, ReferencePolicy
+from parrot_pipelines.planogram.perception.profiles import PRICE_TAG_PROFILE
 from parrot_pipelines.planogram.perception.slots import strip_box
 
 W, H = 600, 300
@@ -42,14 +48,15 @@ class StubAdapter:
     """Pops queued answers; an Exception instance is raised. Callables receive the prompt."""
 
     def __init__(self, *answers):
-        self.answers, self.calls = list(answers), []
+        self.answers, self.calls, self.images = list(answers), [], []
 
     async def ask(self, prompt, images, schema, *, stage, prompt_version, system_prompt=None):
         self.calls.append(prompt)
+        self.images.append(list(images))
         assert images and images[0][:8] == b"\x89PNG\r\n\x1a\n"
         assert prompt_version == IDENTIFY_PROMPT_VERSION
         item = self.answers.pop(0)
-        if isinstance(item, Exception):
+        if isinstance(item, BaseException):
             raise item
         return item(prompt) if callable(item) else item
 
@@ -62,6 +69,10 @@ def _ctx(adapter) -> CycleContext:
         credit_policy=CreditPolicy.default(),
         evidence_weights=EvidenceWeights(),
     )
+
+
+def _layout(**overrides) -> LayoutProfile:
+    return LayoutProfile(shape_profiles=[PRICE_TAG_PROFILE], **overrides)
 
 
 def _box(x1, y1, x2, y2, conf=1.0):
@@ -279,3 +290,118 @@ async def test_additions_get_membership(perception):
     assert added.membership == FixtureMembership.ON_FIXTURE  # inside the zone's anchor column
     assert added.membership_evidence
     assert result.identifications[-1].shape_id == added.shape_id
+
+
+def test_prompt_version_is_v2():
+    assert IDENTIFY_PROMPT_VERSION == "identify-v2-ocr"
+
+
+def test_v2_prompt_has_occupancy_and_printed_code_rules_without_expectations():
+    prompt = build_identify_prompt([], ["family"])
+    assert "empty" in prompt and "ocr_text is NOT evidence of emptiness" in prompt
+    assert "printed product code" in prompt
+    assert "planogram" not in prompt.lower() and "expected" not in prompt.lower()
+
+
+def test_reference_labels_listed_without_catalogue_keys():
+    prompt = build_identify_prompt([], [], reference_labels=["ref-0001", "ref-0002"])
+    assert "ref-0001" in prompt and "ref-0002" in prompt and "reference_id" in prompt
+    assert "catalog_key" not in prompt
+
+
+async def test_references_attached_to_initial_and_repair_calls(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    adapter = StubAdapter(_answer(ids[:-1]), _answer(ids))
+    ctx = _ctx(adapter)
+    ctx.layout = _layout()
+    ctx.reference_bank = [ReferenceImage(label="ref-0001", image=b"reference", catalog_key="A")]
+    await identify_full_image(_image(), perception, ctx, vocabulary=[])
+    assert adapter.images[0] == adapter.images[1]
+    assert len(adapter.images[0]) == 2
+
+
+async def test_unknown_reference_id_is_rejected(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    answer = _answer(ids)
+    answer.existing_identifications[0].reference_id = "ref-9999"
+    result = await identify_full_image(_image(), perception, _ctx(StubAdapter(answer)), vocabulary=[])
+    identification = result.identifications[0]
+    assert identification.reference_id is None
+    assert identification.product == "ES-400" and identification.raw_confidence == pytest.approx(0.8)
+    assert any("unknown reference_id ref-9999" in error for error in result.errors)
+
+
+async def test_capped_references_reported(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    ctx = _ctx(StubAdapter(_answer([*ids, "img0:zone"])))
+    ctx.layout = _layout(references=ReferencePolicy(max_per_call=2))
+    ctx.reference_bank = [
+        ReferenceImage(label=f"ref-{index}", image=b"reference", catalog_key=str(index)) for index in range(7)
+    ]
+    result = await identify_full_image(_image(), perception, ctx, vocabulary=[])
+    assert len(ctx.vision.images[0]) == 3
+    assert any("references: omitted" in error for error in result.errors)
+
+
+async def test_zones_are_targets_only_with_layout(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    without_layout = await identify_full_image(_image(), perception, _ctx(StubAdapter(_answer(ids))), vocabulary=[])
+    ctx = _ctx(StubAdapter(_answer([*ids, "img0:zone"])))
+    ctx.layout = _layout()
+    with_layout = await identify_full_image(_image(), perception, ctx, vocabulary=[])
+    assert len(without_layout.identifications) == 6
+    assert [item.shape_id for item in with_layout.identifications][-1] == "img0:zone"
+
+
+async def test_own_box_ocr_used_and_tag_text_separate(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    perception.ocr_readings = {"img0:r0:s1": OcrReading(text="62XL", confidence=0.9)}
+    adapter = StubAdapter(_answer(ids))
+    await identify_full_image(_image(), perception, _ctx(adapter), vocabulary=[])
+    assert '"ocr_text":"62XL"' in adapter.calls[0]
+    assert '"tag_text":"OCR-01"' in adapter.calls[0]
+    assert '"ocr_text":null' in adapter.calls[0]
+
+
+async def test_custom_descriptor_allowed_when_declared_by_profile(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    with pytest.raises(ValueError):
+        await identify_full_image(_image(), perception, _ctx(StubAdapter()), vocabulary=["capacity_ml"])
+    ctx = _ctx(StubAdapter(_answer([*ids, "img0:zone"])))
+    ctx.layout = _layout(descriptor_fields=["capacity_ml"])
+    result = await identify_full_image(_image(), perception, ctx, vocabulary=["capacity_ml"])
+    assert len(result.identifications) == 7
+
+
+async def test_identify_slots_one_call_per_target(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    adapter = StubAdapter(*(_answer([identifier]) for identifier in ids))
+    await identify_slots(_image(), perception, _ctx(adapter), vocabulary=[])
+    assert len(adapter.calls) == 6
+    assert all(sum(f'"{identifier}"' in prompt for identifier in ids) == 1 for prompt in adapter.calls)
+
+
+async def test_identify_slots_addition_is_source_pixels(perception):
+    slot = perception.slots[0]
+    response = _answer([slot.slot_id])
+    response.added_shapes = [AddedShape(box_norm=[800, 800, 950, 950], raw_confidence=0.5)]
+    answers = [response, *(_answer([other.slot_id]) for other in perception.slots[1:])]
+    result = await identify_slots(_image(), perception, _ctx(StubAdapter(*answers)), vocabulary=[])
+    added = result.added[0].box
+    crop = strip_box([slot], perception.image_size, pad=0.08)
+    assert crop.x1 <= added.x1 < added.x2 <= crop.x2 and crop.y1 <= added.y1 < added.y2 <= crop.y2
+
+
+async def test_identify_slots_failure_isolated(perception):
+    ids = [slot.slot_id for slot in perception.slots]
+    adapter = StubAdapter(_answer([ids[0]]), VisionError("boom"), *(_answer([identifier]) for identifier in ids[2:]))
+    result = await identify_slots(_image(), perception, _ctx(adapter), vocabulary=[])
+    by_id = {item.shape_id: item for item in result.identifications}
+    assert by_id[ids[1]].uncertain
+    assert all(not by_id[identifier].uncertain for identifier in ids if identifier != ids[1])
+    assert len(result.errors) == 1 and "boom" in result.errors[0]
+
+
+async def test_cancellation_propagates(perception):
+    with pytest.raises(asyncio.CancelledError):
+        await identify_slots(_image(), perception, _ctx(StubAdapter(asyncio.CancelledError())), vocabulary=[])

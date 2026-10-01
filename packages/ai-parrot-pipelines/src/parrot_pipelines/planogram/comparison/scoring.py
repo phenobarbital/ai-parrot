@@ -41,6 +41,8 @@ _RESOLVED = {
     FacingStatus.EMPTY,
     FacingStatus.INFERRED_PRESENT,
     FacingStatus.VARIANT_UNRESOLVED,
+    FacingStatus.EXPECTED_EMPTY,
+    FacingStatus.UNEXPECTED_OCCUPIED,
 }
 _OCCUPIED = {
     FacingStatus.MATCH,
@@ -49,6 +51,7 @@ _OCCUPIED = {
     FacingStatus.MISMATCH,
     FacingStatus.INFERRED_PRESENT,
     FacingStatus.OCCUPIED_UNASSIGNED,
+    FacingStatus.UNEXPECTED_OCCUPIED,
 }
 
 
@@ -79,6 +82,9 @@ def _decide(
 ) -> Tuple[FacingStatus, Optional[Identification]]:
     """Apply the 10-step decision list of the task Scope. Returns (status, deciding observation).
 
+    Facings with ``expected_occupancy == "empty"`` use a dedicated branch (EXPECTED_EMPTY /
+    UNEXPECTED_OCCUPIED / CONFLICT) after the not-visible / not-assessed steps.
+
     ``source`` is never consulted: evidence weights only feed ``evidence_quality``.
     """
     # 1. nothing registered
@@ -91,6 +97,13 @@ def _decide(
     occupied = [v for v in reliable if not _is_empty(v)]
     empty = [v for v in reliable if _is_empty(v)]
     admissible = [v for v in occupied if _is_admissible(v)]
+    # Expected-empty position (spec §2): emptiness is the compliant outcome; never MATCH/EMPTY.
+    if facing.expected_occupancy == "empty":
+        if occupied and empty:
+            return FacingStatus.CONFLICT, None
+        if not occupied:
+            return FacingStatus.EXPECTED_EMPTY, empty[0]
+        return FacingStatus.UNEXPECTED_OCCUPIED, admissible[0] if admissible else occupied[0]
     products = {_norm(v.product) for v in admissible}
     # 3. reliable disagreement
     if (occupied and empty) or len(products) >= 2:
@@ -370,8 +383,16 @@ def score_shelves(
         resolved = sum(1 for p in facings if policy.is_resolved(p.status))
         visible = sum(1 for p in facings if p.status != FacingStatus.NOT_VISIBLE)
         occupied = sum(
-            1 for p in facings if p.status in _OCCUPIED or any(o.occupancy == "occupied" for o in p.observations)
+            1
+            for p in facings
+            if p.status is not FacingStatus.EXPECTED_EMPTY
+            and (p.status in _OCCUPIED or any(o.occupancy == "occupied" for o in p.observations))
         )
+        mandatory = [outcomes[b.rule_id] for b in shelf_bindings if b.mandatory]
+        if count:
+            unit_coverage = resolved / count
+        else:
+            unit_coverage = sum(1 for o in mandatory if o.assessed) / len(mandatory) if mandatory else 0.0
         rule_results = [
             outcomes[b.rule_id]
             for b in shelf_bindings
@@ -386,7 +407,7 @@ def score_shelves(
                 facing_lenient=facing_lenient,
                 strict_score=_combine(strict_term, text_score, visual_score, (wp, wt, wv), multiplier),
                 lenient_score=_combine(lenient_term, text_score, visual_score, (wp, wt, wv), multiplier),
-                coverage=resolved / count if count else 1.0,
+                coverage=unit_coverage,
                 visible_fraction=visible / count if count else 0.0,
                 occupied_facings=occupied,
                 occupied_fraction=occupied / count if count else 0.0,
@@ -420,11 +441,25 @@ def summarize(
     else:
         overall, strict = 0.0, 0.0
     resolved = [p for p in positions if p.status in _RESOLVED]
-    coverage = len(resolved) / len(positions) if positions else None
-    deciding_weights = [weights.weight_for(p.observations[0].source) for p in resolved if p.observations]
-    evidence_quality = sum(deciding_weights) / len(deciding_weights) if deciding_weights else None
-    rules_complete = all(o.assessed for s in shelf_scores for o in s.rule_results)
-    complete = bool(shelf_scores) and len(resolved) == len(positions) and rules_complete
+    rule_results = [o for s in shelf_scores for o in s.rule_results]
+    if positions:
+        coverage = len(resolved) / len(positions)
+        deciding_weights = [weights.weight_for(p.observations[0].source) for p in resolved if p.observations]
+        evidence_quality = sum(deciding_weights) / len(deciding_weights) if deciding_weights else None
+    else:
+        # Zone-only run: coverage and evidence come from rule outcomes (spec §2 Stage 3).
+        coverage = sum(1 for o in rule_results if o.assessed) / len(rule_results) if rule_results else 0.0
+        rule_weights = [
+            weights.weight_for(o.observations[0].source) for o in rule_results if o.assessed and o.observations
+        ]
+        evidence_quality = sum(rule_weights) / len(rule_weights) if rule_weights else 0.0
+    rules_complete = all(o.assessed for o in rule_results)
+    complete = (
+        bool(shelf_scores)
+        and len(resolved) == len(positions)
+        and rules_complete
+        and (bool(positions) or bool(rule_results))
+    )
     return ComparisonResult(
         overall_compliance_score=overall,
         strict_compliance_score=strict,
