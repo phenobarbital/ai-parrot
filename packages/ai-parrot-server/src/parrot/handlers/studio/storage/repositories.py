@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -45,10 +46,18 @@ async def studio_transaction(pool: Any) -> AsyncIterator[Any]:
         await conn.transaction()
         try:
             yield conn
+            await conn.commit()
         except BaseException:
-            await conn.rollback()
+            await _safe_rollback(conn)
             raise
-        await conn.commit()
+
+
+async def _safe_rollback(conn: Any) -> None:
+    """Roll back shielded from cancellation; a failed rollback is logged and never masks the original error."""
+    try:
+        await asyncio.shield(conn.rollback())
+    except BaseException as exc:   # noqa: BLE001 — the original exception is re-raised by the caller
+        logger.error("studio transaction rollback failed: %r", exc)
 
 
 async def _exec(conn: Any, sql: str, *args: Any) -> Any:

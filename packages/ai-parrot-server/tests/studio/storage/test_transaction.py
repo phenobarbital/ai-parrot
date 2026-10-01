@@ -99,3 +99,31 @@ async def test_studio_transaction_real_postgres() -> None:
         async with pool.acquire() as conn:
             await conn.execute(f"DROP TABLE IF EXISTS {table}")
         await pool.close()
+
+
+async def test_commit_failure_rolls_back_and_reraises() -> None:
+    driver = _DriverDouble()
+
+    async def _boom():
+        driver.calls.append("commit")
+        raise RuntimeError("commit failed")
+
+    driver.commit = _boom
+    with pytest.raises(RuntimeError, match="commit failed"):
+        async with studio_transaction(_PoolDouble(driver)):
+            pass
+    assert driver.calls == ["transaction", "commit", "rollback"]
+
+
+async def test_failed_rollback_does_not_mask_original_error() -> None:
+    driver = _DriverDouble()
+
+    async def _bad_rollback():
+        driver.calls.append("rollback")
+        raise ConnectionError("rollback failed")
+
+    driver.rollback = _bad_rollback
+    with pytest.raises(ValueError, match="original"):
+        async with studio_transaction(_PoolDouble(driver)):
+            raise ValueError("original")
+    assert driver.calls == ["transaction", "rollback"]

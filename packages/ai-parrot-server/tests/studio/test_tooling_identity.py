@@ -11,7 +11,7 @@ from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 
 from parrot.handlers import agent as agent_module
-from parrot.handlers import toolkit_persistence
+from parrot.handlers import mcp_helper, toolkit_persistence
 from parrot.handlers.studio import toolkit_overrides as overrides
 from parrot.handlers.studio import tooling_store
 from parrot.handlers.studio._base import StudioUser
@@ -159,6 +159,14 @@ class _Session(dict):
     user_id = "user-1"
 
 
+class _RefSvc:
+    async def load(self, user_id, agent_id):
+        return [UserToolkitOverride(user_id=user_id, agent_id=agent_id, slug="jira")]
+
+    async def revision(self, user_id, agent_id):
+        return "r1"
+
+
 @pytest.mark.parametrize("tooling_ref,expected", [(None, "sales"), (REF, REF)])
 async def test_apply_overrides_session_keys_use_ref(monkeypatch, tooling_ref, expected) -> None:
     loaded = []
@@ -213,6 +221,8 @@ class _FakeDb:
 
     async def delete_many(self, collection, query):
         _FakeDb.calls.append(("delete_many", collection, query))
+        ids = query.get("_id", {}).get("$in")
+        _FakeDb.docs = [d for d in _FakeDb.docs if ids is not None and d["_id"] not in ids]
 
 
 async def test_purge_agent_returns_and_deletes(monkeypatch) -> None:
@@ -221,8 +231,101 @@ async def test_purge_agent_returns_and_deletes(monkeypatch) -> None:
     purged = await ToolkitConfigService().purge_agent(REF)
     assert [(p.user_id, p.slug) for p in purged] == [("u1", "jira"), ("u2", "jira")]
     q = {"agent_id": REF}
-    assert _FakeDb.calls == [("read", "user_toolkit_configs", q), ("delete_many", "user_toolkit_configs", q)]
+    assert _FakeDb.calls == [
+        ("read", "user_toolkit_configs", q),
+        ("delete_many", "user_toolkit_configs", {**q, "_id": {"$in": [1, 2, 3]}}),
+        ("read", "user_toolkit_configs", q),
+    ]
     _FakeDb.calls = []
     monkeypatch.setattr(_FakeDb, "docs", [])
     assert await ToolkitConfigService().purge_agent("studio-agent:none") == []
     assert [c[0] for c in _FakeDb.calls] == ["read"]
+
+
+async def test_purge_agent_returns_concurrent_writes(monkeypatch) -> None:
+    """A document written between the read and the delete is purged on the next pass, not silently lost."""
+
+    class RacyDb(_FakeDb):
+        batches = [
+            [{"_id": 1, "user_id": "u1", "agent_id": REF, "slug": "jira", "params": {}, "secret_refs": {}}],
+            [{"_id": 9, "user_id": "u9", "agent_id": REF, "slug": "jira", "params": {}, "secret_refs": {}}],
+            [],
+        ]
+        deleted: list = []
+
+        async def read(self, collection, query):
+            return [dict(d) for d in RacyDb.batches.pop(0)]
+
+        async def delete_many(self, collection, query):
+            RacyDb.deleted.append(query)
+
+    monkeypatch.setattr(toolkit_persistence, "DocumentDb", RacyDb)
+    purged = await ToolkitConfigService().purge_agent(REF)
+    assert [p.user_id for p in purged] == ["u1", "u9"]
+    assert RacyDb.deleted == [{"agent_id": REF, "_id": {"$in": [1]}}, {"agent_id": REF, "_id": {"$in": [9]}}]
+
+
+async def test_delete_override_falls_back_to_bare_name_when_agent_gone(monkeypatch) -> None:
+    class Gone:
+        def __init__(self, handler):
+            pass
+
+        async def load(self, name):
+            raise LookupError(name)
+
+    monkeypatch.setattr(overrides, "AgentToolingStore", Gone)
+    removed, deleted = AsyncMock(return_value=True), AsyncMock()
+    monkeypatch.setattr(overrides.ToolkitConfigService, "remove", removed)
+    monkeypatch.setattr(overrides, "delete_vault_credential", deleted)
+    session = {"URL-NAME_toolkit_overrides_rev": "x"}
+    dele = await _unwrap(overrides.StudioUserToolkitOverrideHandler.delete)(_handler("DELETE", None, session))
+    assert dele.status == 200
+    removed.assert_awaited_once_with("user-1", "URL-NAME", "jira")
+    assert session == {}
+
+
+# --------------------------------------------------------------------------- session-key read == write
+
+
+async def test_mcp_helper_session_key_matches_override_write_key(monkeypatch) -> None:
+    """A bot whose ``_tooling_ref`` differs from its name: the write key and the read key are the same."""
+    monkeypatch.setattr(agent_module, "ToolkitConfigService", _RefSvc)
+    bot = SimpleNamespace(
+        name="sales", _tooling_ref=REF, _pending_toolkit_specs=[], tool_manager=SimpleNamespace(clone=lambda: "BASE"),
+    )
+    session = _Session(seed="x")
+    await agent_module.AgentTalk._apply_user_toolkit_overrides(
+        SimpleNamespace(logger=logging.getLogger("t")), bot, session, None
+    )
+    assert f"{REF}_tool_manager" in session and "sales_tool_manager" not in session
+
+    from parrot.tools.manager import ToolManager
+
+    manager = ToolManager()
+    session[f"{REF}_tool_manager"] = manager
+    app = web.Application()
+    app["bot_manager"] = SimpleNamespace(get_bot=AsyncMock(return_value=bot))
+    request = make_mocked_request("GET", "/x", app=app)
+    request.session = session
+    assert await mcp_helper._get_tool_manager(request, "sales") is manager
+    assert "sales_tool_manager" not in session
+
+
+async def test_mcp_helper_legacy_key_unchanged() -> None:
+    from parrot.tools.manager import ToolManager
+
+    legacy = SimpleNamespace(name="sales")
+    app = web.Application()
+    app["bot_manager"] = SimpleNamespace(get_bot=AsyncMock(return_value=legacy))
+    request = make_mocked_request("GET", "/x", app=app)
+    request.session = session = _Session(seed="x")   # non-empty: an empty session is falsy
+    manager = await mcp_helper._get_tool_manager(request, "sales")
+    assert isinstance(manager, ToolManager) and session["sales_tool_manager"] is manager
+
+
+def test_no_name_based_tool_manager_keys_left() -> None:
+    import inspect
+
+    source = inspect.getsource(agent_module)
+    assert "f\"{agent.name}_tool_manager\"" not in source
+    assert "f\"{agent_name}_tool_manager\"" not in source

@@ -169,7 +169,12 @@ class StudioBaseView(BaseView):
 
     def _studio_storage(self) -> Any:
         """The resolved ``StudioStorage`` memoised on the app."""
-        return self.request.app["studio_storage"]
+        from .storage.models import StudioStorageUnavailable
+
+        storage = self.request.app.get("studio_storage")
+        if storage is None:   # the startup hook did not run → 503 studio_storage_unavailable
+            raise StudioStorageUnavailable("studio storage was not resolved at startup")
+        return storage
 
     async def _get_user(self) -> StudioUser:
         """Resolve the authenticated caller's identity from the session.

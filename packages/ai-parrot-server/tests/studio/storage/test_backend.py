@@ -145,3 +145,9 @@ async def test_real_postgres_resolves_database(studio_pool):
     app["database"] = studio_pool
     storage = await be.ensure_studio_storage(app)
     assert storage.backend == "database" and storage.repos is not None
+
+
+async def test_studio_storage_missing_raises_unavailable():
+    req = real_request(web.Application(), "GET", "/api/v1/astudio/agents")
+    with pytest.raises(StudioStorageUnavailable):
+        StudioBaseView(req)._studio_storage()

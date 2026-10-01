@@ -1611,7 +1611,7 @@ class AgentTalk(BaseView):
         # per-system-bot ToolManager swap is not applicable to them.
         user_tool_manager = None
         if request_session and not is_user_bot:
-            session_key = f"{agent.name}_tool_manager"
+            session_key = f"{agent_tooling_ref(agent)}_tool_manager"
             user_tool_manager = request_session.get(session_key)
             user_tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, user_tool_manager)
 
@@ -2123,7 +2123,7 @@ class AgentTalk(BaseView):
             summary: Dict[str, Any] = {
                 "agent": agent_name,
                 "message": "Tool configuration saved to session.",
-                "session_key": f"{agent_name}_tool_manager",
+                "session_key": f"{agent_tooling_ref(agent)}_tool_manager",
             }
             if tool_manager and isinstance(tool_manager, ToolManager):
                 summary["tool_count"] = tool_manager.tool_count()
@@ -2274,7 +2274,14 @@ class AgentTalk(BaseView):
 
             mcp_servers_list: list = []
             if request_session:
-                session_key = f"{agent_name}_tool_manager"
+                ref = agent_name
+                manager = self.request.app.get("bot_manager")
+                if manager is not None:
+                    try:
+                        ref = agent_tooling_ref(await manager.get_bot(agent_name))
+                    except Exception:   # unknown agent: legacy name-based key
+                        ref = agent_name
+                session_key = f"{ref}_tool_manager"
                 tool_manager = request_session.get(session_key)
                 if tool_manager and isinstance(tool_manager, ToolManager):
                     # Build serializable list from _mcp_configs
