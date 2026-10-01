@@ -160,7 +160,8 @@ def test_fixed_quantity_seeds_facings_and_range_is_unresolved(legacy_config):
     ]
     assert any("RR-60" in item for item in report.unresolved)
     assert any("slot order taken from list order" in w for w in report.warnings)
-    assert all(f["descriptors"] == {} for f in middle["facings"])  # never invents descriptors / prices
+    # descriptors carry only what the row states: the name, never an inferred attribute or a price
+    assert all(f["descriptors"] == {"display_name": f["product"]} for f in middle["facings"])
 
 
 def test_promotional_product_becomes_zone_with_zone_present_binding(legacy_config):
@@ -200,15 +201,28 @@ def test_fact_tags_are_not_facings(legacy_config):
     assert "Tag" not in products
 
 
-def test_candidate_validation_failure_is_unresolved(legacy_config):
-    """Missing descriptors are a blocking unresolved item, never merely a warning."""
+def test_candidate_validation_failure_is_unresolved():
+    """A candidate that does not validate is a blocking unresolved item, never merely a warning."""
+    report = _convert({"shelves": []})
+    assert any("candidate does not validate" in item for item in report.unresolved)
+
+
+def test_seeded_descriptors_make_the_candidate_load(legacy_config):
     report = _convert(legacy_config)
-    assert any("zero described positions" in item for item in report.unresolved)
-    for shelf in report.candidate["shelves"]:
-        for facing in shelf["facings"]:
-            facing["descriptors"] = {"display_name": facing["product"]}
+    assert not any("zero described positions" in item for item in report.unresolved)
+    assert any("seeded from name/aliases" in item for item in report.warnings)
     definition = load_slots_definition(report.candidate)
     assert len(validate_bindings(definition, {"rule_bindings": report.bindings})) == len(report.bindings)
+
+
+def test_seeding_carries_row_aliases_and_keeps_source_descriptors(legacy_config):
+    products = legacy_config["shelves"][1]["products"]
+    products[0]["aliases"] = ["ES400", " "]
+    products[1]["descriptors"] = {"display_name": "RapidReceipt 60", "aliases": ["RR60"]}
+    products[1]["aliases"] = ["ignored"]
+    facings = _convert(legacy_config).candidate["shelves"][1]["facings"]
+    assert facings[0]["descriptors"] == {"display_name": "ES-400", "aliases": ["ES400"]}
+    assert facings[2]["descriptors"] == {"display_name": "RapidReceipt 60", "aliases": ["RR60"]}
 
 
 def test_unknown_type_rejected():
@@ -403,3 +417,98 @@ async def test_preflight_issues_single_select(monkeypatch):
     monkeypatch.setitem(sys.modules, "asyncdb", types.SimpleNamespace(AsyncDB=AsyncDB))
     assert await preflight("postgresql://example") == []
     assert calls == [_PREFLIGHT_SQL]
+
+
+@pytest.fixture
+def stacked_promo_config() -> dict:
+    """Shelf-less endcap: three stacked graphics with source geometry, shelf-level and endcap-level text."""
+    return {
+        "advertisement_endcap": {
+            "enabled": True,
+            "position": "header",
+            "text_requirements": [{"required_text": "Goodbye Cartridges"}],
+        },
+        "shelves": [
+            {
+                "level": "bottom",
+                "y_start_ratio": 0.54,
+                "products": [{"name": "Base Offer", "product_type": "promotional_graphic"}],
+            },
+            {
+                "level": "header",
+                "y_start_ratio": 0.0,
+                "text_requirements": [{"required_text": "Hello Savings"}],
+                "products": [{"name": "Top Sign", "product_type": "promotional_graphic"}],
+            },
+            {
+                "level": "middle",
+                "y_start_ratio": 0.37,
+                "products": [{"name": "Comparison Table", "product_type": "promotional_graphic"}],
+            },
+        ],
+    }
+
+
+def _texts(report: ConversionReport, target_id: str) -> list:
+    binding = next(b for b in report.bindings if b["rule_id"] == f"text_requirements:{target_id}")
+    return [item["required_text"] for item in binding["params"]["requirements"]]
+
+
+def test_zone_selectors_follow_source_geometry(stacked_promo_config):
+    report = convert_config(stacked_promo_config, planogram_type="endcap_no_shelves_promotional")
+    ordinals = {s["zone_id"]: s["ordinal"] for s in report.layout_profile["zone_selectors"]}
+    assert ordinals == {"zone-header-1": 0, "zone-middle-1": 1, "zone-bottom-1": 2}
+    assert report.unresolved == []
+    assert any("y_start_ratio" in item for item in report.warnings)
+
+
+def test_zone_selectors_without_geometry_are_unresolved(stacked_promo_config):
+    del stacked_promo_config["shelves"][0]["y_start_ratio"]
+    report = convert_config(stacked_promo_config, planogram_type="endcap_no_shelves_promotional")
+    assert [s["ordinal"] for s in report.layout_profile["zone_selectors"]] == [0, 1, 2]  # list order
+    assert any("follow list order" in item for item in report.unresolved)
+
+
+def test_zone_only_keeps_endcap_and_shelf_text(stacked_promo_config):
+    report = convert_config(stacked_promo_config, planogram_type="endcap_no_shelves_promotional")
+    assert _texts(report, "zone-header-1") == ["Hello Savings", "Goodbye Cartridges"]
+
+
+def test_endcap_text_without_target_is_unresolved(stacked_promo_config):
+    stacked_promo_config["advertisement_endcap"]["position"] = "floor"
+    report = convert_config(stacked_promo_config, planogram_type="endcap_no_shelves_promotional")
+    assert any("advertisement_endcap" in item and "Goodbye Cartridges" in item for item in report.unresolved)
+    shelves = convert_config(stacked_promo_config, planogram_type="product_on_shelves")
+    assert any("advertisement_endcap" in item for item in shelves.unresolved)
+
+
+def test_shelf_level_text_binds_to_zone_or_shelf(legacy_config):
+    legacy_config["advertisement_endcap"]["enabled"] = False
+    legacy_config["shelves"][0]["text_requirements"] = [{"required_text": "Epic for Play"}]
+    legacy_config["shelves"][1]["text_requirements"] = ["Price Match"]
+    report = _convert(legacy_config)
+    assert _texts(report, "zone-header-1") == ["Epic for Play"]
+    assert _texts(report, "shelf-2") == ["Price Match"]
+
+
+def test_branding_types_become_zones_in_mixed_displays():
+    config = {
+        "shelves": [
+            {"level": "header", "products": [{"name": "Brand Header", "product_type": "signage"}]},
+            {
+                "level": "middle",
+                "products": [
+                    {"name": "TV", "product_type": "tv", "descriptors": {"display_name": "TV"}},
+                    {"name": "Product Information Materials", "product_type": "product_materials", "mandatory": False},
+                ],
+            },
+        ]
+    }
+    report = _convert(config)
+    kinds = {zone["zone_id"]: zone["kind"] for zone in report.candidate["zones"]}
+    assert kinds == {"zone-header-1": "graphic", "zone-middle-1": "information_label"}
+    assert [f["product"] for shelf in report.candidate["shelves"] for f in shelf["facings"]] == ["TV"]
+
+
+def test_skipped_fact_tags_are_warned(legacy_config):
+    assert any("fact/price tag" in item for item in _convert(legacy_config).warnings)
