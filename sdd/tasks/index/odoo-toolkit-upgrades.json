@@ -202,7 +202,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -212,8 +212,9 @@
       "parallelism_notes": "Needs TASK-3899: same two files (helpdesk.py, test_odoo_helpdesk_toolkit.py); its append anchors are move_ticket_to_stage and test_cancel_ticket_writes_reason_then_action from TASK-3899.",
       "assigned_to": null,
       "started_at": "2026-09-30T23:25:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3900-helpdesk-sla.md"
+      "completed_at": "2026-10-01T00:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3900-helpdesk-sla.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3901",
