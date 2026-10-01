@@ -16,7 +16,7 @@ tags: [a2ui, infographic, display-hints, formatting]
 
 **Date**: 2026-09-30
 **Author**: Juan Rodriguez + Claude
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: B
 
 ---
@@ -152,15 +152,35 @@ renderer:
    - Everything Option A does.
    - Forwards `ColumnDef.type/format` → `DataTable.columns[]`, series axes →
      `seriesAxes` (plus `yAxisLabels`), and hero `format/unit` → `KPICard`.
-3. **HTML lane**:
-   - A shared Python display formatter (`percent` = ratio, `currency`,
-     `number`, plus `unit`) that mirrors the admin UI's `a2ui-format.ts`.
-   - `_render_hero_card` and `_render_table` use it, so both lanes print the
-     same string for the same value.
-   - The HTML chart honours `axis: 'right'`.
-4. **Toolkit**: `_build_table_block` derives `ColumnDef.type` from the
+3. **HTML lane — reuse, don't write, a formatter**:
+   - The infographic HTML renderer reuses `format_cell`
+     (`ai-parrot-visualizations/.../a2ui_renderers/_table_format.py:41`,
+     FEAT-493). The A2UI `ssr_html` / `interactive_html` / PDF renderers
+     already use it for `DataTable` cells, and `kpi_value_display`
+     (`_semantics.py:135`) uses it for `KPICard.format`.
+   - `_render_hero_card` and `_render_table` call it, so every Python lane
+     prints the same string for the same value.
+   - **Align `format_cell` with `a2ui-format.ts`, which is the reference**
+     (it is what users see live). Today they disagree:
+
+     | Format | `format_cell` | `formatA2UIValue` |
+     |---|---|---|
+     | currency | `1,234.56`, no symbol | `$1,234.56` |
+     | number | 2 decimals | max 1 decimal |
+
+     After alignment, `format_cell` writes `$` for currency and at most 1
+     decimal for number.
+   - A parity test runs shared JSON fixtures through pytest
+     (`format_cell`) and vitest (`formatA2UIValue`), and fails on any drift.
+   - The infographic HTML chart honours `axis: 'right'`. The A2UI Python
+     renderers already do (`interactive_html.py`, `echarts.py`).
+4. **Admin UI**: its Svelte renderer gains `seriesAxes` / `yAxisLabels`
+   support. It is the only parrot renderer that lacks it. Without it, the
+   walkthrough's new hint would be ignored by parrot's own UI ("implemented
+   but never wired").
+5. **Toolkit**: `_build_table_block` derives `ColumnDef.type` from the
    DataFrame dtype (`integer`/`number`), a typed source rather than a guess.
-5. **Example**:
+6. **Example**:
    - The walkthrough sends raw numbers with hints: MRR `currency`, churn
      `percent` as a ratio, and New MRR on the right axis with
      `y_axis_labels=['USD', 'USD (new)']`.
@@ -174,10 +194,11 @@ renderer:
 - The HTML lane and the A2UI lane really are identical by construction.
 
 ❌ **Cons:**
-- It touches three packages: the models and adapter in `ai-parrot`, the
-  HTML renderer in `ai-parrot-visualizations`, and the walkthrough.
-- The Python formatter must not drift from `a2ui-format.ts`. This needs a
-  parity test over shared fixtures.
+- It touches the models and adapter in `ai-parrot`, the HTML renderers in
+  `ai-parrot-visualizations`, the admin UI, and the walkthrough.
+- Aligning `format_cell` with TS changes today's `ssr_html` / PDF output
+  for currency and `number` cells: currency gains `$`, and `number` drops
+  to 1 decimal. Their golden or snapshot tests move on purpose.
 - LLM-facing prompts (`bots/prompts/__init__.py:80-83`, which shows
   `"value": "$3.7M"`) and the template contract need updating, so the model
   learns the new optional fields.
@@ -188,12 +209,16 @@ renderer:
 | Package | Purpose | Notes |
 |---|---|---|
 | `pydantic` | optional fields on the block models | already the model layer |
-| stdlib `locale`-free formatting | mirror of `Intl.NumberFormat` (max 1 decimal, USD) | no new dependency, en-US fixed like the HTML lane's JS formatter |
+| `format_cell` (in-repo) | the one Python display formatter | already shared by `ssr_html` / `interactive_html` / PDF; no new module |
+| `vitest` | TS side of the parity test | already the admin UI test runner |
 
 🔗 **Existing Code to Reuse:**
 - `packages/ai-parrot/src/parrot/models/outputs.py` — `TableColumn` (type/format vocabulary), `SeriesAxis`
 - `packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/kpicard.py` — `format`/`unit` contract and instructions
-- `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-format.ts` — `formatA2UIValue`, the reference semantics for the Python mirror
+- `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-format.ts` — `formatA2UIValue`, the reference semantics
+- `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/_table_format.py` — `format_cell` (:41), `is_numeric_column`, `NUMERIC_TYPES`
+- `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/_semantics.py` — `kpi_value_display` (:135), `kpi_comparison_html` (:164)
+- `packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-chart-adapter.ts` — where the admin UI's `seriesAxes` support lands
 - `packages/ai-parrot-visualizations/src/parrot/outputs/formats/infographic_html.py` — `_render_hero_card` (:745), `_render_table` (:1190), `_render_progress` (:1329), `_CURRENCY_FORMATTER_JS` (:141)
 - `packages/ai-parrot/src/parrot/tools/infographic_toolkit.py` — `_build_table_block` (:1608), `_build_chart_block` (:1571)
 
@@ -291,7 +316,8 @@ admin UI, an A2A peer):
 
 - **Goal blocks read as goals.** A "Goal completion" heading is followed by
   `ARR target 90.4%`, `Churn under 2.0% 100%` and `NPS 50 target 92%`. When
-  a target is declared, it shows as the comparison text.
+  a target is declared, it shows as neutral comparison text (`vs 80% target`),
+  never as a coloured delta.
 - **Tables are typed.** Numeric columns arrive as numbers with
   `type`/`format`, so renderers right-align, sort numerically, and format
   currency and percent consistently. Declared alignment survives.
@@ -316,21 +342,31 @@ admin UI, an A2A peer):
   - A titled `progress` block closes the current section, opens one with
     `heading = title`, adds one `KPICard` per item, then closes it. Each
     card is `value = item.value / 100`, `format = 'percent'`,
-    `comparisonPeriod = "target N%"` when `target` is set, and `color`
-    forwarded.
+    `comparisonPeriod = "vs N% target"` when `target` is set (omitted
+    otherwise), and `color` forwarded. The target never goes in `delta`:
+    `delta` carries trend colouring and the `higherIsBetter` judgement, and
+    a target is neither a change nor good or bad news. All four renderers
+    already render `comparisonPeriod` neutrally: `_semantics.kpi_comparison_html`,
+    the admin UI `A2UINode.svelte:221`, and navigator-svelte's `MetricCard`.
   - An untitled `progress` keeps today's placement, in the current section,
     but with the same per-item fix.
   - `_table` forwards `align`, `type` and `format`. `_chart` builds
     `seriesAxes` (parallel to `y`) only when at least one series declares an
     axis, plus `yAxisLabels`. `_hero_card` forwards `format` and `unit`.
   - The docstring's "Known lossy degradations" list is corrected.
-- **HTML lane**:
-  - A small pure display formatter (new module beside the renderer, or in
-    `parrot.outputs`; open question) implements
-    `format_display_value(value, format, unit)` with `formatA2UIValue`'s
-    semantics.
-  - `_render_hero_card` and `_render_table` call it. The ECharts option
-    honours `axis: 'right'` with a second `yAxis`.
+- **HTML lanes**:
+  - There is no new formatter. `format_cell`
+    (`a2ui_renderers/_table_format.py`) is aligned with `formatA2UIValue`:
+    `$` for currency, at most 1 decimal for number, and percent unchanged.
+  - The infographic renderer's `_render_hero_card` / `_render_table` call
+    it. A `unit` is appended after a space, except for percent, matching
+    TS. The infographic ECharts option honours `axis: 'right'` with a
+    second `yAxis`.
+  - Shared fixtures (`value`, `type`, `format`, `unit` → expected string)
+    are a JSON file read by both a pytest and a vitest test.
+- **Admin UI**: `a2ui-chart-adapter.ts` / `A2UINode.svelte` map
+  `seriesAxes` / `yAxisLabels` to a second value axis, mirroring
+  navigator-svelte's `chart-option.ts:371,399`.
 - **Toolkit**: `_build_table_block` emits `ColumnDef` objects with `type`
   derived from pandas dtypes (int → `integer`, float → `number`). It never
   emits `format`, because a dtype carries no currency or percent meaning.
@@ -357,17 +393,20 @@ admin UI, an A2A peer):
   This is documented in the sectioning policy.
 - **Old payloads** (string hero values, `List[str]` columns): byte-identical
   envelope except for the progress/sectioning fix. The golden test proves it.
-- **The formatter pair drifts**: a parity test runs shared fixtures through
-  both the Python formatter and `a2ui-format.ts` (vitest) and compares the
-  strings.
+- **The formatter pair drifts**: the shared-fixture parity test (pytest +
+  vitest over one JSON file) fails on any difference.
+- **Compact notation** (`$1.20M`) is not part of `format`. `format` says what
+  the number *is*, and compact vs. full is how to *write* it. A hand-written
+  hero headline stays a string. Axes keep the renderer's own compact
+  formatter (`_CURRENCY_FORMATTER_JS`).
 
 ---
 
 ## Capabilities
 
 ### New Capabilities
-- `infographic-display-formatter`: a pure Python display formatter mirroring
-  `a2ui-format.ts`, shared by the HTML lane.
+- `a2ui-format-parity`: shared JSON fixtures plus a pytest and a vitest
+  test that pin `format_cell` and `formatA2UIValue` to the same strings.
 
 ### Modified Capabilities
 - `infographic-a2ui-adapter` (FEAT-470/527): lossless `progress` lowering
@@ -375,7 +414,10 @@ admin UI, an A2A peer):
 - `infographic-models`: optional display hints on `ColumnDef`,
   `ChartDataSeries`, `ChartBlock`, `HeroCardBlock`.
 - `infographic-html-renderer`: hero, table and chart honour the hints via
-  the shared formatter.
+  `format_cell`.
+- `a2ui-cell-formatter` (FEAT-493): `format_cell` aligned with
+  `formatA2UIValue` (`$` on currency, max 1 decimal on number).
+- `admin-ui-a2ui-chart`: `seriesAxes` / `yAxisLabels` in the admin UI renderer.
 - `infographic-toolkit-build-block`: typed `ColumnDef`s from DataFrame dtypes.
 - `a2ui-dashboard-walkthrough` (example): raw numbers + hints; README parity
   claim corrected.
@@ -395,6 +437,8 @@ admin UI, an A2A peer):
 | `packages/ai-parrot/src/parrot/bots/prompts/__init__.py`, `models/infographic_templates.py` | modifies | teach the optional fields |
 | `examples/agents/a2ui/` (walkthrough, `synthetic_data.py`, README) | modifies | raw numbers + hints |
 | admin UI `a2ui-format.ts` | depends on | reference semantics; parity test |
+| `packages/ai-parrot-visualizations/src/parrot/outputs/a2ui_renderers/_table_format.py` | modifies | currency `$`, number max 1 decimal; `ssr_html`/PDF outputs move on purpose |
+| admin UI `a2ui-chart-adapter.ts` / `A2UINode.svelte` | modifies | `seriesAxes` / `yAxisLabels` |
 | navigator-svelte A2UI renderer | consumer | already honours `format`, column `type`, `seriesAxes`; its `a2ui-renderer-visual-polish` brainstorm depends on this |
 | A2UI catalog / wire | unchanged | no version bump |
 
@@ -498,7 +542,8 @@ from parrot.outputs.a2ui.adapters.infographic import infographic_response_to_env
 - ~~`ColumnDef.type` / `ColumnDef.format`~~: only header/width/align/color.
 - ~~A per-series axis on `ChartDataSeries`~~: only name/values/color.
 - ~~`ChartBlock.y_axis_labels`~~: only the singular `y_axis_label`.
-- ~~A Python display formatter shared by the HTML lane~~: the only formatter is the JS `_CURRENCY_FORMATTER_JS` sentinel for chart axes. Hero and table values are printed with `escape(...)` verbatim.
+- ~~Infographic HTML lane formatting of hero/table values~~: `infographic_html.py` prints them with `escape(...)` verbatim. Its only formatter is the JS `_CURRENCY_FORMATTER_JS` axis sentinel. **A Python formatter DOES exist**, `format_cell` (`a2ui_renderers/_table_format.py:41`), used by the A2UI Python renderers. An earlier revision of this doc wrongly said none existed.
+- ~~A `compact` value in the `format` enum~~: deliberately not added (see Edge Cases).
 - ~~`seriesAxes`/`yAxisLabels` support in the admin UI renderer~~: no match under `packages/ai-parrot-server/ui/src/lib` (navigator-svelte does support it, `chart-option.ts:60,371,399`).
 - ~~`target` on any KPICard prop~~: the catalog has no target field (hence the `comparisonPeriod` text decision).
 
@@ -507,17 +552,19 @@ from parrot.outputs.a2ui.adapters.infographic import infographic_response_to_env
 ## Parallelism Assessment
 
 - **Internal parallelism**: the model change comes first, because everything
-  reads the new fields. After that, the adapter, the HTML lane plus the
-  formatter, and the toolkit's typed columns are independent files. The
-  walkthrough/README goes last.
+  reads the new fields. After that, these are independent files: the
+  adapter, the infographic HTML lane, the `format_cell` alignment plus the
+  parity test, the admin UI `seriesAxes`, and the toolkit's typed columns.
+  The walkthrough/README goes last.
 - **Cross-feature independence**:
   - No in-flight branch touches `adapters/infographic.py` or
     `models/infographic.py`. Checked against every `origin/*` ref on
     2026-09-30, and there are no open Jira tickets.
   - navigator-svelte's `a2ui-renderer-visual-polish` consumes the result.
     Its fixture should be regenerated after this lands.
-- **Recommended isolation**: `mixed`. Model first, then adapter /
-  HTML+formatter / toolkit as parallel tasks, then the example.
+- **Recommended isolation**: `mixed`. Model first. Then adapter / HTML lane
+  / formatter+parity / admin UI / toolkit as parallel tasks; the HTML lane
+  task depends on the formatter alignment. The example comes last.
 - **Rationale**: the shared surface is the model module only, and every
   later task touches a different package or file.
 
@@ -530,7 +577,8 @@ from parrot.outputs.a2ui.adapters.infographic import infographic_response_to_env
 - [x] Does a titled progress block get its own section? — *Owner: Juan*: Yes.
 - [x] How does the HTML lane handle raw numbers + format? — *Owner: Juan*: A shared Python formatter mirroring `a2ui-format.ts`.
 - [x] Hero value shape? — *Owner: Juan*: `value: str | float` plus optional `format`/`unit`.
-- [ ] Should `currency` gain a compact notation (`$1.20M`)? `formatA2UIValue` currency is full USD (`$1,203,456.78`), which is fine for tables but heavy for a hero KPI. Adding `compact` would touch the catalog enum and both renderers. Until then, the walkthrough keeps a string headline. — *Owner: Jesús*
-- [ ] Where does the Python formatter live: `ai-parrot` (`parrot.outputs`) so the adapter tests can share fixtures, or `ai-parrot-visualizations` next to its only caller? — *Owner: Jesús*
-- [ ] Should the admin UI renderer gain `seriesAxes` support in this feature, or in a follow-up? — *Owner: Jesús*
-- [ ] Is the target text `comparisonPeriod: "target 80%"` acceptable, or `delta`? `delta` gets trend colouring, which is wrong for a target. — *Owner: Jesús*
+- [x] Should `currency` gain a compact notation (`$1.20M`)? — *Owner: Juan*: No, not now. `format` states meaning and compact is notation. A hand-written headline stays a string (`value: str | float` already allows it). If it is ever needed, it becomes a separate optional `notation: 'compact'` prop, never a new `format` value.
+- [x] Where does the Python formatter live? — *Owner: Juan*: Nowhere new. Reuse `format_cell` (`ai-parrot-visualizations/.../a2ui_renderers/_table_format.py`), which sits in the same package as the infographic HTML renderer. Align it with `a2ui-format.ts`, which is the reference (`$` on currency, max 1 decimal on number), and pin both with a shared-fixture parity test.
+- [x] Does the admin UI renderer gain `seriesAxes` support in this feature? — *Owner: Juan*: Yes, as its own small task. It is the only parrot renderer without it, and the walkthrough starts emitting the hint.
+- [x] Does the target go in `comparisonPeriod` or `delta`? — *Owner: Juan*: `comparisonPeriod`, worded `vs N% target`, and omitted when there is no target. Never `delta`, which carries trend colour and the `higherIsBetter` judgement.
+- [ ] Is changing `format_cell`'s currency/number output acceptable for existing `ssr_html` / PDF consumers? Nothing is known to depend on the bare `1,234.56` form. — *Owner: Jesús*
