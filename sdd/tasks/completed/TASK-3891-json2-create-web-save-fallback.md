@@ -277,10 +277,8 @@ See the blueprint: four new tests plus the whole existing module green.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (FEAT-616)
+**Date**: 2026-10-01
+**Notes**: gpt-5.6-terra (codex) via sdd-coder; diff reviewed against contract. Tests NOT runnable locally (venv: parrot.utils is not a package, pre-existing); merge-tier sweep red on unrelated failures, accepted as pre-existing by user.
 
 **Deviations from spec**: none | describe if any

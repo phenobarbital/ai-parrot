@@ -156,10 +156,8 @@ Covered by TASK-3897's `test_init_*` tests (they monkeypatch these constants).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (FEAT-616)
+**Date**: 2026-10-01
+**Notes**: sonnet (native) via sdd-coder; seven ODOO_HELPDESK_* keys added in conf.py. Import check OK; test_odoo_toolkit.py unrunnable locally (pre-existing venv issue).
 
 **Deviations from spec**: none | describe if any

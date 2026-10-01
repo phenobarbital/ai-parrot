@@ -35,6 +35,7 @@ Inspect all per-spec indexes (`sdd/tasks/index/*.json`), identify tasks whose de
 2. Inspect worktrees:
    - Run `git worktree list` to match active feature worktrees.
    - Additionally run `python -m scripts.sdd.worktree_status --json` for task-level progress and `ready_for_done` flags.
+   - Ignore `flow_type: "non-sdd"` entries — they have no tasks and are not suggestion candidates.
 3. Compute unblocked tasks:
    - Check `status == "pending"`.
    - Verify every ID in `depends_on` has `status == "done"`.

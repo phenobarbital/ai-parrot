@@ -212,6 +212,19 @@ is retired:
 
 ## Completion Note
 
-<!-- filled in on completion -->
-**Completed by**:
-**Date**:
+**Completed by**: Claude Opus 5 (/sdd-fix issue:c3c59277ef77)
+**Date**: 2026-10-01
+**Verification**: verified.
+
+- `test_exceptions.py` — path now `packages/ai-parrot/src/parrot/exceptions.py`.
+  **20 tests pass**, so the by-path load (deliberate, to bypass a stale `.so`) works
+  against the real module; this was a stale path, not dead coverage.
+- `test_expense_approval.py` — module-level `pytest.skip(..., allow_module_level=True)`
+  when `_AGENT_PATH` is absent. Collects clean, reports **skipped** with a reason
+  naming the path. Still runs for anyone holding the agent file locally.
+- `test_cryptoquant_integration.py` — **deleted**. The mandatory pre-delete re-check
+  (`find packages -name '*cryptoquant*'`) matched only the test file itself and its
+  `__pycache__`; no toolkit source anywhere in the workspace. User confirmed the
+  disposition on 2026-10-01.
+
+AC-1..AC-6 all ✅.

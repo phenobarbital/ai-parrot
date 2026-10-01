@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-619 — worktree_status Tech-Debt Drain (FEAT-582 follow-up)
 **Spec**: `sdd/specs/sdd-worktree-status-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -536,8 +536,41 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Opus 5 (`/sdd-fix issue:07b75dc7dfae`)
+**Date**: 2026-10-01
+**Notes**: Implemented exactly as blueprinted (flow_type literal,
+`_is_under_worktree_root`, resolved root, sorted iteration + sorted return,
+pool guard, non-SDD emission, reconcile filter), plus ONE unplanned guard
+described below. 8 new tests in `TestNonSddWorktrees`, plus a
+`_discover_with_branches` helper alongside the existing single-worktree one.
+Suite: 37 → 45 passing; `ruff check` clean on both files.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one addition, no removals.
+
+The blueprint's two guards (primary checkout by path containment, pool
+sub-worktrees by `_POOL_SUB_WORKTREE_RE`) were necessary but NOT sufficient.
+Running the new code against the real checkout produced **54 non-SDD rows, 35
+of them on branch `dev`**. Cause: `discover_worktree_reports`' orphan scan adds
+every *directory* under `WORKTREE_ROOT` that git does not know as a worktree —
+including the sdd-coder `--pool` CONTAINER directories (17 of them here) and
+leftover directories whose worktree was removed. For those, the `branch is
+None` fallback runs `git rev-parse --abbrev-ref HEAD` with `cwd` inside the
+directory; since `.claude/worktrees/` sits inside the primary checkout, git
+walks UP and returns the primary checkout's branch, `dev`. That was harmless
+before this task (`dev` never parsed as an SDD branch, so the row was dropped)
+and became 35 bogus rows the moment unparseable branches started being emitted.
+
+Fix: require `(wt_path / ".git").exists()` before the rev-parse fallback — a
+real git worktree carries its own `.git` file, a bare directory does not. This
+restores exactly the pre-task outcome for those directories (skipped) while
+letting genuine non-SDD worktrees through. Covered by
+`test_orphan_directory_without_git_is_not_reported`.
+
+Verified against the live checkout: 32 reports, 19 non-SDD, matching
+`git worktree list` exactly — no `--pool` rows, no primary-checkout row,
+order equal to its own `sorted()`.
+
+Note for later tasks: this does NOT make the orphan scan meaningful for
+leftover directories — they are now simply skipped rather than mis-reported.
+Surfacing them properly would need a different branch source than `rev-parse`
+and is outside both this feature's spec and the ledger issues it drains.

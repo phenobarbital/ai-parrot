@@ -124,6 +124,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "download_share_point_file": "parrot_tools.o365.sharepoint.DownloadSharePointFileTool",
     "upload_share_point_file": "parrot_tools.o365.sharepoint.UploadSharePointFileTool",
     "delta_share_point_files": "parrot_tools.o365.sharepoint.DeltaSharePointFilesTool",
+    "odoo_helpdesk": "parrot_tools.odoo.helpdesk.OdooHelpdeskToolkit",
     "odoo": "parrot_tools.odoo.toolkit.OdooToolkit",
     "open_weather": "parrot_tools.openweather.OpenWeatherTool",
     "pdf_print": "parrot_tools.pdfprint.PDFPrintTool",

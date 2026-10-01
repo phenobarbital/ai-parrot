@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-619 — worktree_status Tech-Debt Drain (FEAT-582 follow-up)
 **Spec**: `sdd/specs/sdd-worktree-status-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-3915
@@ -451,8 +451,27 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Opus 5 (`/sdd-fix issue:07b75dc7dfae`)
+**Date**: 2026-10-01
+**Notes**: Implemented exactly as blueprinted. Tests: 3 new `TestHealth`
+methods, 2 new `TestReadyForDone` methods (the blueprint asked for 1 — split
+per git call so a regression names which signal broke), 1 parametrized
+`TestReadWorktreeIndex` method over the three exception subtypes, plus the two
+additive assertions on `test_git_missing_worktree_directory_does_not_raise`
+(its original assertions untouched). Suite: 45 → 53 passing; `ruff check` clean.
 
-**Deviations from spec**: none | describe if any
+The blueprint's FILL IN noted `_discover_with_fake_worktree` could not express
+a failing git call. Resolved by giving that pre-existing helper two new
+keyword-only parameters, `status_rc=0` / `log_rc=0`, which are backwards
+compatible — every existing call site is unchanged.
+
+**Negative control** (to prove the new tests are not vacuous): loaded the
+pre-task module from `git show HEAD:scripts/sdd/worktree_status.py` and ran the
+new cases against it. `PermissionError`, `IsADirectoryError` and
+`UnicodeDecodeError` all PROPAGATED out of `_read_worktree_index`, and
+`_check_health` on a missing directory returned
+`{dirty_count: 0, unpushed_count: 0, live_process_count: 0}` with no
+`dirty_unknown` attribute — i.e. it reported a broken worktree as clean, which
+is precisely `issue:6b0b91e1f5b2`.
+
+**Deviations from spec**: none.

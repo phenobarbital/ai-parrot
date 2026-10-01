@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-619 — worktree_status Tech-Debt Drain (FEAT-582 follow-up)
 **Spec**: `sdd/specs/sdd-worktree-status-tech-debt.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -361,8 +361,39 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Opus 5 (`/sdd-fix issue:07b75dc7dfae`)
+**Date**: 2026-10-01
+**Notes**: Five of the six declared files edited with the verbatim blueprint
+blocks. `pytest tests/sdd_scripts/test_command_twin_parity.py
+tests/sdd_scripts/test_command_contracts.py -q` → 18 passed. No `.py` file
+touched. The `chore-ruff-config  (non-SDD)` worked example is byte-unchanged in
+both sdd-status copies, and the sdd-status twin bodies are still identical
+(verified by a Python frontmatter-stripping comparison, not the shell `sed`
+one-liner — see below).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: one file dropped, for cause.
+
+1. `.agent/workflows/sdd-next.md` was NOT edited. This task's Codebase Contract
+   claimed it was the byte-identical twin of `.claude/commands/sdd-next.md`.
+   It is not: 131 vs 152 lines, 4847 vs 5710 body bytes, and it contains **no
+   `worktree_status` section at all** — so there is no lookup to qualify and no
+   anchor to attach to. Adding a "skip non-sdd entries" note to a file that
+   never describes the lookup would be incoherent. This is a pre-existing
+   divergence, far larger than this feature, and reconciling it is out of
+   scope. Filed as a ledger issue instead.
+
+   The `sdd-status` pair IS a true twin (7485 bytes both sides, before and
+   after) and both copies were edited identically, as required.
+
+2. The `diff <(sed '1,/^---$/d;1,/^---$/d' …)` recipe in this task's Codebase
+   Contract is unreliable — it reported the `sdd-next` pair as identical when
+   the files differ by 863 bytes. Use a real frontmatter strip instead; the
+   repo's own `tests/sdd_scripts/test_command_twin_parity.py::_strip_frontmatter`
+   is the correct implementation, and it covers only `sdd-spec` and `sdd-task`,
+   so neither `sdd-status` nor `sdd-next` has automated drift protection.
+
+3. `git add` needs `-f` for these paths from inside a worktree: `.claude/` and
+   `.agent/` match a `.gitignore` directory rule, and although the five files
+   are tracked (so the rule does not actually apply to them), plain `git add`
+   emits an advisory failure. `git add -f` is correct and safe here precisely
+   because every path is already tracked.

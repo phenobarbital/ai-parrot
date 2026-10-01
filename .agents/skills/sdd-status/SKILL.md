@@ -51,7 +51,8 @@ Aggregate task states across all per-spec indexes (`sdd/tasks/index/*.json`) and
 5. Print summary totals (done, done-with-issues, in-progress, pending, total).
 6. Show worktree summary (FEAT-582):
    - List all SDD worktrees with: name, branch, task progress (N/M done), health flags, ready-for-done.
-   - Non-SDD worktrees show health only, no task counts.
+   - Non-SDD worktrees (`flow_type: "non-sdd"`) show health only, no task counts; mark them ` (non-SDD)`.
+   - A `dirty_unknown`/`unpushed_unknown` worktree renders `unknown`, never `clean`, and is never ready for `/sdd-done`.
    - Flag `✅ Ready for /sdd-done` when `ready_for_done: true`, and `🧹 Stale — dev is ahead` when the feature's reconciled entry has `worktree_stale: true`.
    - Include worktree count in the summary line.
 

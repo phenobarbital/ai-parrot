@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T22:58:12+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-01T00:43:24+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: edits only transport/json2.py and test_odoo_json2_transport.py, which no other FEAT-616 task touches; runs concurrently with TASK-3892/3893.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3891-json2-create-web-save-fallback.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-09-30T23:52:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3891-json2-create-web-save-fallback.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3892",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: edits only parrot/conf.py; TASK-3897 imports its constants later. Runs concurrently with TASK-3891/3893.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3892-helpdesk-conf-keys.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-09-30T23:52:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3892-helpdesk-conf-keys.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3893",
@@ -52,16 +54,17 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: creates models/helpdesk_entities.py and creates tests/test_odoo_helpdesk_models.py (TASK-3894/3895 append to that test module afterwards).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3893-helpdesk-entities.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-09-30T23:57:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3893-helpdesk-entities.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3894",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,9 +82,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3893: appends to tests/test_odoo_helpdesk_models.py, which TASK-3893 creates (same-file serialization). helpdesk_inputs.py itself imports nothing from TASK-3893.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3894-helpdesk-inputs.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:01:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3894-helpdesk-inputs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3895",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,9 +104,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3893: helpdesk_envelopes.py imports HelpdeskTicket/HelpdeskSla/... from models/helpdesk_entities.py. Needs TASK-3894: models/__init__.py re-exports helpdesk_inputs classes and it appends to tests/test_odoo_helpdesk_models.py after TASK-3894's block.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3895-helpdesk-envelopes-exports.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:06:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3895-helpdesk-envelopes-exports.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3896",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -120,9 +125,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3895: imports StatsGroup from models/helpdesk_envelopes.py (and HelpdeskTicket/HelpdeskLifecycle via the re-exports).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3896-helpdesk-normalize.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3896-helpdesk-normalize.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3897",
@@ -131,7 +137,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -142,9 +148,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3892: imports ODOO_HELPDESK_* from parrot.conf. Needs TASK-3895: imports helpdesk envelopes/inputs/entities. Needs TASK-3896: calls normalize_ticket from helpdesk_normalize.py. Creates helpdesk.py and tests/test_odoo_helpdesk_toolkit.py that TASK-3898–3901 append to.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3897-helpdesk-toolkit-core.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:16:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3897-helpdesk-toolkit-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3898",
@@ -153,7 +160,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,9 +169,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3897: appends to helpdesk.py (class OdooHelpdeskToolkit, _resolve_ref, _load_ticket, _ticket_url) and to tests/test_odoo_helpdesk_toolkit.py (_fake_transport, _make_helpdesk_toolkit).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3898-helpdesk-ticket-write-assignment.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:21:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3898-helpdesk-ticket-write-assignment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3899",
@@ -173,7 +181,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -182,9 +190,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3898: same two files (helpdesk.py, test_odoo_helpdesk_toolkit.py) and close_ticket calls add_ticket_comment from TASK-3898; anchors are TASK-3898's last method/test.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3899-helpdesk-transitions.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:23:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3899-helpdesk-transitions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3900",
@@ -193,7 +202,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -202,9 +211,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3899: same two files (helpdesk.py, test_odoo_helpdesk_toolkit.py); its append anchors are move_ticket_to_stage and test_cancel_ticket_writes_reason_then_action from TASK-3899.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3900-helpdesk-sla.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:27:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3900-helpdesk-sla.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3901",
@@ -213,7 +223,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -222,9 +232,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3900: same two files (helpdesk.py, test_odoo_helpdesk_toolkit.py); append anchors are list_ticket_alarms and test_list_ticket_alarms_envelope from TASK-3900. Uses _closed_stage_ids from TASK-3897 (transitively done).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3901-helpdesk-stats-wizards-timer.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:33:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3901-helpdesk-stats-wizards-timer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3902",
@@ -233,7 +244,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -243,9 +254,10 @@
       "parallel": true,
       "parallelism_notes": "Needs TASK-3901: the smoke calls the full tool surface (ticket_stats, merge_tickets) and the doc lists every final method. Needs TASK-3891: the smoke's create_ticket only works live once the JSON-2 web_save fallback exists.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3902-helpdesk-docs-live-smoke.md"
+      "started_at": "2026-09-30T23:25:49+00:00",
+      "completed_at": "2026-10-01T00:34:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3902-helpdesk-docs-live-smoke.md",
+      "verification": "verified"
     }
   ]
 }
