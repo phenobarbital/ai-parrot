@@ -196,10 +196,8 @@ app.get("ui_surfaces_scope_resolver")` (X9 names); once FEAT-605 W0.1 merges use
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: manager.py: BotManager.studio (None until install_studio_runtime sets it), get_studio_bot(key, *, new, session_id, request) (new=False: studio.get then PBAC on key.qualified; new=True: PBAC first, then get_session; StudioStorageUnavailable when no runtime; ValueError for new=True without a session_id, because an empty id would share one test session between users), the single additive get_bot fallback (_studio_global_fallback: runtime installed AND no scope resolver per handlers.scope.has_installed_resolver -> studio.get(StudioAgentKey(None, name)), PBAC on the bare name, a failed/refused build is 'not served' = None, instance never added to _bots/_botdef), and add_studio_runtime_hooks(self.app) in setup(). _load_database_bots untouched (asserted). Finding: legacy get_bot(name, new=True) on an UNKNOWN bare name builds a default BasicAgent session clone and registers it in _bots (pre-existing behaviour); the warm-cache test asserts that clone is never a Studio instance rather than None. 9 tests; 12 mutations RED, 1 equivalent (the studio-is-None early exit; the AttributeError is caught by the same except). Whole tests/manager: 125 pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

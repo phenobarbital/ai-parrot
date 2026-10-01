@@ -141,6 +141,9 @@ from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 if TYPE_CHECKING:
     from parrot.integrations import IntegrationBotManager
 
+    from ..handlers.studio.storage.models import StudioAgentKey
+    from .studio_runtime import StudioAgentRuntime
+
 
 class AgentNotFoundError(ParrotError):
     """Raised by :meth:`BotManager.reload_agent` for an unknown agent name.
@@ -243,6 +246,9 @@ class BotManager:
         self._bot_expiration: Dict[str, float] = {}  # Track expiration timestamps for temporary bots
         self._cleanup_task: Optional[asyncio.Task] = None  # Background cleanup task
         self._cleaned_up: set[str] = set()  # Idempotency guard for _safe_cleanup
+        # Studio runtime (FEAT-621): installed by ``install_studio_runtime`` when the storage backend is ``database``.
+        # Its instances live in its own cache, never in ``_bots``/``_botdef``.
+        self.studio: "StudioAgentRuntime | None" = None
         self.logger = logging.getLogger(name="Parrot.Manager")
         self.registry: AgentRegistry = agent_registry
         self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
@@ -899,7 +905,52 @@ class BotManager:
                 # AgentAccessDenied is NOT swallowed as "Failed to get bot instance".
                 await enforce_agent_access(self.registry.evaluator, name, request)
                 return bot_instance
-        return None
+        return await self._studio_global_fallback(name, request)
+
+    async def _studio_global_fallback(self, name: str, request: Optional[web.Request]) -> Optional[AbstractBot]:
+        """The only additive ``get_bot`` fallback (Q9): a GLOBAL (tenant NULL) Studio agent by bare name.
+
+        Only when the Studio runtime is installed (``database`` backend) and the app has no scope resolver
+        (a plain host); tenant rows are never reachable by name. The instance stays in the Studio cache.
+        """
+        if self.studio is None or has_installed_resolver(self.app):
+            return None
+        from ..handlers.studio.storage.models import StudioAgentKey
+
+        try:
+            bot = await self.studio.get(StudioAgentKey(None, name))
+        except Exception as exc:  # noqa: BLE001 — a refused/failed Studio build is "not served" on the legacy path
+            self.logger.warning("Studio fallback for '%s' failed: %r", name, exc)
+            return None
+        if bot is not None:
+            await enforce_agent_access(self.registry.evaluator, name, request)
+        return bot
+
+    async def get_studio_bot(
+        self, key: "StudioAgentKey", *, new: bool = False, session_id: str = "", request: Optional[web.Request] = None
+    ) -> Optional[AbstractBot]:
+        """A Studio agent by qualified key, from the Studio runtime cache (never ``_bots``).
+
+        ``new=False`` → the revalidated base instance, then PBAC on ``key.qualified``. ``new=True`` (test chat) →
+        PBAC first (before any build, the FEAT-153 ordering), then the session instance for ``session_id``.
+
+        Raises:
+            StudioStorageUnavailable: the Studio runtime is not installed (backend is not ``database``).
+            ValueError: ``new=True`` without a ``session_id``.
+        """
+        if self.studio is None:
+            from ..handlers.studio.storage.models import StudioStorageUnavailable
+
+            raise StudioStorageUnavailable("studio runtime is not installed")
+        if new:
+            if not session_id:
+                raise ValueError("get_studio_bot(new=True) requires a session_id")
+            await enforce_agent_access(self.registry.evaluator, key.qualified, request)
+            return await self.studio.get_session(key, session_id)
+        bot = await self.studio.get(key)
+        if bot is not None:
+            await enforce_agent_access(self.registry.evaluator, key.qualified, request)
+        return bot
 
     def remove_bot(self, name: str) -> None:
         """Remove a Bot by name."""
@@ -2311,6 +2362,10 @@ class BotManager:
         # Register per-bot cleanup BEFORE shared-Redis cleanup so bots can
         # still use app['redis'] inside their own cleanup() coroutines.
         self.app.on_cleanup.append(self._cleanup_all_bots)
+        # Studio runtime (FEAT-621): hooks added once per app; a no-op at startup unless the backend is ``database``.
+        from .studio_runtime import add_studio_runtime_hooks
+
+        add_studio_runtime_hooks(self.app)
         # Publish a shared Redis client so every ai-parrot component that
         # expects ``app['redis']`` (navigator-auth refresh-token rotation,
         # FEAT-108 VaultTokenSync, Jira OAuth state, etc.) finds one. If a

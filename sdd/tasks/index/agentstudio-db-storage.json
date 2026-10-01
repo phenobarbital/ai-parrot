@@ -459,7 +459,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -469,8 +469,9 @@
       "parallelism_notes": "calls StudioAgentRuntime/add_studio_runtime_hooks from TASK-3942 (manager/studio_runtime.py); second FEAT-621 edit of manager/manager.py after TASK-3941 (transitive)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3943-manager-studio-lookup.md"
+      "completed_at": "2026-10-01T23:10:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3943-manager-studio-lookup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3944",
