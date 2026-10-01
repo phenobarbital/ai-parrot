@@ -101,6 +101,14 @@ def test_untagged_bottom_row_only_with_room():  # AC-5
     assert not [s for s in slots if s.row_index == 3]
 
 
+def test_untagged_bottom_row_never_exceeds_known_rows():
+    """No row is synthesized below a fixture whose rows are all anchored: that room is the floor."""
+    rows = group_rows(_tag_rows(n_rows=2), W)
+    options = dict(image_id="img", rule=AnchorRule.TAG_BELOW_PRODUCT, untagged_bottom_row=True)
+    assert {s.row_index for s in build_slots(rows, (W, H), max_rows=2, **options)} == {0, 1}
+    assert {s.row_index for s in build_slots(rows, (W, H), max_rows=3, **options)} == {0, 1, 2}
+
+
 def test_shape_is_slot_rule():  # AC-6
     """SHAPE_IS_SLOT: one slot per candidate, same box, anchored to the candidate id."""
     rows = group_rows(_tag_rows(), W)

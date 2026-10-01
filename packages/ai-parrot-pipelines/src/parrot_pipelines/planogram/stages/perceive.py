@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from PIL import Image
@@ -47,6 +47,12 @@ def _profile(ctx: CycleContext) -> LayoutProfile:
     if ctx.layout is None:
         raise ValueError("CycleContext.layout is not set")
     return ctx.layout
+
+
+def _expected_rows(ctx: CycleContext) -> Optional[int]:
+    """Shelves of the definition that carry facings; ``None`` when the run has no definition."""
+    shelves = getattr(ctx.definition, "shelves", None) or []
+    return sum(1 for shelf in shelves if shelf.facings) or None
 
 
 def _shape_from_candidate(image_id: str, candidate: ShapeCandidate) -> Shape:
@@ -227,6 +233,7 @@ async def rebuild_geometry(
         rule=profile.anchor_rule,
         fill_gaps=profile.fill_gaps,
         untagged_bottom_row=profile.untagged_bottom_row,
+        max_rows=_expected_rows(ctx),
     )
     slots = [
         slot.model_copy(update={"anchor_shape_id": by_candidate.get(slot.anchor_shape_id or "", slot.anchor_shape_id)})

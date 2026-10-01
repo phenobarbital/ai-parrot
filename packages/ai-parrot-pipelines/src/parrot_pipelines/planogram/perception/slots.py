@@ -120,6 +120,7 @@ def build_slots(
     rule: AnchorRule,
     fill_gaps: bool = True,
     untagged_bottom_row: bool = False,
+    max_rows: Optional[int] = None,
 ) -> List[Slot]:
     """Build every slot of one image. Reference: plancheck/grid.py:78.
 
@@ -131,6 +132,8 @@ def build_slots(
         fill_gaps: Insert inferred slots for unambiguous holes (``TAG_BELOW_PRODUCT`` only).
         untagged_bottom_row: Synthesize a last row below the last anchored row when room remains
             (``TAG_BELOW_PRODUCT`` only).
+        max_rows: Rows the fixture is known to have (shelves of the definition). The bottom row is not
+            synthesized once that many anchored rows are visible: the room below them is not the fixture.
 
     Returns:
         Slots ordered by row then left→right. ``slot_index`` is 1..n per row after gap filling;
@@ -186,7 +189,8 @@ def build_slots(
             anchor_id = candidate_shape_id(image_id, anchor) if anchor else None
             slots.append(_slot(image_id, r, index, box, anchor_id))
 
-    if untagged_bottom_row and len(anchored) >= 2 and last_columns:
+    room_for_row = max_rows is None or len(anchored) < max_rows
+    if untagged_bottom_row and room_for_row and len(anchored) >= 2 and last_columns:
         xc = width / 2
         pitches = [
             _line_y(lines[b], xc) - _line_y(lines[a], xc)  # type: ignore[arg-type]
