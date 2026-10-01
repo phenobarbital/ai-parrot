@@ -115,7 +115,7 @@ def test_perception_marks_band_members_and_drops_the_neighbour():
     assert [zone.shape_id for zone in banded_zones(list(zones.values()), "middle")] == ["panel", "table_title"]
 
 
-def _run_rules(zones, texts, illumination, bindings):
+def _run_rules(zones, texts, illumination, bindings, features=None):
     perception = PerceptionResult(image_id="img0", image_size=SIZE, zones=_match_zone_selectors(zones, SELECTORS, SIZE))
     identification = IdentificationResult(
         image_id="img0",
@@ -133,6 +133,17 @@ def _run_rules(zones, texts, illumination, bindings):
                 source=ObservationSource.LLM,
             )
             for shape_id, state in illumination.items()
+        ]
+        + [
+            RuleObservation(
+                image_id="img0",
+                target_id=shape_id,
+                kind="visual_features",
+                value=phrases,
+                assessed=True,
+                source=ObservationSource.LLM,
+            )
+            for shape_id, phrases in (features or {}).items()
         ],
     )
     ctx = CycleContext(
@@ -176,6 +187,15 @@ def test_text_of_every_fragment_counts_for_its_zone_only():
     assert (
         outcomes["text_requirements:bottom"].assessed is True and outcomes["text_requirements:bottom"].passed is False
     )
+
+
+def test_phrases_read_off_a_zone_crop_are_text_evidence_for_that_zone_only():
+    bindings = [_text_rule("bottom", "Special Offer"), _text_rule("header", "Special Offer")]
+    outcomes = _run_rules(
+        _zones(), {"base": "Why print?"}, {}, bindings, {"base": ["EPSON logo", "Special Offer insert"]}
+    )
+    assert outcomes["text_requirements:bottom"].passed is True
+    assert outcomes["text_requirements:header"].passed is False
 
 
 def test_a_band_without_fragments_is_not_observed_not_ambiguous():

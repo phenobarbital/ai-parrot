@@ -278,6 +278,15 @@ def _entity_texts(
                         if text:
                             features.extend([f"ocr:{text}", text])
                     refs.append(_ref(image_id, identification.shape_id, identification.source))
+            # Phrases read off the zone's own crop (logos, headlines, inserts) are text evidence too.
+            for observation in result.rule_observations:
+                if (
+                    observation.target_id == shape.shape_id
+                    and observation.kind == "visual_features"
+                    and observation.assessed
+                    and isinstance(observation.value, (list, tuple))
+                ):
+                    features.extend(str(phrase) for phrase in observation.value if phrase)
     for image_id, identification in _registered_identifications(
         binding.target_id,
         registrations,
