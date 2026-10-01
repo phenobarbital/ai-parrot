@@ -22,7 +22,6 @@ from ..contracts import (
     IdentificationResult,
     IdentifyStrategy,
     PerceptionResult,
-    Shape,
     ShapeKind,
     Slot,
 )

@@ -21,7 +21,9 @@ def _slot(slot_id: str, x1: int, x2: int) -> Slot:
     return Slot(slot_id=slot_id, image_id="img0", row_index=0, slot_index=1, box=_box(x1, 100, x2, 300))
 
 
-@pytest.mark.parametrize(("text", "expected"), [("$12.99", 12.99), ("12,99 EUR", 12.99), ("no price", None), (None, None)])
+@pytest.mark.parametrize(
+    ("text", "expected"), [("$12.99", 12.99), ("12,99 EUR", 12.99), ("no price", None), (None, None)]
+)
 def test_tag_price_reads_dot_and_comma(text, expected):
     assert tag_price(text) == expected
 
