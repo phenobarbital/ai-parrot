@@ -26,6 +26,8 @@ _RESOLVED = {
     FacingStatus.EMPTY,
     FacingStatus.INFERRED_PRESENT,
     FacingStatus.VARIANT_UNRESOLVED,
+    FacingStatus.EXPECTED_EMPTY,
+    FacingStatus.UNEXPECTED_OCCUPIED,
 }
 _FOUND = {
     FacingStatus.MATCH,
@@ -39,7 +41,7 @@ _DEFAULT_THRESHOLD = 0.8
 
 def _label(facing: FacingDefinition) -> str:
     """Human label of an expected facing: its display name, else its product id."""
-    return facing.descriptors.display_name or facing.product
+    return facing.descriptors.display_name or facing.product or facing.facing_id
 
 
 def _threshold(description: PlanogramDescription, level: Optional[str]) -> float:
@@ -59,10 +61,11 @@ def project_compliance(
     """One ComplianceResult per definition shelf, definition order. Sets ``ComplianceResult.assessment``.
 
     Status rules: COMPLIANT iff completely assessed, facing_lenient >= shelf threshold, no mandatory rule
-    failed, no illumination mismatch; MISSING iff completely assessed and every facing is EMPTY; MISPLACED
-    iff completely assessed and every violation is MISPLACED; otherwise NON_COMPLIANT. ``missing_products``
-    lists only facings proven EMPTY (plus illumination pseudo-entries). ``unexpected_products`` is left
-    empty for the type hook to fill (a "major unexpected product" therefore never blocks here).
+    failed, no illumination mismatch (zero-facing shelves are checked on ``lenient_score``); MISSING iff
+    completely assessed and every occupied-expected facing is EMPTY; MISPLACED iff completely assessed and
+    every violation is MISPLACED; otherwise NON_COMPLIANT. ``missing_products`` lists only occupied-expected
+    facings proven EMPTY (plus illumination pseudo-entries). Expected-empty facings are neither expected nor
+    missing products; ``UNEXPECTED_OCCUPIED`` facings are violations listed in ``unexpected_products``.
 
     ``ShelfScore.rule_results`` (see ``score_shelves``) holds only status-relevant outcomes: a failed entry
     blocks COMPLIANT, an unassessed entry makes the shelf incomplete, and a failed entry with a penalty (only
@@ -87,6 +90,14 @@ def project_compliance(
             continue
         pairs = [(f, positions_by_facing.get(f.facing_id)) for f in shelf.facings]
         statuses = [p.status if p is not None else FacingStatus.NOT_VISIBLE for _, p in pairs]
+        occupied_expected = [
+            (f, s) for f, s in zip(shelf.facings, statuses, strict=True) if f.expected_occupancy != "empty"
+        ]
+        unexpected = [
+            p.identity or f"occupied:{f.facing_id}"
+            for f, p in pairs
+            if p is not None and p.status == FacingStatus.UNEXPECTED_OCCUPIED
+        ]
         unresolved_ids = [
             f.facing_id for f, status in zip(shelf.facings, statuses, strict=True) if status not in _RESOLVED
         ]
@@ -94,15 +105,18 @@ def project_compliance(
         rules_complete = all(o.assessed for o in score.rule_results)
         complete = not unresolved_ids and rules_complete
 
-        missing = [_label(f) for f, status in zip(shelf.facings, statuses, strict=True) if status == FacingStatus.EMPTY]
+        missing = [_label(f) for f, status in occupied_expected if status == FacingStatus.EMPTY]
         missing += [o.detail for o in failed_rules if o.penalty > 0 and o.detail]
         found = [(p.identity or _label(f)) for f, p in pairs if p is not None and p.status in _FOUND]
         threshold = _threshold(description, shelf.level)
-        meets_threshold = score.expected_facings == 0 or score.facing_lenient >= threshold
-        violations = [s for s in statuses if s != FacingStatus.MATCH]
+        if score.expected_facings:
+            meets_threshold = score.facing_lenient >= threshold
+        else:
+            meets_threshold = score.lenient_score >= threshold
+        violations = [s for s in statuses if s not in (FacingStatus.MATCH, FacingStatus.EXPECTED_EMPTY)]
         if complete and meets_threshold and not failed_rules:
             status = ComplianceStatus.COMPLIANT
-        elif complete and statuses and all(s == FacingStatus.EMPTY for s in statuses):
+        elif complete and occupied_expected and all(s == FacingStatus.EMPTY for _, s in occupied_expected):
             status = ComplianceStatus.MISSING
         elif complete and not failed_rules and violations and all(s == FacingStatus.MISPLACED for s in violations):
             status = ComplianceStatus.MISPLACED
@@ -122,10 +136,10 @@ def project_compliance(
         results.append(
             ComplianceResult(
                 shelf_level=score.shelf_level,
-                expected_products=[_label(f) for f in shelf.facings],
+                expected_products=[_label(f) for f, _ in occupied_expected],
                 found_products=found,
                 missing_products=missing,
-                unexpected_products=[],
+                unexpected_products=unexpected,
                 compliance_status=status,
                 compliance_score=max(0.0, min(1.0, score.lenient_score)),
                 assessment=assessment,
