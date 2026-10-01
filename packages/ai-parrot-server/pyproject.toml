@@ -109,6 +109,7 @@ namespaces = true
 [tool.setuptools.package-data]
 "parrot.handlers" = ["*.sql"]
 "parrot.handlers.models" = ["*.sql"]
+"parrot.handlers.studio.storage.migrations" = ["*.sql", "MANIFEST.json"]
 "parrot.mcp.transports" = ["*.proto"]
 # Embedded Admin UI (FEAT-468): built by release CI (Node 24 LTS + pnpm 9)
 # into src/parrot/server/ui/dist/ before `uv build`; never committed to git.
