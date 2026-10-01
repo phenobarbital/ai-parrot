@@ -644,6 +644,67 @@ class TestCli:
         assert "tasks" in data[0]
         assert data[0]["tasks"][0]["id"] == "TASK-3132"
 
+    def _run_table(self, monkeypatch, reports):
+        """Run main() in plain-table mode over `reports` and return stdout."""
+        monkeypatch.setattr(sys, "argv", ["worktree_status.py"])
+        with (
+            patch("scripts.sdd.worktree_status._git", return_value=_completed("/repo\n")),
+            patch("scripts.sdd.worktree_status.discover_worktree_reports", return_value=reports),
+        ):
+            assert main() == 0
+
+    def test_feature_id_printed_once_per_row(self, capsys, monkeypatch):
+        """The Name column no longer repeats feature_id (issue:4456385c283c)."""
+        report = WorktreeReport(
+            feature_slug="token-budget-bedrock",
+            feature_id="FEAT-550",
+            flow_type="feature",
+            worktree_path="/repo/.claude/worktrees/feat-FEAT-550-token-budget-bedrock",
+            branch="feat-FEAT-550-token-budget-bedrock",
+            tasks=[WorktreeTaskStatus(id="TASK-3132", status="done")],
+        )
+        self._run_table(monkeypatch, [report])
+        row = [ln for ln in capsys.readouterr().out.splitlines() if "token-budget-bedrock" in ln][0]
+        # The Name column is the first 40 characters (f-string width). It must
+        # carry the slug alone; the id belongs to the Feature column only. The
+        # Branch column legitimately embeds the id (it is part of the branch
+        # name), so assert on the Name column rather than on the whole row.
+        assert row[:40].strip() == "token-budget-bedrock"
+        assert "FEAT-550" not in row[:40]
+        assert "FEAT-550" in row[40:]
+
+    def test_non_sdd_row_is_marked(self, capsys, monkeypatch):
+        """A non-SDD row shows the marker, a 0/0 task count and '-' for Feature."""
+        report = WorktreeReport(
+            feature_slug="chore-ruff-config",
+            feature_id=None,
+            flow_type="non-sdd",
+            worktree_path="/repo/.claude/worktrees/chore-ruff-config",
+            branch="chore-ruff-config",
+            tasks=[],
+            index_found=False,
+        )
+        self._run_table(monkeypatch, [report])
+        row = [ln for ln in capsys.readouterr().out.splitlines() if "chore-ruff-config" in ln][0]
+        assert "(non-SDD)" in row
+        assert "0/0" in row
+        assert " - " in row
+
+    def test_unknown_health_is_not_rendered_as_clean(self, capsys, monkeypatch):
+        """dirty_unknown/unpushed_unknown surface in the Health column."""
+        report = WorktreeReport(
+            feature_slug="chore-ruff-config",
+            flow_type="non-sdd",
+            worktree_path="/repo/.claude/worktrees/chore-ruff-config",
+            branch="chore-ruff-config",
+            health=WorktreeHealth(dirty_unknown=True, unpushed_unknown=True),
+        )
+        self._run_table(monkeypatch, [report])
+        row = [ln for ln in capsys.readouterr().out.splitlines() if "chore-ruff-config" in ln][0]
+        assert "dirty:unknown" in row
+        assert "unpushed:unknown" in row
+        assert "clean" not in row
+
     def test_not_a_git_repo(self, capsys, monkeypatch):
         """When repo-root resolution fails, main() returns 1 and prints an error."""
         monkeypatch.setattr(sys, "argv", ["worktree_status.py"])

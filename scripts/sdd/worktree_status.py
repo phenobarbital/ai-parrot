@@ -17,7 +17,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from scripts.sdd.sdd_meta import WORKTREE_ROOT  # verified: scripts/sdd/sdd_meta.py:15
+# scripts/sdd/sdd_meta.py is a re-export shim; the definition lives in the package.
+from scripts.sdd.sdd_meta import (  # verified: packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py:322
+    WORKTREE_ROOT,
+)
 
 # ---------------------------------------------------------------------------
 # Branch-name patterns
@@ -673,10 +676,11 @@ def main() -> int:
         print(f"{'Name':<40} {'Branch':<30} {'Feature':<15} {'Tasks':<12} {'Health':<20} {'Ready'}")
         print("-" * 130)
         for r in reports:
-            # Name: feature_slug
+            # Name: feature_slug only — the Feature column below already prints
+            # feature_id, and printing it twice was issue:4456385c283c.
             name = r.feature_slug
-            if r.feature_id:
-                name = f"{r.feature_slug} ({r.feature_id})"
+            if r.flow_type == "non-sdd":
+                name = f"{r.feature_slug} (non-SDD)"
 
             # Branch
             branch = r.branch
@@ -694,6 +698,12 @@ def main() -> int:
                 health_parts.append(f"unpushed:{r.health.unpushed_count}")
             if r.health.live_process_count > 0:
                 health_parts.append(f"live:{r.health.live_process_count}")
+            # An unreadable signal is its own token, so the "clean" fallback is
+            # reached only when nothing at all is flagged (issue:6b0b91e1f5b2).
+            if r.health.dirty_unknown:
+                health_parts.append("dirty:unknown")
+            if r.health.unpushed_unknown:
+                health_parts.append("unpushed:unknown")
             health_str = ", ".join(health_parts) if health_parts else "clean"
 
             # Ready flag
