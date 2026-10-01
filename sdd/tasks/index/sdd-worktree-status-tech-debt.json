@@ -16,7 +16,7 @@
       "feature_id": "FEAT-619",
       "feature": "sdd-worktree-status-tech-debt",
       "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies. Shares scripts/sdd/worktree_status.py and tests/sdd_scripts/test_worktree_status.py with TASK-3916 and TASK-3917, which depend on it (chain 3915 -> 3916 -> 3917) so the three never run concurrently.",
       "assigned_to": null,
       "started_at": "2026-10-01T00:31:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3915-non-sdd-worktree-reports.md"
+      "completed_at": "2026-10-01T00:33:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3915-non-sdd-worktree-reports.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3916",
