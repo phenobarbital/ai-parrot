@@ -160,7 +160,8 @@ def test_fixed_quantity_seeds_facings_and_range_is_unresolved(legacy_config):
     ]
     assert any("RR-60" in item for item in report.unresolved)
     assert any("slot order taken from list order" in w for w in report.warnings)
-    assert all(f["descriptors"] == {} for f in middle["facings"])  # never invents descriptors / prices
+    # descriptors carry only what the row states: the name, never an inferred attribute or a price
+    assert all(f["descriptors"] == {"display_name": f["product"]} for f in middle["facings"])
 
 
 def test_promotional_product_becomes_zone_with_zone_present_binding(legacy_config):
@@ -200,15 +201,28 @@ def test_fact_tags_are_not_facings(legacy_config):
     assert "Tag" not in products
 
 
-def test_candidate_validation_failure_is_unresolved(legacy_config):
-    """Missing descriptors are a blocking unresolved item, never merely a warning."""
+def test_candidate_validation_failure_is_unresolved():
+    """A candidate that does not validate is a blocking unresolved item, never merely a warning."""
+    report = _convert({"shelves": []})
+    assert any("candidate does not validate" in item for item in report.unresolved)
+
+
+def test_seeded_descriptors_make_the_candidate_load(legacy_config):
     report = _convert(legacy_config)
-    assert any("zero described positions" in item for item in report.unresolved)
-    for shelf in report.candidate["shelves"]:
-        for facing in shelf["facings"]:
-            facing["descriptors"] = {"display_name": facing["product"]}
+    assert not any("zero described positions" in item for item in report.unresolved)
+    assert any("seeded from name/aliases" in item for item in report.warnings)
     definition = load_slots_definition(report.candidate)
     assert len(validate_bindings(definition, {"rule_bindings": report.bindings})) == len(report.bindings)
+
+
+def test_seeding_carries_row_aliases_and_keeps_source_descriptors(legacy_config):
+    products = legacy_config["shelves"][1]["products"]
+    products[0]["aliases"] = ["ES400", " "]
+    products[1]["descriptors"] = {"display_name": "RapidReceipt 60", "aliases": ["RR60"]}
+    products[1]["aliases"] = ["ignored"]
+    facings = _convert(legacy_config).candidate["shelves"][1]["facings"]
+    assert facings[0]["descriptors"] == {"display_name": "ES-400", "aliases": ["ES400"]}
+    assert facings[2]["descriptors"] == {"display_name": "RapidReceipt 60", "aliases": ["RR60"]}
 
 
 def test_unknown_type_rejected():

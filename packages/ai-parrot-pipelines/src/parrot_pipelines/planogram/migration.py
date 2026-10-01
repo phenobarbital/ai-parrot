@@ -100,6 +100,30 @@ def _fixed_quantity(product: Dict[str, Any]) -> Optional[int]:
     return low if low == high and low >= 1 else None
 
 
+def _seed_descriptors(product: Dict[str, Any], name: str) -> Tuple[Dict[str, Any], bool]:
+    """Source descriptors, seeded from the row itself where absent: ``name`` -> ``display_name``, ``aliases``.
+
+    Only values the legacy row already states are carried over; nothing is inferred and no price is set.
+
+    Args:
+        product: One legacy product entry.
+        name: Its stripped, non-empty name.
+
+    Returns:
+        The descriptors and whether anything was seeded.
+    """
+    descriptors = copy.deepcopy(product.get("descriptors") or {})
+    seeded = False
+    if not str(descriptors.get("display_name") or "").strip():
+        descriptors["display_name"] = name
+        seeded = True
+    aliases = [str(alias) for alias in product.get("aliases") or [] if str(alias).strip()]
+    if aliases and not descriptors.get("aliases"):
+        descriptors["aliases"] = aliases
+        seeded = True
+    return descriptors, seeded
+
+
 def _zone_kind(product_type: str, name: str) -> str:
     """Map a promotional product to a ZoneDefinition kind."""
     text = f"{product_type} {name}".casefold()
@@ -203,6 +227,7 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
         slot = 0
         zone_count = 0
         skipped = 0
+        seeded = 0
         first_zone: Optional[str] = None
         for product in shelf.get("products") or []:
             name = str(product.get("name") or "").strip()
@@ -231,6 +256,8 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
                 )
                 count = 1
             first_facing: Optional[str] = None
+            descriptors, was_seeded = _seed_descriptors(product, name)
+            seeded += was_seeded
             for _ in range(count):
                 slot += 1
                 facing_id = f"{shelf_id}:{slot}"
@@ -242,7 +269,7 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
                         "slot": slot,
                         "product": name,
                         "brand": product.get("brand") or brand,
-                        "descriptors": copy.deepcopy(product.get("descriptors") or {}),
+                        "descriptors": copy.deepcopy(descriptors),
                     }
                 )
             if first_facing:
@@ -254,6 +281,10 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
             report.warnings.append(
                 f"{shelf_id} ({level}): {skipped} fact/price tag element(s) not converted — "
                 "the cycle has no tag-presence or price rule"
+            )
+        if seeded:
+            report.warnings.append(
+                f"{shelf_id} ({level}): descriptors of {seeded} product(s) seeded from name/aliases — review"
             )
         if facings:
             report.warnings.append(f"{shelf_id} ({level}): slot order taken from list order — review")
@@ -384,6 +415,7 @@ def _convert_counter(config: Dict[str, Any], report: ConversionReport, bindings:
     zones: List[Dict[str, Any]] = []
     slot = 0
     zone_number = 0
+    seeded = 0
     elements = [product for shelf in config.get("shelves") or [] for product in shelf.get("products") or []]
     for product in elements:
         name = str(product.get("name") or "").strip()
@@ -414,6 +446,8 @@ def _convert_counter(config: Dict[str, Any], report: ConversionReport, bindings:
             )
             count = 1
         first_facing: Optional[str] = None
+        descriptors, was_seeded = _seed_descriptors(product, name)
+        seeded += was_seeded
         for _ in range(count):
             slot += 1
             facing_id = f"{shelf_id}:{slot}"
@@ -425,11 +459,15 @@ def _convert_counter(config: Dict[str, Any], report: ConversionReport, bindings:
                     "slot": slot,
                     "product": name,
                     "brand": product.get("brand") or config.get("brand"),
-                    "descriptors": copy.deepcopy(product.get("descriptors") or {}),
+                    "descriptors": copy.deepcopy(descriptors),
                 }
             )
         if first_facing:
             _product_rules(product, first_facing, bindings)
+    if seeded:
+        report.warnings.append(
+            f"shelf-1 (counter): descriptors of {seeded} product(s) seeded from name/aliases — review"
+        )
     if "scoring_weights" in config:
         report.unresolved.append("scoring_weights: map to definition/profile weights")
     return [{"shelf_id": shelf_id, "shelf_number": 1, "level": "counter", "facings": facings}], zones
