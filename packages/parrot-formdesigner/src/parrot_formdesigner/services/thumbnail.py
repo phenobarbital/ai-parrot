@@ -80,6 +80,9 @@ class ThumbnailService:
             field_id=f"{metadata.field_id}__thumb",
             submission_id=metadata.submission_id,
             tenant=metadata.tenant,
+            # A deterministic photo gets a deterministic thumbnail: a retried
+            # upload overwrites both instead of orphaning a new thumbnail.
+            blob_id=f"{metadata.blob_id}-thumb" if metadata.blob_id else None,
             content_type=f"image/{self._format.lower()}",
             size_bytes=len(thumb_bytes),
         )

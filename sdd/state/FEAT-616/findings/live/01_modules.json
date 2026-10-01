@@ -1,0 +1,251 @@
+[
+ {
+  "id": 516,
+  "name": "sh_all_in_one_helpdesk",
+  "shortdesc": "All In One Helpdesk | CRM Helpdesk | Sale Order Helpdesk | Purchase Helpdesk | Invoice Helpdesk | Helpdesk Timesheet | Helpdesk Support Ticket To Task",
+  "author": "Softhealer Technologies",
+  "installed_version": "19.0.0.0.1",
+  "website": "https://www.softhealer.com",
+  "summary": "Flexible HelpDesk Customizable Help Desk Service Desk HelpDesk With Stages Help Desk Ticket Management Helpdesk Email Templates Email Alias Email Helpdesk Chatter Sale Order With Helpdesk,Purchase Order With Helpdesk Invoice With Helpdesk Apps for purchase Material Requisitions Request  purchase product Requisitions Request Material Requisition for tender Material Requisition for manufacturing order Product Request on RFQ Product Request on Tender Product Request on manufacturing order Odoo",
+  "category_id": [
+   64,
+   "Discuss"
+  ],
+  "dependencies_id": [
+   1064,
+   1065,
+   1066,
+   1067,
+   1068,
+   1069,
+   1070,
+   1071,
+   1072,
+   1073
+  ]
+ },
+ {
+  "id": 117,
+  "name": "hr_timesheet",
+  "shortdesc": "Task Logs",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "https://www.odoo.com/app/timesheet",
+  "summary": "Track employee time on tasks",
+  "category_id": [
+   32,
+   "Timesheets"
+  ],
+  "dependencies_id": [
+   234,
+   235,
+   236,
+   237,
+   238
+  ]
+ },
+ {
+  "id": 705,
+  "name": "dynamic_form_helpdesk",
+  "shortdesc": "Dynamic Form Helpdesk Integration",
+  "author": "T-ROC, Victor Inojosa",
+  "installed_version": "19.0.1.1.0",
+  "website": "",
+  "summary": "Unmapped dynamic form data on helpdesk tickets and partner resolution hooks",
+  "category_id": [
+   97,
+   "Helpdesk"
+  ],
+  "dependencies_id": [
+   1479,
+   1480
+  ]
+ },
+ {
+  "id": 513,
+  "name": "sale_timesheet",
+  "shortdesc": "Sales Timesheet",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Sell based on timesheets",
+  "category_id": [
+   12,
+   "Sales"
+  ],
+  "dependencies_id": [
+   1058,
+   1059
+  ]
+ },
+ {
+  "id": 522,
+  "name": "spreadsheet",
+  "shortdesc": "Spreadsheet",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Spreadsheet",
+  "category_id": [
+   66,
+   "Dashboard"
+  ],
+  "dependencies_id": [
+   1084,
+   1085,
+   1086
+  ]
+ },
+ {
+  "id": 523,
+  "name": "spreadsheet_account",
+  "shortdesc": "Spreadsheet Accounting Formulas",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Spreadsheet Accounting formulas",
+  "category_id": [
+   1,
+   "Accounting"
+  ],
+  "dependencies_id": [
+   1087,
+   1088
+  ]
+ },
+ {
+  "id": 524,
+  "name": "spreadsheet_dashboard",
+  "shortdesc": "Spreadsheet dashboard",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Spreadsheet",
+  "category_id": [
+   66,
+   "Dashboard"
+  ],
+  "dependencies_id": [
+   1089
+  ]
+ },
+ {
+  "id": 525,
+  "name": "spreadsheet_dashboard_account",
+  "shortdesc": "Spreadsheet dashboard for accounting",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Spreadsheet",
+  "category_id": [
+   66,
+   "Dashboard"
+  ],
+  "dependencies_id": [
+   1090,
+   1091
+  ]
+ },
+ {
+  "id": 528,
+  "name": "spreadsheet_dashboard_hr_timesheet",
+  "shortdesc": "Spreadsheet dashboard for time sheets",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Spreadsheet",
+  "category_id": [
+   66,
+   "Dashboard"
+  ],
+  "dependencies_id": [
+   1096,
+   1097
+  ]
+ },
+ {
+  "id": 532,
+  "name": "spreadsheet_dashboard_sale",
+  "shortdesc": "Spreadsheet dashboard for sales",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Spreadsheet",
+  "category_id": [
+   66,
+   "Dashboard"
+  ],
+  "dependencies_id": [
+   1105,
+   1106
+  ]
+ },
+ {
+  "id": 533,
+  "name": "spreadsheet_dashboard_sale_timesheet",
+  "shortdesc": "Spreadsheet dashboard for time sheets",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Spreadsheet",
+  "category_id": [
+   66,
+   "Dashboard"
+  ],
+  "dependencies_id": [
+   1107,
+   1108
+  ]
+ },
+ {
+  "id": 620,
+  "name": "troc_helpdesk",
+  "shortdesc": "TROC Helpdesk",
+  "author": "TROC Global",
+  "installed_version": "19.0.1.32.0",
+  "website": "",
+  "summary": "TROC extensions for sh_all_in_one_helpdesk",
+  "category_id": [
+   81,
+   "Helpdesk"
+  ],
+  "dependencies_id": [
+   1323,
+   1324
+  ]
+ },
+ {
+  "id": 706,
+  "name": "troc_helpdesk_dynamic_forms",
+  "shortdesc": "TROC Helpdesk - Navigator Dynamic Forms",
+  "author": "TROC Global",
+  "installed_version": "19.0.1.2.1",
+  "website": "",
+  "summary": "Navigator QuerySource engine for helpdesk dynamic forms",
+  "category_id": [
+   81,
+   "Helpdesk"
+  ],
+  "dependencies_id": [
+   1481,
+   1482
+  ]
+ },
+ {
+  "id": 682,
+  "name": "website_timesheet",
+  "shortdesc": "Hide Portal Timesheet Information",
+  "author": "Odoo S.A.",
+  "installed_version": "19.0.1.0",
+  "website": "",
+  "summary": "Allow hiding timesheet information in the portal",
+  "category_id": [
+   82,
+   "Website"
+  ],
+  "dependencies_id": [
+   1473,
+   1474
+  ]
+ }
+]

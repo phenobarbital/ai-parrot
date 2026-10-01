@@ -8,6 +8,7 @@ for data errors: a failing source yields ``SourceOutcome(error=<stable code>)``.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Mapping
@@ -207,7 +208,9 @@ async def execute_sources(
         )
         source = AuthorizingDataSource(inner, guard, pctx_provider=lambda: pctx) if guard is not None else inner
         try:
-            frame = await source.fetch(**conditions)
+            # Deep copy: conditions share nested filter dicts with src.request, and a data source may mutate
+            # them (querysource's parsers popitem()'d operator dicts), which emptied the envelope's filter.
+            frame = await source.fetch(**copy.deepcopy(conditions))
             if src.transform is not None and src.transform.ref is not None:
                 logger.warning("linked source %r: ref transform %s skipped in Python", key, src.transform.ref.name)
             elif src.transform is not None:

@@ -450,11 +450,17 @@ class QuerysourceToolkit(AbstractToolkit):
             sources[widget.key] = self._build_linked_source(widget, detail)
         self.logger.info("qs_build_linked_dashboard %d widgets snapshot=%s", len(parsed), snapshot)
         execution = await execute_sources(sources, pctx=None, guard=None)
-        for key in sources:
-            outcome = execution.outcomes.get(key)
-            if outcome is None or outcome.error:
-                error = outcome.error if outcome is not None else "no outcome"
-                raise QuerysourceToolkitError(f"source '{key}' failed while building the linked dashboard: {error}")
+        # Sources fail independently; report every failure, not just the first in widget order.
+        failures = [
+            f"'{key}' ({sources[key].slug}): {outcome.error if outcome is not None else 'no outcome'}"
+            for key in sources
+            if (outcome := execution.outcomes.get(key)) is None or outcome.error
+        ]
+        if failures:
+            raise QuerysourceToolkitError(
+                f"{len(failures)} source(s) failed while building the linked dashboard: {'; '.join(failures)} "
+                "(see the 'linked source ... failed' warnings for the underlying errors)"
+            )
         components = [{**self._bind_component(w.component, w.key), "id": w.key} for w in parsed]
         layout = self._dashboard_layout(components, parsed, title)
         envelope = _build(

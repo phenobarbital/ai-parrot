@@ -92,13 +92,16 @@ def _stem_to_title(stem: str) -> str:
 
 
 def disambiguate_title(title: str, taken: set[str], *, toc_entries: list[TocEntry], stem: str) -> str:
-    """Return ``title`` unless its casefold is in ``taken``; otherwise a unique ``"<title> — <hint>"``.
+    """Return a normalized, unique display title.
 
     Hint order: (1) the first ``toc_entries`` title whose casefold differs from
     ``title``'s and whose combination is not taken; (2) the de-slugified
     ``stem``; (3) ``"<title> — <stem> (N)"`` for the first free ``N >= 2``.
-    ``taken`` holds casefolded titles. Never returns a taken title.
+    ``taken`` holds casefolded titles. Blank titles fall back to the
+    de-slugified stem, the stripped stem, or ``"Untitled"``. Never returns a
+    taken title.
     """
+    title = title.strip() or _stem_to_title(stem) or stem.strip() or "Untitled"
     if title.casefold() not in taken:
         return title
     for entry in toc_entries:

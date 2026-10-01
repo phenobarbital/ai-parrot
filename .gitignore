@@ -451,3 +451,8 @@ examples/planogram/pipelines/*
 examples/planogram/aws/*
 !examples/planogram/aws/*.py
 !examples/planogram/aws/README.md
+
+# Local/untracked work
+examples/clients/bestbuy_catalog/
+examples/planogram/pipelines/
+sdd/state/FEAT-585/

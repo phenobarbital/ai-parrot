@@ -353,3 +353,60 @@ def test_update_command_without_fields_fails(tmp_path, monkeypatch):
     result = CliRunner().invoke(bookstore_cli.bookstore, ["update", book_id])
     assert result.exit_code != 0
     assert "Nothing to do" in result.output
+
+
+def _seed_lists(tmp_path, monkeypatch) -> str:
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+
+    book_id = _seed_one_book(tmp_path, monkeypatch)
+    store = CatalogStore(tmp_path / "lib" / "library.db")
+    card = store.get(book_id)
+    card.authors = ["Ann", "Bob"]
+    card.topics = ["x", "y"]
+    store.upsert(card)
+    return book_id
+
+
+def _persisted(tmp_path, book_id):
+    from parrot.knowledge.bookstore.catalog import CatalogStore
+
+    return CatalogStore(tmp_path / "lib" / "library.db").get(book_id)
+
+
+def test_cli_update_clear_authors_topics(tmp_path, monkeypatch) -> None:
+    """Clear both persisted lists with one CLI update."""
+    book_id = _seed_lists(tmp_path, monkeypatch)
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["update", book_id, "--clear-authors", "--clear-topics"])
+    assert result.exit_code == 0, result.output
+    card = _persisted(tmp_path, book_id)
+    assert card.authors == []
+    assert card.topics == []
+    assert card.card_origin == "manual"
+
+
+def test_cli_update_clear_single_list_preserves_other(tmp_path, monkeypatch) -> None:
+    """Clear-only calls work and preserve the unspecified list."""
+    book_id = _seed_lists(tmp_path, monkeypatch)
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["update", book_id, "--clear-authors"])
+    assert result.exit_code == 0, result.output
+    card = _persisted(tmp_path, book_id)
+    assert card.authors == []
+    assert card.topics == ["x", "y"]
+
+    result = CliRunner().invoke(bookstore_cli.bookstore, ["update", book_id, "--clear-topics", "--author", "Zed"])
+    assert result.exit_code == 0, result.output
+    card = _persisted(tmp_path, book_id)
+    assert card.authors == ["Zed"]
+    assert card.topics == []
+
+
+def test_cli_update_clear_flags_conflict(tmp_path, monkeypatch) -> None:
+    """Matching replacement and clear options fail before any write."""
+    book_id = _seed_lists(tmp_path, monkeypatch)
+    for args in (["--clear-authors", "--author", "Zed"], ["--clear-topics", "--topic", "z"]):
+        result = CliRunner().invoke(bookstore_cli.bookstore, ["update", book_id, *args])
+        assert result.exit_code != 0
+        assert "cannot be combined" in result.output
+        card = _persisted(tmp_path, book_id)
+        assert card.authors == ["Ann", "Bob"]
+        assert card.topics == ["x", "y"]

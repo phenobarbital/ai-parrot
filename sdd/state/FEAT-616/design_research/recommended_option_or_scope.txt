@@ -1,0 +1,91 @@
+### What's New
+
+- **`packages/ai-parrot-tools/src/parrot_tools/odoo/helpdesk.py`** —
+  `OdooHelpdeskToolkit(OdooToolkit)` (resolved U1). `tool_prefix` inherited (`odoo`) so tools
+  surface as `odoo_<name>`; the spec may decide a dedicated prefix (`odoo_hd`) — see §5.
+  Tool groups (resolved U2 — **all in v1**):
+  - *Tickets — read*: `get_ticket`, `search_tickets`, `list_my_tickets`, `get_ticket_history`
+    (stage.info lines), `get_ticket_messages` (mail.message), `get_ticket_extra_fields`.
+  - *Tickets — write*: `create_ticket` (partner by id/email/name, category/priority/team/type
+    by id **or** name), `update_ticket`, `add_ticket_comment` / `reply_ticket`
+    (`message_post`), `attach_to_ticket` (reuses inherited `attach_document`).
+  - *Assignment*: `assign_ticket` (user_id / `sh_user_ids`), `take_ticket`
+    (`action_take_ticket`), `reassign_ticket` (`sh.helpdesk.reassign.wizard`).
+  - *Transitions* (resolved U3 — call Softhealer `action_*` with `[[id]]`, verified on staging
+    with a throwaway ticket during the spec phase): `move_ticket_to_stage` (by name or
+    `sh_next_stage`), `resolve_ticket` (`action_done`), `close_ticket` (`action_closed`),
+    `cancel_ticket` (`action_cancel` + `cancel_reason`), `reopen_ticket` (`action_open`),
+    `approve_ticket`. Each returns a `TicketTransitionResult` (`from_stage`, `to_stage`,
+    `method_used`, `warnings`).
+  - *SLA*: `list_sla_policies`, `create_sla_policy`, `update_sla_policy`,
+    `get_ticket_sla_status`, `list_ticket_alarms`.
+  - *Reference data*: `list_stages`, `list_teams`, `list_categories`, `list_priorities`,
+    `list_ticket_types`, `list_tags` (+ name→id resolution helpers, cached like
+    `_fields_cache`).
+  - *Stats & wizards & timesheet*: `ticket_stats` (by stage/team/user/category — depends on
+    FEAT-614; interim N×`search_count`), `merge_tickets`, `mass_update_tickets`,
+    `start_ticket_timer` / `stop_ticket_timer`.
+- **Entities** (`models/entities.py`): `HelpdeskTicket`, `HelpdeskStage`, `HelpdeskTeam`,
+  `HelpdeskCategory`, `HelpdeskPriority`, `HelpdeskTicketType`, `HelpdeskSla`,
+  `HelpdeskSlaStatus`, `HelpdeskStageInfo` — all `_OdooEntity`; `HelpdeskTicket` exposes
+  `replied_status` (alias of `state`), a derived `lifecycle` block (`stage_name` +
+  booleans) and `extra_fields: dict[str, str]` (U5 recommendation).
+- **Inputs** (`models/inputs.py`): one `_OdooBaseInput` per tool (`CreateTicketInput`,
+  `SearchTicketsInput`, `MoveTicketStageInput`, `AssignTicketInput`,
+  `AddTicketCommentInput`, `CreateSlaPolicyInput`, `MergeTicketsInput`, …).
+- **Envelopes** (`models/envelopes.py`): `TicketResult`, `TicketListResult`,
+  `TicketTransitionResult`, `TicketCommentResult`, `TicketHistoryResult`,
+  `SlaPolicyResult`, `SlaStatusResult`, `HelpdeskReferenceResult`, `TicketStatsResult`.
+- **Config** (resolved U4): `ODOO_HELPDESK_URL`, `ODOO_HELPDESK_USER`,
+  `ODOO_HELPDESK_APIKEY` (fallback `ODOO_HELPDESK_PASSWORD`), `ODOO_HELPDESK_DATABASE`
+  (optional, empty allowed for JSON-2) in `parrot.conf`, used as `OdooHelpdeskToolkit`
+  constructor defaults.
+- **Tests**: `packages/ai-parrot/tests/test_odoo_helpdesk_toolkit.py` (AsyncMock transport,
+  exact `execute_kw` tuples, envelope classes) + a live smoke script (opt-in, env-gated).
+
+### What Changes
+
+- **`packages/ai-parrot-tools/src/parrot_tools/odoo/models/__init__.py`**::`__all__` —
+  re-export helpdesk models. *Evidence*: F004
+- **`packages/ai-parrot-tools/src/parrot_tools/odoo/__init__.py`**::`__all__` — export
+  `OdooHelpdeskToolkit`. *Evidence*: F004
+- **`packages/ai-parrot/src/parrot/conf.py`** — new `ODOO_HELPDESK_*` keys. *Evidence*: F008, F002
+- **`packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py`** — no change required;
+  optional `_DEFAULT_KNOWN_MODELS` override on the subclass instead of editing the base
+  (avoids the FEAT-614 overlap). *Evidence*: F002, F006, F007
+
+### What's Untouched (Non-Goals)
+
+- `parrot/interfaces/odoointerface.py`, `parrot/clients/base.py`.
+- XML-RPC / JSON-RPC transports and `Json2Transport._build_body` beyond FEAT-614.
+- Existing generic CRUD / partner / sales / invoice / shell tools (inherited as-is).
+- Any Odoo-side change (Softhealer or `troc_helpdesk` modules stay untouched).
+- The dynamic-form / NavAPI submission pipeline (read-only linkage only).
+- Portal/website ticket creation paths (`ticket_from_portal/website`) — the toolkit creates
+  backend tickets only.
+
+### Patterns to Follow
+
+- Subclass `OdooToolkit`; tools auto-register; all I/O via `_execute`. *Evidence*: F007, F002
+- Action-then-read-back (`action_*` with `[[id]]` → `_read_one` → entity). *Evidence*: F003, F017
+- Per-model default field constants + `select_smart_fields` fallback. *Evidence*: F003, F011
+- `@requires_permission("odoo.write")` on every mutating tool; optional HITL
+  (`confirming_tools`) for destructive transitions (cancel, merge, mass update). *Evidence*: F003, F007
+- Zammad tool naming (`create_ticket`, `get_ticket`, `list_tickets`, `update_ticket`,
+  `close_ticket`, `search_tickets`). *Evidence*: F008
+
+### Integration Risks
+
+- **Unverified `action_*` side effects** (guard flags are False on every stage of this
+  tenant): mitigated by the staging verification the user authorised (U3); fallback is a
+  direct `stage_id` write with explicit `close_date/close_by`. *Evidence*: F016, F017
+- **File overlap with FEAT-614**: new modules only; base the worktree after FEAT-614 merges.
+  *Evidence*: F006
+- **Stats over JSON-2** break until FEAT-614: declare a dependency. *Evidence*: F021
+- **`state` naming trap** for the LLM: expose as `replied_status`. *Evidence*: F015
+- **SLA logic unobservable** (0 policies): unit-test the wire shape; live-validate after
+  creating one policy on staging. *Evidence*: F018
+- **Tenant-specific ids/reference data** leaking into code: resolve by name at runtime.
+  *Evidence*: F016, F019
+
+---
