@@ -296,10 +296,53 @@ bodies must be completed. Build the fixture as a real temporary git worktree.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 5 (/sdd-fix issue:181bd0c01bb4)
+**Date**: 2026-10-01
+**Status**: done-with-issues — **AC4 is NOT met**, for a reason that invalidates
+this module's premise rather than its implementation.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**What was implemented (and works)**
+- `ScopePolicy.escalate_foreign_dists: bool = False` (`policy.py:781`).
+- The cap-escalation branch in `plan_tests()` (`select.py:186`) now skips a
+  cap-exceeded distribution owning none of the changed files, recording it in
+  `ScopePlan.notes`. The skip happens *before* `cap_candidates[dist] = paths`,
+  so the distribution stays out of `cap_hits`, `cap_impacted`, `to_run` and
+  therefore out of `escalated` — the invariant at `select.py:191-198` holds.
+- 5 new tests in `test_foreign_escalation_guard.py`, all passing. The whole
+  existing `test_scope` suite still passes: **89 passed**.
+- AC5 verified: `escalate_foreign_dists=True` reproduces the prior behaviour.
+- The core exemption is verified: `detect_core()` runs after the loop, so a
+  core-reached distribution is still escalated.
 
-**Deviations from spec**: none | describe if any
+**Why AC4 is unmet — the module targets the wrong mechanism**
+Measured against the real repository (worktree at base `275a8d2bd`), a
+merge-tier plan for a diff confined to
+`packages/ai-parrot/src/parrot/outputs/a2ui/linked/dsl.py`:
+
+```
+core_hits: [('packages/ai-parrot/src/parrot/outputs/a2ui/linked/dsl.py', 26)]
+cap_hits keys: []
+invocations: 26   distributions: 26 (incl. parrot-formdesigner, ai-parrot-embeddings)
+```
+
+The plan is **byte-identical with the guard on and off**. `cap_hits` is empty:
+the impact cap contributes nothing to this issue. The entire ~2800-test blast
+radius of `issue:181bd0c01bb4` comes from `detect_core()`.
+
+Mechanism: `source_fanin()` (`impact.py:244-260`) counts **transitive**
+importers. A leaf module like `a2ui/linked/dsl.py` is imported by a hub that is
+itself imported across the monorepo, so its transitive fan-in reaches 26
+distributions, clears `core_fanin_threshold`, and escalates every one of them
+as `reason="core"`. The guard deliberately does not suppress core escalations
+(and should not — that exemption is itself an acceptance criterion here).
+
+**Consequence for the feature**
+Spec §3 Module 2 is written against the impact cap and cannot deliver AC4 as
+specified. Resolving `issue:181bd0c01bb4` needs a separate decision about core
+detection — e.g. whether transitive fan-in is the right core signal at all, or
+whether core escalation should also respect a red-baseline/foreign-distribution
+policy. That decision is out of this task's scope and was not invented here.
+
+**Deviations from spec**: AC4 unmet (premise invalidated, evidence above). AC5,
+the `escalated`/`skipped_escalations` invariant, the core exemption, and AC7
+(`ruff check` clean) are all met.

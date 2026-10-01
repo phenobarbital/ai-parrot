@@ -150,6 +150,57 @@ testpaths = ["tests"]   # line 239
 
 ---
 
+## Measured Findings (FEAT-618, recorded 2026-10-01 in the worktree)
+
+> Strategy (a) as originally written — "delete the 24 top-level
+> `packages/*/tests/__init__.py` and set `--import-mode=importlib`" — is
+> **insufficient**, and the real count is 25, not 24. Evidence, all run in the
+> feature worktree at base `275a8d2bd`:
+
+1. **The top-level deletion + importlib mode does fix the originally-reported
+   pair.** `pytest packages/ai-parrot-embeddings/tests/test_wheel_layout.py
+   packages/parrot-formdesigner/tests/unit/test_version_and_docs.py
+   --collect-only` → exit 0, 19 collected, 0 collision markers.
+
+2. **But the collision only moves down one level.** The nested test
+   subpackages are themselves shared across distributions:
+
+   | Nested name | Distributions sharing it |
+   |---|---|
+   | `unit` | **19** (15 clients + integrations, server, tools, formdesigner) |
+   | `integration` | 3 (ai-parrot, ai-parrot-server, parrot-formdesigner) |
+   | `handlers`, `manager`, `mcp`, `outputs`, `scraping`, `security`, `integrations`, `voice` | 2 each |
+
+   Verified: `pytest packages/parrot-formdesigner/tests/unit/test_version_and_docs.py
+   packages/ai-parrot-client-openai/tests/unit --collect-only` → **exit 2,
+   4 collection errors**, same class of failure one level down.
+
+3. **Deleting every `__init__.py` under the test trees does work.** Removing
+   both `tests/unit/__init__.py` files and re-running the same command →
+   **58 collected, 0 errors.**
+
+4. **Scope of that fix**: `find packages -path '*/tests/*' -name '__init__.py'`
+   → **237 nested files**, plus the 25 top-level ones = **262 deletions**,
+   spread over every test tree in the monorepo (148 in `ai-parrot` alone).
+
+5. **Consequence for the 24 cross-module imports**: with no `__init__.py`
+   anywhere under `tests/`, `from tests.unit.X import Y` has no direct
+   replacement — the test dirs are no longer packages at all. These 24 sites
+   need either a path-based loader, promotion of the shared helpers into
+   `conftest.py` fixtures, or a `sys.path` + PEP 420 namespace arrangement.
+   This is unresolved and must be decided before implementing.
+
+6. **Operational cost**: 262 deletions touching every test tree will conflict
+   with every in-flight worktree (~40 live at the time of measurement). The
+   landing strategy matters as much as the change itself.
+
+**Therefore**: do not implement this task from the blueprint below as written.
+The blueprint's step 2 understates the change by two orders of magnitude.
+Re-decide between the full (a) and strategy (b) with the evidence above, and
+update this task file before writing code.
+
+---
+
 ## Implementation Notes
 
 ### Key Constraints

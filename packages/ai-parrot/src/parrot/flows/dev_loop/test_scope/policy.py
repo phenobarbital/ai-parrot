@@ -778,4 +778,14 @@ class ScopePolicy:
     core_fanin_threshold: int = DEFAULT_CORE_FANIN_THRESHOLD
     core_paths: tuple[str, ...] = CORE_PATHS
     xdist_safe: frozenset[str] = XDIST_SAFE_DISTRIBUTIONS
+    escalate_foreign_dists: bool = False
+    """Allow a cap-only escalation into a distribution owning none of the changed files.
+
+    ``False`` (the default, FEAT-618) skips such an escalation and records it in
+    ``ScopePlan.notes`` instead of contributing the distribution's whole suite, so
+    a merge-tier verdict cannot absorb an unrelated package's failing baseline.
+    A distribution reached by :func:`detect_core` is unaffected — it is escalated
+    for a reason this flag does not override. ``True`` restores the
+    pre-FEAT-618 behaviour.
+    """
     marker_expression: str = AGENT_MARKER_EXPRESSION
