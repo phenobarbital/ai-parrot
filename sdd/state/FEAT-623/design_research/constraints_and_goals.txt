@@ -1,0 +1,21 @@
+- **No change to the A2UI wire vocabulary.** Every hint in this brainstorm
+  already exists on the catalog components (`KPICard.format/unit/delta/
+  comparisonPeriod`, `DataTable.columns[].type/format`, `Chart.seriesAxes/
+  yAxisLabels`). This feature only makes the infographic path *produce*
+  them. No catalog version bump.
+- **Additive model changes only.** Every new field on the infographic models
+  is optional, and today's payloads validate unchanged: a `str` hero value,
+  `List[str]` table columns and series without an axis.
+- **The two lanes stay in lockstep.** Whatever the A2UI lane forwards, the
+  HTML lane must render with the same meaning. A raw number with
+  `format='currency'` must not show up as `794058.66` in HTML.
+- **Never guess.** A hint is forwarded only when the block declares it, or
+  when it is derived from a typed source (a DataFrame dtype in
+  `infographic_build_block`). Nothing is inferred from labels.
+- **The adapter stays pure and deterministic.** Same input → byte-identical
+  envelope (adapter docstring, spec G2/D1a). The golden file is updated on
+  purpose, not loosened.
+- **The one-way import rule (G8) holds.** The adapter imports only the a2ui
+  core and `parrot.models.infographic`.
+
+---
