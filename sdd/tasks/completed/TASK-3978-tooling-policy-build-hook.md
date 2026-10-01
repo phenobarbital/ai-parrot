@@ -310,11 +310,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: bind_tooling_policy, _resolve_tooling_binding, apply_tooling_specs policy kwargs, check_tool before class construction, resolve_mcp before MCPServerConfig, hydrate_mcp hardening. 4 new build-hook tests + 1 hardening test pass; test_apply_tooling_specs passes. test_configure_applies_tooling.py fails with 'Can't instantiate abstract class AbstractBot' both before and after this change (pre-existing, unrelated). 'Reaches configure' is tested by calling apply_tooling_specs() with no args, exactly as bots/abstract.py:1524 does, rather than a full configure(), which is not instantiable in tests. bots/abstract.py untouched.
+**Mutation evidence**: Ignored bound policy -> bind test RED; dropped resolve_mcp call -> bind test RED; dropped hydrate_mcp foreign-field guard -> hardening test RED.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

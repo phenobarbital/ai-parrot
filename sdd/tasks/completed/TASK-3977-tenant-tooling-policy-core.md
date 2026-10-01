@@ -430,11 +430,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: tooling_policy.py + 16 tests pass. Spec ambiguities: (1) host_toolkits=False refuses with toolkit_unavailable (spec names no reason; no new ToolingRefusal value added). (2) check_tooling takes keyword owner for the build-phase vault_owner check (ToolingSubject untouched). (3) secret_refs={'command':...} yields local_execution (check 2 precedes field allow-list); local fields are skipped in the allow-list since check 2 already proved them empty. (4) build-phase vault name check implemented with today's spec.py helpers; TASK-3988 re-verifies against storage M10. flake8/ruff not installed in worktree venv.
+**Mutation evidence**: Dropped params overlay -> smuggling cases RED; dropped segment-boundary -> normalisation RED; dropped write-phase secret refusal -> secret test RED; dropped re-registration guard -> registration test RED; dropped stdio detection -> explicit stdio case RED.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -445,11 +445,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: resolver.py, _host_probe.py and 6 tests; 6 pass. Walk-fallback and unprefixed/collision paths tested. Added extra wrong-tool_prefix and no-host tests. ruff/flake8 not installed in worktree venv, so not run.
+**Mutation evidence**: Disabled rule-5 branch -> test_tenant_bound_host_entry_unavailable RED; disabled prefix+collision checks -> test_resolver_rejects_unprefixed_and_colliding RED.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
