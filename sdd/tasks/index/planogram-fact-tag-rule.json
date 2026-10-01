@@ -1,0 +1,132 @@
+{
+  "feature": "planogram-fact-tag-rule",
+  "feature_id": "FEAT-624",
+  "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-01T11:14:01+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4003",
+      "slug": "fact-tag-contracts",
+      "title": "fact_tag_present kind, info_results fields and binding validation",
+      "feature_id": "FEAT-624",
+      "feature": "planogram-fact-tag-rule",
+      "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependency; owns comparison/definition.py, contracts.py and core compliance.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4003-fact-tag-contracts.md"
+    },
+    {
+      "id": "TASK-4004",
+      "slug": "tag-helpers-module",
+      "title": "Move fact-tag helpers to comparison/tags.py",
+      "feature_id": "FEAT-624",
+      "feature": "planogram-fact-tag-rule",
+      "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependency; creates comparison/tags.py and edits types/product_on_shelves.py only",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4004-tag-helpers-module.md"
+    },
+    {
+      "id": "TASK-4005",
+      "slug": "fact-tag-rule-evaluation",
+      "title": "Evaluate fact_tag_present in evaluate_rules",
+      "feature_id": "FEAT-624",
+      "feature": "planogram-fact-tag-rule",
+      "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4003",
+        "TASK-4004"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs the fact_tag_present RuleKind from TASK-4003 (comparison/definition.py) and imports slot_above/tag_text/tag_price from TASK-4004 (comparison/tags.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4005-fact-tag-rule-evaluation.md"
+    },
+    {
+      "id": "TASK-4006",
+      "slug": "fact-tag-info-routing",
+      "title": "Route fact_tag_present outcomes to info_results",
+      "feature_id": "FEAT-624",
+      "feature": "planogram-fact-tag-rule",
+      "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4003"
+      ],
+      "parallel": true,
+      "parallelism_notes": "writes ShelfScore.info_results / ShelfAssessment.info_results added by TASK-4003 (contracts.py, compliance.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4006-fact-tag-info-routing.md"
+    },
+    {
+      "id": "TASK-4007",
+      "slug": "converter-fact-tag-bindings",
+      "title": "Convert legacy fact/price tag elements into fact_tag_present bindings",
+      "feature_id": "FEAT-624",
+      "feature": "planogram-fact-tag-rule",
+      "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4003"
+      ],
+      "parallel": true,
+      "parallelism_notes": "its candidates must pass validate_bindings with the fact_tag_present kind from TASK-4003 (comparison/definition.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4007-converter-fact-tag-bindings.md"
+    },
+    {
+      "id": "TASK-4008",
+      "slug": "fact-tag-docs-and-harness",
+      "title": "Document fact_tag_present and let the live harness assert it",
+      "feature_id": "FEAT-624",
+      "feature": "planogram-fact-tag-rule",
+      "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4005",
+        "TASK-4006",
+        "TASK-4007"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents evaluation from TASK-4005 (rules.py), info_results routing from TASK-4006 (scoring.py) and the converter output of TASK-4007 (migration.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4008-fact-tag-docs-and-harness.md"
+    }
+  ]
+}
