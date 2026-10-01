@@ -358,3 +358,87 @@ async def test_take_assign_reassign_call_tuples():
         [[3]],
         None,
     )
+
+
+# -- M7: transitions ---------------------------------------------------------
+
+
+def _stage_reads(before, after, close_before=False, close_after=False):
+    return [
+        [{"id": 1, "stage_id": before, "close_date": close_before}],
+        [{"id": 1, "stage_id": after, "close_date": close_after}],
+    ]
+
+
+def _transition_toolkit(side_effect, roles=None):
+    from parrot_tools.odoo.models.helpdesk_entities import HelpdeskTicket
+
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    toolkit._load_ticket = AsyncMock(return_value=HelpdeskTicket(id=1))
+    toolkit._stage_roles = roles or {"reopen": 22, "close": 21, "done": None, "cancel": None}
+    toolkit._stages_cache = {}
+    transport.execute_kw.side_effect = side_effect
+    return transport, toolkit
+
+
+def _calls(transport):
+    return [c.args for c in transport.execute_kw.await_args_list]
+
+
+@pytest.mark.asyncio
+async def test_close_ticket_applied_via_action():
+    reads = _stage_reads([22, "Open"], [21, "Closed"], False, "2026-09-30 22:37:43")
+    transport, tk = _transition_toolkit([reads[0], None, reads[1]])
+    result = await tk.close_ticket(1)
+    assert result.applied and result.method_used == "action"
+    assert (TICKET_MODEL, "action_closed", [[1]], None) in _calls(transport)
+
+
+@pytest.mark.asyncio
+async def test_resolve_ticket_noop_reports_not_applied():
+    reads = _stage_reads([22, "Open"], [22, "Open"])
+    transport, tk = _transition_toolkit([reads[0], None, reads[1]])
+    result = await tk.resolve_ticket(1)
+    assert result.applied is False and result.method_used == "none"
+    assert any("no change" in w for w in result.warnings)
+    assert not any(c[1] == "write" for c in _calls(transport))
+
+
+@pytest.mark.asyncio
+async def test_reopen_ticket_falls_back_to_stage_write():
+    closed, open_ = [21, "Closed"], [22, "Open"]
+    transport, tk = _transition_toolkit(
+        [
+            [{"id": 1, "stage_id": closed, "close_date": "x"}],
+            None,
+            [{"id": 1, "stage_id": closed, "close_date": "x"}],
+            True,
+            [{"id": 1, "stage_id": open_, "close_date": "x"}],
+        ]
+    )
+    result = await tk.reopen_ticket(1)
+    writes = [c for c in _calls(transport) if c[1] == "write"]
+    assert writes == [(TICKET_MODEL, "write", [[1], {"stage_id": 22}], None)]
+    assert result.method_used == "stage_write" and result.applied is True
+
+
+@pytest.mark.asyncio
+async def test_move_ticket_to_stage_expected_stage_mismatch_raises_before_rpc():
+    transport, tk = _transition_toolkit([[{"id": 1, "stage_id": [4, "New"], "close_date": False}]])
+    with pytest.raises(ValueError, match="expected"):
+        await tk.move_ticket_to_stage(ticket_id=1, stage=21, expected_current_stage=22)
+    assert not any(c[1] == "write" for c in _calls(transport))
+
+
+@pytest.mark.asyncio
+async def test_cancel_ticket_writes_reason_then_action():
+    reads = _stage_reads([22, "Open"], [22, "Open"])
+    transport, tk = _transition_toolkit([reads[0], True, None, reads[1]])
+    result = await tk.cancel_ticket(1, "dup")
+    calls = _calls(transport)
+    assert calls[1] == (TICKET_MODEL, "write", [[1], {"cancel_reason": "dup"}], None)
+    assert calls[2] == (TICKET_MODEL, "action_cancel", [[1]], None)
+    assert [c for c in calls if c[1] == "write"] == [calls[1]]
+    assert result.applied is False
+
