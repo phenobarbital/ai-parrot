@@ -337,10 +337,8 @@ def test_migration_files_match_manifest() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: Five bodies extracted programmatically from spec §2.3 (the '-- NNNN_name.sql' header comment line dropped; first statement is the lock, preceded only by comments in 0004/0005). Stamped via stamp_migrations; 3 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
