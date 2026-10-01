@@ -200,6 +200,38 @@ class ToolkitTool(AbstractTool):
         return result
 
 
+def _is_host_class(cls: type) -> bool:
+    """Return True iff ``cls`` is the class of a resolver entry with ``source="host"``.
+
+    Computed from resolver entries (never stamped on the class). The resolver is
+    imported lazily because ``resolver`` imports ``discovery``, which imports this module.
+    """
+    from importlib import import_module  # pylint: disable=import-outside-toplevel
+    from .resolver import get_toolkit_resolver  # pylint: disable=import-outside-toplevel
+
+    for entry in get_toolkit_resolver().entries():
+        if entry.source != "host" or not entry.dotted_path:
+            continue
+        module_path, _, attr = entry.dotted_path.rpartition(".")
+        try:
+            if getattr(import_module(module_path), attr, None) is cls:
+                return True
+        except Exception:  # pylint: disable=broad-except
+            continue
+    return False
+
+
+def effective_access(cls: type, method_name: str) -> Optional[str]:
+    """Effective access of toolkit method ``method_name``: ``"read"``, ``"write"`` or ``None``.
+
+    ``"read"`` when listed in ``cls.read_tools``; ``"write"`` (fail-safe) for other
+    methods of a host toolkit; ``None`` for built-ins (unchanged behaviour).
+    """
+    if method_name in getattr(cls, "read_tools", frozenset()):
+        return "read"
+    return "write" if _is_host_class(cls) else None
+
+
 class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstract methods; see below.
     """
     Abstract base class for creating toolkits - collections of related tools.
@@ -328,6 +360,9 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
     #: FEAT-622 — True when this toolkit reads tenant data; tools then refuse without a matching
     #: ``studio_scope`` (enforced by AbstractTool.execute, FEAT-622 M3b). See parrot.tools.scope.
     tenant_bound: ClassVar[bool] = False
+    #: FEAT-622 — method names (pre-prefix) that are read-only. Host toolkit methods not listed are
+    #: treated as writes and require an approval token (strict confirmation).
+    read_tools: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, **kwargs):
         """
@@ -700,6 +735,16 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
             if tool.routing_meta is None:
                 tool.routing_meta = {}
             tool.routing_meta["requires_confirmation"] = True
+
+        # FEAT-622: read/write marker; host write tools are strictly confirmed.
+        access = effective_access(type(self), method_name)
+        if tool.routing_meta is None:
+            tool.routing_meta = {}
+        tool.routing_meta["access"] = access
+        if access == "write" and _is_host_class(type(self)):
+            tool.routing_meta["requires_confirmation"] = True
+            tool.routing_meta["confirmation_enforced"] = True
+            tool.routing_meta["confirm_window_seconds"] = 0
 
         return tool
 
