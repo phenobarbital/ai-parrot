@@ -263,32 +263,50 @@ existing coverage; do not create a parallel test module.
 
 **Completed by**: Claude Opus 5 (/sdd-fix issue:c3c59277ef77)
 **Date**: 2026-10-01
-**Verification**: partial — AC-4 (live hang demonstration) NOT run.
+**Verification**: verified — 10 passed; AC-4 demonstrated live.
 
 `pytest-timeout>=2.3` declared in the `dev` group via `uv add --no-sync` (pyproject +
-uv.lock committed, shared venv untouched), and `scripts/sdd/select_tests.py` gained an
-opt-in `--timeout SECONDS` that appends `--timeout=N` to each planned invocation's
-argv under `--run`. A local argv list is built so `invocation.argv` stays unmodified
-for the printed plan. Two new tests in `tests/sdd_scripts/test_select_tests.py`;
-**10 passed**.
+uv.lock committed, shared venv untouched by the worktree), and
+`scripts/sdd/select_tests.py` gained an opt-in `--timeout SECONDS` that appends
+`--timeout=N` to each planned invocation's argv under `--run`. A local argv list is
+built so `invocation.argv` stays unmodified for the printed plan. Two new tests in
+`tests/sdd_scripts/test_select_tests.py`; **10 passed** (2 under `-k timeout`).
 
 A first version of the test helper monkeypatched `subprocess.run` wholesale and broke
 `test_scope`'s internal `git diff`; it now intercepts only pytest argvs and delegates
 everything else to the real `subprocess.run`.
 
-**AC-4 blocked, by design.** It needs `pytest_timeout` importable, and
-`.claude/rules/worktree-management.md` forbids a worktree agent from installing into
-the shared venv. The user elected to run the install themselves
-(`uv pip install pytest-timeout`), after which AC-4 is a single command.
+**AC-4 demonstrated** (the user installed pytest-timeout 2.4.0 into the shared venv;
+`worktree-management.md` reserves that for the main-checkout operator). A throwaway
+module with `time.sleep(600)` plus one passing test:
 
-**AC-5 ✅ confirmed**: `[tool.pytest.ini_options]` gained no timeout key — the
-default is sweep-only, per the user's Q2 decision, so slow voice/browser suites
-cannot start flaking for developers.
+```
+# without --timeout, capped externally at 20s:
+#   killed by SIGKILL, exit 137 — stalled, no information about which test
+#
+# with --timeout=5:
+F.                                                                       [100%]
+    def test_this_one_hangs():
+>       time.sleep(600)
+E       Failed: Timeout (>5.0s) from pytest-timeout.
+=========================== short test summary info ============================
+FAILED test_feat617_hang_demo.py::test_this_one_hangs - Failed: Timeout (>5.0...
+1 failed, 1 passed in 5.17s
+```
+
+The offender is **named**, the suite **continues**, and the sibling test still passes —
+exactly the behaviour change the merge gate needed. The throwaway module was deleted
+after the run (it never entered the repo; it lived in the session scratchpad).
+
+**AC-5 confirmed**: `pyproject.toml` has no timeout key outside the dependency
+declaration — the default is sweep-only per the user's Q2 decision, so slow
+voice/browser suites cannot start flaking for developers.
 
 **Context**: this ships as a precaution, not a repair. The hang in
 `issue:c3c59277ef77` does not reproduce (full integrations run completes in 260.8s),
 and the separately-filed `issue:1dbb2aac09ba` names a test that now passes in 1.93s
-under its own documented repro — that issue looks already fixed and is a candidate
-for closure by its owner.
+under its own documented repro — that issue looks already fixed and is a candidate for
+closure by its owner.
 
-AC-1 ⏸ (pending install), AC-2/3 ✅, AC-4 ⏸, AC-5/6/7/8 ✅.
+**AC status**: AC-1 ✅ (pytest_timeout 2.4.0 imports; `--timeout` registered),
+AC-2 ✅, AC-3 ✅, AC-4 ✅ (above), AC-5 ✅, AC-6 ✅, AC-7 ✅ ruff clean, AC-8 ✅.

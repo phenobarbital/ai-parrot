@@ -94,7 +94,7 @@
       "feature_id": "FEAT-617",
       "feature": "manager-test-bot-cleanup-lifecycle-fixes",
       "spec": "sdd/specs/manager-test-bot-cleanup-lifecycle-fixes.spec.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
