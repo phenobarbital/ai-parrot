@@ -352,7 +352,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -362,8 +362,9 @@
       "parallelism_notes": "import_to_agent writes the asset through StudioAssetService from TASK-3936 (services/assets.py); creates services/catalog.py; sole FEAT-621 writer of handlers/models/skills_catalog.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3938-catalog-service.md"
+      "completed_at": "2026-10-01T22:38:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3938-catalog-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3939",
