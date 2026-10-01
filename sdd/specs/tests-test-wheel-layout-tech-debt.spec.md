@@ -43,7 +43,7 @@ $ python -m pytest packages/parrot-formdesigner/tests -q -p no:randomly
 ```
 
 The ledger issue named two of these. There are forty. They cluster into five
-distinct root causes (§2 *Failure taxonomy*), the largest of which — 15 of the
+distinct root causes (§2 *Failure taxonomy*), the largest of which — 18 of the
 40 — is a **knowingly deferred** test double. `test_api_feat300.py:173`
 documents the deferral in its own docstring:
 
@@ -137,16 +137,31 @@ overlap, so they parallelise cleanly.
 
 ### Failure taxonomy — all 40, partitioned
 
-Counts are from the §1 run at `8d2cf8510`. Every failure appears in exactly
-one cluster.
+Counts are from the §1 run at `8d2cf8510`. Every failure appears in exactly one
+cluster. **Re-triaged per file at spec time**: each failing file was also run
+standalone, which splits the 40 into **32 genuine** failures that reproduce in
+isolation and **8 pollution-only** failures that appear solely in a shared
+session.
 
-| Cluster | n | Root cause | Which side moves |
-|---|---|---|---|
-| **F1 tenant double** | 15 | `_make_request()` (`test_api_feat300.py:125`) never stubs `request.get("tenant")`; `MagicMock(spec=web.Request).get()` returns a truthy MagicMock, so `_get_tenant()` resolves garbage → handler 404s. `_tenant_request()` (`:173`) already fixes it for a subset. | **test** — fold `_tenant_request`'s patch into `_make_request`, delete the now-redundant wrapper |
-| **F2 registry/enum coverage** | 11 | New `FieldType` members shipped without matching control-capability and schema-snippet entries. `_FIELD_SCHEMA_SNIPPETS` (`field_helpers.py:15`) and the builtin control table are missing keys (`KeyError: 'text' / 'number' / 'select' / 'nps' / 'group' / 'version'`, `Missing control for FieldType.TEXT`). | **product** — these are genuine gaps; register the missing entries |
-| **F3 pinned-constant drift** | 7 | Tests assert literals the product legitimately grew past: `'1.0.6' == '0.9.0'`, `'1.0.6' == '0.3.0'`, `45 == 32` (×3, controls), `22 == 15` (tool defs), `60 < 50` (line count). | **test** — derive from the source of truth, never re-pin a new literal |
-| **F4 contract/metadata drift** | 4 | `form_controls_response_schema.json` forbids fields the endpoint now returns (`Additional properties are not allowed ('supported_effects', …)`); two metadata key-set assertions drift with it. | **test fixture** — the schema is a snapshot of the endpoint, so it follows the endpoint |
-| **F5 isolation & harness** | 3 | `parrot_formdesigner.ui` transitively imports `.api` (a real layering regression); `test_duplicate_location_raises` leaks DB state (`23505 unique violation` escaping instead of the expected error); `test_shortcut_equals_explicit`. | **mixed** — F5a is **product**, F5b/F5c are **test** |
+```
+$ for f in <each failing file>; do pytest "$f" -q -p no:randomly; done
+→ 32 failures standalone
+$ pytest packages/parrot-formdesigner/tests -q -p no:randomly
+→ 40 failures
+```
+
+The 8-failure delta is entirely `tests/unit/controls/test_control_registry_capabilities.py`,
+which **passes 21/21 standalone**.
+
+| Cluster | n | Files | Root cause | Which side moves |
+|---|---|---|---|---|
+| **F1 tenant double** | 18 | `tests/unit/test_api_feat300.py` (9), `tests/unit/test_feat300_review_fixes.py` (6), `tests/test_form_uid_integration.py` (3) | `_make_request()` (`test_api_feat300.py:125`) never stubs `request.get("tenant")`; `MagicMock(spec=web.Request).get()` returns a truthy MagicMock, so `_get_tenant()` resolves garbage → handler 404s. `_tenant_request()` (`:173`) already fixes it for 6 of 31 call sites. `test_form_uid_integration.py:43` is a second, independent double with the same gap. | **test** — fold the patch into `_make_request`, delete the wrapper |
+| **F2 registry pollution + contract drift** | 8 + 3 | `tests/integration/test_form_controls_contract.py` (2 own), `tests/unit/api/test_form_controls_endpoint.py` (1 own) | Both fixtures call `_REGISTRY.clear()` (`registry.py:91`) and never restore it, so every later test in the session sees an empty/partial control registry — the sole cause of the 8 `KeyError: 'text' / 'number' / …` and `assert 'text' in {'cap_test', 'compat_test'}` failures. Their own 3 failures are separate: `form_controls_response_schema.json` forbids fields the endpoint now returns (`Additional properties are not allowed ('supported_effects', …)`). | **test fixture** — snapshot/restore `_REGISTRY`; regenerate the schema from the endpoint |
+| **F3 coverage gaps** | 2 | `tests/unit/test_field_helpers.py` (1), `tests/unit/test_controls_registry.py` (1) | `_FIELD_SCHEMA_SNIPPETS` (`field_helpers.py:15`) lacks entries for newer `FieldType` members (`audio`, `search`, `masked`, `ai_capture`, `tree_select`, …). **Verified**: with `controls.builtin` imported, all 45 `FieldType` values DO register — so this is a snippets gap, not a registry gap. | **product** — add the missing snippets |
+| **F4 pinned-constant drift** | 6 | `tests/unit/test_version_and_docs.py` (1), `tests/unit/test_init_imports_metadata_only.py` (1), `tests/unit/test_core_models.py` (1), `tests/test_edit_toolkit.py` (2), `tests/integration/test_msteams_import_compat.py` (1) | Tests assert literals the product grew past: `'1.0.6' == '0.9.0'`, `'1.0.6' == '0.3.0'`, `45 == 32`, `22 == 15`, `60 < 50`. | **test** — derive from the source of truth, never re-pin a new literal |
+| **F5 isolation & harness** | 3 | `tests/unit/ui/test_ui_imports.py` (1), `tests/unit/test_venue_service.py` (1), `tests/unit/test_deterministic_integration.py` (1) | `parrot_formdesigner.ui` transitively imports `.api` (a real layering regression); `test_duplicate_location_raises` leaks DB state (`23505 unique violation` escaping instead of the expected error). | **mixed** — the `ui → api` break is **product**, the other two are **test** |
+
+Totals: 18 + 11 + 2 + 6 + 3 = 40 (of which 8, inside F2, are pollution-only).
 
 ### Integration Points
 
@@ -169,9 +184,9 @@ one cluster.
 | M1 | no | the two candidate strategies must be measured against the real suite before one is fixed | strategy choice is an open design question — see M1 |
 | M2 | yes | guard placement, policy field, and the `notes` string are fixed below | — |
 | M3 (F1) | yes | fold `_tenant_request` into `_make_request`; delete the wrapper | — |
-| M4 (F2) | no | which snippet/capability values are correct per `FieldType` is a product judgement | — |
-| M5 (F3) | yes | every literal becomes a derivation from the source of truth | — |
-| M6 (F4) | yes | regenerate the schema fixture from the live endpoint, assert round-trip | — |
+| M4 (F3) | no | which snippet values are correct per `FieldType` is a product judgement | — |
+| M5 (F4) | yes | every literal becomes a derivation from the source of truth | — |
+| M6 (F2) | yes | snapshot/restore `_REGISTRY`; regenerate the schema fixture from the live endpoint | — |
 | M7 (F5) | no | the `ui → api` import is a real layering break needing a design call | — |
 
 ### Module 1: Unique pytest collection identity per package
@@ -228,46 +243,61 @@ one cluster.
   FEAT-604 ledger interaction are unchanged — a skipped foreign escalation must
   not appear in `escalated`, matching the existing comment at `select.py:191-198`.
 
-### Module 3: formdesigner F1 — tenant test double (15 failures)
+### Module 3: formdesigner F1 — tenant test double (18 failures)
 
 - **Path**: `packages/parrot-formdesigner/tests/unit/test_api_feat300.py`,
   `…/tests/unit/test_feat300_review_fixes.py`, `…/tests/test_form_uid_integration.py`
 - **Responsibility**: `_make_request()` stubs `request.get("tenant")` the way
-  the real `@requires_tenant` decorator does, so handler tests exercise the
-  real tenant path. `_tenant_request()` becomes redundant and is deleted.
-- **Depends on**: nothing. **Touches no `src/`.**
+  the real `@requires_tenant` decorator does, so handler tests exercise the real
+  tenant path. `_tenant_request()` becomes redundant and is deleted.
+  `test_form_uid_integration.py:43` is a second, independent double needing the
+  same stub.
+- **Depends on**: M1 — `test_feat300_review_fixes.py:32` does
+  `from tests.unit.test_api_feat300 import …`, one of the 24 sites M1 rewrites.
+- **Touches no `src/`.** `FormAPIHandler._get_tenant()` (`handlers.py:270-295`)
+  is correct; FEAT-421 rewrote it deliberately and the double lagged.
 
-### Module 4: formdesigner F2 — registry & snippet coverage (11 failures)
+### Module 4: formdesigner F3 — schema-snippet coverage (2 failures)
 
-- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/tools/field_helpers.py`,
-  `…/src/parrot_formdesigner/controls/builtin.py`
-- **Responsibility**: every `FieldType` member (45 verified) has a schema
-  snippet in `_FIELD_SCHEMA_SNIPPETS` and a registered builtin control with
-  correct `supported_effects`. Product gap — tests stay as the contract.
+- **Path**: `packages/parrot-formdesigner/src/parrot_formdesigner/tools/field_helpers.py`
+- **Responsibility**: every `FieldType` member has an entry in
+  `_FIELD_SCHEMA_SNIPPETS` (`field_helpers.py:15`). Product gap — the tests are
+  the contract and stay as they are.
+- **Verified at spec time**: importing `parrot_formdesigner.controls.builtin`
+  registers all **45** `FieldType` values with zero missing, so the control
+  registry is NOT the gap — `controls/builtin.py` needs no change. The gap is
+  the snippets dict that seeds it.
 - **Depends on**: nothing.
 
-### Module 5: formdesigner F3 — pinned-constant drift (7 failures)
+### Module 5: formdesigner F4 — pinned-constant drift (6 failures)
 
 - **Path**: `…/tests/unit/test_version_and_docs.py:11`,
   `…/tests/unit/test_init_imports_metadata_only.py`,
-  `…/tests/unit/test_core_models.py`, `…/tests/unit/test_controls_registry.py`,
-  `…/tests/test_edit_toolkit.py`,
+  `…/tests/unit/test_core_models.py`, `…/tests/test_edit_toolkit.py`,
   `…/tests/integration/test_msteams_import_compat.py`
 - **Responsibility**: replace each hardcoded literal with a derivation from the
   source of truth (`importlib.metadata.version`, `len(FieldType)`, the registry
   itself). **No test may re-pin a fresh literal** — that only resets the clock.
-- **Depends on**: M4 (counts settle once M4's entries land).
+- **Depends on**: M4 (the counts settle once M4's snippet entries land).
 
-### Module 6: formdesigner F4 — controls contract fixture (4 failures)
+### Module 6: formdesigner F2 — registry fixture isolation + contract drift (11 failures)
 
-- **Path**: `…/tests/fixtures/form_controls_response_schema.json`,
-  `…/tests/integration/test_form_controls_contract.py`,
+- **Path**: `…/tests/integration/test_form_controls_contract.py`,
   `…/tests/unit/api/test_form_controls_endpoint.py`,
-  `…/tests/unit/controls/test_metadata_dump_keys.py`
-- **Responsibility**: the response schema admits the fields the endpoint
-  actually returns (`supported_effects`, …); the metadata key-set assertions
-  follow. The endpoint is the contract; the fixture is the snapshot.
-- **Depends on**: M4.
+  `…/tests/fixtures/form_controls_response_schema.json`
+- **Responsibility**: two things in the same two files.
+  1. **Isolation (8 pollution failures).** Both fixtures call `_REGISTRY.clear()`
+     (`test_form_controls_contract.py:33,37`; `test_form_controls_endpoint.py:19,23`)
+     against the module-global `_REGISTRY` (`controls/registry.py:91`) and never
+     restore it, so every later test in the session sees an empty or fake-seeded
+     registry. Snapshot and restore it instead. This alone turns
+     `tests/unit/controls/test_control_registry_capabilities.py` from 8 failures
+     back to the 21/21 it already scores standalone — **that file is not edited.**
+  2. **Contract drift (3 own failures).** `form_controls_response_schema.json`
+     forbids fields the endpoint now returns (`supported_effects`, …).
+     Regenerate the schema from the live endpoint; the endpoint is the contract,
+     the fixture is the snapshot.
+- **Depends on**: M4 (regenerate the schema only once the control set is final).
 
 ### Module 7: formdesigner F5 — layering & harness (3 failures)
 
@@ -275,7 +305,7 @@ one cluster.
   `…/tests/unit/test_venue_service.py`,
   `…/tests/unit/test_deterministic_integration.py`
 - **Responsibility**: break the `parrot_formdesigner.ui → parrot_formdesigner.api`
-  transitive import (**product fix** — the test is asserting a real invariant);
+  transitive import (**product fix** — the test asserts a real invariant);
   isolate `test_duplicate_location_raises` so the `23505` surfaces as the
   expected error rather than escaping.
 - **Depends on**: nothing.
@@ -318,11 +348,18 @@ one cluster.
 - [ ] **AC5** `ScopePolicy(escalate_foreign_dists=True)` reproduces the
       pre-FEAT-618 target set exactly (no silent behaviour change for callers
       that opt back in).
-- [ ] **AC6** No product behaviour changed to satisfy a stale test: every F3/F4
+- [ ] **AC6** No product behaviour changed to satisfy a stale test: every F4/F2
       edit is a derivation or a regenerated snapshot, reviewable as such.
 - [ ] **AC7** `ruff check` clean on every changed file.
 - [ ] **AC8** No test re-pins a fresh hardcoded version/count literal (grep the
       M5 diff for new numeric/version equality literals).
+- [ ] **AC9** `tests/unit/controls/test_control_registry_capabilities.py` scores
+      21/21 both standalone AND inside the full package run, **without that file
+      being edited** — proving M6's fixture restore fixed the pollution rather
+      than the symptom.
+- [ ] **AC10** No fixture in `packages/parrot-formdesigner/tests` leaves the
+      module-global `_REGISTRY` (`controls/registry.py:91`) mutated after
+      teardown.
 
 ---
 
@@ -381,6 +418,10 @@ def _make_handler(registry=None, *, tenant="t1") -> FormAPIHandler:             
   lives in `test_scope/`.
 - ~~`ScopePolicy.exclude_distributions`~~ — not a real field (only `impact_cap`
   and `impact_depth` exist at `policy.py:776-777`).
+- ~~a control-registry gap~~ — **verified**: importing
+  `parrot_formdesigner.controls.builtin` registers all 45 `FieldType` values
+  with none missing. `controls/builtin.py` is NOT a target of this feature; the
+  `KeyError: 'text'` failures are fixture pollution (M6), not a missing control.
 - ~~a per-package `.venv`~~ — only the repo-root `.venv` exists; the ledger
   issue's reference to "a clean `packages/ai-parrot/.venv`" describes no
   current checkout state.
@@ -398,7 +439,8 @@ def _make_handler(registry=None, *, tenant="t1") -> FormAPIHandler:             
 | `packages/parrot-formdesigner/tests/unit/test_api_feat300.py` | MODIFY | `def _make_request(` | `test_api_feat300.py:125` | 1 |
 | `packages/parrot-formdesigner/tests/unit/test_api_feat300.py` | MODIFY | `def _tenant_request(*, tenant: str = "t1", **kwargs) -> MagicMock:` | `test_api_feat300.py:173` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/tools/field_helpers.py` | MODIFY | `_FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {` | `field_helpers.py:15` | 1 |
-| `packages/parrot-formdesigner/src/parrot_formdesigner/controls/builtin.py` | MODIFY | (unverified — check before use) | — | — |
+| `packages/parrot-formdesigner/tests/unit/api/test_form_controls_endpoint.py` | MODIFY | `    _REGISTRY.clear()` | `test_form_controls_endpoint.py:19` | 2 |
+| `packages/parrot-formdesigner/tests/integration/test_form_controls_contract.py` | MODIFY | `    _REGISTRY.clear()` | `test_form_controls_contract.py:33` | 2 |
 | `packages/parrot-formdesigner/tests/unit/test_version_and_docs.py` | MODIFY | `    assert v.__version__ == "0.9.0"` | `test_version_and_docs.py:11` | 1 |
 | `packages/parrot-formdesigner/tests/unit/test_field_helpers.py` | MODIFY | `def test_field_schema_snippets_cover_all_types() -> None:` | `test_field_helpers.py:15` | 1 |
 | `packages/parrot-formdesigner/tests/fixtures/form_controls_response_schema.json` | MODIFY | — (JSON fixture, regenerated) | — | — |
