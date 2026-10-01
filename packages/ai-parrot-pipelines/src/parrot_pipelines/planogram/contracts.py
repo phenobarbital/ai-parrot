@@ -364,5 +364,6 @@ class CycleContext(BaseModel):
     output_dir: Optional[Path] = None
     layout: Any = None  # validated LayoutProfile (typed Any: avoids the slots/contracts import cycle)
     reference_bank: List[ReferenceImage] = Field(default_factory=list)
+    roi_prompt: Optional[str] = None  # rendered ROI prompt; None = the LLM detector sees the whole image
     images: Dict[str, Any] = Field(default_factory=dict)  # image_id -> PIL image, run-owned
     errors: List[str] = Field(default_factory=list)

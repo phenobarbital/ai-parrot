@@ -25,7 +25,7 @@ from .contracts import (
 )
 from .perception.executor import CpuExecutor
 from .perception.ocr import OcrReader
-from .identification.detector import GENERIC_DETECTION_PROMPT, llm_detect_shapes
+from .identification.detector import GENERIC_DETECTION_PROMPT, llm_detect_shapes, render_roi_prompt
 from .identification.vision import VisionAdapter
 from .comparison.definition import (
     SlotsDefinition,
@@ -298,7 +298,21 @@ class PlanogramCompliance(AbstractPipeline):
             errors=[],
             layout=self._layout,
             reference_bank=[],
+            roi_prompt=self._roi_prompt(),
             images={},
+        )
+
+    def _roi_prompt(self) -> Optional[str]:
+        """The configuration's ROI prompt with its placeholders filled; ``None`` when unset or disabled."""
+        if not self._layout.roi_detection:
+            return None
+        config = self.planogram_config.planogram_config or {}
+        requirements = (config.get("advertisement_endcap") or {}).get("text_requirements") or []
+        tags = config.get("tags") or [item.get("required_text") for item in requirements if isinstance(item, dict)]
+        return render_roi_prompt(
+            self.planogram_config.roi_detection_prompt,
+            brand=str(config.get("brand") or ""),
+            tags=[tag for tag in tags if isinstance(tag, str)],
         )
 
     async def _perceive_one(

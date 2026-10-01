@@ -74,6 +74,8 @@ class LayoutProfile(BaseModel):
     untagged_bottom_row: bool = False
     identify_strategy: IdentifyStrategy = IdentifyStrategy.FULL_IMAGE
     perception_mode: Literal["cv", "llm_detector"] = "cv"
+    #: Locate the fixture with the configuration's ROI prompt before any LLM detection.
+    roi_detection: bool = True
     min_usable_shapes: int = Field(default=1, ge=0)
     min_row_items: int = Field(default=1, ge=1)
     max_row_slope: float = Field(default=0.12, ge=0.0)
