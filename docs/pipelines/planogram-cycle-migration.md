@@ -37,6 +37,10 @@ For one release, `roi_detection_prompt`, `object_identification_prompt`, `detect
 paths, stable path lists, and PIL images; valid entries are hydrated once per run into opaque
 reference labels.
 
+Legacy `fact_tag` and `price_tag` elements become informative `fact_tag_present` bindings on the
+first facing of the product they name (`"ES-60W Fact Tag"` → product `ES-60W`, same shelf),
+carrying `price_required`. A tag that names no product of its shelf is reported as unresolved.
+
 ## Deployment sequence
 
 Migration happens before deployment.
@@ -99,3 +103,4 @@ Accuracy signoff requires three successful local reports from the documented cas
 | Empty or invalid definition | Review slots, expected-empty facings, descriptors, and selector ids. |
 | Unmigrated row in a handler job | Export, convert, review, apply SQL, and preflight before deployment. |
 | Exit code `2` | Resolve every reported candidate or readiness problem; do not deploy it. |
+| `tag '…' matches no product of the shelf` | Bind the tag to the right facing by hand, or drop it. |
