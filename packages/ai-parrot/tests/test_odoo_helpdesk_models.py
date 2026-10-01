@@ -95,3 +95,33 @@ def test_update_ticket_input_has_no_lifecycle_fields():
     fields = set(UpdateTicketInput.model_fields)
     assert not fields & forbidden
     assert not any(field.startswith("sh_sla") for field in fields)
+
+
+import parrot_tools.odoo.models as odoo_models  # noqa: E402
+
+
+def test_models_init_exports_helpdesk_classes():
+    """Expose every required helpdesk model through the Odoo model package."""
+    for name in (
+        "HelpdeskTicket",
+        "HelpdeskLifecycle",
+        "TicketResult",
+        "TicketTransitionResult",
+        "StatsGroup",
+        "CreateTicketInput",
+        "UpdateTicketInput",
+        "SearchTicketsInput",
+        "CreateSlaPolicyInput",
+        "MergeTicketsInput",
+    ):
+        assert hasattr(odoo_models, name), name
+        assert name in odoo_models.__all__, name
+
+    result = odoo_models.TicketTransitionResult(
+        ticket_id=1,
+        action="action_closed",
+        applied=True,
+        method_used="action",
+        ticket=odoo_models.HelpdeskTicket(id=1),
+    )
+    assert result.warnings == []
