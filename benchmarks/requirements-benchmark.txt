@@ -8,7 +8,7 @@ Pillow>=9.0
 numpy>=1.24
 
 # Optional: ONNX backend
-onnxruntime>=1.16
+onnxruntime>=1.30.0
 
 # Baseline model (HuggingFace sentence-transformers)
 sentence-transformers>=2.2

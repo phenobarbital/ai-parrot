@@ -195,3 +195,19 @@ def test_compare_unassessed_rule_is_violation(harness):
         "shelf_scores": [{"rule_results": [{"rule_id": "r1", "assessed": False, "passed": None}]}],
     }
     assert any("rule r1" in item for item in harness.compare_ground_truth(result, truth))
+
+
+def test_compare_reads_informative_rules(harness):
+    truth = _truth(harness, expected_positions={}, expected_rules={"fact_tag_present:f1": True})
+    result = {
+        "overall_compliance_score": 0.8,
+        "coverage": 1.0,
+        "position_results": [],
+        "shelf_scores": [
+            {
+                "rule_results": [],
+                "info_results": [{"rule_id": "fact_tag_present:f1", "assessed": True, "passed": True}],
+            }
+        ],
+    }
+    assert not any("fact_tag_present" in item for item in harness.compare_ground_truth(result, truth))

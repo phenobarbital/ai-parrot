@@ -25,6 +25,9 @@ class UserToolkitOverride(BaseModel):
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
+_PURGE_MAX_PASSES = 50
+
+
 class ToolkitConfigService:
     """CRUD over ``user_toolkit_configs`` keyed ``(user_id, agent_id, slug)``."""
 
@@ -59,6 +62,32 @@ class ToolkitConfigService:
                 return False
             await db.delete(COLLECTION, query)
         return True
+
+    async def purge_agent(self, agent_ref: str) -> list[UserToolkitOverride]:
+        """Delete every user's override documents for ``agent_ref`` and return them (spec §2.5c clean-up)."""
+        query = {"agent_id": agent_ref}
+        docs: list[dict] = []
+        async with DocumentDb() as db:
+            # Delete exactly the documents that were read, and re-read until none is left, so an override written
+            # concurrently is either purged (and returned for vault clean-up) or survives untouched — never lost.
+            for _ in range(_PURGE_MAX_PASSES):
+                batch = await db.read(COLLECTION, query)
+                if not batch:
+                    break
+                docs.extend(batch)
+                ids = [doc["_id"] for doc in batch if "_id" in doc]
+                if not ids:
+                    await db.delete_many(COLLECTION, query)
+                    break
+                await db.delete_many(COLLECTION, {**query, "_id": {"$in": ids}})
+        purged: list[UserToolkitOverride] = []
+        for doc in docs or []:
+            doc.pop("_id", None)
+            try:
+                purged.append(UserToolkitOverride.model_validate(doc))
+            except ValidationError as exc:
+                logger.warning("Purged malformed toolkit override for agent='%s': %s", agent_ref, exc)
+        return purged
 
     async def revision(self, user_id: str, agent_id: str) -> str:
         """Return the latest override timestamp, or an empty string when none exist."""

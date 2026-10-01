@@ -86,6 +86,10 @@ import hashlib                                                                  
 
 ## Implementation Notes
 
+- **Review carry-over (W0-W1 review)**: `StudioAssetInput` does no validation in storage. The asset service MUST reject
+  path traversal (`..`, absolute paths), backslash and NUL in `name`, and map an oversize payload to
+  `StudioAssetTooLarge`, before calling the repository.
+
 - Parallelism: uses validate_asset_input/normalized_tooling_for/StudioToolingGate from TASK-3933 (services/_common.py) and InMemoryStudioRepositories from TASK-3931 for DB-free tests; creates services/assets.py only (runs alongside TASK-3934/14)
 - Cross-feature ordering: X16 "Cross-spec waits" — STORAGE W2 services need TOOLKITS Wave 1 (M7 core: `parrot/tools/tooling_policy.py` with `enforce_tenant_tooling`, `ToolingSubject`, `TenantToolingRefused`, `get_tenant_tooling_policy`) merged first. Do not start before it is on `dev`.
 - Quota check MUST happen after the lock (mutation in `test_concurrent_quota`: check before the lock ⇒ RED).

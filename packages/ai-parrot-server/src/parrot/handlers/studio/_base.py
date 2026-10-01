@@ -233,6 +233,21 @@ class StudioBaseView(BaseView):
         body = self._json_error(f"Name '{slug}' is not available.", "name_taken")
         return self.json_response(body, status=409)
 
+    async def _studio_partition(self) -> Any:
+        """Storage partition for this request: GLOBAL here; FEAT-605 v0.2 W2.1 overrides it (X5)."""
+        from .storage.models import StudioPartition
+
+        return StudioPartition.GLOBAL
+
+    def _studio_storage(self) -> Any:
+        """The resolved ``StudioStorage`` memoised on the app."""
+        from .storage.models import StudioStorageUnavailable
+
+        storage = self.request.app.get("studio_storage")
+        if storage is None:   # the startup hook did not run → 503 studio_storage_unavailable
+            raise StudioStorageUnavailable("studio storage was not resolved at startup")
+        return storage
+
     async def _get_user(self) -> StudioUser:
         """Resolve the authenticated caller's identity from the session.
 
