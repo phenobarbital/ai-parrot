@@ -18,7 +18,7 @@ tags: [agentstudio, multi-tenant, visibility, byok, pbac]
 
 **Date**: 2026-09-24
 **Author**: Juan Ruffato (with Claude)
-**Status**: exploration
+**Status**: accepted (2026-09-30; superseded in storage, activation and naming by FEAT-605 v0.2 C1/C3/C4)
 **Recommended Option**: A (revised — registry/YAML metadata is the Agent
 Studio agent system of record)
 
