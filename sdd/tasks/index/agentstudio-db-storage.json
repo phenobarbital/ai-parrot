@@ -244,7 +244,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -254,8 +254,9 @@
       "parallelism_notes": "types StudioServices over StudioRepositories from TASK-3930 (storage/repositories.py); creates services/__init__.py (lazy export table, written once) and services/_common.py that TASK-3934..19 import",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3933-services-foundation-gate-limits.md"
+      "completed_at": "2026-10-01T21:58:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3933-services-foundation-gate-limits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3934",
