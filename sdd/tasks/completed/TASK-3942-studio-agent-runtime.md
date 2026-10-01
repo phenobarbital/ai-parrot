@@ -245,10 +245,8 @@ async def shutdown_studio_runtime(app) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: manager/studio_runtime.py: StudioAgentRuntime (get/get_session/use with lease/reload/evict/start/sweep/shutdown) over StudioRuntimeCache + StudioAgentBuilder; §2.6 read-through revalidation on every lookup (get_version -> retire on missing/disabled -> reuse on same (agent_id, version) -> per-key single-flight rebuild from ONE load_snapshot), session entries rebuilt fresh (never cloned), PBAC (enforce_agent_access) before any build/lease, identity-guarded once-only cleanup (cleaned flag + mark_cleaned), ref-counted version dirs, one WARNING per refused (agent_id, version), module hooks add_studio_runtime_hooks (once per app) / install_studio_runtime (ensure_studio_storage first; only the database backend installs and sets manager.studio) / shutdown_studio_runtime; re-exports StudioRuntimeCache/StudioCacheEntry/StudioAgentBuilder. Settings read through a local _float_setting (navconfig has no getfloat). Decisions: install sets runtime.app (the builder's gate/policy source; manager.app can still be None at that point); reload returns previous_instance_closed=False (the previous instance is retired, cleaned after the grace) with an explanatory warning; evict retires base and session entries of the key; a policy-refused build raises StudioToolingRefused from get/use. Also touched TASK-3940's builder in a separate fix commit: a failed rebuild no longer deletes a version directory another cache entry already uses, plus a runtime_dir property. 46 tests (memory+postgres) pass; 23 mutations RED (equivalent mutant: skipping the same-version shortcut, covered by the in-lock recheck).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -435,7 +435,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -448,8 +448,9 @@
       "parallelism_notes": "composes StudioRuntimeCache (TASK-3939, manager/studio_cache.py), StudioAgentBuilder (TASK-3940, manager/studio_builder.py), cleanup_bot_instance (TASK-3941, manager.py) and ensure_studio_storage + repos (TASK-3932, storage/backend.py); creates manager/studio_runtime.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3942-studio-agent-runtime.md"
+      "completed_at": "2026-10-01T23:08:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3942-studio-agent-runtime.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3943",
