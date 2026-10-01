@@ -34,6 +34,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--worktree", type=Path, default=Path.cwd())
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Per-test timeout (pytest-timeout) applied to every planned invocation. "
+            "FEAT-617: bounds a hung test so the sweep names it instead of stalling. "
+            "Opt-in -- deliberately NOT a shared pytest config default, so slow suites "
+            "do not flake for developers."
+        ),
+    )
     return parser
 
 
@@ -87,7 +99,13 @@ def main(argv: list[str] | None = None) -> int:
 
     exit_code = 0
     for invocation in plan.invocations:
-        result = subprocess.run(list(invocation.argv), cwd=worktree)
+        # FEAT-617: bound each test so a hang fails loudly, named, instead of stalling
+        # the whole merge gate. Build a local argv -- invocation.argv is read elsewhere
+        # (the printed plan) and must stay unmodified.
+        argv = list(invocation.argv)
+        if args.timeout is not None:
+            argv.append(f"--timeout={args.timeout}")
+        result = subprocess.run(argv, cwd=worktree)
         is_core_escalation = any(target.reason == "core" for target in invocation.targets)
         is_cap_escalation = any(target.reason == "escalated" for target in invocation.targets)
         if result.returncode != 0:
