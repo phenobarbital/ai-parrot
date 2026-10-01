@@ -34,7 +34,7 @@
       "feature_id": "FEAT-618",
       "feature": "tests-test-wheel-layout-tech-debt",
       "spec": "sdd/specs/tests-test-wheel-layout-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done-with-issues",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +42,9 @@
       "parallelism_notes": "Independent: only test_scope/policy.py, test_scope/select.py and a new test file under packages/ai-parrot/tests/flows/dev_loop/test_scope/ \u2014 no file shared with any other task.",
       "assigned_to": null,
       "started_at": "2026-10-01T00:41:21.442374+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3909-merge-tier-foreign-escalation-guard.md"
+      "completed_at": "2026-10-01T00:45:41+00:00",
+      "file": "sdd/tasks/completed/TASK-3909-merge-tier-foreign-escalation-guard.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3910",
