@@ -137,7 +137,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -149,8 +149,9 @@
       "parallelism_notes": "Needs TASK-3892: imports ODOO_HELPDESK_* from parrot.conf. Needs TASK-3895: imports helpdesk envelopes/inputs/entities. Needs TASK-3896: calls normalize_ticket from helpdesk_normalize.py. Creates helpdesk.py and tests/test_odoo_helpdesk_toolkit.py that TASK-3898–3901 append to.",
       "assigned_to": null,
       "started_at": "2026-09-30T23:25:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3897-helpdesk-toolkit-core.md"
+      "completed_at": "2026-10-01T00:16:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3897-helpdesk-toolkit-core.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3898",
