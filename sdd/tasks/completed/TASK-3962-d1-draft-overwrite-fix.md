@@ -246,6 +246,6 @@ When you pick up this task:
 **Completed by**: sdd-worker (Claude Sonnet 5.5)
 **Date**: 2026-09-30
 **Notes**: Guard before write_text in StudioDraftsHandler.post; 409 name_taken. Mutation (neutralise guard) RED; test_drafts.py green.
-**Mutation evidence**: 
+**Mutation evidence**:
 
 **Deviations from spec**: none

@@ -365,6 +365,6 @@ When you pick up this task:
 **Completed by**: sdd-worker (Claude Sonnet 5.5)
 **Date**: 2026-09-30
 **Notes**: StudioBaseView scope/gate/_iter, helpers, scope-sourced identity; routed tests; mutation (drop tenant check) went RED. test_integration errors are pre-existing baseline.
-**Mutation evidence**: 
+**Mutation evidence**:
 
 **Deviations from spec**: none

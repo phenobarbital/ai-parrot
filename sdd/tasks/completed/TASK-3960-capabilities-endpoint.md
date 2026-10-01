@@ -300,6 +300,6 @@ When you pick up this task:
 **Completed by**: sdd-worker (Claude Sonnet 5.5)
 **Date**: 2026-09-30
 **Notes**: Added StudioCapabilities, StudioCapabilitiesHandler, /me registered first. Mutation (drop exemption) RED. Unauthenticated test accepts 401/403 because navigator get_userid answers 403 for a session without a user (pre-existing behaviour).
-**Mutation evidence**: 
+**Mutation evidence**:
 
 **Deviations from spec**: none

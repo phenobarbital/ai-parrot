@@ -269,6 +269,6 @@ When you pick up this task:
 **Completed by**: sdd-worker (Claude Sonnet 5.5)
 **Date**: 2026-09-30
 **Notes**: Appended FEAT-605 contract part to docs/agent_studio_api.md (host modes, access rule, route table, codes, /me, visibility PATCH, mount hooks, context keys, release gate) + doc-presence test.
-**Mutation evidence**: 
+**Mutation evidence**:
 
 **Deviations from spec**: none

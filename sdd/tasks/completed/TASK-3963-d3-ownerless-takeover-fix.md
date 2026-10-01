@@ -232,6 +232,6 @@ When you pick up this task:
 **Completed by**: sdd-worker (Claude Sonnet 5.5)
 **Date**: 2026-09-30
 **Notes**: Activation replace over ownerless/foreign agent refused; name_collision/not_owner normalised to name_taken. Mutation RED. test_drafts.py green.
-**Mutation evidence**: 
+**Mutation evidence**:
 
 **Deviations from spec**: none

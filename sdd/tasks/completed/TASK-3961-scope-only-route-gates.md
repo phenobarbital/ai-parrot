@@ -257,6 +257,6 @@ When you pick up this task:
 **Completed by**: sdd-worker (Claude Sonnet 5.5)
 **Date**: 2026-09-30
 **Notes**: Execute authoring gate before PBAC; resync superuser from scope when opted in. Mutation (remove gate) RED. Existing testing/skills suites green.
-**Mutation evidence**: 
+**Mutation evidence**:
 
 **Deviations from spec**: none

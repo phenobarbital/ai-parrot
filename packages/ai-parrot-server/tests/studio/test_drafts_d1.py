@@ -1,10 +1,15 @@
 """FEAT-605 W1.4 — D1: POST /drafts never overwrites another user's draft."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
+from pathlib import Path
+from typing import Any
 
 import pytest
 from aiohttp import web
+from aiohttp.test_utils import TestClient
+from asyncdb.exceptions import NoDataFound
 from navigator_session.data import SessionData
 from parrot.handlers.studio import drafts as drafts_module
 from parrot.handlers.studio import setup_studio_routes
@@ -16,9 +21,7 @@ SRC_B = "from parrot.bots.basic import BasicBot\n\n\nclass B(BasicBot):\n    pas
 @web.middleware
 async def _session_mw(request, handler):
     uid = request.headers["X-Uid"]
-    request["NAV_SESSION"] = SessionData(
-        data={"session": {"user_id": uid, "groups": [], "superuser": uid == "root"}}
-    )
+    request["NAV_SESSION"] = SessionData(data={"session": {"user_id": uid, "groups": [], "superuser": uid == "root"}})
     request["authenticated"] = True
     return await handler(request)
 
@@ -83,3 +86,55 @@ async def test_superuser_may_overwrite(aiohttp_client, rows, tmp_path):
     assert (await _save(client, "A", SRC_A)).status == 201
     assert (await _save(client, "root", SRC_B)).status == 201
     assert (tmp_path / drafts_module.DRAFTS_SUBDIR / "x.py").read_text() == SRC_B
+
+
+@pytest.mark.parametrize("failure", ["acquire", "query", "absent"])
+async def test_draft_lookup_failure_preserves_file(
+    aiohttp_client: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str
+) -> None:
+    """A failed ownership read refuses before writes; a genuinely absent row permits creation."""
+    monkeypatch.setattr(drafts_module, "AGENTS_DIR", tmp_path)
+    draft_dir = tmp_path / drafts_module.DRAFTS_SUBDIR
+    draft_dir.mkdir()
+    draft_file = draft_dir / "x.py"
+    if failure != "absent":
+        draft_file.write_text(SRC_A)
+    writes: list[dict[str, Any]] = []
+
+    class Database:
+        async def acquire(self) -> "Database":
+            if failure == "acquire":
+                raise OSError("ownership database unavailable")
+            return self
+
+        async def __aenter__(self) -> "Database":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+    async def get_row(**kwargs: Any) -> None:
+        if failure == "absent":
+            raise NoDataFound("no draft")
+        raise OSError("ownership query unavailable")
+
+    async def upsert(self: Any, **fields: Any) -> None:
+        writes.append(fields)
+
+    monkeypatch.setattr(drafts_module.StudioDraft, "get", get_row)
+    monkeypatch.setattr(drafts_module.StudioDraft.Meta, "connection", None)
+    monkeypatch.setattr(drafts_module._StudioDraftsMixin, "_upsert_draft_row", upsert)
+    app = web.Application(middlewares=[_session_mw])
+    app["database"] = Database()
+    app.router.add_view("/api/v1/astudio/drafts", drafts_module.StudioDraftsHandler)
+    client: TestClient = await aiohttp_client(app)
+    response = await _save(client, "B", SRC_B)
+    if failure == "absent":
+        assert response.status == 201
+        assert draft_file.read_text() == SRC_B
+        assert len(writes) == 1
+    else:
+        assert response.status == 503
+        assert (await response.json())["code"] == "draft_lookup_failed"
+        assert draft_file.read_text() == SRC_A
+        assert writes == []

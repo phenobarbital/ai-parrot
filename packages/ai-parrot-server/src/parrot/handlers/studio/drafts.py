@@ -12,10 +12,12 @@ must run BEFORE any import).
 from __future__ import annotations
 
 import contextlib
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
 from asyncdb.exceptions import NoDataFound
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.conf import AGENTS_DIR
@@ -63,6 +65,7 @@ class _StudioDraftsMixin:
         return manager.registry if manager else None
 
     async def _get_draft_row(self, name: str) -> StudioDraft | None:
+        """Read a draft, refusing unavailable ownership information with HTTP 503."""
         db = self.request.app.get("database")
         if db is None:
             return None
@@ -75,7 +78,12 @@ class _StudioDraftsMixin:
                     return None
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Studio: failed to query draft '%s': %s", name, exc)
-            return None
+            raise web.HTTPServiceUnavailable(
+                text=json.dumps(
+                    StudioError(message="Draft lookup unavailable.", code="draft_lookup_failed").model_dump()
+                ),
+                content_type="application/json",
+            ) from exc
 
     async def _get_all_draft_rows(self) -> list[StudioDraft]:
         db = self.request.app.get("database")
@@ -215,11 +223,7 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
 
         user = await self._get_user()
         existing = await self._get_draft_row(save_request.name)
-        if (
-            existing is not None
-            and str(existing.owner_user_id) != str(user.user_id)
-            and not user.is_superuser
-        ):
+        if existing is not None and str(existing.owner_user_id) != str(user.user_id) and not user.is_superuser:
             return self._name_taken(save_request.name)
 
         file_path.write_text(save_request.source)
