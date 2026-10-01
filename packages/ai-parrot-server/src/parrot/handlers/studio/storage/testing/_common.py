@@ -7,7 +7,7 @@ import re
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..models import (
     StudioAgentHead,
@@ -17,6 +17,9 @@ from ..models import (
     StudioVersionConflict,
     StudioWriteGuard,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only; the package __init__ imports this module
+    from . import InMemoryStudioRepositories
 
 
 _NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
