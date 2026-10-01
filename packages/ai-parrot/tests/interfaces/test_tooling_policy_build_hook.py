@@ -82,3 +82,13 @@ async def test_unbound_bot_builds_as_today():
     bot = _Bot()
     await bot.apply_tooling_specs()
     assert len(bot.added) == 1
+
+
+@pytest.mark.asyncio
+async def test_bound_policy_is_used_when_no_kwargs():
+    """A bound permissive policy (not deny_all) is honoured: distinguishes binding from the deny_all default."""
+    bot = _Bot()
+    bot._pending_mcp_specs = [AgentMCPServerSpec(name="ok", url="https://mcp.host/api/x")]
+    bot.bind_tooling_policy(TenantToolingPolicy(mcp_endpoints=("https://mcp.host/api/",)), _subject())
+    await bot.apply_tooling_specs()
+    assert len(bot.added) == 1
