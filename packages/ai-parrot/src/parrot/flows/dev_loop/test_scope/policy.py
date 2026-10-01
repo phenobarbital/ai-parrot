@@ -8,7 +8,11 @@ AGENT_MARKER_EXPRESSION: str = "not e2e and not real_llm and not integration"
 AGENT_FLAGS: tuple[str, ...] = ("-q", "--tb=short", "-p", "no:cacheprovider", "-o", "log_cli=false")
 DEFAULT_IMPACT_CAP: int = 150
 DEFAULT_IMPACT_DEPTH: int = 1
-DEFAULT_CORE_FANIN_THRESHOLD: int = 50
+# FEAT-620: direct-importer count, recalibrated 2026-10-01 on dev@76a7d7b22 over 2688
+# modules -- >=20 selects 45 modules (1.7%), >=30 selects 29 (1.1%), >=50 selects 12 (0.4%).
+# 30 sits an order of magnitude above the measured leaves (1-2) and below every measured
+# hub (clients/base.py 35, bots/abstract.py 31, tools/abstract.py 151, conf.py 174).
+DEFAULT_CORE_FANIN_THRESHOLD: int = 30
 CORE_PATHS: tuple[str, ...] = (  # measured by FEAT-563 S4 - artifacts/logs/feat-563-core-fanin.tsv; always escalate
     "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/bedrock.py",  # fan-in 77 (ast) / 2 (text)
     "packages/ai-parrot-client-amazon/src/parrot/clients/amazon/budget.py",  # fan-in 79 (ast) / 0 (text)

@@ -147,9 +147,9 @@ class ImportIndex:
                 # the parent, for test-impact purposes), expanding source-to-source edges to
                 # every ancestor floods `src_importers["parrot"]` with nearly every file in the
                 # tree (every satellite package imports *something* under the bare `parrot`
-                # namespace), which then inflates `source_fanin`'s transitive BFS for almost any
-                # module to a number close to the total file count. `source_fanin` must only
-                # follow exact import edges.
+                # namespace). `source_fanin` is a DIRECT count since FEAT-620, but exact-target
+                # edges are still required: ancestor-prefix edges would make every satellite
+                # package a direct importer of the bare `parrot` namespace. Keep this as-is.
                 index.src_importers.setdefault(target, set()).add(module)
 
         test_files: set[Path] = set()
@@ -242,22 +242,23 @@ def impacted_tests(index: ImportIndex, changed: Sequence[str], *, worktree: Path
 
 
 def source_fanin(index: ImportIndex, module: str) -> tuple[int, frozenset[str]]:
-    """Transitive count of source modules importing `module`, and their distributions (incl. the module's own)."""
-    visited: set[str] = set()
-    seen: set[str] = {module}  # never re-count `module` itself even if a cycle loops back to it
-    queue: list[str] = [module]
-    while queue:
-        current = queue.pop()
-        importers: set[str] = set()
-        for alias in module_aliases(current):
-            importers |= index.src_importers.get(alias, set())
-        for importer in importers:
-            if importer not in seen:
-                seen.add(importer)
-                visited.add(importer)
-                queue.append(importer)
-    dists = frozenset(index.module_dist[m] for m in visited if m in index.module_dist)
-    return len(visited), dists
+    """Count of source modules importing `module` DIRECTLY, and their distributions.
+
+    Direct, not transitive (FEAT-620). A transitive walk inherits the upstream
+    closure of any hub the module happens to be imported by, which saturates:
+    measured on dev@76a7d7b22 the self-contained leaf
+    `parrot/outputs/a2ui/linked/dsl.py` scored 1041 against `parrot/clients/base.py`'s
+    1024 - the leaf ranked higher than genuine core. Direct importers separate
+    those cases by ~15x (2 vs 35).
+
+    The module's own distribution is NOT included - `detect_core` unions it.
+    """
+    importers: set[str] = set()
+    for alias in module_aliases(module):
+        importers |= index.src_importers.get(alias, set())
+    importers.discard(module)  # a module is never its own importer, even via an alias edge
+    dists = frozenset(index.module_dist[m] for m in importers if m in index.module_dist)
+    return len(importers), dists
 
 
 def detect_core(index: ImportIndex, changed: Sequence[str], *, policy: ScopePolicy) -> list[CoreHit]:
