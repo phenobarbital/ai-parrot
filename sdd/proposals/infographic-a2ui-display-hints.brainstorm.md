@@ -574,7 +574,7 @@ from parrot.outputs.a2ui.adapters.infographic import infographic_response_to_env
 
 - [x] Scope? — *Owner: Juan*: Adapter + model + example (Option B).
 - [x] How does a progress item lower? — *Owner: Juan*: `KPICard` with ratio + `format='percent'`, and the target as text. No catalog change.
-- [x] Does a titled progress block get its own section? — *Owner: Juan*: Yes.
+- [x] Does a titled progress block get its own section? — *Owner: Juan*: Yes. **Revised in the spec (FEAT-623, 2026-09-30, after codex S8)**: no. Both renderers turn more than one section into tabs, so it becomes a `Column{Text(title), Row{KPICard…}}` group inside the current section.
 - [x] How does the HTML lane handle raw numbers + format? — *Owner: Juan*: A shared Python formatter mirroring `a2ui-format.ts`.
 - [x] Hero value shape? — *Owner: Juan*: `value: str | float` plus optional `format`/`unit`.
 - [x] Should `currency` gain a compact notation (`$1.20M`)? — *Owner: Juan*: No, not now. `format` states meaning and compact is notation. A hand-written headline stays a string (`value: str | float` already allows it). If it is ever needed, it becomes a separate optional `notation: 'compact'` prop, never a new `format` value.
