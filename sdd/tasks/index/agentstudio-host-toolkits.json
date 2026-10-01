@@ -36,7 +36,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 1,
@@ -45,8 +45,9 @@
       "parallelism_notes": "No dependency: creates parrot/tools/scope.py and its test, and adds one ClassVar line to toolkit.py and abstract.py that no other Wave 1 task edits; runs concurrently with TASK-3975 and TASK-3977.",
       "assigned_to": null,
       "started_at": "2026-10-01T02:46:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3976-tool-scope-contract.md"
+      "completed_at": "2026-10-01T02:47:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3976-tool-scope-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3977",

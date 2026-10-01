@@ -364,11 +364,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: scope.py plus tenant_bound ClassVar on AbstractToolkit/AbstractTool; 12 tests pass incl. test_toolkit_config_hooks. No call sites changed.
+**Mutation evidence**: Removed agent_tenant_unset/tenant_mismatch checks -> those parametrized cases RED; removed tenant_bound getattr -> is_tenant_bound tests RED.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
