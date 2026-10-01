@@ -316,10 +316,8 @@ def test_definition_from_create_request() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: Implemented all §2.4 types/errors in storage/models.py, explicit __all__ in __init__.py, 19 DB-free tests passing. Bundle secret refusal covers secret_refs, vault_owner and params whose key matches is_secret_name. ruff not installed in the worktree venv, so not run.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
