@@ -1263,9 +1263,11 @@ class OdooHelpdeskToolkit(OdooToolkit):
             wizard_id=wizard_id,
             ticket_ids=ticket_ids,
             applied=not mismatched,
-            message="tickets updated"
-            if not mismatched
-            else f"wizard ran but tickets {mismatched} do not show the requested values",
+            message=(
+                "tickets updated"
+                if not mismatched
+                else f"wizard ran but tickets {mismatched} do not show the requested values"
+            ),
         )
 
     @requires_permission("odoo.write")
