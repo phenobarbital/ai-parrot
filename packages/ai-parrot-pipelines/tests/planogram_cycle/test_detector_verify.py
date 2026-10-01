@@ -422,3 +422,22 @@ async def test_named_roi_zones_are_observed_zones_without_a_fixture_box():
     assert (top.box.x1, top.box.y1, top.box.x2, top.box.y2) == (600, 200, 1400, 400)
     # No fixture label: the detector saw the whole image, and nothing is reported as an error.
     assert (shapes[2].box.x1, shapes[2].box.x2) == (600, 1400) and not ctx.errors
+
+
+async def test_roi_fixture_running_past_its_components_is_cut_back_sideways():
+    """A fixture box that swallowed the neighbouring bay is narrowed to its own components plus a margin."""
+    image = np.zeros((1000, 2000, 3), dtype=np.uint8)
+    roi = Detections(
+        detections=[
+            _det(0.2, 0.1, 1.0, 0.9, label="endcap_roi"),
+            _det(0.25, 0.1, 0.7, 0.4, label="poster_panel"),
+            _det(0.25, 0.5, 0.75, 0.8, label="demo_unit"),
+        ]
+    )
+    adapter = StubAdapter(roi, Detections(detections=[_det(0.0, 0.0, 1.0, 1.0, label="zone")]))
+
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(adapter), prompt="p")
+
+    # components span x 500..1500; the right edge (2000) is cut to 1500 + 12% of 1000, then padded 4%.
+    box = shapes[0].box
+    assert 1620 <= box.x2 <= 1680 and box.x1 < 420

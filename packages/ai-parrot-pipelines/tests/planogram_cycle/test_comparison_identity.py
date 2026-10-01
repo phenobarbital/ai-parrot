@@ -298,3 +298,12 @@ def test_printed_text_naming_the_product_is_evidence():
     assert read.product == "ET-3950" and read.evidence == ["text | ACME EcoTank ET-3950"]
     bare = canonicalise(_ident(product="EcoTank ET-3950", text="ACME"), _models(), CycleContext())
     assert bare.product == "ET-3950" and bare.evidence == []
+
+
+def test_an_agreeing_reference_is_evidence_for_a_product_named_without_any():
+    from parrot_pipelines.planogram.stages.compare import canonicalise
+
+    named = canonicalise(_ident(product="ET-3950", reference_id="ref-0002"), _models(), _referenced_ctx())
+    assert named.evidence == ["reference | ref-0002 | ET-3950 Printer"]
+    other = canonicalise(_ident(product="ET-3950", reference_id="ref-0001"), _models(), _referenced_ctx())
+    assert other.product == "ET-3950" and other.evidence == []

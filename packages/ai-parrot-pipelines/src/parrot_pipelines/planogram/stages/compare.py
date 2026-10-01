@@ -91,6 +91,12 @@ def canonicalise(identification: Identification, definition: SlotsDefinition, ct
         return identification.model_copy(
             update={"product": product, "evidence": [f"{TEXT_EVIDENCE_PREFIX}{identification.text}"]}
         )
+    if not identification.evidence:
+        # So is the reference image the model matched, when it shows that same product.
+        matched, key = _reference_product(identification, definition, ctx, [product])
+        if matched == product:
+            evidence = [f"{REFERENCE_EVIDENCE_PREFIX}{identification.reference_id} | {key}"]
+            return identification.model_copy(update={"product": product, "evidence": evidence})
     return identification.model_copy(update={"product": product})
 
 

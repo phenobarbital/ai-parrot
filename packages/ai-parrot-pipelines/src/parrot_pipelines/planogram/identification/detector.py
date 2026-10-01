@@ -42,6 +42,10 @@ ROI_PAD: float = 0.04
 #: A fixture box smaller than this fraction of the image side is not a fixture.
 ROI_MIN_SIDE: float = 0.2
 
+#: A fixture box wider than its components by more than this fraction of their span, on one side, is
+#: cut back to the components plus ``ROI_SIDE_MARGIN`` of the span on that side.
+ROI_SIDE_EXCESS: float = 0.25
+ROI_SIDE_MARGIN: float = 0.12
 #: A detected "zone" overlapping the header panel and smaller than this fraction of it is a card on it.
 ROI_CARD_AREA: float = 0.25
 
@@ -227,6 +231,16 @@ async def detect_roi(image: np.ndarray, image_id: str, ctx: CycleContext) -> Opt
         max([fixture[2], *(box[2] for box in components)]),
         max([fixture[3], *(box[3] for box in components)]),
     )
+    if components:
+        # ...and a fixture box that runs far past them sideways has swallowed the neighbouring fixture.
+        left, right = min(box[0] for box in components), max(box[2] for box in components)
+        span = right - left
+        fixture = (
+            left - round(ROI_SIDE_MARGIN * span) if left - fixture[0] > ROI_SIDE_EXCESS * span else fixture[0],
+            fixture[1],
+            right + round(ROI_SIDE_MARGIN * span) if fixture[2] - right > ROI_SIDE_EXCESS * span else fixture[2],
+            fixture[3],
+        )
     pad_x, pad_y = round(ROI_PAD * (fixture[2] - fixture[0])), round(ROI_PAD * (fixture[3] - fixture[1]))
     padded = (
         max(0, fixture[0] - pad_x),
