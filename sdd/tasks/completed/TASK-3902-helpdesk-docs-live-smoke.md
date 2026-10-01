@@ -222,10 +222,8 @@ No new unit tests; the live smoke is manual evidence.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (FEAT-616)
+**Date**: 2026-10-01
+**Notes**: qwen (nova): docs/tools/odoo-helpdesk.md + examples/odoo/helpdesk_live_smoke.py (live smoke not run: needs credentials). Diff reviewed vs contract; task tests run with `pytest --noconftest` (repo conftest broken by pre-existing venv issue); merge-tier sweep red on unrelated failures, accepted by user.
 
 **Deviations from spec**: none | describe if any
