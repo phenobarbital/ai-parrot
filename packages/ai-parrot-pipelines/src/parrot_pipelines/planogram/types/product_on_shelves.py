@@ -6,13 +6,14 @@ provisional CV defaults and fact-tag corroboration of observed, occupied slots.
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, List, Mapping, Optional, Sequence
+from typing import ClassVar, Dict, List, Optional, Sequence
 
 from PIL import Image
 
 from parrot.models.detections import AisleConfig, PlanogramDescription
 
 from ..comparison.definition import SlotsDefinition
+from ..comparison.tags import slot_above, tag_text
 from ..contracts import (
     ComparisonResult,
     CycleContext,
@@ -91,31 +92,6 @@ def _shelf_shape_profiles() -> List[ShapeProfile]:
             thresholds=(200, 220, 240),
         ),
     ]
-
-
-def _tag_text(tag: Shape, readings: Mapping[str, object], reads: Mapping[str, Identification]) -> Optional[str]:
-    """Return own-box OCR of a fact tag, falling back to shape or vision text."""
-    reading = readings.get(tag.shape_id)
-    text = getattr(reading, "text", "") or tag.ocr_text
-    if not text and tag.shape_id in reads:
-        text = reads[tag.shape_id].text
-    return text.strip() if text and text.strip() else None
-
-
-def _slot_above(tag: Shape, slots: Sequence[Slot]) -> Optional[Slot]:
-    """Return the slot whose lower area is labelled by a fact tag."""
-    cx = (tag.box.x1 + tag.box.x2) / 2
-    cy = (tag.box.y1 + tag.box.y2) / 2
-    best: Optional[Slot] = None
-    for slot in slots:
-        height = max(1, slot.box.y2 - slot.box.y1)
-        if not slot.box.x1 <= cx <= slot.box.x2:
-            continue
-        if not (slot.box.y1 + slot.box.y2) / 2 <= cy <= slot.box.y2 + height:
-            continue
-        if best is None or abs(tag.box.y1 - slot.box.y2) < abs(tag.box.y1 - best.box.y2):
-            best = slot
-    return best
 
 
 class ProductOnShelves(AbstractPlanogramType):
@@ -208,8 +184,8 @@ class ProductOnShelves(AbstractPlanogramType):
                 slot_of.setdefault(slot.anchor_shape_id, slot)
         extra: Dict[str, List[str]] = {}
         for tag in tags:
-            text = _tag_text(tag, readings, reads)
-            slot = _slot_above(tag, perception.slots) if text else None
+            text = tag_text(tag, readings, reads)
+            slot = slot_above(tag, perception.slots) if text else None
             if slot is not None:
                 extra.setdefault(slot.slot_id, []).append(f"fact_tag | {text}")
         updated: List[Identification] = []
