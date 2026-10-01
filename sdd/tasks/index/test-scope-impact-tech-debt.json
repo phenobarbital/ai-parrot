@@ -16,7 +16,7 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -25,8 +25,9 @@
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
       "started_at": "2026-10-01T01:28:56.968052+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3919-direct-importer-core-metric.md"
+      "completed_at": "2026-10-01T01:30:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3919-direct-importer-core-metric.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3920",
