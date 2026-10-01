@@ -24,12 +24,23 @@ from parrot_tools.odoo.models.envelopes import (
     ModelOperations,
     ModelsResult,
 )
-from parrot_tools.odoo.models.helpdesk_entities import HelpdeskMessage, HelpdeskStageInfo, HelpdeskTicket
+from parrot_tools.odoo.models.helpdesk_entities import (
+    HelpdeskMessage,
+    HelpdeskSla,
+    HelpdeskSlaStatus,
+    HelpdeskStageInfo,
+    HelpdeskTicket,
+    HelpdeskTicketAlarm,
+)
 from parrot_tools.odoo.models.helpdesk_envelopes import (
     HelpdeskReferenceItem,
     HelpdeskReferenceResult,
+    SlaPolicyListResult,
+    SlaPolicyResult,
+    SlaStatusResult,
     TicketExtraFieldsResult,
     TicketHistoryResult,
+    TicketAlarmListResult,
     TicketAssignmentResult,
     TicketCommentResult,
     TicketListResult,
@@ -52,12 +63,17 @@ from parrot_tools.odoo.models.helpdesk_inputs import (
     GetTicketHistoryInput,
     GetTicketInput,
     GetTicketMessagesInput,
+    GetTicketSlaStatusInput,
     ListMyTicketsInput,
     ListReferenceInput,
+    ListSlaPoliciesInput,
+    ListTicketAlarmsInput,
     SearchTicketsInput,
     ReassignTicketInput,
     TakeTicketInput,
     UpdateTicketInput,
+    CreateSlaPolicyInput,
+    UpdateSlaPolicyInput,
 )
 from parrot_tools.odoo.toolkit import OdooToolkit, _DEFAULT_KNOWN_MODELS
 from parrot_tools.odoo.transport.base import AbstractOdooTransport
@@ -901,3 +917,154 @@ class OdooHelpdeskToolkit(OdooToolkit):
             await self._resolve_ref("stage", expected_current_stage) if expected_current_stage is not None else None
         )
         return await self._transition(ticket_id, "", expected_stage=expected, fallback_stage=target)
+
+    # ── SLA policies, status, alarms (FEAT-616 M8) ─────────────────────────
+    _SLA_FIELDS = [
+        "id",
+        "display_name",
+        "name",
+        "sh_team_id",
+        "sh_days",
+        "sh_hours",
+        "sh_minutes",
+        "sh_sla_target_type",
+        "sh_stage_id",
+        "sh_ticket_type_id",
+        "company_id",
+        "sla_ticket_count",
+    ]
+    _SLA_STATUS_FIELDS = [
+        "id",
+        "sh_ticket_id",
+        "sh_sla_id",
+        "sh_sla_stage_id",
+        "sh_deadline",
+        "sh_done_sla_date",
+        "sh_exceeded_hours",
+        "sh_status",
+        "sh_create_date",
+    ]
+
+    @tool_schema(ListSlaPoliciesInput)
+    async def list_sla_policies(
+        self, team: Optional[int | str] = None, ticket_type: Optional[int | str] = None, limit: int = 50
+    ) -> SlaPolicyListResult:
+        """List SLA policies (``sh.helpdesk.sla``), optionally filtered by team and ticket type (id or name)."""
+        domain: list[Any] = []
+        if team is not None:
+            domain.append(("sh_team_id", "=", await self._resolve_ref("team", team)))
+        if ticket_type is not None:
+            domain.append(("sh_ticket_type_id", "=", await self._resolve_ref("ticket_type", ticket_type)))
+        rows = (
+            await self._execute(
+                "sh.helpdesk.sla", "search_read", [domain], {"fields": self._SLA_FIELDS, "limit": limit, "order": "id"}
+            )
+            or []
+        )
+        return SlaPolicyListResult(policies=[HelpdeskSla.model_validate(row) for row in rows], total=len(rows))
+
+    @requires_permission("odoo.write")
+    @tool_schema(CreateSlaPolicyInput)
+    async def create_sla_policy(
+        self,
+        name: str,
+        team: int | str,
+        days: int = 0,
+        hours: int = 0,
+        minutes: int = 0,
+        target_type: str = "reaching_stage",
+        stage: Optional[int | str] = None,
+        ticket_type: Optional[int | str] = None,
+    ) -> SlaPolicyResult:
+        """Define an SLA policy for a team to reach a stage or receive assignment within a duration."""
+        values: dict[str, Any] = {
+            "name": name,
+            "sh_team_id": await self._resolve_ref("team", team),
+            "sh_days": days,
+            "sh_hours": hours,
+            "sh_minutes": minutes,
+            "sh_sla_target_type": target_type,
+        }
+        if stage is not None:
+            values["sh_stage_id"] = await self._resolve_ref("stage", stage)
+        if ticket_type is not None:
+            values["sh_ticket_type_id"] = await self._resolve_ref("ticket_type", ticket_type)
+        new_id = await self._execute("sh.helpdesk.sla", "create", [values])
+        sla_id = int(new_id[0] if isinstance(new_id, list) else new_id)
+        self.logger.info("create_sla_policy: created sh.helpdesk.sla #%s", sla_id)
+        record = await self._read_one("sh.helpdesk.sla", sla_id, self._SLA_FIELDS)
+        return SlaPolicyResult(
+            policy=HelpdeskSla.model_validate(record),
+            url=self._record_url(self.config.url, "sh.helpdesk.sla", sla_id),
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(UpdateSlaPolicyInput)
+    async def update_sla_policy(
+        self,
+        sla_id: int,
+        name: Optional[str] = None,
+        days: Optional[int] = None,
+        hours: Optional[int] = None,
+        minutes: Optional[int] = None,
+        target_type: Optional[str] = None,
+        stage: Optional[int | str] = None,
+        ticket_type: Optional[int | str] = None,
+    ) -> SlaPolicyResult:
+        """Update the supplied fields of an SLA policy and return the refreshed record."""
+        values: dict[str, Any] = {}
+        for field, value in {
+            "name": name,
+            "sh_days": days,
+            "sh_hours": hours,
+            "sh_minutes": minutes,
+            "sh_sla_target_type": target_type,
+        }.items():
+            if value is not None:
+                values[field] = value
+        if stage is not None:
+            values["sh_stage_id"] = await self._resolve_ref("stage", stage)
+        if ticket_type is not None:
+            values["sh_ticket_type_id"] = await self._resolve_ref("ticket_type", ticket_type)
+        if not values:
+            raise ValueError("nothing to update")
+        await self._execute("sh.helpdesk.sla", "write", [[sla_id], values])
+        record = await self._read_one("sh.helpdesk.sla", sla_id, self._SLA_FIELDS)
+        return SlaPolicyResult(
+            policy=HelpdeskSla.model_validate(record),
+            url=self._record_url(self.config.url, "sh.helpdesk.sla", sla_id),
+        )
+
+    @tool_schema(GetTicketSlaStatusInput)
+    async def get_ticket_sla_status(self, ticket_id: int) -> SlaStatusResult:
+        """Return a ticket's overall SLA status, deadline, and per-policy status rows."""
+        ticket = await self._read_one(TICKET_MODEL, ticket_id, ["sh_status", "sh_sla_deadline", "sh_sla_policy_ids"])
+        rows = (
+            await self._execute(
+                "sh.helpdesk.sla.status",
+                "search_read",
+                [[("sh_ticket_id", "=", ticket_id)]],
+                {"fields": self._SLA_STATUS_FIELDS},
+            )
+            or []
+        )
+        return SlaStatusResult(
+            ticket_id=ticket_id,
+            overall_status=ticket.get("sh_status") or None,
+            deadline=ticket.get("sh_sla_deadline") or None,
+            statuses=[HelpdeskSlaStatus.model_validate(row) for row in rows],
+        )
+
+    @tool_schema(ListTicketAlarmsInput)
+    async def list_ticket_alarms(self, limit: int = 50) -> TicketAlarmListResult:
+        """List ticket alarm configurations from ``sh.ticket.alarm``."""
+        rows = (
+            await self._execute(
+                "sh.ticket.alarm",
+                "search_read",
+                [[]],
+                {"fields": ["id", "name", "type", "sh_remind_before", "sh_reminder_unit"], "limit": limit},
+            )
+            or []
+        )
+        return TicketAlarmListResult(alarms=[HelpdeskTicketAlarm.model_validate(row) for row in rows], total=len(rows))
