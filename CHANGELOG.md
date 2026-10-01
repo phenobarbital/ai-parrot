@@ -7,8 +7,38 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+---
+
+## [1.0.7] — 2026-10-01 — A2UI linked surfaces, SharePoint file manager, Hooba and Odoo toolkits
+
+Twelve core-line distributions move to `1.0.7` (`ai-parrot-pipelines` to `1.1.1`).
+The sixteen satellites move to `0.2.7` and are re-pinned to `ai-parrot>=1.0.7`.
+
+### Added
+
+- **FEAT-611 / FEAT-610: A2UI linked surfaces.** `qs_build_linked_surface`,
+  multi-slug query surfaces, an A2UI output mode in the chat selector, a Svelte
+  renderer that resolves v1.0 id-referenced children, and an end-to-end lane
+  (linked + parallel) with golden fixtures and PBAC grants.
+- **FEAT-603: SharePoint file manager.**
+- **FEAT-601: training agent** — durable guided-mode state, export tips,
+  WhatsApp `media_urls`.
+- **Hooba toolkit** working against the real Hooba API.
+- **Odoo toolkit upgrades** — `odoo_helpdesk` registered in `TOOL_REGISTRY`,
+  `get_ticket(include_history)`, `mass_update` post-condition checks.
+- **Form designer: idempotent file upload** via `X-Parrot-Client-Upload-Id`.
+- **Bookstore: `update_card` + `bookstore update`**, atomic re-index swap,
+  manual card edits preserved on in-place re-index.
+- **Admin UI:** canvas swap-with-chat layout and maximize.
+
 ### Fixed
 
+- PBAC is built in `BotManager.setup()` before the app freezes; middleware
+  order corrected.
+- `frame_to_records`: UUID/inet cells stringified, non-UTF-8 cells sanitised,
+  float precision kept; pivot/join dtype parity between TS and pandas.
+- `jira_add_comment` now forwards `is_internal`.
+- Pillow bumped to `>=12.3.0` (Dependabot); CodeQL clear-text logging alert.
 - **sdd-coder merge-tier validation scope.** `coder_run_validation(tier='merge')`
   planned its selection from the feature branch's whole cumulative diff against
   `origin/dev`, so every merge re-validated every task merged before it; past a
