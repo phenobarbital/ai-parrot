@@ -56,7 +56,7 @@
       "feature_id": "FEAT-619",
       "feature": "sdd-worktree-status-tech-debt",
       "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -65,7 +65,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies the same two files as TASK-3915/TASK-3916 (file overlap), and renders WorktreeHealth.dirty_unknown / unpushed_unknown which TASK-3916 creates in scripts/sdd/worktree_status.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T00:36:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3917-cli-table-and-anchor-comment.md"
     },
