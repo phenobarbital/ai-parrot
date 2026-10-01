@@ -1,0 +1,12 @@
+[
+  {"value": 0.683, "format": "percent", "expected": "68.3%"},
+  {"value": 1.0, "format": "percent", "expected": "100%"},
+  {"value": 0.5, "format": "percent", "unit": "pts", "expected": "50%"},
+  {"value": 1234.5, "format": "currency", "expected": "$1,234.50"},
+  {"value": -1234.5, "format": "currency", "expected": "-$1,234.50"},
+  {"value": 1234.56, "format": "number", "expected": "1,234.6"},
+  {"value": 1903, "format": "number", "expected": "1,903"},
+  {"value": 3, "format": "number", "unit": "visits", "expected": "3 visits"},
+  {"value": 12.34, "format": "number", "unit": "visits", "expected": "12.3 visits"},
+  {"value": "n/a", "format": "currency", "expected": "n/a"}
+]

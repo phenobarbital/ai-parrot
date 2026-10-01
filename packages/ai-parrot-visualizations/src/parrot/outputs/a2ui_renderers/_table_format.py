@@ -38,6 +38,16 @@ def is_numeric_column(col_type: str | None) -> bool:
     return col_type in NUMERIC_TYPES
 
 
+def _max_one_decimal(number: float) -> str:
+    """Grouped, at most one fraction digit, no trailing ``.0``.
+
+    Mirrors ``Intl.NumberFormat('en-US', {maximumFractionDigits: 1})`` (the
+    admin UI's ``formatA2UIValue``), so every lane prints the same string.
+    """
+    text = f"{number:,.1f}"
+    return text[:-2] if text.endswith(".0") else text
+
+
 def format_cell(value: Any, *, col_type: str | None, col_format: str | None = None) -> str:
     """Format one cell value for display. Pure: no I/O, no renderer state.
 
@@ -48,7 +58,7 @@ def format_cell(value: Any, *, col_type: str | None, col_format: str | None = No
             | ``datetime`` | ``time`` | ``duration`` | ``any``).
         col_format: The column's optional ``TableColumn.format`` hint
             (``currency`` | ``percent`` | ``email`` | ``uri`` | ``enum`` |
-            ``id`` | ``code``). Only ``currency``/``percent`` affect
+            ``id`` | ``code``) or ``number``. Only ``currency``/``percent``/``number`` affect
             formatting here; the rest are display hints for a frontend grid
             library, not something this text-only renderer acts on.
 
@@ -73,9 +83,12 @@ def format_cell(value: Any, *, col_type: str | None, col_format: str | None = No
         return str(value)
 
     if col_format == "percent":
-        return f"{number * 100:,.1f}%"
+        return f"{_max_one_decimal(number * 100)}%"
     if col_format == "currency":
-        return f"{number:,.2f}"
+        sign = "-" if number < 0 else ""
+        return f"{sign}${abs(number):,.2f}"
+    if col_format == "number":
+        return _max_one_decimal(number)
     if number.is_integer():
         return f"{int(number):,}"
     return f"{number:,.2f}"
