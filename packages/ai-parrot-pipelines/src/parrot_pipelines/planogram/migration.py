@@ -52,6 +52,17 @@ _ZONE_TYPES = frozenset(
         "text_overlay",
     }
 )
+# Branding / signage / information elements of mixed displays (real products plus branding): zones, never facings.
+_BRANDING_ZONE_TYPES = frozenset(
+    {
+        "signage",
+        "hero_graphic",
+        "base_branding",
+        "product_materials",
+        "informational_materials",
+        "product_info_panel",
+    }
+)
 _COUNTER_ZONE_TYPES = frozenset({"promotional_background", "background", "information_label", "label"})
 _PREFLIGHT_SQL = "SELECT * FROM troc.planograms_configurations WHERE is_active = TRUE ORDER BY config_name"
 
@@ -124,6 +135,8 @@ class _BindingSet:
 
     def __init__(self) -> None:
         self.items: Dict[str, Dict[str, Any]] = {}
+        # zone_id -> ``y_start_ratio`` of its source shelf (None when the row gives none); orders the selectors.
+        self.zone_tops: Dict[str, Optional[float]] = {}
 
     def add(self, kind: str, target_id: str, params: Dict[str, Any], mandatory: bool = True) -> None:
         rule_id = f"{kind}:{target_id}"
@@ -189,17 +202,21 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
         facings: List[Dict[str, Any]] = []
         slot = 0
         zone_count = 0
+        skipped = 0
+        first_zone: Optional[str] = None
         for product in shelf.get("products") or []:
             name = str(product.get("name") or "").strip()
             ptype = str(product.get("product_type") or "product").strip().lower()
             if ptype in _NON_FACING_TYPES:
+                skipped += 1
                 continue
-            if ptype in _ZONE_TYPES:
+            if ptype in _ZONE_TYPES or ptype in _BRANDING_ZONE_TYPES:
                 zone_count += 1
                 zone_id = f"zone-{level}-{zone_count}"
-                zones.append(
-                    {"zone_id": zone_id, "kind": _zone_kind(ptype, name), "shelf_id": shelf_id, "required": True}
-                )
+                first_zone = first_zone or zone_id
+                kind = _zone_kind(ptype, name) if ptype in _ZONE_TYPES else _extended_zone_kind(ptype, name, "graphic")
+                zones.append({"zone_id": zone_id, "kind": kind, "shelf_id": shelf_id, "required": True})
+                bindings.zone_tops[zone_id] = _shelf_top(shelf)
                 bindings.add("zone_present", zone_id, {"name": name}, mandatory=bool(product.get("mandatory", True)))
                 _product_rules(product, zone_id, bindings)
                 continue
@@ -230,6 +247,14 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
                 )
             if first_facing:
                 _product_rules(product, first_facing, bindings)
+        shelf_requirements = _requirements(shelf.get("text_requirements"))
+        if shelf_requirements:
+            bindings.add("text_requirements", first_zone or shelf_id, {"requirements": shelf_requirements})
+        if skipped:
+            report.warnings.append(
+                f"{shelf_id} ({level}): {skipped} fact/price tag element(s) not converted — "
+                "the cycle has no tag-presence or price rule"
+            )
         if facings:
             report.warnings.append(f"{shelf_id} ({level}): slot order taken from list order — review")
         if not facings and not zone_count:
@@ -238,21 +263,48 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
     return shelves, zones
 
 
+def _shelf_top(shelf: Dict[str, Any]) -> Optional[float]:
+    """``y_start_ratio`` of a source shelf as a float, or None when absent or not numeric."""
+    try:
+        return float(shelf["y_start_ratio"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _endcap_rules(
-    config: Dict[str, Any], shelves: List[Dict[str, Any]], zones: List[Dict[str, Any]], bindings: _BindingSet
+    config: Dict[str, Any], targets: Dict[str, str], bindings: _BindingSet, report: ConversionReport
 ) -> None:
-    """Endcap text requirements -> a binding on the endcap shelf's zone (or the shelf itself)."""
+    """Endcap text requirements -> a binding on the target of the endcap's level (never dropped silently).
+
+    Args:
+        config: The raw planogram configuration.
+        targets: Source shelf ``level`` -> the zone (or shelf) id its rules bind to.
+        bindings: The collected bindings.
+        report: Receives an unresolved item when no target sits at the endcap position.
+    """
     endcap = config.get("advertisement_endcap") or {}
     requirements = _requirements(endcap.get("text_requirements"))
     if not requirements or endcap.get("enabled") is False:
         return
     position = str(endcap.get("position") or "header")
-    shelf = next((s for s in shelves if s["level"] == position), None)
-    if shelf is None:
+    target = targets.get(position)
+    if target is None:
+        texts = ", ".join(repr(item["required_text"]) for item in requirements)
+        report.unresolved.append(
+            f"advertisement_endcap: no shelf or zone at position '{position}' — bind its text requirements "
+            f"({texts}) to a target"
+        )
         return
-    zone = next((z for z in zones if z["shelf_id"] == shelf["shelf_id"]), None)
-    target = zone["zone_id"] if zone else shelf["shelf_id"]
     bindings.add("text_requirements", target, {"requirements": requirements})
+
+
+def _shelf_targets(shelves: List[Dict[str, Any]], zones: List[Dict[str, Any]]) -> Dict[str, str]:
+    """Shelf ``level`` -> its first zone id, or the shelf id when it owns no zone (first level wins)."""
+    targets: Dict[str, str] = {}
+    for shelf in shelves:
+        zone = next((z for z in zones if z["shelf_id"] == shelf["shelf_id"]), None)
+        targets.setdefault(shelf["level"], zone["zone_id"] if zone else shelf["shelf_id"])
+    return targets
 
 
 def _convert_ink(config: Dict[str, Any], report: ConversionReport, bindings: _BindingSet) -> Tuple[list, list]:
@@ -296,12 +348,15 @@ def _convert_zones_only(
 ) -> Tuple[list, list]:
     """Promotional / graphic-panel elements -> unowned zones."""
     zones: List[Dict[str, Any]] = []
+    targets: Dict[str, str] = {}
     for index, shelf in enumerate(config.get("shelves") or [], start=1):
         level = str(shelf.get("level") or f"shelf{index}")
         for number, product in enumerate(shelf.get("products") or [], start=1):
             name = str(product.get("name") or "").strip()
             ptype = str(product.get("product_type") or "graphic").strip().lower()
             zone_id = f"zone-{level}-{number}"
+            targets.setdefault(level, zone_id)
+            bindings.zone_tops[zone_id] = _shelf_top(shelf)
             required = bool(product.get("mandatory", True))
             zones.append(
                 {
@@ -313,12 +368,12 @@ def _convert_zones_only(
             )
             bindings.add("zone_present", zone_id, {"name": name}, mandatory=required)
             _product_rules(product, zone_id, bindings)
-    by_kind: Dict[str, List[str]] = {}
-    for zone in zones:
-        by_kind.setdefault(zone["kind"], []).append(zone["zone_id"])
-    for zone_ids in by_kind.values():
-        if len(zone_ids) > 1:
-            report.unresolved.append(f"zone selector required for {', '.join(zone_ids)}")
+        shelf_requirements = _requirements(shelf.get("text_requirements"))
+        if shelf_requirements and level in targets:
+            bindings.add("text_requirements", targets[level], {"requirements": shelf_requirements})
+        elif shelf_requirements:
+            report.unresolved.append(f"{level}: text requirements on a level without elements — bind them to a zone")
+    _endcap_rules(config, targets, bindings, report)
     return [], zones
 
 
@@ -383,7 +438,7 @@ def _convert_counter(config: Dict[str, Any], report: ConversionReport, bindings:
 def _convert_backlit(config: Dict[str, Any], report: ConversionReport, bindings: _BindingSet) -> Tuple[list, list]:
     """Backlit shelves -> candidate shelves/zones; sections require human spatial configuration."""
     shelves, zones = _walk_shelves(config, report, bindings)
-    _endcap_rules(config, shelves, zones, bindings)
+    _endcap_rules(config, _shelf_targets(shelves, zones), bindings, report)
     for shelf_id, source_shelf in zip(
         (shelf["shelf_id"] for shelf in shelves), config.get("shelves") or [], strict=False
     ):
@@ -392,6 +447,36 @@ def _convert_backlit(config: Dict[str, Any], report: ConversionReport, bindings:
                 f"{shelf_id} section {section.get('id')}: configure a zone selector / section group"
             )
     return shelves, zones
+
+
+def _zone_selectors(
+    zones: List[Dict[str, Any]], tops: Dict[str, Optional[float]], layout: Dict[str, Any], report: ConversionReport
+) -> None:
+    """Generate one ordinal selector per zone; the runtime matches ordinals to observed zones top to bottom.
+
+    The order is grounded when every zone's source shelf carries a distinct ``y_start_ratio``; otherwise it
+    falls back to list order and is reported as unresolved.
+
+    Args:
+        zones: The candidate zones, in list order.
+        tops: zone_id -> ``y_start_ratio`` of its source shelf.
+        layout: The candidate layout profile (extended in place).
+        report: Receives the review warning or the unresolved item.
+    """
+    values = [tops.get(zone["zone_id"]) for zone in zones]
+    grounded = all(value is not None for value in values) and len(set(values)) == len(values)
+    ordered = sorted(zones, key=lambda zone: tops.get(zone["zone_id"]) or 0.0) if grounded else zones
+    for ordinal, zone in enumerate(ordered):
+        layout.setdefault("zone_selectors", []).append({"zone_id": zone["zone_id"], "kind": "zone", "ordinal": ordinal})
+    if len(zones) < 2:
+        return
+    zone_ids = ", ".join(zone["zone_id"] for zone in ordered)
+    if grounded:
+        report.warnings.append(f"zone selectors ordered top to bottom by y_start_ratio: {zone_ids} — review")
+    else:
+        report.unresolved.append(
+            f"zone selectors for {zone_ids} follow list order — confirm the top-to-bottom order or set a region"
+        )
 
 
 def convert_config(planogram_config: Dict[str, Any], *, planogram_type: str) -> ConversionReport:
@@ -416,7 +501,7 @@ def convert_config(planogram_config: Dict[str, Any], *, planogram_type: str) -> 
     bindings = _BindingSet()
     if planogram_type == "product_on_shelves":
         shelves, zones = _walk_shelves(config, report, bindings)
-        _endcap_rules(config, shelves, zones, bindings)
+        _endcap_rules(config, _shelf_targets(shelves, zones), bindings, report)
     elif planogram_type == "ink_wall":
         shelves, zones = _convert_ink(config, report, bindings)
     elif planogram_type == "endcap_backlit_multitier":
@@ -429,10 +514,7 @@ def convert_config(planogram_config: Dict[str, Any], *, planogram_type: str) -> 
     if "perception_mode" in config:
         layout["perception_mode"] = config["perception_mode"]
         report.warnings.append("perception_mode accepted and moved to layout_profile")
-    for zone_index, zone in enumerate(zones):
-        layout.setdefault("zone_selectors", []).append(
-            {"zone_id": zone["zone_id"], "kind": "zone", "ordinal": zone_index}
-        )
+    _zone_selectors(zones, bindings.zone_tops, layout, report)
     report.layout_profile = layout
     for field in (
         "roi_detection_prompt",
