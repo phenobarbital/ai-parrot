@@ -195,10 +195,8 @@ class StudioToolingRepository:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: Implemented per §2.5; 5 new real-PG tests pass (50 in storage/). Writes go through _write/_fetch_one (fetch_one-based, see TASK-3928 note on asyncdb swallowing execute violations); a duplicate slug in replace() surfaces as StudioNameConflict, any other violation as StudioStorageError. Partitioned reads join ai_agents with an explicit alias (USING made updated_at/name ambiguous). repositories.py is now ~430 lines: TASK-3930 will need to split it (Rule 4, 500 lines).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
