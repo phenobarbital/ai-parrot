@@ -569,8 +569,16 @@ async def test_ticket_stats_fallback_search_count():
         2,
     ]
     result = await toolkit.ticket_stats()
-    assert result.source_method == "search_count" and [(group.key, group.count) for group in result.groups] == [(4, 7), (21, 2)]
-    assert transport.execute_kw.await_args_list[2].args == (TICKET_MODEL, "search_count", [[("stage_id", "=", 4)]], None)
+    assert result.source_method == "search_count" and [(group.key, group.count) for group in result.groups] == [
+        (4, 7),
+        (21, 2),
+    ]
+    assert transport.execute_kw.await_args_list[2].args == (
+        TICKET_MODEL,
+        "search_count",
+        [[("stage_id", "=", 4)]],
+        None,
+    )
 
 
 @pytest.mark.asyncio
