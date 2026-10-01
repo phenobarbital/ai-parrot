@@ -158,7 +158,7 @@
       "feature_id": "FEAT-623",
       "feature": "infographic-a2ui-display-hints",
       "spec": "sdd/specs/infographic-a2ui-display-hints.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -168,8 +168,9 @@
       "parallelism_notes": "Documents HeroCardBlock.format/unit, ColumnDef.type/format, ChartDataSeries.axis, ChartBlock.y_axis_labels from TASK-3994 (models/infographic.py).",
       "assigned_to": null,
       "started_at": "2026-10-01T03:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4001-llm-contract-display-hints.md"
+      "completed_at": "2026-10-01T03:16:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4001-llm-contract-display-hints.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4002",

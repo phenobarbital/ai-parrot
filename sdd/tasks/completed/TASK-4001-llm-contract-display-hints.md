@@ -294,10 +294,10 @@ present in both texts, and the `$`-token guard holds.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet 5.5, fallback sequential loop — parrot-sdd-coder unavailable)
+**Date**: 2026-09-30
+**Notes**: Prompt addon keeps the $3.7M hero example, adds a numeric+format example and a display-hints paragraph (ratio rule, ColumnDef type/format, axis right + y_axis_labels); to_prompt_instruction appends a compact template-agnostic hints line after the 'type' line. Tests pass.
 
 **Deviations from spec**: none | describe if any
