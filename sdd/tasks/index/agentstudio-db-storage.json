@@ -201,7 +201,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -211,8 +211,9 @@
       "parallelism_notes": "mirrors the method set of the five repositories and the StudioRepositories container from TASK-3930 (storage/repositories.py); creates storage/testing.py",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3931-inmemory-studio-repositories.md"
+      "completed_at": "2026-10-01T03:07:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3931-inmemory-studio-repositories.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3932",
