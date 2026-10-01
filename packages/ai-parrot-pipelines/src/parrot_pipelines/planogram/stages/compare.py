@@ -7,7 +7,7 @@ from typing import List, Sequence
 
 from parrot.models.detections import PlanogramDescription
 from parrot_pipelines.planogram.comparison.definition import SlotsDefinition
-from parrot_pipelines.planogram.comparison.identity import resolve_identity
+from parrot_pipelines.planogram.comparison.identity import names_product, resolve_identity
 from parrot_pipelines.planogram.comparison.projection import finalize_comparison, project_compliance
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration, register_image
 from parrot_pipelines.planogram.comparison.rules import evaluate_rules
@@ -26,9 +26,42 @@ from parrot_pipelines.planogram.contracts import (
 logger = logging.getLogger(__name__)
 
 
+REFERENCE_EVIDENCE_PREFIX = "reference | "
+TEXT_EVIDENCE_PREFIX = "text | "
+
+
+def _reference_product(
+    identification: Identification, definition: SlotsDefinition, ctx: CycleContext, candidates: Sequence[str]
+) -> tuple[str | None, str | None]:
+    """Catalogue id of the reference image the model matched, when it settles an unread identity.
+
+    The catalogue key of the matched reference is resolved like a read name. A reference never
+    contradicts printed text: with text candidates it may only pick one of them.
+
+    Returns:
+        ``(product, catalogue key)``, or ``(None, None)`` when the reference settles nothing.
+    """
+    if identification.uncertain or not identification.reference_id:
+        return None, None
+    key = next((ref.catalog_key for ref in ctx.reference_bank if ref.label == identification.reference_id), None)
+    if not key:
+        return None, None
+    product, _ = resolve_identity(
+        Identification(shape_id=identification.shape_id, product=key, brand=identification.brand),
+        definition,
+        required_fields=(),
+    )
+    if product is None or (candidates and product not in candidates):
+        return None, None
+    return product, key
+
+
 def canonicalise(identification: Identification, definition: SlotsDefinition, ctx: CycleContext) -> Identification:
-    """Canonicalize a read to one catalogue id, or retain unresolved candidates."""
-    if not identification.product and not identification.text:
+    """Canonicalize a read to one catalogue id, or retain unresolved candidates.
+
+    Printed text decides first; a matched reference image decides only what the text left open.
+    """
+    if not identification.product and not identification.text and not identification.reference_id:
         return identification
     by_id = {facing.product.casefold().strip(): facing.product for facing in definition.all_facings() if facing.product}
     product = by_id.get((identification.product or "").casefold().strip())
@@ -43,9 +76,21 @@ def canonicalise(identification: Identification, definition: SlotsDefinition, ct
             required_fields=required_fields,
         )
         if product is None:
+            product, key = _reference_product(identification, definition, ctx, candidates)
+            if product is not None:
+                evidence = [
+                    *identification.evidence,
+                    f"{REFERENCE_EVIDENCE_PREFIX}{identification.reference_id} | {key}",
+                ]
+                return identification.model_copy(update={"product": product, "evidence": evidence})
             descriptors = dict(identification.descriptors)
             descriptors["candidates"] = candidates
             return identification.model_copy(update={"product": None, "descriptors": descriptors})
+    if not identification.evidence and names_product(identification.text, product):
+        # Printed text that names the product is crop-tied evidence even when the model listed none.
+        return identification.model_copy(
+            update={"product": product, "evidence": [f"{TEXT_EVIDENCE_PREFIX}{identification.text}"]}
+        )
     return identification.model_copy(update={"product": product})
 
 

@@ -464,6 +464,19 @@ async def _run_call(
             answer = await _ask_identify(ctx, repair_prompt, images, bool(labels))
         except VisionError as exc:
             retry_error = f"{perception.image_id}: identify_incomplete_retry_failed: {exc}"
+    # "null" / "none" spelled out is the model declining to match, not an unknown label.
+    answer = answer.model_copy(
+        update={
+            "existing_identifications": [
+                (
+                    item.model_copy(update={"reference_id": None})
+                    if (item.reference_id or "").strip().casefold() in _EMPTY_IDENTITY_TOKENS
+                    else item
+                )
+                for item in answer.existing_identifications
+            ]
+        }
+    )
     invalid_references = [
         item
         for item in answer.existing_identifications
