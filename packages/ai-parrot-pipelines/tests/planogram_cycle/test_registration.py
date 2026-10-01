@@ -212,3 +212,81 @@ def test_register_image_is_deterministic():
     first = register_image("img0", slots, idents, definition)
     for _ in range(3):
         assert register_image("img0", list(reversed(slots)), list(reversed(idents)), definition) == first
+
+
+def test_a_shuffled_full_row_registers_position_by_position():
+    """A row holding the shelf's own products in another order keeps every slot on its own facing."""
+    definition = _definition(shelves=2, per_shelf=3)
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    rotated = {1: "P1-3", 2: "P1-1", 3: "P1-2"}
+    idents = [
+        _ident(slot, rotated[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert not registration.ambiguous
+    assert {registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)} == {"s1_f1", "s1_f2", "s1_f3"}
+    assert [registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)] == ["s1_f1", "s1_f2", "s1_f3"]
+
+
+def test_a_row_with_a_foreign_product_keeps_the_evidence_alignment():
+    """A stray on the left is not a shuffle: the two anchored products stay on their own facings."""
+    definition = _definition(shelves=2, per_shelf=3)
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    seen = {1: "Stray", 2: "P1-1", 3: "P1-2"}
+    idents = [
+        _ident(slot, seen[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert registration.assignments["img:t0:2"] == "s1_f1" and registration.assignments["img:t0:3"] == "s1_f2"
+
+
+def _free_order_definition():
+    data = {"version": "1", "shelves": []}
+    for shelf in (1, 2):
+        data["shelves"].append(
+            {
+                "shelf_id": f"shelf_{shelf}",
+                "shelf_number": shelf,
+                "ordered": shelf != 1,
+                "facings": [
+                    {
+                        "facing_id": f"s{shelf}_f{idx}",
+                        "shelf_id": f"shelf_{shelf}",
+                        "slot": idx,
+                        "product": f"P{shelf}-{idx}",
+                        "brand": "Alpha",
+                        "descriptors": {"display_name": f"Product {shelf}-{idx}"},
+                    }
+                    for idx in (1, 2, 3)
+                ],
+            }
+        )
+    return load_slots_definition(data)
+
+
+def test_a_free_order_shelf_assigns_each_product_to_the_facing_that_expects_it():
+    definition = _free_order_definition()
+    assert [shelf.ordered for shelf in definition.shelves] == [False, True]
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    rotated = {1: "P1-3", 2: "P1-1", 3: "P1-2"}
+    idents = [
+        _ident(slot, rotated[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert [registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)] == ["s1_f3", "s1_f1", "s1_f2"]
+    assert [registration.assignments[f"img:t1:{idx}"] for idx in (1, 2, 3)] == ["s2_f1", "s2_f2", "s2_f3"]
+
+
+def test_a_free_order_shelf_reports_a_foreign_slot_on_the_facing_left_over():
+    definition = _free_order_definition()
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    seen = {1: "Stray", 2: "P1-1", 3: "P1-3"}
+    idents = [
+        _ident(slot, seen[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert [registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)] == ["s1_f2", "s1_f1", "s1_f3"]

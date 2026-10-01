@@ -103,6 +103,9 @@ class ShelfDefinition(BaseModel):
     shelf_id: str
     shelf_number: int
     level: Optional[str] = None
+    #: False: the shelf must hold its products, in any left-to-right order (a product found on the shelf
+    #: is a match wherever it stands).
+    ordered: bool = True
     facings: List[FacingDefinition] = Field(default_factory=list)
 
 
