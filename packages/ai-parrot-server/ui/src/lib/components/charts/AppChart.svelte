@@ -24,6 +24,7 @@
   import { themeStore } from "$lib/stores/theme.svelte";
   import type { AppChartConfig } from "./chart-contract.js";
   import { buildOverlays } from "./overlays.js";
+  import { axisDomain, splitByAxis } from "./dual-axis.js";
   import { onMount } from "svelte";
   // ai-parrot (FEAT-476 TASK-2595): AppChartGeo's own deps (d3-geo,
   // topojson-client, world-atlas) belong to features.maps, not
@@ -211,6 +212,39 @@
     })),
   );
 
+  // FEAT-623: dual value axis (cartesian SVG bar/line/area only; the canvas
+  // branch and every other chart type ignore `seriesAxes`). Without a right-axis
+  // series every value below collapses to today's: same series, domain, padding.
+  let axisSplit = $derived(splitByAxis(config.y, config.seriesAxes));
+  let hasRightAxis = $derived(
+    axisSplit.right.length > 0 &&
+      axisSplit.left.length > 0 &&
+      !useCanvas &&
+      !useSignColor &&
+      (isBar || isLine || isArea),
+  );
+  let leftDomain = $derived(
+    axisDomain(data, axisSplit.left, config.stacked ?? false),
+  );
+  let rightDomain = $derived(axisDomain(data, axisSplit.right, false));
+  let leftSeriesDefs = $derived(
+    hasRightAxis
+      ? seriesDefs.filter((s) => axisSplit.left.includes(s.key))
+      : seriesDefs,
+  );
+  let rightSeriesDefs = $derived(
+    seriesDefs.filter((s) => axisSplit.right.includes(s.key)),
+  );
+  let leftChartSeries = $derived(
+    hasRightAxis
+      ? chartSeries.filter((s) => axisSplit.left.includes(s.key))
+      : chartSeries,
+  );
+  let leftAxisLabel = $derived(
+    config.yAxisLabels?.[0] ?? config.yAxisLabel ?? undefined,
+  );
+  let rightAxisLabel = $derived(config.yAxisLabels?.[1] ?? undefined);
+
   // Overlays: trendlines + median lines (cartesian only)
   let overlays = $derived.by(() => {
     if (isPie || isRadar || isMap || (!config.trendline && !config.median))
@@ -312,7 +346,7 @@
          inside LayerChart throws at runtime, degrade to a fallback instead of
          crashing the surrounding ChatBubble / AgentChat render. -->
     <svelte:boundary>
-      <div class="min-h-0 flex-1">
+      <div class="relative min-h-0 flex-1">
       {#if isRadar}
         <!-- ── Radar emulation (pure SVG) ────────────────────────────── -->
         {@const size = Math.min(
@@ -491,11 +525,13 @@
             ? scaleBand().padding(0.3)
             : (scalePoint().padding(0.5) as any)}
           yScale={scaleLinear()}
-          yDomain={[yMin * 1.05, yMaxStacked * 1.05]}
+          yDomain={hasRightAxis
+            ? [leftDomain[0] * 1.05, leftDomain[1] * 1.05]
+            : [yMin * 1.05, yMaxStacked * 1.05]}
           yNice
-          series={useSignColor ? undefined : chartSeries}
+          series={useSignColor ? undefined : leftChartSeries}
           seriesLayout={config.stacked ? "stack" : "group"}
-          padding={{ top: 16, right: 16, bottom: 36, left: 52 }}
+          padding={{ top: 16, right: hasRightAxis ? 52 : 16, bottom: 36, left: 52 }}
           tooltipContext={{ mode: "band" }}
         >
           {#if useCanvas}
@@ -534,14 +570,18 @@
             </Canvas>
           {:else}
             <Svg>
-              <Axis placement="left" grid rule />
+              {#if hasRightAxis && leftAxisLabel}
+                <Axis placement="left" grid rule label={leftAxisLabel} />
+              {:else}
+                <Axis placement="left" grid rule />
+              {/if}
               <Axis
                 placement="bottom"
                 rule
                 tickLabelProps={categoryTickLabelProps}
               />
 
-              {#each seriesDefs as s}
+              {#each leftSeriesDefs as s}
                 {#if isBar}
                   {#if useSignColor}
                     <Bars
@@ -622,6 +662,47 @@
             {/snippet}
           </Tooltip.Root>
         </Chart>
+        {#if hasRightAxis}
+          <!-- FEAT-623: second value scale. layerchart <Chart> takes one yScale, so the
+               right-axis series live in a layered <Chart> with identical data / x /
+               xScale / padding (x positions line up). pointer-events-none keeps the
+               left chart's tooltip working (it lists every series). -->
+          <div class="pointer-events-none absolute inset-0">
+            <Chart
+              {data}
+              x={config.x}
+              y={axisSplit.right[0]}
+              xScale={isBar
+                ? scaleBand().padding(0.3)
+                : (scalePoint().padding(0.5) as any)}
+              yScale={scaleLinear()}
+              yDomain={[rightDomain[0] * 1.05, rightDomain[1] * 1.05]}
+              yNice
+              padding={{ top: 16, right: 52, bottom: 36, left: 52 }}
+            >
+              <Svg>
+                {#if rightAxisLabel}
+                  <Axis placement="right" rule label={rightAxisLabel} />
+                {:else}
+                  <Axis placement="right" rule />
+                {/if}
+                {#each rightSeriesDefs as s}
+                  {#if isArea}
+                    <Area
+                      y={s.key}
+                      fill={s.color}
+                      fillOpacity={0.2}
+                      line={{ stroke: s.color, strokeWidth: 2 }}
+                    />
+                  {:else}
+                    <!-- bar charts draw right-axis series as a line (bars + rate line) -->
+                    <Spline y={s.key} stroke={s.color} strokeWidth={2} />
+                  {/if}
+                {/each}
+              </Svg>
+            </Chart>
+          </div>
+        {/if}
       {/if}
     </div>
 

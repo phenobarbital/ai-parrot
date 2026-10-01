@@ -24,6 +24,10 @@ Blocks are grouped with these rules, applied in order:
   nested blocks wrapped in a ``Column``) — UNLESS nesting exceeds
   :data:`_MAX_NESTING_DEPTH`, in which case they degrade to the legacy
   flatten-into-sibling-sections behavior (``_flatten_container``).
+* A ``progress`` block never opens a section (more than one section renders as
+  tabs in both A2UI renderers). It adds ONE descriptor to the current section:
+  ``Column{Text(title), Row{KPICard…}}`` when titled, a bare ``Row{KPICard…}``
+  when not.
 * Every other block maps to a nested catalog component appended to the current
   section. A ``summary`` becomes the section's ``text`` when that slot is still
   free, otherwise an ``InfoCard``.
@@ -37,7 +41,9 @@ Block              A2UI v1.0 component
 ``chart``          ``Chart`` (+ rows into the data model, bound by pointer)
 ``table``          ``DataTable`` (+ rows into the data model)
 ``timeline``       ``Timeline``
-``progress``       one ``KPICard`` per item
+``progress``       ``Row`` of ``KPICard`` (value/100, ``format='percent'``,
+                   target as ``comparisonPeriod``), wrapped with a title ``Text``
+                   in a ``Column`` when the block is titled
 ``summary``        section ``text``, else ``InfoCard``
 ``bullet_list``    ``List{direction:'vertical'}`` of ``Text``
 ``checklist``      ``List`` of ``CheckBox{label, value}``
@@ -50,9 +56,14 @@ Block              A2UI v1.0 component
 =================  =====================================================
 
 Known lossy degradations (spec §8, OQ-C; FEAT-527 removed the chart-type
-collapse and now forwards table ``style``, bullet ``columns``, hero-card
-``icon``/``color``/``comparison_period``, and chart presentation fields —
-nothing presentation-relevant is dropped any more):
+collapse and forwards table ``style``, bullet ``columns``, hero-card
+``icon``/``color``/``comparison_period``, and chart presentation fields;
+FEAT-623 forwards ``ColumnDef.type``/``format``, series ``axis``,
+``y_axis_labels`` and hero ``format``/``unit``):
+
+* ``ColumnDef.align``/``width``/``color`` are HTML-lane only: ``TableColumn`` has
+  no slot for them on the wire, so the A2UI lane drops them (extending
+  ``TableColumn`` is a tracked follow-up).
 
 * ``InfoCard`` ``title`` is omitted for blocks with no title-like field. The
   lowering in ``catalog/parrot/infocard.py`` skips absent properties, so this
@@ -139,6 +150,16 @@ def _clean(props: dict[str, Any]) -> dict[str, Any]:
 def _descriptor(component: str, properties: dict[str, Any]) -> dict[str, Any]:
     """Build a nested composite child descriptor for the Infographic component."""
     return {"component": component, "properties": _clean(properties)}
+
+
+def _fmt_pct(value: Any) -> str:
+    """Format a percentage number with at most 1 decimal and no trailing ``.0``."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    text = f"{number:.1f}"
+    return text[:-2] if text.endswith(".0") else text
 
 
 def _unique(name: str, taken: dict[str, int]) -> str:
@@ -282,8 +303,14 @@ class _Converter:
             properties["xAxisLabel"] = block["x_axis_label"]
         if block.get("y_axis_label") is not None:
             properties["yAxisLabel"] = block["y_axis_label"]
+        if block.get("y_axis_labels") is not None:
+            properties["yAxisLabels"] = block["y_axis_labels"]
         if block.get("layout") is not None:
             properties["layout"] = block["layout"]
+
+        # FEAT-623: per-series value axis, parallel to ``y``; only when declared.
+        if any(s.get("axis") is not None for s in series):
+            properties["seriesAxes"] = [s.get("axis") or "left" for s in series]
 
         # Per-series colours → palette, only when at least one is set.
         series_colors = [s.get("color") for s in series]
@@ -298,11 +325,15 @@ class _Converter:
 
         taken: dict[str, int] = {}
         names: list[str] = []
+        hints: list[dict[str, Any]] = []
         for column in block.get("columns") or []:
             if isinstance(column, str):
                 header = column
+                hints.append({})
             else:
-                header = str((_as_dict_or_none(column) or {}).get("header") or "")
+                column_dict = _as_dict_or_none(column) or {}
+                header = str(column_dict.get("header") or "")
+                hints.append(_clean({"type": column_dict.get("type"), "format": column_dict.get("format")}))
             names.append(_unique(header or "column", taken))
 
         rows: list[dict[str, Any]] = []
@@ -312,7 +343,7 @@ class _Converter:
 
         properties = {
             "title": block.get("title") or block.get("caption"),
-            "columns": [{"name": name, "title": name} for name in names],
+            "columns": [{"name": name, "title": name, **hint} for name, hint in zip(names, hints, strict=True)],
             "totalRows": len(rows),
             "data": self._bind_rows("tables", key, rows),
         }
@@ -321,9 +352,10 @@ class _Converter:
         return _descriptor("DataTable", properties)
 
     def _hero_card(self, block: dict[str, Any]) -> dict[str, Any]:
+        value = block.get("value")
         properties: dict[str, Any] = {
             "label": block.get("label") or "",
-            "value": block.get("value") or "",
+            "value": "" if value is None else value,
             "delta": block.get("trend_value"),
             "trend": block.get("trend"),
         }
@@ -333,6 +365,10 @@ class _Converter:
             properties["color"] = block["color"]
         if block.get("comparison_period") is not None:
             properties["comparisonPeriod"] = block["comparison_period"]
+        if block.get("format") is not None:
+            properties["format"] = block["format"]
+        if block.get("unit") is not None:
+            properties["unit"] = block["unit"]
         return _descriptor("KPICard", properties)
 
     def _timeline(self, block: dict[str, Any]) -> dict[str, Any]:
@@ -353,18 +389,44 @@ class _Converter:
         return _descriptor("Timeline", {"title": block.get("title"), "events": events})
 
     def _progress(self, block: dict[str, Any]) -> list[dict[str, Any]]:
+        """One ``KPICard`` per item: ``value/100`` with ``format='percent'``.
+
+        A set ``target`` travels as neutral ``comparisonPeriod`` text
+        (``"vs N% target"``), never as ``delta``; ``color`` is forwarded.
+        """
         descriptors = []
         for raw in block.get("items") or []:
             item = _as_dict_or_none(raw)
             if item is None:
                 continue
-            descriptors.append(
-                _descriptor(
-                    "KPICard",
-                    {"label": item.get("label") or "", "value": item.get("value")},
-                )
-            )
+            value = item.get("value")
+            properties: dict[str, Any] = {"label": item.get("label") or ""}
+            try:
+                properties["value"] = round(float(value) / 100, 6)
+                properties["format"] = "percent"
+            except (TypeError, ValueError):
+                properties["value"] = value
+            if item.get("target") is not None:
+                properties["comparisonPeriod"] = f"vs {_fmt_pct(item['target'])}% target"
+            if item.get("color") is not None:
+                properties["color"] = item["color"]
+            descriptors.append(_descriptor("KPICard", properties))
         return descriptors
+
+    def _progress_group(self, block: dict[str, Any]) -> dict[str, Any] | None:
+        """Lower a ``progress`` block to ONE descriptor for the current section.
+
+        Titled → ``Column{Text(title), Row{KPICard…}}``; untitled → ``Row{KPICard…}``.
+        Returns ``None`` when no item survived.
+        """
+        cards = self._progress(block)
+        if not cards:
+            return None
+        row = _descriptor("Row", {"children": cards})
+        title = _text(block.get("title"))
+        if not title:
+            return row
+        return _descriptor("Column", {"children": [_descriptor("Text", {"text": title}), row]})
 
     def _bullet_list(self, block: dict[str, Any]) -> dict[str, Any]:
         """Map a ``bullet_list`` block to ``List{direction:'vertical'}`` of ``Text``."""
@@ -585,8 +647,9 @@ class _Converter:
             elif block_type == "timeline":
                 sections.add(self._timeline(block))
             elif block_type == "progress":
-                for descriptor in self._progress(block):
-                    sections.add(descriptor)
+                group = self._progress_group(block)
+                if group is not None:
+                    sections.add(group)
             elif block_type == "chain":
                 sections.add(self._chain(block))
             elif block_type == "steps":
