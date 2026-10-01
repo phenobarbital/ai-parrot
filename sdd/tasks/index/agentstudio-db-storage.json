@@ -137,7 +137,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -148,8 +148,9 @@
       "parallelism_notes": "extends storage/repositories.py after TASK-3925 (studio_transaction/_exec); its tests use the studio_pool fixture from TASK-3926 (conftest.py, applied migrations); models from TASK-3922 arrive transitively",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3928-agent-repository.md"
+      "completed_at": "2026-10-01T02:55:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3928-agent-repository.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3929",
