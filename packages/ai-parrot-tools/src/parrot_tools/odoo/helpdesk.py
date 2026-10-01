@@ -35,8 +35,15 @@ from parrot_tools.odoo.models.helpdesk_envelopes import (
     TicketListResult,
     TicketMessagesResult,
     TicketResult,
+    TicketTransitionResult,
 )
 from parrot_tools.odoo.models.helpdesk_inputs import (
+    ApproveTicketInput,
+    CancelTicketInput,
+    CloseTicketInput,
+    MoveTicketToStageInput,
+    ReopenTicketInput,
+    ResolveTicketInput,
     AddTicketCommentInput,
     AssignTicketInput,
     AttachToTicketInput,
@@ -780,3 +787,117 @@ class OdooHelpdeskToolkit(OdooToolkit):
         wizard_id = int(wizard[0] if isinstance(wizard, list) else wizard)
         await self._execute("sh.helpdesk.reassign.wizard", "action_confirm", [[wizard_id]])
         return await self._assignment_result(ticket_id, "reassign_wizard")
+
+    # ── Transitions (FEAT-616 M7): action first, post-condition verified ───
+    async def _transition(
+        self,
+        ticket_id: int,
+        action: str,
+        *,
+        expected_stage: int | None = None,
+        fallback_stage: int | None = None,
+        pre_write: dict[str, Any] | None = None,
+    ) -> TicketTransitionResult:
+        """Run ``action`` on the ticket, re-read it and report whether anything changed.
+
+        ``fallback_stage`` (only reopen/move use it) is written ONLY when the action changed nothing and is
+        reported as ``method_used="stage_write"`` with a warning, never silently.
+        """
+        before = await self._read_one(TICKET_MODEL, ticket_id, ["stage_id", "close_date"])
+        from_id = before["stage_id"][0] if before.get("stage_id") else None
+        if expected_stage is not None and from_id != expected_stage:
+            raise ValueError(f"Ticket {ticket_id} is in stage {before.get('stage_id')!r}, expected id {expected_stage}")
+        warnings: list[str] = []
+        if pre_write:
+            await self._execute(TICKET_MODEL, "write", [[ticket_id], pre_write])
+        method_used = "none"
+        if action:
+            result = await self._execute(TICKET_MODEL, action, [[ticket_id]])
+            if isinstance(result, dict) and result.get("type") == "ir.actions.act_window":
+                warnings.append(f"{action} opened a wizard ({result.get('res_model')}); not applied")
+        after = await self._read_one(TICKET_MODEL, ticket_id, ["stage_id", "close_date"])
+        applied = after.get("stage_id") != before.get("stage_id") or (
+            action == "action_closed" and bool(after.get("close_date")) and not before.get("close_date")
+        )
+        if applied:
+            method_used = "action"
+        elif action:
+            warnings.append(f"{action} produced no change on this instance (company stage role not configured?)")
+        if not applied and fallback_stage is not None:
+            await self._execute(TICKET_MODEL, "write", [[ticket_id], {"stage_id": fallback_stage}])
+            after = await self._read_one(TICKET_MODEL, ticket_id, ["stage_id", "close_date"])
+            applied = after.get("stage_id") != before.get("stage_id")
+            method_used = "stage_write"
+            warnings.append("stage written directly")
+        ticket = await self._load_ticket(ticket_id, include_extra=False)
+        return TicketTransitionResult(
+            ticket_id=ticket_id,
+            action=action or "write",
+            applied=applied,
+            method_used=method_used,
+            from_stage=before["stage_id"][1] if before.get("stage_id") else None,
+            to_stage=after["stage_id"][1] if after.get("stage_id") else None,
+            warnings=warnings,
+            ticket=ticket,
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(CloseTicketInput)
+    async def close_ticket(self, ticket_id: int, comment: Optional[str] = None) -> TicketTransitionResult:
+        """Close a ticket (Softhealer ``action_closed``: sets close_date/close_by, moves to the company close stage).
+
+        An optional internal note is posted first.
+        """
+        if comment:
+            await self.add_ticket_comment(ticket_id, comment, internal=True)
+        return await self._transition(ticket_id, "action_closed")
+
+    @requires_permission("odoo.write")
+    @tool_schema(ReopenTicketInput)
+    async def reopen_ticket(self, ticket_id: int, to_stage: Optional[int | str] = None) -> TicketTransitionResult:
+        """Reopen: ``action_open`` first; if it changes nothing, the stage is written directly (reported as stage_write)."""
+        if to_stage is not None:
+            target = await self._resolve_ref("stage", to_stage)
+        else:
+            roles = await self._company_stage_config()
+            target = roles.get("reopen") or await self._resolve_ref("stage", "Open")
+        return await self._transition(ticket_id, "action_open", fallback_stage=target)
+
+    @requires_permission("odoo.write")
+    @tool_schema(ResolveTicketInput)
+    async def resolve_ticket(self, ticket_id: int) -> TicketTransitionResult:
+        """Mark resolved (Softhealer ``action_done``). No fallback: without a company done stage, applied=False."""
+        result = await self._transition(ticket_id, "action_done")
+        if (await self._company_stage_config()).get("done") is None:
+            result.warnings.append("done stage not configured on company; action_done cannot apply")
+        return result
+
+    @requires_permission("odoo.write")
+    @tool_schema(ApproveTicketInput)
+    async def approve_ticket(self, ticket_id: int) -> TicketTransitionResult:
+        """Approve a ticket (Softhealer ``action_approve``). No fallback: the result reports whether it applied."""
+        return await self._transition(ticket_id, "action_approve")
+
+    @requires_permission("odoo.write")
+    @tool_schema(CancelTicketInput)
+    async def cancel_ticket(self, ticket_id: int, reason: str) -> TicketTransitionResult:
+        """Cancel a ticket: write ``cancel_reason`` then call ``action_cancel``. No stage fallback."""
+        result = await self._transition(ticket_id, "action_cancel", pre_write={"cancel_reason": reason})
+        if (await self._company_stage_config()).get("cancel") is None:
+            result.warnings.append("cancel stage not configured on company; action_cancel cannot apply")
+        return result
+
+    @requires_permission("odoo.write")
+    @tool_schema(MoveTicketToStageInput)
+    async def move_ticket_to_stage(
+        self,
+        ticket_id: int,
+        stage: int | str,
+        expected_current_stage: Optional[int | str] = None,
+    ) -> TicketTransitionResult:
+        """Move a ticket to a stage by writing ``stage_id``, optionally guarded by the expected current stage."""
+        target = await self._resolve_ref("stage", stage)
+        expected = (
+            await self._resolve_ref("stage", expected_current_stage) if expected_current_stage is not None else None
+        )
+        return await self._transition(ticket_id, "", expected_stage=expected, fallback_stage=target)
