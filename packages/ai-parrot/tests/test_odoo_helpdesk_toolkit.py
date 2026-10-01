@@ -441,4 +441,3 @@ async def test_cancel_ticket_writes_reason_then_action():
     assert calls[2] == (TICKET_MODEL, "action_cancel", [[1]], None)
     assert [c for c in calls if c[1] == "write"] == [calls[1]]
     assert result.applied is False
-
