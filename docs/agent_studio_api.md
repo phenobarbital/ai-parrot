@@ -811,3 +811,161 @@ agent's instance from its current on-disk/registry definition:
   ([above](#per-agent-asset-files)) always report
   `reload_required: true` precisely because they take effect only
   through this explicit reload, never automatically.
+
+
+---
+
+## Tenant scope & visibility (FEAT-605)
+
+> **Status of the early subset.** Only the scope-only parts (request-scope seam, mount hooks, the
+> `/me` endpoint, scope-only gates and the draft-overwrite / ownerless-takeover fixes) are in place.
+> This is **not tenant-ready**: a host that installs it keeps `studio_enabled=False` for its tenants
+> until the release gate below is met.
+
+An **opted-in host** is one where `app["scope_resolver"]` (or the legacy
+`app["ui_surfaces_scope_resolver"]`) is installed. The **tenant path** is an opted-in host. Resolver
+lookup precedence: `scope_resolver` → `ui_surfaces_scope_resolver` → the session default.
+
+### Host modes
+
+opted-in host; every Studio record it reads or writes is a row of the
+storage spec's tables (assumption A1, §6).
+
+| Host state | Reads | Create | PATCH visibility | New gates (reload, files GET, tool execute) |
+|---|---|---|---|---|
+| no resolver installed | FEAT-467 unchanged (list-all, read-any) on the storage spec's GLOBAL partition (`tenant IS NULL`, always `private` by CHECK) or its filesystem backend; visibility fields reported as `access: "global"` | FEAT-467 unchanged (+ D1/D3 fixes, `name_taken` code) | 422 `tenant_required` for non-private | **not applied** (G9) |
+| resolver installed, `scope.tenant is None` (unprefixed mount, multi-programme user) | empty lists; addressed routes 404 | 422 `tenant_required` | 422 `tenant_required` | applied |
+| resolver installed, prefixed mount, `match_info["tenant"] != scope.tenant` | 403 `tenant_mismatch` before any record access | same | same | same |
+
+### Access rule
+
+```
+For a record `r` (agent, draft or skill row) and scope `s`:
+
+```
+in_tenant(r)   := s.tenant is not None and r.tenant is not None and r.tenant == s.tenant
+owns(r)        := in_tenant(r) and r.owner == s.user_id
+administers(r) := in_tenant(r) and (s.may_administer or s.is_superuser)
+grants(r)      := in_tenant(r) and (r.visibility == "tenant"
+                   or (r.visibility == "groups" and set(r.allowed_groups) & s.groups))
+can_see(r)     := owns(r) or administers(r) or grants(r)
+can_manage(r)  := owns(r) or administers(r)
+access_tag(r)  := "owner" | "admin" | "tenant" | "groups"    ("global" with no resolver)
+```
+
+```
+
+Handlers never re-implement this rule; they call the Studio access service. A tenant-NULL row is
+invisible and unmanageable in every opted-in host. No branch crosses tenants, not even a superuser's.
+
+### Route policy (relative to the mount prefix)
+
+"404" = `can_see` false (identical body to absent). "403" = visible but not `can_manage`. All rows
+also pass `tenant_mismatch` and `studio_disabled` first (except `/me`).
+
+behaviour without a resolver.
+
+| Route | Invisible | Visible, not manageable | Manageable | Notes |
+|---|---|---|---|---|
+| `GET /me` | — | — | — | scope only; exempt from `studio_disabled` |
+| `GET /agents`, `/drafts`, `/skills` (list) | omitted | included, `access` tag | included | response items carry the visibility fields |
+| `GET /agents/{name}`, `/drafts/{name}`, `/skills/{id}` | 404 | 200 | 200 | returns `tenant, owner, visibility, allowed_groups, access, can_manage` (C14) |
+| `POST /agents`, `/drafts`, `/skills` | — | — | — | `may_author` else 403 `authoring_denied`; `name_taken` in tenant; reserved keys 400; Python `source` on `/drafts` ⇒ 422 `declarative_only` (tenant path); tenant path: any toolkit/MCP configuration in the body or bundle must pass `TenantToolingPolicy` (TOOLKITS) before anything is written (C35) |
+| `PATCH /agents/{name}` (General fields; route and body owned by the storage spec §2.9a) | 404 | 403 | allowed | + `may_author` else 403 `authoring_denied`; reserved keys 400; `name` in body ⇒ 422 `name_immutable` (storage); tooling in the patch ⇒ `TenantToolingPolicy` (C35) |
+| `POST /agents/{name}/test/ask`, `POST /agents/{name}/test`, `DELETE /agents/{name}/test` | 404 | allowed | allowed | binds `studio_scope` with `.agent` set (C16); re-checked on every ask; tenant path runs the request inside storage's `manager.studio.use(StudioAgentKey(scope.tenant, name), session_id=…, request=…)` (the `get_studio_bot(key, new=True, …)` lookup plus a lease), never `get_bot(name)`; host write tools run only after an approval from the TOOLKITS confirmation mechanism, zero writes when none is available (C36) |
+| `POST /agents/{name}/skills/import/{id}` | 404 (agent or skill) | 403 on the agent | skill must be visible | copies into the agent's assets (storage spec) |
+| `GET /agents/{name}/files/{kind}[/{filename}]` | 404 | **403, opted-in only** | allowed | FEAT-467 GET stays ungated without a resolver (`test_files.py:350`) |
+| `PUT/DELETE /agents/{name}/files/...` | 404 | 403 | allowed | |
+| `POST /agents/{name}/reload` | 404 | **403, opted-in only** | allowed | tenant path: `manager.studio.reload(StudioAgentKey(scope.tenant, name))`; legacy path unchanged |
+| `DELETE /agents/{name}` | 404 | 403 | allowed | |
+| `POST /agents/{name}/tools`, `/agents/{name}/toolkits`; `GET/PUT/DELETE /agents/{name}/toolkit-config`, `/agents/{name}/toolkits/{slug}`, `/agents/{name}/toolkits/{slug}/options/{param}`, `/agents/{name}/mcp-servers` | 404 | 403 | allowed | tooling rows in `ai_agent_tooling` (storage). Tenant path: every write (incl. `/mcp-servers` and bundle activation) accepts only configuration allowed by the host-owned `TenantToolingPolicy` (TOOLKITS), applied to the final normalised config (so `transport`/`command` inside `params` count); tenant-supplied local/stdio execution is denied by default; refused before persistence and before any process starts (C35). `options/{param}`: runs the TOOLKITS mandatory scope check before `config_options()` acquires any resource (C36) |
+| `GET/PUT/DELETE /agents/{name}/toolkits/{slug}/me` | 404 | allowed (own override) | allowed | per-user secrets unchanged |
+| `POST /drafts/{name}/activate` | 404 | 403 | allowed | + `may_author`; declarative (tenant path); `name_taken` rules above; the draft's tooling re-checked against `TenantToolingPolicy` at activation (C35) |
+| `DELETE /drafts/{name}` | 404 | 403 | allowed | |
+| `PUT /skills/{id}`, `DELETE /skills/{id}` | 404 | 403 | allowed | 404 check runs before today's `_require_owner` (`skills_catalog.py:411`, `:456`) |
+| `PATCH /agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility` | 404 | 403 | allowed | 422 `tenant_required` / `groups_required` |
+| `POST /skills/resync` | — | — | — | opted-in: global `is_superuser` from the scope only (not `may_administer`); rebuilds the storage spec's derived per-pod search index for the caller's partition from Postgres |
+| `POST /tools/{slug}/execute` | — | — | — | opted-in: `may_author` else 403 `authoring_denied`, then existing PBAC (C13), then the TOOLKITS mandatory scope check for standalone tools (refusal before any side effect, `tool_scope_unavailable`) (C36). A host write tool is refused here with zero writes, because this endpoint has no confirmation channel (fail closed, C36) |
+| `GET /toolkits/{slug}/schema` | — | — | — | no record; `studio_enabled` only |
+| `GET /catalog/{kind}` | — | — | — | global catalogues unchanged; tenant-safe toolkit listing is `agentstudio-host-toolkits` |
+| `GET/POST/DELETE /keys[/{provider}]` | — | — | — | per-user, unchanged; BYOK is out of scope (host may skip via `view_wrapper`) |
+| `POST /assistant`, `DELETE /assistant` | — | — | — | not gated by `may_author` (questions allowed); its writing tools are (M10), and they pass `TenantToolingPolicy` when they write tooling. Session, instance and conversational identity partitioned by (tenant, user); DELETE resets only the current partition (C30) |
+
+### Error codes
+
+| Code | HTTP | Owner |
+|---|---|---|
+| `name_taken` | 409 | FEAT-605 (body `{"code": "name_taken", "message": "Name '<slug>' is not available."}`) |
+| `declarative_only` | 422 | FEAT-605 (also the storage tenant-path Python-draft refusal) |
+| `studio_disabled` | 404 | FEAT-605 |
+| `tenant_mismatch` | 403 | FEAT-605 |
+| `authoring_denied` | 403 | FEAT-605 |
+| `reserved_config_key` | 400 | FEAT-605 (`owner`, `created_by`, `tenant`, `visibility`, `allowed_groups` in `config`/`definition`) |
+| `tenant_required` | 422 | FEAT-605 |
+| `groups_required` | 422 | FEAT-605 |
+| `groups_not_allowed` | 422 | FEAT-605 (open question: `allowed_groups` outside the owner's groups) |
+| `tooling_not_permitted` | 422 write / 403 execute | TOOLKITS (pass-through) |
+| `confirmation_required` | 403 | TOOLKITS (pass-through) |
+| `server_managed` | 422 | TOOLKITS (pass-through) |
+| `tool_scope_unavailable` | 403 | TOOLKITS (pass-through) |
+
+Storage codes (`version_conflict`, `name_immutable`, `studio_storage_unavailable`, …) pass through
+unchanged; see the storage host guide (FEAT-621).
+
+### `GET {prefix}/me`
+
+Returns the resolved scope: `{"user_id", "tenant", "may_author", "may_administer", "enabled", "is_superuser"}`
+(`enabled = scope.studio_enabled`). Exempt from `studio_disabled`, still subject to `tenant_mismatch`,
+needs no record and no storage. Without a resolver it returns the default scope with `enabled: true` and
+`may_administer: false`. The literal `/me` is registered before any dynamic top-level route.
+
+### Visibility
+
+`PATCH /agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility` take
+`VisibilityUpdateRequest`:
+
+```json
+{"visibility": "private | tenant | groups", "allowed_groups": ["..."]}
+```
+
+`groups` with an empty `allowed_groups` ⇒ 422 `groups_required`; non-private without a tenant ⇒ 422
+`tenant_required`. Single-record GETs return `tenant`, `owner`, `visibility`, `allowed_groups`, `access`
+(`owner | admin | tenant | groups | global`) and `can_manage`.
+
+### Mounting Studio in a host
+
+```python
+setup_studio_routes(app, *, prefix=None, view_wrapper=None)
+BotManager.setup(app, ..., studio_routes=True)           # False skips the default /api/v1/astudio mount
+BotManager.setup_registry_only(app, *, import_modules=False, load_definitions=False)
+```
+
+- `prefix` may contain `{tenant}`; the router value is compared with `scope.tenant` before any record
+  access (403 `tenant_mismatch`).
+- `view_wrapper` is called once per distinct view class; its result is registered for every route of that
+  class; `None` skips them. `_scope()` is resolved lazily so the wrapper's prologue runs first.
+- `setup_studio_routes` is idempotent per prefix; startup hooks are installed once per app.
+- `setup_registry_only` is idempotent, registers no route and runs no startup agents.
+  **Incomplete lifecycle — not recommended to tenant hosts** until the Studio runtime wiring lands.
+  With an installed resolver, `import_modules=True` / `load_definitions=True` raise `RuntimeError`.
+- Documented mount order: install the resolver → `setup_registry_only` → `setup_studio_routes`.
+- The host reserves `astudio` as a tenant segment itself.
+
+### Request context for tools
+
+`RequestContext.kwargs["studio_scope"]` is a `StudioToolScope`: `caller` (the caller's `RequestScope`) and
+`agent` (`StudioAgentRef(agent_id, name, owner, tenant, visibility)` or `None` on agent-less calls),
+built by `build_tool_scope(scope, agent=None)`. With no resolver installed nothing is bound.
+
+### Behaviour on a plain host (no resolver)
+
+FEAT-467 behaviour is unchanged (list-all, read-any), the new gates (reload, files GET, tool execute) are
+not applied, visibility fields report `access: "global"`, non-private visibility is 422 `tenant_required`,
+and duplicate-name responses use `name_taken` (409) instead of `duplicate` / `name_collision` / `not_owner`.
+
+### Release gate
+
+No release is tenant-ready while only the early subset, toolkit discovery or route flags are done. A
+tenant-ready release requires: every FEAT-605 task through the docs wave (including the registry-only
+lifecycle and the assistant partition), the storage work (FEAT-621, W0–W4) and the toolkits work (FEAT-622,
+Waves 1–4). Until then keep `studio_enabled=False` for tenants.
