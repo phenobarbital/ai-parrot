@@ -7,6 +7,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent Studio drafts (FEAT-605, plain hosts too):** `POST /astudio/drafts/{name}/activate` now answers
+  `409 name_taken` instead of `409 name_collision` / `409 not_owner`; the body never discloses the owner.
+
+### Fixed
+
+- **Agent Studio D1:** `POST /astudio/drafts` no longer overwrites another user's draft file or row; it answers
+  `409 name_taken` before anything is written (superusers and the owner are unaffected).
+- **Agent Studio D3:** draft activation with `replace=true` over an agent without an owner, or owned by someone
+  else, is refused (`409 name_taken`) unless the caller is a superuser.
+
 ---
 
 ## [1.0.7] — 2026-10-01 — A2UI linked surfaces, SharePoint file manager, Hooba and Odoo toolkits

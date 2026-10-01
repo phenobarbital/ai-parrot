@@ -11,10 +11,12 @@ superuser/admin bypasses ownership, fail-open when no PDP is configured).
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from aiohttp import web
 from navigator.views import BaseView
@@ -36,6 +38,7 @@ except ImportError:
 
 # Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
 from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
+from parrot.handlers.scope import RequestScope, get_scope_resolver, has_installed_resolver
 
 # Superuser/admin group convention — mirrors
 # navigator_auth.decorators.SUPERUSER_GROUP / `_check_superuser` (private
@@ -109,6 +112,9 @@ class StudioUser:
         groups: Group memberships from session userinfo (empty list if none).
         is_superuser: Derived admin/superuser flag — bypasses ownership
             checks in :meth:`StudioBaseView._require_owner`.
+        tenant: Resolved tenant (opted-in hosts only).
+        may_author: Host authoring gate (opted-in hosts only).
+        may_administer: Host tenant-admin gate (opted-in hosts only).
     """
 
     user_id: str
@@ -116,6 +122,9 @@ class StudioUser:
     username: str | None = None
     groups: list[str] = field(default_factory=list)
     is_superuser: bool = False
+    tenant: str | None = None
+    may_author: bool = True
+    may_administer: bool = False
 
 
 class StudioBaseView(BaseView):
@@ -161,6 +170,69 @@ class StudioBaseView(BaseView):
             return await session_attr()
         return session_attr
 
+    _STUDIO_ENABLED_EXEMPT: ClassVar[bool] = False
+
+    def _opted_in(self) -> bool:
+        """Package X9: a scope resolver is installed on the app."""
+        return has_installed_resolver(self.request.app)
+
+    async def _scope(self) -> RequestScope:
+        """Resolve the caller's scope once per request (lazy; never in ``__init__``)."""
+        cached = getattr(self, "_studio_scope_cache", None)
+        if cached is not None:
+            return cached
+        scope = await get_scope_resolver(self.request.app).resolve(self.request)
+        if not scope.tenant:
+            scope = dataclasses.replace(scope, tenant=None)
+        self._studio_scope_cache = scope
+        return scope
+
+    @staticmethod
+    def _json_error(message: str, code: str) -> dict:
+        from .models import StudioError  # lazy: models imports the manager
+
+        return StudioError(message=message, code=code).model_dump()
+
+    async def _studio_gate(self) -> None:
+        """403 ``tenant_mismatch``, then 404 ``studio_disabled`` (unless exempt)."""
+        declared = self.request.match_info.get("tenant")
+        if declared is None and not self._opted_in():
+            return
+        scope = await self._scope()
+        if declared is not None and declared != scope.tenant:
+            raise web.HTTPForbidden(
+                text=json.dumps(self._json_error("Tenant mismatch.", "tenant_mismatch")),
+                content_type="application/json",
+            )
+        if not scope.studio_enabled and not self._STUDIO_ENABLED_EXEMPT:
+            raise web.HTTPNotFound(
+                text=json.dumps(self._json_error("Agent Studio is disabled.", "studio_disabled")),
+                content_type="application/json",
+            )
+
+    async def _iter(self):  # aiohttp ``web.View`` verb dispatch
+        """Run the scope gate before any verb handler (opted-in or ``{tenant}`` routes only)."""
+        await self._studio_gate()
+        return await super()._iter()
+
+    async def _require_author(self) -> web.Response | None:
+        """403 ``authoring_denied`` when the resolved scope may not author; ``None`` otherwise."""
+        if not self._opted_in():
+            return None
+        if (await self._scope()).may_author:
+            return None
+        return self.json_response(self._json_error("Authoring is not allowed.", "authoring_denied"), status=403)
+
+    def _not_found(self, kind: str, name: str) -> web.Response:
+        """One 404 body for invisible and absent records."""
+        body = self._json_error(f"{kind.capitalize()} '{name}' not found.", "not_found")
+        return self.json_response(body, status=404)
+
+    def _name_taken(self, slug: str) -> web.Response:
+        """Non-enumerating 409: no owner, source or tenant."""
+        body = self._json_error(f"Name '{slug}' is not available.", "name_taken")
+        return self.json_response(body, status=409)
+
     async def _studio_partition(self) -> Any:
         """Storage partition for this request: GLOBAL here; FEAT-605 v0.2 W2.1 overrides it (X5)."""
         from .storage.models import StudioPartition
@@ -202,12 +274,26 @@ class StudioBaseView(BaseView):
                 user_obj = session.decode("user")
             except (AttributeError, TypeError, RuntimeError):
                 user_obj = None
-        return StudioUser(
+        user = StudioUser(
             user_id=str(user_id),
             email=userinfo.get("email"),
             username=userinfo.get("username"),
             groups=list(userinfo.get("groups", []) or []),
             is_superuser=self._is_superuser(userinfo, user_obj),
+        )
+        if not self._opted_in():
+            return user
+        scope = await self._scope()
+        if not scope.user_id:
+            raise web.HTTPUnauthorized(reason="User ID not found in scope.")
+        return dataclasses.replace(
+            user,
+            user_id=str(scope.user_id),
+            is_superuser=scope.is_superuser,
+            groups=sorted(scope.groups),
+            tenant=scope.tenant,
+            may_author=scope.may_author,
+            may_administer=scope.may_administer,
         )
 
     @staticmethod

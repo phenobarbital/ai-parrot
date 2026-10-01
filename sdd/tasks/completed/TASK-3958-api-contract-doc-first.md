@@ -266,10 +266,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: Appended FEAT-605 contract part to docs/agent_studio_api.md (host modes, access rule, route table, codes, /me, visibility PATCH, mount hooks, context keys, release gate) + doc-presence test.
+**Mutation evidence**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

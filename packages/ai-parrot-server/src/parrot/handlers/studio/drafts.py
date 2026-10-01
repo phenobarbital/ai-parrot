@@ -12,10 +12,12 @@ must run BEFORE any import).
 from __future__ import annotations
 
 import contextlib
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
 from asyncdb.exceptions import NoDataFound
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.conf import AGENTS_DIR
@@ -63,6 +65,7 @@ class _StudioDraftsMixin:
         return manager.registry if manager else None
 
     async def _get_draft_row(self, name: str) -> StudioDraft | None:
+        """Read a draft, refusing unavailable ownership information with HTTP 503."""
         db = self.request.app.get("database")
         if db is None:
             return None
@@ -75,7 +78,12 @@ class _StudioDraftsMixin:
                     return None
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Studio: failed to query draft '%s': %s", name, exc)
-            return None
+            raise web.HTTPServiceUnavailable(
+                text=json.dumps(
+                    StudioError(message="Draft lookup unavailable.", code="draft_lookup_failed").model_dump()
+                ),
+                content_type="application/json",
+            ) from exc
 
     async def _get_all_draft_rows(self) -> list[StudioDraft]:
         db = self.request.app.get("database")
@@ -213,6 +221,11 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         except ValueError as exc:
             return self._error(str(exc), status=400, code="invalid_path")
 
+        user = await self._get_user()
+        existing = await self._get_draft_row(save_request.name)
+        if existing is not None and str(existing.owner_user_id) != str(user.user_id) and not user.is_superuser:
+            return self._name_taken(save_request.name)
+
         file_path.write_text(save_request.source)
 
         # Pure static analysis — NEVER imports/executes the draft.
@@ -220,7 +233,6 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         base_class = detect_base_class(save_request.source) if report.passed else None
         status = "validated" if report.passed else "failed"
 
-        user = await self._get_user()
         await self._upsert_draft_row(
             name=save_request.name,
             file_path=str(file_path),
@@ -339,17 +351,9 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
             if existing_meta is not None and existing_meta.bot_config is not None:
                 existing_owner = (existing_meta.bot_config.config or {}).get("created_by")
             if not activate_request.replace:
-                return self._error(
-                    f"Agent '{name}' is already registered; pass " "replace=true to overwrite.",
-                    status=409,
-                    code="name_collision",
-                )
-            if existing_owner is not None and str(existing_owner) != str(user.user_id) and not user.is_superuser:
-                return self._error(
-                    f"Agent '{name}' is owned by another user; cannot replace.",
-                    status=409,
-                    code="not_owner",
-                )
+                return self._name_taken(name)
+            if not user.is_superuser and (existing_owner is None or str(existing_owner) != str(user.user_id)):
+                return self._name_taken(name)
 
         # Move the file into AGENTS_DIR/ so the startup loader also finds
         # it on next boot (spec §7 "Activation moves the file with

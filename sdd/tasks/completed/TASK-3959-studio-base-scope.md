@@ -362,10 +362,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: StudioBaseView scope/gate/_iter, helpers, scope-sourced identity; routed tests; mutation (drop tenant check) went RED. test_integration errors are pre-existing baseline.
+**Mutation evidence**:
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
