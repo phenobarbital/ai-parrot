@@ -85,6 +85,8 @@ def _discover_with_fake_worktree(
     *,
     status_out: str = "",
     log_out: str = "",
+    status_rc: int = 0,
+    log_rc: int = 0,
 ):
     """Build a single fake SDD worktree under tmp_path and run discover_worktree_reports
     against it with every subprocess/filesystem boundary mocked out."""
@@ -109,9 +111,9 @@ def _discover_with_fake_worktree(
         if args[:2] == ("worktree", "list"):
             return _completed(porcelain_output)
         if args[:2] == ("status", "--porcelain"):
-            return _completed(status_out)
+            return _completed(status_out, returncode=status_rc)
         if args and args[0] == "log":
-            return _completed(log_out)
+            return _completed(log_out, returncode=log_rc)
         return _completed("")
 
     with (
@@ -293,6 +295,26 @@ class TestReadWorktreeIndex:
         assert len(tasks) == 1
         assert tasks[0].id == "TASK-2"
 
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            PermissionError(13, "Permission denied"),
+            IsADirectoryError(21, "Is a directory"),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+        ],
+        ids=["permission", "is-a-directory", "bad-encoding"],
+    )
+    def test_unreadable_index_returns_defaults(self, tmp_path, exc):
+        """One unreadable index must not propagate out of the scan.
+
+        FEAT-619 / issue:8aef2c10c7fd — the original clause named only
+        FileNotFoundError, so these three escaped and aborted the whole run.
+        """
+        with patch("builtins.open", side_effect=exc):
+            tasks, base = _read_worktree_index(tmp_path, "any-slug")
+        assert tasks == []
+        assert base == "dev"
+
 
 # ---------------------------------------------------------------------------
 # TestHealth
@@ -337,6 +359,44 @@ class TestHealth:
         assert health.dirty_count == 0
         assert health.unpushed_count == 2
 
+    def test_health_clean_sets_no_unknown_flags(self):
+        """Both git calls succeeding leaves both unknown flags False."""
+        with (
+            patch("scripts.sdd.worktree_status._git", side_effect=[_completed(""), _completed("")]),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            health = _check_health(Path("/fake/wt"), "dev")
+        assert health.dirty_unknown is False
+        assert health.unpushed_unknown is False
+
+    def test_status_failure_marks_dirty_unknown(self):
+        """A non-zero `git status` is 'unknown', never 'clean'."""
+        with (
+            patch(
+                "scripts.sdd.worktree_status._git",
+                side_effect=[_completed("", returncode=1), _completed("")],
+            ),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            health = _check_health(Path("/fake/wt"), "dev")
+        assert health.dirty_unknown is True
+        assert health.dirty_count == 0
+        assert health.unpushed_unknown is False
+
+    def test_missing_origin_ref_marks_unpushed_unknown(self):
+        """A missing origin/<base> ref (git exit 128) is 'unknown'."""
+        with (
+            patch(
+                "scripts.sdd.worktree_status._git",
+                side_effect=[_completed(""), _completed("", returncode=128)],
+            ),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            health = _check_health(Path("/fake/wt"), "staging")
+        assert health.unpushed_unknown is True
+        assert health.unpushed_count == 0
+        assert health.dirty_unknown is False
+
     def test_git_missing_worktree_directory_does_not_raise(self, tmp_path):
         """A registered-but-deleted worktree directory (rm -rf'd without
         `git worktree remove`/`prune`) must not crash the whole scan (AC9)."""
@@ -347,6 +407,10 @@ class TestHealth:
         health = _check_health(missing, "dev")
         assert health.dirty_count == 0
         assert health.unpushed_count == 0
+        # A deleted worktree directory makes _git return returncode=1, so both
+        # signals are now explicitly unknown rather than silently "clean".
+        assert health.dirty_unknown is True
+        assert health.unpushed_unknown is True
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +447,28 @@ class TestReadyForDone:
         """Some tasks pending/in-progress = not ready."""
         reports = _discover_with_fake_worktree(tmp_path, sample_index, status_out="", log_out="")
         assert len(reports) == 1
+        assert reports[0].ready_for_done is False
+
+    def test_not_ready_when_dirty_state_unknown(self, tmp_path, all_done_index):
+        """All done but `git status` failed = NOT ready (issue:6b0b91e1f5b2).
+
+        Before FEAT-619 an unreadable status produced an empty stdout, counted
+        as zero dirty files and reported the worktree as ready — the exact
+        false green light this gate exists to prevent.
+        """
+        reports = _discover_with_fake_worktree(tmp_path, all_done_index, status_rc=1)
+        assert len(reports) == 1
+        assert reports[0].health.dirty_unknown is True
+        assert reports[0].health.dirty_count == 0
+        assert all(t.status in ("done", "done-with-issues") for t in reports[0].tasks)
+        assert reports[0].ready_for_done is False
+
+    def test_not_ready_when_unpushed_state_unknown(self, tmp_path, all_done_index):
+        """All done but `git log origin/<base>..HEAD` failed = NOT ready."""
+        reports = _discover_with_fake_worktree(tmp_path, all_done_index, log_rc=128)
+        assert len(reports) == 1
+        assert reports[0].health.unpushed_unknown is True
+        assert reports[0].health.unpushed_count == 0
         assert reports[0].ready_for_done is False
 
 

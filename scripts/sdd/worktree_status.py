@@ -50,6 +50,12 @@ class WorktreeHealth(BaseModel):
     dirty_count: int = 0
     unpushed_count: int = 0
     live_process_count: int = 0
+    #: ``git status`` failed — ``dirty_count`` is not trustworthy. Never report
+    #: this worktree as clean (FEAT-619 / issue:6b0b91e1f5b2).
+    dirty_unknown: bool = False
+    #: ``git log origin/<base>..HEAD`` failed (commonly: the remote-tracking ref
+    #: does not exist locally) — ``unpushed_count`` is not trustworthy.
+    unpushed_unknown: bool = False
 
 
 class WorktreeReport(BaseModel):
@@ -137,7 +143,10 @@ def _read_worktree_index(
     try:
         with open(index_path, encoding="utf-8") as f:
             data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+    # OSError subsumes FileNotFoundError, PermissionError and IsADirectoryError.
+    # UnicodeDecodeError is a ValueError subclass and is NOT covered by OSError,
+    # so it must be named explicitly (issue:8aef2c10c7fd).
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, KeyError):
         return [], "dev"
 
     base_branch = data.get("base_branch", "dev")
@@ -191,13 +200,19 @@ def _live_process_count(path: Path) -> int:
 
 def _check_health(wt_path: Path, base_branch: str) -> WorktreeHealth:
     """Dirty files, unpushed commits, live processes."""
-    # Count dirty files
+    # Count dirty files. A non-zero exit means git could not tell us — stdout is
+    # empty in that case, which is indistinguishable from a clean tree, so the
+    # count stays 0 and the uncertainty is carried by the flag instead.
     status_proc = _git("status", "--porcelain", cwd=wt_path)
-    dirty_count = len([line for line in status_proc.stdout.splitlines() if line.strip()])
+    dirty_unknown = status_proc.returncode != 0
+    dirty_count = 0 if dirty_unknown else len([line for line in status_proc.stdout.splitlines() if line.strip()])
 
-    # Count unpushed commits
+    # Count unpushed commits. The common real failure is a missing
+    # origin/<base_branch> ref (worktree cut from staging during a freeze, or an
+    # unfetched remote) — git exits non-zero and prints nothing.
     log_proc = _git("log", f"origin/{base_branch}..HEAD", "--oneline", cwd=wt_path)
-    unpushed_count = len([line for line in log_proc.stdout.splitlines() if line.strip()])
+    unpushed_unknown = log_proc.returncode != 0
+    unpushed_count = 0 if unpushed_unknown else len([line for line in log_proc.stdout.splitlines() if line.strip()])
 
     # Count live processes
     live_process_count = _live_process_count(wt_path)
@@ -206,6 +221,8 @@ def _check_health(wt_path: Path, base_branch: str) -> WorktreeHealth:
         dirty_count=dirty_count,
         unpushed_count=unpushed_count,
         live_process_count=live_process_count,
+        dirty_unknown=dirty_unknown,
+        unpushed_unknown=unpushed_unknown,
     )
 
 
@@ -367,7 +384,16 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
         # Compute ready_for_done
         # All tasks must be done or done-with-issues, no dirty files, no unpushed commits
         all_done = all(t.status in ("done", "done-with-issues") for t in tasks) and len(tasks) > 0
-        ready_for_done = all_done and health.dirty_count == 0 and health.unpushed_count == 0 and index_found
+        # Fail closed: an unreadable health signal must never present as ready.
+        # This gate's whole purpose is to avoid suggesting an unsafe /sdd-done.
+        ready_for_done = (
+            all_done
+            and health.dirty_count == 0
+            and health.unpushed_count == 0
+            and not health.dirty_unknown
+            and not health.unpushed_unknown
+            and index_found
+        )
 
         reports.append(
             WorktreeReport(
