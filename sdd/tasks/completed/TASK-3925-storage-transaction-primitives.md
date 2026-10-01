@@ -259,10 +259,8 @@ async def test_studio_transaction_real_postgres() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: As blueprint. 4 tests pass including the real-Postgres commit/rollback fixture (TEST_STUDIO_PG_DSN).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

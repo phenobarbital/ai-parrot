@@ -73,7 +73,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -83,8 +83,9 @@
       "parallelism_notes": "imports StudioStorageError from TASK-3922 (storage/models.py); creates storage/repositories.py, which TASK-3926 (apply) imports and TASK-3928/08/09 extend",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3925-storage-transaction-primitives.md"
+      "completed_at": "2026-10-01T02:48:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3925-storage-transaction-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3926",
