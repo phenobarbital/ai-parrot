@@ -485,7 +485,9 @@ def _rule_fact_tag(
             continue
         seen = True
         facing_slots = {
-            slot.slot_id for slot in perception.slots if slot.slot_id in registered or slot.anchor_shape_id in registered
+            slot.slot_id
+            for slot in perception.slots
+            if slot.slot_id in registered or slot.anchor_shape_id in registered
         }
         anchors = {slot.anchor_shape_id for slot in perception.slots if slot.slot_id in facing_slots}
         facing_refs.extend(_ref(perception.image_id, shape_id, ObservationSource.CV) for shape_id in registered)

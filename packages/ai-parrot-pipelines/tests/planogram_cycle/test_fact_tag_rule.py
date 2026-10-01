@@ -42,9 +42,7 @@ def _perception(image_id="img0", tag_text=None, with_tag=True, membership=Fixtur
         )
         if tag_text:
             readings[f"{image_id}:t1"] = OcrReading(text=tag_text)
-    return PerceptionResult(
-        image_id=image_id, image_size=(200, 400), shapes=shapes, slots=slots, ocr_readings=readings
-    )
+    return PerceptionResult(image_id=image_id, image_size=(200, 400), shapes=shapes, slots=slots, ocr_readings=readings)
 
 
 def _registration(image_id="img0", facing_slot="s1"):
