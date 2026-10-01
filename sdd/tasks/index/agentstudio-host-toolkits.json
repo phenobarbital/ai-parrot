@@ -78,7 +78,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 1,
@@ -89,8 +89,9 @@
       "parallelism_notes": "Depends on TASK-3977: imports TenantToolingPolicy, ToolingSubject and TenantToolingRefused from parrot/tools/tooling_policy.py. Sole Wave 1 editor of interfaces/tools.py and tools/spec.py.",
       "assigned_to": null,
       "started_at": "2026-10-01T02:46:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3978-tooling-policy-build-hook.md"
+      "completed_at": "2026-10-01T02:50:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3978-tooling-policy-build-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3979",
