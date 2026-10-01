@@ -164,6 +164,13 @@ def test_get_tools_registers_helpdesk_and_inherited_tools():
     assert {"odoo_get_ticket", "odoo_search_records"} <= names
 
 
+def test_confirming_tools_mark_generated_tools_requires_confirmation():
+    """AC7: the generated tools for the destructive helpdesk methods carry requires_confirmation."""
+    tools = {tool.name: tool for tool in _make_helpdesk_toolkit().get_tools()}
+    for name in ("odoo_cancel_ticket", "odoo_merge_tickets", "odoo_mass_update_tickets"):
+        assert (tools[name].routing_meta or {}).get("requires_confirmation") is True, name
+
+
 @pytest.mark.asyncio
 async def test_list_models_includes_helpdesk_models():
     """The override checks ACLs for helpdesk models as well as core models."""
@@ -322,6 +329,20 @@ async def test_add_ticket_comment_reports_reopen():
     call = transport.execute_kw.await_args_list[1]
     assert call.args[:3] == (TICKET_MODEL, "message_post", [[1]])
     assert call.args[3]["subtype_xmlid"] == "mail.mt_comment"
+
+
+@pytest.mark.asyncio
+async def test_internal_note_never_reports_reopened():
+    """AC12: reopened is tied to a public comment even if the stage changed concurrently."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [
+        [{"id": 1, "stage_id": [21, "Closed"]}],
+        [2269],
+        [{"id": 1, "stage_id": [22, "Open"]}],
+    ]
+    result = await toolkit.add_ticket_comment(ticket_id=1, body="note", internal=True)
+    assert result.reopened is False
 
 
 @pytest.mark.asyncio

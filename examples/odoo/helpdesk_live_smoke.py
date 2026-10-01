@@ -41,15 +41,15 @@ async def main() -> int:
 
         # Add internal comment (should not reopen)
         internal_comment = await tk.add_ticket_comment(
-            ticket_id=t1.ticket.id, content="Internal note - should not reopen", internal=True
+            ticket_id=t1.ticket.id, body="Internal note - should not reopen", internal=True
         )
-        print(f"Added internal comment: {internal_comment.success}")
+        print(f"Added internal comment: {internal_comment.message_id}")
 
         # Add public comment (should reopen if setting enabled)
         public_comment = await tk.add_ticket_comment(
-            ticket_id=t1.ticket.id, content="Public comment - may reopen ticket", internal=False
+            ticket_id=t1.ticket.id, body="Public comment - may reopen ticket", internal=False
         )
-        print(f"Added public comment: {public_comment.success}")
+        print(f"Added public comment: {public_comment.message_id} reopened={public_comment.reopened}")
 
         # Reopen the ticket
         reopened = await tk.reopen_ticket(ticket_id=t1.ticket.id)
@@ -69,27 +69,27 @@ async def main() -> int:
             mass_update = await tk.mass_update_tickets(
                 ticket_ids=[t1.ticket.id, t2.ticket.id], stage="Open", team=team_name
             )
-            print(f"Mass updated tickets: {mass_update.updated_count}")
+            print(f"Mass updated tickets: {mass_update.applied}")
 
         # Create SLA policy
         if teams.items:
             sla_policy = await tk.create_sla_policy(
                 name="[FEAT-616 smoke] SLA Policy", team=teams.items[0].name, hours=1, stage="Closed"
             )
-            created.append(("sh.helpdesk.sla", sla_policy.policy_id))
-            print(f"Created SLA policy: {sla_policy.policy_id}")
+            created.append(("sh.helpdesk.sla", sla_policy.policy.id))
+            print(f"Created SLA policy: {sla_policy.policy.id}")
 
             # Check SLA status
             sla_status = await tk.get_ticket_sla_status(ticket_id=t1.ticket.id)
-            print(f"SLA status: {sla_status.status}")
+            print(f"SLA status: {sla_status.overall_status}")
 
         # Get ticket stats
         stats = await tk.ticket_stats()
-        print(f"Ticket stats: total={stats.total_tickets}, open={stats.open_tickets}")
+        print(f"Ticket stats: total={stats.total}")
 
         # Merge tickets
         merge_result = await tk.merge_tickets(ticket_ids=[t2.ticket.id], into_ticket_id=t1.ticket.id)
-        print(f"Merged tickets: {merge_result.merged_count}")
+        print(f"Merged tickets: {merge_result.applied}")
 
         return 0
     except OdooError as exc:

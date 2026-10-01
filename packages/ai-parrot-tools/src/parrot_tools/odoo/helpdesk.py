@@ -746,7 +746,7 @@ class OdooHelpdeskToolkit(OdooToolkit):
             ticket_id=ticket_id,
             message_id=int(message_id[0] if isinstance(message_id, list) else message_id),
             internal=internal,
-            reopened=before.get("stage_id") != after.get("stage_id"),
+            reopened=(not internal) and before.get("stage_id") != after.get("stage_id"),
             stage_after=stage_after,
         )
 
@@ -1162,7 +1162,7 @@ class OdooHelpdeskToolkit(OdooToolkit):
 
         if into_ticket_id:
             record = await self._read_one(TICKET_MODEL, target, ["sh_merge_ticket_count"])
-            applied = int(record.get("sh_merge_ticket_count") or 0) >= len(ticket_ids)
+            applied = int(record.get("sh_merge_ticket_count") or 0) >= len(set(ticket_ids) - {target})
             result_ticket_id: Optional[int] = target
         else:
             rows = await self._execute(
