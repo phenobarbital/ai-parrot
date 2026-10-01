@@ -180,7 +180,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -190,8 +190,9 @@
       "parallelism_notes": "extends storage/repositories.py after TASK-3929 (same file); defines StudioRepositories that TASK-3931/11/12 import",
       "assigned_to": null,
       "started_at": "2026-10-01T02:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3930-draft-catalog-repositories.md"
+      "completed_at": "2026-10-01T02:58:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3930-draft-catalog-repositories.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3931",

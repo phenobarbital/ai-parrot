@@ -217,10 +217,8 @@ Add `from dataclasses import dataclass` to the imports.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5)
+**Date**: 2026-09-30
+**Notes**: All methods implemented; 10 new real-PG tests pass (59 in storage/). Rule-4 module size: repositories.py would reach ~620 lines, so StudioDraftRepository went to storage/draft_repository.py and StudioSkillCatalogRepository to storage/catalog_repository.py (the task note allowed the latter; the draft split is the same mechanism, files not in the task's table). Both are lazily re-exported from repositories.py via module __getattr__ (they import its helpers, so an eager import would be circular) and build_studio_repositories imports them locally. Draft lock() returns StudioAgentHead with agent_id carrying the draft id (no draft head type specified). Catalogue has no version trigger, so its writes bump version/updated_at explicitly; mark_stale does not bump version. Catalogue update/update_visibility/mark_stale return None/False when the row is absent.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
