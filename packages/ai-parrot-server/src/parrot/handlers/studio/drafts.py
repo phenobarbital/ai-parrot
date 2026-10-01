@@ -347,17 +347,9 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
             if existing_meta is not None and existing_meta.bot_config is not None:
                 existing_owner = (existing_meta.bot_config.config or {}).get("created_by")
             if not activate_request.replace:
-                return self._error(
-                    f"Agent '{name}' is already registered; pass " "replace=true to overwrite.",
-                    status=409,
-                    code="name_collision",
-                )
-            if existing_owner is not None and str(existing_owner) != str(user.user_id) and not user.is_superuser:
-                return self._error(
-                    f"Agent '{name}' is owned by another user; cannot replace.",
-                    status=409,
-                    code="not_owner",
-                )
+                return self._name_taken(name)
+            if not user.is_superuser and (existing_owner is None or str(existing_owner) != str(user.user_id)):
+                return self._name_taken(name)
 
         # Move the file into AGENTS_DIR/ so the startup loader also finds
         # it on next boot (spec §7 "Activation moves the file with
