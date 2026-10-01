@@ -56,7 +56,7 @@
       "feature_id": "FEAT-623",
       "feature": "infographic-a2ui-display-hints",
       "spec": "sdd/specs/infographic-a2ui-display-hints.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -64,8 +64,9 @@
       "parallelism_notes": "No upstream edge: only _table_format.py, a2ui-format.ts and new fixture/test files; TASK-3997 consumes its aligned format_cell.",
       "assigned_to": null,
       "started_at": "2026-10-01T03:07:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3996-format-cell-parity.md"
+      "completed_at": "2026-10-01T03:10:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3996-format-cell-parity.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3997",

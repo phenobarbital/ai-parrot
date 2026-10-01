@@ -366,4 +366,4 @@ def test_a2ui_format_parity_vitest() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
