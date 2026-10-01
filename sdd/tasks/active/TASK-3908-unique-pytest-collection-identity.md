@@ -201,6 +201,20 @@ update this task file before writing code.
 
 ---
 
+## Measured Findings, round 2 (2026-10-01, pytest 9.1.1, worktree at origin/dev 6df7a721f)
+
+Re-measured before writing any code. These **supersede** the claim in round 1 that nested `unit/` packages still collide.
+
+1. **Top-level deletion + `--import-mode=importlib` fixes the collision.** After `git rm packages/*/tests/__init__.py` and adding the flag, `pytest packages/parrot-formdesigner/tests/unit/test_version_and_docs.py packages/ai-parrot-client-openai/tests/unit --collect-only` collects 58 with no errors. Nested `unit/__init__.py` files did not need deleting under pytest 9.1.1. AC2 shows 0 `ImportPathMismatchError` / `already registered` markers.
+2. **But it breaks ~60 collection sites in 6 distributions that relied on the `tests` package.** Per-dist `--collect-only` after the change: 19/28 roots clean; embeddings 1 error, integrations 25, loaders 1, server 6, tools 9, formdesigner 5; `ai-parrot` exits 4 (a conftest import error that is not yet attributed to this change — needs a baseline run).
+3. **Breakage classes** (not just the 24 `from tests.…` sites): (i) `from tests.X import …` (24 sites); (ii) relative imports with no known parent package (`test_namespace_imports.py` et al.); (iii) reliance on pytest's prepend-mode `sys.path` insertion (`scripts.build_snippet_bundles`); (iv) 158 relative imports in 143 test files that need their package `__init__.py`; (v) runtime string targets such as `"tests.agentd.fakes:EchoAgent"` in `ai-parrot-integrations/tests/agentd/` (dozens); (vi) `tests/mcp/__init__.py` in ai-parrot-server shadowing the real `mcp` package once its parent directory is importable.
+4. **Strategy (b) rejected on measurement**: renaming the 25 `packages/*/tests` dirs changes path literals in 3,282 `sdd/` files (141 active tasks), 4 CI workflows, `ruff.toml` per-file ignores, and runtime code (`parrot/e2e/runner.py`, `stores/lancedb.py`).
+5. **Not run**: baseline per-dist collection in the main checkout (denied by the sandbox — shared checkout). Items marked "needs a baseline" in 2 cannot be attributed yet; run them in a worktree on a pre-change commit.
+
+**Status**: implementation paused at the decision point. Nothing was changed in `packages/` or `pyproject.toml`; the experiment was reverted. Remaining open choice: finish (a) by fixing classes (i)–(vi), or take a narrower route.
+
+---
+
 ## Implementation Notes
 
 ### Key Constraints
