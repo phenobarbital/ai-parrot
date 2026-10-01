@@ -60,6 +60,22 @@ class ToolkitConfigService:
             await db.delete(COLLECTION, query)
         return True
 
+    async def purge_agent(self, agent_ref: str) -> list[UserToolkitOverride]:
+        """Delete every user's override documents for ``agent_ref`` and return them (spec §2.5c clean-up)."""
+        query = {"agent_id": agent_ref}
+        async with DocumentDb() as db:
+            docs = await db.read(COLLECTION, query)
+            if docs:
+                await db.delete_many(COLLECTION, query)
+        purged: list[UserToolkitOverride] = []
+        for doc in docs or []:
+            doc.pop("_id", None)
+            try:
+                purged.append(UserToolkitOverride.model_validate(doc))
+            except ValidationError as exc:
+                logger.warning("Purged malformed toolkit override for agent='%s': %s", agent_ref, exc)
+        return purged
+
     async def revision(self, user_id: str, agent_id: str) -> str:
         """Return the latest override timestamp, or an empty string when none exist."""
         overrides = await self.load(user_id, agent_id)

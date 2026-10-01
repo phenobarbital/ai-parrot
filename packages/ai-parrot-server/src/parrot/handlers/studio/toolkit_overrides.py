@@ -13,7 +13,7 @@ from parrot.security.vault_utils import (
     store_vault_credential,
 )
 from parrot.tools.config_schema import secret_paths
-from parrot.tools.spec import SECRET_MASK
+from parrot.tools.spec import SECRET_MASK, toolkit_override_vault_name
 
 from ..toolkit_persistence import ToolkitConfigService, UserToolkitOverride
 from ._base import StudioBaseView
@@ -90,6 +90,11 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         _, schema = store.schema_for(slug)
         return spec, schema
 
+    async def _tooling_ref(self, name: str) -> str:
+        """Immutable tooling identity of agent ``name`` (spec §2.5c); the bare name for a legacy agent."""
+        state = await AgentToolingStore(self).load(name)
+        return getattr(state, "tooling_ref", None) or name
+
     async def get(self):
         """Return the caller's masked override and current overridable parameters."""
         if (denied := await self._pbac_gate("toolkits", "astudio:toolkits:override")) is not None:
@@ -100,13 +105,14 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
             return self._error("Agent name and toolkit slug are required.", status=400, code="missing_resource")
         try:
             spec, _ = await self._spec(name, slug)
+            ref = await self._tooling_ref(name)
         except LookupError:
             return self._error("Requested toolkit was not found.", status=404, code="not_found")
         user = await self._get_user()
         override = next(
             (
                 item
-                for item in await ToolkitConfigService().load(user.user_id, name)
+                for item in await ToolkitConfigService().load(user.user_id, ref)
                 if item.slug.lower() == slug.lower()
             ),
             None,
@@ -141,6 +147,7 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
             return self._error("params must be an object.", status=400, code="invalid_request")
         try:
             spec, schema = await self._spec(name, slug)
+            ref = await self._tooling_ref(name)
         except LookupError:
             return self._error("Requested toolkit was not found.", status=404, code="not_found")
         offending = sorted(set(params) - set(spec.user_overridable))
@@ -154,7 +161,7 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         user = await self._get_user()
         service = ToolkitConfigService()
         previous = next(
-            (item for item in await service.load(user.user_id, name) if item.slug.lower() == slug.lower()),
+            (item for item in await service.load(user.user_id, ref) if item.slug.lower() == slug.lower()),
             None,
         )
         clean = copy.deepcopy(params)
@@ -167,7 +174,7 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
             if value == SECRET_MASK:
                 continue
             secrets[path] = value
-        vault_name = f"toolkit_{slug}_{name}_user"
+        vault_name = toolkit_override_vault_name(slug, ref)
         if secrets:
             try:
                 try:
@@ -180,10 +187,10 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
                 return self._error("Vault service unavailable.", status=503, code="vault_unavailable")
             refs.update(dict.fromkeys(secrets, vault_name))
         await service.save(
-            UserToolkitOverride(user_id=user.user_id, agent_id=name, slug=slug, params=clean, secret_refs=refs)
+            UserToolkitOverride(user_id=user.user_id, agent_id=ref, slug=slug, params=clean, secret_refs=refs)
         )
         session = await self._resolve_session()
-        session.pop(f"{name}_toolkit_overrides_rev", None)
+        session.pop(f"{ref}_toolkit_overrides_rev", None)
         return self.json_response({"agent": name, "slug": slug, "persisted": True})
 
     async def delete(self):
@@ -194,12 +201,16 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         slug = self.request.match_info.get("slug")
         if not name or not slug:
             return self._error("Agent name and toolkit slug are required.", status=400, code="missing_resource")
+        try:
+            ref = await self._tooling_ref(name)
+        except LookupError:
+            return self._error("Requested toolkit was not found.", status=404, code="not_found")
         user = await self._get_user()
         try:
-            await ToolkitConfigService().remove(user.user_id, name, slug)
-            await delete_vault_credential(user.user_id, f"toolkit_{slug}_{name}_user")
+            await ToolkitConfigService().remove(user.user_id, ref, slug)
+            await delete_vault_credential(user.user_id, toolkit_override_vault_name(slug, ref))
         except RuntimeError:
             return self._error("Vault service unavailable.", status=503, code="vault_unavailable")
         session = await self._resolve_session()
-        session.pop(f"{name}_toolkit_overrides_rev", None)
+        session.pop(f"{ref}_toolkit_overrides_rev", None)
         return self.json_response({"agent": name, "slug": slug, "deleted": True})
