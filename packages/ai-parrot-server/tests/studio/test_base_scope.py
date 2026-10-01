@@ -1,7 +1,6 @@
 """FEAT-605 M3 — StudioBaseView scope, check order and identity (routed, real SessionData)."""
 from __future__ import annotations
 
-import pytest
 from aiohttp import web
 from navigator_session.data import SessionData
 from parrot.handlers.scope import RequestScope
