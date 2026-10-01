@@ -33,6 +33,7 @@ from parrot.tools.spec import (
 )
 
 from ..models import BotModel
+from .storage.models import StudioStorageUnavailable, StudioWriteGuard
 from .toolkits import _resolve_toolkit_class
 
 logger = logging.getLogger(__name__)
@@ -51,8 +52,8 @@ class ToolingState:
     editable: bool
     reason: str | None
     owner: str | None
-    source: Literal["database", "registry"]
-    tooling_ref: str = ""   # tooling identity (spec §2.5c): == name for database/registry sources
+    source: Literal["database", "registry", "studio"]
+    tooling_ref: str = ""   # tooling identity (spec §2.5c): == name for database/registry; studio-agent:<id> for studio
 
 
 def _pop_dotted(target: dict[str, Any], dotted: str) -> tuple[bool, Any]:
@@ -76,6 +77,144 @@ def _pop_dotted(target: dict[str, Any], dotted: str) -> tuple[bool, Any]:
     return False, None
 
 
+@dataclass(frozen=True)
+class VaultWrite:
+    """A pending owner-scoped vault merge: ``values`` are merged into the entry ``vault_name``."""
+
+    owner: str
+    vault_name: str
+    values: dict[str, Any]
+
+
+async def flush_vault_writes(writes: list[VaultWrite]) -> None:
+    """Merge every pending write into its vault entry (read-merge-store, as FEAT-593 always did)."""
+    for write in writes:
+        try:
+            current = await retrieve_vault_credential(write.owner, write.vault_name)
+        except KeyError:
+            current = {}
+        current.update(write.values)
+        await store_vault_credential(write.owner, write.vault_name, current)
+
+
+def toolkit_schema_for(slug: str) -> tuple[type, dict[str, Any]]:
+    """Return the class and JSON schema for ``slug`` (``LookupError`` when the toolkit is unknown)."""
+    cls = _EXPLICIT.get(slug) or _resolve_toolkit_class(slug)
+    if cls is None:
+        raise LookupError(slug)
+    envelope = build_schema_envelope(slug, cls, server_managed=_SERVER_MANAGED.get(slug, frozenset()))
+    return cls, envelope.schema
+
+
+def validate_toolkit_params(cls: type, schema: dict[str, Any], params: dict[str, Any]) -> None:
+    """Validate client params after masked secret values have been removed."""
+    masked = copy.deepcopy(params)
+    for path in secret_paths(schema, masked):
+        found, value = _pop_dotted(masked, path)
+        if found and value == SECRET_MASK:
+            continue
+        if found:
+            # Secrets are opaque to structural validation; they have already been classified.
+            _pop_dotted(masked, path)
+    try:
+        config_model = getattr(cls, "config_model", None)
+        if config_model is not None:
+            config_model(**masked)
+        else:
+            jsonschema.Draft202012Validator(schema).validate(masked)
+    except (ValidationError, jsonschema.ValidationError) as exc:
+        raise ValueError(f"Invalid toolkit parameters: {exc}") from exc
+
+
+def reject_server_managed(schema: dict[str, Any], params: dict[str, Any]) -> None:
+    """Reject top-level fields reserved for server construction."""
+    forbidden = [
+        key for key, value in params.items() if schema.get("properties", {}).get(key, {}).get("x-server-managed") is True
+    ]
+    if forbidden:
+        raise ValueError(f"Server-managed parameters cannot be set: {', '.join(sorted(forbidden))}")
+
+
+def split_toolkit_secrets(
+    *,
+    owner: str | None,
+    ref: str,
+    slug: str,
+    schema: dict[str, Any],
+    params: dict[str, Any],
+    user_overridable: list[str],
+    previous: ToolkitSpec | None,
+) -> tuple[ToolkitSpec, list[VaultWrite]]:
+    """Pure split of x-secret values out of ``params``: the spec to persist and the vault writes to perform."""
+    if owner is None:
+        raise PermissionError("agent has no owner; cannot store secrets")
+    vault_name = toolkit_vault_name(slug, ref)
+    clean = copy.deepcopy(params)
+    refs = dict(previous.secret_refs) if previous is not None else {}
+    merged: dict[str, Any] = {}
+    for path in secret_paths(schema, params):
+        found, value = _pop_dotted(clean, path)
+        if not found:
+            continue
+        if value == SECRET_MASK:
+            if path in refs:
+                continue
+        else:
+            merged[path] = value
+            refs[path] = vault_name
+    spec = ToolkitSpec(
+        slug=slug, params=clean, user_overridable=user_overridable, secret_refs=refs, vault_owner=owner
+    )
+    return spec, [VaultWrite(owner, vault_name, merged)] if merged else []
+
+
+def _split_one_mcp(
+    raw: dict[str, Any], owner: str, ref: str, previous: dict[str, AgentMCPServerSpec]
+) -> tuple[AgentMCPServerSpec, list[VaultWrite]]:
+    payload = copy.deepcopy(raw)
+    params = dict(payload.pop("params", {}))
+    for field in MCP_SECRET_FIELDS:
+        if field in payload:
+            params[field] = payload.pop(field)
+    try:
+        candidate = AgentMCPServerSpec.model_validate({**payload, "params": params})
+    except ValidationError as exc:
+        raise ValueError(f"Invalid MCP server parameters: {exc}") from exc
+    vault_name = mcp_vault_name(candidate.name, ref)
+    prior = previous.get(candidate.name)
+    refs = dict(prior.secret_refs) if prior is not None else {}
+    clean = dict(candidate.params)
+    merged: dict[str, Any] = {}
+    for field in MCP_SECRET_FIELDS:
+        if field not in clean:
+            continue
+        value = clean.pop(field)
+        if value == SECRET_MASK:
+            if field in refs:
+                continue
+        else:
+            merged[field] = value
+            refs[field] = vault_name
+    spec = candidate.model_copy(update={"params": clean, "secret_refs": refs, "vault_owner": owner})
+    return spec, [VaultWrite(owner, vault_name, merged)] if merged else []
+
+
+def split_mcp_secrets(
+    *, owner: str | None, ref: str, servers: list[dict[str, Any]], previous: list[AgentMCPServerSpec]
+) -> tuple[list[AgentMCPServerSpec], list[VaultWrite]]:
+    """Pure split of MCP secret fields: the complete server list to persist and the vault writes to perform."""
+    if owner is None:
+        raise PermissionError("agent has no owner; cannot store secrets")
+    by_name = {item.name: item for item in previous}
+    specs: list[AgentMCPServerSpec] = []
+    writes: list[VaultWrite] = []
+    for raw in servers:
+        spec, pending = _split_one_mcp(raw, owner, ref, by_name)
+        specs.append(spec)
+        writes.extend(pending)
+    return specs, writes
+
+
 class AgentToolingStore:
     """Load and persist agent-level toolkit / MCP configuration (DB row or agent YAML)."""
 
@@ -84,6 +223,9 @@ class AgentToolingStore:
 
     async def load(self, name: str) -> ToolingState:
         """Load agent tooling, raising ``LookupError`` when the agent is unknown."""
+        studio = await self._load_studio(name)
+        if studio is not None:
+            return studio
         row = await self.handler._get_db_agent(name)
         if row is not None:
             owner = str(row.created_by) if row.created_by is not None else None
@@ -122,6 +264,30 @@ class AgentToolingStore:
         state._registry = registry
         return state
 
+    async def _load_studio(self, name: str) -> ToolingState | None:
+        """A Studio agent of this request's partition, when the database backend serves it (spec §2.5)."""
+        locate = getattr(self.handler, "_studio_storage", None)
+        if locate is None:
+            return None
+        try:
+            storage = locate()
+        except StudioStorageUnavailable:
+            return None
+        if getattr(storage, "backend", None) != "database":
+            return None
+        part = await self.handler._studio_partition()
+        service = storage.services.tooling
+        view = await service.load(part, name)
+        if view is None:
+            return None
+        record = view.record
+        state = ToolingState(
+            tooling=view.tooling, editable=True, reason=None, owner=record.owner, source="studio",
+            tooling_ref=record.tooling_ref,
+        )
+        state._studio = (part, record, service)
+        return state
+
     @staticmethod
     def _registry_read_only_reason(name: str, meta: Any, bot_config: Any) -> str | None:
         """Return the same editability failure that registry persistence would raise."""
@@ -140,42 +306,17 @@ class AgentToolingStore:
 
     def schema_for(self, slug: str) -> tuple[type, dict[str, Any]]:
         """Return the class and JSON schema for ``slug``."""
-        cls = _EXPLICIT.get(slug) or _resolve_toolkit_class(slug)
-        if cls is None:
-            raise LookupError(slug)
-        envelope = build_schema_envelope(slug, cls, server_managed=_SERVER_MANAGED.get(slug, frozenset()))
-        return cls, envelope.schema
+        return toolkit_schema_for(slug)
 
     @staticmethod
     def _validate(cls: type, schema: dict[str, Any], params: dict[str, Any]) -> None:
         """Validate client params after masked secret values have been removed."""
-        masked = copy.deepcopy(params)
-        for path in secret_paths(schema, masked):
-            found, value = _pop_dotted(masked, path)
-            if found and value == SECRET_MASK:
-                continue
-            if found:
-                # Secrets are opaque to structural validation; they have already been classified.
-                _pop_dotted(masked, path)
-        try:
-            config_model = getattr(cls, "config_model", None)
-            if config_model is not None:
-                config_model(**masked)
-            else:
-                jsonschema.Draft202012Validator(schema).validate(masked)
-        except (ValidationError, jsonschema.ValidationError) as exc:
-            raise ValueError(f"Invalid toolkit parameters: {exc}") from exc
+        validate_toolkit_params(cls, schema, params)
 
     @staticmethod
     def _reject_server_managed(schema: dict[str, Any], params: dict[str, Any]) -> None:
         """Reject top-level fields reserved for server construction."""
-        forbidden = [
-            key
-            for key, value in params.items()
-            if schema.get("properties", {}).get(key, {}).get("x-server-managed") is True
-        ]
-        if forbidden:
-            raise ValueError(f"Server-managed parameters cannot be set: {', '.join(sorted(forbidden))}")
+        reject_server_managed(schema, params)
 
     async def put_toolkit(
         self, name: str, slug: str, params: dict[str, Any], user_overridable: list[str]
@@ -209,43 +350,10 @@ class AgentToolingStore:
         state = await self.load(name)
         if not state.editable or state.owner is None:
             raise PermissionError(state.reason or "agent has no owner; cannot store secrets")
-        previous = {item.name: item for item in state.tooling.mcp_servers}
-        specs: list[AgentMCPServerSpec] = []
-        for raw in servers:
-            payload = copy.deepcopy(raw)
-            params = dict(payload.pop("params", {}))
-            for field in MCP_SECRET_FIELDS:
-                if field in payload:
-                    params[field] = payload.pop(field)
-            try:
-                candidate = AgentMCPServerSpec.model_validate({**payload, "params": params})
-            except ValidationError as exc:
-                raise ValueError(f"Invalid MCP server parameters: {exc}") from exc
-            vault_name = mcp_vault_name(candidate.name, state.tooling_ref)
-            prior = previous.get(candidate.name)
-            refs = dict(prior.secret_refs) if prior is not None else {}
-            clean = dict(candidate.params)
-            merged: dict[str, Any] = {}
-            for field in MCP_SECRET_FIELDS:
-                if field not in clean:
-                    continue
-                value = clean.pop(field)
-                if value == SECRET_MASK:
-                    if field in refs:
-                        continue
-                else:
-                    merged[field] = value
-                    refs[field] = vault_name
-            if merged:
-                try:
-                    current = await retrieve_vault_credential(state.owner, vault_name)
-                except KeyError:
-                    current = {}
-                current.update(merged)
-                await store_vault_credential(state.owner, vault_name, current)
-            specs.append(
-                candidate.model_copy(update={"params": clean, "secret_refs": refs, "vault_owner": state.owner})
-            )
+        specs, writes = split_mcp_secrets(
+            owner=state.owner, ref=state.tooling_ref, servers=servers, previous=state.tooling.mcp_servers
+        )
+        await flush_vault_writes(writes)
         state.tooling.mcp_servers = specs
         await self._persist(name, state)
         return specs
@@ -260,41 +368,27 @@ class AgentToolingStore:
         user_overridable: list[str],
     ) -> ToolkitSpec:
         """Move x-secret values into the owner-scoped toolkit vault entry."""
-        if state.owner is None:
-            raise PermissionError("agent has no owner; cannot store secrets")
         previous = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
-        vault_name = toolkit_vault_name(slug, state.tooling_ref)
-        clean = copy.deepcopy(params)
-        refs = dict(previous.secret_refs) if previous is not None else {}
-        merged: dict[str, Any] = {}
-        for path in secret_paths(schema, params):
-            found, value = _pop_dotted(clean, path)
-            if not found:
-                continue
-            if value == SECRET_MASK:
-                if path in refs:
-                    continue
-            else:
-                merged[path] = value
-                refs[path] = vault_name
-        if merged:
-            try:
-                current = await retrieve_vault_credential(state.owner, vault_name)
-            except KeyError:
-                current = {}
-            current.update(merged)
-            await store_vault_credential(state.owner, vault_name, current)
-        return ToolkitSpec(
+        spec, writes = split_toolkit_secrets(
+            owner=state.owner,
+            ref=state.tooling_ref,
             slug=slug,
-            params=clean,
+            schema=schema,
+            params=params,
             user_overridable=user_overridable,
-            secret_refs=refs,
-            vault_owner=state.owner,
+            previous=previous,
         )
+        await flush_vault_writes(writes)
+        return spec
 
     async def _persist(self, name: str, state: ToolingState) -> None:
-        """Persist normalized specs to either the DB row or agent-owned YAML."""
-        if state.source == "database":
+        """Persist normalized specs to the Studio rows, the DB row or agent-owned YAML."""
+        if state.source == "studio":
+            part, record, service = state._studio
+            await service.replace_from_state(
+                part, name, state.tooling, actor=record.owner, guard=StudioWriteGuard(authorized_version=record.version)
+            )
+        elif state.source == "database":
             db = self.handler.request.app.get("database")
             if db is None:
                 raise RuntimeError("database unavailable")

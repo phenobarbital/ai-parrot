@@ -274,7 +274,7 @@ def build_studio_services(app: web.Application, repos: StudioRepositories) -> St
     limits = StudioLimits.from_config()
     allowlist = StudioClassAllowlist.from_app(app)
     gate = StudioToolingGate(app)
-    tooling = StudioToolingService(repos, tooling_gate=gate)
+    tooling = StudioToolingService(repos, gate=gate)
     agents = StudioAgentService(repos, limits=limits, class_allowlist=allowlist, tooling=tooling, tooling_gate=gate)
     assets = StudioAssetService(repos, limits=limits, tooling_gate=gate)
     drafts = StudioDraftService(repos, agents=agents, class_allowlist=allowlist, tooling_gate=gate)

@@ -265,7 +265,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -276,8 +276,9 @@
       "parallelism_notes": "modifies studio/tooling_store.py after TASK-3927 (ToolingState.tooling_ref); uses StudioToolingGate/normalized_tooling_for from TASK-3933 (services/_common.py) and the tooling repository from TASK-3929 (transitive)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3934-tooling-service.md"
+      "completed_at": "2026-10-01T22:03:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3934-tooling-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3935",

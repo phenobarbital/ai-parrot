@@ -256,10 +256,8 @@ class StudioToolingService:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: tooling_store.py: pure extraction of validate_toolkit_params/reject_server_managed/toolkit_schema_for and PURE split_toolkit_secrets/split_mcp_secrets (return spec + VaultWrite list) with flush_vault_writes, so the service can gate BEFORE any vault write; AgentToolingStore methods are thin callers; studio source in load/_persist (authorized_version guard). services/tooling.py: load/put_toolkit/delete_toolkit/put_mcp_servers/replace_from_state (lock→final tooling→gate(write)→vault→replace→commit, returns in-txn version). vault_owner is persisted only when a spec has secret_refs, because TenantToolingPolicy refuses vault_owner/secret_refs in the write phase. 8 real-PG tests; existing tests/studio suite has no new failures vs baseline. Mutations RED: gate removed, gate after vault write, guard dropped, vault_owner-only-with-refs. Tenant secrets are refused by the policy in write phase (policy-owned behaviour, not tested further). Fixed my TASK-3933 factory call to StudioToolingService(gate=).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: put_toolkit etc. return int version (blueprint); added replace_from_state() for the _persist bridge; _common.py touched only to fix the factory kwarg
