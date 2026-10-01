@@ -162,6 +162,8 @@ class _BindingSet:
         self.items: Dict[str, Dict[str, Any]] = {}
         # zone_id -> ``y_start_ratio`` of its source shelf (None when the row gives none); orders the selectors.
         self.zone_tops: Dict[str, Optional[float]] = {}
+        # zone_id -> ``height_ratio`` of its source shelf; with the top it gives the zone's fixture band.
+        self.zone_heights: Dict[str, Optional[float]] = {}
 
     def add(self, kind: str, target_id: str, params: Dict[str, Any], mandatory: bool = True) -> None:
         rule_id = f"{kind}:{target_id}"
@@ -244,6 +246,7 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
                 kind = _zone_kind(ptype, name) if ptype in _ZONE_TYPES else _extended_zone_kind(ptype, name, "graphic")
                 zones.append({"zone_id": zone_id, "kind": kind, "shelf_id": shelf_id, "required": True})
                 bindings.zone_tops[zone_id] = _shelf_top(shelf)
+                bindings.zone_heights[zone_id] = _shelf_ratio(shelf, "height_ratio")
                 bindings.add("zone_present", zone_id, {"name": name}, mandatory=bool(product.get("mandatory", True)))
                 _product_rules(product, zone_id, bindings)
                 continue
@@ -317,12 +320,17 @@ def _tag_product_name(name: str) -> str:
     return _TAG_SUFFIX.sub("", name).strip()
 
 
-def _shelf_top(shelf: Dict[str, Any]) -> Optional[float]:
-    """``y_start_ratio`` of a source shelf as a float, or None when absent or not numeric."""
+def _shelf_ratio(shelf: Dict[str, Any], key: str) -> Optional[float]:
+    """A ratio field of a source shelf as a float, or None when absent or not numeric."""
     try:
-        return float(shelf["y_start_ratio"])
+        return float(shelf[key])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _shelf_top(shelf: Dict[str, Any]) -> Optional[float]:
+    """``y_start_ratio`` of a source shelf as a float, or None when absent or not numeric."""
+    return _shelf_ratio(shelf, "y_start_ratio")
 
 
 def _endcap_rules(
@@ -411,6 +419,7 @@ def _convert_zones_only(
             zone_id = f"zone-{level}-{number}"
             targets.setdefault(level, zone_id)
             bindings.zone_tops[zone_id] = _shelf_top(shelf)
+            bindings.zone_heights[zone_id] = _shelf_ratio(shelf, "height_ratio")
             required = bool(product.get("mandatory", True))
             zones.append(
                 {
@@ -510,20 +519,54 @@ def _convert_backlit(config: Dict[str, Any], report: ConversionReport, bindings:
     return shelves, zones
 
 
-def _zone_selectors(
-    zones: List[Dict[str, Any]], tops: Dict[str, Optional[float]], layout: Dict[str, Any], report: ConversionReport
-) -> None:
-    """Generate one ordinal selector per zone; the runtime matches ordinals to observed zones top to bottom.
+def _zone_bands(
+    zones: List[Dict[str, Any]], tops: Dict[str, Optional[float]], heights: Dict[str, Optional[float]]
+) -> Optional[Dict[str, Tuple[float, float]]]:
+    """zone_id -> ``(y_start, y_end)`` fixture band, when every zone's source shelf gives a usable one."""
+    bands: Dict[str, Tuple[float, float]] = {}
+    for zone in zones:
+        top, height = tops.get(zone["zone_id"]), heights.get(zone["zone_id"])
+        if top is None or height is None or not 0.0 <= top < 1.0 or height <= 0.0:
+            return None
+        bands[zone["zone_id"]] = (top, min(1.0, round(top + height, 4)))
+    return bands if len({band[0] for band in bands.values()}) == len(bands) else None
 
-    The order is grounded when every zone's source shelf carries a distinct ``y_start_ratio``; otherwise it
-    falls back to list order and is reported as unresolved.
+
+def _zone_selectors(
+    zones: List[Dict[str, Any]],
+    tops: Dict[str, Optional[float]],
+    layout: Dict[str, Any],
+    report: ConversionReport,
+    *,
+    heights: Optional[Dict[str, Optional[float]]] = None,
+    zones_only: bool = False,
+) -> None:
+    """Generate one selector per zone.
+
+    A fixture made only of zones whose source shelves all carry ``y_start_ratio`` and ``height_ratio``
+    gets band selectors: each zone owns that vertical slice of the observed fixture, however many
+    fragments the detector returns for it. Otherwise the selectors are ordinals, matched to observed
+    zones top to bottom: grounded when every source shelf carries a distinct ``y_start_ratio``, else in
+    list order and reported as unresolved.
 
     Args:
         zones: The candidate zones, in list order.
         tops: zone_id -> ``y_start_ratio`` of its source shelf.
         layout: The candidate layout profile (extended in place).
         report: Receives the review warning or the unresolved item.
+        heights: zone_id -> ``height_ratio`` of its source shelf.
+        zones_only: The fixture has no product shelf, so its zones span the whole fixture.
     """
+    bands = _zone_bands(zones, tops, heights or {}) if zones_only and len(zones) >= 2 else None
+    if bands is not None:
+        ordered = sorted(zones, key=lambda zone: bands[zone["zone_id"]][0])
+        for zone in ordered:
+            layout.setdefault("zone_selectors", []).append(
+                {"zone_id": zone["zone_id"], "kind": "zone", "band": list(bands[zone["zone_id"]])}
+            )
+        zone_ids = ", ".join(f"{zone['zone_id']} {bands[zone['zone_id']]}" for zone in ordered)
+        report.warnings.append(f"zone selectors use fixture bands from y_start_ratio/height_ratio: {zone_ids} — review")
+        return
     values = [tops.get(zone["zone_id"]) for zone in zones]
     grounded = all(value is not None for value in values) and len(set(values)) == len(values)
     ordered = sorted(zones, key=lambda zone: tops.get(zone["zone_id"]) or 0.0) if grounded else zones
@@ -575,7 +618,14 @@ def convert_config(planogram_config: Dict[str, Any], *, planogram_type: str) -> 
     if "perception_mode" in config:
         layout["perception_mode"] = config["perception_mode"]
         report.warnings.append("perception_mode accepted and moved to layout_profile")
-    _zone_selectors(zones, bindings.zone_tops, layout, report)
+    _zone_selectors(
+        zones,
+        bindings.zone_tops,
+        layout,
+        report,
+        heights=bindings.zone_heights,
+        zones_only=not any(shelf.get("facings") for shelf in shelves),
+    )
     report.layout_profile = layout
     for field in (
         "roi_detection_prompt",

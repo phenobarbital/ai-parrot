@@ -12,6 +12,7 @@ from parrot.models.detections import TextRequirement
 from parrot_pipelines.planogram.comparison.definition import RuleBinding, SlotsDefinition, ZoneDefinition
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration
 from parrot_pipelines.planogram.comparison.tags import slot_above, tag_price, tag_text
+from parrot_pipelines.planogram.perception.bands import banded_zones
 from parrot_pipelines.planogram.contracts import (
     CycleContext,
     FixtureMembership,
@@ -178,15 +179,26 @@ def _zone_matches(
     definition: SlotsDefinition,
     selectors: Sequence[object],
 ) -> List[Tuple[str, ZoneDefinition, Optional[Shape], str]]:
-    """Return one selector decision for every definition zone and image."""
+    """Return the selector decisions for every definition zone and image.
+
+    A band selector yields one ``matched`` entry per observed fragment of its zone; any other zone
+    yields exactly one entry.
+    """
     zones = [zone for zone in definition.zones if zone.zone_id == target_id]
     if not zones:
         zones = [zone for zone in definition.zones if zone.shelf_id == target_id]
-    return [
-        (perception.image_id, zone, *match_zone(zone, perception, definition, selectors))
-        for perception in perceptions
-        for zone in zones
-    ]
+    banded = {getattr(item, "zone_id", None) for item in selectors if getattr(item, "band", None) is not None}
+    matches: List[Tuple[str, ZoneDefinition, Optional[Shape], str]] = []
+    for perception in perceptions:
+        for zone in zones:
+            if zone.zone_id not in banded:
+                matches.append((perception.image_id, zone, *match_zone(zone, perception, definition, selectors)))
+                continue
+            fragments = banded_zones(perception.zones, zone.zone_id)
+            matches.extend((perception.image_id, zone, fragment, "matched") for fragment in fragments)
+            if not fragments:
+                matches.append((perception.image_id, zone, None, "not_observed"))
+    return matches
 
 
 def _rule_observations(
@@ -331,6 +343,21 @@ def _rule_zone_present(
     return _unassessed(binding, "zone visibility unknown")
 
 
+def _majority_state(votes: Sequence[Tuple[str, ObservationRef, int]]) -> List[Tuple[str, ObservationRef]]:
+    """Reduce the fragments of one zone in one image to the state covering the most area.
+
+    A tie keeps every vote, so the caller reports the conflict instead of picking a side.
+    """
+    totals: Dict[str, int] = {}
+    for state, _, area in votes:
+        totals[state] = totals.get(state, 0) + area
+    best = max(totals.values())
+    winners = {state for state, total in totals.items() if total == best}
+    if len(winners) != 1:
+        return [(state, ref) for state, ref, _area in votes]
+    return [(state, ref) for state, ref, _area in votes if state in winners]
+
+
 def _rule_illumination(
     binding: RuleBinding,
     perceptions: Sequence[PerceptionResult],
@@ -340,15 +367,18 @@ def _rule_illumination(
 ) -> RuleOutcome:
     """Evaluate illumination states already collected by the identification stage."""
     matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
-    states: List[Tuple[str, ObservationRef]] = []
+    votes: Dict[str, List[Tuple[str, ObservationRef, int]]] = {}
     for image_id, _zone, shape, status in matched:
         if status != "matched" or shape is None:
             continue
+        area = (shape.box.x2 - shape.box.x1) * (shape.box.y2 - shape.box.y1)
         for observation in _rule_observations(observations, image_id, [shape.shape_id], "illumination"):
             if isinstance(observation.value, str):
-                states.append(
-                    (observation.value.strip().lower(), _ref(image_id, observation.target_id, observation.source))
-                )
+                ref = _ref(image_id, observation.target_id, observation.source)
+                votes.setdefault(image_id, []).append((observation.value.strip().lower(), ref, area))
+    states: List[Tuple[str, ObservationRef]] = []
+    for image_votes in votes.values():
+        states.extend(_majority_state(image_votes))
     if not states:
         return _unassessed(binding, "illumination target not observed")
     distinct = {state for state, _ in states}

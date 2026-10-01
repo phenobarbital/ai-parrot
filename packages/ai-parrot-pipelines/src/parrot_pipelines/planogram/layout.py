@@ -40,10 +40,18 @@ class ZoneSelector(BaseModel):
     kind: Optional[str] = None
     ordinal: Optional[int] = Field(default=None, ge=0)
     region: Optional[Tuple[float, float, float, float]] = None
+    #: ``(y_start, y_end)`` as fractions of the observed fixture height: every zone fragment whose centre
+    #: falls in the band belongs to this zone (see ``perception.bands``).
+    band: Optional[Tuple[float, float]] = None
 
     @model_validator(mode="after")
     def _check(self) -> "ZoneSelector":
-        """Validate kind and normalized, non-reversed region bounds."""
+        """Validate kind, normalized non-reversed region bounds, and the fixture band."""
+        if self.band is not None:
+            if self.region is not None or self.ordinal is not None:
+                raise ValueError("band: cannot be combined with region or ordinal")
+            if not 0.0 <= self.band[0] < self.band[1] <= 1.0:
+                raise ValueError("band: 0 <= y_start < y_end <= 1 is required")
         if self.kind is not None and self.kind not in _SHAPE_KINDS:
             raise ValueError(f"kind: {self.kind!r} is not a ShapeKind value")
         if self.region is not None:

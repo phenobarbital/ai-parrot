@@ -13,6 +13,7 @@ from parrot.models.detections import DetectionBox
 from ..contracts import CycleContext, FixtureMembership, ObservationSource, PerceptionResult, Shape, ShapeKind
 from ..identification.detector import GENERIC_DETECTION_PROMPT, llm_detect_shapes
 from ..layout import LayoutProfile, ZoneSelector
+from ..perception.bands import OUTSIDE_FIXTURE_EVIDENCE, SELECTOR_EVIDENCE_PREFIX, assign_bands
 from ..perception.membership import assign_membership, usable_shapes
 from ..perception.profiles import ShapeCandidate, ShapeProfile
 from ..perception.rows import detect_shelf_edges, group_rows
@@ -22,7 +23,6 @@ from ..perception.slots import AnchorRule, build_slots, candidate_shape_id
 logger = logging.getLogger(__name__)
 
 _PRODUCT_KINDS = (ShapeKind.PRODUCT, ShapeKind.BOX, ShapeKind.UNKNOWN)
-SELECTOR_EVIDENCE_PREFIX = "zone_selector:"
 
 
 def _to_bgr(image: Image.Image) -> np.ndarray:
@@ -155,9 +155,12 @@ async def _rows_shape_is_slot(
 def _match_zone_selectors(zones: List[Shape], selectors: Sequence[ZoneSelector], size: Tuple[int, int]) -> List[Shape]:
     """Copy zones and mark only unambiguously selector-matched observations as on-fixture."""
     grouped: Dict[Tuple[str | None, str | None, Tuple[float, float, float, float] | None], List[ZoneSelector]] = {}
+    banded, outside = assign_bands(zones, selectors)
     for selector in selectors:
+        if selector.band is not None:
+            continue
         grouped.setdefault((selector.profile, selector.kind, selector.region), []).append(selector)
-    matches: Dict[str, str] = {}
+    matches: Dict[str, str] = dict(banded)
     width, height = size
     for (profile, kind, region), selector_group in grouped.items():
         candidates = [
@@ -192,7 +195,16 @@ def _match_zone_selectors(zones: List[Shape], selectors: Sequence[ZoneSelector],
                 }
             )
             if zone.shape_id in matches
-            else zone.model_copy()
+            else (
+                zone.model_copy(
+                    update={
+                        "membership": FixtureMembership.OFF_FIXTURE,
+                        "membership_evidence": [*zone.membership_evidence, OUTSIDE_FIXTURE_EVIDENCE],
+                    }
+                )
+                if zone.shape_id in outside
+                else zone.model_copy()
+            )
         )
         for zone in zones
     ]
