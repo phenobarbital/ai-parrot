@@ -441,3 +441,81 @@ async def test_cancel_ticket_writes_reason_then_action():
     assert calls[2] == (TICKET_MODEL, "action_cancel", [[1]], None)
     assert [c for c in calls if c[1] == "write"] == [calls[1]]
     assert result.applied is False
+
+
+# ── M8: SLA ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_sla_policy_values():
+    """SLA creation resolves references and sends Softhealer wire field names."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [
+        [{"id": 1, "name": "Compliance"}],
+        [{"id": 21, "name": "Closed"}],
+        7,
+        [{"id": 7, "name": "Close in 1h", "sh_team_id": [1, "Compliance"], "sh_hours": 1}],
+    ]
+    result = await toolkit.create_sla_policy(name="Close in 1h", team="Compliance", hours=1, stage="Closed")
+    create_call = transport.execute_kw.await_args_list[2]
+    assert create_call.args[:2] == ("sh.helpdesk.sla", "create")
+    assert create_call.args[2][0] == {
+        "name": "Close in 1h",
+        "sh_team_id": 1,
+        "sh_days": 0,
+        "sh_hours": 1,
+        "sh_minutes": 0,
+        "sh_sla_target_type": "reaching_stage",
+        "sh_stage_id": 21,
+    }
+    assert result.policy.id == 7 and result.url.endswith("&model=sh.helpdesk.sla&view_type=form")
+
+
+@pytest.mark.asyncio
+async def test_get_ticket_sla_status_envelope():
+    """Ticket SLA status combines the ticket summary with its policy status rows."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [
+        [{"id": 1, "sh_status": "sla_failed", "sh_sla_deadline": "2026-10-01 10:00:00", "sh_sla_policy_ids": [7]}],
+        [
+            {"id": 11, "sh_ticket_id": [1, "HD-1"], "sh_sla_id": [7, "Close in 1h"], "sh_status": "sla_passed"},
+            {"id": 12, "sh_ticket_id": [1, "HD-1"], "sh_sla_id": [8, "Reply in 1h"], "sh_status": "sla_failed"},
+        ],
+    ]
+    result = await toolkit.get_ticket_sla_status(1)
+    assert result.overall_status == "sla_failed"
+    assert result.deadline == "2026-10-01 10:00:00"
+    assert len(result.statuses) == 2
+    status_call = transport.execute_kw.await_args_list[1]
+    assert status_call.args[:3] == ("sh.helpdesk.sla.status", "search_read", [[("sh_ticket_id", "=", 1)]])
+
+
+@pytest.mark.asyncio
+async def test_update_sla_policy_patch():
+    """SLA updates write only supplied wire fields and reject an empty patch."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [True, [{"id": 7, "name": "Close in 2h", "sh_hours": 2}]]
+    result = await toolkit.update_sla_policy(7, name="Close in 2h", hours=2)
+    assert transport.execute_kw.await_args_list[0].args == (
+        "sh.helpdesk.sla",
+        "write",
+        [[7], {"name": "Close in 2h", "sh_hours": 2}],
+        None,
+    )
+    assert result.policy.name == "Close in 2h"
+    with pytest.raises(ValueError, match="nothing to update"):
+        await toolkit.update_sla_policy(7)
+
+
+@pytest.mark.asyncio
+async def test_list_ticket_alarms_envelope():
+    """Ticket alarm rows are returned in the typed list envelope."""
+    transport = _fake_transport()
+    transport.execute_kw.return_value = [
+        {"id": 4, "name": "Reminder", "type": "email", "sh_remind_before": 30, "sh_reminder_unit": "minutes"}
+    ]
+    result = await _make_helpdesk_toolkit(transport).list_ticket_alarms()
+    assert result.total == 1 and result.alarms[0].name == "Reminder"
