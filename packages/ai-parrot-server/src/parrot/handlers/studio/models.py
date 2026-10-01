@@ -8,7 +8,7 @@ contract for the Studio API stays in one place across the
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from parrot.skills.models import SkillCategory
 from pydantic import BaseModel, Field, SecretStr
@@ -59,6 +59,8 @@ class CreateAgentRequest(BaseModel):
     persist: bool = False
     category: str = "general"
     config: dict[str, Any] = Field(default_factory=dict)
+    visibility: Literal["private", "tenant", "groups"] = "private"
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class DraftValidationReport(BaseModel):
@@ -92,6 +94,8 @@ class SkillPublishRequest(BaseModel):
     category: SkillCategory
     triggers: list[str] = Field(default_factory=list)
     body: str
+    visibility: Literal["private", "tenant", "groups"] = "private"
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class ByokKeyRequest(BaseModel):
@@ -165,3 +169,10 @@ class StudioCapabilities(BaseModel):
     may_administer: bool
     enabled: bool
     is_superuser: bool
+
+
+class VisibilityUpdateRequest(BaseModel):
+    """``PATCH …/visibility`` body (FEAT-605)."""
+
+    visibility: Literal["private", "tenant", "groups"]
+    allowed_groups: list[str] = Field(default_factory=list)

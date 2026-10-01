@@ -234,10 +234,43 @@ class StudioBaseView(BaseView):
         return self.json_response(body, status=409)
 
     async def _studio_partition(self) -> Any:
-        """Storage partition for this request: GLOBAL here; FEAT-605 v0.2 W2.1 overrides it (X5)."""
+        """Storage partition: GLOBAL without a resolver; the caller's tenant when opted in (X5)."""
+        from .access import StudioTenantRequired
         from .storage.models import StudioPartition
 
-        return StudioPartition.GLOBAL
+        if not self._opted_in():
+            return StudioPartition.GLOBAL
+        scope = await self._scope()
+        if scope.tenant is None:
+            raise StudioTenantRequired
+        return StudioPartition.from_scope(scope)
+
+    async def _access(self) -> Any:
+        """Per-request :class:`StudioAccess` (lazy)."""
+        from .access import StudioAccess  # local import: access.py must never import _base
+
+        if self._opted_in():
+            return StudioAccess(await self._scope(), opted_in=True, app=self.request.app)
+        user = await self._get_user()
+        scope = dataclasses.replace(
+            await self._scope(), user_id=user.user_id, is_superuser=user.is_superuser, groups=frozenset(user.groups)
+        )
+        return StudioAccess(scope, opted_in=False, app=self.request.app)
+
+    async def _check_record_access(
+        self, access: Any, rec: Any, kind: str, name: str, *, manage: bool = False
+    ) -> web.Response | None:
+        """404 when absent or invisible (one body, AC5); 403 when ``manage`` and not can_manage (AC6)."""
+        if rec is None or not access.can_see(rec):
+            return self._not_found(kind, name)
+        if manage and not access.can_manage(rec):
+            body = self._json_error("You do not have permission to modify this resource.", "forbidden")
+            return self.json_response(body, status=403)
+        return None
+
+    def _tenant_required(self) -> web.Response:
+        """422 ``tenant_required``."""
+        return self.json_response(self._json_error("A tenant scope is required.", "tenant_required"), status=422)
 
     def _studio_storage(self) -> Any:
         """The resolved ``StudioStorage`` memoised on the app."""
