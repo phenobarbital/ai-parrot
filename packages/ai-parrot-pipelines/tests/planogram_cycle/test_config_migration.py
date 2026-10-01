@@ -24,7 +24,7 @@ from parrot_pipelines.planogram.plan import PlanogramCompliance
 @pytest.fixture
 def legacy_config() -> dict:
     """header shelf (backlit promotional_graphic + illumination_required + endcap text reqs) and a
-    middle shelf: product A quantity_range [2, 2], product B quantity_range [1, 3], one fact_tag."""
+    middle shelf: product A quantity_range [2, 2], product B quantity_range [1, 3], one fact_tag labelling RR-60."""
     return {
         "brand": "Acme",
         "category": "Printers",
@@ -54,7 +54,7 @@ def legacy_config() -> dict:
                 "products": [
                     {"name": "ES-400", "product_type": "product", "quantity_range": [2, 2]},
                     {"name": "RR-60", "product_type": "product", "quantity_range": [1, 3]},
-                    {"name": "Tag", "product_type": "fact_tag"},
+                    {"name": "RR-60 Fact Tag", "product_type": "fact_tag", "price_required": True},
                 ],
             },
         ],
@@ -198,7 +198,7 @@ def test_thresholds_and_weights_stay_in_planogram_config(legacy_config):
 def test_fact_tags_are_not_facings(legacy_config):
     report = _convert(legacy_config)
     products = [f["product"] for s in report.candidate["shelves"] for f in s["facings"]]
-    assert "Tag" not in products
+    assert "RR-60 Fact Tag" not in products
 
 
 def test_candidate_validation_failure_is_unresolved():
@@ -510,5 +510,45 @@ def test_branding_types_become_zones_in_mixed_displays():
     assert [f["product"] for shelf in report.candidate["shelves"] for f in shelf["facings"]] == ["TV"]
 
 
-def test_skipped_fact_tags_are_warned(legacy_config):
-    assert any("fact/price tag" in item for item in _convert(legacy_config).warnings)
+def test_tag_elements_become_bindings(legacy_config):
+    report = _convert(legacy_config)
+    binding = next(b for b in report.bindings if b["kind"] == "fact_tag_present")
+    assert binding == {
+        "rule_id": "fact_tag_present:shelf-2:3",
+        "kind": "fact_tag_present",
+        "target_id": "shelf-2:3",
+        "params": {"price_required": True, "name": "RR-60 Fact Tag"},
+        "mandatory": False,
+    }
+    assert not any("fact/price tag" in item for item in report.warnings)
+
+
+def test_tag_listed_before_its_product_still_binds(legacy_config):
+    products = legacy_config["shelves"][1]["products"]
+    products.insert(0, products.pop())  # tag first
+    report = _convert(legacy_config)
+    targets = [b["target_id"] for b in report.bindings if b["kind"] == "fact_tag_present"]
+    assert targets == ["shelf-2:3"]
+
+
+def test_unmatched_tag_is_unresolved(legacy_config):
+    legacy_config["shelves"][1]["products"][2]["name"] = "Tag"
+    report = _convert(legacy_config)
+    assert any("tag 'Tag' matches no product" in item for item in report.unresolved)
+
+
+def test_converted_candidate_with_tags_validates(legacy_config):
+    legacy_config["shelves"][1]["products"][1]["quantity_range"] = [1, 1]
+    report = _convert(legacy_config)
+    assert check_row(
+        {
+            "config_name": "x",
+            "planogram_type": "product_on_shelves",
+            "slots_definition": report.candidate,
+            "planogram_config": {
+                **legacy_config,
+                "rule_bindings": report.bindings,
+                "layout_profile": report.layout_profile,
+            },
+        }
+    ).ok
