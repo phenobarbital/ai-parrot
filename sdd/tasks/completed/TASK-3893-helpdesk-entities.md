@@ -306,10 +306,8 @@ See the blueprint: three entity tests in the new `test_odoo_helpdesk_models.py`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (FEAT-616)
+**Date**: 2026-10-01
+**Notes**: gpt-5.6-terra (codex): 14 helpdesk entity models; transport+models tests 19 passed. Diff reviewed vs contract; task tests run with `pytest --noconftest` (repo conftest broken by pre-existing venv issue); merge-tier sweep red on unrelated failures, accepted by user.
 
 **Deviations from spec**: none | describe if any
