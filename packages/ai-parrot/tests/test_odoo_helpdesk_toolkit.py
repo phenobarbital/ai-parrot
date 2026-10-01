@@ -643,7 +643,11 @@ async def test_mass_update_tickets_wizard_calls():
     """Mass updates enable only the selected stage control and invoke update_record."""
     transport = _fake_transport()
     toolkit = _make_helpdesk_toolkit(transport)
-    transport.execute_kw.side_effect = [[2], None]
+    transport.execute_kw.side_effect = [
+        [2],
+        None,
+        [{"id": 1, "stage_id": [22, "Open"]}, {"id": 3, "stage_id": [22, "Open"]}],
+    ]
     result = await toolkit.mass_update_tickets([1, 3], stage=22)
     assert transport.execute_kw.await_args_list[0].args == (
         "sh.helpdesk.ticket.mass.update.wizard",
@@ -658,6 +662,63 @@ async def test_mass_update_tickets_wizard_calls():
         None,
     )
     assert result.applied is True
+
+
+@pytest.mark.asyncio
+async def test_mass_update_tickets_reports_not_applied_when_values_unchanged():
+    """applied comes from a post-condition read, not from the wizard call succeeding."""
+    transport = _fake_transport()
+    toolkit = _make_helpdesk_toolkit(transport)
+    transport.execute_kw.side_effect = [
+        [2],
+        None,
+        [{"id": 1, "stage_id": [22, "Open"]}, {"id": 3, "stage_id": [4, "New"]}],
+    ]
+    result = await toolkit.mass_update_tickets([1, 3], stage=22)
+    assert result.applied is False and "[3]" in result.message
+
+
+@pytest.mark.asyncio
+async def test_get_ticket_include_history_returns_stage_lines():
+    """include_history loads the stage-history lines into the result."""
+    transport = _fake_transport()
+    ticket = {"id": 9, "name": "HD-9", "stage_id": [4, "New"], "state": "customer_replied"}
+    transport.execute_kw.side_effect = [
+        [ticket],
+        [],
+        STAGES_ROWS,
+        [{"company_id": [1, "Company"]}],
+        ROLES_ROW,
+        [{"stage_task_id": [9, "HD-9"], "stage_name": "New"}],
+    ]
+    result = await _make_helpdesk_toolkit(transport).get_ticket(9, include_history=True)
+    assert [line.stage_name for line in result.history] == ["New"]
+
+
+@pytest.mark.asyncio
+async def test_find_or_create_partner_requires_an_identifier():
+    """No id, email or name must not create a partner literally named None."""
+    transport = _fake_transport()
+    with pytest.raises(ValueError, match="partner"):
+        await _make_helpdesk_toolkit(transport)._find_or_create_partner(None, None, None)
+    transport.execute_kw.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_move_ticket_to_stage_is_explicit_without_fallback_warning():
+    """An explicit move is the intended path, so it is not reported as a fallback."""
+    open_, new = [22, "Open"], [4, "New"]
+    transport, tk = _transition_toolkit(
+        [
+            [{"id": 1, "stage_id": new, "close_date": False}],
+            [{"id": 1, "stage_id": new, "close_date": False}],
+            True,
+            [{"id": 1, "stage_id": open_, "close_date": False}],
+        ]
+    )
+    result = await tk.move_ticket_to_stage(ticket_id=1, stage=22)
+    assert result.applied is True and result.method_used == "stage_write"
+    assert not any("directly" in w for w in result.warnings)
 
 
 @pytest.mark.asyncio

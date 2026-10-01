@@ -441,10 +441,10 @@ class OdooHelpdeskToolkit(OdooToolkit):
     async def get_ticket(
         self, ticket_id: int, include_extra_fields: bool = True, include_history: bool = False
     ) -> TicketResult:
-        """Read one ticket; use ``get_ticket_history`` separately when history is required."""
-        _ = include_history
+        """Read one ticket; with ``include_history`` its stage-history lines are returned in ``history``."""
         ticket = await self._load_ticket(ticket_id, include_extra=include_extra_fields)
-        return TicketResult(ticket=ticket, url=self._ticket_url(ticket_id))
+        history = (await self.get_ticket_history(ticket_id)).lines if include_history else []
+        return TicketResult(ticket=ticket, url=self._ticket_url(ticket_id), history=history)
 
     async def _ticket_list(
         self, clauses: list[Any], fields: list[str], limit: int, offset: int, order: str
@@ -611,6 +611,8 @@ class OdooHelpdeskToolkit(OdooToolkit):
         """Resolve a customer by id, email, name, or create one."""
         if partner_id:
             return partner_id
+        if not email and not name:
+            raise ValueError("A customer needs partner_id, partner_email or partner_name")
         domain = [("email", "=ilike", email)] if email else [("name", "=", name)]
         rows = await self._execute("res.partner", "search_read", [domain], {"fields": ["id"], "limit": 1}) or []
         if rows:
@@ -853,7 +855,8 @@ class OdooHelpdeskToolkit(OdooToolkit):
             after = await self._read_one(TICKET_MODEL, ticket_id, ["stage_id", "close_date"])
             applied = after.get("stage_id") != before.get("stage_id")
             method_used = "stage_write"
-            warnings.append("stage written directly")
+            if action:  # an explicit move_ticket_to_stage (no action) is the intended path, not a fallback
+                warnings.append("stage written directly")
         ticket = await self._load_ticket(ticket_id, include_extra=False)
         return TicketTransitionResult(
             ticket_id=ticket_id,
@@ -906,7 +909,11 @@ class OdooHelpdeskToolkit(OdooToolkit):
     @requires_permission("odoo.write")
     @tool_schema(CancelTicketInput)
     async def cancel_ticket(self, ticket_id: int, reason: str) -> TicketTransitionResult:
-        """Cancel a ticket: write ``cancel_reason`` then call ``action_cancel``. No stage fallback."""
+        """Cancel a ticket: write ``cancel_reason`` then call ``action_cancel``. No stage fallback.
+
+        ``cancel_reason`` is written before the action, so it stays on the ticket even when ``action_cancel``
+        changes nothing (``applied=False``).
+        """
         result = await self._transition(ticket_id, "action_cancel", pre_write={"cancel_reason": reason})
         if (await self._company_stage_config()).get("cancel") is None:
             result.warnings.append("cancel stage not configured on company; action_cancel cannot apply")
@@ -1223,12 +1230,42 @@ class OdooHelpdeskToolkit(OdooToolkit):
         wizard = await self._execute(wizard_model, "create", [values])
         wizard_id = int(wizard[0] if isinstance(wizard, list) else wizard)
         await self._execute(wizard_model, "update_record", [[wizard_id]])
+        expected: dict[str, int] = {}
+        if stage is not None:
+            expected["stage_id"] = values["helpdesk_stages"]
+        if assignee is not None:
+            expected["user_id"] = values["assign_to"]
+        if team is not None:
+            expected["team_id"] = values["team_id"]
+        if not expected:
+            return WizardResult(
+                wizard_model=wizard_model,
+                wizard_id=wizard_id,
+                ticket_ids=ticket_ids,
+                applied=True,
+                message="follower update submitted (followers are not verified)",
+            )
+        rows = (
+            await self._execute(
+                TICKET_MODEL, "search_read", [[("id", "in", ticket_ids)]], {"fields": ["id", *expected]}
+            )
+            or []
+        )
+        by_id = {int(row["id"]): row for row in rows}
+        mismatched = [
+            tid
+            for tid in ticket_ids
+            if tid not in by_id
+            or any((by_id[tid].get(field) or [None])[0] != value for field, value in expected.items())
+        ]
         return WizardResult(
             wizard_model=wizard_model,
             wizard_id=wizard_id,
             ticket_ids=ticket_ids,
-            applied=True,
-            message="tickets updated",
+            applied=not mismatched,
+            message="tickets updated"
+            if not mismatched
+            else f"wizard ran but tickets {mismatched} do not show the requested values",
         )
 
     @requires_permission("odoo.write")

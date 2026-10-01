@@ -40,6 +40,7 @@ class TicketResult(BaseModel):
     ticket: HelpdeskTicket
     url: str
     model: str = "sh.helpdesk.ticket"
+    history: list[HelpdeskStageInfo] = Field(default_factory=list, description="Stage history when requested")
     model_config = ConfigDict(protected_namespaces=())
 
 
