@@ -287,7 +287,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -298,8 +298,9 @@
       "parallelism_notes": "constructor takes StudioToolingService from TASK-3934 (services/tooling.py) for bundle tooling validation; DB-free tests use InMemoryStudioRepositories from TASK-3931 (storage/testing.py); creates services/agents.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3935-agent-service.md"
+      "completed_at": "2026-10-01T22:14:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3935-agent-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3936",

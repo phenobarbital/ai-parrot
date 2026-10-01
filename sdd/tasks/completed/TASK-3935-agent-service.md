@@ -222,10 +222,8 @@ class StudioAgentService:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: services/agents.py: create/create_from_bundle/patch/update_visibility/delete/get/get_version/list + _insert_with_children/_replace_children (+ public validate_new/validate_assets for TASK-3937). Gate runs before any write on create/bundle and on the current tooling at patch; guard applied under the row lock; post-commit best-effort clean-up (stored vault names under vault_owner, purge_agent, per-user …_user entries). 15 tests x {in-memory, real PG} = 30 pass. 13 mutations RED (gate on create/patch, guard on patch/visibility/delete, body expected_version, quota, duplicate assets, name check, secrets check, cleanup call/names/swallow). Renamed tooling.py _toolkit_row/_mcp_row to public toolkit_row/mcp_row so agents.py can reuse them.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: patch/delete get optional actor kwarg (patch only) for the gate subject; body expected_version merged into the guard

@@ -46,13 +46,13 @@ def _owner_only_with_refs(spec: Any) -> Any:
     return spec.model_copy(update={"vault_owner": None})
 
 
-def _toolkit_row(spec: ToolkitSpec) -> StudioToolingRecord:
+def toolkit_row(spec: ToolkitSpec) -> StudioToolingRecord:
     """Persisted shape of a toolkit: secret-free ``config``; refs and owner live in their own columns."""
     config = spec.model_dump(exclude={"slug", "secret_refs", "vault_owner"})
     return StudioToolingRecord(None, "toolkit", spec.slug, -1, config, dict(spec.secret_refs), spec.vault_owner, _now())  # type: ignore[arg-type]
 
 
-def _mcp_row(spec: AgentMCPServerSpec) -> StudioToolingRecord:
+def mcp_row(spec: AgentMCPServerSpec) -> StudioToolingRecord:
     """Persisted shape of an MCP server."""
     config = spec.model_dump(exclude={"name", "secret_refs", "vault_owner"})
     return StudioToolingRecord(None, "mcp", spec.name, -1, config, dict(spec.secret_refs), spec.vault_owner, _now())  # type: ignore[arg-type]
@@ -86,8 +86,8 @@ class StudioToolingService:
         await self._repos.tooling.replace(
             conn,
             agent_id,
-            toolkits=[_toolkit_row(s) for s in tooling.toolkits],
-            mcp_servers=[_mcp_row(s) for s in tooling.mcp_servers],
+            toolkits=[toolkit_row(s) for s in tooling.toolkits],
+            mcp_servers=[mcp_row(s) for s in tooling.mcp_servers],
         )
         return (await self._repos.agents.lock(conn, part, name, _NO_GUARD)).version
 
