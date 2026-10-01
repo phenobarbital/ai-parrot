@@ -173,7 +173,7 @@ Labels are created by a human looking at the photo — never copied from a run.
 |-------|-------------|
 | `expected_positions` | Map of facing_id → expected product identity |
 | `expected_occupancy` | Map of facing_id → `occupied`, `empty`, or `unknown` |
-| `expected_rules` | Map of rule_id → expected pass/fail boolean |
+| `expected_rules` | Map of rule_id → expected pass/fail boolean; informative rules such as `fact_tag_present:<facing_id>` are accepted too |
 | `overall_score` | Expected compliance score in [0, 1] |
 | `score_tolerance` | Permissible deviation from `overall_score` |
 | `min_coverage` | Minimum required coverage in [0, 1] |

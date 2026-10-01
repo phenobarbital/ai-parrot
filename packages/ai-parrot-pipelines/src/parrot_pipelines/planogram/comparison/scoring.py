@@ -320,6 +320,8 @@ def score_shelves(
     ``ShelfScore.rule_results`` carries the outcomes that decide status/completeness: every MANDATORY
     binding (an unassessed placeholder when no outcome was supplied) plus every assessed illumination
     binding. Illumination penalties are the only penalties the formula applies.
+    Outcomes of ``fact_tag_present`` bindings are carried in ``info_results`` and excluded from every
+    score, coverage and status input.
 
     Args:
         positions: Merged positions.
@@ -340,7 +342,14 @@ def score_shelves(
 
     scores: List[ShelfScore] = []
     for shelf in definition.shelves:
-        shelf_bindings = [b for b in bindings if target_shelf.get(b.target_id) == shelf.shelf_id]
+        scoped = [b for b in bindings if target_shelf.get(b.target_id) == shelf.shelf_id]
+        # fact_tag_present is informative (FEAT-624): it never enters a score, coverage or status term.
+        shelf_bindings = [b for b in scoped if b.kind != "fact_tag_present"]
+        info_results = [
+            rule_outcomes.get(b.rule_id) or RuleOutcome(rule_id=b.rule_id, detail="not evaluated")
+            for b in scoped
+            if b.kind == "fact_tag_present"
+        ]
         outcomes = {
             b.rule_id: rule_outcomes.get(b.rule_id) or RuleOutcome(rule_id=b.rule_id, detail="not evaluated")
             for b in shelf_bindings
@@ -412,6 +421,7 @@ def score_shelves(
                 occupied_facings=occupied,
                 occupied_fraction=occupied / count if count else 0.0,
                 rule_results=rule_results,
+                info_results=info_results,
             )
         )
     return scores

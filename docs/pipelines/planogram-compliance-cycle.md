@@ -100,6 +100,22 @@ still apply when a unit has zero facings. Evidence quality reports source streng
 changes credit. A complete result can be noncompliant; uncertainty is inconclusive and never
 compliant.
 
+## Informative rules
+
+`fact_tag_present` binds to one facing and must set `mandatory` to `false`. It passes when a fact
+or price tag is anchored to that facing's slot in any photo. Tags are perceived only by planogram
+types with a tag shape profile: `product_on_shelves` and `endcap_backlit_multitier`; InkWall price
+tags anchor slots.
+
+Informative outcomes appear in `shelf_scores[].info_results` and
+`compliance_results[].assessment.info_results`, never in `rule_results`. They do not change a
+score, coverage, or status.
+
+| Parameter | Meaning | Default |
+|---|---|---|
+| `mandatory` | Must be `false`; informative rules cannot be mandatory. | `false` |
+| `price_required` | Requires an amount to be legible on the anchored tag; it does not compare against an expected price. | `false` |
+
 ## Result keys
 
 `run()` always returns the eight established keys: `step3_compliance_results`,

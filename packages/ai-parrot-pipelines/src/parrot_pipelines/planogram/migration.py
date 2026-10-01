@@ -11,6 +11,7 @@ import asyncio
 import copy
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -226,14 +227,15 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
         facings: List[Dict[str, Any]] = []
         slot = 0
         zone_count = 0
-        skipped = 0
+        tags: List[Dict[str, Any]] = []
         seeded = 0
         first_zone: Optional[str] = None
         for product in shelf.get("products") or []:
             name = str(product.get("name") or "").strip()
             ptype = str(product.get("product_type") or "product").strip().lower()
             if ptype in _NON_FACING_TYPES:
-                skipped += 1
+                if ptype != "slot":
+                    tags.append(product)
                 continue
             if ptype in _ZONE_TYPES or ptype in _BRANDING_ZONE_TYPES:
                 zone_count += 1
@@ -277,10 +279,23 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
         shelf_requirements = _requirements(shelf.get("text_requirements"))
         if shelf_requirements:
             bindings.add("text_requirements", first_zone or shelf_id, {"requirements": shelf_requirements})
-        if skipped:
-            report.warnings.append(
-                f"{shelf_id} ({level}): {skipped} fact/price tag element(s) not converted — "
-                "the cycle has no tag-presence or price rule"
+        first_facing_of: Dict[str, str] = {}
+        for facing in facings:
+            first_facing_of.setdefault(str(facing["product"]).casefold(), facing["facing_id"])
+        for tag in tags:
+            tag_name = str(tag.get("name") or "").strip()
+            tag_facing = first_facing_of.get(_tag_product_name(tag_name).casefold())
+            if tag_facing is None:
+                report.unresolved.append(
+                    f"{shelf_id} ({level}): tag '{tag_name}' matches no product of the shelf — "
+                    "bind it to a facing or drop it"
+                )
+                continue
+            bindings.add(
+                "fact_tag_present",
+                tag_facing,
+                {"price_required": bool(tag.get("price_required")), "name": tag_name},
+                mandatory=False,
             )
         if seeded:
             report.warnings.append(
@@ -292,6 +307,14 @@ def _walk_shelves(config: Dict[str, Any], report: ConversionReport, bindings: _B
             report.unresolved.append(f"{shelf_id} ({level}): no facing and no zone could be derived")
         shelves.append({"shelf_id": shelf_id, "shelf_number": index, "level": level, "facings": facings})
     return shelves, zones
+
+
+_TAG_SUFFIX = re.compile(r"\s*(fact|price)\s+tag\s*$", re.IGNORECASE)
+
+
+def _tag_product_name(name: str) -> str:
+    """Tag element name with a trailing ``fact tag`` / ``price tag`` removed (case-insensitive), stripped."""
+    return _TAG_SUFFIX.sub("", name).strip()
 
 
 def _shelf_top(shelf: Dict[str, Any]) -> Optional[float]:

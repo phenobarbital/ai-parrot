@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-01T11:14:01+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-01T13:25:46+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; owns comparison/definition.py, contracts.py and core compliance.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4003-fact-tag-contracts.md"
+      "started_at": "2026-10-01T11:17:15+00:00",
+      "completed_at": "2026-10-01T11:25:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4003-fact-tag-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4004",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency; creates comparison/tags.py and edits types/product_on_shelves.py only",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4004-tag-helpers-module.md"
+      "started_at": "2026-10-01T11:17:15+00:00",
+      "completed_at": "2026-10-01T11:25:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4004-tag-helpers-module.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4005",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,9 +64,10 @@
       "parallel": true,
       "parallelism_notes": "needs the fact_tag_present RuleKind from TASK-4003 (comparison/definition.py) and imports slot_above/tag_text/tag_price from TASK-4004 (comparison/tags.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4005-fact-tag-rule-evaluation.md"
+      "started_at": "2026-10-01T11:17:15+00:00",
+      "completed_at": "2026-10-01T11:30:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4005-fact-tag-rule-evaluation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4006",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,9 +85,10 @@
       "parallel": true,
       "parallelism_notes": "writes ShelfScore.info_results / ShelfAssessment.info_results added by TASK-4003 (contracts.py, compliance.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4006-fact-tag-info-routing.md"
+      "started_at": "2026-10-01T11:17:15+00:00",
+      "completed_at": "2026-10-01T11:30:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4006-fact-tag-info-routing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4007",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,9 +106,10 @@
       "parallel": true,
       "parallelism_notes": "its candidates must pass validate_bindings with the fact_tag_present kind from TASK-4003 (comparison/definition.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4007-converter-fact-tag-bindings.md"
+      "started_at": "2026-10-01T11:17:15+00:00",
+      "completed_at": "2026-10-01T11:30:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4007-converter-fact-tag-bindings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4008",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-624",
       "feature": "planogram-fact-tag-rule",
       "spec": "sdd/specs/planogram-fact-tag-rule.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -124,9 +129,10 @@
       "parallel": true,
       "parallelism_notes": "documents evaluation from TASK-4005 (rules.py), info_results routing from TASK-4006 (scoring.py) and the converter output of TASK-4007 (migration.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4008-fact-tag-docs-and-harness.md"
+      "started_at": "2026-10-01T11:17:15+00:00",
+      "completed_at": "2026-10-01T11:34:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4008-fact-tag-docs-and-harness.md",
+      "verification": "verified"
     }
   ]
 }

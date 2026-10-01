@@ -199,7 +199,7 @@ def ground_truth_assertions(result: Mapping[str, Any], truth: GroundTruth) -> li
 
     rules: dict[str, Any] = {}
     for shelf in result.get("shelf_scores", []):
-        for rule in _value(shelf, "rule_results", []) or []:
+        for rule in [*(_value(shelf, "rule_results", []) or []), *(_value(shelf, "info_results", []) or [])]:
             rules[_value(rule, "rule_id")] = rule
     for rule_id, expected in truth.expected_rules.items():
         observed = rules.get(rule_id)
