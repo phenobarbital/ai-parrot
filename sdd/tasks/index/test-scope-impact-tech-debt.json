@@ -16,7 +16,7 @@
       "feature_id": "FEAT-620",
       "feature": "test-scope-impact-tech-debt",
       "spec": "sdd/specs/test-scope-impact-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,7 +24,7 @@
       "parallelism_notes": "No dependencies. Owns impact.py and the DEFAULT_CORE_FANIN_THRESHOLD line of policy.py; TASK-3920 also edits policy.py and depends on this task, so the two never run concurrently.",
       "discovered_from": "issue:7f2f3d4d7828",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-01T01:28:56.968052+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3919-direct-importer-core-metric.md"
     },
@@ -38,7 +38,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-3919"],
+      "depends_on": [
+        "TASK-3919"
+      ],
       "parallel": true,
       "parallelism_notes": "Modifies the same file as TASK-3919 (packages/ai-parrot/src/parrot/flows/dev_loop/test_scope/policy.py), and its generator reproduces source_fanin's direct count from TASK-3919 (impact.py#source_fanin).",
       "discovered_from": "issue:7f2f3d4d7828",
@@ -57,7 +59,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-3920"],
+      "depends_on": [
+        "TASK-3920"
+      ],
       "parallel": true,
       "parallelism_notes": "Must state the regenerated CORE_PATHS entry count, which only exists after TASK-3920 runs its generator against policy.py.",
       "discovered_from": "issue:7f2f3d4d7828",
