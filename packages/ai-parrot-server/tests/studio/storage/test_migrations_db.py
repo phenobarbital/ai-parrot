@@ -2,7 +2,6 @@
 import asyncio
 import os
 
-import pytest
 
 from parrot.handlers.studio.storage.migrate import (
     STUDIO_SCHEMA_REQUIRED,
