@@ -71,6 +71,7 @@ from ...models.infographic import (
     ChangelogEntry,
 )
 from .assets.design_system import DesignSystem
+from ..a2ui_renderers._table_format import format_cell, is_numeric_column
 
 logger = logging.getLogger(__name__)
 
@@ -742,9 +743,31 @@ class InfographicHTMLRenderer(BaseRenderer):
             f"        </header>"
         )
 
+    @staticmethod
+    def _hero_value_text(block: HeroCardBlock) -> str:
+        """Display string for a hero value.
+
+        A ``str`` renders verbatim. A number with a ``format`` goes through the
+        shared ``format_cell`` (same strings as the A2UI renderers and the admin
+        UI's ``formatA2UIValue``); ``unit`` is appended after a space unless the
+        format is ``percent``.
+        """
+        value = block.value
+        if isinstance(value, str) or isinstance(value, bool):
+            return str(value)
+        if block.format:
+            text = format_cell(value, col_type="number", col_format=block.format)
+        elif block.unit:
+            text = str(value)
+        else:
+            return str(value)
+        if block.unit and block.format != "percent":
+            text = f"{text} {block.unit}"
+        return text
+
     def _render_hero_card(self, block: HeroCardBlock) -> str:
         """Render HeroCardBlock as a KPI card."""
-        value = escape(block.value)
+        value = escape(self._hero_value_text(block))
         label = escape(block.label)
         color_style = ""
         if block.color:
@@ -959,14 +982,23 @@ class InfographicHTMLRenderer(BaseRenderer):
                 "type": "value",
                 "splitLine": {"show": True, "lineStyle": {"color": split_color}},
             }
-            if block.y_axis_label:
-                option["yAxis"]["name"] = str(escape(block.y_axis_label))
+            right_axis = any(getattr(s, "axis", None) == "right" for s in block.series)
+            labels = list(block.y_axis_labels or [])
+            left_name = labels[0] if labels and labels[0] else block.y_axis_label
+            if left_name:
+                option["yAxis"]["name"] = str(escape(left_name))
             # Compact $K/$M/$B labels on the value axis (and tooltip) when the
             # axis represents money. The token is swapped for a JS function in
             # _render_chart after JSON serialization.
             if self._is_currency_axis(block):
                 option["yAxis"]["axisLabel"] = {"formatter": _CURRENCY_FORMATTER_TOKEN}
                 option["tooltip"]["valueFormatter"] = _CURRENCY_FORMATTER_TOKEN
+            if right_axis:
+                # FEAT-623: second value scale for right-axis series.
+                right_axis_cfg: Dict[str, Any] = {"type": "value", "splitLine": {"show": False}}
+                if len(labels) > 1 and labels[1]:
+                    right_axis_cfg["name"] = str(escape(labels[1]))
+                option["yAxis"] = [option["yAxis"], right_axis_cfg]
             top_round = [_BAR_BORDER_RADIUS, _BAR_BORDER_RADIUS, 0, 0]
             primary = getattr(self._theme_cfg, "primary", None) or _DEFAULT_PRIMARY_COLOR
             # Single-series lines get a gradient fill (the cumulative-line look);
@@ -1009,6 +1041,8 @@ class InfographicHTMLRenderer(BaseRenderer):
                         item.setdefault("itemStyle", {})["color"] = base
                     item["areaStyle"] = self._gradient_area_style(base)
 
+                if right_axis and getattr(s, "axis", None) == "right":
+                    item["yAxisIndex"] = 1
                 if block.stacked:
                     item["stack"] = "total"
                 option["series"].append(item)
@@ -1187,6 +1221,15 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         return f'        <div class="{escape(container_cls)}">' f"{title_html}\n" f"{list_html}" f"        </div>"
 
+    @staticmethod
+    def _render_table_cell(cell: Any, col: Optional[ColumnDef]) -> str:
+        """One ``<td>``: numeric typed columns use ``format_cell`` and right-align."""
+        if col is not None and is_numeric_column(col.type):
+            text = escape(format_cell(cell, col_type=col.type, col_format=col.format))
+            style = "" if col.align else ' style="text-align:right"'
+            return f"                    <td{style}>{text}</td>"
+        return f"                    <td>{escape(str(cell))}</td>"
+
     def _render_table(self, block: TableBlock) -> str:
         """Render TableBlock as HTML table with optional styling."""
         title_html = ""
@@ -1203,6 +1246,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         # Build header row — support both List[str] and List[ColumnDef]
         header_cells = []
+        col_defs = [c if isinstance(c, ColumnDef) else None for c in block.columns]
         for col in block.columns:
             if isinstance(col, ColumnDef):
                 # ColumnDef with optional width/align/color
@@ -1224,7 +1268,9 @@ class InfographicHTMLRenderer(BaseRenderer):
         # Build body rows
         rows_html = ""
         for row in block.rows:
-            cells = "\n".join(f"                    <td>{escape(str(cell))}</td>" for cell in row)
+            cells = "\n".join(
+                self._render_table_cell(cell, col_defs[i] if i < len(col_defs) else None) for i, cell in enumerate(row)
+            )
             rows_html += f"                <tr>\n{cells}\n                </tr>\n"
 
         # Build caption
