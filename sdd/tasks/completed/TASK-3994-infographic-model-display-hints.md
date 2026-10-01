@@ -334,10 +334,10 @@ no `...` behind.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet 5.5, fallback sequential loop — parrot-sdd-coder unavailable)
+**Date**: 2026-09-30
+**Notes**: Added optional type/format (ColumnDef), axis (ChartDataSeries), y_axis_labels (ChartBlock), format/unit + widened value (HeroCardBlock). SeriesAxis imported from parrot.models.outputs (no cycle). 11 unit tests pass. ruff not installed in this env; lint left to /sdd-done.
 
 **Deviations from spec**: `HeroCardBlock.value` is `Union[str, int, float]` (spec §2 said `str | float`) to keep integers integral. This was decided at task time.
