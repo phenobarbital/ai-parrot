@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from parrot.conf import (
@@ -14,9 +15,9 @@ from parrot.conf import (
     ODOO_HELPDESK_USER,
     ODOO_HELPDESK_VERIFY_SSL,
 )
-from parrot.interfaces.odoointerface import OdooConfig, OdooError
+from parrot.interfaces.odoointerface import OdooConfig, OdooError, OdooRPCError
 from parrot.tools.decorators import requires_permission, tool_schema
-from parrot_tools.odoo.helpdesk_normalize import extra_fields_to_dict, normalize_ticket
+from parrot_tools.odoo.helpdesk_normalize import extra_fields_to_dict, normalize_stats_groups, normalize_ticket
 from parrot_tools.odoo.models.envelopes import (
     BinaryFieldResult,
     FieldSelectionMetadata,
@@ -46,7 +47,10 @@ from parrot_tools.odoo.models.helpdesk_envelopes import (
     TicketListResult,
     TicketMessagesResult,
     TicketResult,
+    TicketStatsResult,
+    TicketTimerResult,
     TicketTransitionResult,
+    WizardResult,
 )
 from parrot_tools.odoo.models.helpdesk_inputs import (
     ApproveTicketInput,
@@ -68,12 +72,17 @@ from parrot_tools.odoo.models.helpdesk_inputs import (
     ListReferenceInput,
     ListSlaPoliciesInput,
     ListTicketAlarmsInput,
+    MassUpdateTicketsInput,
+    MergeTicketsInput,
     SearchTicketsInput,
     ReassignTicketInput,
     TakeTicketInput,
     UpdateTicketInput,
     CreateSlaPolicyInput,
     UpdateSlaPolicyInput,
+    StartTicketTimerInput,
+    StopTicketTimerInput,
+    TicketStatsInput,
 )
 from parrot_tools.odoo.toolkit import OdooToolkit, _DEFAULT_KNOWN_MODELS
 from parrot_tools.odoo.transport.base import AbstractOdooTransport
@@ -1068,3 +1077,194 @@ class OdooHelpdeskToolkit(OdooToolkit):
             or []
         )
         return TicketAlarmListResult(alarms=[HelpdeskTicketAlarm.model_validate(row) for row in rows], total=len(rows))
+
+    # ── Stats, wizards, timer (FEAT-616 M9) ─────────────────────────────────
+
+    @tool_schema(TicketStatsInput)
+    async def ticket_stats(
+        self,
+        group_by: str = "stage_id",
+        only_open: bool = False,
+        domain: Optional[list[Any]] = None,
+        created_after: Optional[str] = None,
+        created_before: Optional[str] = None,
+    ) -> TicketStatsResult:
+        """Count tickets grouped by a supported field across Odoo versions."""
+        clauses: list[Any] = list(domain or [])
+        if created_after is not None:
+            clauses.append(("create_date", ">=", created_after))
+        if created_before is not None:
+            clauses.append(("create_date", "<=", created_before))
+        if only_open:
+            clauses.append(("stage_id", "not in", await self._closed_stage_ids()))
+
+        version = await self._get_odoo_major_version()
+        try:
+            if version is not None and version >= 19:
+                rows = await self._execute(
+                    TICKET_MODEL,
+                    "formatted_read_group",
+                    [clauses],
+                    {"groupby": [group_by], "aggregates": ["__count"]},
+                )
+                source = "formatted_read_group"
+            else:
+                rows = await self._execute(
+                    TICKET_MODEL,
+                    "read_group",
+                    [clauses],
+                    {"groupby": [group_by], "fields": ["id:count"], "lazy": False},
+                )
+                source = "read_group"
+        except OdooRPCError as exc:
+            if group_by != "stage_id":
+                raise
+            self.logger.warning("ticket_stats: aggregation failed (%s); falling back to per-stage search_count", exc)
+            rows = []
+            for stage_id, stage in (await self._stage_map()).items():
+                count = await self._execute(TICKET_MODEL, "search_count", [clauses + [("stage_id", "=", stage_id)]])
+                rows.append({"stage_id": [stage_id, stage["name"]], "__count": count})
+            source = "search_count"
+
+        groups = normalize_stats_groups(rows or [], group_by, source)
+        return TicketStatsResult(
+            group_by=group_by,
+            groups=groups,
+            total=sum(group.count for group in groups),
+            source_method=source,
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(MergeTicketsInput)
+    async def merge_tickets(
+        self,
+        ticket_ids: list[int],
+        into_ticket_id: Optional[int] = None,
+        merged_action: str = "close",
+        merge_history: bool = True,
+    ) -> WizardResult:
+        """Merge tickets into an existing target or a new ticket through the Softhealer wizard."""
+        target = into_ticket_id or ticket_ids[0]
+        partner = await self._read_one(TICKET_MODEL, target, ["partner_id"])
+        values: dict[str, Any] = {
+            "sh_helpdesk_ticket_ids": [[6, 0, ticket_ids]],
+            "sh_select_type": "existing" if into_ticket_id else "new",
+            "sh_select_merge_type": merged_action,
+            "sh_merge_history": merge_history,
+            "sh_partner_id": partner["partner_id"][0] if partner.get("partner_id") else False,
+        }
+        if into_ticket_id:
+            values["sh_existing_ticket"] = into_ticket_id
+        wizard_model = "sh.helpdesk.ticket.merge.ticket.wizard"
+        wizard = await self._execute(wizard_model, "create", [values])
+        wizard_id = int(wizard[0] if isinstance(wizard, list) else wizard)
+        await self._execute(wizard_model, "action_merge_tickets", [[wizard_id]])
+
+        if into_ticket_id:
+            record = await self._read_one(TICKET_MODEL, target, ["sh_merge_ticket_count"])
+            applied = int(record.get("sh_merge_ticket_count") or 0) >= len(ticket_ids)
+            result_ticket_id: Optional[int] = target
+        else:
+            rows = await self._execute(
+                TICKET_MODEL,
+                "search_read",
+                [[("sh_merge_ticket_ids", "in", ticket_ids)]],
+                {"fields": ["id"], "order": "id desc", "limit": 1},
+            )
+            result_ticket_id = int(rows[0]["id"]) if rows else None
+            applied = result_ticket_id is not None
+        return WizardResult(
+            wizard_model=wizard_model,
+            wizard_id=wizard_id,
+            ticket_ids=ticket_ids,
+            applied=applied,
+            result_ticket_id=result_ticket_id,
+            message="tickets merged" if applied else "merge wizard completed but no merged ticket was found",
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(MassUpdateTicketsInput)
+    async def mass_update_tickets(
+        self,
+        ticket_ids: list[int],
+        stage: Optional[int | str] = None,
+        assignee: Optional[int | str] = None,
+        team: Optional[int | str] = None,
+        add_followers: Optional[list[int]] = None,
+        remove_followers: Optional[list[int]] = None,
+    ) -> WizardResult:
+        """Apply a staged, assignment, team, or follower update through the Softhealer wizard."""
+        if add_followers and remove_followers:
+            raise ValueError("add_followers and remove_followers cannot be applied by one mass-update wizard")
+        values: dict[str, Any] = {"helpdesks_ticket_ids": [[6, 0, ticket_ids]]}
+        if stage is not None:
+            values.update({"check_helpdesks_state": True, "helpdesk_stages": await self._resolve_ref("stage", stage)})
+        if assignee is not None:
+            values.update({"check_assign_to": True, "assign_to": await self._resolve_ref("user", assignee)})
+        if team is not None:
+            values.update({"check_team_id": True, "team_id": await self._resolve_ref("team", team)})
+        if add_followers:
+            values.update(
+                {
+                    "check_add_remove": True,
+                    "followers": [[6, 0, add_followers]],
+                    "ticket_follower_update_type": "add",
+                }
+            )
+        elif remove_followers:
+            values.update(
+                {
+                    "check_add_remove": True,
+                    "followers": [[6, 0, remove_followers]],
+                    "ticket_follower_update_type": "remove",
+                }
+            )
+        wizard_model = "sh.helpdesk.ticket.mass.update.wizard"
+        wizard = await self._execute(wizard_model, "create", [values])
+        wizard_id = int(wizard[0] if isinstance(wizard, list) else wizard)
+        await self._execute(wizard_model, "update_record", [[wizard_id]])
+        return WizardResult(
+            wizard_model=wizard_model,
+            wizard_id=wizard_id,
+            ticket_ids=ticket_ids,
+            applied=True,
+            message="tickets updated",
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(StartTicketTimerInput)
+    async def start_ticket_timer(self, ticket_id: int) -> TicketTimerResult:
+        """Start a ticket timer and surface tenant configuration errors as warnings."""
+        try:
+            await self._execute(TICKET_MODEL, "action_ticket_start", [[ticket_id]])
+            ticket = await self._read_one(TICKET_MODEL, ticket_id, ["ticket_running", "start_time"])
+        except OdooRPCError as exc:
+            return TicketTimerResult(ticket_id=ticket_id, running=False, warnings=[str(exc)])
+        return TicketTimerResult(
+            ticket_id=ticket_id,
+            running=bool(ticket.get("ticket_running")),
+            started_at=ticket.get("start_time") or None,
+        )
+
+    @requires_permission("odoo.write")
+    @tool_schema(StopTicketTimerInput)
+    async def stop_ticket_timer(self, ticket_id: int, description: Optional[str] = None) -> TicketTimerResult:
+        """Stop a ticket timer by recording and ending its time-account entry."""
+        try:
+            ticket = await self._read_one(TICKET_MODEL, ticket_id, ["start_time"])
+            action = await self._execute(TICKET_MODEL, "action_ticket_end", [[ticket_id]])
+            context = action.get("context") if isinstance(action, dict) else {}
+            values: dict[str, Any] = {
+                "name": description or f"Ticket {ticket_id}",
+                "start_date": ticket.get("start_time"),
+                "end_date": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            if isinstance(context, dict) and context.get("default_project_id"):
+                values["project_id"] = context["default_project_id"]
+            line = await self._execute("ticket.time.account.line", "create", [values])
+            line_id = int(line[0] if isinstance(line, list) else line)
+            await self._execute("ticket.time.account.line", "end_ticket", [[line_id]])
+            record = await self._read_one("ticket.time.account.line", line_id, ["duration"])
+        except OdooRPCError as exc:
+            return TicketTimerResult(ticket_id=ticket_id, running=False, warnings=[str(exc)])
+        return TicketTimerResult(ticket_id=ticket_id, running=False, duration_hours=record.get("duration"))
