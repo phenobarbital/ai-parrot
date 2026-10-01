@@ -73,7 +73,7 @@
       "feature_id": "FEAT-616",
       "feature": "odoo-toolkit-upgrades",
       "spec": "sdd/specs/odoo-toolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,9 @@
       "parallelism_notes": "Needs TASK-3893: appends to tests/test_odoo_helpdesk_models.py, which TASK-3893 creates (same-file serialization). helpdesk_inputs.py itself imports nothing from TASK-3893.",
       "assigned_to": null,
       "started_at": "2026-09-30T23:25:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3894-helpdesk-inputs.md"
+      "completed_at": "2026-10-01T00:01:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3894-helpdesk-inputs.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-3895",
