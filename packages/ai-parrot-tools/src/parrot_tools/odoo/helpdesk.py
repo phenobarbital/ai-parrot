@@ -628,7 +628,12 @@ class OdooHelpdeskToolkit(OdooToolkit):
                 values[field] = await self._resolve_ref(kind, value)
         if tags is not None:
             values["tag_ids"] = [[6, 0, await self._resolve_refs("tag", tags)]]
-        for field, value in (("email", email), ("mobile_no", mobile_no), ("person_name", person_name), ("sh_due_date", due_date)):
+        for field, value in (
+            ("email", email),
+            ("mobile_no", mobile_no),
+            ("person_name", person_name),
+            ("sh_due_date", due_date),
+        ):
             if value is not None:
                 values[field] = value
         new_id = await self._execute(TICKET_MODEL, "create", [values])
