@@ -26,9 +26,11 @@ from .toolkit import (
     OdooRPCError,
     OdooToolkit,
 )
+from .helpdesk import OdooHelpdeskToolkit
 
 __all__ = [
     "OdooToolkit",
+    "OdooHelpdeskToolkit",
     "OdooError",
     "OdooAuthenticationError",
     "OdooConnectionError",
