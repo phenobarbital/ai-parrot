@@ -11,6 +11,7 @@ from parrot.models.compliance import TextMatcher
 from parrot.models.detections import TextRequirement
 from parrot_pipelines.planogram.comparison.definition import RuleBinding, SlotsDefinition, ZoneDefinition
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration
+from parrot_pipelines.planogram.comparison.tags import slot_above, tag_price, tag_text
 from parrot_pipelines.planogram.contracts import (
     CycleContext,
     FixtureMembership,
@@ -22,6 +23,8 @@ from parrot_pipelines.planogram.contracts import (
     RuleObservation,
     RuleOutcome,
     Shape,
+    ShapeKind,
+    Slot,
 )
 
 logger = logging.getLogger(__name__)
@@ -456,6 +459,82 @@ def _rule_visual(
     )
 
 
+_TAG_KINDS = frozenset({ShapeKind.FACT_TAG, ShapeKind.PRICE_TAG})
+
+
+def _rule_fact_tag(
+    binding: RuleBinding,
+    perceptions: Sequence[PerceptionResult],
+    identifications: Sequence[IdentificationResult],
+    registrations: Sequence[ImageRegistration],
+) -> RuleOutcome:
+    """Evaluate tag presence and an optionally required legible price for one facing."""
+    price_required = bool(binding.params.get("price_required"))
+    reads = {result.image_id: {item.shape_id: item for item in result.identifications} for result in identifications}
+    by_image = {registration.image_id: registration for registration in registrations}
+    seen = False
+    tagged: List[ObservationRef] = []
+    priced: List[ObservationRef] = []
+    facing_refs: List[ObservationRef] = []
+    for perception in perceptions:
+        registration = by_image.get(perception.image_id)
+        if registration is None:
+            continue
+        registered = {shape_id for shape_id, facing in registration.assignments.items() if facing == binding.target_id}
+        if not registered:
+            continue
+        seen = True
+        facing_slots = {
+            slot.slot_id
+            for slot in perception.slots
+            if slot.slot_id in registered or slot.anchor_shape_id in registered
+        }
+        anchors = {slot.anchor_shape_id for slot in perception.slots if slot.slot_id in facing_slots}
+        facing_refs.extend(_ref(perception.image_id, shape_id, ObservationSource.CV) for shape_id in registered)
+        for tag in perception.shapes:
+            if tag.kind not in _TAG_KINDS or tag.membership == FixtureMembership.OFF_FIXTURE:
+                continue
+            above: Optional[Slot] = slot_above(tag, perception.slots)
+            if tag.shape_id not in anchors and (above is None or above.slot_id not in facing_slots):
+                continue
+            tag_ref = _ref(perception.image_id, tag.shape_id, tag.source)
+            tagged.append(tag_ref)
+            text = tag_text(tag, perception.ocr_readings, reads.get(perception.image_id, {}))
+            if tag_price(text) is not None:
+                priced.append(tag_ref)
+
+    if not seen:
+        return _unassessed(binding, "facing not observed")
+    if tagged and (not price_required or priced):
+        return RuleOutcome(
+            rule_id=binding.rule_id,
+            assessed=True,
+            passed=True,
+            score=1.0,
+            penalty=0.0,
+            observations=_dedupe_refs(priced or tagged),
+        )
+    if tagged:
+        return RuleOutcome(
+            rule_id=binding.rule_id,
+            assessed=True,
+            passed=False,
+            score=0.0,
+            penalty=0.0,
+            detail="fact tag present, price not legible",
+            observations=_dedupe_refs(facing_refs),
+        )
+    return RuleOutcome(
+        rule_id=binding.rule_id,
+        assessed=True,
+        passed=False,
+        score=0.0,
+        penalty=0.0,
+        detail="fact tag not observed",
+        observations=_dedupe_refs(facing_refs),
+    )
+
+
 def evaluate_rules(
     perceptions: Sequence[PerceptionResult],
     identifications: Sequence[IdentificationResult],
@@ -481,6 +560,8 @@ def evaluate_rules(
                 outcome = _rule_visual(
                     binding, perceptions, identifications, registrations, observations, definition, selectors
                 )
+            elif binding.kind == "fact_tag_present":
+                outcome = _rule_fact_tag(binding, perceptions, identifications, registrations)
             else:
                 outcome = _unassessed(binding, "unknown rule kind")
         except Exception as exc:  # noqa: BLE001
