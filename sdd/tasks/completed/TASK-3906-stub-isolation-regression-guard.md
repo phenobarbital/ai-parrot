@@ -272,6 +272,25 @@ becomes the next source of cross-test pollution.
 
 ## Completion Note
 
-<!-- filled in on completion -->
-**Completed by**:
-**Date**:
+**Completed by**: Claude Opus 5 (/sdd-fix issue:c3c59277ef77)
+**Date**: 2026-10-01
+**Verification**: verified — 9 passed.
+
+Guards both halves of the fix. Beyond the specified tests, added
+`test_conftest_has_no_executable_setdefault_calls`, which pins the pattern itself
+while ignoring prose and commented-out references (the literal grep count is 3 and
+always will be).
+
+**AC-5 demonstrated.** Reverting ONE `_stub_if_absent` call back to
+`sys.modules.setdefault` fails exactly two tests:
+`test_real_modules_are_not_shadowed[parrot.tools.filemanager]` and
+`test_conftest_has_no_executable_setdefault_calls`. The conftest was restored
+immediately and the revert was never committed (`git status` clean before commit).
+
+For the restore-hook half, pairing one polluter with this guard was inconclusive —
+that pair errors identically with and without the hook, so it is independently
+broken. The load-bearing evidence is instead the full-tree delta: **13 collection
+errors with the hook disabled vs 3 with it enabled.**
+
+All `sys.modules` mutations clean up in `finally`, so this module cannot become the
+next polluter. AC-1..AC-8 ✅.

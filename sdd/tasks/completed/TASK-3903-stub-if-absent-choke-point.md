@@ -275,6 +275,51 @@ packages/ai-parrot/tests/manager/test_bot_cleanup_lifecycle.py
 
 ## Completion Note
 
-<!-- filled in on completion -->
-**Completed by**:
-**Date**:
+**Completed by**: Claude Opus 5 (/sdd-fix issue:c3c59277ef77)
+**Date**: 2026-10-01
+**Verification**: partial — AC-5 (full-tree 0 errors) NOT met; 3 errors remain.
+
+Delivered in two parts, because the task's premise turned out to be wrong.
+
+**Part 1 — `_stub_if_absent` (as specified).** 32 executable
+`sys.modules.setdefault()` calls in `_install_navconfig_stub`/`_install_navigator_stubs`
+now route through a helper that defers to `importlib.util.find_spec` and installs a
+stub only when the real module cannot be resolved. Also found **3 further leaking
+sites inside the opt-in `fake_parrot_bots` fixture** that FEAT-268 had missed; those
+now use `monkeypatch.setitem`, matching the two already converted in that same
+function. Zero executable setdefault calls remain (3 grep hits are prose/comments).
+
+**SCOPE CORRECTION.** The task claimed this would fix 14 of 18 collection errors.
+It fixed **one** (18 → 17). The dominant cause is individual test modules assigning
+`sys.modules[...]` at MODULE scope and never restoring —
+`tests/integration/test_spatial_transport.py:95-96` replaces the real `aiohttp`.
+Delta-debugging over 1684 files isolated it; a per-victim scan of all 91 modules in
+this tree that write to `sys.modules` named all 8 polluters (table in the spec's
+§8b errata).
+
+**Part 2 — snapshot/restore (not in the original task).** Rather than rewrite eight
+modules, `conftest.py` gained a `pytest_collectstart`/`pytest_collectreport` pair that
+snapshots `sys.modules` around each test module's import and restores exactly what
+that module *replaced*. Verified non-regressive: the six polluters run together give
+**17 failed / 36 passed both with and without the hook** — byte-identical (those
+failures are pre-existing mutual pollution).
+
+**Measured**: 18 → 3 collection errors; 22873 → 23090 tests collected (AC-7 floor
+holds). A first attempt at a blunt "evict every shadowing stub" hook made things
+worse (14 errors) and was reverted before committing.
+
+**AC status**: AC-1 ✅ (executable calls; the literal "grep → 0" was unachievable —
+prose mentions the pattern), AC-2/3/4 ✅ (pinned by TASK-3906), AC-5 ❌ 3 errors
+remain, AC-6 ✅, AC-7 ✅ 23090 ≥ 22873, AC-8 ✅ ruff clean, AC-9 ✅ no src/ change.
+
+**Remaining 3, characterised**: `test_botmanager_flags.py` and
+`unit/scripts/test_recompute_contextual_embeddings.py` collect cleanly in isolation
+(residual pollution of a different shape, not characterised);
+`manager/test_bot_cleanup_lifecycle.py` fails in isolation on
+`parrot.handlers.crew.execution_history_handler`, which imports fine standalone —
+namespace wiring under pytest (the root conftest rewrites `parrot.__path__` and drops
+`parrot.handlers.*`), not a defect in the test.
+
+**Unmasking (R2) observed as predicted**: `test_odoo_diagnostics.py` now fails on
+`ODOO_HELPDESK_APIKEY` missing from `parrot.conf`. It fails in isolation too — a
+genuine pre-existing gap the stub was hiding. Related to FEAT-616, in flight.

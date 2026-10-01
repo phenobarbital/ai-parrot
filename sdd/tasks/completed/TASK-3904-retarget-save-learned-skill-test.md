@@ -237,6 +237,15 @@ The 6 preserved methods, with their original intent:
 
 ## Completion Note
 
-<!-- filled in on completion -->
-**Completed by**:
-**Date**:
+**Completed by**: Claude Opus 5 (/sdd-fix issue:c3c59277ef77)
+**Date**: 2026-10-01
+**Verification**: verified — 6 passed.
+
+Retargeted to `SkillFileToolkit.save_learned_skill` (FEAT-207's successor to the
+removed `SaveLearnedSkillTool`). 8 call sites converted — the task estimated 6; the
+extra two were in tests that call it twice to exercise a collision. Imports moved off
+the deprecated `parrot.memory.skills.*` shim; the only residual mention is prose in
+the new module docstring. All 6 original assertions preserved verbatim — none
+weakened, the toolkit returns the same `ToolResult` shape.
+
+AC-1..AC-5 all ✅.
