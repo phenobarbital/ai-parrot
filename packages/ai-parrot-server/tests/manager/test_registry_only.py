@@ -70,3 +70,18 @@ def test_registry_only_refuses_imports_in_tenant_host():
             _manager().setup_registry_only(app, **kw)
     # non-tenant host: allowed
     _manager().setup_registry_only(web.Application(), import_modules=True)
+
+
+async def test_registry_only_startup_refuses_when_resolver_installed_later():
+    class _R:
+        async def resolve(self, request):  # pragma: no cover
+            raise AssertionError
+
+    app, mgr = web.Application(), _manager()
+    mgr.setup_registry_only(app, import_modules=True)  # no resolver yet: accepted
+    app["scope_resolver"] = _R()  # installed after the call
+    runner = web.AppRunner(app)
+    with pytest.raises(RuntimeError):
+        await runner.setup()
+    await runner.cleanup()
+    assert mgr._cleanup_task is None

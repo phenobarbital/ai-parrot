@@ -172,3 +172,25 @@ async def test_require_author_noop_on_plain_host(aiohttp_client):
     client = await aiohttp_client(app)
     resp = await client.get("/_h?k=author")
     assert resp.status == 200
+
+
+async def test_user_id_comes_from_scope_when_opted_in(aiohttp_client):
+    # Session says user 7; the host resolver maps the caller to "host-42": ownership must use the scope id.
+    client = await aiohttp_client(_app(_scope(user_id="host-42")))
+    resp = await client.get("/api/v1/acme/astudio/_probe")
+    assert resp.status == 200
+    assert (await resp.json())["user_id"] == "host-42"
+
+
+async def test_scope_without_user_id_is_401(aiohttp_client):
+    client = await aiohttp_client(_app(_scope(user_id=None)))
+    resp = await client.get("/api/v1/acme/astudio/_probe")
+    assert resp.status == 401
+
+
+async def test_plain_host_user_id_from_session(aiohttp_client):
+    app = web.Application(middlewares=[_session_mw])
+    setup_studio_routes(app, prefix="/api/v1/astudio")
+    app.router.add_view("/api/v1/astudio/_probe", _ProbeView)
+    client = await aiohttp_client(app)
+    assert (await (await client.get("/api/v1/astudio/_probe")).json())["user_id"] == "7"

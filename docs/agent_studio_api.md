@@ -118,7 +118,8 @@ Every non-2xx Studio response is a `StudioError`:
 
 Common `code` values across endpoints: `invalid_json`, `invalid_request`,
 `missing_name`/`missing_id`, `invalid_name`, `not_found`, `duplicate`,
-`not_owner`, `unavailable` (503, dependency not configured),
+`not_owner`, `name_taken` (409; drafts save/activate today, see the FEAT-605
+section), `unavailable` (503, dependency not configured),
 `server_managed` (422, missing app-context dependency),
 `invalid_params`, `validation_failed`, `read_only_definition`,
 `not_overridable`, `not_configured`, `options_failed`, `vault_unavailable`,
@@ -243,11 +244,11 @@ Re-validates the **current on-disk** content (it may have been edited
 since save) before importing — a stale validation report is never
 trusted. Moves the file into `AGENTS_DIR/<name>.py` (so the startup
 loader also finds it on next boot), imports it, and registers ownership.
-Refuses (`409 name_collision`) unless `replace: true` when a name is
-already taken; refuses replacement of another user's agent unless
-superuser (`409 not_owner`).
+Refuses (`409 name_taken`) unless `replace: true` when a name is
+already taken; refuses replacement of an ownerless or another user's agent
+unless superuser (`409 name_taken`, no owner disclosed).
 
-**Errors:** `409 missing_source`/`validation_failed`/`name_collision`/`not_owner`,
+**Errors:** `409 missing_source`/`validation_failed`/`name_taken`,
 `422 import_failed`/`not_registered`, `503 unavailable`.
 
 ### `DELETE /drafts/{name}`
@@ -961,7 +962,9 @@ built by `build_tool_scope(scope, agent=None)`. With no resolver installed nothi
 
 FEAT-467 behaviour is unchanged (list-all, read-any), the new gates (reload, files GET, tool execute) are
 not applied, visibility fields report `access: "global"`, non-private visibility is 422 `tenant_required`,
-and duplicate-name responses use `name_taken` (409) instead of `duplicate` / `name_collision` / `not_owner`.
+and duplicate-name responses on the draft routes (`POST /drafts`, `POST /drafts/{name}/activate`) already use
+`name_taken` (409) instead of `name_collision` / `not_owner` (TASK-3962, TASK-3963). The agents and skills
+create routes still answer `duplicate` until TASK-3966 (agents) and TASK-3968 (skills) switch them to `name_taken`.
 
 ### Release gate
 

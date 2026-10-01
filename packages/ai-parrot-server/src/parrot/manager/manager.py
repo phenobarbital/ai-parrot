@@ -2780,6 +2780,10 @@ Available documentation UIs:
     async def _registry_only_startup(self, app: web.Application) -> None:
         """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""
         opts = app[_REGISTRY_ONLY_APP_KEY]
+        if (opts["import_modules"] or opts["load_definitions"]) and has_installed_resolver(app):
+            raise RuntimeError(
+                "setup_registry_only: import_modules/load_definitions are refused in a tenant host"
+            )
         if self.enable_registry_bots:
             self.registry.setup(app)
             if opts["import_modules"]:

@@ -188,10 +188,10 @@ class StudioBaseView(BaseView):
         return scope
 
     @staticmethod
-    def _json_error(message: str, code: str) -> str:
+    def _json_error(message: str, code: str) -> dict:
         from .models import StudioError  # lazy: models imports the manager
 
-        return json.dumps(StudioError(message=message, code=code).model_dump())
+        return StudioError(message=message, code=code).model_dump()
 
     async def _studio_gate(self) -> None:
         """403 ``tenant_mismatch``, then 404 ``studio_disabled`` (unless exempt)."""
@@ -201,11 +201,12 @@ class StudioBaseView(BaseView):
         scope = await self._scope()
         if declared is not None and declared != scope.tenant:
             raise web.HTTPForbidden(
-                text=self._json_error("Tenant mismatch.", "tenant_mismatch"), content_type="application/json"
+                text=json.dumps(self._json_error("Tenant mismatch.", "tenant_mismatch")),
+                content_type="application/json",
             )
         if not scope.studio_enabled and not self._STUDIO_ENABLED_EXEMPT:
             raise web.HTTPNotFound(
-                text=self._json_error("Agent Studio is disabled.", "studio_disabled"),
+                text=json.dumps(self._json_error("Agent Studio is disabled.", "studio_disabled")),
                 content_type="application/json",
             )
 
@@ -220,15 +221,17 @@ class StudioBaseView(BaseView):
             return None
         if (await self._scope()).may_author:
             return None
-        return self.json_response(json.loads(self._json_error("Authoring is not allowed.", "authoring_denied")), status=403)
+        return self.json_response(self._json_error("Authoring is not allowed.", "authoring_denied"), status=403)
 
     def _not_found(self, kind: str, name: str) -> web.Response:
         """One 404 body for invisible and absent records."""
-        return self.json_response(json.loads(self._json_error(f"{kind.capitalize()} '{name}' not found.", "not_found")), status=404)
+        body = self._json_error(f"{kind.capitalize()} '{name}' not found.", "not_found")
+        return self.json_response(body, status=404)
 
     def _name_taken(self, slug: str) -> web.Response:
         """Non-enumerating 409: no owner, source or tenant."""
-        return self.json_response(json.loads(self._json_error(f"Name '{slug}' is not available.", "name_taken")), status=409)
+        body = self._json_error(f"Name '{slug}' is not available.", "name_taken")
+        return self.json_response(body, status=409)
 
     async def _get_user(self) -> StudioUser:
         """Resolve the authenticated caller's identity from the session.
@@ -266,8 +269,11 @@ class StudioBaseView(BaseView):
         if not self._opted_in():
             return user
         scope = await self._scope()
+        if not scope.user_id:
+            raise web.HTTPUnauthorized(reason="User ID not found in scope.")
         return dataclasses.replace(
             user,
+            user_id=str(scope.user_id),
             is_superuser=scope.is_superuser,
             groups=sorted(scope.groups),
             tenant=scope.tenant,
