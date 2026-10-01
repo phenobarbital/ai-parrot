@@ -307,3 +307,11 @@ def test_an_agreeing_reference_is_evidence_for_a_product_named_without_any():
     assert named.evidence == ["reference | ref-0002 | ET-3950 Printer"]
     other = canonicalise(_ident(product="ET-3950", reference_id="ref-0001"), _models(), _referenced_ctx())
     assert other.product == "ET-3950" and other.evidence == []
+
+
+def test_a_reference_does_not_rename_a_product_read_as_something_else():
+    from parrot_pipelines.planogram.stages.compare import canonicalise
+
+    read = _ident(product="Duet", text='Portable 80" projection screen DUET', evidence=["box"], reference_id="ref-0002")
+    result = canonicalise(read, _models(), _referenced_ctx())
+    assert result.product is None and result.evidence == ["box"]

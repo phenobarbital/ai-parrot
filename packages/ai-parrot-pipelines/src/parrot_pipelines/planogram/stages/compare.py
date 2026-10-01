@@ -76,7 +76,10 @@ def canonicalise(identification: Identification, definition: SlotsDefinition, ct
             required_fields=required_fields,
         )
         if product is None:
-            product, key = _reference_product(identification, definition, ctx, candidates)
+            # A name the model read that is not in the catalogue is another product: the look-alike
+            # reference it also picked must not rename it.
+            named = bool((identification.product or "").strip())
+            product, key = (None, None) if named else _reference_product(identification, definition, ctx, candidates)
             if product is not None:
                 evidence = [
                     *identification.evidence,
