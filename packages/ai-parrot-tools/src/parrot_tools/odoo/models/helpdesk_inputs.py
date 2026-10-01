@@ -1,4 +1,5 @@
 """Pydantic input schemas for :class:`~parrot_tools.odoo.helpdesk.OdooHelpdeskToolkit` tools."""
+
 from __future__ import annotations
 
 from typing import Literal, Optional, Union
@@ -6,7 +7,6 @@ from typing import Literal, Optional, Union
 from pydantic import Field, model_validator
 
 from .inputs import OdooDomain, _OdooBaseInput
-
 
 #: An Odoo id, or the record's name (resolved server-side; ambiguous names are rejected).
 Ref = Union[int, str]
@@ -141,7 +141,9 @@ class AssignTicketInput(TicketIdInput):
     """Input for assigning a ticket."""
 
     assignee: Ref = Field(..., description="Primary assignee user — id, login or name")
-    additional_assignees: Optional[list[Ref]] = Field(default=None, description="Additional assignee ids, logins or names")
+    additional_assignees: Optional[list[Ref]] = Field(
+        default=None, description="Additional assignee ids, logins or names"
+    )
 
 
 class TakeTicketInput(TicketIdInput):
@@ -170,7 +172,9 @@ class CloseTicketInput(TicketIdInput):
 class ReopenTicketInput(TicketIdInput):
     """Input for reopening a ticket."""
 
-    to_stage: Optional[Ref] = Field(default=None, description="Reopen stage; default is the company reopen stage or Open")
+    to_stage: Optional[Ref] = Field(
+        default=None, description="Reopen stage; default is the company reopen stage or Open"
+    )
 
 
 class ResolveTicketInput(TicketIdInput):
@@ -203,9 +207,7 @@ class CreateSlaPolicyInput(_OdooBaseInput):
     days: int = Field(default=0, ge=0, description="SLA duration days")
     hours: int = Field(default=0, ge=0, description="SLA duration hours")
     minutes: int = Field(default=0, ge=0, description="SLA duration minutes")
-    target_type: Literal["reaching_stage", "assign_to"] = Field(
-        default="reaching_stage", description="SLA target type"
-    )
+    target_type: Literal["reaching_stage", "assign_to"] = Field(default="reaching_stage", description="SLA target type")
     stage: Optional[Ref] = Field(default=None, description="Required target stage for reaching_stage policies")
     ticket_type: Optional[Ref] = Field(default=None, description=f"Ticket type — {_REF_DESC}")
 
@@ -264,7 +266,9 @@ class MergeTicketsInput(_OdooBaseInput):
     """Input for merging two or more tickets."""
 
     ticket_ids: list[int] = Field(..., min_length=2, description="Ticket ids to merge")
-    into_ticket_id: Optional[int] = Field(default=None, ge=1, description="Target ticket id; omit to create a new ticket")
+    into_ticket_id: Optional[int] = Field(
+        default=None, ge=1, description="Target ticket id; omit to create a new ticket"
+    )
     merged_action: Literal["close", "cancel", "done", "remove", "do_nothing"] = Field(
         default="close", description="Action applied to merged source tickets"
     )
