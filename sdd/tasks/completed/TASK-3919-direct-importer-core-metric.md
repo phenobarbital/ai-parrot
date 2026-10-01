@@ -407,4 +407,33 @@ build artifact that mirrors these modules and is not importable source.
 
 ## Completion Note
 
-*(fill in on completion)*
+**Completed**: 2026-10-01 — verified.
+
+`source_fanin` now returns the direct `src_importers` of the module
+(alias-expanded, with `importers.discard(module)` replacing the old
+`seen = {module}` seeding). The BFS is gone, so cycle safety is structural.
+`DEFAULT_CORE_FANIN_THRESHOLD` is 30, with the calibration cited inline.
+
+**Measured after the change** (worktree index over the checkout):
+`dsl.py` and `impact.py` produce no core hit under `ScopePolicy(core_paths=())`;
+`conf.py`, `clients/base.py`, `bots/abstract.py` and `tools/abstract.py` each
+produce one with `forced is False`. That is AC2, asserted by
+`test_core_calibration.py`.
+
+**Tests**: 41 passed, 0 failed —
+`test_impact.py` + `test_core_calibration.py` (9), then `test_select.py`,
+`test_context.py`, `test_cap_escalation_ledger.py`,
+`test_supervisor_ledger.py` (32). `ruff check` clean on both the source and
+test trees.
+
+`test_source_fanin_is_cycle_safe` and
+`test_core_detected_by_source_fanin_not_test_count` passed **unmodified**, as
+predicted at task-authoring time: in the `_tree` fixture `pa.base` has exactly
+2 direct importers (`pa.impl`, `pb.use`) and `pc.m1` exactly 1 (`pc.m2`).
+
+**Environment note**: a fresh worktree has no compiled extensions, so the
+package `conftest.py` import chain dies on `No module named
+'parrot.utils.types'`. Copied the 9 `*.so` files from the main checkout into
+the worktree (they are git-ignored, so nothing was committed).
+
+**No deviations from scope.** `CORE_PATHS` untouched — TASK-3920 owns it.

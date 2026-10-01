@@ -210,4 +210,34 @@ Modify only `docs/dev_loop/sdd-coder-orchestrator.md`. Do not touch `policy.py`,
 
 ## Completion Note
 
-*(fill in on completion)*
+**Completed**: 2026-10-01 — verified.
+
+Both passages in `docs/dev_loop/sdd-coder-orchestrator.md`
+§"Core detection and escalation" now match what ships. Values were read from
+`policy.py` in this worktree, not copied from the task file:
+`DEFAULT_CORE_FANIN_THRESHOLD = 30` (policy.py:15) and 29 `CORE_PATHS` entries
+(`grep -c '^    "packages/'`).
+
+Changes:
+- The metric paragraph says **direct** fan-in, threshold 30, and points
+  `CORE_PATHS` provenance at `scripts/sdd/regen_core_paths.py` instead of the
+  git-ignored `artifacts/logs/feat-563-core-fanin.tsv`. A second paragraph gives
+  the measured justification (leaf 1041 > core 1024 under the old metric; 2 vs
+  35/31/151 under the new one).
+- The "A core hit escalates the package suite…" sentence is now its own
+  paragraph and was rewrapped. Its content is unchanged and still correct:
+  escalation *reach* stays transitive, only *detection* became direct.
+- The 2026-09-17 cost callout is kept with its date and attribution and marked
+  resolved. Worth recording: its own closing sentence listed "re-run the S4
+  measurement with a narrower `CORE_PATHS` curation pass" as one of three
+  options, which is what FEAT-620 did — so the note says which option was taken
+  rather than just asserting a fix. The part of the callout that still stands
+  (`XDIST_SAFE_DISTRIBUTIONS` ships empty, so a genuine core hit is still a
+  large serial run) is explicitly preserved.
+
+**Tests**: 5 passed — `test_core_paths.py`, `test_core_calibration.py`. These
+are the regression check that the numbers stated in the doc are the ones that
+ship; there is no doc-linting test and none was invented.
+
+**No code file was modified by this task** — `git status` showed only
+`docs/dev_loop/sdd-coder-orchestrator.md`.
