@@ -6,14 +6,16 @@ import asyncio
 import json
 import logging
 import math
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import cv2
 import numpy as np
+from pydantic import BaseModel, Field, create_model
 
 from parrot.models.detections import DetectionBox
 from parrot_pipelines.planogram.comparison.definition import Descriptors
 from parrot_pipelines.planogram.contracts import (
+    AddedShape,
     CycleContext,
     Identification,
     IdentificationResponse,
@@ -156,6 +158,38 @@ def render_marked_strip(image: np.ndarray, strip: PixelBox, marks: List[Tuple[in
         cv2.rectangle(crop, (tx - pad, ty - th - pad), (tx + tw + pad, ty + pad), _MARK_COLOUR, max(1, outline // 2))
         cv2.putText(crop, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, font_scale, _LABEL_FG, text_thickness, cv2.LINE_AA)
     return encode_png(crop)
+
+
+def _without_reference_id() -> Type[BaseModel]:
+    """``IdentificationResponse`` whose area entries have no ``reference_id`` field.
+
+    A model fills every field its response schema offers, so a call that attaches no reference image must
+    not offer the field at all.
+    """
+    fields: Dict[str, Any] = {
+        name: (field.annotation, field) for name, field in Identification.model_fields.items() if name != "reference_id"
+    }
+    entry = create_model("UnreferencedIdentification", **fields)
+    return create_model(
+        "UnreferencedIdentificationResponse",
+        existing_identifications=(List[entry], Field(default_factory=list)),  # type: ignore[valid-type]
+        added_shapes=(List[AddedShape], Field(default_factory=list)),
+    )
+
+
+#: Response schema of a call without reference images.
+UNREFERENCED_RESPONSE: Type[BaseModel] = _without_reference_id()
+
+
+async def _ask_identify(
+    ctx: CycleContext, prompt: str, images: Sequence[bytes], referenced: bool
+) -> IdentificationResponse:
+    """One identify call; ``reference_id`` is part of the schema only when the call carries references."""
+    schema = IdentificationResponse if referenced else UNREFERENCED_RESPONSE
+    answer = await ctx.vision.ask(prompt, images, schema, stage=IDENTIFY_STAGE, prompt_version=IDENTIFY_PROMPT_VERSION)
+    if isinstance(answer, IdentificationResponse):
+        return answer
+    return IdentificationResponse.model_validate(answer.model_dump())
 
 
 def build_identify_prompt(
@@ -411,9 +445,7 @@ async def _run_call(
     try:
         png = await ctx.executor.run(render_marked_strip, image, _as_tuple(strip), mark_list)
         images = [png, *(reference.image for reference in references)]
-        answer = await ctx.vision.ask(
-            prompt, images, IdentificationResponse, stage=IDENTIFY_STAGE, prompt_version=IDENTIFY_PROMPT_VERSION
-        )
+        answer = await _ask_identify(ctx, prompt, images, bool(labels))
     except VisionError as exc:
         source = _source_for(perception)
         message = f"identify_failed: {exc}"
@@ -429,13 +461,7 @@ async def _run_call(
             "existing_identifications entry for every requested area."
         )
         try:
-            answer = await ctx.vision.ask(
-                repair_prompt,
-                images,
-                IdentificationResponse,
-                stage=IDENTIFY_STAGE,
-                prompt_version=IDENTIFY_PROMPT_VERSION,
-            )
+            answer = await _ask_identify(ctx, repair_prompt, images, bool(labels))
         except VisionError as exc:
             retry_error = f"{perception.image_id}: identify_incomplete_retry_failed: {exc}"
     invalid_references = [

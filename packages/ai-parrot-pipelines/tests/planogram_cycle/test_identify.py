@@ -1,6 +1,7 @@
 """Offline tests for stage-2 identification strategies (FEAT-574, Module 12)."""
 
 import asyncio
+import json
 import math
 
 import numpy as np
@@ -25,6 +26,7 @@ from parrot_pipelines.planogram.contracts import (
 )
 from parrot_pipelines.planogram.identification.identify import (
     IDENTIFY_PROMPT_VERSION,
+    UNREFERENCED_RESPONSE,
     build_identify_prompt,
     identify_full_image,
     identify_slots,
@@ -48,10 +50,11 @@ class StubAdapter:
     """Pops queued answers; an Exception instance is raised. Callables receive the prompt."""
 
     def __init__(self, *answers):
-        self.answers, self.calls, self.images = list(answers), [], []
+        self.answers, self.calls, self.images, self.schemas = list(answers), [], [], []
 
     async def ask(self, prompt, images, schema, *, stage, prompt_version, system_prompt=None):
         self.calls.append(prompt)
+        self.schemas.append(schema)
         self.images.append(list(images))
         assert images and images[0][:8] == b"\x89PNG\r\n\x1a\n"
         assert prompt_version == IDENTIFY_PROMPT_VERSION
@@ -318,6 +321,35 @@ async def test_references_attached_to_initial_and_repair_calls(perception):
     await identify_full_image(_image(), perception, ctx, vocabulary=[])
     assert adapter.images[0] == adapter.images[1]
     assert len(adapter.images[0]) == 2
+
+
+def _offers_reference_id(schema) -> bool:
+    return "reference_id" in json.dumps(schema.model_json_schema())
+
+
+async def test_reference_id_is_not_requested_without_references(perception):
+    """A call with no reference image offers no reference_id, in the prompt or in the response schema."""
+    ids = [slot.slot_id for slot in perception.slots]
+    adapter = StubAdapter(_answer(ids[:-1]), UNREFERENCED_RESPONSE.model_validate(_answer(ids).model_dump()))
+    ctx = _ctx(adapter)
+    ctx.layout = _layout()
+    result = await identify_full_image(_image(), perception, ctx, vocabulary=[])
+    assert len(adapter.schemas) == 2 and not any(_offers_reference_id(schema) for schema in adapter.schemas)
+    assert not any("reference_id" in prompt for prompt in adapter.calls)
+    assert set(ids) <= {item.shape_id for item in result.identifications}
+    assert all(item.reference_id is None for item in result.identifications)
+    assert not any("unknown reference_id" in error for error in result.errors)
+
+
+async def test_reference_id_is_requested_with_references(perception):
+    """A call carrying reference images keeps reference_id in the response schema."""
+    ids = [slot.slot_id for slot in perception.slots]
+    adapter = StubAdapter(_answer([*ids, "img0:zone"]))
+    ctx = _ctx(adapter)
+    ctx.layout = _layout()
+    ctx.reference_bank = [ReferenceImage(label="ref-0001", image=b"reference", catalog_key="A")]
+    await identify_full_image(_image(), perception, ctx, vocabulary=[])
+    assert _offers_reference_id(adapter.schemas[0])
 
 
 async def test_unknown_reference_id_is_rejected(perception):
