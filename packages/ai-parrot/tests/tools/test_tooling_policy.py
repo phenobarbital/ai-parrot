@@ -150,3 +150,11 @@ def test_policy_registration_once_and_default_deny():
     set_tenant_tooling_policy(app2, TenantToolingPolicy(apply_to_global=True))
     with pytest.raises(TenantToolingRefused):
         enforce_tenant_tooling(app2, bad, subject=glob)
+
+
+def test_policy_refuses_unknown_tool_entry_shape():
+    """A non-str tool entry without a str .name is refused, not skipped."""
+    for bad in (42, object(), {"name": "x"}):
+        with pytest.raises(TenantToolingRefused) as err:
+            TenantToolingPolicy.deny_all().check_tooling(NormalizedTooling(tools=[bad]), subject=SUBJECT)
+        assert err.value.reason == "toolkit_unavailable"

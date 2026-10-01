@@ -147,16 +147,23 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         """Check every tool, toolkit and MCP spec of ``tooling`` (and secret references by phase)."""
         for tool in tooling.tools:
             slug = tool if isinstance(tool, str) else getattr(tool, "name", None)
-            if isinstance(slug, str):
-                self.check_tool(slug, subject=subject)
+            if not isinstance(slug, str):
+                raise TenantToolingRefused("toolkit_unavailable", item=repr(tool)[:80])
+            self.check_tool(slug, subject=subject)
         for toolkit in tooling.toolkits:
-            self.check_tool(toolkit.slug, subject=subject)
-            self._check_secrets(
-                toolkit.secret_refs, toolkit.vault_owner, toolkit.slug, subject, owner, toolkit_vault_name
-            )
+            self.precheck_toolkit(toolkit, subject=subject, owner=owner)
         for server in tooling.mcp_servers:
-            self.resolve_mcp(effective_mcp_config(server), subject=subject)
-            self._check_secrets(server.secret_refs, server.vault_owner, server.name, subject, owner, mcp_vault_name)
+            self.precheck_mcp(server, subject=subject, owner=owner)
+
+    def precheck_toolkit(self, spec: Any, *, subject: ToolingSubject, owner: str | None = None) -> None:
+        """Slug check plus phase-dependent secret-reference check of one toolkit spec (no vault access)."""
+        self.check_tool(spec.slug, subject=subject)
+        self._check_secrets(spec.secret_refs, spec.vault_owner, spec.slug, subject, owner, toolkit_vault_name)
+
+    def precheck_mcp(self, spec: AgentMCPServerSpec, *, subject: ToolingSubject, owner: str | None = None) -> None:
+        """Effective-config check plus secret-reference check of one MCP spec (no vault access)."""
+        self.resolve_mcp(effective_mcp_config(spec), subject=subject)
+        self._check_secrets(spec.secret_refs, spec.vault_owner, spec.name, subject, owner, mcp_vault_name)
 
     @staticmethod
     def _check_secrets(
