@@ -290,4 +290,4 @@ def test_walkthrough_blocks_carry_display_hints() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+
