@@ -63,7 +63,7 @@ class ToolkitResolver:
             return self._classes.get(key)
         try:
             cls = resolve_class(found.dotted_path)
-        except (ImportError, AttributeError):
+        except (ImportError, AttributeError, ValueError):
             return None
         if found.source == "host" and getattr(cls, "tenant_bound", False):
             return None  # rule 5: lifted by FEAT-622 M3b

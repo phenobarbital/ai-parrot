@@ -73,3 +73,15 @@ def test_tenant_bound_host_entry_unavailable_before_enforcement(host_plugins):
     resolver = get_toolkit_resolver()
     assert resolver.entry("tp_probe") is not None
     assert resolver.resolve("tp_probe") is None
+
+
+def test_malformed_dotted_path_is_unavailable(host_plugins):
+    """resolve() returns None (not ValueError) when a registry value has no module separator."""
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    resolver._ensure()
+    from parrot.tools.resolver import ToolkitEntry
+
+    resolver._entries["tp_bad"] = ToolkitEntry(slug="tp_bad", dotted_path="nodots", source="host")
+    assert resolver.entry("tp_bad") is not None
+    assert resolver.resolve("tp_bad") is None
