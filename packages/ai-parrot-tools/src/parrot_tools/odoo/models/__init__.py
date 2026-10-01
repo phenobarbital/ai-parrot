@@ -1,4 +1,5 @@
 """Pydantic models exposed by the Odoo toolkit."""
+
 from .entities import (
     AccountMove,
     AccountMoveLine,
