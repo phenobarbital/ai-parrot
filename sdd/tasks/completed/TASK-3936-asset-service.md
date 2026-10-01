@@ -212,10 +212,8 @@ class StudioAssetService:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: services/assets.py: StudioAssetService put/delete/get/list; lock -> gate on current tooling (phase=write) -> quota (total - old + new) under the lock -> sha256 write -> post-write version. StudioAssetInput validation (review carry-over) is done via validate_asset_input: path traversal, absolute path, backslash and NUL in name -> invalid_asset_name; oversize -> StudioAssetTooLarge (asset_too_large); quota -> agent_assets_quota. 19 tests (x memory/postgres where parametrised) pass incl. concurrent quota on real PG. Mutations RED: quota check removed (3 fail), gate removed (2 fail).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

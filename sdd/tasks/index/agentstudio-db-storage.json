@@ -309,7 +309,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -320,8 +320,9 @@
       "parallelism_notes": "uses validate_asset_input/normalized_tooling_for/StudioToolingGate from TASK-3933 (services/_common.py) and InMemoryStudioRepositories from TASK-3931 for DB-free tests; creates services/assets.py only (runs alongside TASK-3934/14)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3936-asset-service.md"
+      "completed_at": "2026-10-01T22:28:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3936-asset-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3937",
