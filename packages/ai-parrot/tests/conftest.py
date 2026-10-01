@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 import types
+import importlib.util
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -84,6 +85,45 @@ if str(PROJECT_ROOT) not in sys.path:
 TESTS_DIR = Path(__file__).resolve().parent
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
+
+
+def _stub_if_absent(name: str, module: types.ModuleType) -> bool:
+    """Register ``module`` under ``name`` only if the real module is unavailable.
+
+    FEAT-617 / issue:c3c59277ef77. The previous ``sys.modules.setdefault(name, stub)``
+    asked "is this name already imported?" -- a question about import *order*, not
+    availability -- so a stub pre-empted any real module that simply had not been
+    imported yet, and its symbols vanished for the rest of the pytest process. The
+    tell was ``(unknown location)`` in the resulting ImportError: a ``ModuleType``
+    stub has no ``__file__``. That poisoned 14 of 18 collection errors in this tree.
+
+    The stubs' legitimate purpose -- keeping tests importable when an optional
+    third-party dependency (navigator, asyncdb, querysource, navconfig) is genuinely
+    missing -- is preserved exactly: if the real module cannot be resolved, the stub
+    still lands.
+
+    Args:
+        name: Fully-qualified module name, e.g. ``"parrot.tools.filemanager"``.
+        module: The lightweight stand-in to install if the real module is absent.
+
+    Returns:
+        True if the stub was installed, False if the real module won (or the name
+        was already present in ``sys.modules``).
+    """
+    if name in sys.modules:
+        # Preserve setdefault's original contract for the already-imported case.
+        return False
+    try:
+        if importlib.util.find_spec(name) is not None:
+            # The real module is importable -- never shadow it.
+            return False
+    except (ImportError, AttributeError, ValueError):
+        # find_spec() imports the PARENT package and may raise rather than return
+        # None. Any failure means "not resolvable", so fall through and install the
+        # stub -- identical to the pre-FEAT-617 fallback for missing optional deps.
+        pass
+    sys.modules[name] = module
+    return True
 
 
 def _install_navconfig_stub() -> None:
@@ -165,9 +205,9 @@ def _install_navconfig_stub() -> None:
     exceptions_module.ConfigError = _ConfigError
     exceptions_module.NavConfigException = _ConfigError
 
-    sys.modules.setdefault("navconfig", navconfig_module)
-    sys.modules.setdefault("navconfig.logging", logging_module)
-    sys.modules.setdefault("navconfig.exceptions", exceptions_module)
+    _stub_if_absent("navconfig", navconfig_module)
+    _stub_if_absent("navconfig.logging", logging_module)
+    _stub_if_absent("navconfig.exceptions", exceptions_module)
 
 
 def _install_navigator_stubs() -> None:
@@ -216,7 +256,7 @@ def _install_navigator_stubs() -> None:
     _nuf_abstract = types.ModuleType("navigator.utils.file.abstract")
     _nuf_abstract.FileManagerInterface = _FileManagerInterface
     _nuf_abstract.FileMetadata = _FileMetadata
-    sys.modules.setdefault("navigator.utils.file.abstract", _nuf_abstract)
+    _stub_if_absent("navigator.utils.file.abstract", _nuf_abstract)
 
     # parrot.interfaces.file shim — avoids re-importing the real module that
     # would fail if navigator doesn't expose these attrs yet.
@@ -227,40 +267,40 @@ def _install_navigator_stubs() -> None:
     _parrot_interfaces_file.TempFileManager = _TempFileManager
     _parrot_interfaces_file.S3FileManager = type("S3FileManager", (_FileManagerInterface,), {})
     _parrot_interfaces_file.GCSFileManager = type("GCSFileManager", (_FileManagerInterface,), {})
-    sys.modules.setdefault("parrot.interfaces.file", _parrot_interfaces_file)
+    _stub_if_absent("parrot.interfaces.file", _parrot_interfaces_file)
 
     # parrot.interfaces.file.{abstract,s3,gcs,local,tmp} — concrete submodules
     # used by parrot.storage.overflow / s3_overflow and the backend factory.
     _parrot_interfaces_file_abstract = types.ModuleType("parrot.interfaces.file.abstract")
     _parrot_interfaces_file_abstract.FileManagerInterface = _FileManagerInterface
     _parrot_interfaces_file_abstract.FileMetadata = _FileMetadata
-    sys.modules.setdefault("parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract)
+    _stub_if_absent("parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract)
     _parrot_interfaces_file.abstract = _parrot_interfaces_file_abstract
 
     _parrot_interfaces_file_s3 = types.ModuleType("parrot.interfaces.file.s3")
     _parrot_interfaces_file_s3.S3FileManager = _parrot_interfaces_file.S3FileManager
-    sys.modules.setdefault("parrot.interfaces.file.s3", _parrot_interfaces_file_s3)
+    _stub_if_absent("parrot.interfaces.file.s3", _parrot_interfaces_file_s3)
     _parrot_interfaces_file.s3 = _parrot_interfaces_file_s3
 
     _parrot_interfaces_file_gcs = types.ModuleType("parrot.interfaces.file.gcs")
     _parrot_interfaces_file_gcs.GCSFileManager = _parrot_interfaces_file.GCSFileManager
-    sys.modules.setdefault("parrot.interfaces.file.gcs", _parrot_interfaces_file_gcs)
+    _stub_if_absent("parrot.interfaces.file.gcs", _parrot_interfaces_file_gcs)
     _parrot_interfaces_file.gcs = _parrot_interfaces_file_gcs
 
     _parrot_interfaces_file_local = types.ModuleType("parrot.interfaces.file.local")
     _parrot_interfaces_file_local.LocalFileManager = _LocalFileManager
-    sys.modules.setdefault("parrot.interfaces.file.local", _parrot_interfaces_file_local)
+    _stub_if_absent("parrot.interfaces.file.local", _parrot_interfaces_file_local)
     _parrot_interfaces_file.local = _parrot_interfaces_file_local
 
     _parrot_interfaces_file_tmp = types.ModuleType("parrot.interfaces.file.tmp")
     _parrot_interfaces_file_tmp.TempFileManager = _TempFileManager
-    sys.modules.setdefault("parrot.interfaces.file.tmp", _parrot_interfaces_file_tmp)
+    _stub_if_absent("parrot.interfaces.file.tmp", _parrot_interfaces_file_tmp)
     _parrot_interfaces_file.tmp = _parrot_interfaces_file_tmp
 
     # parrot.tools.filemanager — used by parrot.clients.google.generation
     _parrot_tools_fm = types.ModuleType("parrot.tools.filemanager")
     _parrot_tools_fm.FileManagerFactory = _FileManagerFactory
-    sys.modules.setdefault("parrot.tools.filemanager", _parrot_tools_fm)
+    _stub_if_absent("parrot.tools.filemanager", _parrot_tools_fm)
 
     # ── main navigator stubs ───────────────────────────────────────────────
     navigator_conf = types.ModuleType("navigator.conf")
@@ -269,25 +309,25 @@ def _install_navigator_stubs() -> None:
     navigator_conf.CACHE_PORT = 6379
     navigator_module = types.ModuleType("navigator")
     navigator_module.__path__ = []
-    sys.modules.setdefault("navigator", navigator_module)
-    sys.modules.setdefault("navigator.conf", navigator_conf)
+    _stub_if_absent("navigator", navigator_module)
+    _stub_if_absent("navigator.conf", navigator_conf)
     # navigator.types stub
     navigator_types = types.ModuleType("navigator.types")
     navigator_types.WebApp = type("WebApp", (), {})
-    sys.modules.setdefault("navigator.types", navigator_types)
+    _stub_if_absent("navigator.types", navigator_types)
 
     # navigator.applications stub
     navigator_applications = types.ModuleType("navigator.applications")
     navigator_applications.__path__ = []
     navigator_applications.App = type("App", (), {})
-    sys.modules.setdefault("navigator.applications", navigator_applications)
+    _stub_if_absent("navigator.applications", navigator_applications)
     navigator_applications_base = types.ModuleType("navigator.applications.base")
     navigator_applications_base.BaseApplication = type("BaseApplication", (), {})
-    sys.modules.setdefault("navigator.applications.base", navigator_applications_base)
+    _stub_if_absent("navigator.applications.base", navigator_applications_base)
 
     # navigator.middlewares stub
     navigator_middlewares = types.ModuleType("navigator.middlewares")
-    sys.modules.setdefault("navigator.middlewares", navigator_middlewares)
+    _stub_if_absent("navigator.middlewares", navigator_middlewares)
 
     navigator_auth_module = types.ModuleType("navigator_auth")
     navigator_auth_conf = types.ModuleType("navigator_auth.conf")
@@ -310,9 +350,9 @@ def _install_navigator_stubs() -> None:
 
     navigator_auth_module.decorators = decorators_module
 
-    sys.modules.setdefault("navigator_auth", navigator_auth_module)
-    sys.modules.setdefault("navigator_auth.conf", navigator_auth_conf)
-    sys.modules.setdefault("navigator_auth.decorators", decorators_module)
+    _stub_if_absent("navigator_auth", navigator_auth_module)
+    _stub_if_absent("navigator_auth.conf", navigator_auth_conf)
+    _stub_if_absent("navigator_auth.decorators", decorators_module)
 
     navigator_views = types.ModuleType("navigator.views")
     base_handler = type("BaseHandler", (), {})
@@ -355,9 +395,9 @@ def _install_navigator_stubs() -> None:
     # Register navigator.views.abstract submodule
     abstract_module = types.ModuleType("navigator.views.abstract")
     abstract_module.AbstractModel = _abstract_model
-    sys.modules.setdefault("navigator.views.abstract", abstract_module)
+    _stub_if_absent("navigator.views.abstract", abstract_module)
 
-    sys.modules.setdefault("navigator.views", navigator_views)
+    _stub_if_absent("navigator.views", navigator_views)
 
     # Ensure navigator.conf has AUTH_SESSION_OBJECT
     navigator_conf.AUTH_SESSION_OBJECT = "user"
@@ -365,14 +405,14 @@ def _install_navigator_stubs() -> None:
     # navigator.connections — required by parrot.scheduler
     navigator_connections = types.ModuleType("navigator.connections")
     navigator_connections.PostgresPool = type("PostgresPool", (), {})
-    sys.modules.setdefault("navigator.connections", navigator_connections)
+    _stub_if_absent("navigator.connections", navigator_connections)
 
     # asyncdb — required by parrot.scheduler and parrot.scheduler.models
     asyncdb_module = types.ModuleType("asyncdb")
     asyncdb_module.AsyncDB = type("AsyncDB", (), {})
     asyncdb_module.AsyncPool = type("AsyncPool", (), {})
     asyncdb_module.__path__ = []  # make Python treat it as a package
-    sys.modules.setdefault("asyncdb", asyncdb_module)
+    _stub_if_absent("asyncdb", asyncdb_module)
 
     asyncdb_exceptions = types.ModuleType("asyncdb.exceptions")
     asyncdb_exceptions.__path__ = []  # treat as package to allow sub-imports
@@ -399,20 +439,20 @@ def _install_navigator_stubs() -> None:
     asyncdb_exc_exc.__dict__.update(
         {k: v for k, v in asyncdb_exceptions.__dict__.items() if isinstance(v, type) and issubclass(v, Exception)}
     )
-    sys.modules.setdefault("asyncdb.exceptions", asyncdb_exceptions)
-    sys.modules.setdefault("asyncdb.exceptions.exceptions", asyncdb_exc_exc)
+    _stub_if_absent("asyncdb.exceptions", asyncdb_exceptions)
+    _stub_if_absent("asyncdb.exceptions.exceptions", asyncdb_exc_exc)
 
     asyncdb_models = types.ModuleType("asyncdb.models")
     asyncdb_models.Model = type("Model", (), {})
     asyncdb_models.Field = lambda *a, **kw: None
-    sys.modules.setdefault("asyncdb.models", asyncdb_models)
+    _stub_if_absent("asyncdb.models", asyncdb_models)
 
     # querysource.conf — required by parrot.scheduler
     querysource_module = types.ModuleType("querysource")
     querysource_conf = types.ModuleType("querysource.conf")
     querysource_conf.default_dsn = "postgresql://user:pass@localhost/db"
-    sys.modules.setdefault("querysource", querysource_module)
-    sys.modules.setdefault("querysource.conf", querysource_conf)
+    _stub_if_absent("querysource", querysource_module)
+    _stub_if_absent("querysource.conf", querysource_conf)
 
     # parrot.notifications — required by parrot.scheduler.
     # Prefer the REAL module when it is importable (same policy as
@@ -425,7 +465,7 @@ def _install_navigator_stubs() -> None:
     except Exception:  # noqa: BLE001 — any import failure → stub fallback
         parrot_notifications = types.ModuleType("parrot.notifications")
         parrot_notifications.NotificationMixin = type("NotificationMixin", (), {})
-        sys.modules.setdefault("parrot.notifications", parrot_notifications)
+        _stub_if_absent("parrot.notifications", parrot_notifications)
 
     # parrot.conf — required by parrot.scheduler, parrot.memory, parrot.plugins, parrot.tools
     # Use a module subclass that auto-provides any missing attribute as a Path/str default
@@ -452,13 +492,13 @@ def _install_navigator_stubs() -> None:
         import parrot.conf  # noqa: F401
     except Exception:  # noqa: BLE001 — any import failure → stub fallback
         parrot_conf = _ParrotConf("parrot.conf")
-        sys.modules.setdefault("parrot.conf", parrot_conf)
+        _stub_if_absent("parrot.conf", parrot_conf)
 
     # parrot.plugins — required by parrot.tools.__init__
     parrot_plugins = types.ModuleType("parrot.plugins")
     parrot_plugins.setup_plugin_importer = lambda *a, **kw: None
     parrot_plugins.dynamic_import_helper = lambda *a, **kw: None
-    sys.modules.setdefault("parrot.plugins", parrot_plugins)
+    _stub_if_absent("parrot.plugins", parrot_plugins)
 
 
 @pytest.fixture
@@ -557,7 +597,7 @@ def fake_parrot_bots(monkeypatch):
             return "Agent executed"
 
     tools_agent_module.AgentTool = _AgentTool
-    sys.modules.setdefault("parrot.tools.agent", tools_agent_module)
+    monkeypatch.setitem(sys.modules, "parrot.tools.agent", tools_agent_module)
 
     # Minimal response types with ``content`` attribute
     @dataclass
@@ -591,7 +631,7 @@ def fake_parrot_bots(monkeypatch):
     models_responses_module.MessageResponse = object
     models_responses_module.StreamChunk = object
     models_responses_module.InvokeResult = _InvokeResult
-    sys.modules.setdefault("parrot.models.responses", models_responses_module)
+    monkeypatch.setitem(sys.modules, "parrot.models.responses", models_responses_module)
 
     @dataclass
     class _AgentExecutionInfo:
@@ -714,8 +754,66 @@ def fake_parrot_bots(monkeypatch):
     models_crew_module.VectorStoreProtocol = _VectorStoreProtocol
     models_crew_module.build_agent_metadata = _build_agent_metadata
     models_crew_module.determine_run_status = _determine_run_status
-    sys.modules.setdefault("parrot.models.crew", models_crew_module)
+    monkeypatch.setitem(sys.modules, "parrot.models.crew", models_crew_module)
 
+
+
+# ---------------------------------------------------------------------------
+# FEAT-617 / issue:c3c59277ef77 — a test module may not keep another's imports
+# ---------------------------------------------------------------------------
+# Several modules in this tree install stand-ins at MODULE scope and never restore
+# them, e.g. tests/integration/test_spatial_transport.py:95-96 does
+#
+#     sys.modules["aiohttp"] = types.ModuleType("aiohttp")
+#
+# so the real aiohttp is gone for every file collected afterwards. Delta-debugging
+# identified 8 such modules; between them they caused 13 of this tree's 18 collection
+# errors ("cannot import name 'FormData' from 'aiohttp' (unknown location)",
+# "module 'aiohttp.web' has no attribute 'Application'", and the parrot._imports /
+# parrot.registry variants). The tell is always the same: a types.ModuleType stub has
+# no __file__.
+#
+# Rather than rewrite eight modules, scope the damage: snapshot sys.modules around
+# each test module's import and put back exactly the real modules that module
+# REPLACED. Only genuine module objects are restored (a name the module merely ADDED
+# is left in place, since nothing was shadowed), and the original object is restored
+# rather than re-imported, so any reference captured meanwhile stays valid.
+#
+# The polluting modules need their stand-ins only while they load a target by path at
+# import time -- they keep direct references afterwards -- so restoring once their
+# collection finishes leaves their own tests working.
+
+_MODULE_SNAPSHOTS: Dict[str, Dict[str, Any]] = {}
+
+
+def _real_module_snapshot() -> Dict[str, Any]:
+    """Identity map of every sys.modules entry that is currently a REAL module."""
+    snap = {}
+    for name, module in list(sys.modules.items()):
+        if module is not None and getattr(module, "__file__", None) is not None:
+            snap[name] = module
+    return snap
+
+
+def pytest_collectstart(collector):  # noqa: D401
+    """Snapshot the real modules in play before a test module is imported."""
+    if type(collector).__name__ == "Module":
+        _MODULE_SNAPSHOTS[collector.nodeid] = _real_module_snapshot()
+
+
+def pytest_collectreport(report):  # noqa: D401
+    """Undo any real module the just-collected test module replaced with a stub."""
+    snapshot = _MODULE_SNAPSHOTS.pop(report.nodeid, None)
+    if not snapshot:
+        return
+    for name, original in snapshot.items():
+        current = sys.modules.get(name)
+        if current is original or current is None:
+            continue
+        # The entry changed. Restore only if what replaced it is a bare stand-in --
+        # a real re-import (different object, still a real module) is left alone.
+        if getattr(current, "__file__", None) is None:
+            sys.modules[name] = original
 
 _install_navconfig_stub()
 _install_navigator_stubs()

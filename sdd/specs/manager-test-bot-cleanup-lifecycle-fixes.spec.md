@@ -399,6 +399,77 @@ class SkillFileToolkit(AbstractToolkit):
 
 ---
 
+## 8b. ERRATA — measured root cause supersedes §1 and §3 M1
+
+> Added 2026-10-01 during implementation. §1's Bucket-A analysis and §3 Module 1
+> were **wrong**, and measurement is what caught it. The spec text above is left
+> intact as the record of what was believed at authoring time; this section is
+> authoritative where they conflict.
+
+**What §1 claimed.** That `tests/conftest.py`'s ~37 `sys.modules.setdefault()`
+stubs shadowed healthy modules, causing 14 of 18 collection errors.
+
+**What measurement showed.** Routing every installer site through
+`_stub_if_absent()` fixed exactly **one** error (18 → 17). The conftest was
+very nearly a red herring. Two things were wrong:
+
+1. **The count was wrong.** Of 37 grep hits, only **32** were executable calls in
+   the two installers. **3** were inside the opt-in `fake_parrot_bots` fixture —
+   leaking out of a fixture FEAT-268 had supposedly already scoped — and **2**
+   were prose/commented-out. AC2's "grep → 0" was therefore unachievable as
+   literally written; it is now measured against *executable* call sites.
+2. **The mechanism was wrong.** The dominant polluters are **individual test
+   modules** that assign `sys.modules[...]` at MODULE (import) scope and never
+   restore. `tests/integration/test_spatial_transport.py:95-96` replaces the real
+   `aiohttp` outright. Delta-debugging over 1684 files proved that file alone
+   poisons `tests/unit/test_combined_callback.py`; a per-victim scan of all 91
+   modules in this tree that write to `sys.modules` named every polluter:
+
+   | Shadowed module | Polluting test modules |
+   |---|---|
+   | `aiohttp`, `aiohttp.web` | `integration/test_spatial_transport.py`, `test_jira_specialist_grounding.py` |
+   | `parrot._imports` | `integration/test_spatial_transport.py`, `unit/test_spatial_compiler_fallback.py` |
+   | `parrot.registry` | the above plus `bots/test_rag_conversation_integration.py`, `bots/test_vector_context_integration.py`, `manager/test_bot_cleanup_lifecycle.py`, `registry/test_vector_store_propagation.py`, `test_research_node_envelope.py` |
+
+   Note `manager/test_bot_cleanup_lifecycle.py` is both a **victim** (its own
+   error) and a **polluter**.
+
+**What was built instead of §3 M1.** Rewriting eight modules was rejected as
+high-risk. `tests/conftest.py` gained a `pytest_collectstart`/`pytest_collectreport`
+pair that snapshots `sys.modules` around each test module's import and restores
+exactly the real modules that module **replaced**. A name merely *added* is left
+alone, and the original object is restored rather than re-imported, so references
+captured meanwhile stay valid. The polluting modules need their stand-ins only
+while they load a target by path at import time, so restoring after their
+collection leaves their own tests untouched.
+
+**Measured outcome** (`dev` @ `9735ae09d`, full namespace `PYTHONPATH`):
+
+| | Collection errors | Tests collected |
+|---|---|---|
+| Baseline | 18 | 22873 |
+| + `_stub_if_absent` (installers + fixture leak) | 17 | — |
+| + the 4 stale-test repairs (M2) | 13 | 22931 |
+| + snapshot/restore hook | **3** | **23090** |
+
+**AC1 is not met: 3 errors remain.** Two of the three
+(`test_botmanager_flags.py`, `unit/scripts/test_recompute_contextual_embeddings.py`)
+collect cleanly in isolation — residual pollution of a different shape, not yet
+characterised. The third (`manager/test_bot_cleanup_lifecycle.py`) fails in
+isolation on `parrot.handlers.crew.execution_history_handler`, which imports fine
+standalone; that looks like namespace wiring under pytest (the root `conftest.py`
+rewrites `parrot.__path__` and deletes `parrot.handlers.*` from `sys.modules`),
+not a defect in the test.
+
+**Unmasking (spec R2) was observed, as predicted.** `test_odoo_diagnostics.py`
+began failing on `ODOO_HELPDESK_APIKEY` missing from `parrot.conf` once the real
+module stopped being shadowed. It fails in isolation too, so it is a genuine
+pre-existing gap the stub had been hiding — related to FEAT-616, in flight.
+
+**AC5 (count floor) holds comfortably**: 23090 ≥ 22873.
+
+---
+
 ## 9. Decisions Log
 
 | Date | Decision | Rationale |

@@ -14,7 +14,9 @@ import pytest
 # ---------------------------------------------------------------------------
 # Load the .py module directly — bypasses the compiled .so if still present
 # ---------------------------------------------------------------------------
-_PY_PATH = Path(__file__).parent.parent / "parrot" / "exceptions.py"
+# FEAT-617: the uv-workspace layout moved the package under src/; this test still
+# loads the .py by path on purpose (bypassing any stale compiled .so -- see above).
+_PY_PATH = Path(__file__).parent.parent / "src" / "parrot" / "exceptions.py"
 _spec = importlib.util.spec_from_file_location("parrot.exceptions_py", _PY_PATH)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)

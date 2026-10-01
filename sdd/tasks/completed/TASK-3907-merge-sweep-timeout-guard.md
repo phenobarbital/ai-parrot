@@ -261,6 +261,34 @@ existing coverage; do not create a parallel test module.
 
 ## Completion Note
 
-<!-- filled in on completion -->
-**Completed by**:
-**Date**:
+**Completed by**: Claude Opus 5 (/sdd-fix issue:c3c59277ef77)
+**Date**: 2026-10-01
+**Verification**: partial — AC-4 (live hang demonstration) NOT run.
+
+`pytest-timeout>=2.3` declared in the `dev` group via `uv add --no-sync` (pyproject +
+uv.lock committed, shared venv untouched), and `scripts/sdd/select_tests.py` gained an
+opt-in `--timeout SECONDS` that appends `--timeout=N` to each planned invocation's
+argv under `--run`. A local argv list is built so `invocation.argv` stays unmodified
+for the printed plan. Two new tests in `tests/sdd_scripts/test_select_tests.py`;
+**10 passed**.
+
+A first version of the test helper monkeypatched `subprocess.run` wholesale and broke
+`test_scope`'s internal `git diff`; it now intercepts only pytest argvs and delegates
+everything else to the real `subprocess.run`.
+
+**AC-4 blocked, by design.** It needs `pytest_timeout` importable, and
+`.claude/rules/worktree-management.md` forbids a worktree agent from installing into
+the shared venv. The user elected to run the install themselves
+(`uv pip install pytest-timeout`), after which AC-4 is a single command.
+
+**AC-5 ✅ confirmed**: `[tool.pytest.ini_options]` gained no timeout key — the
+default is sweep-only, per the user's Q2 decision, so slow voice/browser suites
+cannot start flaking for developers.
+
+**Context**: this ships as a precaution, not a repair. The hang in
+`issue:c3c59277ef77` does not reproduce (full integrations run completes in 260.8s),
+and the separately-filed `issue:1dbb2aac09ba` names a test that now passes in 1.93s
+under its own documented repro — that issue looks already fixed and is a candidate
+for closure by its owner.
+
+AC-1 ⏸ (pending install), AC-2/3 ✅, AC-4 ⏸, AC-5/6/7/8 ✅.
