@@ -13,7 +13,7 @@ tags: [a2ui, infographic, display-hints, formatting]
 **Feature ID**: FEAT-623
 **Date**: 2026-09-30
 **Author**: Juan Rodriguez + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot` / `ai-parrot-visualizations`
 **Brainstorm**: `sdd/proposals/infographic-a2ui-display-hints.brainstorm.md` (accepted, Option B)
 
@@ -713,3 +713,4 @@ Summary: **8** confirmed · **0** rejected · **2** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-09-30 | Juan Rodriguez + Claude | Initial draft from the accepted brainstorm; M5 stop rule and §8 Q1–Q3 added after spec-time verification; codex design research folded in (§9), progress-as-group decision; §8 Q1–Q3 answered (en-US pin, align/width/color follow-up) |
+| 1.0 | 2026-09-30 | Juan Rodriguez | Approved |
