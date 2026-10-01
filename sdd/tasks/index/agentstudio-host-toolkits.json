@@ -16,7 +16,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 1,
@@ -25,8 +25,9 @@
       "parallelism_notes": "No dependency: creates parrot/tools/resolver.py, tests/tools/_host_probe.py and tests/tools/test_toolkit_resolver.py, which no other Wave 1 task touches; runs concurrently with TASK-3976. Rule 5 reads `getattr(cls, 'tenant_bound', False)` so it needs nothing from TASK-3976.",
       "assigned_to": null,
       "started_at": "2026-10-01T02:46:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3975-toolkit-resolver.md"
+      "completed_at": "2026-10-01T02:46:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3975-toolkit-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3976",
