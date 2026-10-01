@@ -10,7 +10,7 @@ tags: [planogram, compliance, rules, migration]
 **Feature ID**: FEAT-624
 **Date**: 2026-10-01
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-pipelines 1.2.0
 
 ---
