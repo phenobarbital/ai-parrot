@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, AsyncIterator, Sequence
+from uuid import UUID
 
 from asyncpg.exceptions import UniqueViolationError
 
@@ -15,6 +17,7 @@ from .models import (
     StudioAgentHead,
     StudioAgentRecord,
     StudioAgentSnapshot,
+    StudioAssetInput,
     StudioAssetRecord,
     StudioNameConflict,
     StudioNotFound,
@@ -266,3 +269,165 @@ class StudioAgentRepository:
         row = await _fetch_one(conn, _SNAPSHOT_SQL + " WHERE a.agent_id = $1", head.agent_id)
         await _fetch_one(conn, f"DELETE FROM {_A} WHERE agent_id = $1 RETURNING agent_id", head.agent_id)
         return _snapshot(row)
+
+
+async def _write(conn: Any, sql: str, *args: Any, conflict: bool = False) -> int:
+    """Run an INSERT/UPDATE/DELETE (no RETURNING) through ``fetch_one`` so violations raise; returns row count."""
+    row = await _fetch_one(conn, f"WITH w AS ({sql} RETURNING 1) SELECT count(*) AS n FROM w", *args, conflict=conflict)
+    return int(row["n"])
+
+
+_ASSET_COLS = "kind, name, content, content_type, size, sha256, storage_uri, updated_at"
+_ASSET_COLS_NO_CONTENT = "kind, name, NULL::text AS content, content_type, size, sha256, storage_uri, updated_at"
+_ASSET_COLS_J = ", ".join(
+    f"c.{c}" for c in ("kind", "name", "content", "content_type", "size", "sha256", "storage_uri", "updated_at")
+)
+_ASSET_COLS_J_NO_CONTENT = _ASSET_COLS_J.replace("c.content,", "NULL::text AS content,")
+_AS = f"{NAVIGATOR_SCHEMA}.ai_agent_assets"
+_TOOLING_COLS = "kind, slug, position, config, secret_refs, vault_owner, updated_at"
+_TOOLING_COLS_J = ", ".join(
+    f"c.{c}" for c in ("kind", "slug", "position", "config", "secret_refs", "vault_owner", "updated_at")
+)
+_TS = f"{NAVIGATOR_SCHEMA}.ai_agent_tooling"
+
+
+def _asset_row(agent_id: UUID, row: Any) -> StudioAssetRecord:
+    return StudioAssetRecord(
+        agent_id=agent_id,
+        kind=row["kind"],
+        name=row["name"],
+        content=row["content"],
+        content_type=row["content_type"],
+        size=row["size"],
+        sha256=row["sha256"],
+        storage_uri=row["storage_uri"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _tooling_row(agent_id: UUID, row: Any) -> StudioToolingRecord:
+    return StudioToolingRecord(
+        agent_id=agent_id,
+        kind=row["kind"],
+        slug=row["slug"],
+        position=row["position"],
+        config=_json(row["config"]),
+        secret_refs=_json(row["secret_refs"]),
+        vault_owner=row["vault_owner"],
+        updated_at=row["updated_at"],
+    )
+
+
+class StudioAssetRepository:
+    """Assets of an agent. Partitioned reads join ``ai_agents``; writes take an ``agent_id`` from ``lock()``."""
+
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
+
+    async def list(self, part: StudioPartition, agent_name: str, kind: str | None = None) -> list[StudioAssetRecord]:
+        """Assets of the agent (content omitted: ``content=None``), ordered by (kind, name)."""
+        sql = (
+            f"SELECT a.agent_id, {_ASSET_COLS_J_NO_CONTENT} FROM {_AS} c "
+            f"JOIN {_A} a ON a.agent_id = c.agent_id WHERE a.tenant IS NOT DISTINCT FROM $1 AND a.name = $2"
+        )
+        args: list[Any] = [part.tenant, agent_name]
+        if kind is not None:
+            sql += " AND c.kind = $3"
+            args.append(kind)
+        async with self.pool.acquire() as conn:
+            rows = await _fetch_all(conn, sql + " ORDER BY c.kind, c.name", *args)
+        return [_asset_row(r["agent_id"], r) for r in rows]
+
+    async def get(self, part: StudioPartition, agent_name: str, kind: str, name: str) -> StudioAssetRecord | None:
+        """One asset including its content, or None."""
+        sql = (
+            f"SELECT a.agent_id, {_ASSET_COLS_J} FROM {_AS} c JOIN {_A} a ON a.agent_id = c.agent_id "
+            "WHERE a.tenant IS NOT DISTINCT FROM $1 AND a.name = $2 AND c.kind = $3 AND c.name = $4"
+        )
+        async with self.pool.acquire() as conn:
+            row = await _fetch_one(conn, sql, part.tenant, agent_name, kind, name)
+        return _asset_row(row["agent_id"], row) if row else None
+
+    async def total_size(self, conn: Any, agent_id: UUID) -> int:
+        """Sum of the agent's asset sizes (call under the agent lock: quota)."""
+        row = await _fetch_one(
+            conn, f"SELECT COALESCE(SUM(size), 0)::bigint AS n FROM {_AS} WHERE agent_id = $1", agent_id
+        )
+        return int(row["n"])
+
+    async def put(self, conn: Any, agent_id: UUID, asset: StudioAssetInput, *, sha256: str) -> StudioAssetRecord:
+        """Upsert one asset; ``size`` is computed in SQL so it always matches the CHECK."""
+        sql = (
+            f"INSERT INTO {_AS} (agent_id, kind, name, content, content_type, size, sha256) "
+            "VALUES ($1, $2, $3, $4, $5, octet_length($4), $6) "
+            "ON CONFLICT (agent_id, kind, name) DO UPDATE SET content = EXCLUDED.content, "
+            "content_type = EXCLUDED.content_type, size = EXCLUDED.size, sha256 = EXCLUDED.sha256, "
+            f"updated_at = now() RETURNING {_ASSET_COLS}"
+        )
+        row = await _fetch_one(conn, sql, agent_id, asset.kind, asset.name, asset.content, asset.content_type, sha256)
+        return _asset_row(agent_id, row)
+
+    async def delete(self, conn: Any, agent_id: UUID, kind: str, name: str) -> bool:
+        """Delete one asset; True when it existed."""
+        sql = f"DELETE FROM {_AS} WHERE agent_id = $1 AND kind = $2 AND name = $3"
+        return await _write(conn, sql, agent_id, kind, name) > 0
+
+    async def replace_all(self, conn: Any, agent_id: UUID, assets: Sequence[StudioAssetInput]) -> None:
+        """Replace every asset of the agent with exactly ``assets`` (atomic within the caller's transaction)."""
+        await _write(conn, f"DELETE FROM {_AS} WHERE agent_id = $1", agent_id)
+        for asset in assets:
+            digest = hashlib.sha256(asset.content.encode("utf-8")).hexdigest()
+            await self.put(conn, agent_id, asset, sha256=digest)
+
+
+class StudioToolingRepository:
+    """Tooling (toolkits and MCP servers) of an agent."""
+
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
+
+    async def list(self, part: StudioPartition, agent_name: str) -> list[StudioToolingRecord]:
+        """Tooling rows of the agent ordered by (kind, position)."""
+        sql = (
+            f"SELECT a.agent_id, {_TOOLING_COLS_J} FROM {_TS} c JOIN {_A} a ON a.agent_id = c.agent_id "
+            "WHERE a.tenant IS NOT DISTINCT FROM $1 AND a.name = $2 ORDER BY c.kind, c.position, c.slug"
+        )
+        async with self.pool.acquire() as conn:
+            rows = await _fetch_all(conn, sql, part.tenant, agent_name)
+        return [_tooling_row(r["agent_id"], r) for r in rows]
+
+    async def list_locked(self, conn: Any, agent_id: UUID) -> list[StudioToolingRecord]:
+        """Tooling rows read inside the caller's transaction, locked in (kind, slug) order."""
+        sql = f"SELECT {_TOOLING_COLS} FROM {_TS} WHERE agent_id = $1 ORDER BY kind, slug FOR UPDATE"
+        rows = await _fetch_all(conn, sql, agent_id)
+        found = [_tooling_row(agent_id, r) for r in rows]
+        return sorted(found, key=lambda r: (r.kind, r.position, r.slug))
+
+    async def replace(
+        self,
+        conn: Any,
+        agent_id: UUID,
+        *,
+        toolkits: Sequence[StudioToolingRecord],
+        mcp_servers: Sequence[StudioToolingRecord],
+    ) -> None:
+        """Replace every tooling row with exactly the given ones; ``position`` is the list index."""
+        await _write(conn, f"DELETE FROM {_TS} WHERE agent_id = $1", agent_id)
+        sql = (
+            f"INSERT INTO {_TS} (agent_id, kind, slug, position, config, secret_refs, vault_owner) "
+            "VALUES ($1, $2, $3, $4, $5::text::jsonb, $6::text::jsonb, $7)"
+        )
+        for kind, records in (("toolkit", toolkits), ("mcp", mcp_servers)):
+            for position, rec in enumerate(records):
+                await _write(
+                    conn,
+                    sql,
+                    agent_id,
+                    kind,
+                    rec.slug,
+                    position,
+                    json.dumps(rec.config),
+                    json.dumps(rec.secret_refs),
+                    rec.vault_owner,
+                    conflict=True,
+                )
