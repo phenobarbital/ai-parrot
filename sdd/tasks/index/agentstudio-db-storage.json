@@ -707,7 +707,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -718,9 +718,10 @@
       "parallelism_notes": "exclusive: rewrites the shared MANIFEST.json after TASK-3953 (0007 entry, same file); edits handlers/toolkit_persistence.py after TASK-3927 (purge_agent, same file)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3954-p2-toolkit-overrides-postgres.md",
-      "phase": "P2"
+      "completed_at": "2026-10-02T06:09:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3954-p2-toolkit-overrides-postgres.md",
+      "phase": "P2",
+      "verification": "verified"
     },
     {
       "id": "TASK-3955",

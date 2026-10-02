@@ -184,10 +184,8 @@ class ToolkitConfigService:   # :28 — save :31, load :37, remove :53, revision
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 445c73a2a. Migration 0008, PgToolkitOverrideStore, TOOLKIT_OVERRIDES_STORE dispatch, registration in ensure_studio_storage; 5 new tests; 7 mutations RED. Also edited backend.py (registration, same place as vault) and test_vault_store.py (removed phase-2 version monkeypatch, now truthful). Stores are process-global and never unregistered; flipping switches without TASK-3955 copy leaves existing data invisible.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
