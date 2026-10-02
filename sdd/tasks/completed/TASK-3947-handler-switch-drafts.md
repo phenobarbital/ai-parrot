@@ -193,10 +193,8 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):   # :270 â
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 2619c594c. Database-mode drafts POST(bundle)/GET/activate; 10 new tests on real PG; 7 mutations RED. GAPS: DELETE /drafts/{name} has no database-mode path (not listed in task; StudioDraftService.delete exists) so DB drafts cannot be deleted over HTTP; drafts.py is 595 lines (>500 budget); _legacy_post complexity 21 is the verbatim legacy body.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
