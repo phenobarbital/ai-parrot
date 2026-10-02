@@ -174,11 +174,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Four end-to-end regressions crossing the real join (resolver → Studio test chat → the agent's own `tool_manager` inside the
+handler's `bot.session` → a tenant-bound host toolkit whose `whoami` reads the scope the SERVER bound): the caller's tenant/id and the
+agent's owner/visibility reach the tool; six concurrent `bot.session`s on one shared agent never cross (gate event forces every
+session to be open before any tool runs); agent tenant A vs caller tenant B ⇒ `tool_scope_unavailable` / `tenant_mismatch` with zero
+executions; no session at all (scheduler shape) ⇒ `no_context`. The server host probe's tenant-bound toolkit now declares
+`server_managed_params` tenant/caller/agent and its `whoami` returns them. No production code changed.
+Mutations RED (restored): scope cached on the tool instance ⇒ concurrent test; `studio_scope` binding at test/ask removed ⇒ join
+test; the agent-tenant mismatch rule removed ⇒ mismatch test. Gate-off mutation stays GREEN here on purpose: this toolkit declares
+scope-sourced params, so the per-call injection refuses as a second line of defence; the gate itself is mutation-tested in core
+`test_scope_enforcement.py` (standalone tenant-bound tool with NO scope params).
+The runtime's `configure()` is replaced offline (as in the other Studio tests), so the toolkit is registered on the agent's
+`tool_manager` inside the ask seam.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: file as listed; none otherwise.

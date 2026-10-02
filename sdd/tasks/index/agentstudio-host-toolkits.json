@@ -401,7 +401,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 4,
@@ -412,8 +412,9 @@
       "parallelism_notes": "Depends on TASK-3991: drives the bindings it installs (chat/execute/options) and FEAT-605's test-chat binding it asserts. Test-only; creates one new test file.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3992-scope-join-regressions.md"
+      "completed_at": "2026-10-02T15:49:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3992-scope-join-regressions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3993",
