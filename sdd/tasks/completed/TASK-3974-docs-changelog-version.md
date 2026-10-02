@@ -242,10 +242,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+`docs/agent_studio_api.md` reconciled with the code (status block, tenant-None answers, `not_manageable`, `groups_not_allowed` without the "open question",
+plain-host behaviour now final, `version` in toolkit/MCP write responses, cross-links to the FEAT-621/622 guides, release-gate statement kept — AC30).
+CHANGELOG: FEAT-605 under `## [Unreleased]` (Added / Changed incl. every plain-host change). Contract-doc test extended (specs identical, X14 codes, schema 8, CHANGELOG).
+Owner decisions (C1-C4): C1 `not_manageable` 403 on every Studio route (TASK-3972 commit); C2 `ToolkitPersistResponse.version` (additive, Studio agents only, a legacy agent's body is
+unchanged; the value comes from the service's own return of the committed version) — own commit; C3 `groups_not_allowed` + `not_manageable` added to X14 in the three byte-identical
+"Cross-spec contract (package)" sections (verified identical by a test), X1 now says required versions 1..8 for the `database` backend, storage spec wording/skeleton/manifest
+example fixed (`STUDIO_SCHEMA_REQUIRED = 8`, no `_PHASE2` constant — the code has none), doc 'open question' removed.
+**C4 — VERSION BUMP NOT DONE (owner decision):** `parrot/version.py` and `parrot/server/version.py` are UNTOUCHED; the changes sit under `Unreleased`. Jesus chooses the number at release.
+FLAG: the spec host-mode row says "resolver + tenant None: addressed routes 404"; the code answers 422 `tenant_required` on every addressed route (identical for existing/absent names);
+the doc states the code's behaviour; the matrix test asserts it.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (tramo C)
+**Date**: 2026-10-02
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: version files not bumped (C4); touched toolkit_config.py / models.py / tooling_store.py / three specs (owner requirements C2, C3).

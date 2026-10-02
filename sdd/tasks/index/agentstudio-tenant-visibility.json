@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-01T02:22:26+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-02T16:47:49+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "notes": "Decomposed 2026-09-30 from spec v0.2.1 (reconciled). Ids TASK-3956..TASK-3974 reserved with reserve_ids.py (2026-09-30). Spec wave labels are kept in each title and in `wave_label`. `early_subset: true` marks the spec's early subset (W0.1-W0.3, W1.1-W1.5), which has no dependency on FEAT-621/FEAT-622. Cross-feature ordering (package X16) is written in each task's Implementation Notes, never in depends_on.",
@@ -439,7 +439,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -449,9 +449,10 @@
       "parallelism_notes": "Final pass after the matrix (TASK-3973); edits docs/agent_studio_api.md and test_feat605_contract_doc.py after TASK-3958/10 (same files, transitive via TASK-3973 → TASK-3965 → TASK-3958).",
       "assigned_to": null,
       "started_at": "2026-10-02T16:37:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3974-docs-changelog-version.md",
-      "wave_label": "W4.3"
+      "completed_at": "2026-10-02T16:47:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3974-docs-changelog-version.md",
+      "wave_label": "W4.3",
+      "verification": "verified"
     }
   ]
 }
