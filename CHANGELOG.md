@@ -37,8 +37,72 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `not_manageable` (it was `forbidden`).
 - **Agent Studio storage:** with the `database` backend the required migration level is 8 (phase 2 is part of
   the release); `parrot-studio-migrate --verify` checks versions 1-8.
+
+---
+
+## [1.1.0] — 2026-10-02 — Agent Studio multi-tenant storage, linked-dashboard derived sources, planogram fact tags
+
+Eleven core-line distributions move to `1.1.0` (`ai-parrot-pipelines` to `1.2.0`).
+The seventeen satellites move to `0.3.0` and are re-pinned to `ai-parrot>=1.1.0`.
+
+### Added
+
+- **FEAT-621: Agent Studio database storage.** Studio agents, drafts, assets,
+  tooling and the skill catalog can live in a database instead of the
+  filesystem: partitioned repositories (`StudioAgentRepository`,
+  `StudioDraftRepository`, `StudioAssetRepository`, `StudioToolingRepository`,
+  `StudioSkillCatalogRepository`) behind a `StudioRepositories` container,
+  `studio_transaction` primitives, migrations `0001`–`0005` with a checksummed
+  manifest and the `parrot-studio-migrate` CLI, backend selection through
+  `ensure_studio_storage`, and an `InMemoryStudioRepositories` fake for
+  DB-free tests.
+- **FEAT-605: Agent Studio tenant visibility.** A request-scope seam, host
+  mount hooks, a Studio base scope, scope-only route gates and a capabilities
+  endpoint `GET /me`; the API contract is documented first.
+- **FEAT-622: Agent Studio host toolkits.** `ToolkitResolver`, a tool-scope
+  contract and a tenant tooling policy enforced by a build hook that runs the
+  policy and secret checks before hydration (`precheck_toolkit` /
+  `precheck_mcp`); unknown tool shapes are refused.
+- **Linked dashboards: dashboard-owned data sources and derived views.**
+  `parrot_data_sources` gains a second source kind, `derived`
+  (`{"kind": "derived", "from": "<sibling>", "transform": {"ops": […]}}`): a
+  view computed from a sibling source's full frame with the transform DSL,
+  never fetched, snapshotted like any source and recomputed whenever its
+  parent runs. The Python executor, `LinkedSurfaceService`, surface
+  validation, the admin UI lane and the example lane all understand it, and
+  every `query_slug` source is now fetched once per pass however many widgets
+  bind it. `qs_build_linked_dashboard` takes a `sources` map owned by the
+  dashboard; each widget declares one data origin — `source` (direct binding,
+  or a derived view with `transform`), `slug` (its own source, the previous
+  shape) or `data` (inline rows). The Polestar example loads with 4
+  QuerySource calls instead of 8. Contract: regenerated `LinkedSources`
+  schema/TS types, `envelopes/linked_dashboard_derived.json` and
+  `parity/derived_dashboard.json`. Definition-only linked surfaces render
+  from a one-row probe; a finance linked-dashboard example ships alongside.
+- **FEAT-623: infographic / A2UI display hints.** Model display hints lowered
+  losslessly by the adapter, typed table columns from dtypes, `format_cell`
+  parity with `formatA2UIValue`, and admin-UI chart axis mapping with a dual
+  value axis.
+- **FEAT-624: planogram fact-tag rule.** Fact and price tags become a
+  first-class compliance rule.
+- **Planogram detection and registration.** Fixture ROI before LLM detection
+  with native `box_2d` boxes; ROI components as observed zones
+  (`roi_zone_labels`) and ROI unit boxes that split stacked detections and
+  recover misses; free-order and tiered shelves; shape-is-slot fixtures keep
+  one row per shelf and fill empty columns; identity resolved by contained
+  name and matched reference; zone-crop phrases count as text evidence.
+- **Teams notifications:** a card can play a podcast it does not host.
+
+### Changed
+
 - **Agent Studio drafts (FEAT-605, plain hosts too):** `POST /astudio/drafts/{name}/activate` now answers
   `409 name_taken` instead of `409 name_collision` / `409 not_owner`; the body never discloses the owner.
+- **A2UI:** single query slugs and linked surfaces fetch from
+  `/api/v2/services/queries` instead of MultiQS.
+- **FEAT-620: test-scope impact.** `source_fanin` counts direct importers
+  (threshold 30) and `CORE_PATHS` is re-derived from them (724 → 29 entries),
+  so merge-tier selection stops escalating whole package suites.
+- Dependencies: `onnxruntime>=1.30.0`; `coverage` 7.16.2 (dev).
 
 ### Fixed
 
@@ -46,6 +110,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `409 name_taken` before anything is written (superusers and the owner are unaffected).
 - **Agent Studio D3:** draft activation with `replace=true` over an agent without an owner, or owned by someone
   else, is refused (`409 name_taken`) unless the caller is a superuser.
+- **Agent Studio storage:** draft-ownership lookup errors fail closed; tooling
+  references key their sessions consistently; orphan deletes, atomic purge,
+  commit rollback and a `503` when storage is unavailable.
+- **Tooling policy** honours the global opt-in and requires host-toolkit
+  prefixes; a malformed dotted path resolves as unavailable.
+- **A2UI linked lane:** deadlock, stale derived joins, ignored params and
+  cycle-check findings fixed.
+- **Planogram:** surplus identities, foreign strays and mangled reference
+  labels; references never rename a product read as something else; oversized
+  fixture ROIs cut back; no synthesized bottom row once every shelf is
+  anchored; `reference_id` dropped without references; truncated responses
+  retried; converter no longer loses rules.
+- **Teams notifications:** no more `Action.OpenUrl` with a placeholder URL.
 
 ---
 

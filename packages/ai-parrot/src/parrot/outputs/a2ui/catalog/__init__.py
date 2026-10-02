@@ -559,7 +559,15 @@ def _validate_filter_params(
                 )
                 continue
             source = sources[source_key]
-            if name in source.locked:
+            if getattr(source, "kind", "query_slug") == "derived":
+                issues.append(
+                    {
+                        "code": FILTER_PARAM_UNDECLARED,
+                        "path": path,
+                        "message": f"FilterBar param {name!r} targets derived source {source_key!r}, which takes no params.",
+                    }
+                )
+            elif name in source.locked:
                 issues.append(
                     {
                         "code": FILTER_PARAM_UNDECLARED,
@@ -601,7 +609,7 @@ def _validate_linked_sources(
     from pydantic import ValidationError
 
     from parrot.outputs.a2ui.linked.conditions import derive_conditions
-    from parrot.outputs.a2ui.linked.models import LinkedSources
+    from parrot.outputs.a2ui.linked.models import DerivedDataSource, LinkedSources
 
     try:
         sources = LinkedSources.model_validate(raw).root
@@ -635,15 +643,34 @@ def _validate_linked_sources(
                     "message": f"Source target root {target_root!r} is not present in dataModel or a component binding.",
                 }
             )
-        missing_locked = [name for name in source.locked if name not in source.params]
-        if missing_locked:
-            issues.append(
-                {
-                    "code": DATA_SOURCE_INVALID,
-                    "path": path,
-                    "message": f"Locked parameter names are not declared in params: {missing_locked}.",
-                }
-            )
+        if isinstance(source, DerivedDataSource):
+            parent = sources.get(source.from_)
+            if parent is None or source.from_ == key:
+                issues.append(
+                    {
+                        "code": DATA_SOURCE_INVALID,
+                        "path": path,
+                        "message": f"Derived source names an invalid parent key: {source.from_!r}.",
+                    }
+                )
+            elif parent.transform is not None and parent.transform.ref is not None:
+                issues.append(
+                    {
+                        "code": DATA_SOURCE_INVALID,
+                        "path": path,
+                        "message": f"Derived source parent {source.from_!r} uses a renderer-side transform ref.",
+                    }
+                )
+        else:
+            missing_locked = [name for name in source.locked if name not in source.params]
+            if missing_locked:
+                issues.append(
+                    {
+                        "code": DATA_SOURCE_INVALID,
+                        "path": path,
+                        "message": f"Locked parameter names are not declared in params: {missing_locked}.",
+                    }
+                )
         if source.transform is not None and source.transform.ops is not None:
             for operation in source.transform.ops:
                 if operation.op == "join":
@@ -661,6 +688,8 @@ def _validate_linked_sources(
                             "message": f"Source transform names invalid sibling keys: {unknown_keys}.",
                         }
                     )
+        if isinstance(source, DerivedDataSource):
+            continue  # no request/conditions/ref on a derived source (its model already enforces ops-only)
         locked = {name: source.conditions.get(name) for name in source.locked}
         if source.conditions != derive_conditions(source.request, locked=locked):
             issues.append(
@@ -683,6 +712,31 @@ def _validate_linked_sources(
                         "message": f"Transform reference {source.transform.ref.name!r} is not in the manifest.",
                     }
                 )
+    # Dependency cycles (derived `from`, join.with, union.sources) can never execute on any lane: report every
+    # member once. Missing/self references are already reported above (and taint their transitive dependents), so
+    # only the remaining structurally-failed keys are cycle members.
+    from parrot.outputs.a2ui.linked.executor import dependencies_of, execution_order
+
+    _, failed = execution_order(sources)
+    tainted = {
+        key for key in sources if any(ref not in sources or ref == key for ref in dependencies_of(sources[key]))
+    }
+    changed = True
+    while changed:
+        changed = False
+        for key in sources:
+            if key not in tainted and any(ref in tainted for ref in dependencies_of(sources[key])):
+                tainted.add(key)
+                changed = True
+    for key in failed:
+        if key not in tainted:
+            issues.append(
+                {
+                    "code": DATA_SOURCE_INVALID,
+                    "path": f"{_DATA_SOURCES_KEY}.{key}",
+                    "message": f"Source {key!r} is part of a dependency cycle (or depends on one).",
+                }
+            )
     _validate_filter_params(envelope, sources, issues)
 
 

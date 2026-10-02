@@ -7,6 +7,7 @@
  */
 import type { CreateSurface } from '../a2ui-types';
 import type {
+  DerivedDataSource,
   LinkedDataSource,
   LinkedSources,
   Ops,
@@ -18,6 +19,7 @@ import type {
 } from '$lib/types/generated/LinkedSources';
 
 export type {
+  DerivedDataSource,
   LinkedDataSource,
   LinkedSources,
   ParamSpec,
@@ -27,6 +29,9 @@ export type {
   TransformSpec,
 };
 
+/** One entry of `parrot_data_sources`: a fetched query-slug source or a derived view of a sibling. */
+export type LinkedSource = LinkedSources[string];
+
 /** One transform operation emitted by the generated schema. */
 export type TransformOp = NonNullable<Ops>[number];
 
@@ -35,6 +40,19 @@ export type Row = Record<string, unknown>;
 
 /** Extension key carrying the descriptor (spec G2). */
 export const DATA_SOURCES_EXTENSION = 'parrot_data_sources';
+
+/**
+ * Narrow a source to the fetched kind. A descriptor written before the `derived` kind existed carries no
+ * `kind` at all — it is a query-slug source (TS twin of `LinkedSources._default_kind`).
+ */
+export function isQuerySlug(src: LinkedSource): src is LinkedDataSource {
+  return (src.kind ?? 'query_slug') === 'query_slug';
+}
+
+/** Narrow a source to a derived view (computed from a sibling's frame; never fetched). */
+export function isDerived(src: LinkedSource): src is DerivedDataSource {
+  return src.kind === 'derived';
+}
 
 /**
  * Return the surface's `parrot_data_sources` mapping, or `null` when the surface is baked
