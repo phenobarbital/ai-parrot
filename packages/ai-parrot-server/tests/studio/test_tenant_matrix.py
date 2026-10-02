@@ -295,10 +295,13 @@ async def test_resolver_tenant_none(aiohttp_client, pool):  # noqa: F811
     assert (await create_in(client, None, "agents", "seed", who("u1"), {}))[0].status == 201
     resp = await client.get(f"{PLAIN}/agents", headers=who("u1", None))
     assert resp.status == 200 and (await resp.json())["agents"] == []
-    seen = await client.get(f"{PLAIN}/agents/seed", headers=who("u1", None))     # exists, but in a tenant
-    ghost = await client.get(f"{PLAIN}/agents/ghost", headers=who("u1", None))
-    assert seen.status == ghost.status and seen.status in (404, 422)              # never an existence oracle
-    assert (await seen.json())["code"] == (await ghost.json())["code"]
+    for name in ("seed", "ghost"):                       # exists-in-a-tenant or absent: the SAME answer, no oracle
+        for method, path, body in (("get", f"/agents/{name}", None), ("delete", f"/agents/{name}", None),
+                                   ("get", f"/drafts/{name}", None), ("get", f"/skills/{uuid.uuid4()}", None),
+                                   ("patch", f"/agents/{name}/visibility", {"visibility": "private"})):
+            kw = {"headers": who("u1", None), **({"json": body} if body is not None else {})}
+            resp = await getattr(client, method)(f"{PLAIN}{path}", **kw)
+            assert resp.status == 422 and (await resp.json())["code"] == "tenant_required", (method, path)
     for path, body in (("/agents", {"name": "n", "bot_class": "BasicBot", "visibility": "tenant"}),
                        ("/drafts", {"name": "n", "bundle": {"name": "n", "definition": {"bot_class": "BasicBot"}},
                                     "visibility": "tenant"}),

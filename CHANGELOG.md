@@ -7,8 +7,36 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Agent Studio — tenant scope, owner-controlled visibility and host mount (FEAT-605).** Opt-in through an
+  installed `app["scope_resolver"]`; with none, Studio behaves as before. Adds `parrot.handlers.scope`
+  (`RequestScope`), `setup_studio_routes(app, prefix=…, view_wrapper=…)` (prefix may contain `{tenant}`),
+  `BotManager.setup_registry_only(app)`, `GET {prefix}/me`, per-record `visibility`
+  (`private | tenant | groups`) with `allowed_groups`, and three new routes —
+  `PATCH /astudio/agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility`. Every route
+  follows one access rule (404 for an invisible record, identical to an absent one; 403 `not_manageable` for a
+  visible record the caller cannot manage), the assistant is partitioned by (tenant, user), and tool calls from
+  `test/ask`, chat and execute carry a `studio_scope`. Contract: `docs/agent_studio_api.md`; host guides
+  `docs/agentstudio/db-storage.md` and `docs/toolkits/host-toolkits.md`.
+- New Studio error codes: `name_taken` (409), `declarative_only`, `tenant_required`, `groups_required`,
+  `groups_not_allowed` (422), `studio_disabled` (404), `tenant_mismatch`, `authoring_denied`, `not_manageable` (403),
+  `reserved_config_key` (400).
+- `PUT`/`DELETE /astudio/agents/{name}/toolkits/{slug}` and `PUT …/mcp-servers` return the agent's `version` after the
+  write when the agent is a database-backed Studio agent (additive).
+
 ### Changed
 
+- **Agent Studio, plain hosts too (FEAT-605):** duplicate names answer `409 name_taken` (no owner, source or tenant
+  in the body) on agents, drafts (save and activate) and skills — previously `duplicate` / `name_collision` /
+  `not_owner`. Every agent/draft/skill item gains additive `tenant`, `owner`, `visibility`, `allowed_groups`,
+  `access` (`"global"` without a resolver) and, on single-record reads, `can_manage`. Non-private visibility
+  without a tenant is `422 tenant_required`. Reload, files GET and tool execute keep their old, ungated behaviour
+  without a resolver.
+- **Agent Studio (FEAT-605):** the 403 for "visible but not manageable" on a database-backed Studio record is now
+  `not_manageable` (it was `forbidden`).
+- **Agent Studio storage:** with the `database` backend the required migration level is 8 (phase 2 is part of
+  the release); `parrot-studio-migrate --verify` checks versions 1-8.
 - **Agent Studio drafts (FEAT-605, plain hosts too):** `POST /astudio/drafts/{name}/activate` now answers
   `409 name_taken` instead of `409 name_collision` / `409 not_owner`; the body never discloses the owner.
 

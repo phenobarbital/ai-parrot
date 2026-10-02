@@ -118,8 +118,8 @@ Every non-2xx Studio response is a `StudioError`:
 
 Common `code` values across endpoints: `invalid_json`, `invalid_request`,
 `missing_name`/`missing_id`, `invalid_name`, `not_found`, `duplicate`,
-`not_owner`, `name_taken` (409; drafts save/activate today, see the FEAT-605
-section), `unavailable` (503, dependency not configured),
+`not_owner`, `name_taken` (409; agents, drafts and skills, see the FEAT-605
+section), `not_manageable` (403, visible but not manageable), `unavailable` (503, dependency not configured),
 `server_managed` (422, missing app-context dependency),
 `invalid_params`, `validation_failed`, `read_only_definition`,
 `not_overridable`, `not_configured`, `options_failed`, `vault_unavailable`,
@@ -558,6 +558,8 @@ user id; the response and all future GETs show only `secret_refs`.
 - `reload_required: true` indicates the agent must be reloaded for the
   changes to take effect.
 - `persisted: true` confirms the configuration was stored.
+- With the database backend (a Studio agent) the body also carries `version`: the agent's version after
+  this write (additive; the same for `DELETE` and `PUT /agents/{name}/mcp-servers`). A legacy agent's body is unchanged.
 
 **Errors:** `403 read_only_definition` (registry agent outside
 `AGENTS_DIR`), `400 invalid_params` (malformed request), `422
@@ -568,7 +570,7 @@ vault_unavailable` (vault service error).
 
 Remove a toolkit configuration from an agent.
 
-**Response `200`:** `{ "agent": "...", "slug": "...", "reload_required": true, "persisted": true }`
+**Response `200`:** `{ "agent": "...", "slug": "...", "reload_required": true, "persisted": true }` (+ `version` for a Studio agent)
 
 **Errors:** `403 read_only_definition`, `404 not_found`.
 
@@ -633,7 +635,7 @@ List all MCP server configurations persisted for an agent.
 Persists MCP server configurations to the agent definition. Secrets in
 `headers` or `auth_config` are extracted and stored in the vault.
 
-**Response `200`:** `{ "agent": "...", "reload_required": true, "persisted": true }`
+**Response `200`:** `{ "agent": "...", "reload_required": true, "persisted": true }` (+ `version` for a Studio agent)
 
 **Errors:** `403 read_only_definition`, `400 invalid_json`.
 
@@ -821,10 +823,13 @@ agent's instance from its current on-disk/registry definition:
 
 ## Tenant scope & visibility (FEAT-605)
 
-> **Status of the early subset.** Only the scope-only parts (request-scope seam, mount hooks, the
-> `/me` endpoint, scope-only gates and the draft-overwrite / ownerless-takeover fixes) are in place.
-> This is **not tenant-ready**: a host that installs it keeps `studio_enabled=False` for its tenants
-> until the release gate below is met.
+> **Status.** The whole FEAT-605 contract below is implemented on the integration branch: request-scope
+> seam, mount hooks, `/me`, the access rule on every route, the three visibility PATCH routes, tenant
+> partitioning of the assistant, registry-only lifecycle and the scope plumbing for tools. A release is
+> still **not declared tenant-ready** until the release gate below is met across FEAT-605, FEAT-621 and
+> FEAT-622: a host keeps `studio_enabled=False` for its tenants until then. Companion guides:
+> [`docs/agentstudio/db-storage.md`](agentstudio/db-storage.md) (storage, migrations, runtime) and
+> [`docs/toolkits/host-toolkits.md`](toolkits/host-toolkits.md) (host toolkits, tenant tooling policy).
 
 An **opted-in host** is one where `app["scope_resolver"]` (or the legacy
 `app["ui_surfaces_scope_resolver"]`) is installed. The **tenant path** is an opted-in host. Resolver
@@ -838,7 +843,7 @@ storage spec's tables (assumption A1, §6).
 | Host state | Reads | Create | PATCH visibility | New gates (reload, files GET, tool execute) |
 |---|---|---|---|---|
 | no resolver installed | FEAT-467 unchanged (list-all, read-any) on the storage spec's GLOBAL partition (`tenant IS NULL`, always `private` by CHECK) or its filesystem backend; visibility fields reported as `access: "global"` | FEAT-467 unchanged (+ D1/D3 fixes, `name_taken` code) | 422 `tenant_required` for non-private | **not applied** (G9) |
-| resolver installed, `scope.tenant is None` (unprefixed mount, multi-programme user) | empty lists; addressed routes 404 | 422 `tenant_required` | 422 `tenant_required` | applied |
+| resolver installed, `scope.tenant is None` (unprefixed mount, multi-programme user) | empty lists; every addressed route answers 422 `tenant_required` (the same answer for an existing and an absent name — never an existence oracle) | 422 `tenant_required` | 422 `tenant_required` | applied |
 | resolver installed, prefixed mount, `match_info["tenant"] != scope.tenant` | 403 `tenant_mismatch` before any record access | same | same | same |
 
 ### Access rule
@@ -864,7 +869,7 @@ invisible and unmanageable in every opted-in host. No branch crosses tenants, no
 
 ### Route policy (relative to the mount prefix)
 
-"404" = `can_see` false (identical body to absent). "403" = visible but not `can_manage`. All rows
+"404" = `can_see` false (identical body to absent). "403" = visible but not `can_manage` (body code `not_manageable`, the same on every route). All rows
 also pass `tenant_mismatch` and `studio_disabled` first (except `/me`).
 
 behaviour without a resolver.
@@ -907,7 +912,8 @@ behaviour without a resolver.
 | `reserved_config_key` | 400 | FEAT-605 (`owner`, `created_by`, `tenant`, `visibility`, `allowed_groups` in `config`/`definition`) |
 | `tenant_required` | 422 | FEAT-605 |
 | `groups_required` | 422 | FEAT-605 |
-| `groups_not_allowed` | 422 | FEAT-605 (open question: `allowed_groups` outside the owner's groups) |
+| `groups_not_allowed` | 422 | FEAT-605 (`allowed_groups` outside the caller's own groups; a tenant admin is not bound to its groups) |
+| `not_manageable` | 403 | FEAT-605 (the record is visible to the caller but the caller may not manage it; same code on every Studio route) |
 | `tooling_not_permitted` | 422 write / 403 execute | TOOLKITS (pass-through) |
 | `confirmation_required` | 403 | TOOLKITS (pass-through) |
 | `server_managed` | 422 | TOOLKITS (pass-through) |
@@ -932,8 +938,10 @@ needs no record and no storage. Without a resolver it returns the default scope 
 {"visibility": "private | tenant | groups", "allowed_groups": ["..."]}
 ```
 
-`groups` with an empty `allowed_groups` ⇒ 422 `groups_required`; non-private without a tenant ⇒ 422
-`tenant_required`. Single-record GETs return `tenant`, `owner`, `visibility`, `allowed_groups`, `access`
+`groups` with an empty `allowed_groups` ⇒ 422 `groups_required`; `allowed_groups` outside the caller's own
+groups (unless a tenant admin) ⇒ 422 `groups_not_allowed`; non-private without a tenant ⇒ 422
+`tenant_required`; a visible non-manager ⇒ 403 `not_manageable`; an invisible record ⇒ 404. The three PATCH
+routes are mounted by `setup_studio_routes` (under the same prefix, wrapper and gates as every other route). Single-record GETs return `tenant`, `owner`, `visibility`, `allowed_groups`, `access`
 (`owner | admin | tenant | groups | global`) and `can_manage`.
 
 ### Mounting Studio in a host
@@ -966,9 +974,10 @@ built by `build_tool_scope(scope, agent=None)`. With no resolver installed nothi
 
 FEAT-467 behaviour is unchanged (list-all, read-any), the new gates (reload, files GET, tool execute) are
 not applied, visibility fields report `access: "global"`, non-private visibility is 422 `tenant_required`,
-and duplicate-name responses on the draft routes (`POST /drafts`, `POST /drafts/{name}/activate`) already use
-`name_taken` (409) instead of `name_collision` / `not_owner` (TASK-3962, TASK-3963). The agents and skills
-create routes still answer `duplicate` until TASK-3966 (agents) and TASK-3968 (skills) switch them to `name_taken`.
+and duplicate-name responses use `name_taken` (409) on agents, drafts (save and activate) and skills, instead of
+`duplicate` / `name_collision` / `not_owner`; the body never discloses owner, source or tenant. Drafts keep the
+D1 (a non-owner cannot overwrite a draft) and D3 (an ownerless agent is not taken over) refusals, and every
+item gains the additive visibility fields (`access: "global"`).
 
 ### Release gate
 
