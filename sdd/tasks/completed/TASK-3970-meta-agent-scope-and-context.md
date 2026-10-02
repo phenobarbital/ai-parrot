@@ -268,10 +268,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: `StudioAssistantHandler.post` binds `studio_scope = build_tool_scope(await self._scope())` (agent=None) in
+`agent.session(...)` for opted-in hosts only. Core `bots/studio/tools/_context.py` (duck-typed, no server import at module level):
+`_studio_caller()`, `_require_author()` (bound caller with `may_author` false ⇒ `PermissionError("authoring_denied")`, applied
+to every MUTATING tool: `save_agent_draft`, `save_agent_bundle`, `create_yaml_agent`, `write_*_file`, `publish_skill_to_catalog`),
+`_require_python_drafts()` (a tenant caller's `save_agent_draft` ⇒ `declarative_only`), `_require_tenantless_agent()` (used by
+`_require_agent_owner`: a tenant caller never reaches a registry/legacy agent — "not found"), `_can_manage_agent()` (the access rule
+under a scope, owner equality without; `_db_put_asset` uses it so a tenant admin can write an agent's assets like on the routes).
+`publish_skill_to_catalog` now stamps the REAL user (legacy path no longer writes `owner="agent_studio"`); a name collision is
+`name_taken` (`_refusal_code`: `StudioNameConflict` → `name_taken`). `list_existing_agents`: bound scope ⇒ only the Studio rows the
+caller can see in its own partition; an opted-in host with no scope ⇒ `[]` (fail closed); no resolver ⇒ the FEAT-467 registry names.
+`_studio_partition_and_services`: a tenant caller on a non-database backend is refused (`studio_storage_unavailable`) instead of
+falling to the tenant-less legacy path. Complexity: `_require_agent_owner` stays 11 (pre-existing, not grown); new checks are
+helper calls, not branches.
+Mutations RED (restored): authoring gate; `declarative_only`; list filter; opted-in no-scope guard; publish owner placeholder;
+`name_taken` code; other-tenant refusal; asset manage rule; assistant binding.
+Tests: `test_meta_agent_scope.py` (13). `test_assistant_tools_db_mode.py`: `duplicate` → `name_taken`.
+Server suite vs baseline-package: 0 new.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: tools modules are the `bots/studio/tools/` package (not `tools.py`). The LEGACY (non-database) path of
+`publish_skill_to_catalog` could not be exercised: it builds a handler with `object.__new__` and assigns `helper.request`, which is a
+read-only property in the installed navigator `BaseView` (pre-existing defect, untouched; to be filed in the ledger — shared ledger
+is read-only in this sandbox). `create_yaml_agent`'s tenant path writes the agents store (already so since FEAT-621 W3).
