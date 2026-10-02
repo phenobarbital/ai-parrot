@@ -62,12 +62,17 @@ export type Op9 = "union";
 export type Sources = [string, ...string[]];
 export type Integrity = string;
 export type Name1 = string;
+export type From = string;
+export type Kind1 = "derived";
+export type SnapshotAt1 = string | null;
+export type SnapshotTruncated1 = boolean;
+export type Target1 = string;
 
 /**
  * Value of ``metadata.extensions['parrot_data_sources']`` keyed by data-model root.
  */
 export interface LinkedSources {
-  [k: string]: LinkedDataSource;
+  [k: string]: LinkedDataSource | DerivedDataSource;
 }
 /**
  * One data source of a linked surface (spec §2 Data Models).
@@ -216,4 +221,20 @@ export interface Union_ {
 export interface TransformRef {
   integrity: Integrity;
   name: Name1;
+}
+/**
+ * A dashboard-owned view computed from a sibling source's frame — never fetched (linked dashboards).
+ *
+ * The base frame is the *full* fetched (and transformed) frame of ``from`` (bounded by ``max_fetch_rows``),
+ * not its ≤500-row snapshot; the derived rows are snapshotted like any other source so bake/HTML lanes see
+ * the computed view. Only inline ``transform.ops`` are allowed: a renderer-side ``ref`` cannot run in the
+ * Python executor, which would break Python ↔ renderer parity.
+ */
+export interface DerivedDataSource {
+  from: From;
+  kind: Kind1;
+  snapshot_at?: SnapshotAt1;
+  snapshot_truncated?: SnapshotTruncated1;
+  target: Target1;
+  transform: TransformSpec;
 }

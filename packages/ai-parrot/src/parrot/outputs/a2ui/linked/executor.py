@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Mapping
 from pydantic import BaseModel, Field
 
 from parrot.outputs.a2ui.linked.conditions import derive_conditions
-from parrot.outputs.a2ui.linked.models import Join, LinkedDataSource, Union_
+from parrot.outputs.a2ui.linked.models import DerivedDataSource, Join, LinkedDataSource, LinkedSource, Union_
 
 if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
@@ -94,18 +94,27 @@ def map_query_error(exc: BaseException) -> tuple[int, str]:
     return 502, "data_stage"
 
 
-def _execution_order(sources: Mapping[str, LinkedDataSource]) -> tuple[list[str], dict[str, str]]:
-    """Topological order (join.with / union.sources first). Returns (order, failed{key: code})."""
-    deps: dict[str, list[str]] = {}
-    for key, src in sources.items():
-        refs: list[str] = []
-        if src.transform is not None and src.transform.ops:
-            for op in src.transform.ops:
-                if isinstance(op, Join):
-                    refs.append(op.with_)
-                elif isinstance(op, Union_):
-                    refs.extend(op.sources)
-        deps[key] = refs
+def dependencies_of(src: LinkedSource) -> list[str]:
+    """Sibling keys ``src`` needs before it can run: ``from`` (derived) plus ``join.with`` / ``union.sources``."""
+    refs: list[str] = []
+    if isinstance(src, DerivedDataSource):
+        refs.append(src.from_)
+    if src.transform is not None and src.transform.ops:
+        for op in src.transform.ops:
+            if isinstance(op, Join):
+                refs.append(op.with_)
+            elif isinstance(op, Union_):
+                refs.extend(op.sources)
+    return refs
+
+
+def execution_order(sources: Mapping[str, LinkedSource]) -> tuple[list[str], dict[str, str]]:
+    """Topological order (dependencies first). Returns (order, failed{key: code}).
+
+    ``failed`` holds every key that can never run: a missing sibling reference, a (transitive) dependency on a
+    failed key, or membership in a dependency cycle — each mapped to the stable ``data_stage`` code.
+    """
+    deps: dict[str, list[str]] = {key: dependencies_of(src) for key, src in sources.items()}
 
     failed: dict[str, str] = {}
     for key, refs in deps.items():
@@ -150,6 +159,9 @@ def _execution_order(sources: Mapping[str, LinkedDataSource]) -> tuple[list[str]
     return order, failed
 
 
+_execution_order = execution_order  # backward-compatible private alias (tests / TS twin docs reference it)
+
+
 def _conditions_for(
     src: LinkedDataSource, overrides: Mapping[str, Any], *, max_fetch_rows: int
 ) -> tuple[dict[str, Any], list[str]]:
@@ -177,8 +189,73 @@ def _conditions_for(
     return conditions, ignored
 
 
+async def _run_source(
+    key: str,
+    src: LinkedSource,
+    overrides: Mapping[str, Any],
+    frames: Mapping[str, "pd.DataFrame"],
+    *,
+    sources: Mapping[str, LinkedSource],
+    principal: Any,
+    pctx: "PermissionContext | None",
+    guard: Any | None,
+    max_fetch_rows: int,
+) -> "pd.DataFrame":
+    """Produce ``key``'s frame: fetch + transform (query_slug) or transform the parent's frame (derived).
+
+    ``overrides`` are the already-derived QuerySource conditions for a query_slug source (see
+    :func:`_conditions_for`) and are unused for a derived one.
+    """
+    from parrot.outputs.a2ui.linked.dsl import apply_transform
+
+    if isinstance(src, DerivedDataSource):
+        # Its base is the parent's FULL fetched frame (bounded by max_fetch_rows), never the parent's ≤500-row snapshot.
+        base = frames[src.from_]
+        parent = sources.get(src.from_)
+        if isinstance(parent, LinkedDataSource):
+            cap = min(parent.request.limit or max_fetch_rows, max_fetch_rows)
+            if len(base) >= cap:
+                logger.warning(
+                    "derived source %r aggregates a parent (%r) frame that hit its fetch cap (%d rows): the result "
+                    "may be partial — aggregate in the parent's request instead",
+                    key,
+                    src.from_,
+                    cap,
+                )
+        return await asyncio.to_thread(apply_transform, base, src.transform, frames=dict(frames))
+
+    from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource
+    from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+
+    conditions = overrides
+    inner = QuerySlugSource(
+        src.slug,
+        prefetch_schema_enabled=False,
+        tenant=src.tenant,
+        is_multiquery=src.is_multiquery,
+        multi_output=src.multi_output,
+        principal=principal,
+    )
+    source = AuthorizingDataSource(inner, guard, pctx_provider=lambda: pctx) if guard is not None else inner
+    # Deep copy: conditions share nested filter dicts with src.request, and a data source may mutate
+    # them (querysource's parsers popitem()'d operator dicts), which emptied the envelope's filter.
+    frame = await source.fetch(**copy.deepcopy(conditions))
+    if src.transform is not None and src.transform.ref is not None:
+        logger.warning("linked source %r: ref transform %s skipped in Python", key, src.transform.ref.name)
+    elif src.transform is not None:
+        frame = await asyncio.to_thread(apply_transform, frame, src.transform, frames=dict(frames))
+    return frame
+
+
+def _describe(src: LinkedSource) -> str:
+    """Short log label for a source: ``slug (tenant=…)`` or ``derived from <key>``."""
+    if isinstance(src, DerivedDataSource):
+        return f"derived from {src.from_!r}"
+    return f"{src.slug}, tenant={src.tenant}"
+
+
 async def execute_sources(
-    sources: Mapping[str, LinkedDataSource],
+    sources: Mapping[str, LinkedSource],
     *,
     param_overrides: Mapping[str, Mapping[str, Any]] | None = None,
     pctx: "PermissionContext | None" = None,
@@ -186,38 +263,49 @@ async def execute_sources(
     max_snapshot_rows: int | None = None,
     max_fetch_rows: int = 5000,
 ) -> ExecutionOutcome:
-    """Fetch + transform every source (siblings first); per-source failure isolation (spec §3 M5)."""
-    from parrot.outputs.a2ui.linked.dsl import apply_transform, frame_to_records
-    from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource
-    from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource, to_qs_principal
+    """Fetch + transform every source (dependencies first); per-source failure isolation (spec §3 M5).
+
+    A ``derived`` source is never fetched: it is computed from its parent's frame once the parent has run, and a
+    parent failure propagates to it through :func:`execution_order` (``data_stage``).
+    """
+    from parrot.outputs.a2ui.linked.dsl import frame_to_records
+    from parrot.tools.dataset_manager.sources.query_slug import to_qs_principal
 
     principal = to_qs_principal(pctx, channel="ui_surfaces") if pctx is not None else None  # mapped ONCE
-    order, failed = _execution_order(sources)
+    order, failed = execution_order(sources)
     frames: dict[str, "pd.DataFrame"] = {}
     outcomes: dict[str, SourceOutcome] = {k: SourceOutcome(key=k, error=code) for k, code in failed.items()}
     for key in order:
         src = sources[key]
-        conditions, ignored = _conditions_for(src, (param_overrides or {}).get(key, {}), max_fetch_rows=max_fetch_rows)
-        inner = QuerySlugSource(
-            src.slug,
-            prefetch_schema_enabled=False,
-            tenant=src.tenant,
-            is_multiquery=src.is_multiquery,
-            multi_output=src.multi_output,
-            principal=principal,
-        )
-        source = AuthorizingDataSource(inner, guard, pctx_provider=lambda: pctx) if guard is not None else inner
+        overrides = (param_overrides or {}).get(key, {})
+        if isinstance(src, DerivedDataSource):
+            # A derived view takes no params: every override is ignored (reported, never applied).
+            conditions: dict[str, Any] = {}
+            ignored = sorted(overrides)
+        else:
+            conditions, ignored = _conditions_for(src, overrides, max_fetch_rows=max_fetch_rows)
+        broken = [ref for ref in dependencies_of(src) if ref not in frames]
+        if broken:
+            # A dependency that was in `order` but failed at run time (fetch/transform error): never run this one,
+            # and carry the dependency's own error code so the caller sees the root cause (404/503, not data_stage).
+            code = next((outcomes[ref].error for ref in broken if outcomes.get(ref) and outcomes[ref].error), None)
+            outcomes[key] = SourceOutcome(key=key, error=code or "data_stage", ignored_params=ignored)
+            continue
         try:
-            # Deep copy: conditions share nested filter dicts with src.request, and a data source may mutate
-            # them (querysource's parsers popitem()'d operator dicts), which emptied the envelope's filter.
-            frame = await source.fetch(**copy.deepcopy(conditions))
-            if src.transform is not None and src.transform.ref is not None:
-                logger.warning("linked source %r: ref transform %s skipped in Python", key, src.transform.ref.name)
-            elif src.transform is not None:
-                frame = await asyncio.to_thread(apply_transform, frame, src.transform, frames=dict(frames))
+            frame = await _run_source(
+                key,
+                src,
+                conditions,
+                frames,
+                sources=sources,
+                principal=principal,
+                pctx=pctx,
+                guard=guard,
+                max_fetch_rows=max_fetch_rows,
+            )
         except Exception as exc:  # noqa: BLE001 — data errors never fail siblings
             status, code = map_query_error(exc)
-            logger.warning("linked source %r (%s, tenant=%s) failed: %s → %s", key, src.slug, src.tenant, exc, status)
+            logger.warning("linked source %r (%s) failed: %s → %s", key, _describe(src), exc, status)
             outcomes[key] = SourceOutcome(key=key, error=code, ignored_params=ignored)
             continue
         frames[key] = frame

@@ -40,3 +40,26 @@ def test_schema_uses_with_alias() -> None:
     join_properties = export_json_schema()["$defs"]["Join"]["properties"]
     assert "with" in join_properties
     assert "with_" not in join_properties
+
+
+def test_schema_uses_from_alias_and_kind_discriminator(linked_source) -> None:
+    """Derived sources expose ``from`` (never ``from_``) and the map value discriminates on ``kind``."""
+    schema = export_json_schema()
+    derived_properties = schema["$defs"]["DerivedDataSource"]["properties"]
+    assert "from" in derived_properties and "from_" not in derived_properties
+    assert schema["additionalProperties"]["discriminator"]["propertyName"] == "kind"
+
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(
+        {
+            "activity": linked_source.model_dump(mode="json", by_alias=True, exclude_none=True),
+            "view": {
+                "kind": "derived",
+                "from": "activity",
+                "transform": {"ops": [{"op": "limit", "n": 1}]},
+                "target": "/view/rows",
+            },
+        }
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        validator.validate({"view": {"kind": "derived", "from": "activity", "target": "/view/rows"}})

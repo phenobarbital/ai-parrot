@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CreateSurface } from '../a2ui-types';
 import type { LinkedSources } from '$lib/types/generated/LinkedSources';
-import { DATA_SOURCES_EXTENSION, getDataSources } from './types';
+import { DATA_SOURCES_EXTENSION, getDataSources, isDerived, isQuerySlug } from './types';
 
 const base: CreateSurface = { surfaceId: 's1', components: [{ id: 'root', component: 'Chart' }] };
 
@@ -45,5 +45,25 @@ describe('getDataSources', () => {
         metadata: { extensions: { [DATA_SOURCES_EXTENSION]: sources } },
       }),
     ).toBe(sources);
+  });
+});
+
+describe('source kinds', () => {
+  const mixed: LinkedSources = {
+    ...sources,
+    by_region: {
+      kind: 'derived',
+      from: 'sales',
+      transform: { ops: [{ op: 'group_by', by: ['region'], aggregate: { amount: 'sum' } }] },
+      target: '/by_region/rows',
+    },
+  };
+
+  it('a descriptor without kind is a query-slug source; kind=derived is a derived view', () => {
+    expect(isQuerySlug(mixed.sales)).toBe(true);
+    expect(isDerived(mixed.sales)).toBe(false);
+    expect(isQuerySlug(mixed.by_region)).toBe(false);
+    expect(isDerived(mixed.by_region)).toBe(true);
+    expect(getDataSources({ ...base, metadata: { extensions: { [DATA_SOURCES_EXTENSION]: mixed } } })).toBe(mixed);
   });
 });

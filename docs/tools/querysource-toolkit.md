@@ -66,10 +66,23 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Nine tools are al
   keys become `locked`; `@variables` are rejected), **executes the slug once** to validate the component's
   axes/columns against the real columns, and embeds ≤ 500 rows only when `snapshot=True`. Returns
   `{a2ui_envelope, artifacts}`. See [A2UI linked surfaces](../outputs/a2ui-linked-surfaces.md).
-- **`qs_build_linked_dashboard`** — (FEAT-610) Emits ONE linked A2UI dashboard: each widget
-  `{key, slug, component, request?, tenant?, section?, refresh?}` gets its own source; KPIs, charts and tables
-  are laid out in rows. KPICards name their aggregate column. Filters accept the JSONB operators `@>`, `<@`,
-  `@>|`, `->` and `->>` in the `{op: value}` filter form (querysource >= 5.1).
+- **`qs_build_linked_dashboard`** — (FEAT-610, linked dashboards) Emits ONE linked A2UI dashboard whose data
+  sources are **owned by the dashboard**. `sources` maps a key to `{slug, request?, tenant?, refresh?,
+  transform?}`; each is fetched once on load and shared by every widget that reads it. Each widget
+  `{key, component, section?}` declares exactly one data origin:
+  - `source: "<key>"` — binds the dashboard source's rows directly (six KPICards over one `kpis` query that
+    computes six aggregates: `{"source": "kpis", "component": {"component": "KPICard", "value": "total_visits"}}`);
+  - `source` + `transform: {ops: [...]}` — a **derived view** (`kind: "derived"` on the wire) computed from the
+    parent's full frame with the transform DSL, on the client and on the server, without another fetch — e.g. a
+    grid shows every row of `rows` while a pie chart groups those same rows by category;
+  - `slug` (+ `request?`, `tenant?`, `refresh?`) — the widget's own query-slug source, refreshed independently
+    (the FEAT-610 shape, still supported);
+  - `data: [...]` — inline rows (≤ 500) baked into the data model, never refreshed.
+
+  KPIs, charts and tables are laid out in rows. KPICards name their column in `value`. Filters accept the
+  JSONB operators `@>`, `<@`, `@>|`, `->` and `->>` in the `{op: value}` filter form (querysource >= 5.1).
+  Derived views aggregate what the parent fetched (bounded by the 5000-row fetch cap): when the full data set
+  is larger, put the aggregation in the parent's `request` (`fields` + `grouping`) and derive from that.
 - **`qs_save_multiquery`** *(only when `allow_write=True`)* — Persists a validated MultiQuery pipeline as a
   query-slug owned by `program` (forced to the single allowed program when this toolkit is tenant-restricted).
   Requires operator opt-in (`allow_write`) and user confirmation. Refuses to overwrite a slug owned by another
