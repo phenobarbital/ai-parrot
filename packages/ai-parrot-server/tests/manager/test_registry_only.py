@@ -41,8 +41,8 @@ def test_registry_only_hooks_once():
     mgr.setup_registry_only(app)
     mgr.setup_registry_only(app)
     got = (len(app.on_startup), len(app.on_shutdown), len(app.on_cleanup))
-    # manager lifecycle hooks + the Studio runtime pair (add_studio_runtime_hooks, once per app)
-    assert got == (base[0] + 2, base[1] + 1, base[2] + 2)
+    # manager lifecycle hooks + the Studio runtime pair and the store-registration cleanup (once per app)
+    assert got == (base[0] + 2, base[1] + 1, base[2] + 3)
 
 
 async def test_registry_only_manager_lifecycle():
