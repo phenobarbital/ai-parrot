@@ -7,8 +7,11 @@ real DocumentDB driver (``DocumentDb.read`` against a live server).
 """
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
+import os
+from datetime import datetime
 
 import pytest
 from navigator_session.vault import KeyRing
@@ -18,7 +21,7 @@ from parrot.handlers.studio.storage import secrets_copy as copy_module
 from parrot.handlers.studio.storage import vault_store as vault_module
 from parrot.handlers.studio.storage.byok_store import PgUserLLMKeyStore
 from parrot.handlers.studio.storage.overrides_store import PgToolkitOverrideStore
-from parrot.handlers.studio.storage.secrets_copy import _build_parser, copy_secrets
+from parrot.handlers.studio.storage.secrets_copy import DSN_ENV, copy_secrets, main
 from parrot.handlers.studio.storage.vault_store import PgVaultCredentialStore
 from parrot.security.credentials_utils import credential_context, encrypt_credential, llm_key_context
 
@@ -100,7 +103,7 @@ async def _run(pool, seed=None, **flags):
 async def test_copy_verbatim_and_decrypts(pool):
     seed = _seed()
     counts = await _run(pool, seed)
-    assert counts == {"byok": 1, "vault": 1, "overrides": 1, "failed": 0}
+    assert counts == {"byok": 1, "vault": 1, "overrides": 1, "skipped": 0, "failed": 0}
     async with pool.acquire() as conn:
         key_row = await conn.fetch_one("SELECT * FROM navigator.ai_user_llm_keys")
         cred_row = await conn.fetch_one("SELECT * FROM navigator.ai_user_credentials")
@@ -117,28 +120,15 @@ async def test_copy_verbatim_and_decrypts(pool):
     assert override.updated_at == UPDATED
 
 
-async def test_copy_idempotent(pool):
-    seed = _seed()
-    first = await _run(pool, seed)
-    async with pool.acquire() as conn:
-        before = await conn.fetch_one("SELECT api_key_enc, created_at FROM navigator.ai_user_llm_keys")
-    second = await _run(pool, seed)
-    assert first == second
-    assert [await _count(pool, t) for t in TABLES] == [1, 1, 1]
-    async with pool.acquire() as conn:
-        after = await conn.fetch_one("SELECT api_key_enc, created_at FROM navigator.ai_user_llm_keys")
-    assert dict(before) == dict(after)
-
-
 async def test_dry_run_writes_nothing(pool):
     counts = await _run(pool, dry_run=True)
-    assert counts == {"byok": 1, "vault": 1, "overrides": 1, "failed": 0}
+    assert counts == {"byok": 1, "vault": 1, "overrides": 1, "skipped": 0, "failed": 0}
     assert [await _count(pool, t) for t in TABLES] == [0, 0, 0]
 
 
 async def test_switches_select_collections(pool):
     counts = await _run(pool, byok=False, vault=True, overrides=False)
-    assert counts == {"byok": 0, "vault": 1, "overrides": 0, "failed": 0}
+    assert counts == {"byok": 0, "vault": 1, "overrides": 0, "skipped": 0, "failed": 0}
     assert [await _count(pool, t) for t in TABLES] == [0, 1, 0]
 
 
@@ -161,6 +151,160 @@ async def test_no_values_logged_and_bad_docs_counted(pool, caplog):
     assert "u1" in caplog.text and "openai" in caplog.text  # identities (not values) are what gets logged
 
 
+EDITED = "2024-01-01T00:00:00+00:00"
+NEWER = "2031-01-01T00:00:00+00:00"
+OLDER = "2020-01-01T00:00:00+00:00"
+_EDIT_SQL = {
+    "ai_user_llm_keys": "UPDATE navigator.ai_user_llm_keys SET api_key_enc = 'USER-EDITED', masked = 'edited', "
+                        "updated_at = $1::timestamptz",
+    "ai_user_credentials": "UPDATE navigator.ai_user_credentials SET credential = 'USER-EDITED', "
+                           "updated_at = $1::timestamptz",
+    "ai_user_toolkit_overrides": "UPDATE navigator.ai_user_toolkit_overrides SET params = '{\"edited\": true}'::jsonb, "
+                                 "updated_at = $1::timestamptz",
+}
+_READ_SQL = {
+    "ai_user_llm_keys": "SELECT api_key_enc AS v, updated_at FROM navigator.ai_user_llm_keys",
+    "ai_user_credentials": "SELECT credential AS v, updated_at FROM navigator.ai_user_credentials",
+    "ai_user_toolkit_overrides": "SELECT params::text AS v, updated_at FROM navigator.ai_user_toolkit_overrides",
+}
+
+
+async def _edit_all(pool, when: str) -> None:
+    async with pool.acquire() as conn:
+        for table, sql in _EDIT_SQL.items():
+            await conn.execute(sql, datetime.fromisoformat(when))
+
+
+async def _snapshot(pool) -> dict:
+    async with pool.acquire() as conn:
+        return {t: dict(await conn.fetch_one(sql)) for t, sql in _READ_SQL.items()}
+
+
+def _with_updated(seed: dict, when: str) -> dict:
+    for docs in seed.values():
+        for doc in docs:
+            doc["updated_at"] = when
+    return seed
+
+
+async def test_rerun_after_cutover_never_overwrites_edited_rows(pool):
+    await _run(pool)
+    await _edit_all(pool, EDITED)
+    before = await _snapshot(pool)
+    # even a strictly newer source must not win without --overwrite
+    counts = await _run(pool, _with_updated(_seed(), NEWER))
+    assert counts == {"byok": 0, "vault": 0, "overrides": 0, "skipped": 3, "failed": 0}
+    assert await _snapshot(pool) == before
+    assert [await _count(pool, t) for t in TABLES] == [1, 1, 1]
+
+
+async def test_overwrite_updates_only_strictly_newer(pool):
+    await _run(pool)
+    await _edit_all(pool, EDITED)
+    before = await _snapshot(pool)
+    for older in (OLDER, EDITED):  # older and EQUAL sources leave the row untouched
+        counts = await _run(pool, _with_updated(_seed(), older), overwrite=True)
+        assert counts["skipped"] == 3 and counts["byok"] == counts["vault"] == counts["overrides"] == 0
+        assert await _snapshot(pool) == before
+    seed = _with_updated(_seed(), NEWER)
+    counts = await _run(pool, seed, overwrite=True)
+    assert counts == {"byok": 1, "vault": 1, "overrides": 1, "skipped": 0, "failed": 0}
+    after = await _snapshot(pool)
+    assert after["ai_user_llm_keys"]["v"] == seed["user_llm_keys"][0]["api_key"]
+    assert after["ai_user_credentials"]["v"] == seed["user_credentials"][0]["credential"]
+    assert "region" in after["ai_user_toolkit_overrides"]["v"]
+    assert all(row["updated_at"].isoformat() == NEWER for row in after.values())  # timestamp preserved
+
+
+async def test_overwrite_undated_source_never_wins(pool):
+    await _run(pool)
+    await _edit_all(pool, EDITED)
+    before = await _snapshot(pool)
+    seed = _seed()
+    for docs in seed.values():
+        for doc in docs:
+            doc.pop("updated_at", None)
+            doc.pop("created_at", None)
+    counts = await _run(pool, seed, overwrite=True)
+    assert counts["skipped"] == 3 and await _snapshot(pool) == before
+
+
+def _seed_with_failures() -> dict:
+    seed = _seed()
+    wrong_aad = encrypt_credential({"api_key": "sk-OTHER-USER-KEY"}, llm_key_context("u2", "openai"), KEYRING)
+    seed["user_llm_keys"].append({"user_id": "u1", "provider": "openai", "api_key": wrong_aad})
+    seed["user_llm_keys"].append({"user_id": "u1", "api_key": wrong_aad})  # malformed: no provider
+    vault_wrong = encrypt_credential(VAULT_SECRET, credential_context("u2", "other"), KEYRING)
+    seed["user_credentials"].append({"user_id": "u1", "name": "v2", "credential": vault_wrong})
+    seed["user_credentials"].append({"user_id": "u1", "name": "v3", "credential": "not-a-ciphertext"})
+    seed["user_toolkit_configs"].append({"user_id": "u1", "slug": "no-agent"})  # malformed override
+    return seed
+
+
+async def test_dry_run_predicts_failures_like_a_real_run_and_writes_nothing(pool):
+    dry = await _run(pool, _seed_with_failures(), dry_run=True)
+    assert [await _count(pool, t) for t in TABLES] == [0, 0, 0]
+    real = await _run(pool, _seed_with_failures())
+    assert dry == real == {"byok": 1, "vault": 1, "overrides": 1, "skipped": 0, "failed": 5}
+
+
+async def test_dry_run_without_keyring_reports_clear_error_and_counts_failed(pool, monkeypatch, caplog):
+    def _missing():
+        raise RuntimeError("Vault keys are not configured: boom")
+
+    monkeypatch.setattr(copy_module, "get_vault_keyring", _missing)
+    caplog.set_level(logging.DEBUG)
+    counts = await _run(pool, dry_run=True)
+    assert counts == {"byok": 0, "vault": 0, "overrides": 1, "skipped": 0, "failed": 2}
+    assert "vault keyring unavailable" in caplog.text and "VAULT_MASTER_KEY" in caplog.text
+    assert "Traceback" not in caplog.text and [await _count(pool, t) for t in TABLES] == [0, 0, 0]
+
+
+def test_cli_rejects_dsn_argument(monkeypatch, capsys):
+    monkeypatch.setenv(DSN_ENV, "postgresql://u:pw@h/db")
+    with pytest.raises(SystemExit) as exc:
+        main(["--dsn", "postgresql://u:SECRETPW@h/db"])
+    err = capsys.readouterr().err
+    assert exc.value.code == 2 and "--dsn is not accepted" in err and "SECRETPW" not in err
+
+
+def test_cli_requires_dsn_env(monkeypatch, capsys):
+    monkeypatch.delenv(DSN_ENV, raising=False)
+    with pytest.raises(SystemExit) as exc:
+        main(["--dry-run"])
+    assert exc.value.code == 2 and DSN_ENV in capsys.readouterr().err
+
+
+def _fake_source(monkeypatch) -> None:
+    real_copy = copy_module.copy_secrets
+
+    async def _with_fake(pool_, **kwargs):
+        return await real_copy(pool_, source=_FakeDocumentDb(_seed()), **kwargs)
+
+    monkeypatch.setattr(copy_module, "copy_secrets", _with_fake)
+
+
+async def test_cli_reads_dsn_from_env_and_never_logs_it(pool, monkeypatch, capsys, caplog):
+    dsn = os.environ["TEST_STUDIO_PG_DSN"]
+    monkeypatch.setenv(DSN_ENV, dsn)
+    _fake_source(monkeypatch)
+    caplog.set_level(logging.DEBUG)
+    code = await asyncio.to_thread(main, ["--byok"])  # asyncio.run needs its own thread inside a running loop
+    out = capsys.readouterr()
+    assert code == 0 and await _count(pool, "ai_user_llm_keys") == 1
+    password = dsn.split("@")[0].rsplit(":", 1)[-1]
+    for text in (out.out, out.err, caplog.text):
+        assert dsn not in text and (len(password) < 4 or password not in text)
+
+
+async def test_cli_connects_with_the_env_dsn_only(monkeypatch):
+    """A DSN that cannot connect in the env must be the one used (not any other configured DSN)."""
+    monkeypatch.setenv(DSN_ENV, "postgresql://nobody:pw@127.0.0.1:1/none")
+    _fake_source(monkeypatch)  # the source is faked, so only the unreachable DSN can make this raise
+    with pytest.raises(Exception):  # noqa: B017 — the driver's connection error type is not part of the contract
+        await asyncio.to_thread(main, ["--dry-run", "--overrides"])
+
+
 def test_cli_flags():
-    args = _build_parser().parse_args(["--dsn", "postgresql://x", "--dry-run", "--byok"])
-    assert args.dry_run and args.byok and not args.vault and not args.overrides
+    args = copy_module._build_parser().parse_args(["--dry-run", "--overwrite", "--byok"])
+    assert args.dry_run and args.overwrite and args.byok and not args.vault and not args.overrides

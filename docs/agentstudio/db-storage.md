@@ -130,39 +130,52 @@ same rule: vendor them together with 0001-0005: the probe requires all of 0001-0
 ## Moving existing secrets: `secrets_copy`
 
 Switching a store to `postgres` does not move data. Existing BYOK keys, vault credentials and per-user overrides are
-copied from DocumentDB with a one-shot script:
+copied from DocumentDB with a one-shot script. The DSN is read from the environment (`STUDIO_PG_DSN`), never from argv,
+because argv shows up in process listings; `--dsn` is rejected.
 
 ```bash
-python -m parrot.handlers.studio.storage.secrets_copy --dsn "$DSN" --dry-run
-python -m parrot.handlers.studio.storage.secrets_copy --dsn "$DSN"
-python -m parrot.handlers.studio.storage.secrets_copy --dsn "$DSN" --byok --vault
+export STUDIO_PG_DSN="postgresql://..."
+python -m parrot.handlers.studio.storage.secrets_copy --dry-run
+python -m parrot.handlers.studio.storage.secrets_copy
+python -m parrot.handlers.studio.storage.secrets_copy --byok --vault
+python -m parrot.handlers.studio.storage.secrets_copy --overwrite     # explicit, see below
 ```
 
-| Flag | Meaning |
+| Flag / env | Meaning |
 |---|---|
-| `--dsn` | required; PostgreSQL DSN of the Studio database |
-| `--dry-run` | read DocumentDB and count only; writes nothing |
+| `STUDIO_PG_DSN` | required env var; PostgreSQL DSN of the Studio database (never logged) |
+| `--dry-run` | writes nothing, but opens every BYOK key and vault credential with the keyring, so it reports the same `failed` count a real run would |
+| `--overwrite` | also update rows that already exist in Postgres, but only when the source `updated_at` is strictly newer |
 | `--byok` | copy `user_llm_keys` -> `ai_user_llm_keys` |
 | `--vault` | copy `user_credentials` -> `ai_user_credentials` |
 | `--overrides` | copy `user_toolkit_configs` -> `ai_user_toolkit_overrides` |
 
 With none of `--byok`, `--vault`, `--overrides` all three are copied. The script reads DocumentDB through the host's
-normal DocumentDB configuration and prints `would copy: {...}` / `copied: {...}` with counts per collection and
-`failed`; the exit code is 1 when any document failed. Documents it cannot copy are skipped and logged by identity and
-exception class only; no value or ciphertext is ever logged. Upserts are idempotent, so it is safe to re-run.
+normal DocumentDB configuration and prints `would copy: {...}` / `copied: {...}` with counts per collection, `skipped`
+and `failed`; the exit code is 1 when any document failed. Documents it cannot copy are skipped and logged by identity
+and exception class only; no value, ciphertext or DSN is ever logged.
 
 Requirements and behaviour:
 
-- **Order of operations**: apply migrations 0006-0008 -> run `secrets_copy` -> only then flip the
-  `BYOK_STORE` / `VAULT_STORE` / `TOOLKIT_OVERRIDES_STORE` switch and roll the pods. The probe will not accept the Studio backend
+- **Insert-only by default**: a row that already exists in Postgres is never touched (`ON CONFLICT DO NOTHING`) and is
+  counted as `skipped`. After cutover Postgres is the source of truth and users edit keys, credentials and overrides
+  there, so running the script again is a no-op: it cannot overwrite newer Postgres data.
+- **`--overwrite` is newer-wins**: an existing row is replaced only when the source document's `updated_at` is strictly
+  newer than the row's (equal or older sources, and sources without `updated_at`, leave it untouched). Ciphertexts and
+  timestamps are still copied verbatim.
+- **Order of operations**: apply migrations 0006-0008 -> run `secrets_copy` (use `--dry-run` first) -> only then flip the
+  `BYOK_STORE` / `VAULT_STORE` / `TOOLKIT_OVERRIDES_STORE` switch and roll the pods. Run the copy BEFORE flipping a
+  switch; a re-run after the flip is a no-op unless `--overwrite` is given. The probe will not accept the Studio backend
   switch before the schema is at version 8.
-- **Keyring**: a real copy of `--byok` needs the vault keyring in the environment (`VAULT_MASTER_KEY_v{N}`,
-  `VAULT_ACTIVE_KEY_ID`) because the script opens each key once, read-only, to derive its `masked` preview. Run it with
-  the same keyring the pods use. `--vault` and `--overrides` copy their values as read, and `--dry-run` never needs it.
+- **Keyring**: `--byok` and `--vault` need the vault keyring in the environment (`VAULT_MASTER_KEY_v{N}`,
+  `VAULT_ACTIVE_KEY_ID`) in a real run AND in `--dry-run`, because each key / credential is opened once, read-only (BYOK
+  also to derive its `masked` preview). Run it with the same keyring the pods use. When the keyring is missing the script
+  logs one clear error and counts every BYOK / vault document as `failed` (no traceback); a document that cannot be
+  opened (wrong keyring, wrong AAD context, malformed) is counted `failed` and not copied. `--overrides` needs no keyring.
 - **Ciphertexts are copied verbatim**: they are not re-sealed, so they keep their original keyring `key_id` and AAD
   context and stay decryptable by the same keyring.
 - **Snapshot, not sync**: anything written to DocumentDB after the copy is not carried over and deletions are not
-  propagated. Run the copy again immediately before the flip (or freeze secret writes during the window).
+  propagated. Before the flip, run the copy again (new documents are inserted; documents edited in DocumentDB since the first run need `--overwrite`) or freeze secret writes during the window.
 
 ### Vault rotation targets
 
