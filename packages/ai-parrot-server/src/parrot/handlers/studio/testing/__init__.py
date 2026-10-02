@@ -1,0 +1,236 @@
+"""Studio testing surface — test/ask, deterministic tool execute, tool
+assignment (FEAT-467 TASK-2517).
+
+Implements spec §3 Module 9:
+
+    POST   /api/v1/astudio/agents/{name}/test/ask   — query a session-scoped
+                                                        test instance (BYOK-aware)
+    DELETE /api/v1/astudio/agents/{name}/test        — end the test session
+    POST   /api/v1/astudio/tools/{slug}/execute      — deterministic tool call
+    POST   /api/v1/astudio/agents/{name}/tools       — assign tools/toolkits
+                                                        to the LIVE agent instance
+
+Session-scoped test instances follow the proven ``BotConfigTestHandler``
+pattern (``handlers/testing_handler.py``): ``manager.get_bot(name, new=True,
+session_id=...)`` creates an isolated, expiring bot instance whose name is
+stashed in the caller's session and reused across calls.
+
+Package layout (oversize-module split, owner decision D1): the three views
+live here with their verbs; request models, helpers, the shared mixin and the
+ask / legacy / database-mode bodies are in ``_models.py`` / ``_helpers.py`` /
+``_mixin.py`` / ``_ask.py`` / ``_legacy.py`` / ``_db.py``.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from navigator_auth.decorators import is_authenticated, user_session
+from parrot.clients.factory import LLMFactory
+from parrot.tools.abstract import AbstractTool
+from parrot.tools.discovery import discover_all, resolve_class  # re-exported: tests patch ``testing.discover_all``
+from parrot.tools.toolkit import AbstractToolkit
+from pydantic import ValidationError
+
+from .._base import StudioBaseView
+from ..agents import _StudioAgentsMixin
+from ..byok import resolve_user_api_key  # re-exported: tests patch ``testing.resolve_user_api_key``
+from ._ask import _StudioTestingAskMixin
+from ._db import _StudioTestingDbMixin
+from ._helpers import _instantiate_tool, _resolve_registry_class
+from ._legacy import _StudioTestingLegacyMixin
+from ._mixin import _StudioTestingMixin
+from ._models import (
+    SESSION_PREFIX,
+    TestAskRequest,
+    ToolAssignRequest,
+    ToolExecuteRequest,
+    ToolkitAssignEntry,
+    _ServerManagedDepsError,
+)
+
+__all__ = [
+    "LLMFactory",
+    "SESSION_PREFIX",
+    "StudioTestingHandler",
+    "StudioToolAssignHandler",
+    "StudioToolExecuteHandler",
+    "TestAskRequest",
+    "ToolAssignRequest",
+    "ToolExecuteRequest",
+    "ToolkitAssignEntry",
+    "discover_all",
+    "resolve_class",
+    "resolve_user_api_key",
+]
+
+
+@is_authenticated()
+@user_session()
+class StudioTestingHandler(
+    _StudioTestingLegacyMixin, _StudioTestingDbMixin, _StudioTestingAskMixin, _StudioTestingMixin, StudioBaseView
+):
+    """``/api/v1/astudio/agents/{name}/test/ask`` and ``.../test``.
+
+    POST queries the session-scoped test instance (creating it on first
+    call); DELETE tears the session instance down.
+    """
+
+    _dispatch = _StudioAgentsMixin._dispatch  # one database/filesystem switch for every Studio view
+
+    async def post(self):
+        """Query the test instance: Studio rows through ``manager.studio.use()`` (database mode), else legacy."""
+        gate = lambda: self._pbac_gate("testing", "astudio:testing:ask")  # noqa: E731
+        return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+    async def delete(self):
+        """End the test session: a Studio session entry is evicted from the runtime cache, else legacy."""
+        return await self._dispatch(self._legacy_delete, self._db_delete)
+
+
+@is_authenticated()
+@user_session()
+class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
+    """``POST /api/v1/astudio/tools/{slug}/execute`` — deterministic tool call."""
+
+    async def post(self):
+        if (denied := await self._require_author()) is not None:
+            return denied
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("testing", "astudio:testing:execute")) is not None:
+            return denied
+
+        slug = self.request.match_info.get("slug")
+        if not slug:
+            return self._error("Tool slug is required.", status=400, code="missing_slug")
+
+        try:
+            payload = await self.request.json()
+        except Exception:  # pylint: disable=broad-except
+            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+
+        try:
+            execute_request = ToolExecuteRequest(**(payload or {}))
+        except ValidationError as exc:
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
+
+        cls = _resolve_registry_class(slug)
+        if (
+            cls is None
+            or not (isinstance(cls, type) and issubclass(cls, AbstractTool))
+            or (isinstance(cls, type) and issubclass(cls, AbstractToolkit))
+        ):
+            return self._error(f"Unknown tool '{slug}'.", status=404, code="not_found")
+
+        try:
+            instance = _instantiate_tool(cls, self.request.app)
+        except _ServerManagedDepsError as exc:
+            return self._error(
+                f"Tool '{slug}' requires server-managed dependencies.",
+                status=422,
+                code="server_managed",
+                details={"missing": exc.missing},
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.error("Studio: failed to instantiate tool '%s': %s", slug, exc)
+            return self._error(
+                f"Failed to instantiate tool '{slug}': {exc}",
+                status=500,
+                code="instantiation_failed",
+            )
+
+        try:
+            instance.validate_args(**execute_request.args)
+        except ValueError as exc:
+            return self._error(f"Invalid arguments for '{slug}': {exc}", status=422, code="invalid_args")
+
+        result = await instance.execute(**execute_request.args)
+        return self.json_response(result.model_dump(), status=200)
+
+
+@is_authenticated()
+@user_session()
+class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBaseView):
+    """``POST /api/v1/astudio/agents/{name}/tools`` — assign tools/toolkits.
+
+    Mutates the LIVE agent instance's ``tool_manager`` (shared-instance
+    semantics — resolved in TASK-2517 scope). YAML persistence of toolkit
+    config is TASK-2518's concern; this endpoint always reports
+    ``persisted: false``.
+    """
+
+    async def post(self):
+        # PBAC (adversarial-review fix: gate was defined but never called).
+        if (denied := await self._pbac_gate("agents", "astudio:agents:assign_tools")) is not None:
+            return denied
+
+        name = self.request.match_info.get("name")
+        if not name:
+            return self._error("Agent name is required.", status=400, code="missing_name")
+
+        try:
+            payload = await self.request.json()
+        except Exception:  # pylint: disable=broad-except
+            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+
+        try:
+            assign_request = ToolAssignRequest(**(payload or {}))
+        except ValidationError as exc:
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
+
+        db_agent = await self._get_db_agent(name)
+        if db_agent is not None:
+            owner = str(db_agent.created_by) if db_agent.created_by is not None else None
+        else:
+            registry = self._registry()
+            meta = registry.get_metadata(name) if registry is not None else None
+            if meta is None:
+                return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
+            owner = self._registry_agent_owner(meta)
+
+        user = await self._get_user()
+        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
+
+        manager = self._manager()
+        if manager is None:
+            return self._error("BotManager unavailable.", status=503, code="unavailable")
+
+        bot = await manager.get_bot(name)
+        if bot is None:
+            return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
+
+        errors: list[dict[str, Any]] = []
+        registered_names: set[str] = set()
+
+        if assign_request.tools:
+            before = set(bot.tool_manager.list_tools())
+            bot.tool_manager.register_tools(assign_request.tools)
+            after = set(bot.tool_manager.list_tools())
+            registered_names |= after - before
+
+        for entry in assign_request.toolkits:
+            cls = _resolve_registry_class(entry.slug)
+            if cls is None or not (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
+                errors.append({"slug": entry.slug, "error": "Unknown toolkit."})
+                continue
+            try:
+                registered = bot.tool_manager.register_toolkit(cls, **entry.params)
+            except Exception as exc:  # pylint: disable=broad-except
+                self.logger.error(
+                    "Studio: failed to register toolkit '%s' on '%s': %s",
+                    entry.slug,
+                    name,
+                    exc,
+                )
+                errors.append({"slug": entry.slug, "error": str(exc)})
+                continue
+            registered_names |= {t.name for t in registered}
+
+        response: dict[str, Any] = {
+            "agent": name,
+            "registered_tools": sorted(registered_names),
+            "persisted": False,
+        }
+        if errors:
+            response["errors"] = errors
+        return self.json_response(response, status=200)
