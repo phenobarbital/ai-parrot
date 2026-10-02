@@ -10,6 +10,7 @@ from navigator_auth.decorators import is_authenticated, user_session
 from pydantic import ValidationError
 
 from parrot.tools.spec import hydrate_params, mask_mcp, mask_spec
+from parrot.tools.tooling_policy import TenantToolingRefused
 
 from ._base import StudioBaseView
 from .agents import _StudioAgentsMixin
@@ -63,6 +64,8 @@ class _ToolingViewMixin(_StudioAgentsMixin):
 
     def _map_exc(self, exc: Exception):
         """Map persistence and vault exceptions to the Studio error contract."""
+        if isinstance(exc, TenantToolingRefused):
+            return self._error(str(exc), status=422, code=exc.code, details={"reason": exc.reason, "item": exc.item})
         if isinstance(exc, _STUDIO_ERRORS):
             return self._studio_error(exc)
         if isinstance(exc, PermissionError):

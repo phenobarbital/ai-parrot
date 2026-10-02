@@ -30,6 +30,11 @@ from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.infographic_toolkit import InfographicToolkit
 from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.tooling_policy import (
+    TenantToolingRefused,
+    ToolingSubject,
+    get_tenant_tooling_policy,
+)
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import BaseModel, Field, ValidationError
 
@@ -294,6 +299,7 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         slug = assign_request.slug
         params = assign_request.params
         try:
+            await self._enforce_assign_policy(slug, user)
             if slug == "wiki":
                 registered_names, extra = await self._assign_wiki(bot, params)
             elif slug == "dataset_manager":
@@ -314,6 +320,20 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         }
         response.update(extra)
         return self.json_response(response, status=200)
+
+    async def _enforce_assign_policy(self, slug: str, user: Any) -> None:
+        """Tenant tooling policy for a live toolkit assignment (FEAT-622 M7, phase ``write``): before construction."""
+        part = await self._studio_partition()
+        policy = get_tenant_tooling_policy(self.request.app)
+        if part.tenant is None and not policy.apply_to_global:
+            return
+        subject = ToolingSubject(tenant=part.tenant, agent_id=None, actor=user.user_id, phase="write")
+        try:
+            policy.check_tool(slug, subject=subject)
+        except TenantToolingRefused as exc:
+            raise _ToolkitAssignError(
+                422, exc.code, str(exc), details={"reason": exc.reason, "item": exc.item}
+            ) from exc
 
     async def _assign_owner(self, name: str):
         """Owner of agent ``name`` (Studio row, legacy DB row or registry), or a 404/Studio error response."""

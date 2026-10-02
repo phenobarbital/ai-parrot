@@ -19,6 +19,7 @@ from parrot.security.vault_utils import (
 )
 from parrot.tools.config_schema import build_schema_envelope, secret_paths
 from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.tooling_policy import ToolingSubject, enforce_tenant_tooling
 from parrot.tools.spec import (
     MCP_SECRET_FIELDS,
     SECRET_MASK,
@@ -99,7 +100,7 @@ def toolkit_schema_for(slug: str) -> tuple[type, dict[str, Any]]:
     if cls is None:
         raise LookupError(slug)
     envelope = build_schema_envelope(slug, cls, server_managed=_SERVER_MANAGED.get(slug, frozenset()))
-    return cls, envelope.schema
+    return cls, envelope.schema_
 
 
 def validate_toolkit_params(cls: type, schema: dict[str, Any], params: dict[str, Any]) -> None:
@@ -338,9 +339,11 @@ class AgentToolingStore:
         self._validate(cls, schema, params)
         if state.source == "studio":
             return await self._studio_put_toolkit(state, name, slug, params, user_overridable, guard, actor)
-        spec = await self._split_secrets(state, slug, name, schema, params, user_overridable)
-        state.tooling.toolkits = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
-        state.tooling.toolkits.append(spec)
+        spec, writes = self._toolkit_candidate(state, slug, schema, params, user_overridable)
+        toolkits = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()] + [spec]
+        await self._enforce(state, state.tooling.model_copy(update={"toolkits": toolkits}), actor=actor)
+        await flush_vault_writes(writes)
+        state.tooling.toolkits = toolkits
         await self._persist(name, state)
         return spec
 
@@ -357,7 +360,9 @@ class AgentToolingStore:
                 part, name, slug, actor=actor if actor is not None else record.owner, guard=guard or self._guard(record)
             )
             return
-        state.tooling.toolkits = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
+        remaining = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
+        await self._enforce(state, state.tooling.model_copy(update={"toolkits": remaining}), actor=actor)
+        state.tooling.toolkits = remaining
         if state.owner is None:
             raise PermissionError("agent has no owner; cannot store secrets")
         await delete_vault_credential(state.owner, toolkit_vault_name(slug, state.tooling_ref))
@@ -385,6 +390,7 @@ class AgentToolingStore:
         specs, writes = split_mcp_secrets(
             owner=state.owner, ref=state.tooling_ref, servers=servers, previous=state.tooling.mcp_servers
         )
+        await self._enforce(state, state.tooling.model_copy(update={"mcp_servers": specs}), actor=actor)
         await flush_vault_writes(writes)
         state.tooling.mcp_servers = specs
         await self._persist(name, state)
@@ -413,6 +419,26 @@ class AgentToolingStore:
         view = await service.load(part, name)
         return next(item for item in view.tooling.toolkits if item.slug.lower() == slug.lower())
 
+    def _toolkit_candidate(
+        self,
+        state: ToolingState,
+        slug: str,
+        schema: dict[str, Any],
+        params: dict[str, Any],
+        user_overridable: list[str],
+    ) -> tuple[ToolkitSpec, list[VaultWrite]]:
+        """Pure split of x-secret values: the spec to persist and the owner-scoped vault writes (no I/O)."""
+        previous = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
+        return split_toolkit_secrets(
+            owner=state.owner,
+            ref=state.tooling_ref,
+            slug=slug,
+            schema=schema,
+            params=params,
+            user_overridable=user_overridable,
+            previous=previous,
+        )
+
     async def _split_secrets(
         self,
         state: ToolingState,
@@ -423,18 +449,28 @@ class AgentToolingStore:
         user_overridable: list[str],
     ) -> ToolkitSpec:
         """Move x-secret values into the owner-scoped toolkit vault entry."""
-        previous = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
-        spec, writes = split_toolkit_secrets(
-            owner=state.owner,
-            ref=state.tooling_ref,
-            slug=slug,
-            schema=schema,
-            params=params,
-            user_overridable=user_overridable,
-            previous=previous,
-        )
+        spec, writes = self._toolkit_candidate(state, slug, schema, params, user_overridable)
         await flush_vault_writes(writes)
         return spec
+
+    async def _enforce(self, state: ToolingState, tooling: NormalizedTooling, *, actor: str | None = None) -> None:
+        """Apply the host tenant tooling policy to the COMPLETE resulting tooling (FEAT-622 M7, phase ``write``).
+
+        Runs before any vault write or persistence. Studio rows are gated by the storage service instead.
+        """
+        from .storage.services.tooling import _owner_only_with_refs  # lazy: that module imports this one
+
+        locate = getattr(self.handler, "_studio_partition", None)
+        part = await locate() if locate is not None else None
+        subject = ToolingSubject(
+            tenant=getattr(part, "tenant", None), agent_id=None, actor=actor or state.owner, phase="write"
+        )
+        resulting = NormalizedTooling(
+            tools=list(tooling.tools),
+            toolkits=[_owner_only_with_refs(item) for item in tooling.toolkits],
+            mcp_servers=[_owner_only_with_refs(item) for item in tooling.mcp_servers],
+        )
+        enforce_tenant_tooling(self.handler.request.app, resulting, subject=subject)
 
     async def _persist(self, name: str, state: ToolingState) -> None:
         """Persist normalized specs to the Studio rows, the DB row or agent-owned YAML."""
