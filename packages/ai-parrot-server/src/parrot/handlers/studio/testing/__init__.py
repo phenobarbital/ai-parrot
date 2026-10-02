@@ -29,7 +29,7 @@ from navigator_auth.decorators import is_authenticated, user_session
 from parrot.auth.confirmation import is_enforced_write_class
 from parrot.clients.factory import LLMFactory
 from parrot.tools.abstract import AbstractTool
-from parrot.tools.discovery import discover_all, resolve_class  # re-exported: tests patch ``testing.discover_all``
+from parrot.tools.discovery import resolve_class
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import ValidationError
 
@@ -60,7 +60,6 @@ __all__ = [
     "ToolAssignRequest",
     "ToolExecuteRequest",
     "ToolkitAssignEntry",
-    "discover_all",
     "resolve_class",
     "resolve_user_api_key",
 ]

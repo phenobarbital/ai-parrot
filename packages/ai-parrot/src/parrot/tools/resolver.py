@@ -71,6 +71,18 @@ class ToolkitResolver:
             return None  # rule 5: lifted by FEAT-622 M3b
         return cls
 
+    def registry_paths(self) -> dict[str, str]:
+        """Slug → dotted path of every non-host entry (built-ins from their class) (host paths are never listed)."""
+        paths: dict[str, str] = {}
+        for entry in self.entries():
+            if entry.source == "host":
+                continue
+            cls = self._classes.get(entry.slug.lower())
+            dotted = entry.dotted_path or (f"{cls.__module__}.{cls.__qualname__}" if cls else None)
+            if dotted:
+                paths[entry.slug] = dotted
+        return paths
+
     def reload(self) -> None:
         """Drop the cache (tests / hot reload only)."""
         with self._lock:

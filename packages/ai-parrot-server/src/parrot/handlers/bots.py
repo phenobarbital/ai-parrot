@@ -26,7 +26,7 @@ from parrot.conf import (
 )
 from parrot.utils.naming import slugify_name, deduplicate_name
 from .models import BotModel, ChatbotUsage, PromptLibrary, UserPrompts, ChatbotFeedback, FeedbackType
-from ..tools.discovery import discover_all
+from parrot.tools.resolver import get_toolkit_resolver
 from ..registry.registry import BotConfig
 
 # FEAT-133: reranker + parent-searcher factories (used in _register_bot_into_manager)
@@ -1208,19 +1208,20 @@ class ToolList(_PBACHandlerMixin, BaseView):
     async def get(self):
         """List all tools, filtered by PBAC ``tool:list`` action when PDP configured."""
         try:
-            raw = discover_all()
+            resolver = get_toolkit_resolver()
             tools = {}
-            for name, value in raw.items():
-                if isinstance(value, str):
-                    tools[name] = {
-                        "tool_name": name,
-                        "module_path": value,
-                    }
-                else:
-                    tools[name] = {
-                        "tool_name": getattr(value, "name", name),
-                        "module_path": f"{value.__module__}.{value.__qualname__}",
-                        "description": getattr(value, "description", value.__doc__ or ""),
+            for entry in resolver.entries():
+                if entry.source == "host":
+                    continue  # host entries are tenant-policed; never listed here
+                if entry.dotted_path:
+                    tools[entry.slug] = {"tool_name": entry.slug, "module_path": entry.dotted_path}
+                    continue
+                cls = resolver.resolve(entry.slug)
+                if cls is not None:
+                    tools[entry.slug] = {
+                        "tool_name": getattr(cls, "name", entry.slug),
+                        "module_path": f"{cls.__module__}.{cls.__qualname__}",
+                        "description": getattr(cls, "description", cls.__doc__ or ""),
                     }
 
             # PBAC: filter tools by tool:list permission
