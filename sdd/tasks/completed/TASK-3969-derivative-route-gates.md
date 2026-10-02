@@ -337,10 +337,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Derivative routes of an agent follow the access rule on Studio rows: toolkit-config / toolkits/{slug} / options /
+mcp-servers (`_ToolingViewMixin._decide_access`, also used by `_write`'s re-authorization via `_reauthorize`), live assignment
+`POST /agents/{n}/tools` + `/toolkits` (`_assign_owner` moved into `_StudioAgentsMixin`: 404 invisible / 403 not manageable; admin
+allowed), files (GET is now 403 for visible-not-manageable ONLY in opted-in hosts; PUT/DELETE unchanged: 404/403), `/toolkits/{slug}/me`
+(`_visible_state`: invisible ⇒ the one 404, no owner requirement — a visible agent's caller edits their OWN override),
+test/ask + DELETE test (404 before the session entry is touched). test/ask binds
+`studio_scope = build_tool_scope(scope, agent_ref)` through `bot.session(..., studio_scope=...)` in opted-in hosts only (nothing on a
+plain host) and runs inside `manager.studio.use(...)` as before; the access decision is re-run on every ask.
+Tenant partitions never call `manager.get_bot(name)` for live assignment (A2, `_live_bot`): the tenant policy (422) still answers
+first (policy check moved before the live-instance lookup, zero complexity growth), an allowed tenant assignment is 404 "no live
+instance" (tooling for tenant agents is persisted via toolkit-config, not live-assigned) — two B1 tests were adapted to this.
+Mutations RED (restored): toolkit-config access off; `/me` visibility off; files GET opted-in 403 off; assign access `manage=False`;
+`studio_scope` binding off; test DELETE 404 off; tenant `get_bot` lookup re-allowed; options/execute scope check off; owner/access
+decision in options route off.
+Tests: `test_derivative_gates.py` (52: identical 404 for hidden / other-tenant / absent on 16 routes, 403 matrix, peer-allowed
+routes, owner+admin pass, files-GET opted-in-only, scope binding, plain host binds nothing, /me with a configured toolkit),
+`test_tooling_policy_routes.py` (4: stdio MCP refused with zero processes, builtin refused, host write fails closed with zero writes,
+options gates). Server suite vs baseline-package: 0 new.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `testing/` and `agents/` package modules instead of the single files; `test_tenant_tooling_writes.py` and
+`test_tenant_catalogue_execute_policy.py` adapted (tenant live assignment is now 404). The options route for a tenant-bound toolkit
+still answers 403 `tool_scope_unavailable` until TASK-3991 binds the scope there.

@@ -316,7 +316,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -327,9 +327,10 @@
       "parallelism_notes": "Uses StudioAccess/build_tool_scope from TASK-3964 (access.py); edits studio/testing.py after TASK-3961 (execute gate, same file). Only FEAT-605 task on toolkits.py, toolkit_config.py, toolkit_overrides.py, files.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3969-derivative-route-gates.md",
-      "wave_label": "W3.4"
+      "completed_at": "2026-10-02T15:22:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3969-derivative-route-gates.md",
+      "wave_label": "W3.4",
+      "verification": "verified"
     },
     {
       "id": "TASK-3970",
