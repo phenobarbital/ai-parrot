@@ -40,6 +40,14 @@ _KEYRING: Any = None
 # DocumentDB collection for Vault credential storage (mirrors CredentialsHandler)
 VAULT_CRED_COLLECTION: str = "user_credentials"
 
+_PG_VAULT_STORE: Any = None
+
+
+def set_vault_credential_store(store: Any) -> None:
+    """Server registers its Postgres store at startup (VAULT_STORE=postgres). Core never imports server code."""
+    global _PG_VAULT_STORE  # pylint: disable=global-statement
+    _PG_VAULT_STORE = store
+
 
 # ---------------------------------------------------------------------------
 # Key loading
@@ -102,6 +110,8 @@ async def store_vault_credential(
         navigator_session.vault.VaultCryptoError: If the stored credential
             does not belong to ``(user_id, vault_name)`` or fails integrity.
     """
+    if _PG_VAULT_STORE is not None:
+        return await _PG_VAULT_STORE.store(user_id, vault_name, secret_params)
     keyring = get_vault_keyring()
     encrypted = encrypt_credential(
         secret_params, credential_context(user_id, vault_name), keyring
@@ -151,6 +161,8 @@ async def retrieve_vault_credential(
         navigator_session.vault.VaultCryptoError: If the stored credential
             does not belong to ``(user_id, vault_name)`` or fails integrity.
     """
+    if _PG_VAULT_STORE is not None:
+        return await _PG_VAULT_STORE.retrieve(user_id, vault_name)
     keyring = get_vault_keyring()
 
     async with DocumentDb() as db:
@@ -176,6 +188,8 @@ async def delete_vault_credential(user_id: str, vault_name: str) -> None:
         user_id: Owner's user identifier.
         vault_name: Vault credential name to remove.
     """
+    if _PG_VAULT_STORE is not None:
+        return await _PG_VAULT_STORE.delete(user_id, vault_name)
     async with DocumentDb() as db:
         await db.delete(
             VAULT_CRED_COLLECTION,

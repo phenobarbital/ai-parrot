@@ -31,8 +31,7 @@ except ImportError:
     AbstractLoader = None  # type: ignore[assignment,misc]
 
 from .models import BotModel
-
-
+from .studio.access import studio_scope_kwargs
 
 
 
@@ -452,7 +451,8 @@ class ChatHandler(BaseView):
         if isinstance(stream, str):
             stream = stream.lower() == 'true'
         try:
-            async with chatbot.session(request=self.request, app=app, llm=llm) as bot:
+            async with chatbot.session(request=self.request, app=app, llm=llm,
+                                       **await studio_scope_kwargs(app, self.request, chatbot)) as bot:
                 # Prioritize session_id from request data (conversation-specific)
                 # Generate new UUID if not provided - never use browser session
                 session_id = data.pop('session_id', None) or uuid.uuid4().hex

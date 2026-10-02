@@ -15,8 +15,8 @@ from typing import Any, Mapping
 
 logger = logging.getLogger("Parrot.AgentStudio.Storage")
 
-STUDIO_SCHEMA_REQUIRED: int = 5
-STUDIO_SCHEMA_REQUIRED_PHASE2: int = 8
+# The ``database`` backend needs migrations 1-8 (phase 2 ships in the same release), whatever the store switches say.
+STUDIO_SCHEMA_REQUIRED: int = 8
 STUDIO_MIGRATION_LOCK_KEY: int = 4715391001
 STUDIO_MIN_SERVER_VERSION_NUM: int = 140000
 LEDGER_MARKER: str = "-- @studio-ledger"
@@ -108,7 +108,6 @@ def stamp_migrations(directory: Path | None = None) -> None:
     """Release tooling: rewrite every trailer hex and MANIFEST.json from the bodies (repository only)."""
     directory = directory or Path(__file__).parent / "migrations"
     manifest_path = directory / MANIFEST_NAME
-    old = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
     entries = []
     for path in sorted(directory.glob("*.sql")):
         raw = path.read_bytes()
@@ -121,8 +120,7 @@ def stamp_migrations(directory: Path | None = None) -> None:
         version, name = _parse_name(path.name)
         entries.append({"version": version, "name": name, "sha256": digest})
     manifest = {
-        "required": old.get("required", STUDIO_SCHEMA_REQUIRED),
-        "required_phase2": old.get("required_phase2", STUDIO_SCHEMA_REQUIRED_PHASE2),
+        "required": STUDIO_SCHEMA_REQUIRED,
         "migrations": entries,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

@@ -19,6 +19,7 @@ import inspect
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.conf import AGENTS_DIR
 from parrot.knowledge.graphindex.factory import build_graph_memory_toolkit
@@ -27,8 +28,14 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.wiki import LLMWikiToolkit, WikiConfig
 from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
-from parrot.tools.discovery import discover_from_registry, resolve_class
 from parrot.tools.infographic_toolkit import InfographicToolkit
+from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.server_params import constructor_server_params
+from parrot.tools.tooling_policy import (
+    TenantToolingRefused,
+    ToolingSubject,
+    get_tenant_tooling_policy,
+)
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import BaseModel, Field, ValidationError
 
@@ -154,30 +161,8 @@ def _missing_required_params(cls: type, provided: dict) -> list[str]:
 
 
 def _resolve_toolkit_class(slug: str) -> type | None:
-    """Resolve a generic toolkit slug via ``TOOL_REGISTRY`` (case-insensitive).
-
-    Deliberately uses ``discover_from_registry`` (declarative
-    ``TOOL_REGISTRY`` dicts only) rather than the full ``discover_all``
-    walk — matches the Codebase Contract's explicit "resolve via
-    TOOL_REGISTRY" guidance for generic slugs.
-
-    Args:
-        slug: Candidate toolkit slug.
-
-    Returns:
-        The resolved class, or ``None`` if unknown/unresolvable.
-    """
-    registry = discover_from_registry()
-    dotted_path = registry.get(slug)
-    if dotted_path is None:
-        lowered = {key.lower(): value for key, value in registry.items()}
-        dotted_path = lowered.get(slug.lower())
-    if dotted_path is None:
-        return None
-    try:
-        return resolve_class(dotted_path)
-    except (ImportError, AttributeError):
-        return None
+    """Resolve ``slug`` through the shared ToolkitResolver (FEAT-622 M2 shim)."""
+    return get_toolkit_resolver().resolve(slug)
 
 
 def _validate_wiki_storage_dir(raw: Path) -> Path:
@@ -297,30 +282,22 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
-        db_agent = await self._get_db_agent(name)
-        if db_agent is not None:
-            owner = str(db_agent.created_by) if db_agent.created_by is not None else None
-        else:
-            registry = self._registry()
-            meta = registry.get_metadata(name) if registry is not None else None
-            if meta is None:
-                return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
-            owner = self._registry_agent_owner(meta)
-
         user = await self._get_user()
-        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
+        if (refused := await self._assign_refusal(name, assign_request.slug, user)) is not None:
+            return refused  # 404 / 403 / tooling_not_permitted: all before any live-instance lookup or construction
 
         manager = self._manager()
         if manager is None:
             return self._error("BotManager unavailable.", status=503, code="unavailable")
 
-        bot = await manager.get_bot(name)
+        bot = await self._live_bot(manager, name)
         if bot is None:
             return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
 
         slug = assign_request.slug
         params = assign_request.params
         try:
+            self._refuse_server_managed(slug, params)  # 422 server_managed on EVERY assign path
             if slug == "wiki":
                 registered_names, extra = await self._assign_wiki(bot, params)
             elif slug == "dataset_manager":
@@ -341,6 +318,32 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         }
         response.update(extra)
         return self.json_response(response, status=200)
+
+    async def _assign_refusal(self, name: str, slug: str, user: Any):
+        """404 / 403 on the agent (access rule or FEAT-467 owner), then 422 ``tooling_not_permitted``; else ``None``."""
+        owner = await self._assign_owner(name)
+        if isinstance(owner, web.Response):
+            return owner
+        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
+        try:
+            await self._enforce_assign_policy(slug, user)
+        except _ToolkitAssignError as exc:
+            return self._error(exc.message, status=exc.status, code=exc.code, details=exc.details)
+        return None
+
+    async def _enforce_assign_policy(self, slug: str, user: Any) -> None:
+        """Tenant tooling policy for a live toolkit assignment (FEAT-622 M7, phase ``write``): before construction."""
+        part = await self._studio_partition()
+        policy = get_tenant_tooling_policy(self.request.app)
+        if part.tenant is None and not policy.apply_to_global:
+            return
+        subject = ToolingSubject(tenant=part.tenant, agent_id=None, actor=user.user_id, phase="write")
+        try:
+            policy.check_tool(slug, subject=subject)
+        except TenantToolingRefused as exc:
+            raise _ToolkitAssignError(
+                422, exc.code, str(exc), details={"reason": exc.reason, "item": exc.item}
+            ) from exc
 
     # -- Per-toolkit assignment helpers ---------------------------------
 
@@ -440,10 +443,33 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
 
+    def _refuse_server_managed(self, slug: str, params: dict) -> None:
+        """422 ``server_managed`` when the client sent a name the server fills (any slug, before construction)."""
+        known = _resolve_toolkit_class(slug)
+        if known is not None:
+            self._server_managed_inputs(known, params)
+
+    def _server_managed_inputs(self, cls: type, params: dict) -> dict:
+        """Constructor values the server fills (``source="app"`` from ``request.app``); refuses a client value (422)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        sent = sorted(set(params) & set(declared))
+        if sent:
+            raise _ToolkitAssignError(
+                422, "server_managed", f"Server-managed parameters cannot be set: {', '.join(sent)}",
+                details={"params": sent},
+            )
+        app = self.request.app
+        return {
+            name: app[declared[name].key]
+            for name in constructor_server_params(cls)
+            if declared[name].source == "app" and app.get(declared[name].key) is not None
+        }
+
     def _assign_generic(self, bot, slug: str, params: dict) -> tuple[list[str], dict]:
         cls = _resolve_toolkit_class(slug)
         if cls is None:
             raise _ToolkitAssignError(404, "not_found", f"Unknown toolkit '{slug}'.")
+        params = {**params, **self._server_managed_inputs(cls, params)}
         missing = _missing_required_params(cls, params)
         if missing:
             raise _ToolkitAssignError(

@@ -12,11 +12,9 @@ from .models import (
     StudioDraftRecord,
     StudioNotFound,
     StudioPartition,
-    StudioStaleAuthorization,
-    StudioVersionConflict,
     StudioWriteGuard,
 )
-from .repositories import NAVIGATOR_SCHEMA, _fetch_all, _fetch_one, _json, _write
+from .repositories import NAVIGATOR_SCHEMA, _conn_or_acquire, _fetch_all, _fetch_one, _json, _write
 
 _DRAFT_COLS = (
     "draft_id, tenant, owner, name, visibility, allowed_groups, definition, validation, status, version, "
@@ -49,11 +47,11 @@ class StudioDraftRepository:
     def __init__(self, pool: Any) -> None:
         self.pool = pool
 
-    async def get(self, part: StudioPartition, name: str) -> StudioDraftRecord | None:
-        """The draft ``name`` of the partition, or None."""
+    async def get(self, part: StudioPartition, name: str, *, conn: Any | None = None) -> StudioDraftRecord | None:
+        """The draft ``name`` of the partition, or None. Pass ``conn`` to read inside an open transaction."""
         sql = f"SELECT {_DRAFT_COLS} FROM {_D} WHERE tenant IS NOT DISTINCT FROM $1 AND name = $2"
-        async with self.pool.acquire() as conn:
-            row = await _fetch_one(conn, sql, part.tenant, name)
+        async with _conn_or_acquire(self.pool, conn) as c:
+            row = await _fetch_one(c, sql, part.tenant, name)
         return _draft_record(row) if row else None
 
     async def list(self, part: StudioPartition, *, owner: str | None = None) -> list[StudioDraftRecord]:
@@ -80,11 +78,7 @@ class StudioDraftRepository:
         head = await self._lock_row(conn, part, name)
         if head is None:
             raise StudioNotFound(name)
-        if guard.expected_version is not None and guard.expected_version != head.version:
-            raise StudioVersionConflict(f"{name}: expected {guard.expected_version}, found {head.version}")
-        if guard.authorized_version is not None and guard.authorized_version != head.version:
-            raise StudioStaleAuthorization(f"{name}: authorized {guard.authorized_version}, found {head.version}")
-        return head
+        return guard.check(head, name)
 
     async def insert(
         self,

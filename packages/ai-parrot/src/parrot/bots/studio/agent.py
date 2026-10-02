@@ -68,6 +68,7 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
         api_key: str | None = None,
         model: str | None = None,
         system_prompt: str | None = None,
+        declarative_only: bool = False,
         **kwargs: Any,
     ) -> None:
         """Build the AgentStudio meta-agent.
@@ -83,11 +84,14 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
                 ``parrot.conf.STUDIO_AGENT_MODEL``.
             system_prompt: Optional system prompt override. Falls back to
                 this module's default AgentStudio prompt.
+            declarative_only: Tenant partitions (FEAT-621 X11): offer
+                ``save_agent_bundle`` instead of ``save_agent_draft``.
             **kwargs: Forwarded to :class:`~parrot.bots.agent.Agent`. An
                 explicit ``llm=`` kwarg (instance/class/string) takes
                 precedence over the ``api_key``/``model`` construction
                 path below.
         """
+        self._declarative_only = declarative_only
         llm = kwargs.pop("llm", None)
         if llm is None:
             # FEAT-523 (TASK-2846): lazy import — core must not import a
@@ -105,4 +109,4 @@ class AgentStudioAgent(SkillRegistryMixin, Agent):
 
     def agent_tools(self) -> list:
         """Return the AgentStudio-specific tool set (FEAT-467 TASK-2521)."""
-        return [*super().agent_tools(), *build_studio_tools()]
+        return [*super().agent_tools(), *build_studio_tools(declarative_only=self._declarative_only)]

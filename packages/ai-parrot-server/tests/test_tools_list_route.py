@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 from aiohttp import web
 from parrot.handlers.bots import ToolList
 from parrot.manager.manager import BotManager
+from parrot.tools.resolver import ToolkitEntry
 
 
 def _manager() -> BotManager:
@@ -69,8 +70,8 @@ def test_tools_list_registration_respects_pre_registered_host():
 async def test_tools_list_get_route_reachable(aiohttp_client, monkeypatch):
     """End-to-end: the registered route actually dispatches to ToolList.get."""
     monkeypatch.setattr(
-        "parrot.handlers.bots.discover_all",
-        lambda: {"echo": "parrot.tools.echo.EchoTool"},
+        "parrot.tools.resolver.ToolkitResolver.entries",
+        lambda self: [ToolkitEntry(slug="echo", dotted_path="parrot.tools.echo.EchoTool", source="parrot_tools")],
     )
     # ToolList is decorated with @user_session(), which calls
     # navigator_auth.decorators.get_session — that needs a real

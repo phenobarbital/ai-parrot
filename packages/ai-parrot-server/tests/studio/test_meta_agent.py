@@ -328,7 +328,7 @@ class _FakeAssistantAgent:
     def session(self, request=None, app=None, **kwargs):
         return _FakeSessionCtx(self)
 
-    async def ask(self, question: str):
+    async def ask(self, question: str, **_kw):
         self.ask_calls.append(question)
         return SimpleNamespace(content="assistant reply", metadata={})
 

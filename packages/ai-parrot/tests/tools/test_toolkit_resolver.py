@@ -88,11 +88,13 @@ def test_resolver_rejects_missing_toolkit_prefix(host_plugins: Path, caplog: pyt
     assert "tool_prefix None" in errors[0].getMessage()
 
 
-def test_tenant_bound_host_entry_unavailable_before_enforcement(host_plugins):
-    """Rule 5: tenant-bound host entry is unavailable until M3b (TASK-3989 replaces this test)."""
+def test_tenant_bound_host_entry_resolves_after_enforcement(host_plugins):
+    """Rule 5 is lifted: the scope gate lives in the core (FEAT-622 M3b), so a tenant-bound entry resolves."""
     resolver = get_toolkit_resolver()
     assert resolver.entry("tp_probe") is not None
-    assert resolver.resolve("tp_probe") is None
+    cls = resolver.resolve("tp_probe")
+    assert cls is not None and cls.__name__ == "ProbeToolkit" and cls.tenant_bound is True
+    assert resolver.resolve("tp_probe_tool").__name__ == "ProbeTool"
 
 
 def test_malformed_dotted_path_is_unavailable(host_plugins):

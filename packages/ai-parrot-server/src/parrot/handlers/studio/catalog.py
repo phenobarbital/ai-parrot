@@ -26,7 +26,7 @@ from parrot.clients.factory import LLMFactory
 from parrot.stores import supported_stores
 
 import parrot.handlers.tools_catalog as tools_catalog_module
-from parrot.handlers.tools_catalog import _build_catalog
+from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
 
 from ._base import StudioBaseView
 from .models import StudioError
@@ -207,7 +207,7 @@ class StudioCatalogHandler(StudioBaseView):
         if kind == "llm-clients":
             return self.json_response(await self._get_llm_clients())
         if kind == "tools":
-            return self.json_response(await self._get_tools())
+            return await self._tools_for_caller()
         if kind == "vector-stores":
             return self.json_response(await self._get_vector_stores())
         return self._error(f"Unknown catalog '{kind}'.", status=404, code="not_found")
@@ -225,6 +225,19 @@ class StudioCatalogHandler(StudioBaseView):
         if _LLM_CLIENTS_CACHE is None:
             _LLM_CLIENTS_CACHE = await asyncio.to_thread(_build_llm_clients_catalog)
         return _LLM_CLIENTS_CACHE
+
+    async def _tools_for_caller(self):
+        """The tools catalogue filtered by the tenant tooling policy for the caller's partition (FEAT-622 M7)."""
+        from parrot.tools.tooling_policy import ToolingSubject
+
+        from .access import StudioTenantRequired
+
+        try:
+            part = await self._studio_partition()
+        except StudioTenantRequired:
+            return self._tenant_required()
+        subject = ToolingSubject(tenant=part.tenant, agent_id=None, actor=None, phase="attach")
+        return self.json_response(filter_catalog_for(self.request.app, subject, await self._get_tools()))
 
     @staticmethod
     async def _get_tools() -> list[dict]:

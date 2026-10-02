@@ -8,7 +8,7 @@ enumerated differently:
 * agents — ``AgentRegistry.list_agents()``, whose ``BotConfig`` is already a
   JSON-serialisable manifest;
 * tools — the declarative ``TOOL_REGISTRY`` maps read by
-  ``discover_from_registry()`` (no imports), enriched from a live
+  ``get_toolkit_resolver().registry_paths()`` (no imports), enriched from a live
   ``ToolManager`` when one is available.
 
 This module merges them into one bounded, JSON-safe object. Two properties
@@ -400,12 +400,12 @@ def _build_tools(
     Returns:
         Name-sorted tool entries.
     """
-    from parrot.tools.discovery import discover_from_registry  # noqa: PLC0415
+    from parrot.tools.resolver import get_toolkit_resolver  # noqa: PLC0415
 
     merged: Dict[str, ToolEntry] = {}
 
     try:
-        declared = discover_from_registry()
+        declared = get_toolkit_resolver().registry_paths()
     except Exception:  # pragma: no cover - defensive
         logger.warning("Tool registry discovery failed", exc_info=True)
         declared = {}
@@ -479,9 +479,9 @@ def _cache_key() -> tuple:
         )
     )
     try:
-        from parrot.tools.discovery import discover_from_registry  # noqa: PLC0415
+        from parrot.tools.resolver import get_toolkit_resolver  # noqa: PLC0415
 
-        tools = tuple(sorted(discover_from_registry().items()))
+        tools = tuple(sorted(get_toolkit_resolver().registry_paths().items()))
     except Exception:  # pragma: no cover - defensive
         tools = ("<discovery-failed>",)
     return (node_types, agents, tools)

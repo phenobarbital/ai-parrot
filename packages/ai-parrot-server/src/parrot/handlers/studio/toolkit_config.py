@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 
+from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from pydantic import ValidationError
 
 from parrot.tools.spec import hydrate_params, mask_mcp, mask_spec
+from parrot.tools.tooling_policy import TenantToolingRefused
 
 from ._base import StudioBaseView
 from .agents import _StudioAgentsMixin
@@ -21,9 +23,29 @@ from .models import (
     ToolkitOptionsResponse,
     ToolkitPersistResponse,
 )
-from .tooling_store import AgentToolingStore
+from .access import StudioTenantRequired, _store_record
+from .storage import models as _studio_models
+from .storage.services._common import StudioValidationError
+from .tooling_store import AgentToolingStore, ServerManagedParamsRejected
+
+_STUDIO_ERRORS = (
+    _studio_models.StudioStorageUnavailable,
+    _studio_models.StudioVersionConflict,
+    _studio_models.StudioStaleAuthorization,
+    _studio_models.StudioNameConflict,
+    _studio_models.StudioNotFound,
+    _studio_models.StudioToolingRefused,
+    StudioValidationError,
+)
 
 _OPTIONS_TIMEOUT_S = 15.0
+
+
+def _persisted(store: object, name: str, slug: str | None = None) -> dict:
+    """The write response; ``version`` only for a Studio row (a legacy agent's body stays byte-for-byte)."""
+    version = getattr(store, "last_version", None)
+    response = ToolkitPersistResponse(agent=name, slug=slug, version=version)
+    return response.model_dump(exclude=None if version is not None else {"version"})
 
 
 class _ToolingViewMixin(_StudioAgentsMixin):
@@ -42,11 +64,27 @@ class _ToolingViewMixin(_StudioAgentsMixin):
             state = await store.load(name)
         except LookupError:
             return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
-        self._require_owner(state.owner, await self._get_user())
+        except (*_STUDIO_ERRORS, StudioTenantRequired) as exc:
+            return self._studio_error(exc)
+        if (denied := await self._decide_access(state, name)) is not None:
+            return denied
         return store, state
+
+    async def _decide_access(self, state, name: str):
+        """404 invisible / 403 not manageable for a Studio row (the access rule); the FEAT-467 owner check otherwise."""
+        if getattr(state, "source", None) == "studio":
+            return await self._studio_authorize(state._studio[1], name, manage=True)
+        self._require_owner(state.owner, await self._get_user())
+        return None
 
     def _map_exc(self, exc: Exception):
         """Map persistence and vault exceptions to the Studio error contract."""
+        if isinstance(exc, TenantToolingRefused):
+            return self._error(str(exc), status=422, code=exc.code, details={"reason": exc.reason, "item": exc.item})
+        if isinstance(exc, ServerManagedParamsRejected):
+            return self._error(str(exc), status=422, code="server_managed", details={"params": exc.params})
+        if isinstance(exc, _STUDIO_ERRORS):
+            return self._studio_error(exc)
         if isinstance(exc, PermissionError):
             return self._error(str(exc), status=409, code="read_only_definition")
         if isinstance(exc, ValueError):
@@ -56,6 +94,26 @@ class _ToolingViewMixin(_StudioAgentsMixin):
         if isinstance(exc, LookupError):
             return self._error("Requested resource was not found.", status=404, code="not_found")
         raise exc
+
+    async def _write(self, state, name: str, source, call):
+        """Run ``call(kwargs)``; ``None`` on success, a refusal response otherwise.
+
+        Studio rows go through the guarded write under the version the owner check authorized, re-authorized
+        once on a stale one (spec §2.8). A legacy source has no version to guard: ``expected_version`` is a 400.
+        """
+        if getattr(state, "source", None) != "studio":
+            if (refused := self._refuse_expected_version(source)) is not None:
+                return refused
+            await call({})
+            return None
+        expected = self._expected_version(source)
+        storage, part, user = self._studio_storage(), await self._studio_partition(), await self._get_user()
+        result = await self._studio_write(
+            lambda guard: call({"guard": guard, "actor": user.user_id}),
+            record=state._studio[1], reread=lambda: storage.services.agents.get(part, name),
+            reauthorize=self._reauthorize("agent", name), expected_version=expected,
+        )
+        return result if isinstance(result, web.Response) else None
 
     @staticmethod
     def _is_error_response(value):
@@ -105,12 +163,17 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             request = ToolkitConfigPutRequest(**(payload or {}))
         except (ValidationError, ValueError) as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
-        store, _ = authorized
+        store, state = authorized
         try:
-            await store.put_toolkit(name, slug, request.params, request.user_overridable)
+            refused = await self._write(
+                state, name, payload,
+                lambda kw: store.put_toolkit(name, slug, request.params, request.user_overridable, **kw),
+            )
         except Exception as exc:
             return self._map_exc(exc)
-        return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
+        if refused is not None:
+            return refused
+        return self.json_response(_persisted(store, name, slug))
 
     async def delete(self):
         """Delete one agent-level toolkit specification."""
@@ -119,18 +182,31 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             return authorized
         name = self.request.match_info.get("name")
         slug = self.request.match_info.get("slug")
-        store, _ = authorized
+        store, state = authorized
         try:
-            await store.delete_toolkit(name, slug)
+            refused = await self._write(
+                state, name, self.request.query,
+                lambda kw: store.delete_toolkit(name, slug, **kw),
+            )
         except Exception as exc:
             return self._map_exc(exc)
-        return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
+        if refused is not None:
+            return refused
+        return self.json_response(_persisted(store, name, slug))
 
 
 @is_authenticated()
 @user_session()
 class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
     """GET dynamic options evaluated on the persisted spec only."""
+
+    def _options_refusal(self, cls, slug: str, param: str):
+        """403 ``tool_scope_unavailable`` for a tenant-bound toolkit without a scope; 404 for an unknown parameter."""
+        if (refused := self._scope_refusal(cls, slug)) is not None:
+            return refused
+        if param not in cls.options_params:
+            return self._error(f"Unknown options parameter '{param}'.", status=404, code="not_found")
+        return None
 
     async def get(self):
         """Return dynamic options without accepting request-provided configuration."""
@@ -144,11 +220,27 @@ class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
             cls, _ = store.schema_for(slug)
         except LookupError as exc:
             return self._map_exc(exc)
-        if param not in cls.options_params:
-            return self._error(f"Unknown options parameter '{param}'.", status=404, code="not_found")
+        async with self._bound_scope(await self._state_agent_ref(state)):   # the agent's own reference (C16)
+            return await self._load_options(cls, state, slug, param)
+
+    async def _state_agent_ref(self, state):
+        """The :class:`StudioAgentRef` of a Studio row (access rule view), or ``None`` for a legacy agent."""
+        if getattr(state, "source", None) != "studio":
+            return None
+        rec = state._studio[1]
+        return (await self._access()).agent_ref(_store_record("agent", rec.agent_id, rec))
+
+    async def _load_options(self, cls, state, slug: str, param: str):
+        """Scope gate, then the persisted spec's options (vault read and construction come after the gate)."""
+        if (refused := self._options_refusal(cls, slug, param)) is not None:
+            return refused  # the scope gate runs before hydrate_params (vault read) and before construction
         spec = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
         if spec is None:
             return self._error("Toolkit is not configured.", status=409, code="not_configured")
+        return await self._fetch_options(cls, spec, param)
+
+    async def _fetch_options(self, cls, spec, param: str):
+        """Vault read, construction and ``config_options`` (only after the scope gate); the JSON response."""
         instance = None
         try:
             hydrated = await hydrate_params(spec)
@@ -205,9 +297,14 @@ class StudioAgentMcpServersHandler(_ToolingViewMixin, StudioBaseView):
             request = AgentMcpServersPutRequest(**(payload or {}))
         except (ValidationError, ValueError) as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
-        store, _ = authorized
+        store, state = authorized
         try:
-            await store.put_mcp_servers(name, request.servers)
+            refused = await self._write(
+                state, name, payload,
+                lambda kw: store.put_mcp_servers(name, request.servers, **kw),
+            )
         except Exception as exc:
             return self._map_exc(exc)
-        return self.json_response(ToolkitPersistResponse(agent=name).model_dump())
+        if refused is not None:
+            return refused
+        return self.json_response(_persisted(store, name))

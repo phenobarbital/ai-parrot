@@ -32,6 +32,7 @@ from pandas.api import types as pdt
 from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
 
 from parrot.auth.permission import build_principal_context
+from parrot.tools.server_params import ServerParam
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.template.engine import JinjaConfig, TemplateEngine
 from parrot.models.infographic import (
@@ -251,6 +252,7 @@ class InfographicToolkit(AbstractToolkit):
 
     return_direct: bool = True  # bypass LLM re-summarisation
     tool_prefix: Optional[str] = "infographic"
+    server_managed_params = {"artifact_store": ServerParam(source="app", key="artifact_store")}
     prefix_separator: str = "_"
     exclude_tools: Tuple[str, ...] = ()
 

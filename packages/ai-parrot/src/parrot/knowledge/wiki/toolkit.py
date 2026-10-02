@@ -28,6 +28,7 @@ from parrot.knowledge.wiki.models import WikiConfig, WikiLintReport, WikiPageCat
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store, estimate_tokens
+from parrot.tools.server_params import ServerParam
 from parrot.tools.toolkit import AbstractToolkit
 
 
@@ -66,6 +67,11 @@ class LLMWikiToolkit(AbstractToolkit):
     """
 
     tool_prefix: str = "wiki"
+    server_managed_params = {
+        "pageindex_toolkit": ServerParam(source="server"),
+        "graphindex_toolkit": ServerParam(source="server"),
+        "okf_toolkit": ServerParam(source="server"),
+    }
 
     def __init__(
         self,

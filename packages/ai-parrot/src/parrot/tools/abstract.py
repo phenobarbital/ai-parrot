@@ -24,6 +24,7 @@ from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
 # spec's Module 5 census — same mechanical pattern as bots/clients; fixed here
 # because it blocks import of every AbstractTool subclass. See Completion Note.)
 from ..core.events.lifecycle import EventEmitterMixin, TraceContext
+from . import execution_gates as gates
 from ..core.events.lifecycle.events import (
     BeforeToolCallEvent,
     AfterToolCallEvent,
@@ -342,6 +343,14 @@ class AbstractTool(EventEmitterMixin, ABC):
     delegate_description: Optional[str] = None
     # FEAT-622: standalone tools that read tenant data set this; see parrot.tools.scope.
     tenant_bound: ClassVar[bool] = False
+    # FEAT-622: "read" | "write" | None (unknown). Host standalone tools with None are treated as "write".
+    access: ClassVar[Optional[str]] = None
+    # FEAT-622: Mapping[str, ServerParam] — params the server fills (see parrot.tools.server_params).
+    server_managed_params: ClassVar[Dict[str, Any]] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        gates.validate_tool_subclass(cls)
 
     def __init__(
         self,
@@ -382,9 +391,11 @@ class AbstractTool(EventEmitterMixin, ABC):
         """
         # routing_meta — per-instance to avoid shared mutable default
         self.routing_meta: Dict = routing_meta if routing_meta is not None else {}
+        gates.mark_host_write(self)
 
         # Remote execution wiring (None = legacy in-process behaviour)
         self.executor: Optional["AbstractToolExecutor"] = executor
+        gates.refuse_remote_executor(self, executor)
         self.webhook_callback_url: Optional[str] = webhook_callback_url
         self.remote_timeout_seconds: int = int(remote_timeout_seconds)
 
@@ -880,6 +891,11 @@ class AbstractTool(EventEmitterMixin, ABC):
 
     # ── Core execution ────────────────────────────────────────────────────────
 
+    def _resolve_call_kwargs(self, validated_args: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """The kwargs ``_execute`` receives: the validated args plus the server-managed scope values."""
+        resolved = self._shallow_dump(validated_args) if hasattr(validated_args, "model_dump") else dict(kwargs)
+        return gates.inject_server_managed(self, resolved)
+
     async def execute(self, *args, **kwargs) -> ToolResult:
         """
         Execute the tool with error handling and result standardization.
@@ -918,22 +934,9 @@ class AbstractTool(EventEmitterMixin, ABC):
         _cred_channel: str = kwargs.pop("_cred_channel", "unknown")
         _cred_user_id: Optional[str] = kwargs.pop("_cred_user_id", None)
 
-        if pctx is not None and resolver is not None:
-            required = getattr(self, "_required_permissions", set())
-            allowed = await resolver.can_execute(pctx, self.name, required)
-            if not allowed:
-                self.logger.warning("Permission denied: user=%s tool=%s required=%s", pctx.user_id, self.name, required)
-                return ToolResult(
-                    success=False,
-                    status="forbidden",
-                    result=None,
-                    error=f"Permission denied: '{self.name}' requires {required}",
-                    metadata={
-                        "tool_name": self.name,
-                        "user_id": pctx.user_id,
-                        "required_permissions": list(required),
-                    },
-                )
+        refused = await gates.pre_execute_refusal(self, kwargs, pctx, resolver)
+        if refused is not None:
+            return refused
 
         # Store for lifecycle hooks.  ToolkitTool._execute reads ``_current_pctx``
         # and injects it back into the ``_pre_execute`` / ``_post_execute`` calls
@@ -980,14 +983,12 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             self.logger.info("Executing tool: %s", self.name)
 
-            # Validate arguments
+            # Validate arguments (FEAT-622: an LLM-supplied server-managed value is dropped first)
+            kwargs = gates.drop_server_managed(self, kwargs)
             validated_args = self.validate_args(**kwargs)
 
-            # Resolve the kwargs dict that the tool actually receives.
-            if hasattr(validated_args, "model_dump"):
-                resolved_kwargs = self._shallow_dump(validated_args)
-            else:
-                resolved_kwargs = dict(kwargs)
+            # Resolve the kwargs dict that the tool actually receives (+ server-managed scope values).
+            resolved_kwargs = self._resolve_call_kwargs(validated_args, kwargs)
 
             # ── FEAT-264: credential seam ─────────────────────────────────────
             # Gate is active only when the tool declares credential_provider
@@ -1204,7 +1205,7 @@ class AbstractTool(EventEmitterMixin, ABC):
                 status="error",
                 result=None,
                 error=error_msg,
-                metadata={"tool_name": self.name, "error_type": type(e).__name__},
+                metadata=gates.scope_metadata(self, e),
             )
         finally:
             # Always clear the per-call context so stale references don't linger.
@@ -1215,6 +1216,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         Public alias for executing the tool directly without the ToolResult wrapper.
         Provides a direct way to get raw results instead of calling _execute().
         """
+        gates.require_run_gate(self, kwargs)
         return await self._execute(*args, **kwargs)
 
     # Utility methods for file handling (inherited from BaseAbstractTool)
