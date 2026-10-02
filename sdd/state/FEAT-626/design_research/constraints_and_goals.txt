@@ -1,0 +1,88 @@
+Decisions taken during discovery (Rounds 0–2) — binding for the spec:
+
+- **Flow**: `type: feature`, `base_branch: dev`.
+- **Shape**: a **new command** (`wikitoolkit inbox`) that **reuses** the
+  FEAT-402/451 pipeline (`DocumentAcquirer`, `IngestTriageRouter`,
+  `WikiIngestOrchestrator`, `SourceCollectionManager`, `WikiBookkeeper`).
+  Not a new `ingest` mode, not an independent subsystem. `build`, `upsert`
+  and `ingest` keep byte-identical behavior.
+- **Trigger**: manual, hook-safe command run by a human or an agent, also
+  exposed as an MCP tool. No daemon, no watcher, no default git hook. It
+  needs an LLM, so it must never be wired into the offline post-commit hook
+  path by default.
+- **Inbox**: a **git-tracked** folder, default `inbox/` at the repo root,
+  path configurable in `.parrot/wiki.json`.
+- **Archive**: originals move to the **git-ignored** `.parrot/archive/`
+  (`.gitignore:385` ignores `.parrot/*`), renamed
+  `<stem>.<YYYY-MM-DD>.<ext>`. Archiving a tracked original stages its
+  removal (`git rm`-equivalent); the command never commits.
+- **Markdown output**: an **OKF markdown file inside the storage dir**
+  (`.parrot/wiki/…`), following the `file_store.py` bundle layout and the
+  `export.py` frontmatter contract. The SQLite page remains the retrieval
+  truth; the file is a write-only projection (same boundary `export.py:1-16`
+  states: OKF markdown is never read back on the retrieval path).
+- **Taxonomy**: a **charter-defined closed set of document kinds** (meeting,
+  briefing, decision, report, memo, …), each mapped to a wiki page category,
+  plus **free-form tags normalized to kebab-case**. The LLM chooses *from the
+  list*; it never invents a kind.
+- **Linking**: **retrieve candidates → LLM selects → verify ids**. Lexical
+  search over the plane proposes top-k candidate pages (documents, memories,
+  code modules); the LLM picks related ones with a reason; only ids that
+  resolve in the store become `references`-family edges and `[[wikilinks]]`.
+  Never link to an id the store cannot return.
+- **Triage**: charter thresholds apply in `--auto` semantics (a jokes-only
+  meeting is discarded). Rejected originals are **also archived**, under a
+  `rejected/` marker, with a bookkeeper line — the inbox must be empty after a
+  clean run.
+- **Idempotent and crash-safe**: a document that fails anywhere stays in the
+  inbox; nothing is archived until its page(s) and markdown are persisted.
+  Re-running after a failure resumes without duplicating pages
+  (`replace_source_slice`).
+- **Offline/no-LLM contract untouched**: `repo_scan.py` and the git hook
+  remain deterministic and LLM-free.
+- **Conventions**: aiohttp only (no new HTTP clients), Pydantic v2 models,
+  `self.logger`, `black`/`ruff` clean, tests under
+  `packages/ai-parrot/tests/knowledge/wiki/`.
+
+Resolutions from the open-questions round (2026-10-03) — also binding:
+
+- **Separate classification call**: a dedicated `InboxClassification`
+  structured call on the lightweight tier; FEAT-402 triage prompts and
+  `TriageOutput` stay byte-identical. Discards never pay for it.
+- **Tags** are `tag:<slug>` pages (category `tag`, origin `authored`) joined
+  by `tagged` edges — no `pages` schema migration in any store. Tags are also
+  rendered in the OKF frontmatter.
+- **Document page**: a dedicated `doc:<slug>` page created by the inbox is
+  the carrier of category, summary, tags, links, frontmatter and the
+  markdown projection. The PageIndex pages the orchestrator creates stay as
+  children, each joined to the doc page by a `part_of` edge; the
+  orchestrator's own output is never rewritten.
+- **Git**: archiving a tracked original stages its deletion
+  (`git rm --cached` after the move). No `--commit` flag; the command never
+  commits.
+- **Duplicates**: an unchanged file re-dropped in the inbox is a Stage-0
+  heuristic reject → archived under `rejected/`, bookkeeper reason
+  `duplicate`; `--force` re-ingests.
+- **Markdown path**: `<storage_dir>/inbox/<category-plural>/<flat-id>.md`
+  (never `pages/`, which the `memory` backend owns).
+- **Default taxonomy**: six kinds — meeting→summary, briefing→overview,
+  decision→concept, report→synthesis, memo→summary, note→concept;
+  `default_kind: note`. **`decision` kinds additionally emit an ADR
+  candidate** into the FEAT-578 decisions plane (`origin="inferred"`,
+  `review_status="unreviewed"`) for `wikitoolkit adr review`.
+- **Relation vocabulary** (closed): `references`, `relates_to`, `mentions`,
+  `follows_up`, `supersedes`. `supersedes` is informational in v1 — no
+  ranking demotion.
+- **Link candidates**: at most 20 sent to the LLM (combined search top-k ∪
+  per-tag FTS, deduped); `sym:`/`file:` code pages enter the candidate set
+  only when the document names the symbol or path verbatim.
+- **MCP tool deferred**: no `wiki_inbox` tool in this feature (FEAT-569 is
+  in flight on `tools.py`/`mcp_server.py`); a ledger follow-up is opened at
+  `/sdd-done`. The processor is built so the tool is a thin wrapper later.
+- **Fireflies**: when a document carries a Fireflies id (frontmatter
+  `fireflies_id` / `external_id`, or a `fireflies:<id>` marker), the inbox
+  looks it up with `SourceCollectionManager.find_by_external_id`; a hit
+  re-ingests that existing source (`replace_source_slice`) and updates its
+  doc page instead of creating a second one.
+
+---

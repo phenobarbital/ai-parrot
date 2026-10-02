@@ -1,0 +1,37 @@
+The LLM Wiki already has a supervised document-ingestion lane:
+`wikitoolkit ingest <SOURCE>` (FEAT-402 charter-driven triage + JSONL manifest
+review, FEAT-451 loader-backed PDF/DOCX/PPTX extraction + YAML frontmatter).
+It is built for *curating a corpus with a human in the loop*: every run needs a
+mode (`--dry-run` / `--review` / `--interactive` / `--auto`), the operator
+points it at an arbitrary folder, and the originals stay where they were.
+
+What is missing is the **drop-box workflow** for "corporate digital life"
+documents — meeting notes, briefings, memos, decisions, reports — that arrive
+one by one:
+
+1. **No fixed intake location.** Nothing watches a conventional folder such
+   as `inbox/` in the repository; each ingest is an ad-hoc invocation with a
+   path argument.
+2. **No classification beyond admit/archive/discard.** Triage decides
+   *whether* a document enters the wiki, not *what it is*. `TriageOutput`
+   even carries a `category_hint` field that nothing consumes
+   (`review.py:88-108`; no reader anywhere in `parrot/knowledge/wiki/`).
+   Pages land with PageIndex's generic categories and no tags.
+3. **No relations to the existing graph.** An ingested document becomes an
+   island: `summarizes` edges to its own source only. A meeting that
+   discusses a module, a decision or a previous meeting is never linked to
+   those pages, so `wikitoolkit related` cannot travel from one to the other.
+4. **No on-disk markdown.** With the default `sqlite` backend the page body
+   lives only inside `.parrot/wiki/wiki.db`; OKF markdown exists only as a
+   whole-plane export (`export.py`) or in the `memory` backend's bundle
+   (`file_store.py`). There is no per-document markdown projection a human
+   can open next to the plane.
+5. **No lifecycle for the original.** Processed files stay in place, so the
+   operator cannot tell "already ingested" from "still pending" by looking at
+   the folder, and re-running re-triages everything.
+
+Affected users: the repository maintainers who drop meeting notes and
+briefings into the repo and the coding agents (Claude Code, Codex, Gemini via
+the `wikitoolkit` MCP server) that later query the wiki for that context.
+
+---
