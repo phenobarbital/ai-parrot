@@ -160,7 +160,7 @@ class _StudioStorageMixin:
         table = (
             (m.StudioStorageUnavailable, 503, "studio_storage_unavailable"),
             ((m.StudioVersionConflict, m.StudioStaleAuthorization), 409, "version_conflict"),
-            (m.StudioNameConflict, 409, "duplicate"),  # FEAT-605 v0.2 switches this to name_taken
+            (m.StudioNameConflict, 409, "name_taken"),  # X14: never "duplicate"
             (m.StudioNotFound, 404, "not_found"),
             (m.StudioToolingRefused, 422, "tooling_not_permitted"),
             (m.StudioAssetTooLarge, 413, getattr(exc, "code", "asset_too_large")),
@@ -172,7 +172,8 @@ class _StudioStorageMixin:
             return self.json_response(self._json_error(f"Invalid request: {exc}", "validation_error"), status=422)
         for kinds, status, code in table:
             if isinstance(exc, kinds):
-                return self.json_response(self._json_error(str(exc) or code, code), status=status)
+                message = "The name is not available." if code == "name_taken" else (str(exc) or code)   # non-enumerating
+                return self.json_response(self._json_error(message, code), status=status)
         self.logger.error("Studio: unexpected storage error: %r", exc, exc_info=exc)
         return self.json_response(self._json_error("Internal server error.", "internal_error"), status=500)
 
