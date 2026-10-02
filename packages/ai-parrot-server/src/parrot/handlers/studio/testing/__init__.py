@@ -102,11 +102,7 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
         A host standalone write tool has no approval channel on this path (FEAT-622 M8), so it is refused
         before any instantiation.
         """
-        if (
-            cls is None
-            or not (isinstance(cls, type) and issubclass(cls, AbstractTool))
-            or (isinstance(cls, type) and issubclass(cls, AbstractToolkit))
-        ):
+        if not self._is_standalone_tool(cls):
             return self._error(f"Unknown tool '{slug}'.", status=404, code="not_found")
         if (refused := await self._policy_check(slug, phase="execute", status=403)) is not None:
             return refused
@@ -118,14 +114,22 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
                 status=403,
                 code="confirmation_required",
             )
-        if sent := sorted(set(args) & set(getattr(cls, "server_managed_params", None) or {})):
-            return self._error(
-                f"Server-managed parameters cannot be set: {', '.join(sent)}",
-                status=422,
-                code="server_managed",
-                details={"params": sent},
-            )
-        return None
+        return self._server_managed_refusal(cls, args)
+
+    @staticmethod
+    def _is_standalone_tool(cls) -> bool:
+        """A class that is an :class:`AbstractTool` but not a toolkit (the only thing ``/execute`` runs)."""
+        return isinstance(cls, type) and issubclass(cls, AbstractTool) and not issubclass(cls, AbstractToolkit)
+
+    def _server_managed_refusal(self, cls, args: dict):
+        """422 ``server_managed`` when the body names a parameter the server fills; else ``None``."""
+        sent = sorted(set(args) & set(getattr(cls, "server_managed_params", None) or {}))
+        if not sent:
+            return None
+        return self._error(
+            f"Server-managed parameters cannot be set: {', '.join(sent)}", status=422, code="server_managed",
+            details={"params": sent},
+        )
 
     def _execute_response(self, result):
         """200 with the result; a structured ``tool_scope_unavailable`` result is the same 403 as the pre-check."""

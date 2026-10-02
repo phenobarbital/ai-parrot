@@ -45,9 +45,15 @@ async def seed_agent(app, tenant, name, owner, visibility="private", groups=()):
 async def test_tools_without_scope_unchanged(aiohttp_client, pool):  # noqa: F811
     client = await aiohttp_client(_app(pool))
     app = client.app
-    app["bot_manager"].registry.register("legacy-one", __import__("parrot.bots.basic", fromlist=["BasicBot"]).BasicBot)
-    with ctx(app):
-        assert "legacy-one" in await _call(tools_module.list_existing_agents)          # FEAT-467: the registry names
+    from parrot.bots.basic import BasicBot
+
+    registry = app["bot_manager"].registry
+    registry.register("legacy-meta", BasicBot)
+    try:
+        with ctx(app):
+            assert "legacy-meta" in await _call(tools_module.list_existing_agents)     # FEAT-467: the registry names
+    finally:
+        registry.unregister("legacy-meta")   # process-wide registry: never leak into other tests
 
 
 MUTATING = [

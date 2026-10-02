@@ -230,6 +230,10 @@ class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
         spec = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
         if spec is None:
             return self._error("Toolkit is not configured.", status=409, code="not_configured")
+        return await self._fetch_options(cls, spec, param)
+
+    async def _fetch_options(self, cls, spec, param: str):
+        """Vault read, construction and ``config_options`` (only after the scope gate); the JSON response."""
         instance = None
         try:
             hydrated = await hydrate_params(spec)

@@ -98,16 +98,11 @@ class _StudioAgentsDbMixin:
             return parsed
         create_request, slug = parsed
         access = await self._access()
-        if (denied := self._create_refusal(access, create_request)) is not None:
+        if (denied := await self._create_gates(part, slug, create_request, access)) is not None:
             return denied
-        if (denied := await self._create_preflight(part, slug, create_request)) is not None:
-            return denied
-        try:
-            definition = StudioAgentDefinition.from_create_request(create_request)
-        except ValidationError as exc:
-            reserved = RESERVED_CONFIG_KEY_MESSAGE in str(exc)
-            return self._error(f"Invalid request: {exc}", status=400 if reserved else 422,
-                               code="reserved_config_key" if reserved else "unsupported_config_key")
+        definition = self._create_definition(create_request)
+        if isinstance(definition, web.Response):
+            return definition
         stamp = access.stamp(visibility=create_request.visibility, allowed_groups=create_request.allowed_groups)
         try:
             rec = await storage.services.agents.create(
@@ -116,24 +111,44 @@ class _StudioAgentsDbMixin:
             )
         except StudioNameConflict:
             return self._name_taken(slug)
-        body = {"name": slug, "persisted": True, "source": "studio", "file_path": None,
+        return self.json_response(self._created_body(rec, create_request), status=201)
+
+    async def _create_gates(self, part, slug: str, create_request: CreateAgentRequest, access):
+        """Reserved keys / visibility 422s, then the GLOBAL-partition preflight; a refusal response or ``None``."""
+        if (denied := self._create_refusal(access, create_request)) is not None:
+            return denied
+        return await self._create_preflight(part, slug, create_request)
+
+    def _create_definition(self, create_request: CreateAgentRequest):
+        """The normalised :class:`StudioAgentDefinition`, or the 400/422 response."""
+        try:
+            return StudioAgentDefinition.from_create_request(create_request)
+        except ValidationError as exc:
+            reserved = RESERVED_CONFIG_KEY_MESSAGE in str(exc)
+            return self._error(f"Invalid request: {exc}", status=400 if reserved else 422,
+                               code="reserved_config_key" if reserved else "unsupported_config_key")
+
+    @staticmethod
+    def _created_body(rec, create_request: CreateAgentRequest) -> dict:
+        """The 201 body (``persist: false`` only adds a warning: database storage always persists)."""
+        body = {"name": rec.name, "persisted": True, "source": "studio", "file_path": None,
                 "agent_id": str(rec.agent_id), "version": rec.version, "tenant": rec.tenant}
         if "persist" in create_request.model_fields_set and not create_request.persist:
             body["warnings"] = ["persist ignored: database storage always persists"]
-        return self.json_response(body, status=201)
+        return body
 
     async def _db_delete(self, storage, part):
         """Guarded delete of a Studio row; a GLOBAL name that is not a Studio row takes the legacy path."""
         name, rec = await self._studio_name_lookup(storage, part)
         if rec is None and part.tenant is None:
             return await self._legacy_delete()
-        if (denied := await self._require_author()) is not None:
-            return denied
         if not name:
             return self._error("Agent name is required.", status=400, code="missing_name")
         if rec is None:
             return self._not_found("agent", name)
         if (denied := await self._studio_authorize(rec, name, manage=True)) is not None:
+            return denied  # 404 invisible / 403 not manageable come before authoring_denied (no oracle)
+        if (denied := await self._require_author()) is not None:
             return denied
         svc = storage.services.agents
         deleted = await self._studio_write(

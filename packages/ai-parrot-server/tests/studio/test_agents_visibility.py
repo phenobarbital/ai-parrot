@@ -263,10 +263,27 @@ async def test_plain_host_items_carry_global_access(aiohttp_client, pool):  # no
     one = await (await plain.get(f"{BASE}/agents/plain", headers={"X-User": "u2"})).json()
     assert one["access"] == "global" and one["can_manage"] is False
     # a legacy (registry) agent keeps its FEAT-467 shape plus the additive fields, in the list and by name
-    plain.app["bot_manager"].registry.register("legacy-one", BasicBot)
-    listing = (await (await plain.get(f"{BASE}/agents", headers={"X-User": "u1"})).json())["agents"]
-    legacy = next(i for i in listing if i["name"] == "legacy-one")
-    assert legacy["source"] == "registry" and legacy["access"] == "global" and legacy["visibility"] == "private"
-    assert legacy["tenant"] is None and legacy["allowed_groups"] == []
-    single = await (await plain.get(f"{BASE}/agents/legacy-one", headers={"X-User": "u1"})).json()
-    assert single["access"] == "global" and "can_manage" in single
+    registry = plain.app["bot_manager"].registry
+    registry.register("legacy-vis", BasicBot)
+    try:
+        listing = (await (await plain.get(f"{BASE}/agents", headers={"X-User": "u1"})).json())["agents"]
+        legacy = next(i for i in listing if i["name"] == "legacy-vis")
+        assert legacy["source"] == "registry" and legacy["access"] == "global" and legacy["visibility"] == "private"
+        assert legacy["tenant"] is None and legacy["allowed_groups"] == []
+        single = await (await plain.get(f"{BASE}/agents/legacy-vis", headers={"X-User": "u1"})).json()
+        assert single["access"] == "global" and "can_manage" in single
+    finally:
+        registry.unregister("legacy-vis")   # the registry is process-wide: never leak into other tests
+
+
+async def test_delete_checks_access_before_authoring(aiohttp_client, pool):  # noqa: F811
+    """Same order as PATCH: invisible/absent ⇒ the one 404 even for a caller who may not author (no oracle)."""
+    client = await aiohttp_client(tenant_app(pool))
+    await seed(client)
+    nobody = who("u2", author=False)
+    assert (await client.delete(f"{BASE}/agents/a-private", headers=nobody)).status == 404
+    assert (await client.delete(f"{BASE}/agents/a-nothing", headers=nobody)).status == 404
+    assert (await client.delete(f"{BASE}/agents/a-tenant", headers=nobody)).status == 403       # visible, not manageable
+    resp = await client.delete(f"{BASE}/agents/a-tenant", headers=who("u1", author=False))
+    assert resp.status == 403 and (await resp.json())["code"] == "authoring_denied"
+    assert (await client.delete(f"{BASE}/agents/a-tenant", headers=who("u1"))).status == 200
