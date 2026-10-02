@@ -277,6 +277,6 @@ def build_studio_services(app: web.Application, repos: StudioRepositories) -> St
     tooling = StudioToolingService(repos, gate=gate)
     agents = StudioAgentService(repos, limits=limits, class_allowlist=allowlist, tooling=tooling, tooling_gate=gate)
     assets = StudioAssetService(repos, limits=limits, tooling_gate=gate)
-    drafts = StudioDraftService(repos, agents=agents, class_allowlist=allowlist, tooling_gate=gate)
-    skills = StudioSkillCatalogService(repos, limits=limits, runtime_dir=studio_runtime_dir())
+    drafts = StudioDraftService(repos, agents=agents, tooling_gate=gate)
+    skills = StudioSkillCatalogService(repos, assets=assets)
     return StudioServices(repos, agents, assets, tooling, drafts, skills)
