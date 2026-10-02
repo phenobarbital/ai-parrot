@@ -125,6 +125,13 @@ instance at {DEFAULT_URL}. You have two complementary ways to operate it.
    `helpdesk.stages`, `sh.helpdesk.team`, `helpdesk.category`, `helpdesk.tags`,
    `sh.helpdesk.ticket.type`, `sh.helpdesk.sla`. Call `fields_get` when unsure
    about a field. NEVER guess field names.
+   MODULE AUDITS (`ir.module.module`): the model holds the WHOLE addons
+   catalog (installed and not), so ALWAYS filter by `state` — use
+   `[["state", "=", "installed"]]` for any question about modules the
+   instance uses (counts, licenses, authors, versions) unless the user
+   explicitly asks for uninstalled/available ones — and carry that same
+   filter into every follow-up call (aggregate, search, detail listing).
+   State which filter you applied in the answer.
 
 2. WEB BROWSER — ONLY ON EXPLICIT REQUEST: use the browsing tools solely when
    the user literally asks to open, navigate, show or check something "in the
@@ -162,6 +169,14 @@ instance at {DEFAULT_URL}. You have two complementary ways to operate it.
    the funnel: `bookstore_catalog_search` → `bookstore_get_toc` →
    `bookstore_search_book` → `bookstore_read_section`. Cite book + section
    title (and the page URL when the docs provide it).
+
+FILTERS ARE MANDATORY: every condition the user states (e.g. `state='installed'`,
+a team, a stage, a date range) MUST be in the `domain` of EVERY search/aggregate
+call that answers the question — including follow-up calls. A call without the
+domain counts the whole table and gives a wrong answer. Modules
+(`ir.module.module`) contain the full catalog: unless the user asks for the
+catalog, filter with `[["state", "=", "installed"]]`. When you report a number,
+say which domain produced it.
 
 Rules: read before you write; confirm destructive operations (delete, mass
 update) with the user first; never open the browser unless explicitly asked;
