@@ -305,17 +305,20 @@ class PlanogramComplianceHandler(BaseView):
         return dict(result)
 
     def _build_planogram_config(self, row: dict) -> PlanogramConfig:
-        """Hydrate a PlanogramConfig from a database row dict."""
-        reference_images_raw: dict = row.get("reference_images") or {}
-        reference_images: dict[str, Path] = {}
-        for name, path_str in reference_images_raw.items():
-            p = Path(path_str)
-            if not p.is_absolute():
-                resolved = PLANOGRAM_FOLDER / p
-                if not resolved.exists():
-                    resolved = PLANOGRAM_FOLDER / p.name
-                p = resolved
-            reference_images[name] = p
+        """Hydrate a PlanogramConfig from a database row dict (single-path or path-list references)."""
+        reference_images_raw = self._decode_json_column(row.get("reference_images")) or {}
+        reference_images: dict[str, Path | list[Path]] = {}
+        for name, value in reference_images_raw.items():
+            if isinstance(value, (list, tuple)):
+                paths = [self._resolve_reference_path(name, item) for item in value if item]
+                if paths:
+                    reference_images[name] = paths
+                else:
+                    self.logger.warning("Planogram reference %r has an empty path list; skipped", name)
+            elif value:
+                reference_images[name] = self._resolve_reference_path(name, value)
+            else:
+                self.logger.warning("Planogram reference %r has no path; skipped", name)
 
         endcap_geometry = EndcapGeometry(
             aspect_ratio=row.get("aspect_ratio", 1.35),
@@ -344,6 +347,30 @@ class PlanogramComplianceHandler(BaseView):
             llm_backend=row.get("llm_backend") or None,
             endcap_geometry=endcap_geometry,
         )
+
+    @staticmethod
+    def _resolve_reference_path(name: str, value: Any) -> Path:
+        """Resolve one reference path: absolute as is, else under PLANOGRAM_FOLDER.
+
+        Args:
+            name: Catalogue key for the error message.
+            value: Path string or Path.
+
+        Returns:
+            The resolved path.
+
+        Raises:
+            ValueError: If ``value`` is not a string or Path.
+        """
+        if not isinstance(value, (str, Path)):
+            raise ValueError(f"reference image {name!r}: path must be a string, got {type(value).__name__}")
+        path = Path(value)
+        if not path.is_absolute():
+            resolved = PLANOGRAM_FOLDER / path
+            if not resolved.exists():
+                resolved = PLANOGRAM_FOLDER / path.name
+            path = resolved
+        return path
 
     @staticmethod
     def _decode_json_column(value: Any) -> Any:

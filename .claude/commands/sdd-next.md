@@ -54,6 +54,9 @@ WT_REPORTS=$(python -m scripts.sdd.worktree_status --json 2>/dev/null || echo "[
 Build a lookup from `feature_slug` → `WorktreeReport`. This provides task progress
 counts and `ready_for_done` flags that the bare `git worktree list` cannot give.
 
+Skip entries whose `flow_type` is `"non-sdd"` — they carry no `tasks[]` and no
+feature, so they can never be the source of a next-task suggestion.
+
 ### 3. Compute Unblocked Tasks
 For each task with `status: "pending"`:
 - Check that every task in `depends_on` has `status: "done"`.

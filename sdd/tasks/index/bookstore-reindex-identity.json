@@ -1,0 +1,98 @@
+{
+  "feature": "bookstore-reindex-identity",
+  "feature_id": "bookstore-reindex-identity",
+  "jira_issue_key": null,
+  "identity_kind": "user-authorized-slug",
+  "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
+  "type": "hotfix",
+  "base_branch": "main",
+  "created_at": "2026-09-30T00:00:00Z",
+  "completed_at": "2026-09-30T21:36:46+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-bookstore-reindex-identity-1",
+      "slug": "path-identity-and-graph-invalidation",
+      "title": "Source-path re-index identity and shared graph-invalidation cascade",
+      "feature_id": "bookstore-reindex-identity",
+      "feature": "bookstore-reindex-identity",
+      "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "no dependencies; creates CatalogStore.find_by_path and Bookstore._invalidate_graph in catalog.py/library.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-09-30T21:26:26+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-1-path-identity-and-graph-invalidation.md",
+      "verification": "verified"
+    },
+    {
+      "id": "HOTFIX-bookstore-reindex-identity-2",
+      "slug": "title-collision-guard",
+      "title": "Deterministic title collision guard at carding",
+      "feature_id": "bookstore-reindex-identity",
+      "feature": "bookstore-reindex-identity",
+      "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-bookstore-reindex-identity-1"
+      ],
+      "parallel": true,
+      "parallelism_notes": "shared-file serialization only: edits Bookstore.add_book in library.py and appends to test_library.py, both also modified by HOTFIX-bookstore-reindex-identity-1; no symbol dependency",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-09-30T21:27:18+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-2-title-collision-guard.md",
+      "verification": "verified"
+    },
+    {
+      "id": "HOTFIX-bookstore-reindex-identity-3",
+      "slug": "update-card-and-cli",
+      "title": "Bookstore.update_card() and bookstore update command",
+      "feature_id": "bookstore-reindex-identity",
+      "feature": "bookstore-reindex-identity",
+      "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-bookstore-reindex-identity-2"
+      ],
+      "parallel": true,
+      "parallelism_notes": "shared-file serialization only: adds update_card to library.py and tests to test_library.py, both modified by HOTFIX-bookstore-reindex-identity-2 (cli.py/test_cli.py are exclusive to this task); no symbol dependency",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-09-30T21:28:40+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-3-update-card-and-cli.md",
+      "verification": "verified"
+    },
+    {
+      "id": "HOTFIX-bookstore-reindex-identity-4",
+      "slug": "preserve-manual-card-on-reindex",
+      "title": "Preserve manual card edits on in-place re-index",
+      "feature_id": "bookstore-reindex-identity",
+      "feature": "bookstore-reindex-identity",
+      "spec": "sdd/specs/bookstore-reindex-identity.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "HOTFIX-bookstore-reindex-identity-3"
+      ],
+      "parallel": true,
+      "parallelism_notes": "edits Bookstore.add_book (library.py) and test_library.py after task 3's update_card exists; discovered_from issue:9013034b010f",
+      "discovered_from": "issue:9013034b010f",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-30T21:35:51.075951+00:00",
+      "completed_at": "2026-09-30T21:36:46+00:00",
+      "file": "sdd/tasks/completed/HOTFIX-bookstore-reindex-identity-4-preserve-manual-card-on-reindex.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -12,7 +12,7 @@ import pytest
 from parrot.auth.permission import build_principal_context
 from parrot.outputs.a2ui.linked import Join, JoinKey, LinkedDataSource, Select, SourceRequest, TransformSpec
 from parrot.outputs.a2ui.linked.executor import ERROR_STATUS, PROBE_FETCH_ROWS, execute_sources, map_query_error
-from parrot.outputs.a2ui.linked.models import Pivot
+from parrot.outputs.a2ui.linked.models import DerivedDataSource, Pivot
 from parrot.tools.dataset_manager.sources import query_slug as qsmod
 
 pytestmark = pytest.mark.asyncio
@@ -288,6 +288,52 @@ async def test_probe_null_row_keeps_the_column(fake_qs, linked_source):
     outcome = await execute_sources({"activity": linked_source}, probe=True)
 
     assert list(outcome.frames["activity"].columns) == ["day", "visits"]
+
+
+def _derived_view(from_: str, key: str, ops: list[dict]) -> DerivedDataSource:
+    return DerivedDataSource.model_validate(
+        {"kind": "derived", "from": from_, "transform": {"ops": ops}, "target": f"/{key}/rows"}
+    )
+
+
+async def test_probe_derived_view_is_validated_over_the_probed_parent(fake_qs, linked_source):
+    """Under probe the parent is fetched once with one row and the derived view is computed from that row."""
+    fake_qs.registry[linked_source.slug] = pd.DataFrame({"program": ["x"], "visits": [3]})
+    view = _derived_view("activity", "by_program", [{"op": "group_by", "by": ["program"], "aggregate": {"visits": "sum"}}])
+
+    outcome = await execute_sources({"activity": linked_source, "by_program": view}, probe=True)
+
+    assert [conditions["querylimit"] for _, conditions, _ in fake_qs.single_calls] == [1]
+    result = outcome.outcomes["by_program"]
+    assert result.error is None and result.rows is None
+    assert set(outcome.frames["by_program"].columns) == {"program", "visits"}
+    assert outcome.data_model_patch() == {}
+
+
+async def test_probe_pivoting_derived_view_fetches_its_parent_in_full(fake_qs, linked_source):
+    """A derived pivot's columns depend on the parent's data, so the parent is not probed."""
+    fake_qs.registry[linked_source.slug] = pd.DataFrame({"a": [1, 1], "k": ["x", "y"], "v": [1, 2]})
+    view = _derived_view("activity", "wide", [{"op": "pivot", "index": ["a"], "columns": "k", "values": "v"}])
+
+    outcome = await execute_sources({"activity": linked_source, "wide": view}, probe=True, max_fetch_rows=77)
+
+    _, conditions, _ = fake_qs.single_calls[0]
+    assert conditions["querylimit"] == 77
+    assert set(outcome.frames["wide"].columns) >= {"a", "x", "y"}
+    assert outcome.outcomes["wide"].rows is None
+
+
+async def test_probe_empty_parent_leaves_the_derived_view_unvalidated(fake_qs, linked_source):
+    """A probe that matched no row has no columns to transform: its derived view is empty too, not a failure."""
+    from querysource.exceptions import DataNotFound
+
+    fake_qs.registry[linked_source.slug] = DataNotFound("no rows")
+    view = _derived_view("activity", "by_program", [{"op": "group_by", "by": ["program"], "aggregate": {"visits": "sum"}}])
+
+    outcome = await execute_sources({"activity": linked_source, "by_program": view}, probe=True)
+
+    assert outcome.outcomes["by_program"].error is None
+    assert list(outcome.frames["by_program"].columns) == []
 
 
 async def test_binary_cells_serialised(fake_qs, linked_source):

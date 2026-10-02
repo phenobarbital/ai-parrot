@@ -19,14 +19,14 @@ from __future__ import annotations
 
 import logging
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import pandas as pd
 
-    from parrot.outputs.a2ui.linked.models import LinkedDataSource
+    from parrot.outputs.a2ui.linked.models import LinkedSource
 
 # Ensure the v1 parrot catalog is registered so allowlist validation resolves components.
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401
@@ -460,15 +460,15 @@ logger = logging.getLogger(__name__)
 _LINKED_SOURCES_KEY = "parrot_data_sources"
 
 
-def _rows_key(binding: Any, sources: Mapping[str, Any]) -> tuple[str, str | None] | None:
-    """Return the source key and optional column from a rows binding."""
+def _rows_key(binding: Any, keys: Collection[str]) -> tuple[str, str | None] | None:
+    """Return the data-model root key and optional column from a rows binding (``/<key>/rows[/0/<col>]``)."""
     if not isinstance(binding, Mapping):
         return None
     path = binding.get("path")
     if not isinstance(path, str) or not path.startswith("/"):
         return None
     tokens = path[1:].split("/")
-    if len(tokens) < 2 or tokens[1] != "rows" or tokens[0] not in sources:
+    if len(tokens) < 2 or tokens[1] != "rows" or tokens[0] not in keys:
         return None
     if len(tokens) == 2:
         return tokens[0], None
@@ -477,13 +477,17 @@ def _rows_key(binding: Any, sources: Mapping[str, Any]) -> tuple[str, str | None
     return None
 
 
-def _validate_axes(component: dict[str, Any], sources: Mapping[str, Any], frames: Mapping[str, Any]) -> None:
-    """Check bound component axes and columns against their source frames."""
+def _validate_axes(component: dict[str, Any], keys: Collection[str], frames: Mapping[str, Any]) -> None:
+    """Check bound component axes and columns against the frame of the data-model root they bind to.
+
+    ``keys`` are the roots that carry rows (linked sources, derived views and inline data alike); a binding
+    to any other root is left to ``validate_envelope``.
+    """
     import pandas as pd
 
     component_type = component.get("component")
     binding = component.get("data") if component_type in {"Chart", "DataTable"} else component.get("value")
-    rows_key = _rows_key(binding, sources)
+    rows_key = _rows_key(binding, keys)
     if rows_key is None:
         return
     key, value_column = rows_key
@@ -523,27 +527,42 @@ def _validate_axes(component: dict[str, Any], sources: Mapping[str, Any], frames
 
 def build_linked_surface(
     components: Sequence[dict[str, Any]],
-    sources: Mapping[str, "LinkedDataSource"],
+    sources: Mapping[str, "LinkedSource"],
     frames: Mapping[str, "pd.DataFrame"],
     *,
     surface_id: str,
     snapshot: bool = True,
     max_snapshot_rows: int = 500,
     catalog_id: str = DEFAULT_CATALOG_ID,
+    inline: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
 ) -> CreateSurface:
-    """Build a TOOL-origin linked ``CreateSurface`` (FEAT-598 M4).
+    """Build a TOOL-origin linked ``CreateSurface`` (FEAT-598 M4; linked dashboards).
 
-    Axis props are validated against fetched frames. When ``snapshot`` is false,
-    every source still receives an empty rows collection so bindings resolve.
+    Axis props are validated against fetched frames — ``frames`` must carry one frame per source, derived
+    views included (the executor computes them). When ``snapshot`` is false, every source still receives an
+    empty rows collection so bindings resolve. ``inline`` embeds extra data-model roots
+    (``dataModel[key] = {"rows": rows}``) that carry no descriptor: widgets whose data is baked into the
+    dashboard; their axes are validated too.
 
     Raises:
-        ValueError: A bound axis is missing, non-numeric, or has no frame.
+        ValueError: A bound axis is missing, non-numeric, has no frame, or an inline key collides with a source.
         CatalogValidationError: The generated envelope fails TOOL-origin validation.
     """
-    for component in components:
-        _validate_axes(component, sources, frames)
+    inline = dict(inline or {})
+    collisions = sorted(set(inline) & set(sources))
+    if collisions:
+        raise ValueError(f"inline data keys collide with source keys: {collisions}")
+    all_frames: dict[str, Any] = dict(frames)
+    if inline:
+        import pandas as pd
 
-    data_model: dict[str, Any] = {}
+        for key, rows in inline.items():
+            all_frames[key] = pd.DataFrame.from_records(list(rows))
+    keys = set(sources) | set(inline)
+    for component in components:
+        _validate_axes(component, keys, all_frames)
+
+    data_model: dict[str, Any] = {key: {"rows": [dict(row) for row in rows]} for key, rows in inline.items()}
     stamped: dict[str, Any] = {}
     for key, source in sources.items():
         if key not in frames:

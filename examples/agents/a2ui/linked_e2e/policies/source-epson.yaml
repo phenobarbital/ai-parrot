@@ -42,3 +42,13 @@ policies:
     actions: ["agent:chat"]
     subjects: { groups: ["*"] }
     priority: 10
+  # navigator-auth >= 0.28.3 fixed the ABAC middleware ordering: it now sees authenticated sessions and
+  # enforces a `uri:<path>` / `uri:<read|write|delete>` decision on EVERY request (a request no policy
+  # matches → 428 "No Matching Policies were found"). Mirrors policies/defaults.yaml allow_uri_authenticated.
+  - name: demo_allow_uri_authenticated
+    effect: allow
+    description: FEAT-611 demo — authenticated users may reach the example's HTTP endpoints; data access stays guarded.
+    resources: ["uri:*"]
+    actions: ["uri:read", "uri:write", "uri:create", "uri:delete"]
+    subjects: { groups: ["*"] }
+    priority: 1

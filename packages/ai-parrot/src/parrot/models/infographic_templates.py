@@ -102,6 +102,15 @@ class InfographicTemplate(BaseModel):
         lines.append(
             "Each block must include the 'type' field matching the block type above."
         )
+        lines.append("")
+        lines.append(
+            "Optional display hints: a hero_card 'value' may be a number with "
+            "'format' ('percent'|'currency'|'number') and 'unit' (a string value renders "
+            "verbatim); send a percentage as a ratio (0.683 with format 'percent', never "
+            "'68.3%' or 68.3); a table's 'columns' may be objects "
+            "{'header', 'type', 'format'}; for two chart scales set series 'axis': 'right' "
+            "and chart 'y_axis_labels': [left, right]."
+        )
 
         # Extended instructions for tab_view blocks
         if has_tab_view:

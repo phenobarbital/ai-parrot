@@ -13,6 +13,7 @@ the toolkit-facing ``execute_kw`` contract but translates the ORM calls used by
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import aiohttp
@@ -27,12 +28,29 @@ from parrot.interfaces.odoointerface import (
 
 from .base import AbstractOdooTransport
 
+logger = logging.getLogger(__name__)
+
 
 def _looks_like_ids(value: Any) -> bool:
     """Return True for an Odoo record id or list of record ids."""
     if isinstance(value, int):
         return True
     return isinstance(value, list) and all(isinstance(item, int) for item in value)
+
+
+#: ORM methods whose first positional ``execute_kw`` argument is a search domain.
+#: ``Json2Transport._build_body`` maps ``args[0]`` of these to the JSON-2 ``domain`` key.
+_DOMAIN_FIRST_METHODS: frozenset[str] = frozenset(
+    {
+        "search",
+        "search_read",
+        "search_count",
+        "read_group",
+        "formatted_read_group",
+        "web_read_group",
+        "formatted_read_grouping_sets",
+    }
+)
 
 
 class Json2Transport(AbstractOdooTransport):
@@ -92,11 +110,16 @@ class Json2Transport(AbstractOdooTransport):
         args: list[Any] | None,
         kwargs: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Translate legacy ``execute_kw`` args into JSON-2 named arguments."""
+        """Translate legacy ``execute_kw`` args into JSON-2 named arguments.
+
+        Domain-first methods (``_DOMAIN_FIRST_METHODS``) map ``args[0]`` (an
+        empty list when absent) to ``body["domain"]``; more than one positional
+        argument raises ``OdooRPCError``.
+        """
         args = args or []
         body = dict(kwargs or {})
 
-        if method in {"search", "search_read", "search_count"}:
+        if method in _DOMAIN_FIRST_METHODS:
             if len(args) > 1:
                 raise OdooRPCError(f"JSON-2 transport cannot map positional args for method {method!r}.")
             body.setdefault("domain", args[0] if args else [])
@@ -168,6 +191,30 @@ class Json2Transport(AbstractOdooTransport):
         self.uid = int(uid) if isinstance(uid, int) else 0
         return self.uid
 
+    @staticmethod
+    def _is_create_signature_error(exc: OdooRPCError) -> bool:
+        """True when Odoo rejected a JSON-2 ``create`` because of its argument name (422/500)."""
+        text = str(exc)
+        if ".create:" not in text:
+            return False
+        return "missing a required argument" in text or "unexpected keyword argument" in text
+
+    async def _create_via_web_save(
+        self,
+        model: str,
+        vals: dict[str, Any] | list[dict[str, Any]],
+    ) -> int | list[int]:
+        """Create through ``web_save`` (one call per dict) and return ``create``'s id shape."""
+        records = vals if isinstance(vals, list) else [vals]
+        ids: list[int] = []
+        for record in records:
+            result = await self._request_json2(model, "web_save", {"vals": record, "specification": {"id": {}}})
+            try:
+                ids.append(int(result[0]["id"]))
+            except (IndexError, KeyError, TypeError, ValueError) as exc:
+                raise OdooRPCError(f"JSON-2 web_save returned an unexpected response shape for {model!r}.") from exc
+        return ids if isinstance(vals, list) else ids[0]
+
     async def execute_kw(
         self,
         model: str,
@@ -176,7 +223,15 @@ class Json2Transport(AbstractOdooTransport):
         kwargs: dict[str, Any] | None = None,
     ) -> Any:
         body = self._build_body(method, args, kwargs)
-        return await self._request_json2(model, method, body)
+        if method != "create":
+            return await self._request_json2(model, method, body)
+        try:
+            return await self._request_json2(model, method, body)
+        except OdooRPCError as exc:
+            if not self._is_create_signature_error(exc):
+                raise
+            logger.debug("JSON-2 create rejected for %s (%s); retrying via web_save", model, exc)
+            return await self._create_via_web_save(model, body["vals_list"])
 
     async def version(self) -> dict[str, Any]:
         url = f"{self.config.url.rstrip('/')}/web/version"

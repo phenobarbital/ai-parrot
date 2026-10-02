@@ -114,21 +114,6 @@ def both_keys(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason=(
-        "Pre-existing bug (predates FEAT-575, not introduced by TASK-3451..3456): "
-        "GoogleGenAIClient.__init__ (client.py:189) does "
-        "`self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))` BEFORE "
-        "`super().__init__(**kwargs)`, and AbstractClient.__init__ (base.py:448) "
-        "unconditionally does `self.api_key = kwargs.get('api_key', None)` — since "
-        "'api_key' was already popped, this always resets self.api_key to None. "
-        "GoogleGenAIClient.api_key is None after construction regardless of any kwarg "
-        "or config fallback. Sibling GeminiOpenAICompatClient works around this by "
-        "re-setting self.api_key AFTER super().__init__() (openai_compat.py:37); "
-        "GoogleGenAIClient never does. See ledger issue for the fix task."
-    ),
-    strict=True,
-)
 async def test_handler_built_google_agent_client_uses_crew_key(both_keys, monkeypatch):
     """AC1: a handler-built Google agent's configured client uses CREW_AI_KEY."""
     monkeypatch.setitem(SUPPORTED_CLIENTS, "google", _RecordingGoogleClient)
@@ -149,16 +134,6 @@ async def test_handler_built_google_agent_client_uses_crew_key(both_keys, monkey
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    reason=(
-        "Same pre-existing GoogleGenAIClient.api_key clobber bug as "
-        "test_handler_built_google_agent_client_uses_crew_key above (client.py:189 "
-        "pops api_key before super().__init__ resets it to None) — the fallback path "
-        "is equally clobbered, not just the CREW_AI_KEY injection path. See ledger "
-        "issue for the fix task."
-    ),
-    strict=True,
-)
 async def test_handler_built_google_agent_falls_back_when_unset(monkeypatch):
     """AC6: with CREW_AI_KEY unset, the constructed client falls back to GOOGLE_API_KEY."""
     monkeypatch.setattr("parrot.conf.CREW_AI_KEY", None, raising=False)

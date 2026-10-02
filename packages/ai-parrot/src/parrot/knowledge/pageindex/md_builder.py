@@ -1,4 +1,5 @@
 """PageIndex tree builder for Markdown documents."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,11 +15,33 @@ from .utils import (
     write_node_id,
 )
 
-
 logger = logging.getLogger("parrot.knowledge.pageindex.md_builder")
 
 # --- Markdown Header Regex ---
 _HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)")
+
+# --- Fenced code block delimiter (CommonMark: 0-3 spaces indent, >=3 backticks or tildes) ---
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _fence_marker(line: str) -> tuple[str, int] | None:
+    """Classify ``line`` as a fenced-code-block delimiter.
+
+    Args:
+        line: One raw (unstripped) line of Markdown.
+
+    Returns:
+        ``(fence_char, run_length)`` -- ``fence_char`` is ``"`"`` or ``"~"`` and
+        ``run_length`` the number of consecutive fence characters -- when the
+        line, after at most three leading spaces, starts with three or more
+        identical backticks or tildes. Info strings after an opening fence
+        (```` ```python ````) are allowed. ``None`` otherwise.
+    """
+    m = _FENCE_RE.match(line)
+    if not m:
+        return None
+    run = m.group(1)
+    return run[0], len(run)
 
 
 def _parse_header_level(line: str) -> tuple[int, str] | None:
@@ -31,14 +54,47 @@ def _parse_header_level(line: str) -> tuple[int, str] | None:
 
 # ======================== Markdown Parsing ========================
 
+
 def parse_markdown_structure(md_text: str) -> list[dict]:
-    """Parse markdown text into a flat list of section entries."""
+    """Parse markdown text into a flat list of section entries.
+
+    Fenced code blocks (``` or ~~~, CommonMark rules) are opaque: lines inside
+    them are appended to the current section's text and are never interpreted
+    as headings. A block closes on a fence of the same character whose length
+    is at least the opening length; an unterminated fence extends to the end
+    of the document.
+
+    Args:
+        md_text: Full markdown document text.
+
+    Returns:
+        Section entries with ``structure``, ``title``, ``level``, ``line_num``,
+        ``text`` and ``token_count`` keys, in document order.
+    """
     lines = md_text.split("\n")
     sections: list[dict] = []
     current_text: list[str] = []
     counters: dict[int, int] = {}
 
+    open_fence: tuple[str, int] | None = None
+
     for line_num, line in enumerate(lines, 1):
+        marker = _fence_marker(line)
+        if open_fence is not None:
+            current_text.append(line)
+            stripped = line.strip()
+            if (
+                marker is not None
+                and marker[0] == open_fence[0]
+                and marker[1] >= open_fence[1]
+                and stripped == marker[0] * len(stripped)
+            ):
+                open_fence = None
+            continue
+        if marker is not None:
+            open_fence = marker
+            current_text.append(line)
+            continue
         parsed = _parse_header_level(line)
         if parsed:
             level, title = parsed
@@ -59,14 +115,16 @@ def parse_markdown_structure(md_text: str) -> list[dict]:
                     parts.append(str(counters[lv]))
             structure = ".".join(parts) if parts else str(level)
 
-            sections.append({
-                "structure": structure,
-                "title": title,
-                "level": level,
-                "line_num": line_num,
-                "text": "",
-                "token_count": 0,
-            })
+            sections.append(
+                {
+                    "structure": structure,
+                    "title": title,
+                    "level": level,
+                    "line_num": line_num,
+                    "text": "",
+                    "token_count": 0,
+                }
+            )
         else:
             current_text.append(line)
 
@@ -113,6 +171,7 @@ def sections_to_tree(sections: list[dict]) -> list[dict]:
 
 # ======================== Tree Thinning ========================
 
+
 def _count_tree_tokens(node: dict) -> int:
     """Count total tokens in a node and its children."""
     total = node.get("token_count", 0)
@@ -144,6 +203,7 @@ def thin_tree(
 
 # ======================== Summary Generation ========================
 
+
 async def generate_node_summary_md(
     node: dict,
     adapter: PageIndexLLMAdapter,
@@ -168,6 +228,7 @@ async def generate_prefix_summaries(
     adapter: PageIndexLLMAdapter,
 ) -> None:
     """Generate prefix summaries for all nodes."""
+
     async def process_node(node: dict) -> None:
         if node.get("text") and node["text"].strip():
             summary = await generate_node_summary_md(node, adapter)
@@ -181,15 +242,14 @@ async def generate_prefix_summaries(
             child_summaries = [c.get("summary", "") for c in children if c.get("summary")]
             if child_summaries:
                 combined = "; ".join(child_summaries[:5])
-                node["prefix_summary"] = (
-                    f"{node.get('summary', '')}\nSubsections cover: {combined}"
-                )
+                node["prefix_summary"] = f"{node.get('summary', '')}\nSubsections cover: {combined}"
 
     tasks = [process_node(node) for node in tree]
     await asyncio.gather(*tasks)
 
 
 # ======================== Public API ========================
+
 
 async def md_to_tree(
     md_text: str,
@@ -256,6 +316,7 @@ async def md_to_tree(
 
     if opt.if_add_doc_description == "yes" and adapter is not None:
         from .builder import generate_doc_description
+
         clean_struct = create_clean_structure_for_description(tree)
         doc_description = await generate_doc_description(clean_struct, adapter)
         return {

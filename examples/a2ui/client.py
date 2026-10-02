@@ -3,11 +3,12 @@
 Run: ENV=prod python examples/a2ui/client.py --check  (A2UI_USER_USERNAME / A2UI_USER_PASSWORD from env/prod/.env)
      python examples/a2ui/client.py --open
 
-``--check`` logs in, fetches the dashboard envelope, replays exactly the requests the browser lane sends (each source's
-own conditions, ``querylimit`` capped at 5000), prints the values and ASSERTS them against the spec's verified map
-(AC7). It also exercises the grid's server paging (page, stable ordering, column filter, total). Exit 0 only when every
-check passes; any failure (login, 404, wrong value, missing source) exits 1. ``--no-expect`` prints without asserting
-values, for data that has legitimately drifted since the map was verified.
+``--check`` logs in, fetches the dashboard envelope, replays exactly the requests the browser lane sends (each
+query-slug source's own conditions, ``querylimit`` capped at 5000 — derived views are computed locally from their
+parent's rows with the transform DSL, exactly like the lane), prints the values and ASSERTS them against the spec's
+verified map (AC7). It also exercises the grid's server paging (page, stable ordering, column filter, total). Exit 0
+only when every check passes; any failure (login, 404, wrong value, missing source) exits 1. ``--no-expect`` prints
+without asserting values, for data that has legitimately drifted since the map was verified.
 """
 
 from __future__ import annotations
@@ -29,16 +30,20 @@ MAX_FETCH_ROWS = 5000
 GRID_KEY = "graduates"
 GRID_PAGE = 20
 
-# Verified against production on 2026-09-28 (spec §2). KPIs count people; the pie counts diplomas.
+# Verified against production on 2026-09-28 (spec §2). KPIs count people; the pie counts diplomas. The four KPIs now
+# come from the single dashboard source `kpis`; `by_country` / `by_licensee` are derived views of the `geo` source
+# (DSL group_by, which drops a NULL group key — the old server-side `grouping` kept it as one "Unassigned" bucket, so
+# the group counts are re-verified with `--no-expect` after this change).
+KPI_SOURCE = "kpis"
 EXPECTED_KPIS: dict[str, tuple[str, int]] = {
     "kpi_total": ("total", 17572),
-    "kpi_studio": ("total", 9191),
-    "kpi_mat": ("total", 6245),
+    "kpi_studio": ("studio", 9191),
+    "kpi_mat": ("mat", 6245),
     "kpi_multi": ("multi_graduates", 2884),
 }
 EXPECTED_GROUPS: dict[str, int] = {"by_country": 95, "by_licensee": 23}
 EXPECTED_SLICES: dict[str, int] = {"Pilates Studio": 9204, "Pilates Mat": 6247, "Rehab": 3300, "Reformer": 2048}
-EXPECTED_KEYS = [*EXPECTED_KPIS, *EXPECTED_GROUPS, "by_course", GRID_KEY]
+EXPECTED_KEYS = [KPI_SOURCE, "geo", *EXPECTED_GROUPS, "by_course", GRID_KEY]
 
 
 class CheckError(RuntimeError):
@@ -53,14 +58,15 @@ def emit(line: str = "") -> None:
 def query_url(base_url: str, slug: str, tenant: str | None, is_multiquery: bool = False) -> str:
     """Build the QuerySource URL with the same rule as linked.js.
 
-    A tenant store is always ``/api/v1/{tenant}/queries/{slug}``; otherwise a single query-slug goes to
-    ``/api/v2/services/queries/{slug}`` (QueryService, the optimised single-query handler) and only a MultiQuery
-    pipeline slug needs ``/api/v3/queries/{slug}`` (MultiQS).
+    ``tenant`` → ``/api/v1/{tenant}/queries/{slug}``; ``is_multiquery`` → ``/api/v3/queries/{slug}`` (MultiQS, the
+    only HTTP lane that expands a pipeline); otherwise the plain ``QS()`` route ``/api/v2/services/queries/{slug}``.
     """
     base = base_url.rstrip("/")
     if tenant:
         return f"{base}/api/v1/{tenant}/queries/{slug}"
-    return f"{base}/api/v3/queries/{slug}" if is_multiquery else f"{base}/api/v2/services/queries/{slug}"
+    if is_multiquery:
+        return f"{base}/api/v3/queries/{slug}"
+    return f"{base}/api/v2/services/queries/{slug}"
 
 
 async def login(session: aiohttp.ClientSession, base_url: str, user: str, password: str) -> str:
@@ -133,37 +139,52 @@ def page_bodies(
 async def post_query(
     session: aiohttp.ClientSession, base_url: str, token: str, source: dict[str, Any], body: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """POST one query for ``source``; a 404 or any non-2xx is a hard failure, never an empty frame.
-
-    QuerySource answers an empty result with HTTP 204 (``x-status: Empty Result``) and no body: that IS an
-    empty frame.
-    """
-    url = query_url(base_url, source["slug"], source.get("tenant"), source.get("is_multiquery") is True)
+    """POST one query for ``source``; a 404 or any other non-200/204 is a hard failure, never an empty frame."""
+    url = query_url(base_url, source["slug"], source.get("tenant"), bool(source.get("is_multiquery")))
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     async with session.post(url, json=body, headers=headers) as resp:
         if resp.status == 404:
             raise CheckError(f"source '{source['slug']}' is unavailable (HTTP 404)")
-        if resp.status == 204:
+        if resp.status == 204:  # QuerySource "Empty Result": zero rows, no body
             return []
         if resp.status != 200:
             raise CheckError(f"source '{source['slug']}' failed: HTTP {resp.status}")
         return select_frame(await resp.json(), source)
 
 
+def derive_rows(source: dict[str, Any], rows: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Compute a derived view from its parent's fetched rows with the reference DSL executor (what the lane does)."""
+    from parrot.outputs.a2ui.linked.dsl import apply_transform, frame_from_records, frame_to_records
+    from parrot.outputs.a2ui.linked.models import TransformSpec
+
+    parent = source["from"]
+    if parent not in rows:
+        raise CheckError(f"derived source depends on '{parent}', which was not fetched")
+    frames = {key: frame_from_records(value) for key, value in rows.items()}
+    return frame_to_records(
+        apply_transform(frames[parent], TransformSpec.model_validate(source["transform"]), frames=frames)
+    )
+
+
 def evaluate(rows: dict[str, list[dict[str, Any]]]) -> list[str]:
     """Compare fetched rows with the spec's verified map (AC7); return one message per mismatch."""
     failures: list[str] = []
+    kpi_rows = rows.get(KPI_SOURCE) or []
     for key, (column, expected) in EXPECTED_KPIS.items():
         try:
-            actual = int(rows[key][0][column])
+            actual = int(kpi_rows[0][column])
         except (KeyError, IndexError, TypeError, ValueError):
-            failures.append(f"{key}: no '{column}' value")
+            failures.append(f"{key}: no '{column}' value in source '{KPI_SOURCE}'")
             continue
         if actual != expected:
             failures.append(f"{key}: expected {expected}, got {actual}")
     for key, expected_groups in EXPECTED_GROUPS.items():
         if len(rows.get(key, [])) != expected_groups:
             failures.append(f"{key}: expected {expected_groups} groups, got {len(rows.get(key, []))}")
+    # The derived views must add up to the shared KPI: the geo matrix and the KPI query count the same people.
+    geo_total = sum(int(row.get("graduates") or 0) for row in rows.get("geo", []))
+    if kpi_rows and geo_total != int(kpi_rows[0].get("total") or -1):
+        failures.append(f"geo: sum(graduates) {geo_total} != kpis.total {kpi_rows[0].get('total')}")
     slices: dict[str, int] = {}
     for row in rows.get("by_course", []):
         try:
@@ -180,8 +201,9 @@ def print_values(rows: dict[str, list[dict[str, Any]]]) -> None:
     emit("key | value")
     emit("----|------")
     for key, (column, _) in EXPECTED_KPIS.items():
-        value = rows[key][0].get(column) if rows.get(key) else "(no data)"
+        value = rows[KPI_SOURCE][0].get(column) if rows.get(KPI_SOURCE) else "(no data)"
         emit(f"{key} | {value}")
+    emit(f"geo | {len(rows.get('geo', []))} country × licensee rows (one fetch feeds by_country and by_licensee)")
     for key in EXPECTED_GROUPS:
         emit(f"{key} | {len(rows.get(key, []))} groups")
     for row in rows.get("by_course", []):
@@ -236,10 +258,13 @@ async def check(base_url: str, user: str, password: str, *, expect: bool = True)
             if missing:
                 raise CheckError(f"dashboard envelope is missing sources: {', '.join(missing)}")
             rows: dict[str, list[dict[str, Any]]] = {}
-            for key in EXPECTED_KEYS:
-                if key == GRID_KEY:
+            for key in EXPECTED_KEYS:  # query-slug sources first (one request each), then the derived views
+                if key == GRID_KEY or sources[key].get("kind") == "derived":
                     continue
                 rows[key] = await post_query(session, base_url, token, sources[key], lane_body(sources[key]))
+            for key in EXPECTED_KEYS:
+                if sources[key].get("kind") == "derived":
+                    rows[key] = derive_rows(sources[key], rows)
             print_values(rows)
             failures = evaluate(rows) if expect else []
             expected_total = EXPECTED_KPIS["kpi_total"][1] if expect else None

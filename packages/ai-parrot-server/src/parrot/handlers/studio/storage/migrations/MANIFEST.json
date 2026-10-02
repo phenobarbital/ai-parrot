@@ -1,0 +1,31 @@
+{
+  "required": 5,
+  "required_phase2": 8,
+  "migrations": [
+    {
+      "version": 1,
+      "name": "0001_studio_migrations_ledger",
+      "sha256": "45308b78c159fe5ccb6c2874f0f51eb858f2db3283843b341f6c52e75a202282"
+    },
+    {
+      "version": 2,
+      "name": "0002_ai_agents",
+      "sha256": "11ec7724f035a4890fed91773efffcd15ed9bc8710680db65670897e3d193751"
+    },
+    {
+      "version": 3,
+      "name": "0003_ai_agent_drafts",
+      "sha256": "405307336f1fad11b659bf7a5dda643f3b2b26e2cabfbbdfaac801d2117b6e8b"
+    },
+    {
+      "version": 4,
+      "name": "0004_ai_skills_catalog_tenancy",
+      "sha256": "2654e092c29fc9ae09794ef74bf5570a910f7779163b8a7f95f82e656ed81168"
+    },
+    {
+      "version": 5,
+      "name": "0005_studio_drafts_baseline",
+      "sha256": "2b2d6029d6a52be72b0d296e407b1910b2a2a81ed3e45d5e290e820b0508b3f2"
+    }
+  ]
+}

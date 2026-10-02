@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 FilterScalar = str | int | float | bool | None
 FilterValue = FilterScalar | list[FilterScalar] | dict[str, FilterScalar]  # scalar | IN list | {op: v} | [op, v]
@@ -124,16 +124,56 @@ class SavedSlug(BaseModel):
     action: Literal["inserted", "updated"]
 
 
-class DashboardWidget(BaseModel):
-    """One widget of a linked dashboard: its own source key, slug, request, and unbound component (FEAT-610)."""
+class DashboardSource(BaseModel):
+    """One dashboard-owned data source (linked dashboards): fetched once, shared by any number of widgets."""
 
-    key: str  # data-model root + source key (JSON-pointer-safe)
     slug: str
-    component: dict[str, Any]  # Chart | DataTable | KPICard, without its binding
     request: dict[str, Any] | None = None  # qs grammar: placeholders/filter/fields/ordering/grouping/limit/offset
     tenant: str | None = None
-    section: Literal["kpis", "charts", "table"] | None = None  # layout row; inferred from component when None
     refresh: dict[str, Any] | None = None  # RefreshPolicy payload
+    transform: dict[str, Any] | None = None  # source-level transform DSL (TransformSpec payload)
+
+
+class DashboardWidget(BaseModel):
+    """One widget of a linked dashboard: its key, unbound component and exactly ONE data origin.
+
+    Origins (mutually exclusive):
+
+    * ``slug`` — the widget owns a query-slug source (FEAT-610 shape; ``request``/``tenant``/``refresh`` apply).
+    * ``source`` — the widget reads a dashboard-level source (``sources[<key>]``). Without ``transform`` it binds
+      that source's rows directly; with ``transform`` (DSL ops) it becomes a *derived* view keyed by the widget
+      key, computed from the parent's frame without another fetch.
+    * ``data`` — inline rows baked into the dashboard's data model (no descriptor, never refreshed).
+    """
+
+    key: str  # component id + data-model root (JSON-pointer-safe)
+    component: dict[str, Any]  # Chart | DataTable | KPICard, without its binding
+    section: Literal["kpis", "charts", "table"] | None = None  # layout row; inferred from component when None
+    slug: str | None = None
+    request: dict[str, Any] | None = None  # only with `slug`
+    tenant: str | None = None  # only with `slug`
+    refresh: dict[str, Any] | None = None  # only with `slug`
+    source: str | None = None  # dashboard source key
+    transform: dict[str, Any] | None = None  # only with `source` → derived view
+    data: list[dict[str, Any]] | None = None  # inline rows
+
+    @model_validator(mode="after")
+    def _one_origin(self) -> DashboardWidget:
+        origins = [name for name in ("slug", "source", "data") if getattr(self, name) is not None]
+        if len(origins) != 1:
+            raise ValueError(f"widget {self.key!r} must declare exactly one of slug | source | data (got {origins})")
+        if self.slug is None and any(getattr(self, name) is not None for name in ("request", "tenant", "refresh")):
+            raise ValueError(f"widget {self.key!r}: request/tenant/refresh apply only to a widget with its own slug")
+        if self.transform is not None and self.source is None:
+            raise ValueError(f"widget {self.key!r}: transform requires `source` (a derived view of a dashboard source)")
+        if self.data is not None and (not self.data or not all(isinstance(row, dict) for row in self.data)):
+            raise ValueError(f"widget {self.key!r}: data must be a non-empty list of row objects")
+        return self
+
+    @property
+    def origin(self) -> Literal["slug", "source", "data"]:
+        """Which origin this widget declares."""
+        return "slug" if self.slug is not None else "source" if self.source is not None else "data"
 
 
 class DialectReference(BaseModel):

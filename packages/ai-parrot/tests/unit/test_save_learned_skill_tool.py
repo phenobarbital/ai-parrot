@@ -1,9 +1,15 @@
-"""Unit tests for SaveLearnedSkillTool."""
+"""Unit tests for SkillFileToolkit.save_learned_skill.
+
+FEAT-207 folded the standalone SaveLearnedSkillTool into SkillFileToolkit as the
+``save_learned_skill`` method; the class no longer exists on any import path.
+Retargeted by FEAT-617 (issue:c3c59277ef77), which also moved these imports off the
+deprecated ``parrot.memory.skills.*`` shim. Every original assertion is preserved.
+"""
 import pytest
 from pathlib import Path
-from parrot.memory.skills.tools import SaveLearnedSkillTool
-from parrot.memory.skills.file_registry import SkillFileRegistry
-from parrot.memory.skills.models import SkillDefinition
+from parrot.skills.tools import SkillFileToolkit
+from parrot.skills.file_registry import SkillFileRegistry
+from parrot.skills.models import SkillDefinition
 
 
 @pytest.fixture
@@ -22,17 +28,22 @@ async def registry(skills_dir):
 
 
 @pytest.fixture
-def tool(registry, skills_dir):
-    return SaveLearnedSkillTool(
+def toolkit(registry, skills_dir):
+    """SkillFileToolkit with a writable learned_dir.
+
+    learned_dir MUST be non-None: SkillFileToolkit.__init__ sets
+    exclude_tools = ("save_learned_skill",) when it is None.
+    """
+    return SkillFileToolkit(
         file_registry=registry,
         learned_dir=skills_dir / "learned",
     )
 
 
-class TestSaveLearnedSkillTool:
+class TestSaveLearnedSkill:
     @pytest.mark.asyncio
-    async def test_writes_md_file(self, tool, skills_dir):
-        result = await tool._execute(
+    async def test_writes_md_file(self, toolkit, skills_dir):
+        result = await toolkit.save_learned_skill(
             name="extraer_datos",
             description="Extrae datos de texto",
             content="Instrucciones para extraer datos...",
@@ -42,8 +53,8 @@ class TestSaveLearnedSkillTool:
         assert (skills_dir / "learned" / "extraer_datos.md").exists()
 
     @pytest.mark.asyncio
-    async def test_hot_adds_to_registry(self, tool, registry):
-        await tool._execute(
+    async def test_hot_adds_to_registry(self, toolkit, registry):
+        await toolkit.save_learned_skill(
             name="nuevo",
             description="Test skill",
             content="Do something",
@@ -52,16 +63,16 @@ class TestSaveLearnedSkillTool:
         assert registry.get("/nuevo") is not None
 
     @pytest.mark.asyncio
-    async def test_name_collision(self, tool, registry):
+    async def test_name_collision(self, toolkit, registry):
         # Add first
-        await tool._execute(
+        await toolkit.save_learned_skill(
             name="duplicado",
             description="First",
             content="Body",
             triggers=["/dup1"],
         )
         # Try duplicate
-        result = await tool._execute(
+        result = await toolkit.save_learned_skill(
             name="duplicado",
             description="Second",
             content="Body",
@@ -72,16 +83,16 @@ class TestSaveLearnedSkillTool:
         assert "exists" in str(result.error).lower() or "collision" in str(result.error).lower()
 
     @pytest.mark.asyncio
-    async def test_trigger_collision(self, tool, registry):
+    async def test_trigger_collision(self, toolkit, registry):
         # Add first
-        await tool._execute(
+        await toolkit.save_learned_skill(
             name="skill_a",
             description="First",
             content="Body",
             triggers=["/same_trigger"],
         )
         # Try same trigger
-        result = await tool._execute(
+        result = await toolkit.save_learned_skill(
             name="skill_b",
             description="Second",
             content="Body",
@@ -91,8 +102,8 @@ class TestSaveLearnedSkillTool:
         assert "collision" in str(result.error).lower() or "exists" in str(result.error).lower()
 
     @pytest.mark.asyncio
-    async def test_file_content_valid(self, tool, skills_dir):
-        await tool._execute(
+    async def test_file_content_valid(self, toolkit, skills_dir):
+        await toolkit.save_learned_skill(
             name="test_skill",
             description="Test description",
             content="Test instructions",
@@ -108,8 +119,8 @@ class TestSaveLearnedSkillTool:
         assert "Test instructions" in content
 
     @pytest.mark.asyncio
-    async def test_result_metadata(self, tool):
-        result = await tool._execute(
+    async def test_result_metadata(self, toolkit):
+        result = await toolkit.save_learned_skill(
             name="meta_skill",
             description="Test",
             content="Body",

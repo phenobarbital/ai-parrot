@@ -1,0 +1,170 @@
+[
+ {
+  "id": 518,
+  "model": "account.cash.rounding",
+  "name": "Account Cash Rounding",
+  "info": "\n    In some countries, we need to be able to make appear on an invoice a rounding line, appearing there only because the\n    smallest coinage has been removed from the circulation. For example, in Switzerland invoices have to be rounded to\n    0.05 CHF because coins of 0.01 CHF and 0.02 CHF aren't used anymore.\n    see https://en.wikipedia.org/wiki/Cash_rounding for more details.\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 658,
+  "model": "helpdesk.category",
+  "name": "Helpdesk Category",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 660,
+  "model": "helpdesk.priority",
+  "name": "Helpdesk Priority",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 657,
+  "model": "helpdesk.stages",
+  "name": "Helpdesk Stages",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 655,
+  "model": "helpdesk.sub.type",
+  "name": "Helpdesk Subject Type",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 659,
+  "model": "helpdesk.subcategory",
+  "name": "Helpdesk SubCategory",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 656,
+  "model": "helpdesk.tags",
+  "name": "Helpdesk Tags",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 199,
+  "model": "mail.push.device",
+  "name": "Push Notification Device",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 673,
+  "model": "sh.helpdesk.reassign.wizard",
+  "name": "Reassign Helpdesk Ticket",
+  "info": " Model super-class for transient records, meant to be temporarily\n    persistent, and regularly vacuum-cleaned.\n\n    A TransientModel has a simplified access rights management, all users can\n    create new records, and may only access the records they created. The\n    superuser has unrestricted access to all TransientModel records.\n    ",
+  "transient": true,
+  "state": "base"
+ },
+ {
+  "id": 667,
+  "model": "sh.helpdesk.sla",
+  "name": "Helpdesk SLA Policies",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 668,
+  "model": "sh.helpdesk.sla.analysis",
+  "name": "Helpdesk SLA Analysis",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 669,
+  "model": "sh.helpdesk.sla.status",
+  "name": "Helpdesk Ticket SLA Status",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 653,
+  "model": "sh.helpdesk.team",
+  "name": "Helpdesk Team",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 661,
+  "model": "sh.helpdesk.ticket",
+  "name": "Helpdesk Ticket",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 671,
+  "model": "sh.helpdesk.ticket.extra_fields",
+  "name": "Helpdesk Ticket Extra Fields",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 664,
+  "model": "sh.helpdesk.ticket.mass.update.wizard",
+  "name": "Mass Update Wizard",
+  "info": " Model super-class for transient records, meant to be temporarily\n    persistent, and regularly vacuum-cleaned.\n\n    A TransientModel has a simplified access rights management, all users can\n    create new records, and may only access the records they created. The\n    superuser has unrestricted access to all TransientModel records.\n    ",
+  "transient": true,
+  "state": "base"
+ },
+ {
+  "id": 665,
+  "model": "sh.helpdesk.ticket.merge.ticket.wizard",
+  "name": "Merge Ticket Wizard",
+  "info": " Model super-class for transient records, meant to be temporarily\n    persistent, and regularly vacuum-cleaned.\n\n    A TransientModel has a simplified access rights management, all users can\n    create new records, and may only access the records they created. The\n    superuser has unrestricted access to all TransientModel records.\n    ",
+  "transient": true,
+  "state": "base"
+ },
+ {
+  "id": 666,
+  "model": "sh.helpdesk.ticket.stage.info",
+  "name": "Helpdesk Task Information",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 654,
+  "model": "sh.helpdesk.ticket.type",
+  "name": "Helpdesk Ticket Type",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 672,
+  "model": "sh.helpdesk.webhook.error_dedupe",
+  "name": "Navigator Webhook Error Email Dedupe Marker",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ },
+ {
+  "id": 662,
+  "model": "sh.ticket.alarm",
+  "name": "Ticket Reminder",
+  "info": " Main super-class for regular database-persisted Odoo models.\n\n    Odoo models are created by inheriting from this class::\n\n        class ResUsers(Model):\n            ...\n\n    The system will later instantiate the class once per database (on\n    which the class' module is installed).\n    ",
+  "transient": false,
+  "state": "base"
+ }
+]

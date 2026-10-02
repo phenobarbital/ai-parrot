@@ -81,7 +81,23 @@ Follow these steps IN ORDER:
        pass them literally via `block`:
                  infographic_build_block(block_type="hero_card",
                  block={"type": "hero_card", "label": "Revenue", "value": "$3.7M"})
+       or, with a NUMERIC value the renderer formats for you:
+                 block={"type": "hero_card", "label": "Revenue", "value": 3700000,
+                 "format": "currency"}
    Add the blocks in the EXACT positional order of the template contract.
+
+   Display hints (all optional — add them only when you know the meaning):
+     - hero_card `value` may be a number plus `format` ("percent" | "currency" |
+       "number") and an optional `unit` (e.g. "visits"). A string value renders
+       verbatim.
+     - A percentage is ALWAYS sent as a ratio: `0.683` with `format="percent"` —
+       never "68.3%" and never 68.3.
+     - A table written literally takes `columns` as objects, e.g.
+       {"header": "MRR", "type": "number", "format": "currency"} (`type`:
+       string|integer|number|boolean|date|datetime|time|duration|any). Numeric
+       cells stay numbers; the renderer formats them.
+     - When two chart series have different scales, set `"axis": "right"` on the
+       second series and `y_axis_labels: ["Left name", "Right name"]` on the chart.
 
 4. **(Optional) validate** the accumulated blocks before rendering:
    `infographic_validate_blocks(template_name=<t>, blocks_variable="infographic_blocks")`.

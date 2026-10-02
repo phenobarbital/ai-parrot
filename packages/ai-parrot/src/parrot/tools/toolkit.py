@@ -325,6 +325,9 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
     default_user_overridable: ClassVar[frozenset[str]] = frozenset()
     #: FEAT-593 — params for which ``config_options()`` returns dynamic choices.
     options_params: ClassVar[frozenset[str]] = frozenset()
+    #: FEAT-622 — True when this toolkit reads tenant data; tools then refuse without a matching
+    #: ``studio_scope`` (enforced by AbstractTool.execute, FEAT-622 M3b). See parrot.tools.scope.
+    tenant_bound: ClassVar[bool] = False
 
     def __init__(self, **kwargs):
         """

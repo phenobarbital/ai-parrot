@@ -340,6 +340,8 @@ class AbstractTool(EventEmitterMixin, ABC):
     # FEAT-590: optional short description tuned for tiny local models;
     # tool_specs() falls back to `description` when None.
     delegate_description: Optional[str] = None
+    # FEAT-622: standalone tools that read tenant data set this; see parrot.tools.scope.
+    tenant_bound: ClassVar[bool] = False
 
     def __init__(
         self,

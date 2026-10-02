@@ -84,8 +84,49 @@ def _pair_score(identification: Optional[Identification], facing: FacingDefiniti
     return SCORE_BRAND
 
 
+def _assign_any_order(
+    idents: Sequence[Optional[Identification]], facings: Sequence[FacingDefinition]
+) -> Tuple[Dict[str, str], int]:
+    """Assignment for a shelf whose order is free: a product goes to a facing that expects it.
+
+    Slots that show none of the shelf's still-unassigned products take the facings left over, left to
+    right, so an empty, unreadable or foreign slot is still reported on some facing.
+
+    Returns:
+        ``({Identification.shape_id: facing_id}, anchors)`` — anchors counts product-identity pairs.
+    """
+    free = list(facings)
+    mapping: Dict[str, str] = {}
+    pending: List[Identification] = []
+    for identification in idents:
+        if identification is None:
+            continue
+        product = None if identification.uncertain else _norm(identification.product)
+        facing = next((item for item in free if product and _norm(item.product) == product), None)
+        if facing is None:
+            pending.append(identification)
+            continue
+        mapping[identification.shape_id] = facing.facing_id
+        free.remove(facing)
+    anchors = len(mapping)
+    # A slot of another brand is the likeliest stray (the neighbouring fixture): it takes a facing only
+    # when no slot of the shelf's own brand, or of no readable brand, is left to take it.
+    brands = {_norm(facing.brand) for facing in facings if facing.brand}
+
+    def foreign(identification: Identification) -> bool:
+        brand = _norm(identification.brand)
+        return bool(brand and brands and brand not in brands)
+
+    for identification, facing in zip(sorted(pending, key=foreign), free, strict=False):
+        mapping[identification.shape_id] = facing.facing_id
+    return mapping, anchors
+
+
 def _align_row(
-    row_slots: Sequence[Slot], facings: Sequence[FacingDefinition], by_shape: Dict[str, Identification]
+    row_slots: Sequence[Slot],
+    facings: Sequence[FacingDefinition],
+    by_shape: Dict[str, Identification],
+    fixed_order: bool = True,
 ) -> Tuple[float, Dict[str, str], int]:
     """Semi-global, gap-tolerant alignment of one row against one shelf.
 
@@ -93,6 +134,7 @@ def _align_row(
         row_slots: Slots of one row of one image.
         facings: Expected facings of one shelf, in physical order.
         by_shape: Identifications keyed by ``shape_id``.
+        fixed_order: False for a shelf whose products may stand in any order.
 
     Returns:
         (score, {Identification.shape_id: facing_id}, anchors) — anchors counts SCORE_SAME_PRODUCT pairs.
@@ -145,6 +187,33 @@ def _align_row(
             j -= 1
         else:
             i -= 1
+
+    if not fixed_order:
+        free_mapping, free_anchors = _assign_any_order(idents, facings)
+        return round(max(best, SCORE_SAME_PRODUCT * free_anchors), 4), free_mapping, free_anchors
+
+    # A full row none of whose slots the evidence could place (another brand on every facing) still
+    # stands on these facings: report each slot where it is instead of leaving the shelf unseen.
+    if n == m and not mapping:
+        unplaced = {
+            identification.shape_id: facings[k].facing_id
+            for k, identification in enumerate(idents)
+            if identification is not None
+        }
+        return round(best, 4), unplaced, anchors
+
+    # A full row holding only this shelf's own products in another order is a shuffled shelf, not a
+    # shifted one: register it position by position so every facing reports what stands on it.
+    if n == m and len(mapping) < n:
+        shelf_products = {_norm(facing.product) for facing in facings}
+        if all(
+            identification is not None
+            and not identification.uncertain
+            and _norm(identification.product) in shelf_products
+            for identification in idents
+        ):
+            positional = {idents[k].shape_id: facings[k].facing_id for k in range(n)}  # type: ignore[union-attr]
+            return round(best, 4), positional, anchors
 
     # The evidence-scored path establishes the horizontal offset. Fill the rest of that
     # observed row geometrically so empty, inferred-present and mismatching slots remain
@@ -203,7 +272,7 @@ def register_image(
     cache: Dict[Tuple[int, int], Tuple[float, Dict[str, str], int]] = {}
     for row in row_ids:
         for index, shelf in enumerate(shelves):
-            cache[(row, index)] = _align_row(rows[row], shelf.facings, by_shape)
+            cache[(row, index)] = _align_row(rows[row], shelf.facings, by_shape, shelf.ordered)
 
     best_total = -float("inf")
     best_combo: Optional[Tuple[int, ...]] = None

@@ -57,18 +57,18 @@ class FakeServer:
         self.envelope = envelope
         self.empty = empty  # a slug that answers 204 "Empty Result"
         self.sources = envelope["metadata"]["extensions"]["parrot_data_sources"]
-        self.by_conditions = {canon(src["conditions"]): key for key, src in self.sources.items()}
+        # Only query-slug sources are ever POSTed; derived views (`kind: "derived"`) carry no conditions.
+        self.by_conditions = {canon(src["conditions"]): key for key, src in self.sources.items() if "conditions" in src}
         self.posts: list[dict[str, Any]] = []
         self.overrides = overrides or {}
         self.missing = missing  # a slug that answers 404
         self.login_status = 200
+        # The geo matrix: 95 countries × 23 licensees whose graduates add up to the KPI total (17572).
+        geo = [{"country": f"C{c}", "licensee": f"L{lic}", "graduates": 8} for c in range(95) for lic in range(23)]
+        geo[0]["graduates"] += 17572 - 8 * len(geo)
         self.data: dict[str, Any] = {
-            "kpi_total": [{"total": 17572}],
-            "kpi_studio": [{"total": 9191}],
-            "kpi_mat": [{"total": 6245}],
-            "kpi_multi": [{"multi_graduates": 2884}],
-            "by_country": [{"country": f"C{i}", "graduates": i + 1} for i in range(95)],
-            "by_licensee": [{"licensee": f"L{i}", "graduates": i + 1} for i in range(23)],
+            "kpis": [{"total": 17572, "studio": 9191, "mat": 6245, "multi_graduates": 2884}],
+            "geo": geo,
             "by_course": [
                 {"course": "Pilates Studio", "graduates": 9204},
                 {"course": "Pilates Mat", "graduates": 6247},
@@ -166,24 +166,30 @@ class TestClientCheck:
     async def test_replays_the_lane_requests(self, capsys: pytest.CaptureFixture[str]) -> None:
         server = FakeServer(real_envelope())
         await run_check(server, capsys)
-        studio = server.sources["kpi_studio"]["conditions"]
-        assert any(post.get("filter") == studio["filter"] and post["querylimit"] == 5000 for post in server.posts), (
-            "the Pilates KPI must be fetched with its own filter (not merged into top-level conditions)"
-        )
-        assert not any("graduation_details" in post for post in server.posts)
+        kpis = server.sources["kpis"]["conditions"]
+        kpi_posts = [post for post in server.posts if post.get("fields") == kpis["fields"]]
+        assert len(kpi_posts) == 1 and kpi_posts[0]["querylimit"] == 5000, "the four KPIs are ONE request"
+        assert len(kpis["fields"]) == 4 and "@>" in kpis["fields"][1]
+        geo_posts = [post for post in server.posts if post.get("grouping") == ["country", "licensee"]]
+        assert len(geo_posts) == 1, "the geo matrix is fetched once; by_country/by_licensee are computed locally"
+        assert not any(post.get("grouping") in (["country"], ["licensee"]) for post in server.posts)
         page = next(p for p in server.posts if p.get("_offset") == 0 and p["querylimit"] == 20 and "filter" not in p)
         assert page["ordering"] == ["student_uid"]
         assert any(p.get("filter") == {"country": "US"} for p in server.posts), "the column filter is exercised"
 
     @pytest.mark.asyncio
     async def test_wrong_value_fails(self, capsys: pytest.CaptureFixture[str]) -> None:
-        server = FakeServer(real_envelope(), overrides={"kpi_total": [{"total": 5}]})
+        server = FakeServer(
+            real_envelope(), overrides={"kpis": [{"total": 5, "studio": 9191, "mat": 6245, "multi_graduates": 2884}]}
+        )
         code, _ = await run_check(server, capsys)
         assert code == 1
 
     @pytest.mark.asyncio
     async def test_no_expect_prints_without_asserting(self, capsys: pytest.CaptureFixture[str]) -> None:
-        server = FakeServer(real_envelope(), overrides={"kpi_studio": [{"total": 5}]})
+        server = FakeServer(
+            real_envelope(), overrides={"kpis": [{"total": 17572, "studio": 5, "mat": 6245, "multi_graduates": 2884}]}
+        )
         code, out = await run_check(server, capsys, expect=False)
         assert code == 0 and "kpi_studio | 5" in out
 
@@ -224,11 +230,14 @@ class TestClientCheck:
         assert code == 1
 
     def test_evaluate_reports_every_mismatch(self) -> None:
-        failures = client.evaluate({"kpi_total": [{"total": 1}], "by_country": [], "by_licensee": [], "by_course": []})
+        failures = client.evaluate(
+            {"kpis": [{"total": 1}], "geo": [], "by_country": [], "by_licensee": [], "by_course": []}
+        )
         assert any("kpi_total" in f for f in failures)
         assert any("kpi_studio" in f for f in failures)
         assert any("by_country" in f for f in failures)
         assert any("by_course" in f for f in failures)
+        assert any(f.startswith("geo:") for f in failures), "the geo matrix must add up to the KPI total"
 
 
 class FakeConn:

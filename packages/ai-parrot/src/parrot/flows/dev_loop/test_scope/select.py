@@ -182,8 +182,25 @@ def plan_tests(
                 for path in changed_files
                 if module_name_for(path) is not None
             }
+            changed_dists = {_dist(path) for path in changed_files}
             for dist, paths in by_dist.items():
                 if len(paths) > policy.impact_cap:
+                    # FEAT-618: a cap-only escalation into a distribution that owns
+                    # none of the changed files used to contribute that whole suite,
+                    # so a merge verdict absorbed unrelated packages' failing
+                    # baselines (issue:181bd0c01bb4 -- an outputs/a2ui/linked-only
+                    # diff pulled in ~2800 tests and parrot-formdesigner's 40 reds).
+                    # Skip BEFORE cap_candidates so the distribution stays out of
+                    # cap_hits/cap_impacted and therefore out of `escalated` too,
+                    # matching the invariant documented below. detect_core() runs
+                    # after this loop, so a core-reached distribution is still
+                    # escalated via `hits` -- the guard cannot suppress that.
+                    if not policy.escalate_foreign_dists and dist not in changed_dists:
+                        notes.append(
+                            f"{dist}: cap-only escalation into a distribution owning none of the "
+                            f"changed files; skipped (ScopePolicy.escalate_foreign_dists=False)"
+                        )
+                        continue
                     cap_candidates[dist] = paths
                     notes.append(
                         f"{dist}: {len(paths)} impacted tests exceed cap {policy.impact_cap}, escalated to suite"

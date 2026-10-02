@@ -1,0 +1,14 @@
+- [ ] **U5 — TROC-specific payload in v1?** Expose `extra_field_ids` as `dict[str, str]` and the
+  `dynamic_form_submission_id` link on `HelpdeskTicket`, or keep v1 vendor-generic? —
+  *Owner*: Jesus Lara. *Recommendation*: include both **read-only** in v1 (cheap, and it is
+  where the kiosk data lives). *Blocks*: C12
+- [ ] **Tool prefix**: inherit `odoo` (tools appear as `odoo_create_ticket`) or set
+  `tool_prefix = "odoo_hd"` / `"helpdesk"` to keep helpdesk tools distinguishable when both
+  toolkits are loaded? — *Owner*: spec. *Recommendation*: inherit `odoo`, unless the
+  `odoo_hd` agent loads both toolkits.
+- [ ] **HITL gating**: which transitions join `confirming_tools` (cancel, merge, mass update)?
+  — *Owner*: spec.
+- [ ] **Softhealer method signatures**: do `action_cancel` / `action_done` open wizards or need
+  `cancel_reason` set beforehand? — answered by the staging verification authorised in U3.
+
+---

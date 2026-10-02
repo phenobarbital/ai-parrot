@@ -17,7 +17,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from scripts.sdd.sdd_meta import WORKTREE_ROOT  # verified: scripts/sdd/sdd_meta.py:15
+# scripts/sdd/sdd_meta.py is a re-export shim; the definition lives in the package.
+from scripts.sdd.sdd_meta import (  # verified: packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py:322
+    WORKTREE_ROOT,
+)
 
 # ---------------------------------------------------------------------------
 # Branch-name patterns
@@ -50,6 +53,12 @@ class WorktreeHealth(BaseModel):
     dirty_count: int = 0
     unpushed_count: int = 0
     live_process_count: int = 0
+    #: ``git status`` failed — ``dirty_count`` is not trustworthy. Never report
+    #: this worktree as clean (FEAT-619 / issue:6b0b91e1f5b2).
+    dirty_unknown: bool = False
+    #: ``git log origin/<base>..HEAD`` failed (commonly: the remote-tracking ref
+    #: does not exist locally) — ``unpushed_count`` is not trustworthy.
+    unpushed_unknown: bool = False
 
 
 class WorktreeReport(BaseModel):
@@ -57,7 +66,9 @@ class WorktreeReport(BaseModel):
 
     feature_slug: str
     feature_id: str | None = None
-    flow_type: Literal["feature", "hotfix"]
+    #: ``"non-sdd"`` marks a worktree under WORKTREE_ROOT whose branch is not an
+    #: SDD branch: health only, no tasks, never ready_for_done (FEAT-582 §8).
+    flow_type: Literal["feature", "hotfix", "non-sdd"]
     worktree_path: str
     branch: str
     base_branch: str = "dev"
@@ -135,7 +146,10 @@ def _read_worktree_index(
     try:
         with open(index_path, encoding="utf-8") as f:
             data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+    # OSError subsumes FileNotFoundError, PermissionError and IsADirectoryError.
+    # UnicodeDecodeError is a ValueError subclass and is NOT covered by OSError,
+    # so it must be named explicitly (issue:8aef2c10c7fd).
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, KeyError):
         return [], "dev"
 
     base_branch = data.get("base_branch", "dev")
@@ -189,13 +203,19 @@ def _live_process_count(path: Path) -> int:
 
 def _check_health(wt_path: Path, base_branch: str) -> WorktreeHealth:
     """Dirty files, unpushed commits, live processes."""
-    # Count dirty files
+    # Count dirty files. A non-zero exit means git could not tell us — stdout is
+    # empty in that case, which is indistinguishable from a clean tree, so the
+    # count stays 0 and the uncertainty is carried by the flag instead.
     status_proc = _git("status", "--porcelain", cwd=wt_path)
-    dirty_count = len([line for line in status_proc.stdout.splitlines() if line.strip()])
+    dirty_unknown = status_proc.returncode != 0
+    dirty_count = 0 if dirty_unknown else len([line for line in status_proc.stdout.splitlines() if line.strip()])
 
-    # Count unpushed commits
+    # Count unpushed commits. The common real failure is a missing
+    # origin/<base_branch> ref (worktree cut from staging during a freeze, or an
+    # unfetched remote) — git exits non-zero and prints nothing.
     log_proc = _git("log", f"origin/{base_branch}..HEAD", "--oneline", cwd=wt_path)
-    unpushed_count = len([line for line in log_proc.stdout.splitlines() if line.strip()])
+    unpushed_unknown = log_proc.returncode != 0
+    unpushed_count = 0 if unpushed_unknown else len([line for line in log_proc.stdout.splitlines() if line.strip()])
 
     # Count live processes
     live_process_count = _live_process_count(wt_path)
@@ -204,12 +224,31 @@ def _check_health(wt_path: Path, base_branch: str) -> WorktreeHealth:
         dirty_count=dirty_count,
         unpushed_count=unpushed_count,
         live_process_count=live_process_count,
+        dirty_unknown=dirty_unknown,
+        unpushed_unknown=unpushed_unknown,
     )
 
 
 # ---------------------------------------------------------------------------
 # Discovery
 # ---------------------------------------------------------------------------
+
+
+def _is_under_worktree_root(path: Path, worktree_root: Path) -> bool:
+    """Return True when ``path`` is ``worktree_root`` itself or nested inside it.
+
+    Both arguments must already be resolved — the caller resolves once and
+    passes the result, so a symlinked ``.claude/worktrees`` cannot make this
+    silently return False for every candidate.
+
+    Args:
+        path: A resolved worktree path.
+        worktree_root: The resolved ``repo_root / WORKTREE_ROOT``.
+
+    Returns:
+        Whether ``path`` lives in the SDD worktree pool.
+    """
+    return path == worktree_root or worktree_root in path.parents
 
 
 def _parse_porcelain(output: str) -> list[tuple[Path, str | None]]:
@@ -263,7 +302,7 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
     # Scan WORKTREE_ROOT for orphan directories. WORKTREE_ROOT is relative
     # (".claude/worktrees") and must be resolved against repo_root, not the
     # process's current working directory (which may itself be a worktree).
-    worktree_root = repo_root / WORKTREE_ROOT
+    worktree_root = (repo_root / WORKTREE_ROOT).resolve()
     orphan_paths: list[Path] = []
     if worktree_root.exists():
         for entry in worktree_root.iterdir():
@@ -275,7 +314,9 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 
     reports: list[WorktreeReport] = []
 
-    for wt_path in all_worktree_paths:
+    # Sorted, not set order: the output of a status tool must be screen-diffable
+    # run to run (issue:f3dabdbe09a8).
+    for wt_path in sorted(all_worktree_paths):
         # Try to get branch from git porcelain
         branch = None
         for path, b in git_worktrees:
@@ -285,6 +326,15 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
 
         # If not found in porcelain, try to get it from git
         if branch is None:
+            # Only a real worktree carries its own ``.git`` (a file pointing at
+            # the admin dir). Without this check, ``git rev-parse`` run inside a
+            # plain directory under WORKTREE_ROOT — an sdd-coder ``--pool``
+            # container, or a leftover directory whose worktree was removed —
+            # walks UP to the primary checkout and reports ITS branch, which
+            # used to be harmless (``dev`` never parsed as an SDD branch) but
+            # would now surface dozens of bogus non-SDD rows.
+            if not (wt_path / ".git").exists():
+                continue
             branch_proc = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=wt_path)
             if branch_proc.returncode == 0:
                 branch = branch_proc.stdout.strip()
@@ -292,10 +342,37 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
                 # Detached HEAD or error
                 continue
 
-        # Parse branch name
+        # sdd-coder pool sub-worktrees are task-level attempts nested inside a
+        # feature worktree (FEAT-549), not worktrees in their own right. They
+        # live UNDER WORKTREE_ROOT, so the containment guard below does not
+        # exclude them, and _parse_branch() returns None for them exactly as it
+        # does for a non-SDD branch — hence the explicit test here.
+        if _POOL_SUB_WORKTREE_RE.search(branch):
+            continue
+
         parsed = _parse_branch(branch)
         if parsed is None:
-            # Not an SDD branch
+            # Non-SDD branch (chore-*, fix-*, a detached "HEAD", a branch whose
+            # name does not match the SDD patterns). FEAT-582 §8 resolved these
+            # to appear in the Worktrees panel, health only. Only those under
+            # WORKTREE_ROOT qualify: the primary checkout is itself a porcelain
+            # entry and must never report itself (issue:07b75dc7dfae).
+            if not _is_under_worktree_root(wt_path, worktree_root):
+                continue
+            reports.append(
+                WorktreeReport(
+                    feature_slug=branch,
+                    feature_id=None,
+                    flow_type="non-sdd",
+                    worktree_path=str(wt_path),
+                    branch=branch,
+                    base_branch="dev",
+                    health=_check_health(wt_path, "dev"),
+                    tasks=[],
+                    index_found=False,
+                    ready_for_done=False,
+                )
+            )
             continue
 
         slug, feature_id, flow_type = parsed
@@ -310,7 +387,16 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
         # Compute ready_for_done
         # All tasks must be done or done-with-issues, no dirty files, no unpushed commits
         all_done = all(t.status in ("done", "done-with-issues") for t in tasks) and len(tasks) > 0
-        ready_for_done = all_done and health.dirty_count == 0 and health.unpushed_count == 0 and index_found
+        # Fail closed: an unreadable health signal must never present as ready.
+        # This gate's whole purpose is to avoid suggesting an unsafe /sdd-done.
+        ready_for_done = (
+            all_done
+            and health.dirty_count == 0
+            and health.unpushed_count == 0
+            and not health.dirty_unknown
+            and not health.unpushed_unknown
+            and index_found
+        )
 
         reports.append(
             WorktreeReport(
@@ -327,7 +413,9 @@ def discover_worktree_reports(repo_root: Path) -> list[WorktreeReport]:
             )
         )
 
-    return reports
+    # Stable output contract: identical underlying state yields identical
+    # --json array order and table row order (issue:f3dabdbe09a8).
+    return sorted(reports, key=lambda r: (r.branch, r.worktree_path))
 
 
 # ---------------------------------------------------------------------------
@@ -494,8 +582,12 @@ def reconcile_reports(
         One :class:`ReconciledFeature` per dev index, plus one per
         worktree-only feature, in index-filename order.
     """
-    by_feature_id = {r.feature_id: r for r in reports if r.feature_id}
-    by_slug = {r.feature_slug: r for r in reports}
+    # Non-SDD worktrees carry no per-spec index and never belong on the task
+    # board (FEAT-582 §8: Worktrees panel only). Filter them explicitly rather
+    # than relying on index_found=False to exclude them by accident.
+    sdd_reports = [r for r in reports if r.flow_type != "non-sdd"]
+    by_feature_id = {r.feature_id: r for r in sdd_reports if r.feature_id}
+    by_slug = {r.feature_slug: r for r in sdd_reports}
 
     reconciled: list[ReconciledFeature] = []
     matched: set[str] = set()
@@ -506,7 +598,7 @@ def reconcile_reports(
             matched.add(report.branch)
         reconciled.append(reconcile_feature(dev_index, report))
 
-    for report in reports:
+    for report in sdd_reports:
         if report.branch in matched or not report.index_found:
             continue
         reconciled.append(reconcile_feature(None, report))
@@ -584,10 +676,11 @@ def main() -> int:
         print(f"{'Name':<40} {'Branch':<30} {'Feature':<15} {'Tasks':<12} {'Health':<20} {'Ready'}")
         print("-" * 130)
         for r in reports:
-            # Name: feature_slug
+            # Name: feature_slug only — the Feature column below already prints
+            # feature_id, and printing it twice was issue:4456385c283c.
             name = r.feature_slug
-            if r.feature_id:
-                name = f"{r.feature_slug} ({r.feature_id})"
+            if r.flow_type == "non-sdd":
+                name = f"{r.feature_slug} (non-SDD)"
 
             # Branch
             branch = r.branch
@@ -605,6 +698,12 @@ def main() -> int:
                 health_parts.append(f"unpushed:{r.health.unpushed_count}")
             if r.health.live_process_count > 0:
                 health_parts.append(f"live:{r.health.live_process_count}")
+            # An unreadable signal is its own token, so the "clean" fallback is
+            # reached only when nothing at all is flagged (issue:6b0b91e1f5b2).
+            if r.health.dirty_unknown:
+                health_parts.append("dirty:unknown")
+            if r.health.unpushed_unknown:
+                health_parts.append("unpushed:unknown")
             health_str = ", ".join(health_parts) if health_parts else "clean"
 
             # Ready flag

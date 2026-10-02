@@ -1,0 +1,1 @@
+- [ ] Is changing `format_cell`'s currency/number output acceptable for existing `ssr_html` / PDF consumers? Nothing is known to depend on the bare `1,234.56` form. — *Owner: Jesús*

@@ -816,6 +816,16 @@ ODOO_PASSWORD = config.get("ODOO_PASSWORD", fallback=None)
 ODOO_TIMEOUT = config.getint("ODOO_TIMEOUT", fallback=30)
 ODOO_VERIFY_SSL = config.getboolean("ODOO_VERIFY_SSL", fallback=True)
 
+# ── Odoo Helpdesk (Softhealer sh_all_in_one_helpdesk, dedicated instance — FEAT-616) ──
+# Never merged with the ODOO_* keys above: OdooHelpdeskToolkit reads only these.
+ODOO_HELPDESK_URL = config.get("ODOO_HELPDESK_URL", fallback=None)
+ODOO_HELPDESK_USER = config.get("ODOO_HELPDESK_USER", fallback=None)
+ODOO_HELPDESK_PASSWORD = config.get("ODOO_HELPDESK_PASSWORD", fallback=None)
+ODOO_HELPDESK_APIKEY = config.get("ODOO_HELPDESK_APIKEY", fallback=None)
+ODOO_HELPDESK_DATABASE = config.get("ODOO_HELPDESK_DATABASE", fallback="")
+ODOO_HELPDESK_TIMEOUT = config.getint("ODOO_HELPDESK_TIMEOUT", fallback=30)
+ODOO_HELPDESK_VERIFY_SSL = config.getboolean("ODOO_HELPDESK_VERIFY_SSL", fallback=True)
+
 # ── Zammad Helpdesk (REST API v1) ──
 ZAMMAD_INSTANCE = config.get("ZAMMAD_INSTANCE", fallback=None)
 ZAMMAD_TOKEN = config.get("ZAMMAD_TOKEN", fallback=None)

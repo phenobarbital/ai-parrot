@@ -11,6 +11,7 @@ import asyncio
 import copy
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
@@ -47,6 +48,7 @@ from parrot_tools.querysource.errors import (
 )
 from parrot_tools.querysource.models import (
     ComponentDoc,
+    DashboardSource,
     DashboardWidget,
     DialectReference,
     ExecutionResult,
@@ -62,11 +64,13 @@ from parrot_tools.querysource.models import (
 from parrot_tools.querysource.results import frame_to_result, multi_to_result
 
 if TYPE_CHECKING:
-    from parrot.outputs.a2ui.linked.models import LinkedDataSource
+    from parrot.outputs.a2ui.linked.models import LinkedDataSource, LinkedSource
 
 
 _WIDGET_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _RESERVED_LAYOUT_IDS = frozenset({"root", "title", "row_kpis", "row_charts"})
+_DASHBOARD_COMPONENTS = frozenset({"Chart", "DataTable", "KPICard"})
+_MAX_INLINE_ROWS = 500
 
 
 class QuerysourceToolkit(AbstractToolkit):
@@ -377,12 +381,10 @@ class QuerysourceToolkit(AbstractToolkit):
 
         detail = await self.describe_slug(slug, tenant=tenant)
         key = target_key or self._default_target_key(slug)
-        widget = DashboardWidget(
-            key=key, slug=slug, component=component, request=request, tenant=tenant, refresh=refresh
-        )
-        source = self._build_linked_source(widget, detail, transform=transform)
+        spec = DashboardSource(slug=slug, request=request, tenant=tenant, refresh=refresh, transform=transform)
+        source = self._build_linked_source(spec, detail, key=key)
         self.logger.info("qs_build_linked_surface %s tenant=%s key=%s snapshot=%s", slug, tenant, key, snapshot)
-        self._warn_manual_without_snapshot([widget], snapshot)
+        self._warn_manual_without_snapshot({key: refresh}, snapshot)
         execution = await execute_sources({key: source}, pctx=None, guard=None, probe=not snapshot)
         outcome = execution.outcomes[key]
         if outcome.error:
@@ -415,37 +417,47 @@ class QuerysourceToolkit(AbstractToolkit):
         surface_id: str | None = None,
         title: str | None = None,
         snapshot: bool = False,
+        sources: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Emit ONE linked A2UI dashboard surface.
+        """Emit ONE linked A2UI dashboard surface whose data sources are owned by the dashboard.
 
-        Each widget ``{key, slug, component, request?, tenant?, section?, refresh?}`` gets its own source, so each
-        refreshes independently; KPIs, charts and tables are laid out in rows. Components are Chart, DataTable or
-        KPICard without bindings; a KPICard names its aggregate column in ``value``. By default (``snapshot=False``)
-        the dashboard is definition-only: every slug is only probed with ``querylimit=1`` to validate columns and
-        dtypes, the envelope carries no rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only when
-        viewers cannot fetch for themselves (share links, offline export): it runs every query in full and embeds up
-        to 500 rows per source. Raises InvalidConditionsError on bad/duplicate keys or grammar;
+        ``sources`` maps a source key to ``{slug, request?, tenant?, refresh?, transform?}``: each is fetched ONCE
+        when the dashboard loads and shared by every widget that reads it — e.g. one query computing six KPIs
+        feeds six KPICards. Each widget ``{key, component, section?}`` declares exactly one data origin:
+        ``source`` (a key of ``sources``; add ``transform`` DSL ops to derive a view such as a category
+        aggregation of the rows another widget shows in full), ``slug`` (its own query-slug source with
+        ``request?``/``tenant?``/``refresh?``, refreshed independently), or ``data`` (inline rows, ≤500).
+        Components are Chart, DataTable or KPICard without bindings; a KPICard names its column in ``value``.
+        KPIs, charts and tables are laid out in rows. By default (``snapshot=False``) the dashboard is
+        definition-only: every slug is only probed with ``querylimit=1`` to validate columns and dtypes, the
+        envelope carries no rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only when viewers
+        cannot fetch for themselves (share links, offline export): it runs every query in full and embeds up to
+        500 rows per source. Raises InvalidConditionsError on bad/duplicate keys, unknown sources or grammar;
         QuerysourceToolkitError when a source fails to execute.
         """
         from parrot.outputs.a2ui.builders import build_linked_surface as _build
         from parrot.outputs.a2ui.linked.executor import execute_sources
+        from parrot.outputs.a2ui.linked.models import DerivedDataSource, TransformSpec
 
-        parsed = [DashboardWidget.model_validate(w) for w in widgets]
+        try:
+            parsed = [DashboardWidget.model_validate(w) for w in widgets]
+            shared = {key: DashboardSource.model_validate(spec) for key, spec in (sources or {}).items()}
+        except ValueError as exc:
+            raise InvalidConditionsError(str(exc)) from exc
         if not parsed:
             raise InvalidConditionsError("widgets must not be empty")
-        seen: set[str] = set()
+        for key in shared:
+            self._check_key(key, "source")
+        seen: set[str] = set(shared)
         for widget in parsed:
-            if not _WIDGET_KEY_RE.match(widget.key):
-                raise InvalidConditionsError(
-                    f"widget key '{widget.key}' must match ^[A-Za-z_][A-Za-z0-9_]*$ (JSON-pointer-safe)"
-                )
+            self._check_key(widget.key, "widget")
             if widget.key in seen:
-                raise InvalidConditionsError(f"duplicate widget key '{widget.key}'")
-            if widget.key in _RESERVED_LAYOUT_IDS:
-                raise InvalidConditionsError(f"widget key '{widget.key}' is reserved for the dashboard layout")
+                raise InvalidConditionsError(
+                    f"duplicate key '{widget.key}' (widget keys and source keys share one namespace)"
+                )
             seen.add(widget.key)
             component_type = widget.component.get("component")
-            if component_type not in {"Chart", "DataTable", "KPICard"}:
+            if component_type not in _DASHBOARD_COMPONENTS:
                 raise InvalidConditionsError(
                     f"widget '{widget.key}': component must be one of Chart, DataTable, or KPICard"
                 )
@@ -453,17 +465,60 @@ class QuerysourceToolkit(AbstractToolkit):
                 raise InvalidConditionsError(
                     f"widget '{widget.key}': a KPICard must name its aggregate column as a string in `value`"
                 )
-        sources = {}
+            if widget.source is not None and widget.source not in shared:
+                raise InvalidConditionsError(
+                    f"widget '{widget.key}': source '{widget.source}' is not a key of the dashboard sources"
+                )
+            if widget.data is not None and len(widget.data) > _MAX_INLINE_ROWS:
+                raise InvalidConditionsError(f"widget '{widget.key}': inline data exceeds {_MAX_INLINE_ROWS} rows")
+
+        linked: dict[str, LinkedSource] = {}
+        for key, spec in shared.items():
+            detail = await self.describe_slug(spec.slug, tenant=spec.tenant)
+            linked[key] = self._build_linked_source(spec, detail, key=key)
+        inline: dict[str, list[dict[str, Any]]] = {}
+        derived: list[str] = []
         for widget in parsed:
-            detail = await self.describe_slug(widget.slug, tenant=widget.tenant)
-            sources[widget.key] = self._build_linked_source(widget, detail)
-        self.logger.info("qs_build_linked_dashboard %d widgets snapshot=%s", len(parsed), snapshot)
-        self._warn_manual_without_snapshot(parsed, snapshot)
-        execution = await execute_sources(sources, pctx=None, guard=None, probe=not snapshot)
+            if widget.origin == "slug":
+                detail = await self.describe_slug(widget.slug, tenant=widget.tenant)
+                linked[widget.key] = self._build_linked_source(widget, detail, key=widget.key)
+            elif widget.origin == "data":
+                inline[widget.key] = list(widget.data or [])
+            elif widget.transform is not None:
+                try:
+                    transform = TransformSpec.model_validate(widget.transform)
+                    linked[widget.key] = DerivedDataSource.model_validate(
+                        {
+                            "kind": "derived",
+                            "from": widget.source,
+                            "transform": transform,
+                            "target": f"/{widget.key}/rows",
+                        }
+                    )
+                except ValueError as exc:
+                    raise InvalidConditionsError(f"widget '{widget.key}': invalid transform — {exc}") from exc
+                derived.append(widget.key)
+        self.logger.info(
+            "qs_build_linked_dashboard %d widgets, %d sources (%d shared, %d derived, %d inline) snapshot=%s",
+            len(parsed),
+            len(linked),
+            len(shared),
+            len(derived),
+            len(inline),
+            snapshot,
+        )
+        self._warn_manual_without_snapshot(
+            {
+                **{key: spec.refresh for key, spec in shared.items()},
+                **{w.key: w.refresh for w in parsed if w.origin == "slug"},
+            },
+            snapshot,
+        )
+        execution = await execute_sources(linked, pctx=None, guard=None, probe=not snapshot)
         # Sources fail independently; report every failure, not just the first in widget order.
         failures = [
-            f"'{key}' ({sources[key].slug}): {outcome.error if outcome is not None else 'no outcome'}"
-            for key in sources
+            f"'{key}' ({self._source_label(linked[key])}): {outcome.error if outcome is not None else 'no outcome'}"
+            for key in linked
             if (outcome := execution.outcomes.get(key)) is None or outcome.error
         ]
         if failures:
@@ -471,30 +526,59 @@ class QuerysourceToolkit(AbstractToolkit):
                 f"{len(failures)} source(s) failed while building the linked dashboard: {'; '.join(failures)} "
                 "(see the 'linked source ... failed' warnings for the underlying errors)"
             )
-        components = [{**self._bind_component(w.component, w.key), "id": w.key} for w in parsed]
+        components = []
+        for widget in parsed:
+            bind_key = widget.source if widget.origin == "source" and widget.transform is None else widget.key
+            components.append({**self._bind_component(widget.component, bind_key), "id": widget.key})
         layout = self._dashboard_layout(components, parsed, title)
         envelope = _build(
             layout,
-            sources,
-            {k: execution.frames[k] for k in sources},
+            linked,
+            {k: execution.frames[k] for k in linked},
             surface_id=surface_id or "linked-dashboard",
             snapshot=snapshot,
+            inline=inline,
         )
         return {
             "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
-            "artifacts": [{"type": "a2ui_linked_surface", "surface_id": envelope.surface_id, "sources": list(sources)}],
+            "artifacts": [
+                {
+                    "type": "a2ui_linked_surface",
+                    "surface_id": envelope.surface_id,
+                    "sources": list(linked),
+                    "shared": list(shared),
+                    "derived": derived,
+                    "inline": list(inline),
+                }
+            ],
         }
 
-    def _warn_manual_without_snapshot(self, widgets: list[DashboardWidget], snapshot: bool) -> None:
-        """The admin lane never runs a ``manual`` source on mount, so without a snapshot it renders empty."""
+    def _warn_manual_without_snapshot(self, refreshes: Mapping[str, dict[str, Any] | None], snapshot: bool) -> None:
+        """The admin lane never runs a ``manual`` source on mount, so without a snapshot it renders empty.
+
+        ``refreshes`` maps each query-slug source key to its ``refresh`` payload.
+        """
         if snapshot:
             return
-        manual = [w.key for w in widgets if (w.refresh or {}).get("policy") == "manual"]
+        manual = [key for key, refresh in refreshes.items() if (refresh or {}).get("policy") == "manual"]
         if manual:
             self.logger.warning(
                 "linked source(s) %s use refresh.policy='manual' without a snapshot; they render empty until refreshed",
                 ", ".join(manual),
             )
+
+    @staticmethod
+    def _check_key(key: str, what: str) -> None:
+        """Reject keys that are not JSON-pointer-safe identifiers or collide with the layout ids."""
+        if not _WIDGET_KEY_RE.match(key):
+            raise InvalidConditionsError(f"{what} key '{key}' must match ^[A-Za-z_][A-Za-z0-9_]*$ (JSON-pointer-safe)")
+        if key in _RESERVED_LAYOUT_IDS:
+            raise InvalidConditionsError(f"{what} key '{key}' is reserved for the dashboard layout")
+
+    @staticmethod
+    def _source_label(source: "LinkedSource") -> str:
+        """``slug`` for a query-slug source, ``derived from <key>`` for a derived view (failure reports)."""
+        return getattr(source, "slug", None) or f"derived from {getattr(source, 'from_', '?')}"
 
     @staticmethod
     def _dashboard_layout(
@@ -525,29 +609,34 @@ class QuerysourceToolkit(AbstractToolkit):
         return [root, *extra, *components]
 
     def _build_linked_source(
-        self, widget: DashboardWidget, detail: SlugDetail, *, transform: dict[str, Any] | None = None
+        self, spec: DashboardSource | DashboardWidget, detail: SlugDetail, *, key: str
     ) -> LinkedDataSource:
-        """Validate one widget's request and build its LinkedDataSource (shared by the linked-surface tools)."""
+        """Validate one source spec's request and build its LinkedDataSource targeting ``/<key>/rows``.
+
+        ``spec`` is a dashboard-level ``DashboardSource`` or a widget that owns its slug; both carry
+        ``slug``/``request``/``tenant``/``refresh``, and a ``DashboardSource`` may add a source-level ``transform``.
+        """
         from parrot.outputs.a2ui.linked.conditions import derive_conditions
         from parrot.outputs.a2ui.linked.models import LinkedDataSource, RefreshPolicy, SourceRequest, TransformSpec
 
-        req = SourceRequest.model_validate(widget.request or {})
+        req = SourceRequest.model_validate(spec.request or {})
         validate_placeholders(dict(req.placeholders), set(detail.placeholders))
         validate_filter(dict(req.filter))
         forced = dict(self.forced_conditions)
         reject_variable_values({**req.placeholders, "filter": req.filter, **forced})
         params, locked = self._linked_params(detail, forced)
+        transform = spec.transform if isinstance(spec, DashboardSource) else None
         return LinkedDataSource(
-            slug=widget.slug,
-            tenant=widget.tenant,
+            slug=spec.slug,
+            tenant=spec.tenant,
             is_multiquery=detail.is_multiquery,
             conditions=derive_conditions(req, locked={name: forced[name] for name in locked}),
             request=req,
             params=params,
             locked=locked,
             transform=TransformSpec.model_validate(transform) if transform else None,
-            target=f"/{widget.key}/rows",
-            refresh=RefreshPolicy.model_validate(widget.refresh or {}),
+            target=f"/{key}/rows",
+            refresh=RefreshPolicy.model_validate(spec.refresh or {}),
         )
 
     def _linked_params(self, detail: SlugDetail, forced: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:

@@ -1,0 +1,807 @@
+{
+ "troc_xmlids": [
+  {
+   "id": 49566,
+   "module": "troc_helpdesk",
+   "model": "ir.actions.server",
+   "name": "cron_webhook_error_dedupe_cleanup_ir_actions_server",
+   "res_id": 559
+  },
+  {
+   "id": 49567,
+   "module": "troc_helpdesk",
+   "model": "ir.cron",
+   "name": "cron_webhook_error_dedupe_cleanup",
+   "res_id": 32
+  },
+  {
+   "id": 49377,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_helpdesk_category",
+   "res_id": 658
+  },
+  {
+   "id": 49376,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_helpdesk_stages",
+   "res_id": 657
+  },
+  {
+   "id": 49373,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_res_company",
+   "res_id": 98
+  },
+  {
+   "id": 49374,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_res_users",
+   "res_id": 102
+  },
+  {
+   "id": 49381,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_sh_helpdesk_reassign_wizard",
+   "res_id": 673
+  },
+  {
+   "id": 49375,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_sh_helpdesk_team",
+   "res_id": 653
+  },
+  {
+   "id": 49378,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_sh_helpdesk_ticket",
+   "res_id": 661
+  },
+  {
+   "id": 49379,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_sh_helpdesk_ticket_extra_fields",
+   "res_id": 671
+  },
+  {
+   "id": 49380,
+   "module": "troc_helpdesk",
+   "model": "ir.model",
+   "name": "model_sh_helpdesk_webhook_error_dedupe",
+   "res_id": 672
+  },
+  {
+   "id": 49418,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_category__company_id",
+   "res_id": 10184
+  },
+  {
+   "id": 49391,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_category__display_name",
+   "res_id": 9728
+  },
+  {
+   "id": 49390,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_category__id",
+   "res_id": 9727
+  },
+  {
+   "id": 49419,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_category__is_helpdesk_manager",
+   "res_id": 10185
+  },
+  {
+   "id": 49417,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_category__team_id",
+   "res_id": 10183
+  },
+  {
+   "id": 49420,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_stages__company_id",
+   "res_id": 10186
+  },
+  {
+   "id": 49389,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_stages__display_name",
+   "res_id": 9715
+  },
+  {
+   "id": 49388,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_helpdesk_stages__id",
+   "res_id": 9714
+  },
+  {
+   "id": 49392,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_res_company__category",
+   "res_id": 9753
+  },
+  {
+   "id": 49383,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_res_company__display_name",
+   "res_id": 1164
+  },
+  {
+   "id": 49382,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_res_company__id",
+   "res_id": 1163
+  },
+  {
+   "id": 49385,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_res_users__display_name",
+   "res_id": 1256
+  },
+  {
+   "id": 49384,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_res_users__id",
+   "res_id": 1255
+  },
+  {
+   "id": 49395,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_res_users__sh_helpdesk_team_ids",
+   "res_id": 10161
+  },
+  {
+   "id": 49428,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__create_date",
+   "res_id": 10194
+  },
+  {
+   "id": 49427,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__create_uid",
+   "res_id": 10193
+  },
+  {
+   "id": 49423,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__display_name",
+   "res_id": 10189
+  },
+  {
+   "id": 49422,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__id",
+   "res_id": 10188
+  },
+  {
+   "id": 49425,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__new_user_id",
+   "res_id": 10191
+  },
+  {
+   "id": 49426,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__team_member_ids",
+   "res_id": 10192
+  },
+  {
+   "id": 49424,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__ticket_id",
+   "res_id": 10190
+  },
+  {
+   "id": 49430,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__write_date",
+   "res_id": 10196
+  },
+  {
+   "id": 49429,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_reassign_wizard__write_uid",
+   "res_id": 10195
+  },
+  {
+   "id": 49421,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_team__category_ids",
+   "res_id": 10187
+  },
+  {
+   "id": 49387,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_team__display_name",
+   "res_id": 9665
+  },
+  {
+   "id": 49386,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_team__id",
+   "res_id": 9664
+  },
+  {
+   "id": 49415,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__assignee_on_leave",
+   "res_id": 10181
+  },
+  {
+   "id": 49416,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__category_id_domain",
+   "res_id": 10182
+  },
+  {
+   "id": 49394,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__display_name",
+   "res_id": 9830
+  },
+  {
+   "id": 49414,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__extra_field_count",
+   "res_id": 10180
+  },
+  {
+   "id": 49413,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__extra_field_ids",
+   "res_id": 10179
+  },
+  {
+   "id": 49393,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__id",
+   "res_id": 9829
+  },
+  {
+   "id": 49403,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__create_date",
+   "res_id": 10169
+  },
+  {
+   "id": 49402,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__create_uid",
+   "res_id": 10168
+  },
+  {
+   "id": 49397,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__display_name",
+   "res_id": 10163
+  },
+  {
+   "id": 49399,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__field_name",
+   "res_id": 10165
+  },
+  {
+   "id": 49396,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__id",
+   "res_id": 10162
+  },
+  {
+   "id": 49400,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__name",
+   "res_id": 10166
+  },
+  {
+   "id": 49398,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__ticket_id",
+   "res_id": 10164
+  },
+  {
+   "id": 49401,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__value",
+   "res_id": 10167
+  },
+  {
+   "id": 49405,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__write_date",
+   "res_id": 10171
+  },
+  {
+   "id": 49404,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket_extra_fields__write_uid",
+   "res_id": 10170
+  },
+  {
+   "id": 49410,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_webhook_error_dedupe__create_date",
+   "res_id": 10176
+  },
+  {
+   "id": 49409,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_webhook_error_dedupe__create_uid",
+   "res_id": 10175
+  },
+  {
+   "id": 49407,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_webhook_error_dedupe__display_name",
+   "res_id": 10173
+  },
+  {
+   "id": 49406,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_webhook_error_dedupe__id",
+   "res_id": 10172
+  },
+  {
+   "id": 49408,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_webhook_error_dedupe__key",
+   "res_id": 10174
+  },
+  {
+   "id": 49412,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_webhook_error_dedupe__write_date",
+   "res_id": 10178
+  },
+  {
+   "id": 49411,
+   "module": "troc_helpdesk",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_webhook_error_dedupe__write_uid",
+   "res_id": 10177
+  },
+  {
+   "id": 51423,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model",
+   "name": "model_dynamic_form",
+   "res_id": 402
+  },
+  {
+   "id": 51424,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model",
+   "name": "model_dynamic_form_field",
+   "res_id": 404
+  },
+  {
+   "id": 51425,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model",
+   "name": "model_dynamic_form_submission",
+   "res_id": 405
+  },
+  {
+   "id": 50133,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model",
+   "name": "model_sh_helpdesk_ticket",
+   "res_id": 661
+  },
+  {
+   "id": 51427,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model",
+   "name": "model_troc_navapi_credential",
+   "res_id": 675
+  },
+  {
+   "id": 51428,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model",
+   "name": "model_troc_navapi_query_client",
+   "res_id": 676
+  },
+  {
+   "id": 51430,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form__display_name",
+   "res_id": 3504
+  },
+  {
+   "id": 51429,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form__id",
+   "res_id": 3503
+  },
+  {
+   "id": 51450,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form__navapi_credential_id",
+   "res_id": 10282
+  },
+  {
+   "id": 51432,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__display_name",
+   "res_id": 3599
+  },
+  {
+   "id": 51431,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__id",
+   "res_id": 3598
+  },
+  {
+   "id": 51461,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_autofill_key",
+   "res_id": 10293
+  },
+  {
+   "id": 51460,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_autofill_source_id",
+   "res_id": 10292
+  },
+  {
+   "id": 51452,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_credential_id",
+   "res_id": 10284
+  },
+  {
+   "id": 51455,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_label_key",
+   "res_id": 10287
+  },
+  {
+   "id": 51456,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_label_template",
+   "res_id": 10288
+  },
+  {
+   "id": 51453,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_query_slug",
+   "res_id": 10285
+  },
+  {
+   "id": 51459,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_store_keys",
+   "res_id": 10291
+  },
+  {
+   "id": 51457,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_store_mode",
+   "res_id": 10289
+  },
+  {
+   "id": 51458,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_store_template",
+   "res_id": 10290
+  },
+  {
+   "id": 51454,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__navapi_value_key",
+   "res_id": 10286
+  },
+  {
+   "id": 51451,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_field__options_source",
+   "res_id": 10283
+  },
+  {
+   "id": 51434,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_submission__display_name",
+   "res_id": 3637
+  },
+  {
+   "id": 51433,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_dynamic_form_submission__id",
+   "res_id": 3636
+  },
+  {
+   "id": 50135,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__display_name",
+   "res_id": 9830
+  },
+  {
+   "id": 50134,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_sh_helpdesk_ticket__id",
+   "res_id": 9829
+  },
+  {
+   "id": 51443,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__active",
+   "res_id": 10275
+  },
+  {
+   "id": 51441,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__api_key",
+   "res_id": 10273
+  },
+  {
+   "id": 51442,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__auth_header",
+   "res_id": 10274
+  },
+  {
+   "id": 51440,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__base_url",
+   "res_id": 10272
+  },
+  {
+   "id": 51445,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__create_date",
+   "res_id": 10277
+  },
+  {
+   "id": 51444,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__create_uid",
+   "res_id": 10276
+  },
+  {
+   "id": 51438,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__display_name",
+   "res_id": 10270
+  },
+  {
+   "id": 51437,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__id",
+   "res_id": 10269
+  },
+  {
+   "id": 51439,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__name",
+   "res_id": 10271
+  },
+  {
+   "id": 51447,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__write_date",
+   "res_id": 10279
+  },
+  {
+   "id": 51446,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_credential__write_uid",
+   "res_id": 10278
+  },
+  {
+   "id": 51449,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_query_client__display_name",
+   "res_id": 10281
+  },
+  {
+   "id": 51448,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.model.fields",
+   "name": "field_troc_navapi_query_client__id",
+   "res_id": 10280
+  },
+  {
+   "id": 51600,
+   "module": "troc_helpdesk_dynamic_forms",
+   "model": "ir.ui.menu",
+   "name": "menu_troc_navapi_credential",
+   "res_id": 388
+  }
+ ],
+ "ir.cron": [
+  {
+   "id": 30,
+   "name": "Auto Close Helpdesk Ticket",
+   "active": true,
+   "interval_number": 1,
+   "interval_type": "days"
+  }
+ ],
+ "modules_detail": [
+  {
+   "id": 516,
+   "name": "sh_all_in_one_helpdesk",
+   "shortdesc": "All In One Helpdesk | CRM Helpdesk | Sale Order Helpdesk | Purchase Helpdesk | Invoice Helpdesk | Helpdesk Timesheet | Helpdesk Support Ticket To Task",
+   "summary": "Flexible HelpDesk Customizable Help Desk Service Desk HelpDesk With Stages Help Desk Ticket Management Helpdesk Email Templates Email Alias Email Helpdesk Chatter Sale Order With Helpdesk,Purchase Order With Helpdesk Invoice With Helpdesk Apps for purchase Material Requisitions Request  purchase product Requisitions Request Material Requisition for tender Material Requisition for manufacturing order Product Request on RFQ Product Request on Tender Product Request on manufacturing order Odoo",
+   "description": "Are you looking for fully flexible and customisable helpdesk in odoo? Our this apps almost contain everything you need for Service Desk, Technical Support Team, Issue Ticket System which include service request to be managed in Odoo backend. Support ticket will send by email to customer and admin. Customer can view their ticket from the website portal and easily see stage of the reported ticket. This desk is fully customizable clean and flexible. ",
+   "author": "Softhealer Technologies",
+   "website": "https://www.softhealer.com",
+   "installed_version": "19.0.0.0.1",
+   "dependencies_id": [
+    1064,
+    1065,
+    1066,
+    1067,
+    1068,
+    1069,
+    1070,
+    1071,
+    1072,
+    1073
+   ],
+   "license": "OPL-1",
+   "depends": [
+    "mail",
+    "portal",
+    "product",
+    "resource",
+    "sale_management",
+    "purchase",
+    "account",
+    "hr_timesheet",
+    "crm",
+    "project"
+   ]
+  },
+  {
+   "id": 705,
+   "name": "dynamic_form_helpdesk",
+   "shortdesc": "Dynamic Form Helpdesk Integration",
+   "summary": "Unmapped dynamic form data on helpdesk tickets and partner resolution hooks",
+   "description": "Bridge between WebbyCrown dynamic forms and Softhealer Helpdesk (sh.helpdesk.ticket).\n\nFeatures: store unmapped answers as JSON on the ticket; QWeb table (label/value) on the ticket form; stored search text for list and filters; submission hooks for partner_id on public submits (email match/create or public partner) and website-originated tickets.\n\nDepends on dynamic_custom_odoo_form_builder and sh_all_in_one_helpdesk. After updates, run: odoo-bin ... -d YOUR_DB -u dynamic_form_helpdesk",
+   "author": "T-ROC, Victor Inojosa",
+   "website": "",
+   "installed_version": "19.0.1.1.0",
+   "dependencies_id": [
+    1479,
+    1480
+   ],
+   "license": "LGPL-3",
+   "depends": [
+    "sh_all_in_one_helpdesk",
+    "dynamic_custom_odoo_form_builder"
+   ]
+  },
+  {
+   "id": 620,
+   "name": "troc_helpdesk",
+   "shortdesc": "TROC Helpdesk",
+   "summary": "TROC extensions for sh_all_in_one_helpdesk",
+   "description": "",
+   "author": "TROC Global",
+   "website": "",
+   "installed_version": "19.0.1.32.0",
+   "dependencies_id": [
+    1323,
+    1324
+   ],
+   "license": "LGPL-3",
+   "depends": [
+    "sh_all_in_one_helpdesk",
+    "data_injector_api"
+   ]
+  },
+  {
+   "id": 706,
+   "name": "troc_helpdesk_dynamic_forms",
+   "shortdesc": "TROC Helpdesk - Navigator Dynamic Forms",
+   "summary": "Navigator QuerySource engine for helpdesk dynamic forms",
+   "description": "Shared NavAPI form engine for troc-helpdesk: credentials, options proxy, server-side row rehydration on submit, searchable-select assets, and unmapped answers redirected onto sh.helpdesk.ticket.extra_fields so the form write-path and the webhook write-path agree.\n\nTenant-specific form definitions live in the per-program modules (troc_helpdesk_apple, troc_helpdesk_bose, troc_helpdesk_pokemon, troc_helpdesk_support). Regenerate them with tools/navapi_form_gen.py and commit the diff instead of editing by hand.",
+   "author": "TROC Global",
+   "website": "",
+   "installed_version": "19.0.1.2.1",
+   "dependencies_id": [
+    1481,
+    1482
+   ],
+   "license": "LGPL-3",
+   "depends": [
+    "dynamic_form_helpdesk",
+    "troc_helpdesk"
+   ]
+  }
+ ]
+}

@@ -91,7 +91,7 @@ reranker-llm = []  # uses existing LLM clients (anthropic/openai/etc.) declared 
 multimodal = [
     "uform>=3.1",
     "onnxruntime>=1.16",
-    "pillow>=9.0",
+    "pillow>=12.3.0",
 ]
 
 # Aggregator extra (TASK-1334/1335/1336)
