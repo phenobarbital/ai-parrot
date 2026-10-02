@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 
 import pytest
+from aiohttp.test_utils import make_mocked_request
 from parrot.auth.confirmation import (
     ConfirmationGuard,
     InMemoryConfirmationWindowStore,
@@ -12,8 +13,20 @@ from parrot.auth.confirmation import (
     current_confirmed_call,
 )
 from parrot.tools.manager import ToolManager
+from parrot.utils.helpers import RequestContext, _current_ctx
 
 from ._host_probe import host_plugins  # noqa: F401
+from .test_tool_scope import _Caller, _Scope
+
+
+@pytest.fixture(autouse=True)
+def _bound_scope():
+    """The probe is tenant-bound (scope-sourced server params): bind a real studio_scope for every call."""
+    token = _current_ctx.set(
+        RequestContext(request=make_mocked_request("POST", "/x"), studio_scope=_Scope(caller=_Caller(tenant="acme")))
+    )
+    yield
+    _current_ctx.reset(token)
 
 
 class _FakeResult:
