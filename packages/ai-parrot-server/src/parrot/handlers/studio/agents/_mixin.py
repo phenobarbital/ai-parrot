@@ -9,7 +9,7 @@ from asyncdb.exceptions import NoDataFound
 
 
 from ...models import BotModel
-from ..access import _store_record
+from ..access import _legacy_record, _store_record
 from ..models import StudioError
 from ..storage.models import (
     StudioStorageUnavailable,
@@ -200,14 +200,27 @@ class _StudioAgentsMixin:
             access, _store_record("agent", rec.agent_id, rec), "agent", name, manage=manage
         )
 
+    @staticmethod
+    def _legacy_view(access: Any, item: dict) -> dict:
+        """A legacy item plus the additive visibility fields (``access: "global"``, FEAT-605 AC3/AC10)."""
+        rec = _legacy_record("agent", item["name"], item["name"], item.get("owner"))
+        return {**item, **access.visibility_fields(rec)}
+
     async def _legacy_items(self) -> list[dict]:
         """Legacy DB-origin plus registry agents (GLOBAL partition only)."""
+        access = await self._access()
         items = [self._db_agent_to_dict(a) for a in await self._get_all_db_agents()]
         registry = self._registry()
         taken = {i["name"] for i in items}
         if registry is not None:
             items += [self._registry_agent_to_dict(m) for m in registry.list_agents() if m.name not in taken]
-        return items
+        return [self._legacy_view(access, i) for i in items]
+
+    def _studio_item_for(self, access: Any, rec: Any) -> dict:
+        """The Studio item with the visibility fields the caller's access decision yields (C14)."""
+        item = self._studio_item(rec)
+        item.update(access.visibility_fields(_store_record("agent", rec.agent_id, rec)))
+        return item
 
     async def _studio_name_lookup(self, storage: Any, part: Any):
         """``(name, record)`` of the request's agent; the record is ``None`` when absent or no name was given."""

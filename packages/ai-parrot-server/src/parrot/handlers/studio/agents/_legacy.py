@@ -27,29 +27,28 @@ class _StudioAgentsLegacyMixin:
         return await self._get_all()
 
     async def _get_one(self, name: str):
+        access = await self._access()
         db_agent = await self._get_db_agent(name)
         if db_agent is not None:
-            return self.json_response(self._db_agent_to_dict(db_agent))
+            return self.json_response(self._legacy_view(access, self._db_agent_to_dict(db_agent)))
         registry = self._registry()
         if registry is not None:
             meta = registry.get_metadata(name)
             if meta is not None:
-                return self.json_response(self._registry_agent_to_dict(meta))
+                return self.json_response(self._legacy_view(access, self._registry_agent_to_dict(meta)))
         return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
 
     async def _get_all(self):
-        agents: list[dict] = []
-        seen: set = set()
-        for db_agent in await self._get_all_db_agents():
-            agents.append(self._db_agent_to_dict(db_agent))
-            seen.add(db_agent.name)
-        registry = self._registry()
-        if registry is not None:
-            for meta in registry.list_agents():
-                if meta.name in seen:
-                    continue
-                agents.append(self._registry_agent_to_dict(meta))
+        agents = await self._legacy_items()
         return self.json_response({"agents": agents, "count": len(agents)})
+
+    async def _legacy_create_refusal(self, slug: str, create_request: CreateAgentRequest):
+        """422 for a visibility the (tenant-less) caller cannot hold; 409 ``name_taken`` for an existing name."""
+        access = await self._access()
+        refused = self._visibility_refusal(access, create_request.visibility, create_request.allowed_groups)
+        if refused is None and await self._check_duplicate(slug):
+            return self._name_taken(slug)
+        return refused
 
     async def _legacy_post(self):
         """Create a simple agent — registers into ``AgentRegistry``.
@@ -97,13 +96,8 @@ class _StudioAgentsLegacyMixin:
                 code="invalid_category",
             )
 
-        existing = await self._check_duplicate(slug)
-        if existing:
-            return self._error(
-                f"Agent '{slug}' already exists in {existing}.",
-                status=409,
-                code="duplicate",
-            )
+        if (refused := await self._legacy_create_refusal(slug, create_request)) is not None:
+            return refused
 
         manager = self._manager()
         if manager is None:

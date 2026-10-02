@@ -113,10 +113,10 @@ async def test_create_refusals(aiohttp_client, pool):
     client = await aiohttp_client(_app(pool))
     assert (await _create(client))[0].status == 201
     resp, body = await _create(client)
-    assert resp.status == 409 and body["code"] == "duplicate"
+    assert resp.status == 409 and body["code"] == "name_taken"
     client.app["bot_manager"].registry.register("legacy-one", BasicBot)
     resp, body = await _create(client, name="legacy-one")
-    assert resp.status == 409 and body["code"] == "duplicate"
+    assert resp.status == 409 and body["code"] == "name_taken"
     resp, body = await _create(client, name="gamma", expected_version=3)
     assert resp.status == 400 and body["code"] == "expected_version_unsupported"
     resp = await client.post(f"{BASE}/agents", json={"name": "delta", "bot_class": "NoSuchClass"})

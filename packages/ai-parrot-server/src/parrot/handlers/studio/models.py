@@ -50,6 +50,9 @@ class CreateAgentRequest(BaseModel):
         category: YAML category sub-directory (only relevant when
             ``persist=True``).
         config: Free-form startup config merged into the agent's kwargs.
+        visibility: ``private`` | ``tenant`` | ``groups`` (FEAT-605; read by the create handler, which validates
+            it against the caller's scope before stamping it).
+        allowed_groups: Groups granted access when ``visibility == "groups"``.
     """
 
     name: str
@@ -59,6 +62,8 @@ class CreateAgentRequest(BaseModel):
     persist: bool = False
     category: str = "general"
     config: dict[str, Any] = Field(default_factory=dict)
+    visibility: Literal["private", "tenant", "groups"] = "private"
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class DraftValidationReport(BaseModel):

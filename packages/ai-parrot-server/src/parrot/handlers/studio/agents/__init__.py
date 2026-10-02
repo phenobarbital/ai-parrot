@@ -29,8 +29,9 @@ from ._db import _StudioAgentsDbMixin
 from ._legacy import _StudioAgentsLegacyMixin
 from ._mixin import _StudioAgentsMixin
 from ._reload import _StudioAgentReloadMixin
+from ._visibility import _StudioAgentVisibilityMixin
 
-__all__ = ["AGENTS_DIR", "StudioAgentReloadHandler", "StudioAgentsHandler"]
+__all__ = ["AGENTS_DIR", "StudioAgentReloadHandler", "StudioAgentVisibilityHandler", "StudioAgentsHandler"]
 
 
 @is_authenticated()
@@ -43,6 +44,8 @@ class StudioAgentsHandler(_StudioAgentsLegacyMixin, _StudioAgentsDbMixin, _Studi
 
     async def get(self):
         """List all agents, or return a single agent by name (database mode: Studio rows + legacy on GLOBAL)."""
+        if not self.request.match_info.get("name") and await self._tenantless():
+            return self.json_response({"agents": [], "count": 0})  # an opted-in caller with no tenant sees nothing
         return await self._dispatch(self._legacy_get, self._db_get)
 
     async def post(self):
@@ -74,3 +77,13 @@ class StudioAgentReloadHandler(_StudioAgentReloadMixin, _StudioAgentsMixin, Stud
         """Reload a Studio agent through ``manager.studio`` (database mode) or ``reload_agent`` (legacy)."""
         gate = lambda: self._pbac_gate("agents", "astudio:agents:reload")  # noqa: E731
         return await self._dispatch(self._legacy_reload, self._db_reload, gate)
+
+
+@is_authenticated()
+@user_session()
+class StudioAgentVisibilityHandler(_StudioAgentVisibilityMixin, _StudioAgentsMixin, StudioBaseView):
+    """``PATCH /api/v1/astudio/agents/{name}/visibility`` — change who can see an agent (owner/admin only)."""
+
+    async def patch(self):
+        """Set ``visibility`` / ``allowed_groups`` of a Studio agent (404 invisible, 403 not manageable, 422 rules)."""
+        return await self._dispatch(self._visibility_unavailable, self._db_visibility)

@@ -24,6 +24,10 @@ class _StudioStorageMixin:
             raise StudioTenantRequired
         return StudioPartition.from_scope(scope)
 
+    async def _tenantless(self) -> bool:
+        """An opted-in caller whose scope carries no tenant (it can see no tenant-bound record)."""
+        return self._opted_in() and (await self._scope()).tenant is None
+
     async def _access(self) -> Any:
         """Per-request :class:`StudioAccess` (lazy)."""
         from ..access import StudioAccess  # local import: access.py must never import _base
@@ -50,6 +54,19 @@ class _StudioStorageMixin:
     def _tenant_required(self) -> web.Response:
         """422 ``tenant_required``."""
         return self.json_response(self._json_error("A tenant scope is required.", "tenant_required"), status=422)
+
+    _VISIBILITY_MESSAGES = {
+        "tenant_required": "A tenant scope is required for this visibility.",
+        "groups_required": "allowed_groups is required when visibility is 'groups'.",
+        "groups_not_allowed": "allowed_groups must be a subset of your own groups.",
+    }
+
+    def _visibility_refusal(self, access: Any, visibility: str, allowed_groups: Any) -> web.Response | None:
+        """422 ``tenant_required`` / ``groups_required`` / ``groups_not_allowed`` for a requested visibility."""
+        code = access.validate_visibility(visibility=visibility, allowed_groups=list(allowed_groups))
+        if code is None:
+            return None
+        return self.json_response(self._json_error(self._VISIBILITY_MESSAGES[code], code), status=422)
 
     def _studio_storage(self) -> Any:
         """The resolved ``StudioStorage`` memoised on the app."""

@@ -152,7 +152,7 @@ class TestStudioAgentsCreate:
         )
         response = await _unwrap(StudioAgentsHandler.post)(handler)
         assert response.status == 409
-        assert (await _decode(response))["code"] == "duplicate"
+        assert (await _decode(response))["code"] == "name_taken"
 
     async def test_create_rejects_traversal_category(self, app, tmp_path):
         """Adversarial-review fix: `category` becomes a path segment under

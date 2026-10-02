@@ -58,7 +58,7 @@ class _StudioAgentReloadMixin:
             return refused
         if rec is None:
             return self._not_found("agent", name)
-        if (denied := await self._studio_authorize(rec, name, manage=False)) is not None:
+        if (denied := await self._studio_authorize(rec, name, manage=self._opted_in())) is not None:
             return denied
         return await self._studio_reload(StudioAgentKey(part.tenant, name))
 

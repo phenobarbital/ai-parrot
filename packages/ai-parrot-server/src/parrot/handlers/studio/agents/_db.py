@@ -16,6 +16,7 @@ from ..storage.models import (
     StudioAgentDefinition,
     StudioAgentKey,
     StudioAgentPatch,
+    StudioNameConflict,
 )
 
 
@@ -31,10 +32,11 @@ class _StudioAgentsDbMixin:
                 return await self._legacy_get() if part.tenant is None else self._not_found("agent", name)
             if (denied := await self._studio_authorize(rec, name, manage=False)) is not None:
                 return denied
-            return self.json_response(self._studio_item(rec))
+            return self.json_response(self._studio_item_for(await self._access(), rec))
         access = await self._access()
         recs = await storage.services.agents.list(part)
-        agents = [self._studio_item(r) for r in recs if access.can_see(_store_record("agent", r.agent_id, r))]
+        visible = [r for r in recs if access.can_see(_store_record("agent", r.agent_id, r))]
+        agents = [self._studio_item_for(access, r) for r in visible]
         if part.tenant is None:
             seen = {a["name"] for a in agents}
             agents += [i for i in await self._legacy_items() if i["name"] not in seen]
@@ -63,12 +65,18 @@ class _StudioAgentsDbMixin:
             )
         return create_request, slug
 
+    def _create_refusal(self, access, create_request: CreateAgentRequest):
+        """400 ``reserved_config_key`` (config keys the server owns), then the visibility 422s."""
+        if (key := access.reject_reserved_keys(create_request.config)) is not None:
+            return self._error(f"Reserved config key '{key}'.", status=400, code="reserved_config_key")
+        return self._visibility_refusal(access, create_request.visibility, create_request.allowed_groups)
+
     async def _create_preflight(self, part, slug: str, create_request: CreateAgentRequest):
         """GLOBAL partition: the duplicate check also covers the legacy registry and ``ai_bots``; bot class check."""
         if part.tenant is not None:
             return None  # the tenant allowlist is enforced by the service
-        if existing := await self._check_duplicate(slug):
-            return self._error(f"Agent '{slug}' already exists in {existing}.", status=409, code="duplicate")
+        if await self._check_duplicate(slug):
+            return self._name_taken(slug)
         manager = self._manager()
         if manager is None:
             return self._error("BotManager unavailable.", status=503, code="unavailable")
@@ -89,6 +97,9 @@ class _StudioAgentsDbMixin:
         if isinstance(parsed, web.Response):
             return parsed
         create_request, slug = parsed
+        access = await self._access()
+        if (denied := self._create_refusal(access, create_request)) is not None:
+            return denied
         if (denied := await self._create_preflight(part, slug, create_request)) is not None:
             return denied
         try:
@@ -97,8 +108,14 @@ class _StudioAgentsDbMixin:
             reserved = RESERVED_CONFIG_KEY_MESSAGE in str(exc)
             return self._error(f"Invalid request: {exc}", status=400 if reserved else 422,
                                code="reserved_config_key" if reserved else "unsupported_config_key")
-        user = await self._get_user()
-        rec = await storage.services.agents.create(part, name=slug, owner=user.user_id, definition=definition)
+        stamp = access.stamp(visibility=create_request.visibility, allowed_groups=create_request.allowed_groups)
+        try:
+            rec = await storage.services.agents.create(
+                part, name=slug, owner=stamp["owner"], definition=definition,
+                visibility=stamp["visibility"], allowed_groups=stamp["allowed_groups"],
+            )
+        except StudioNameConflict:
+            return self._name_taken(slug)
         body = {"name": slug, "persisted": True, "source": "studio", "file_path": None,
                 "agent_id": str(rec.agent_id), "version": rec.version, "tenant": rec.tenant}
         if "persist" in create_request.model_fields_set and not create_request.persist:
@@ -142,27 +159,33 @@ class _StudioAgentsDbMixin:
             return self._error("The body must be a JSON object.", status=400, code="invalid_request")
         if "name" in payload:
             return self._error("An agent cannot be renamed.", status=422, code="name_immutable")
+        if (key := (await self._access()).reject_reserved_keys(payload)) is not None:
+            return self._error(f"Reserved key '{key}'.", status=400, code="reserved_config_key")
         try:
             return StudioAgentPatch(**payload)
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=422, code="invalid_request")
 
+    async def _patch_missing(self, part, name: str):
+        """No Studio row: a legacy agent is 409 ``not_studio_agent`` (GLOBAL only), anything else the one 404."""
+        if part.tenant is None and await self._check_duplicate(name):
+            return self._error(f"Agent '{name}' is not a Studio agent.", status=409, code="not_studio_agent")
+        return self._not_found("agent", name)
+
     async def _db_patch(self, storage, part):
         """Edit the General fields of a Studio agent (§2.9a); a legacy agent is 409 ``not_studio_agent``."""
-        if (denied := await self._require_author()) is not None:
-            return denied
         name, rec = await self._studio_name_lookup(storage, part)
         if not name:
             return self._error("Agent name is required.", status=400, code="missing_name")
+        if rec is None:
+            return await self._patch_missing(part, name)
+        if (denied := await self._studio_authorize(rec, name, manage=True)) is not None:
+            return denied  # 404 invisible / 403 not manageable come before authoring_denied
+        if (denied := await self._require_author()) is not None:
+            return denied
         patch = await self._patch_request()
         if isinstance(patch, web.Response):
             return patch
-        if rec is None:
-            if part.tenant is None and await self._check_duplicate(name):
-                return self._error(f"Agent '{name}' is not a Studio agent.", status=409, code="not_studio_agent")
-            return self._not_found("agent", name)
-        if (denied := await self._studio_authorize(rec, name, manage=True)) is not None:
-            return denied
         user = await self._get_user()
         svc = storage.services.agents
         updated = await self._studio_write(
@@ -172,4 +195,4 @@ class _StudioAgentsDbMixin:
         )
         if isinstance(updated, web.Response):
             return updated
-        return self.json_response(self._studio_item(updated))
+        return self.json_response(self._studio_item_for(await self._access(), updated))
