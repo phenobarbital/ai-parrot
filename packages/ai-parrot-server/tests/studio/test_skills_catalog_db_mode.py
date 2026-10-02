@@ -138,7 +138,7 @@ async def test_import_writes_asset_row(aiohttp_client, pool, registry, tmp_path)
     assert (await client.post(url, json={"overwrite": True})).status == 201
     assert (await client.post(url, headers={"X-User": "u2"})).status == 403
     assert (await client.post(f"{BASE}/agents/nobody/skills/import/{body['skill_id']}")).status == 404
-    assert (await client.post(f"{BASE}/agents/alpha/skills/import/{body['skill_id'][:-1]}0")).status == 404
+    assert (await client.post(f"{BASE}/agents/alpha/skills/import/{body['skill_id'][:-1]}{'1' if body['skill_id'][-1] == '0' else '0'}")).status == 404
     assert not (tmp_path / "agents" / "alpha").exists()
 
 
