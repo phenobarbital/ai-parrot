@@ -193,6 +193,18 @@ def _name_problem(name: str) -> str | None:
     return None
 
 
+def _content_size(content: str) -> int:
+    """UTF-8 byte size; NUL (Postgres ``text`` cannot store it) and lone surrogates are a 422, never a 500."""
+    if "\x00" in content:
+        raise StudioValidationError("asset content must not contain NUL characters", code="invalid_asset_content")
+    try:
+        return len(content.encode("utf-8"))
+    except UnicodeEncodeError as exc:
+        raise StudioValidationError(
+            "asset content is not valid UTF-8 text (lone surrogate)", code="invalid_asset_content"
+        ) from exc
+
+
 def validate_asset_input(limits: StudioLimits, asset: StudioAssetInput) -> int:
     """Validate one asset (text only, safe name, per-kind filename rules, size cap, skill frontmatter).
 
@@ -201,7 +213,7 @@ def validate_asset_input(limits: StudioLimits, asset: StudioAssetInput) -> int:
 
     Raises:
         StudioBinaryAssetRefused: ``content_type`` is not ``text/*`` (415).
-        StudioValidationError: unsafe or kind-invalid name, invalid skill frontmatter (422).
+        StudioValidationError: unsafe or kind-invalid name, NUL/lone-surrogate content, invalid skill frontmatter (422).
         StudioAssetFileTooLarge: over the per-kind cap (413).
     """
     from parrot.handlers.studio.files import _StudioFilesMixin, _is_skill_definition_file
@@ -211,7 +223,7 @@ def validate_asset_input(limits: StudioLimits, asset: StudioAssetInput) -> int:
     problem = _name_problem(asset.name) or _StudioFilesMixin._validate_kind_filename(asset.kind, asset.name)
     if problem:
         raise StudioValidationError(problem, code="invalid_asset_name")
-    size = len(asset.content.encode("utf-8"))
+    size = _content_size(asset.content)
     if size > limits.max_for(asset.kind):
         raise StudioAssetFileTooLarge(f"{asset.kind}/{asset.name}: {size} > {limits.max_for(asset.kind)} bytes")
     if asset.kind == "skills" and _is_skill_definition_file(asset.name):

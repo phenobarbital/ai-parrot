@@ -17,6 +17,7 @@ from parrot.handlers.studio.storage.models import (
 )
 from parrot.handlers.studio.storage.repositories import build_studio_repositories, studio_transaction
 from parrot.handlers.studio.storage.services._common import (
+    StudioClassAllowlist,
     StudioAgentAssetsQuota,
     StudioLimits,
     StudioToolingGate,
@@ -174,3 +175,21 @@ async def test_concurrent_quota(studio_pool):
     failures = [r for r in results if isinstance(r, Exception)]
     assert len(failures) == 1 and isinstance(failures[0], StudioAgentAssetsQuota)
     assert len(await svc.list(GLOBAL, "a1")) == 1
+
+
+@pytest.mark.parametrize("content", ["bad\x00nul", "lone \ud800 surrogate", "\udfff"])
+async def test_nul_and_lone_surrogates_are_a_422_not_a_500(repos, content):
+    svc = _svc(repos)
+    await _agent(repos)
+    with pytest.raises(StudioValidationError) as exc:
+        await svc.put(GLOBAL, "a1", _asset(content=content), actor="u1", guard=NO_GUARD)
+    assert exc.value.code == "invalid_asset_content" and exc.value.status == 422
+    assert await svc.list(GLOBAL, "a1") == []
+    from parrot.handlers.studio.storage.services.agents import StudioAgentService  # the bundle path validates too
+
+    agents = StudioAgentService(
+        repos, limits=StudioLimits(), class_allowlist=StudioClassAllowlist(), tooling=None,
+        tooling_gate=StudioToolingGate({}),
+    )
+    with pytest.raises(StudioValidationError):
+        agents.validate_assets([_asset(content=content)])
