@@ -280,11 +280,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Scope gate runs in `AbstractTool.execute` for EVERY tenant-bound tool (with or without scope-sourced params) right after the
+special kwargs are popped and BEFORE the approval check, the permission resolver, lifecycle events, `_ensure_open`, validation,
+the credential seam, the executor dispatch and `_execute` (R-a). Refusal = `ToolResult(status="error", metadata{tool_name,
+error_type="ToolScopeUnavailable", error_code="tool_scope_unavailable", reason})`; a `ToolScopeUnavailable` raised inside the call
+(injection, host mismatch) maps to the same structured result at the generic error path. `AbstractToolkit` gets the
+`ServerManagedToolkit` mixin: a tenant-bound subclass's `config_options` (plain / class / staticmethod, own or inherited) is wrapped
+so `require_tool_scope` runs first (idempotent marker). Custom `args_schema` / method `_args_schema` naming a server-managed param
+→ `TypeError`; a tenant-bound tool or toolkit with `executor` → `TypeError`. Resolver rule 5 deleted: tenant-bound host entries
+resolve (`test_tenant_bound_host_entry_resolves_after_enforcement`).
+**Module-size ratchet (R-d)**: all gate / confirmation / server-param code moved to the NEW `parrot/tools/execution_gates.py`
+(scope gate, approval check, server-managed drop/fill, mark_host_write, subclass/executor refusals, gate_options, the toolkit
+mixin) and `parrot/auth/approval_token.py` (approval ContextVar, `consume_confirmed_call`, `_approved_call`,
+`is_enforced_write_class`; `parrot.auth.confirmation` re-exports them — import paths unchanged). Sizes: abstract.py 1316 (base 1317),
+confirmation.py 866 (base 866), toolkit.py 785 (base 785). The private methods `_check_approval/_mark_host_write/_pre_execute_refusal/
+_drop_server_managed/_inject_server_managed/_server_param_owner` of AbstractTool became functions in `execution_gates` (no external
+callers; grep-verified).
+Mutations RED (restored by editing): scope gate off; gate only for tools with scope-sourced params (R-a); options wrapper off;
+executor refusal off; custom-schema refusal off; structured code off; `_args_schema` refusal off; rule 5 re-added; whole pre-execute
+refusal off.
+Tests: `tests/tools/test_scope_enforcement.py` (11), resolver test replaced. Core suites: tests/tools 0 new vs baseline-core,
+tests/interfaces 0 new, tests/auth 0 new (logs artifacts/logs/b2-core-*-3989.log).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: new files `execution_gates.py` and `approval_token.py` (required by R-d); `abstract.py`/`toolkit.py` edits
+are thin delegations instead of the blueprint's inline `_enforce_scope_and_approval` method (same behaviour, module budget).
