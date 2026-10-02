@@ -411,9 +411,9 @@ async def export_okf_bundle(store, output_dir, wiki_name): ...  # :125  outgoing
 - [x] Asymmetric `related` handling — *Owner: Jesus*: add an inverse asserted edge, attributed to lint; never delete.
 - [x] Finding destinations — *Owner: Jesus*: ledger + JSON/md report + page notes.
 - [x] Execution surface — *Owner: Jesus*: CLI + MCP tool, LLM opt-in.
-- [ ] Relation-inverse table: should `references` really be treated as symmetric `related`, or should only a new `related` rel be symmetrized? — *Owner: Jesus*
-- [ ] Scope-violation policy: which rule decides an edge is out of scope (cross-namespace, cross-project via `KNOWN_PROJECTS`, or a config allowlist)? — *Owner: Jesus*
-- [ ] Duplicate-slug definition: normalized title per category, or concept_id suffix collision across namespaces? — *Owner: Jesus*
-- [ ] Should a stale memory (linked page `content_hash` changed since the memory was written) count as a warning or an error? — *Owner: Jesus*
-- [ ] Should the deterministic lint also run in the post-commit hook or CI with `--fail-on error`? (Deferred from Round 2.) — *Owner: Jesus*
-- [ ] Which LLM client and model does the `--llm` pass use, and what is the default for `--llm-max-pairs`? — *Owner: Jesus*
+- [x] Relation-inverse table — *Owner: Jesus*: yes, `references` is treated as symmetric `related`, and the inverse is added on `--fix`.
+- [x] Scope-violation policy — *Owner: Jesus*: an edge is out of scope when it is a broken link (its target does not resolve in the wiki or namespace).
+- [x] Duplicate-slug definition — *Owner: Jesus*: compute the slug of each page and look it up in the wiki; if it already exists for another page, it is a duplicate.
+- [x] Stale memory severity — *Owner: Jesus*: warning.
+- [x] Run in hook/CI — *Owner: Jesus*: run the deterministic lint in CI (`--fail-on error`); not in the post-commit hook.
+- [ ] Which LLM client and model does the `--llm` pass use, and what is the default for `--llm-max-pairs`? — *Owner: Jesus* (decide during /sdd-spec)
