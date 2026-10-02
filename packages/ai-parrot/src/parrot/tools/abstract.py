@@ -951,13 +951,12 @@ class AbstractTool(EventEmitterMixin, ABC):
             A ``forbidden`` ``ToolResult`` (``error_code="confirmation_required"``), or ``None`` when allowed.
         """
         from parrot.auth.confirmation import (  # pylint: disable=import-outside-toplevel
-            compute_args_hash,
-            current_confirmed_call,
+            consume_confirmed_call,
             is_enforced_write_class,
         )
 
         enforced = (self.routing_meta or {}).get("confirmation_enforced") or is_enforced_write_class(type(self))
-        if not enforced or current_confirmed_call() == (id(self), compute_args_hash(kwargs)):
+        if not enforced or consume_confirmed_call(self, kwargs):
             return None
         reason = "write tool requires an explicit human confirmation for this exact call"
         return ToolResult(

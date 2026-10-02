@@ -70,6 +70,14 @@ def current_confirmed_call() -> Optional[tuple[int, str]]:
     return _APPROVED_CALL.get()
 
 
+def consume_confirmed_call(tool: Any, parameters: dict) -> bool:
+    """True once when the bound token names exactly ``tool`` + ``parameters``; the token is spent (single use)."""
+    if _APPROVED_CALL.get() != (id(tool), compute_args_hash(parameters)):
+        return False
+    _APPROVED_CALL.set(None)
+    return True
+
+
 @contextmanager
 def _approved_call(tool: Any, parameters: dict) -> Iterator[None]:
     """Bind the approval token for exactly one ``tool.execute`` (ToolManager only)."""

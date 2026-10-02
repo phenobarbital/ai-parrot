@@ -136,3 +136,14 @@ async def test_standalone_host_write_direct_execute_refused(host_plugins):  # no
     probe, _ = _setup_standalone(None)
     result = await probe.ProbeWriteTool().execute()
     assert result.status == "forbidden" and probe.COUNTERS["standalone_write"] == 0
+
+
+async def test_approval_token_is_single_use(host_plugins):  # noqa: F811
+    probe, manager = _setup(None)
+    bump = manager.get_tool("tp_bump")
+    with _approved_call(bump, {}):
+        assert (await bump.execute()).status != "forbidden"  # first matched execute consumes the token
+        assert probe.COUNTERS["bump"] == 1
+        again = await bump.execute()  # re-entrant identical call inside the approved execution
+        assert again.status == "forbidden" and probe.COUNTERS["bump"] == 1
+    assert current_confirmed_call() is None
