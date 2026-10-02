@@ -259,11 +259,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: Deleted _SERVER_MANAGED and _KNOWN_APP_DEPS (the ClassVar drives schemas, build, assign and execute). ServerManagedParamsRejected(ValueError) -> 422 server_managed details.params on PUT (_map_exc) and /me (_params_refusal replaces the not_overridable block; complexity unchanged). Generic assign: _server_managed_inputs refuses a client value (422) and fills source=app from request.app. Execute: _executable_refusal(slug, cls, args) refuses body keys (422) ; _instantiate_tool fills from cls.server_managed_params. testing.py is the testing/ package (_helpers/_models/__init__). tooling_store.py is exactly 500 lines. Server probe extended with app_store ctor param and ProbeManagedTool (required app-sourced ctor dep). Golden read from the core test data file by path. /me and PUT tests do not need the vault: the refusal precedes it (spies assert zero writes).
+**Mutation evidence**: dict re-added => dicts_deleted RED; reject_server_managed no-op => PUT + /me RED; _map_exc branch off => PUT RED; /me refusal off => /me RED; assign refusal off / fill off => assign RED; execute refusal off / instantiate fill off => execute RED; restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)
