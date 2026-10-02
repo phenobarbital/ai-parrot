@@ -169,9 +169,9 @@ def _named_secret_paths(value: Any, prefix: str = "") -> list[str]:
 
 def _toolkit_secret_paths(spec: ToolkitSpec) -> list[str]:
     """Inspect the same toolkit classes and x-secret schemas used by the Tools tab, without constructing them."""
-    from ..tooling_store import _EXPLICIT, _resolve_toolkit_class
+    from ..toolkits import _resolve_toolkit_class
 
-    cls = _EXPLICIT.get(spec.slug) or _resolve_toolkit_class(spec.slug)
+    cls = _resolve_toolkit_class(spec.slug)  # the shared ToolkitResolver (built-ins included)
     if cls is None:
         return []  # Optional/unavailable toolkits still get recursive name checks.
     schema = build_schema_envelope(spec.slug, cls).schema_
