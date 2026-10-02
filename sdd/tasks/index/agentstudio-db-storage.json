@@ -662,7 +662,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -673,9 +673,10 @@
       "parallelism_notes": "exclusive: adds migration 0006 and rewrites the shared MANIFEST.json (stamp) that TASK-3953/33 also extend; needs the --stamp CLI from TASK-3926 (storage/migrate.py) and edits storage/backend.py after TASK-3932 (phase-2 required version)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3952-p2-byok-postgres-store.md",
-      "phase": "P2"
+      "completed_at": "2026-10-02T05:52:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3952-p2-byok-postgres-store.md",
+      "phase": "P2",
+      "verification": "verified"
     },
     {
       "id": "TASK-3953",

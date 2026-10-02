@@ -235,10 +235,8 @@ core-side hook (e.g. a module-level `set_user_llm_key_store()` in `auth/broker.p
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 51b87fa5e. Migration 0006 stamped, PgUserLLMKeyStore, BYOK_STORE dispatch in byok.py and broker, 10 mutations RED. Also edited unlisted test_migrations_db.py (hard-coded 5 migrations). OPEN: required-version probe returns 8 when any phase-2 switch is postgres (0007/0008 follow in later tasks); no startup hook registers the BYOK store (lazy via get_byok_store(app)); broker.py 673 lines (was 639).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
