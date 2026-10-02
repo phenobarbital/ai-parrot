@@ -344,6 +344,15 @@ class AbstractTool(EventEmitterMixin, ABC):
     tenant_bound: ClassVar[bool] = False
     # FEAT-622: "read" | "write" | None (unknown). Host standalone tools with None are treated as "write".
     access: ClassVar[Optional[str]] = None
+    # FEAT-622: Mapping[str, ServerParam] — params the server fills (see parrot.tools.server_params).
+    server_managed_params: ClassVar[Dict[str, Any]] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if "server_managed_params" in cls.__dict__:
+            from .server_params import validate_server_params  # pylint: disable=import-outside-toplevel
+
+            validate_server_params(cls)
 
     def __init__(
         self,

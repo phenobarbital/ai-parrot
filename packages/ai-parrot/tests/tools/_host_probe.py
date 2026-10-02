@@ -24,6 +24,7 @@ PROBE_MODULE = textwrap.dedent(
     from pydantic import BaseModel
 
     from parrot.tools.abstract import AbstractTool
+    from parrot.tools.server_params import ServerParam
     from parrot.tools.toolkit import AbstractToolkit
 
     COUNTERS = {"opened": 0, "bump": 0, "options_calls": 0, "executed": 0, "tool_opened": 0}
@@ -36,11 +37,19 @@ PROBE_MODULE = textwrap.dedent(
         tenant_bound: ClassVar[bool] = True
         auto_open = True
         read_tools: ClassVar[frozenset] = frozenset({"whoami"})
+        server_managed_params = {
+            "app_store": ServerParam(source="app", key="probe_store"),  # constructor param
+            "tenant": ServerParam(source="tenant"),  # method param (whoami)
+        }
+
+        def __init__(self, app_store: object = None, **kwargs):
+            super().__init__(**kwargs)
+            self.app_store = app_store
 
         async def _open(self) -> None:
             COUNTERS["opened"] += 1
 
-        async def whoami(self) -> str:
+        async def whoami(self, tenant: str | None = None) -> str:
             """Read tool: report the probe identity."""
             return "probe"
 

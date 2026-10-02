@@ -6,6 +6,7 @@ import asyncio
 import inspect
 from abc import ABC
 from collections.abc import Callable as CallableType
+from collections.abc import Mapping
 from types import UnionType
 from typing import (
     TYPE_CHECKING,
@@ -27,6 +28,7 @@ from pydantic import BaseModel, Field, create_model
 
 from ..conf import BASE_STATIC_URL
 from .abstract import AbstractTool, AbstractToolArgsSchema
+from .server_params import ServerParam, method_server_params, validate_server_params
 
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
@@ -103,10 +105,15 @@ class ToolkitTool(AbstractTool):
 
             # Build fields for Pydantic model
             fields = {}
+            server_managed = method_server_params(type(getattr(self.bound_method, "__self__", None)))
 
             for param_name, param in sig.parameters.items():
                 # Skip 'self' parameter (shouldn't be there for bound methods, but just in case)
                 if param_name == "self":
+                    continue
+
+                # FEAT-622: server-managed method params never reach the LLM args schema
+                if param_name in server_managed:
                     continue
 
                 # Get type hint
@@ -363,6 +370,13 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
     #: FEAT-622 — method names (pre-prefix) that are read-only. Host toolkit methods not listed are
     #: treated as writes and require an approval token (strict confirmation).
     read_tools: ClassVar[frozenset[str]] = frozenset()
+    #: FEAT-622 — params the server fills (never client JSON, never the LLM). See parrot.tools.server_params.
+    server_managed_params: ClassVar[Mapping[str, ServerParam]] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        if "server_managed_params" in cls.__dict__:
+            validate_server_params(cls)
 
     def __init__(self, **kwargs):
         """
