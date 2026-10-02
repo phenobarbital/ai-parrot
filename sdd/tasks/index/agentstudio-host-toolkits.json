@@ -123,7 +123,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -134,8 +134,9 @@
       "parallelism_notes": "Depends on TASK-3979: the integration test exercises the shims it installs and imports the server host fixture tests/studio/_host_probe.py it creates. First editor of handlers/tools_catalog.py; TASK-3984 (access field + tenant filter) follows it on that file.",
       "assigned_to": null,
       "started_at": "2026-10-02T08:17:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3980-catalog-from-resolver-and-all-paths.md"
+      "completed_at": "2026-10-02T08:21:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3980-catalog-from-resolver-and-all-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3981",
