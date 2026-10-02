@@ -21,7 +21,8 @@ from parrot.handlers.studio import drafts as drafts_module
 from parrot.handlers.studio import setup_studio_routes
 from parrot.handlers.studio.drafts import StudioDraftActivateHandler, StudioDraftsHandler
 from parrot.handlers.studio.storage.migrate import apply_studio_migrations
-from parrot.handlers.studio.storage.models import StudioPartition
+from parrot.handlers.scope import RequestScope
+from parrot.handlers.studio.storage.models import StudioAgentBundle, StudioAgentDefinition, StudioPartition
 from parrot.manager.manager import BotManager
 from parrot.registry import registry as registry_module
 
@@ -234,3 +235,165 @@ async def test_stale_activation_expected_version_409(aiohttp_client, pool):
     assert rec.status == "draft"
     resp, _ = await _activate(client, expected_version=1)
     assert resp.status == 200
+
+
+# ---- review fixes: access before 409/400, GLOBAL visibility, DELETE /drafts/{name} -------------------------------
+class _Resolver:
+    """A real ScopeResolver: the caller is the ``X-User`` header, the tenant is always ``acme`` (opted-in host)."""
+
+    async def resolve(self, request):
+        return RequestScope(user_id=request.headers.get("X-User", "u1"), tenant="acme", groups=frozenset())
+
+
+def _opted_app(pool) -> web.Application:
+    app = _app(pool)
+    app["scope_resolver"] = _Resolver()
+    return app
+
+
+async def test_activate_checks_access_before_409_and_400(aiohttp_client, pool):
+    client = await aiohttp_client(_opted_app(pool))
+    acme = StudioPartition("acme")
+    await _save(client)                                                   # u1's private draft in acme
+    await client.app["studio_storage"].services.agents.create(            # a name collision for the activation
+        acme, name="bundled", owner="u1", definition=StudioAgentDefinition(description="x"))
+    for user, bad_body in (("u2", {"replace": "not-a-bool"}), ("u2", {})):
+        resp, body = await _activate(client, user=user, **bad_body)       # invisible: 404 even though 400/409 apply
+        assert resp.status == 404 and body["code"] == "not_found", body
+    resp, body = await _activate(client, replace="not-a-bool")            # the owner does get the 400 ...
+    assert resp.status == 400 and body["code"] == "invalid_request"
+    resp, body = await _activate(client)                                  # ... and the 409 collision
+    assert resp.status == 409 and body["code"] == "name_taken"
+
+
+async def test_activate_invisible_draft_404_even_when_not_activatable(aiohttp_client, pool):
+    client = await aiohttp_client(_opted_app(pool))
+    await _save(client)
+    resp, _ = await _activate(client)
+    assert resp.status == 200                                             # activated: a second activate is a 409 ...
+    resp, body = await _activate(client, user="u2")
+    assert resp.status == 404 and body["code"] == "not_found"            # ... which an invisible caller never sees
+    resp, body = await _activate(client)
+    assert resp.status == 409 and body["code"] == "version_conflict"
+
+
+async def test_global_draft_refuses_non_private_visibility(aiohttp_client, pool):
+    client = await aiohttp_client(_app(pool))
+    for extra in ({"visibility": "tenant"}, {"visibility": "groups", "allowed_groups": ["g1"]},
+                  {"visibility": "private", "allowed_groups": ["g1"]}):
+        resp, body = await _save(client, **extra)
+        assert resp.status == 422 and body["code"] == "tenant_required", (extra, body)
+    assert await client.app["studio_storage"].services.drafts.get(StudioPartition.GLOBAL, "bundled") is None
+    await _save(client)
+    resp, body = await _save(client, visibility="tenant")                 # an update of an existing draft too
+    assert resp.status == 422 and body["code"] == "tenant_required"
+    resp, _ = await _save(client, visibility="private")
+    assert resp.status == 201
+    resp, _ = await _save(client, "ten2", prefix="/tenant", visibility="tenant")   # a tenant partition may share
+    assert resp.status == 201
+
+
+async def _delete(client, name="bundled", prefix=BASE, user="u1", **params):
+    resp = await client.delete(f"{prefix}/drafts/{name}", params=params, headers={"X-User": user})
+    return resp, (await resp.json() if resp.content_type == "application/json" else await resp.text())
+
+
+async def test_delete_declarative_draft(aiohttp_client, pool):
+    client = await aiohttp_client(_app(pool))
+    svc = client.app["studio_storage"].services.drafts
+    await _save(client)
+    resp, body = await _delete(client, user="u2")                         # not the owner (GLOBAL lists all): 403
+    assert resp.status == 403 and body["code"] == "forbidden"
+    assert await svc.get(StudioPartition.GLOBAL, "bundled") is not None
+    resp, body = await _delete(client, expected_version="1")              # not an expected_version route (§2.9)
+    assert resp.status == 400 and body["code"] == "expected_version_unsupported"
+    assert await svc.get(StudioPartition.GLOBAL, "bundled") is not None
+    resp, body = await _delete(client)
+    assert resp.status == 200 and body == {"name": "bundled", "deleted": True}
+    assert await svc.get(StudioPartition.GLOBAL, "bundled") is None
+    resp, body = await _delete(client)
+    assert resp.status == 404 and body["code"] == "not_found"
+
+
+async def test_delete_invisible_draft_is_404(aiohttp_client, pool):
+    client = await aiohttp_client(_opted_app(pool))
+    await _save(client)
+    resp, body = await _delete(client, user="u2")
+    assert resp.status == 404 and body["code"] == "not_found"
+    resp, _ = await _delete(client, user="u2", expected_version="1")      # no 400 leak either
+    assert resp.status == 404
+    assert await client.app["studio_storage"].services.drafts.get(StudioPartition("acme"), "bundled") is not None
+    resp, _ = await _delete(client)
+    assert resp.status == 200
+
+
+async def test_delete_tenant_partition_never_touches_global(aiohttp_client, pool, tmp_path):
+    client = await aiohttp_client(_app(pool))
+    await _save(client)                                                   # a GLOBAL declarative draft
+    await client.post(f"{BASE}/drafts", json={"name": "legacy1", "source": PY_SOURCE})   # and a GLOBAL Python one
+    resp, body = await _delete(client, "legacy1", prefix="/tenant")
+    assert resp.status == 404 and body["code"] == "not_found"
+    assert (tmp_path / "agents" / "_drafts" / "legacy1.py").exists()
+    resp, body = await _delete(client, prefix="/tenant")                  # same name, tenant partition: not found
+    assert resp.status == 404 and body["code"] == "not_found"
+    assert await client.app["studio_storage"].services.drafts.get(StudioPartition.GLOBAL, "bundled") is not None
+    await _save(client, "ten1", prefix="/tenant")
+    resp, _ = await _delete(client, "ten1", prefix="/tenant")
+    assert resp.status == 200
+    assert await client.app["studio_storage"].services.drafts.get(StudioPartition("acme"), "ten1") is None
+
+
+async def test_delete_legacy_python_draft_on_global(aiohttp_client, pool, tmp_path):
+    client = await aiohttp_client(_app(pool))
+    await client.post(f"{BASE}/drafts", json={"name": "legacy1", "source": PY_SOURCE})
+    path = tmp_path / "agents" / "_drafts" / "legacy1.py"
+    assert path.exists()
+    resp, body = await _delete(client, "legacy1", user="u2")              # legacy owner rule still applies
+    assert resp.status == 403
+    resp, body = await _delete(client, "legacy1")
+    assert resp.status == 200 and body == {"name": "legacy1", "deleted": True} and not path.exists()
+    resp, body = await _delete(client, "legacy1")
+    assert resp.status == 404 and body["code"] == "not_found"
+
+
+class _SwapAfterAccess(StudioDraftsHandler):
+    """The first access decision is followed by the draft being replaced by another owner at a higher version."""
+
+    swapped = False
+    mode = "other_owner"
+
+    async def _check_record_access(self, access, rec, kind, name, *, manage=False):
+        denied = await super()._check_record_access(access, rec, kind, name, manage=manage)
+        if not type(self).swapped and kind == "draft" and manage:
+            type(self).swapped = True
+            svc = self._studio_storage().services.drafts
+            owner = "u2" if type(self).mode == "other_owner" else "u1"
+            assert await svc.delete(StudioPartition.GLOBAL, name)
+            bundle = StudioAgentBundle.model_validate(_bundle(name))
+            await svc.save_bundle(StudioPartition.GLOBAL, owner=owner, bundle=bundle)
+            await svc.save_bundle(StudioPartition.GLOBAL, owner=owner, bundle=bundle)   # version 2
+        return denied
+
+
+async def _swap_client(aiohttp_client, pool, mode):
+    _SwapAfterAccess.swapped, _SwapAfterAccess.mode = False, mode
+    app = _app(pool)
+    app.router.add_view("/swap/drafts/{name}", _SwapAfterAccess)
+    return await aiohttp_client(app)
+
+
+async def test_delete_stale_authorization_reauthorizes_and_refuses(aiohttp_client, pool):
+    client = await _swap_client(aiohttp_client, pool, "other_owner")
+    await _save(client)
+    resp, body = await _delete(client, prefix="/swap")                    # u1 authorized v1; the row is now u2's v2
+    assert resp.status == 403 and body["code"] == "forbidden"
+    rec = await client.app["studio_storage"].services.drafts.get(StudioPartition.GLOBAL, "bundled")
+    assert rec is not None and rec.owner == "u2" and rec.version == 2
+
+
+async def test_delete_stale_authorization_retries_when_still_allowed(aiohttp_client, pool):
+    client = await _swap_client(aiohttp_client, pool, "same_owner")
+    await _save(client)
+    resp, body = await _delete(client, prefix="/swap")                    # re-read, re-authorized (still u1's), retried
+    assert resp.status == 200 and body == {"name": "bundled", "deleted": True}
+    assert await client.app["studio_storage"].services.drafts.get(StudioPartition.GLOBAL, "bundled") is None

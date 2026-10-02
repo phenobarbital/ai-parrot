@@ -263,6 +263,18 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         except Exception:  # pylint: disable=broad-except
             return self._error("Invalid JSON body.", status=400, code="invalid_json")
 
+    async def _db_save_refusal(self, part, parsed) -> web.Response | None:
+        """The refusal (author gate, name, GLOBAL visibility) of a declarative save, or ``None``."""
+        if (denied := await self._require_author()) is not None:
+            return denied
+        name = parsed.name
+        if not is_valid_slug(name) or name != parsed.bundle.name:
+            return self._error(f"Invalid draft name '{name}'; must match ^[a-z0-9_-]+$ and equal bundle.name.",
+                               status=400, code="invalid_name")
+        if part.tenant is None and (parsed.visibility != "private" or parsed.allowed_groups):
+            return self._tenant_required()  # the GLOBAL partition is always private (FEAT-605 plain-host rule)
+        return None
+
     async def _db_post(self, storage, part):
         """Declarative ``bundle`` → ``StudioDraftService.save_bundle``; Python ``source`` only where the gate allows."""
         parsed = await self._db_post_request()
@@ -274,12 +286,9 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
                 return self._error("Python drafts are not available here; save a declarative bundle.", status=422,
                                    code="declarative_only")
             return await self._legacy_post()
-        if (denied := await self._require_author()) is not None:
+        if (denied := await self._db_save_refusal(part, parsed)) is not None:
             return denied
         name = parsed.name
-        if not is_valid_slug(name) or name != parsed.bundle.name:
-            return self._error(f"Invalid draft name '{name}'; must match ^[a-z0-9_-]+$ and equal bundle.name.",
-                               status=400, code="invalid_name")
         existing = await svc.get(part, name)
         if existing is not None and (denied := await self._check_record_access(
                 await self._access(), _store_record("draft", existing.draft_id, existing), "draft", name,
@@ -366,6 +375,38 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
         )
 
     async def delete(self):
+        """Delete a declarative draft (database mode) or a legacy Python draft."""
+        gate = lambda: self._pbac_gate("drafts", "astudio:drafts:delete")  # noqa: E731
+        return await self._dispatch(self._legacy_delete, self._db_delete, gate)
+
+    async def _db_delete(self, storage, part):
+        """Guarded delete of a declarative draft; a GLOBAL name that is not a declarative draft is legacy."""
+        name = self.request.match_info.get("name")
+        svc = storage.services.drafts
+        rec = await svc.get(part, name) if name else None
+        if rec is None and part.tenant is None:
+            return await self._legacy_delete()
+        if (denied := await self._require_author()) is not None:
+            return denied
+        if not name:
+            return self._error("Draft name is required.", status=400, code="missing_name")
+        if rec is None:
+            return self._not_found("draft", name)
+        if (denied := await self._check_record_access(await self._access(), _store_record("draft", rec.draft_id, rec),
+                                                      "draft", name, manage=True)) is not None:
+            return denied
+        if (refused := self._refuse_expected_version(self.request.query)) is not None:
+            return refused  # §2.9: DELETE /drafts/{name} is not an expected_version route
+        deleted = await self._studio_write(
+            lambda guard: svc.delete(part, name, guard=guard),
+            record=rec, reread=lambda: svc.get(part, name),
+            reauthorize=self._reauthorize("draft", name, key="draft_id"), expected_version=None,
+        )
+        if isinstance(deleted, web.Response):
+            return deleted
+        return self.json_response({"name": name, "deleted": True}) if deleted else self._not_found("draft", name)
+
+    async def _legacy_delete(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("drafts", "astudio:drafts:delete")) is not None:
             return denied
@@ -427,27 +468,32 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
             return None, self._name_taken(name)
         return target, None
 
+    async def _activation_precheck(self, svc, part, name):
+        """``(draft, refusal)``: the draft the caller may manage — access runs BEFORE any 409/400 (no leaks)."""
+        if (denied := await self._require_author()) is not None:
+            return None, denied
+        if not name:
+            return None, self._error("Draft name is required.", status=400, code="missing_name")
+        rec = await svc.get(part, name)
+        denied = await self._check_record_access(
+            await self._access(), _store_record("draft", rec.draft_id, rec) if rec else None, "draft", name,
+            manage=True)
+        return (None, denied) if denied is not None else (rec, None)
+
     async def _db_post(self, storage, part):
         """One transaction over draft + agent (§2.5a); a GLOBAL name that is not a declarative draft is legacy."""
         name = self.request.match_info.get("name")
         svc = storage.services.drafts
-        rec = await svc.get(part, name) if name else None
-        if rec is None and part.tenant is None:
+        if part.tenant is None and (name is None or await svc.get(part, name) is None):
             return await self._legacy_post()
-        if (denied := await self._require_author()) is not None:
-            return denied
-        if not name:
-            return self._error("Draft name is required.", status=400, code="missing_name")
-        if rec is None:
-            return self._not_found("draft", name)
+        rec, refusal = await self._activation_precheck(svc, part, name)
+        if refusal is not None:
+            return refusal
         parsed = await self._activate_request()
         if isinstance(parsed, web.Response):
             return parsed
         if rec.status not in ("draft", "validated"):  # already activated (or failed): nothing to race over
             return self._studio_error(StudioVersionConflict(f"draft {name!r} is {rec.status}, not activatable"))
-        if (denied := await self._check_record_access(await self._access(), _store_record("draft", rec.draft_id, rec),
-                                                      "draft", name, manage=True)) is not None:
-            return denied
         target, refusal = await self._activation_target(storage.services.agents, part, name, parsed.replace)
         if refusal is not None:
             return refusal
