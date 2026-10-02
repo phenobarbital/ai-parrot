@@ -123,7 +123,8 @@ def resolve_identity(
     """
     facings = [facing for facing in definition.all_facings() if facing.expected_occupancy == "occupied"]
     brand = _norm(identification.brand)
-    pool = [facing for facing in facings if not brand or _norm(facing.brand) == brand]
+    # A facing defined without a brand accepts any: the brand the model reports is then no filter.
+    pool = [facing for facing in facings if not brand or not _norm(facing.brand) or _norm(facing.brand) == brand]
     if brand and not pool:
         return None, []
     lines = set(_text_lines(identification))

@@ -315,3 +315,20 @@ def test_a_reference_does_not_rename_a_product_read_as_something_else():
     read = _ident(product="Duet", text='Portable 80" projection screen DUET', evidence=["box"], reference_id="ref-0002")
     result = canonicalise(read, _models(), _referenced_ctx())
     assert result.product is None and result.evidence == ["box"]
+
+
+def test_a_facing_without_a_brand_resolves_whatever_brand_the_model_reports():
+    facings = [
+        {"facing_id": "m1", "shelf_id": "s1", "slot": 1, "product": "ET-2980", "brand": "Acme"},
+        {"facing_id": "m2", "shelf_id": "s1", "slot": 2, "product": "Duet"},
+    ]
+    for facing in facings:
+        facing["descriptors"] = {"display_name": facing["product"]}
+    definition = load_slots_definition({"shelves": [{"shelf_id": "s1", "shelf_number": 1, "facings": facings}]})
+    for brand in ("Acme", "Duet", None):
+        read = _ident(brand=brand, product='Portable 80" projection screen Duet')
+        assert resolve_identity(read, definition, required_fields=()) == ("Duet", ["Duet"])
+    assert resolve_identity(_ident(brand="Other", product="EcoTank ET-2980"), definition, required_fields=()) == (
+        None,
+        [],
+    )
