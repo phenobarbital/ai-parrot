@@ -16,7 +16,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "root task: creates parrot.knowledge.lint package (models.py, rule.py, context.py) every other task imports",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4009-lint-engine-models.md"
+      "completed_at": "2026-10-02T23:54:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4009-lint-engine-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4010",
@@ -54,7 +55,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -62,8 +63,9 @@
       "parallelism_notes": "no dependencies: only touches wiki/store.py; TASK-4014 consumes rebuild_index/index_drift",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4011-store-rebuild-index.md"
+      "completed_at": "2026-10-02T23:54:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4011-store-rebuild-index.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4012",
