@@ -14,9 +14,14 @@ reconciliation pass, or the admin ``/skills/resync`` endpoint).
 
 from __future__ import annotations
 
+import dataclasses
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
+from uuid import UUID
+
+from aiohttp import web
 
 import yaml
 from asyncdb.exceptions import NoDataFound
@@ -35,12 +40,14 @@ from parrot.skills.store import create_skill_registry
 
 from ..models.skills_catalog import SkillCatalogEntry
 from ._base import StudioBaseView, resolve_safe_path
+from .access import _store_record
 from .files import _StudioFilesMixin
 from .models import SkillPublishRequest, StudioError
 
 DEFAULT_ORG_ID = "default"
 SHARED_NAMESPACE_SUFFIX = "_shared"
 _REGISTRIES_APP_KEY = "studio_shared_skill_registries"
+logger = logging.getLogger("Parrot.AgentStudio")
 
 
 def _shared_namespace(org_id: str) -> str:
@@ -48,7 +55,7 @@ def _shared_namespace(org_id: str) -> str:
     return f"{org_id}/{SHARED_NAMESPACE_SUFFIX}"
 
 
-def _get_shared_skill_registry(app: Any, org_id: str):
+def _get_shared_skill_registry(app: Any, org_id: str, part: Any = None):
     """Return (creating + caching on ``app`` if absent) the shared
     ``SkillRegistry`` for ``org_id``.
 
@@ -58,6 +65,9 @@ def _get_shared_skill_registry(app: Any, org_id: str):
     Args:
         app: The aiohttp Application.
         org_id: Tenant/org id — ``"default"`` when the session carries none.
+        part: The ``StudioPartition`` on the database backend: the registry is then the DERIVED per-pod
+            index at ``shared_index_location(part, org_id)`` (under ``STUDIO_RUNTIME_DIR``, never
+            ``AGENTS_DIR``). ``None`` (filesystem backend) keeps the ``AGENTS_DIR`` layout.
 
     Returns:
         A configured-on-first-use ``SkillRegistry`` for
@@ -67,15 +77,22 @@ def _get_shared_skill_registry(app: Any, org_id: str):
     if registries is None:
         registries = {}
         app[_REGISTRIES_APP_KEY] = registries
-    registry = registries.get(org_id)
+    namespace, persistence_path = _shared_index(org_id, part)
+    cache_key = org_id if part is None else namespace
+    registry = registries.get(cache_key)
     if registry is None:
-        persistence_path = Path(AGENTS_DIR) / SHARED_NAMESPACE_SUFFIX / org_id / "skills"
-        registry = create_skill_registry(
-            namespace=_shared_namespace(org_id),
-            persistence_path=persistence_path,
-        )
-        registries[org_id] = registry
+        registry = create_skill_registry(namespace=namespace, persistence_path=persistence_path)
+        registries[cache_key] = registry
     return registry
+
+
+def _shared_index(org_id: str, part: Any) -> tuple[str, Path]:
+    """``(namespace, persistence_path)`` of the shared index: derived location on the database backend."""
+    if part is not None:
+        from .storage.services.catalog import shared_index_location
+
+        return shared_index_location(part, org_id)
+    return _shared_namespace(org_id), Path(AGENTS_DIR) / SHARED_NAMESPACE_SUFFIX / org_id / "skills"
 
 
 def _validate_skill_markdown(content: str) -> str | None:
@@ -128,6 +145,8 @@ async def reconcile_skills_catalog(app: Any) -> None:
     db = app.get("database")
     if db is None:
         return
+    if await _reconcile_database(app):
+        return
     try:
         async with await db.acquire() as conn:
             SkillCatalogEntry.Meta.connection = conn
@@ -156,6 +175,56 @@ async def reconcile_skills_catalog(app: Any) -> None:
                 await entry.update()
         except Exception:  # pylint: disable=broad-except
             continue
+
+
+def _skill_dict(rec: Any) -> dict:
+    """Response item of a ``StudioSkillRecord``: the FEAT-467 keys plus ``tenant``/``visibility``/``allowed_groups``."""
+    return {
+        "skill_id": str(rec.skill_id), "name": rec.name, "description": rec.description, "category": rec.category,
+        "owner": rec.owner, "triggers": list(rec.triggers or []), "body": rec.body, "version": rec.version,
+        "status": rec.status, "search_index_stale": rec.search_index_stale, "tenant": rec.tenant,
+        "visibility": rec.visibility, "allowed_groups": list(rec.allowed_groups),
+    }
+
+
+async def _upload_to_index(registry: Any, rec: Any) -> None:
+    """Upload one catalogue record into the derived shared index."""
+    await registry.upload_skill(
+        name=rec.name, content=rec.body, agent_id=rec.owner, description=rec.description, category=rec.category,
+        triggers=list(rec.triggers or []), owner_user_id=rec.owner, skill_id=str(rec.skill_id),
+    )
+
+
+async def _rebuild_index(svc: Any, part: Any, registry: Any, rows: list) -> tuple[int, int]:
+    """Re-upload ``rows`` into the derived index, clearing ``search_index_stale``; returns ``(resynced, failed)``."""
+    resynced = failed = 0
+    for rec in rows:
+        try:
+            await _upload_to_index(registry, rec)
+            if rec.search_index_stale:
+                await svc.mark_stale(part, rec.skill_id, False)
+            resynced += 1
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("Studio: index rebuild failed for skill '%s': %s", rec.name, exc)
+            failed += 1
+    return resynced, failed
+
+
+async def _reconcile_database(app: Any) -> bool:
+    """Database backend: rebuild the GLOBAL partition's derived index from Postgres. ``False`` = not applicable."""
+    from .storage.backend import ensure_studio_storage
+    from .storage.models import StudioPartition
+
+    try:
+        storage = app.get("studio_storage") or await ensure_studio_storage(app)
+        if storage.backend != "database":
+            return False
+        svc = storage.services.skills
+        registry = _get_shared_skill_registry(app, DEFAULT_ORG_ID, StudioPartition.GLOBAL)
+        await _rebuild_index(svc, StudioPartition.GLOBAL, registry, await svc.list(StudioPartition.GLOBAL))
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Studio: startup skills reconcile failed: %s", exc)
+    return True
 
 
 class _StudioSkillsMixin:
@@ -262,6 +331,63 @@ class _StudioSkillsMixin:
             status=status,
         )
 
+    # -- database mode (StudioSkillCatalogService) -------------------------
+
+    _dispatch = _StudioFilesMixin._dispatch
+
+    async def _db_registry(self, part: Any):
+        """The derived shared index of the partition (never under ``AGENTS_DIR``)."""
+        return _get_shared_skill_registry(self.request.app, await self._get_org_id(), part)
+
+    async def _db_payload(self, *, lenient: bool = False):
+        """The JSON body of a write (a dict), or the 400 response; ``expected_version`` is refused (§2.9).
+
+        ``lenient`` treats an absent or invalid body as ``{}`` (the import route's optional body).
+        """
+        refused = self._refuse_expected_version(self.request.query)
+        if refused is not None:
+            return refused
+        try:
+            payload = await self.request.json()
+        except Exception:  # pylint: disable=broad-except
+            if lenient:
+                return {}
+            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+        payload = payload if isinstance(payload, dict) else {}
+        refused = self._refuse_expected_version(payload)
+        return payload if refused is None else refused
+
+    async def _db_request(self):
+        """The validated :class:`SkillPublishRequest` of a write, or an error response."""
+        payload = await self._db_payload()
+        if isinstance(payload, web.Response):
+            return payload
+        try:
+            return SkillPublishRequest(**payload)
+        except ValidationError as exc:
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
+
+    async def _db_skill(self, storage: Any, part: Any, skill_id: str, *, manage: bool):
+        """``(record, None)`` of a visible (manageable) skill, else ``(None, 404/403 response)``."""
+        try:
+            sid: UUID | None = UUID(str(skill_id))
+        except ValueError:
+            sid = None
+        rec = await storage.services.skills.get(part, sid) if sid else None
+        view = _store_record("skill", rec.skill_id, rec) if rec else None
+        denied = await self._check_record_access(await self._access(), view, "skill", skill_id, manage=manage)
+        return (None, denied) if denied is not None else (rec, None)
+
+    async def _db_index(self, svc: Any, part: Any, rec: Any) -> Any:
+        """Best-effort upload to the derived index; a failure flags ``search_index_stale`` and never raises."""
+        try:
+            await _upload_to_index(await self._db_registry(part), rec)
+            return rec
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning("Studio: registry dual-write failed for skill '%s': %s", rec.name, exc)
+        await svc.mark_stale(part, rec.skill_id)
+        return dataclasses.replace(rec, search_index_stale=True)
+
 
 @is_authenticated()
 @user_session()
@@ -273,7 +399,112 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
     DELETE (owner-or-admin).
     """
 
+    # -- verbs: database backend through StudioSkillCatalogService, else the legacy bodies ---------
+
     async def get(self):
+        """List / read skills (database mode: ``StudioSkillCatalogService``)."""
+        return await self._dispatch(self._legacy_get, self._db_get)
+
+    async def post(self):
+        """Publish a skill (database mode: ``StudioSkillCatalogService``)."""
+        gate = lambda: self._pbac_gate("skills", "astudio:skills:publish")  # noqa: E731
+        return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+    async def put(self):
+        """Update a skill (database mode: ``StudioSkillCatalogService``)."""
+        gate = lambda: self._pbac_gate("skills", "astudio:skills:update")  # noqa: E731
+        return await self._dispatch(self._legacy_put, self._db_put, gate)
+
+    async def delete(self):
+        """Delete a skill (database mode: ``StudioSkillCatalogService``)."""
+        gate = lambda: self._pbac_gate("skills", "astudio:skills:delete")  # noqa: E731
+        return await self._dispatch(self._legacy_delete, self._db_delete, gate)
+
+    async def _db_get(self, storage, part):
+        """One skill (``/skills/{id}``, with the index versions) or the category-grouped list."""
+        skill_id = self.request.match_info.get("id")
+        if skill_id:
+            rec, denied = await self._db_skill(storage, part, skill_id, manage=False)
+            if denied is not None:
+                return denied
+            data = _skill_dict(rec)
+            try:
+                data["versions"] = await (await self._db_registry(part)).get_skill_versions(str(rec.skill_id))
+            except Exception as exc:  # pylint: disable=broad-except
+                self.logger.warning("Studio: failed to fetch registry versions for '%s': %s", skill_id, exc)
+                data["versions"] = []
+            return self.json_response(data)
+        qs = self.request.rel_url.query
+        valid = [c.value for c in SkillCategory]
+        if qs.get("category") and qs["category"] not in valid:
+            return self._error(f"Invalid category '{qs['category']}'; must be one of {valid}.", status=400,
+                               code="invalid_category")
+        recs = await storage.services.skills.list(part, category=qs.get("category") or None,
+                                                  owner=qs.get("owner") or None)
+        access = await self._access()
+        recs = sorted((r for r in recs if access.can_see(_store_record("skill", r.skill_id, r))),
+                      key=lambda r: (r.category, r.name))
+        grouped: dict[str, list[dict]] = {}
+        for rec in recs:
+            grouped.setdefault(rec.category, []).append(_skill_dict(rec))
+        return self.json_response({"skills": grouped, "count": len(recs)})
+
+    async def _db_post(self, storage, part):
+        """Publish: Postgres first, the derived index best-effort."""
+        if self.request.match_info.get("id"):
+            return self._error("Use POST /astudio/skills (no id in the URL) to publish.", status=400,
+                               code="invalid_route")
+        if (denied := await self._require_author()) is not None:
+            return denied
+        req = await self._db_request()
+        if isinstance(req, web.Response):
+            return req
+        user = await self._get_user()
+        svc = storage.services.skills
+        rec = await svc.publish(part, owner=user.user_id, name=req.name, description=req.description, body=req.body,
+                                category=req.category.value, triggers=list(req.triggers))
+        return self.json_response(_skill_dict(await self._db_index(svc, part, rec)), status=201)
+
+    async def _db_put(self, storage, part):
+        """Update description/category/triggers/body of a manageable skill."""
+        skill_id = self.request.match_info.get("id")
+        if not skill_id:
+            return self._error("Skill id is required.", status=400, code="missing_id")
+        if (denied := await self._require_author()) is not None:
+            return denied
+        rec, denied = await self._db_skill(storage, part, skill_id, manage=True)
+        if denied is not None:
+            return denied
+        req = await self._db_request()
+        if isinstance(req, web.Response):
+            return req
+        svc = storage.services.skills
+        rec = await svc.update(part, rec.skill_id, description=req.description, category=req.category.value,
+                               triggers=list(req.triggers), body=req.body)
+        return self.json_response(_skill_dict(await self._db_index(svc, part, rec)))
+
+    async def _db_delete(self, storage, part):
+        """Delete a manageable skill and revoke it from the derived index (best-effort)."""
+        skill_id = self.request.match_info.get("id")
+        if not skill_id:
+            return self._error("Skill id is required.", status=400, code="missing_id")
+        if (refused := self._refuse_expected_version(self.request.query)) is not None:
+            return refused
+        if (denied := await self._require_author()) is not None:
+            return denied
+        rec, denied = await self._db_skill(storage, part, skill_id, manage=True)
+        if denied is not None:
+            return denied
+        if not await storage.services.skills.delete(part, rec.skill_id):
+            return self._error(f"Skill '{skill_id}' not found.", status=404, code="not_found")
+        try:
+            await (await self._db_registry(part)).revoke_skill(str(rec.skill_id), reason="deleted via Studio catalog")
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning("Studio: registry revoke failed for '%s': %s", skill_id, exc)
+        return self.json_response({"skill_id": str(rec.skill_id), "deleted": True})
+
+
+    async def _legacy_get(self):
         skill_id = self.request.match_info.get("id")
         if skill_id:
             return await self._get_one(skill_id)
@@ -330,7 +561,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
             data["versions"] = []
         return self.json_response(data)
 
-    async def post(self):
+    async def _legacy_post(self):
         """Publish a new shared skill — PG insert first, registry
         best-effort (spec §7: "Never fail a publish because Redis is down")."""
         # PBAC (adversarial-review fix: gate was defined but never called).
@@ -394,7 +625,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
 
         return self.json_response(self._entry_to_dict(entry), status=201)
 
-    async def put(self):
+    async def _legacy_put(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("skills", "astudio:skills:update")) is not None:
             return denied
@@ -439,7 +670,7 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
 
         return self.json_response(self._entry_to_dict(entry))
 
-    async def delete(self):
+    async def _legacy_delete(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("skills", "astudio:skills:delete")) is not None:
             return denied
@@ -525,6 +756,46 @@ class StudioSkillsImportHandler(_StudioSkillsMixin, _StudioFilesMixin, StudioBas
     """
 
     async def post(self):
+        """Import a catalogue skill into an agent (database mode: an ``ai_agent_assets`` row)."""
+        gate = lambda: self._pbac_gate("skills", "astudio:skills:import")  # noqa: E731
+        return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+    async def _db_post(self, storage, part):
+        """Write ``skills/<name>.md`` of the agent through the catalogue service, under the agent lock."""
+        agent_name = self.request.match_info.get("name")
+        skill_id = self.request.match_info.get("id")
+        if not agent_name or not skill_id:
+            return self._error("Agent name and skill id are required.", status=400, code="missing_params")
+        payload = await self._db_payload(lenient=True)
+        if isinstance(payload, web.Response):
+            return payload
+        if (denied := await self._require_author()) is not None:
+            return denied
+        agents = storage.services.agents
+        agent = await agents.get(part, agent_name)
+        if agent is None and part.tenant is None:
+            return await self._legacy_post()  # not a Studio agent: the registry/filesystem path
+        denied = await self._check_record_access(
+            await self._access(), _store_record("agent", agent.agent_id, agent) if agent else None, "agent",
+            agent_name, manage=True)
+        if denied is not None:
+            return denied
+        skill, denied = await self._db_skill(storage, part, skill_id, manage=False)
+        if denied is not None:
+            return denied
+        existing = await storage.services.assets.get(part, agent_name, "skills", f"{skill.name}.md")
+        if existing is not None and not bool(payload.get("overwrite", False)):
+            return self._error(f"Skill file '{skill.name}.md' already exists for agent '{agent_name}'; "
+                               "pass overwrite=true to replace.", status=409, code="collision")
+        user = await self._get_user()
+        await self._studio_write(
+            lambda guard: storage.services.skills.import_to_agent(
+                part, skill.skill_id, agent_name, actor=user.user_id, guard=guard),
+            reread=lambda: agents.get(part, agent_name), expected_version=None)
+        return self.json_response({"agent": agent_name, "skill": skill.name, "file_path": None,
+                                   "reload_required": False}, status=201)
+
+    async def _legacy_post(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("skills", "astudio:skills:import")) is not None:
             return denied
@@ -600,6 +871,22 @@ class StudioSkillsResyncHandler(_StudioSkillsMixin, StudioBaseView):
     """
 
     async def post(self):
+        """Resync the derived index (database mode: rebuilt from Postgres)."""
+        gate = lambda: self._pbac_gate("skills", "astudio:skills:resync")  # noqa: E731
+        return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+    async def _db_post(self, storage, part):
+        """Admin-only: rebuild the partition's derived index from every catalogue row."""
+        user = await self._get_user()
+        is_superuser = (await self._scope()).is_superuser if self._opted_in() else user.is_superuser
+        if not is_superuser:
+            return self._error("Admin privileges required.", status=403, code="admin_required")
+        svc = storage.services.skills
+        rows = await svc.list(part)
+        resynced, failed = await _rebuild_index(svc, part, await self._db_registry(part), rows)
+        return self.json_response({"resynced": resynced, "failed": failed, "total": len(rows)})
+
+    async def _legacy_post(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("skills", "astudio:skills:resync")) is not None:
             return denied
