@@ -332,3 +332,23 @@ def test_a_facing_without_a_brand_resolves_whatever_brand_the_model_reports():
         None,
         [],
     )
+
+
+def test_a_product_read_once_too_often_is_withdrawn_not_reported_as_a_mismatch():
+    from parrot_pipelines.planogram.comparison.registration import ImageRegistration
+    from parrot_pipelines.planogram.stages.compare import SURPLUS_EVIDENCE, _demote_surplus_identities
+
+    definition = _models()  # m1 ET-2980, m2 ET-3950, m3 ET-2980 Pro
+    idents = [
+        _ident(shape_id="a", product="ET-2980"),
+        _ident(shape_id="b", product="ET-2980"),
+        _ident(shape_id="c", product="ET-2980 Pro"),
+    ]
+    registration = ImageRegistration(image_id="img0", assignments={"a": "m1", "b": "m2", "c": "m3"})
+    kept, demoted, other = _demote_surplus_identities(idents, registration, definition)
+    assert kept.product == "ET-2980" and other.product == "ET-2980 Pro"
+    assert demoted.product is None and demoted.descriptors["candidates"] == ["ET-2980"]
+    assert demoted.evidence == [SURPLUS_EVIDENCE]
+    # With its own facing unmatched the same claim stands: the product may really be misplaced.
+    moved = ImageRegistration(image_id="img0", assignments={"b": "m2", "c": "m3"})
+    assert _demote_surplus_identities(idents, moved, definition)[1].product == "ET-2980"

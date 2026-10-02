@@ -437,3 +437,14 @@ async def test_identify_slots_failure_isolated(perception):
 async def test_cancellation_propagates(perception):
     with pytest.raises(asyncio.CancelledError):
         await identify_slots(_image(), perception, _ctx(StubAdapter(asyncio.CancelledError())), vocabulary=[])
+
+
+def test_a_reference_label_with_text_run_onto_it_is_still_that_label():
+    from parrot_pipelines.planogram.identification.identify import _clean_reference_id
+
+    labels = ["ref-0003", "ref-0004"]
+    assert _clean_reference_id("ref-0004BD3C8431E838.jpg", labels) == "ref-0004"
+    assert _clean_reference_id(" ref-0003 ", labels) == "ref-0003"
+    assert _clean_reference_id("null", labels) is None and _clean_reference_id(None, labels) is None
+    assert _clean_reference_id("ref-0009", labels) == "ref-0009"
+

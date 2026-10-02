@@ -53,6 +53,17 @@ _HERSHEY_CAP_HEIGHT_PX = 22  # cv2.FONT_HERSHEY_SIMPLEX digit height at font sca
 _EMPTY_IDENTITY_TOKENS = frozenset({"", "none", "null", "unknown", "n/a", "na", "empty", "empty slot"})
 
 
+def _clean_reference_id(value: Optional[str], labels: Sequence[str]) -> Optional[str]:
+    """The offered label a returned ``reference_id`` stands for; ``None`` when the model declined."""
+    text = (value or "").strip()
+    if text.casefold() in _EMPTY_IDENTITY_TOKENS:
+        return None
+    if text in labels:
+        return text
+    prefixed = [label for label in labels if text.startswith(label)]
+    return prefixed[0] if len(prefixed) == 1 else text
+
+
 def _target_id(target: Target) -> str:
     """Id the LLM must echo back: ``slot_id`` for slots, ``shape_id`` for shapes."""
     return target.slot_id if isinstance(target, Slot) else target.shape_id
@@ -464,15 +475,12 @@ async def _run_call(
             answer = await _ask_identify(ctx, repair_prompt, images, bool(labels))
         except VisionError as exc:
             retry_error = f"{perception.image_id}: identify_incomplete_retry_failed: {exc}"
-    # "null" / "none" spelled out is the model declining to match, not an unknown label.
+    # "null" / "none" spelled out is the model declining to match; a label with text run onto it
+    # ("ref-0004<hash>.jpg") is still that label.
     answer = answer.model_copy(
         update={
             "existing_identifications": [
-                (
-                    item.model_copy(update={"reference_id": None})
-                    if (item.reference_id or "").strip().casefold() in _EMPTY_IDENTITY_TOKENS
-                    else item
-                )
+                item.model_copy(update={"reference_id": _clean_reference_id(item.reference_id, labels)})
                 for item in answer.existing_identifications
             ]
         }

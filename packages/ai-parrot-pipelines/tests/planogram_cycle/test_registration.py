@@ -303,3 +303,16 @@ def test_a_full_row_of_another_brand_is_still_registered_to_its_facings():
     registration = register_image("img", slots, idents, definition)
     assert not registration.ambiguous
     assert [registration.assignments.get(f"img:t1:{idx}") for idx in (1, 2, 3)] == ["s2_f1", "s2_f2", "s2_f3"]
+
+
+def test_a_free_order_shelf_gives_a_leftover_facing_to_its_own_brand_before_a_foreign_one():
+    definition = _free_order_definition()
+    slots = [_slot("img", 0, idx) for idx in (1, 2, 3, 4)] + [_slot("img", 1, idx) for idx in (1, 2, 3)]
+    seen = {1: ("Neighbour", "Gamma"), 2: ("P1-1", "Alpha"), 3: ("Unlisted", "Alpha"), 4: ("P1-3", "Alpha")}
+    idents = [
+        _ident(slot, *seen[slot.slot_index]) if slot.row_index == 0 else _ident(slot, f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert registration.assignments["img:t0:3"] == "s1_f2"
+    assert "img:t0:1" not in registration.assignments

@@ -109,7 +109,15 @@ def _assign_any_order(
         mapping[identification.shape_id] = facing.facing_id
         free.remove(facing)
     anchors = len(mapping)
-    for identification, facing in zip(pending, free, strict=False):
+    # A slot of another brand is the likeliest stray (the neighbouring fixture): it takes a facing only
+    # when no slot of the shelf's own brand, or of no readable brand, is left to take it.
+    brands = {_norm(facing.brand) for facing in facings if facing.brand}
+
+    def foreign(identification: Identification) -> bool:
+        brand = _norm(identification.brand)
+        return bool(brand and brands and brand not in brands)
+
+    for identification, facing in zip(sorted(pending, key=foreign), free, strict=False):
         mapping[identification.shape_id] = facing.facing_id
     return mapping, anchors
 

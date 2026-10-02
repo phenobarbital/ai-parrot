@@ -103,6 +103,54 @@ def canonicalise(identification: Identification, definition: SlotsDefinition, ct
     return identification.model_copy(update={"product": product})
 
 
+SURPLUS_EVIDENCE = "surplus identity: every facing of this product is already matched"
+
+
+def _demote_surplus_identities(
+    identifications: Sequence[Identification], registration: ImageRegistration, definition: SlotsDefinition
+) -> List[Identification]:
+    """Withdraw a product claim the fixture has no room for.
+
+    A slot read as product P while standing on a facing of another product, when every facing that
+    expects P is already matched by another slot, is one unit of P too many: the likelier error is the
+    reading (look-alike models, an illegible label), so the claim becomes an unresolved candidate
+    instead of a confident mismatch.
+    """
+    facings = {facing.facing_id: facing for facing in definition.all_facings()}
+    expected: dict[str, int] = {}
+    for facing in facings.values():
+        if facing.product:
+            expected[facing.product] = expected.get(facing.product, 0) + 1
+    by_shape = {identification.shape_id: identification for identification in identifications}
+    matched: dict[str, int] = {}
+    for shape_id, facing_id in registration.assignments.items():
+        identification, facing = by_shape.get(shape_id), facings.get(facing_id)
+        if identification and facing and identification.product and identification.product == facing.product:
+            matched[facing.product] = matched.get(facing.product, 0) + 1
+    surplus = set()
+    for shape_id, facing_id in registration.assignments.items():
+        identification, facing = by_shape.get(shape_id), facings.get(facing_id)
+        if not identification or not facing or not identification.product:
+            continue
+        product = identification.product
+        if product != facing.product and product in expected and matched.get(product, 0) >= expected[product]:
+            surplus.add(shape_id)
+    return [
+        (
+            identification.model_copy(
+                update={
+                    "product": None,
+                    "descriptors": {**identification.descriptors, "candidates": [identification.product]},
+                    "evidence": [*identification.evidence, SURPLUS_EVIDENCE],
+                }
+            )
+            if identification.shape_id in surplus
+            else identification
+        )
+        for identification in identifications
+    ]
+
+
 def registrable_slots(
     perception: PerceptionResult, added: Sequence[Shape], idents: Sequence[Identification], ctx: CycleContext
 ) -> List[Slot]:
@@ -161,8 +209,9 @@ def compare_observations(
             for identification in raw
         ]
         slots = registrable_slots(perception, result.added if result else [], image_idents, ctx)
-        registrations.append(register_image(perception.image_id, slots, image_idents, definition))
-        canonical.extend(image_idents)
+        registration = register_image(perception.image_id, slots, image_idents, definition)
+        registrations.append(registration)
+        canonical.extend(_demote_surplus_identities(image_idents, registration, definition))
     positions = merge_positions(definition, registrations, canonical, ctx.credit_policy)
     outcomes = evaluate_rules(perceptions, identifications, registrations, ctx)
     shelves = score_shelves(positions, definition, ctx.bindings, outcomes, description, ctx.credit_policy)
