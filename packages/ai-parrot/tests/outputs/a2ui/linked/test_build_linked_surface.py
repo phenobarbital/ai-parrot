@@ -83,6 +83,27 @@ def test_build_linked_surface_axis_validation(activity_frame, linked_source) -> 
         build_linked_surface(non_numeric_y, _sources(linked_source), {"activity": activity_frame}, surface_id="bad-y")
 
 
+def test_build_linked_surface_tolerates_a_null_probe_row(linked_source) -> None:
+    """A one-row probe whose numeric axis is NULL (dtype object) still validates; a real text column still fails."""
+    null_probe = pd.DataFrame([{"day": "2026-01-01", "visits": None, "program": "x"}])
+    envelope = build_linked_surface(_chart(), _sources(linked_source), {"activity": null_probe}, surface_id="null")
+    assert envelope.data_model["activity"] == {"rows": []} or envelope.data_model["activity"]["rows"]
+    non_numeric_y = _chart()
+    non_numeric_y[0]["y"] = ["program"]
+    with pytest.raises(ValueError, match="y 'program' in source 'activity' is not numeric"):
+        build_linked_surface(non_numeric_y, _sources(linked_source), {"activity": null_probe}, surface_id="bad")
+
+
+def test_build_linked_surface_skips_axes_of_a_column_less_frame(linked_source, caplog) -> None:
+    """A probe that matched no row yields no columns: the axes go unvalidated (with a warning) instead of failing."""
+    with caplog.at_level("WARNING"):
+        envelope = build_linked_surface(
+            _chart(), _sources(linked_source), {"activity": pd.DataFrame()}, surface_id="empty", snapshot=False
+        )
+    assert envelope.data_model["activity"] == {"rows": []}
+    assert any("left unvalidated" in record.message for record in caplog.records)
+
+
 def test_build_linked_surface_snapshot_cap(linked_source) -> None:
     """Snapshots cap rows and mark the copied descriptor as truncated."""
     frame = pd.DataFrame({"day": pd.date_range("2026-09-01", periods=501), "visits": range(501)})

@@ -398,7 +398,7 @@ async def test_ink_wall_end_to_end_synthetic(
     described = [f"s{s}_f{i}" for s in (1, 2, 3) for i in range(1, 9) if (s, i) not in UNDESCRIBED]
     assert all(statuses[f] == FacingStatus.MATCH for f in described)
     assert all(CreditPolicy.default().is_resolved(statuses[f"s{s}_f{i}"]) for s, i in UNDESCRIBED)
-    assert len(fake_vision_client.calls_to("ask_to_image")) == 4  # 3 tag rows + the untagged bottom row
+    assert len(fake_vision_client.calls_to("ask_to_image")) == 3  # 3 tag rows = 3 shelves: no synthesized bottom row
 
 
 async def test_ink_wall_price_note_does_not_change_credits(fake_vision_client):

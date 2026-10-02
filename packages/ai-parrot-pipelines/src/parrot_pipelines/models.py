@@ -61,8 +61,8 @@ class PlanogramConfig(BaseModel):
     roi_detection_prompt: Optional[str] = Field(
         default=None,
         description=(
-            "Prompt for ROI detection. Accepted and ignored since ai-parrot-pipelines 1.1.0 (FEAT-612); "
-            "kept one release for stored rows"
+            "Prompt that locates the fixture ('endcap') and its header ('poster_panel'). Used before LLM "
+            "detection so shapes are proposed only inside the fixture; placeholders: {brand}, {tag_hint}"
         ),
     )
 

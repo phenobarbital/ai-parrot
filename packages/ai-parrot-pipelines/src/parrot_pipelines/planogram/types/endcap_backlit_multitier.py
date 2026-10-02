@@ -166,6 +166,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             untagged_bottom_row=False,
             identify_strategy=IdentifyStrategy.STRIPS,
             perception_mode="cv",
+            tiered_shelves=True,
             min_usable_shapes=3,
             descriptor_fields=list(_BACKLIT_DESCRIPTORS),
             required_descriptor_fields=[],

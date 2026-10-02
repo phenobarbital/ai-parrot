@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from PIL import Image
@@ -13,16 +13,17 @@ from parrot.models.detections import DetectionBox
 from ..contracts import CycleContext, FixtureMembership, ObservationSource, PerceptionResult, Shape, ShapeKind
 from ..identification.detector import GENERIC_DETECTION_PROMPT, llm_detect_shapes
 from ..layout import LayoutProfile, ZoneSelector
+from ..perception.bands import OUTSIDE_FIXTURE_EVIDENCE, SELECTOR_EVIDENCE_PREFIX, assign_bands
 from ..perception.membership import assign_membership, usable_shapes
 from ..perception.profiles import ShapeCandidate, ShapeProfile
 from ..perception.rows import detect_shelf_edges, group_rows
+from ..perception.shelf_rows import centre_bands, dedupe_anchors, fit_rows
 from ..perception.shapes import propose_shapes
 from ..perception.slots import AnchorRule, build_slots, candidate_shape_id
 
 logger = logging.getLogger(__name__)
 
 _PRODUCT_KINDS = (ShapeKind.PRODUCT, ShapeKind.BOX, ShapeKind.UNKNOWN)
-SELECTOR_EVIDENCE_PREFIX = "zone_selector:"
 
 
 def _to_bgr(image: Image.Image) -> np.ndarray:
@@ -47,6 +48,12 @@ def _profile(ctx: CycleContext) -> LayoutProfile:
     if ctx.layout is None:
         raise ValueError("CycleContext.layout is not set")
     return ctx.layout
+
+
+def _expected_rows(ctx: CycleContext) -> Optional[int]:
+    """Shelves of the definition that carry facings; ``None`` when the run has no definition."""
+    shelves = getattr(ctx.definition, "shelves", None) or []
+    return sum(1 for shelf in shelves if shelf.facings) or None
 
 
 def _shape_from_candidate(image_id: str, candidate: ShapeCandidate) -> Shape:
@@ -99,48 +106,52 @@ async def _rows_tag_below(
 
 
 async def _rows_shape_is_slot(
-    bgr: np.ndarray, anchors: List[Shape], size: Tuple[int, int], profile: LayoutProfile, ctx: CycleContext
+    bgr: np.ndarray,
+    anchors: List[Shape],
+    size: Tuple[int, int],
+    profile: LayoutProfile,
+    ctx: CycleContext,
+    shapes: Sequence[Shape] = (),
 ) -> Tuple[List[List[ShapeCandidate]], Dict[str, str]]:
-    """Build shelf-edge bands, falling back to vertical-centre bands."""
+    """Build one row per shelf: shelf-edge bands, or vertical-centre bands when the edges do not separate enough."""
+    anchors = dedupe_anchors(anchors, shapes)
     if not anchors:
         return [], {}
     edges = await ctx.executor.run(detect_shelf_edges, bgr)
     image_id = anchors[0].image_id
+    max_rows = _expected_rows(ctx)
 
     def centre_y(shape: Shape) -> float:
         return (shape.box.y1 + shape.box.y2) / 2.0
 
-    bands: Dict[int, List[Shape]] = {}
+    bands: List[List[Shape]] = []
     if edges:
         bounds = [0, *sorted(edges), size[1]]
+        by_band: Dict[int, List[Shape]] = {}
         for shape in anchors:
             band = next(
                 (index for index in range(len(bounds) - 1) if bounds[index] <= centre_y(shape) < bounds[index + 1]), 0
             )
-            bands.setdefault(band, []).append(shape)
-    else:
-        ordered = sorted(anchors, key=lambda shape: (centre_y(shape), shape.box.x1))
-        height = sorted(shape.box.y2 - shape.box.y1 for shape in ordered)[len(ordered) // 2]
-        band = 0
-        bands[band] = [ordered[0]]
-        for shape in ordered[1:]:
-            if abs(centre_y(shape) - centre_y(bands[band][-1])) > height / 2:
-                band += 1
-                bands[band] = []
-            bands[band].append(shape)
+            by_band.setdefault(band, []).append(shape)
+        bands = [by_band[band] for band in sorted(by_band)]
+    # A stray edge (a base board, a neighbouring fixture) leaves several shelves in one band.
+    if not edges or (max_rows is not None and len(bands) < max_rows):
+        bands = centre_bands(anchors)
 
     rows: List[List[ShapeCandidate]] = []
     by_candidate: Dict[str, str] = {}
-    for band in sorted(bands):
-        shapes = sorted(bands[band], key=lambda shape: shape.box.x1)
-        if len(shapes) < profile.min_row_items:
+    for slots in fit_rows(bands, max_rows, not profile.tiered_shelves):
+        if len(slots) < profile.min_row_items:
             continue
-        row = [_candidate_from_shape(shape) for shape in shapes]
+        row = [
+            _candidate_from_shape(shape).model_copy(update={"x1": box[0], "y1": box[1], "x2": box[2], "y2": box[3]})
+            for shape, box in slots
+        ]
         rows.append(row)
         by_candidate.update(
             {
                 candidate_shape_id(image_id, candidate): shape.shape_id
-                for shape, candidate in zip(shapes, row, strict=False)
+                for (shape, _box), candidate in zip(slots, row, strict=True)
             }
         )
     return rows, by_candidate
@@ -149,9 +160,12 @@ async def _rows_shape_is_slot(
 def _match_zone_selectors(zones: List[Shape], selectors: Sequence[ZoneSelector], size: Tuple[int, int]) -> List[Shape]:
     """Copy zones and mark only unambiguously selector-matched observations as on-fixture."""
     grouped: Dict[Tuple[str | None, str | None, Tuple[float, float, float, float] | None], List[ZoneSelector]] = {}
+    banded, outside = assign_bands(zones, selectors)
     for selector in selectors:
+        if selector.band is not None:
+            continue
         grouped.setdefault((selector.profile, selector.kind, selector.region), []).append(selector)
-    matches: Dict[str, str] = {}
+    matches: Dict[str, str] = dict(banded)
     width, height = size
     for (profile, kind, region), selector_group in grouped.items():
         candidates = [
@@ -186,7 +200,16 @@ def _match_zone_selectors(zones: List[Shape], selectors: Sequence[ZoneSelector],
                 }
             )
             if zone.shape_id in matches
-            else zone.model_copy()
+            else (
+                zone.model_copy(
+                    update={
+                        "membership": FixtureMembership.OFF_FIXTURE,
+                        "membership_evidence": [*zone.membership_evidence, OUTSIDE_FIXTURE_EVIDENCE],
+                    }
+                )
+                if zone.shape_id in outside
+                else zone.model_copy()
+            )
         )
         for zone in zones
     ]
@@ -219,7 +242,7 @@ async def rebuild_geometry(
         rows, by_candidate = await _rows_tag_below(anchors, size, profile, ctx)
     else:
         anchors = [shape for shape in others if shape.kind in _PRODUCT_KINDS]
-        rows, by_candidate = await _rows_shape_is_slot(bgr, anchors, size, profile, ctx)
+        rows, by_candidate = await _rows_shape_is_slot(bgr, anchors, size, profile, ctx, others)
     slots = build_slots(
         rows,
         size,
@@ -227,6 +250,7 @@ async def rebuild_geometry(
         rule=profile.anchor_rule,
         fill_gaps=profile.fill_gaps,
         untagged_bottom_row=profile.untagged_bottom_row,
+        max_rows=_expected_rows(ctx),
     )
     slots = [
         slot.model_copy(update={"anchor_shape_id": by_candidate.get(slot.anchor_shape_id or "", slot.anchor_shape_id)})

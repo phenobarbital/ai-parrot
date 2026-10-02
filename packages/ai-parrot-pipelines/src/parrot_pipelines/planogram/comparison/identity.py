@@ -31,6 +31,44 @@ def _text_lines(identification: Identification) -> List[str]:
     return [line for line in (_norm(r) for r in raw) if line]
 
 
+def _name_lines(identification: Identification) -> List[str]:
+    """Normalised lines that name the product: read product and text, never free-form evidence."""
+    raw: List[str] = []
+    for chunk in (identification.product, identification.text):
+        if chunk:
+            raw.extend(_LINE_SPLIT.split(str(chunk)))
+    return [line for line in (_norm(r) for r in raw) if line]
+
+
+def _contained(name: str, line: str) -> bool:
+    """Whether ``name`` appears in ``line`` as whole tokens ("et-2980" in "ecotank et-2980", not in "et-29800")."""
+    return bool(name) and re.search(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])", line) is not None
+
+
+def names_product(text: Optional[str], product: Optional[str]) -> bool:
+    """Whether read text names a catalogue product (the product id appears in it as whole tokens)."""
+    name = _norm(product)
+    return bool(name) and any(_contained(name, line) for line in _LINE_SPLIT.split(_norm(text)) if line)
+
+
+def _by_containment(pool: Sequence[FacingDefinition], lines: Sequence[str]) -> List[FacingDefinition]:
+    """Facings whose product id or identifier is contained in a naming line.
+
+    A name nested in a longer matched name ("et-2980" inside "et-2980 pro") is that longer product.
+    """
+    found: List[Tuple[str, FacingDefinition]] = []
+    for facing in pool:
+        for name in (_norm(name) for name in (facing.product, *facing.descriptors.identifiers) if name):
+            if any(_contained(name, line) for line in lines):
+                found.append((name, facing))
+    names = {name for name, _ in found}
+    return [
+        facing
+        for name, facing in found
+        if not any(len(other) > len(name) and _contained(name, other) for other in names)
+    ]
+
+
 def _dedupe(facings: Sequence[FacingDefinition]) -> List[str]:
     """Distinct product ids in definition order."""
     seen: List[str] = []
@@ -70,7 +108,8 @@ def resolve_identity(
 ) -> tuple[str | None, list[str]]:
     """Resolve photo evidence to one catalogue id, or return unresolved candidates.
 
-    Rules run in order: exact identifier, descriptor signature, and fuzzy alias. Expected-empty
+    Rules run in order: exact identifier, descriptor signature, a catalogue name contained in the
+    read name, and fuzzy alias. Expected-empty
     facings never participate, and no expected slot is used to select an identity.
 
     Args:
@@ -84,7 +123,8 @@ def resolve_identity(
     """
     facings = [facing for facing in definition.all_facings() if facing.expected_occupancy == "occupied"]
     brand = _norm(identification.brand)
-    pool = [facing for facing in facings if not brand or _norm(facing.brand) == brand]
+    # A facing defined without a brand accepts any: the brand the model reports is then no filter.
+    pool = [facing for facing in facings if not brand or not _norm(facing.brand) or _norm(facing.brand) == brand]
     if brand and not pool:
         return None, []
     lines = set(_text_lines(identification))
@@ -123,6 +163,12 @@ def resolve_identity(
             if len(ids) == 1 and all(_observed(read.get(field)) for field in required_fields):
                 return ids[0], ids
             return None, ids
+
+    ids = _dedupe(_by_containment(pool, _name_lines(identification)))
+    if len(ids) == 1:
+        return ids[0], ids
+    if ids:
+        return None, ids
 
     if lines:
         alias_matches = [

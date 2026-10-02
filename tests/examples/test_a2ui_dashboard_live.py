@@ -34,6 +34,7 @@ async def test_linked_dashboard_live() -> None:
     result = await toolkit.build_linked_dashboard(
         widgets,
         title="Polestar graduates dashboard",
+        snapshot=True,  # this test asserts the embedded rows; the default build is definition-only
     )
     envelope = result["a2ui_envelope"]
     data_model = envelope["dataModel"]
@@ -52,3 +53,16 @@ async def test_linked_dashboard_live() -> None:
         by_course = data_model["by_course"]["rows"]
         counts = {row["course"]: row["graduates"] for row in by_course}
         assert counts == {"Pilates Studio": 9204, "Pilates Mat": 6247, "Pilates Rehab": 3300, "Pilates Reformer": 2048}
+
+
+@pytest.mark.asyncio
+async def test_linked_dashboard_live_default_is_definition_only() -> None:
+    """The default build probes every slug with one row and ships no rows in the envelope."""
+    toolkit = QuerysourceToolkit(programs=["polestar"])
+    widgets = [widget for widget in dashboard.WIDGETS if widget["key"] != "by_course"]
+    result = await toolkit.build_linked_dashboard(widgets, title="Polestar graduates dashboard")
+    envelope = result["a2ui_envelope"]
+    sources = envelope["metadata"]["extensions"]["parrot_data_sources"]
+    assert set(sources) == {widget["key"] for widget in widgets}
+    assert all(envelope["dataModel"][key] == {"rows": []} for key in sources)
+    assert all(source["snapshot_at"] is None for source in sources.values())

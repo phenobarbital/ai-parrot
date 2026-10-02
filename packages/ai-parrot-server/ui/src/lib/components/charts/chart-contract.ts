@@ -28,4 +28,10 @@ export interface AppChartConfig {
   title?: string;
   /** Optional one-paragraph summary of the chart (shown as the message text). */
   description?: string;
+  /** Per-series value axis, parallel to `y` ('left' default). Cartesian SVG only. */
+  seriesAxes?: ("left" | "right" | null)[];
+  /** Left value-axis name (single-axis charts). */
+  yAxisLabel?: string;
+  /** Axis names `[left, right]` when any series is on the right. */
+  yAxisLabels?: (string | null)[];
 }

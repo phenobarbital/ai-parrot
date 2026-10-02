@@ -445,11 +445,13 @@ def _qs_rows(body: Any) -> list | None:
 
 async def _qs_post(ctx: E2EContext, path: str, payload: dict) -> tuple[int, list | None]:
     async with ctx.session.post(f"{ctx.base_url}{path}", headers=ctx.headers(), json=payload) as resp:
+        if resp.status == 204:  # QuerySource "Empty Result": zero rows, no body
+            return resp.status, []
         return resp.status, _qs_rows(await resp.json(content_type=None))
 
 
 async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
-    """tenant='public' descriptor: browser route /api/v1/public/queries/{slug} and /refresh both equal the default."""
+    """tenant='public' descriptor: the tenant route, the browser's v2 route, the v3 lane and /refresh all agree."""
     results: list[ScenarioResult] = []
     first, last = live_range()
     payload = {"firstdate": first, "lastdate": last, "querylimit": 5000}
@@ -460,15 +462,20 @@ async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
         t_status == 200 and tenant_rows is not None,
         f"{t_status} rows={len(tenant_rows or [])}",
     )
+    # The browser lane POSTs a regular (non-multiquery, no-tenant) slug to v2 — plain QS, never MultiQS.
+    b_status, v2_rows = await _qs_post(ctx, f"/api/v2/services/queries/{ACTIVITY_SLUG}", payload)
+    check(results, "s5.v2_route", b_status == 200 and v2_rows is not None, f"{b_status} rows={len(v2_rows or [])}")
     v_status, v3_rows = await _qs_post(ctx, f"/api/v3/queries/{ACTIVITY_SLUG}", payload)
     check(results, "s5.v3_route", v_status == 200 and v3_rows is not None, f"{v_status} rows={len(v3_rows or [])}")
-    if tenant_rows is not None and v3_rows is not None:
+    if tenant_rows is not None and v2_rows is not None and v3_rows is not None:
         check(
             results,
             "s5.routes_equal",
-            _canon(tenant_rows) == _canon(v3_rows),
-            f"tenant={len(tenant_rows)} v3={len(v3_rows)}",
+            _canon(tenant_rows) == _canon(v2_rows) == _canon(v3_rows),
+            f"tenant={len(tenant_rows)} v2={len(v2_rows)} v3={len(v3_rows)}",
         )
+    if v2_rows is not None and v3_rows is not None:
+        check(results, "s5.v2_equals_v3", _canon(v2_rows) == _canon(v3_rows), f"v2={len(v2_rows)} v3={len(v3_rows)}")
     refreshed: dict[str, list | None] = {}
     for label, tenant in (("default", None), ("public", "public")):
         component = {

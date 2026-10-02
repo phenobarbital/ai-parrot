@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationError, model_validator
 
 logger = logging.getLogger(__name__)
 
-RuleKind = Literal["illumination", "text_requirements", "visual_features", "zone_present"]
+RuleKind = Literal["illumination", "text_requirements", "visual_features", "zone_present", "fact_tag_present"]
 ZoneKind = Literal[
     "header",
     "backlit",
@@ -103,6 +103,9 @@ class ShelfDefinition(BaseModel):
     shelf_id: str
     shelf_number: int
     level: Optional[str] = None
+    #: False: the shelf must hold its products, in any left-to-right order (a product found on the shelf
+    #: is a match wherever it stands).
+    ordered: bool = True
     facings: List[FacingDefinition] = Field(default_factory=list)
 
 
@@ -357,9 +360,10 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
 
     Raises:
         SlotsDefinitionError: malformed binding, duplicate ``rule_id``, dangling ``target_id``, ambiguous
-            ``target_id`` (present in more than one of facing / zone / shelf namespaces), or a shelf with
-            no facings that ends up with no mandatory bound rule, or a required zone without a mandatory
-            ``zone_present`` binding targeting that zone.
+            ``target_id`` (present in more than one of facing / zone / shelf namespaces), a
+            ``fact_tag_present`` rule that does not target a facing, a mandatory ``fact_tag_present`` rule,
+            a shelf with no facings that ends up with no mandatory bound rule, or a required zone without a
+            mandatory ``zone_present`` binding targeting that zone.
     """
     raw = (planogram_config or {}).get("rule_bindings")
     if raw is None:
@@ -389,6 +393,16 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
         if len(hits) > 1:
             raise SlotsDefinitionError(
                 f"rule {binding.rule_id}: ambiguous target_id {binding.target_id!r} ({' / '.join(hits)})"
+            )
+
+    for binding in bindings:
+        if binding.kind != "fact_tag_present":
+            continue
+        if binding.target_id not in namespaces["facing"]:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: fact_tag_present must target a facing")
+        if binding.mandatory:
+            raise SlotsDefinitionError(
+                f"rule {binding.rule_id}: fact_tag_present is informative and cannot be mandatory"
             )
 
     mandatory_targets = {b.target_id for b in bindings if b.mandatory}

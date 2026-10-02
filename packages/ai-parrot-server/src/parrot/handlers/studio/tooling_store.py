@@ -52,6 +52,7 @@ class ToolingState:
     reason: str | None
     owner: str | None
     source: Literal["database", "registry"]
+    tooling_ref: str = ""   # tooling identity (spec §2.5c): == name for database/registry sources
 
 
 def _pop_dotted(target: dict[str, Any], dotted: str) -> tuple[bool, Any]:
@@ -92,6 +93,7 @@ class AgentToolingStore:
                 reason=None if owner is not None else "agent has no owner; cannot store secrets",
                 owner=owner,
                 source="database",
+                tooling_ref=name,
             )
             state._row = row
             return state
@@ -115,6 +117,7 @@ class AgentToolingStore:
             reason=reason,
             owner=owner,
             source="registry",
+            tooling_ref=name,
         )
         state._registry = registry
         return state
@@ -198,7 +201,7 @@ class AgentToolingStore:
         state.tooling.toolkits = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
         if state.owner is None:
             raise PermissionError("agent has no owner; cannot store secrets")
-        await delete_vault_credential(state.owner, toolkit_vault_name(slug, name))
+        await delete_vault_credential(state.owner, toolkit_vault_name(slug, state.tooling_ref))
         await self._persist(name, state)
 
     async def put_mcp_servers(self, name: str, servers: list[dict[str, Any]]) -> list[AgentMCPServerSpec]:
@@ -218,7 +221,7 @@ class AgentToolingStore:
                 candidate = AgentMCPServerSpec.model_validate({**payload, "params": params})
             except ValidationError as exc:
                 raise ValueError(f"Invalid MCP server parameters: {exc}") from exc
-            vault_name = mcp_vault_name(candidate.name, name)
+            vault_name = mcp_vault_name(candidate.name, state.tooling_ref)
             prior = previous.get(candidate.name)
             refs = dict(prior.secret_refs) if prior is not None else {}
             clean = dict(candidate.params)
@@ -260,7 +263,7 @@ class AgentToolingStore:
         if state.owner is None:
             raise PermissionError("agent has no owner; cannot store secrets")
         previous = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
-        vault_name = toolkit_vault_name(slug, name)
+        vault_name = toolkit_vault_name(slug, state.tooling_ref)
         clean = copy.deepcopy(params)
         refs = dict(previous.secret_refs) if previous is not None else {}
         merged: dict[str, Any] = {}

@@ -32,10 +32,22 @@ Store `layout_profile` inside `planogram_config`. Its validated overrides merge 
 default; lists replace rather than append, and unknown fields are rejected with a layout field
 path. Top-level `perception_mode` is an accepted alias only when it agrees with the nested value.
 
+A zone selector matches observed zones to one configured zone in one of three ways: `ordinal` (the
+n-th observed zone top to bottom; the count of observed zones must equal the count of selectors),
+`region` (a box in whole-photo coordinates), or `band` — `[y_start, y_end]` as fractions of the
+observed fixture height. With a band, every detected fragment whose centre falls in that slice is
+evidence of the zone, and fragments that do not share the fixture's column are off-fixture. The
+converter emits bands for a fixture made only of zones whose source shelves all carry
+`y_start_ratio` and `height_ratio`; otherwise it emits ordinals.
+
 For one release, `roi_detection_prompt`, `object_identification_prompt`, `detection_model`,
 `confidence_threshold`, and `detection_grid` are accepted but ignored. `reference_images` supports
 paths, stable path lists, and PIL images; valid entries are hydrated once per run into opaque
 reference labels.
+
+Legacy `fact_tag` and `price_tag` elements become informative `fact_tag_present` bindings on the
+first facing of the product they name (`"ES-60W Fact Tag"` → product `ES-60W`, same shelf),
+carrying `price_required`. A tag that names no product of its shelf is reported as unresolved.
 
 ## Deployment sequence
 
@@ -51,6 +63,25 @@ Migration happens before deployment.
 5. Apply the approved SQL update by hand; the converter never writes a database.
 6. Run `python -m parrot_pipelines.planogram.migration preflight --dsn "$PLANOGRAM_DSN"` until every
    active row is ready, then deploy.
+
+### Whole-table runner
+
+`python -m parrot_pipelines.planogram.migration_runner` runs the same sequence over every active
+row from one work directory; the `/planogram-migrate` command drives it with the human review in
+between. The DSN comes from `--dsn` or, by default, `querysource.conf.default_dsn` of the active
+`ENV`; `target` shows the resolved host and database without credentials.
+
+| Subcommand | Writes to the database | What it does |
+|---|---|---|
+| `alter [--yes]` | only with `--yes` | Prints, or applies, the ALTER script. |
+| `export --dir D` | no | One file per active row in `D/original/`; never overwrites an export. |
+| `convert --dir D` | no | Candidates in `D/candidates/`; reviewed candidates are kept unless `--force`. |
+| `render --dir D` | no | `D/apply.sql` from candidates with an empty `unresolved` list that pass the preflight checks. |
+| `apply --dir D --yes` | yes | Runs `D/apply.sql`: one transaction, aborted when a row changed since the export. |
+| `preflight` | no | Same report as `migration preflight`. |
+
+Exit codes match the converter: `0` ready, `2` unresolved or not-ready rows, `1` usage, I/O or
+database failure.
 
 ## Rollback
 
@@ -80,3 +111,4 @@ Accuracy signoff requires three successful local reports from the documented cas
 | Empty or invalid definition | Review slots, expected-empty facings, descriptors, and selector ids. |
 | Unmigrated row in a handler job | Export, convert, review, apply SQL, and preflight before deployment. |
 | Exit code `2` | Resolve every reported candidate or readiness problem; do not deploy it. |
+| `tag '…' matches no product of the shelf` | Bind the tag to the right facing by hand, or drop it. |

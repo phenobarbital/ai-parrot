@@ -7,6 +7,36 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **Linked dashboards: dashboard-owned data sources and derived views.**
+  `parrot_data_sources` gains a second source kind, `derived`
+  (`{"kind": "derived", "from": "<sibling>", "transform": {"ops": […]}}`): a
+  view computed from a sibling source's full frame with the transform DSL,
+  never fetched, snapshotted like any source and recomputed whenever its
+  parent runs. The Python executor, `LinkedSurfaceService`, surface
+  validation, the admin UI lane and the example lane all understand it, and
+  every `query_slug` source is now fetched once per pass however many widgets
+  bind it. `qs_build_linked_dashboard` takes a `sources` map owned by the
+  dashboard; each widget declares one data origin — `source` (direct binding,
+  or a derived view with `transform`), `slug` (its own source, the previous
+  shape) or `data` (inline rows). The Polestar example loads with 4
+  QuerySource calls instead of 8. Contract: regenerated `LinkedSources`
+  schema/TS types, `envelopes/linked_dashboard_derived.json` and
+  `parity/derived_dashboard.json`.
+
+### Changed
+
+- **Agent Studio drafts (FEAT-605, plain hosts too):** `POST /astudio/drafts/{name}/activate` now answers
+  `409 name_taken` instead of `409 name_collision` / `409 not_owner`; the body never discloses the owner.
+
+### Fixed
+
+- **Agent Studio D1:** `POST /astudio/drafts` no longer overwrites another user's draft file or row; it answers
+  `409 name_taken` before anything is written (superusers and the owner are unaffected).
+- **Agent Studio D3:** draft activation with `replace=true` over an agent without an owner, or owned by someone
+  else, is refused (`409 name_taken`) unless the caller is a superuser.
+
 ---
 
 ## [1.0.7] — 2026-10-01 — A2UI linked surfaces, SharePoint file manager, Hooba and Odoo toolkits

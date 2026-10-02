@@ -16,7 +16,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 1,
@@ -24,9 +24,10 @@
       "parallel": true,
       "parallelism_notes": "No dependency: creates parrot/tools/resolver.py, tests/tools/_host_probe.py and tests/tools/test_toolkit_resolver.py, which no other Wave 1 task touches; runs concurrently with TASK-3976. Rule 5 reads `getattr(cls, 'tenant_bound', False)` so it needs nothing from TASK-3976.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3975-toolkit-resolver.md"
+      "started_at": "2026-10-01T02:46:13+00:00",
+      "completed_at": "2026-10-01T02:46:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3975-toolkit-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3976",
@@ -35,7 +36,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 1,
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "No dependency: creates parrot/tools/scope.py and its test, and adds one ClassVar line to toolkit.py and abstract.py that no other Wave 1 task edits; runs concurrently with TASK-3975 and TASK-3977.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3976-tool-scope-contract.md"
+      "started_at": "2026-10-01T02:46:13+00:00",
+      "completed_at": "2026-10-01T02:47:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3976-tool-scope-contract.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3977",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 1,
@@ -64,9 +66,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3975: check_tool() calls get_toolkit_resolver().entry() from parrot/tools/resolver.py. Creates parrot/tools/tooling_policy.py and tests/tools/test_tooling_policy.py, touched by no other Wave 1 task.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3977-tenant-tooling-policy-core.md"
+      "started_at": "2026-10-01T02:46:13+00:00",
+      "completed_at": "2026-10-01T02:49:04+00:00",
+      "file": "sdd/tasks/completed/TASK-3977-tenant-tooling-policy-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3978",
@@ -75,7 +78,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 1,
@@ -85,9 +88,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3977: imports TenantToolingPolicy, ToolingSubject and TenantToolingRefused from parrot/tools/tooling_policy.py. Sole Wave 1 editor of interfaces/tools.py and tools/spec.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3978-tooling-policy-build-hook.md"
+      "started_at": "2026-10-01T02:46:13+00:00",
+      "completed_at": "2026-10-01T02:50:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3978-tooling-policy-build-hook.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3979",

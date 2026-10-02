@@ -7,7 +7,7 @@ from typing import List, Sequence
 
 from parrot.models.detections import PlanogramDescription
 from parrot_pipelines.planogram.comparison.definition import SlotsDefinition
-from parrot_pipelines.planogram.comparison.identity import resolve_identity
+from parrot_pipelines.planogram.comparison.identity import names_product, resolve_identity
 from parrot_pipelines.planogram.comparison.projection import finalize_comparison, project_compliance
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration, register_image
 from parrot_pipelines.planogram.comparison.rules import evaluate_rules
@@ -26,9 +26,42 @@ from parrot_pipelines.planogram.contracts import (
 logger = logging.getLogger(__name__)
 
 
+REFERENCE_EVIDENCE_PREFIX = "reference | "
+TEXT_EVIDENCE_PREFIX = "text | "
+
+
+def _reference_product(
+    identification: Identification, definition: SlotsDefinition, ctx: CycleContext, candidates: Sequence[str]
+) -> tuple[str | None, str | None]:
+    """Catalogue id of the reference image the model matched, when it settles an unread identity.
+
+    The catalogue key of the matched reference is resolved like a read name. A reference never
+    contradicts printed text: with text candidates it may only pick one of them.
+
+    Returns:
+        ``(product, catalogue key)``, or ``(None, None)`` when the reference settles nothing.
+    """
+    if identification.uncertain or not identification.reference_id:
+        return None, None
+    key = next((ref.catalog_key for ref in ctx.reference_bank if ref.label == identification.reference_id), None)
+    if not key:
+        return None, None
+    product, _ = resolve_identity(
+        Identification(shape_id=identification.shape_id, product=key, brand=identification.brand),
+        definition,
+        required_fields=(),
+    )
+    if product is None or (candidates and product not in candidates):
+        return None, None
+    return product, key
+
+
 def canonicalise(identification: Identification, definition: SlotsDefinition, ctx: CycleContext) -> Identification:
-    """Canonicalize a read to one catalogue id, or retain unresolved candidates."""
-    if not identification.product and not identification.text:
+    """Canonicalize a read to one catalogue id, or retain unresolved candidates.
+
+    Printed text decides first; a matched reference image decides only what the text left open.
+    """
+    if not identification.product and not identification.text and not identification.reference_id:
         return identification
     by_id = {facing.product.casefold().strip(): facing.product for facing in definition.all_facings() if facing.product}
     product = by_id.get((identification.product or "").casefold().strip())
@@ -43,10 +76,79 @@ def canonicalise(identification: Identification, definition: SlotsDefinition, ct
             required_fields=required_fields,
         )
         if product is None:
+            # A name the model read that is not in the catalogue is another product: the look-alike
+            # reference it also picked must not rename it.
+            named = bool((identification.product or "").strip())
+            product, key = (None, None) if named else _reference_product(identification, definition, ctx, candidates)
+            if product is not None:
+                evidence = [
+                    *identification.evidence,
+                    f"{REFERENCE_EVIDENCE_PREFIX}{identification.reference_id} | {key}",
+                ]
+                return identification.model_copy(update={"product": product, "evidence": evidence})
             descriptors = dict(identification.descriptors)
             descriptors["candidates"] = candidates
             return identification.model_copy(update={"product": None, "descriptors": descriptors})
+    if not identification.evidence and names_product(identification.text, product):
+        # Printed text that names the product is crop-tied evidence even when the model listed none.
+        return identification.model_copy(
+            update={"product": product, "evidence": [f"{TEXT_EVIDENCE_PREFIX}{identification.text}"]}
+        )
+    if not identification.evidence:
+        # So is the reference image the model matched, when it shows that same product.
+        matched, key = _reference_product(identification, definition, ctx, [product])
+        if matched == product:
+            evidence = [f"{REFERENCE_EVIDENCE_PREFIX}{identification.reference_id} | {key}"]
+            return identification.model_copy(update={"product": product, "evidence": evidence})
     return identification.model_copy(update={"product": product})
+
+
+SURPLUS_EVIDENCE = "surplus identity: every facing of this product is already matched"
+
+
+def _demote_surplus_identities(
+    identifications: Sequence[Identification], registration: ImageRegistration, definition: SlotsDefinition
+) -> List[Identification]:
+    """Withdraw a product claim the fixture has no room for.
+
+    A slot read as product P while standing on a facing of another product, when every facing that
+    expects P is already matched by another slot, is one unit of P too many: the likelier error is the
+    reading (look-alike models, an illegible label), so the claim becomes an unresolved candidate
+    instead of a confident mismatch.
+    """
+    facings = {facing.facing_id: facing for facing in definition.all_facings()}
+    expected: dict[str, int] = {}
+    for facing in facings.values():
+        if facing.product:
+            expected[facing.product] = expected.get(facing.product, 0) + 1
+    by_shape = {identification.shape_id: identification for identification in identifications}
+    matched: dict[str, int] = {}
+    for shape_id, facing_id in registration.assignments.items():
+        identification, facing = by_shape.get(shape_id), facings.get(facing_id)
+        if identification and facing and identification.product and identification.product == facing.product:
+            matched[facing.product] = matched.get(facing.product, 0) + 1
+    surplus = set()
+    for shape_id, facing_id in registration.assignments.items():
+        identification, facing = by_shape.get(shape_id), facings.get(facing_id)
+        if not identification or not facing or not identification.product:
+            continue
+        product = identification.product
+        if product != facing.product and product in expected and matched.get(product, 0) >= expected[product]:
+            surplus.add(shape_id)
+    return [
+        (
+            identification.model_copy(
+                update={
+                    "product": None,
+                    "descriptors": {**identification.descriptors, "candidates": [identification.product]},
+                    "evidence": [*identification.evidence, SURPLUS_EVIDENCE],
+                }
+            )
+            if identification.shape_id in surplus
+            else identification
+        )
+        for identification in identifications
+    ]
 
 
 def registrable_slots(
@@ -107,8 +209,9 @@ def compare_observations(
             for identification in raw
         ]
         slots = registrable_slots(perception, result.added if result else [], image_idents, ctx)
-        registrations.append(register_image(perception.image_id, slots, image_idents, definition))
-        canonical.extend(image_idents)
+        registration = register_image(perception.image_id, slots, image_idents, definition)
+        registrations.append(registration)
+        canonical.extend(_demote_surplus_identities(image_idents, registration, definition))
     positions = merge_positions(definition, registrations, canonical, ctx.credit_policy)
     outcomes = evaluate_rules(perceptions, identifications, registrations, ctx)
     shelves = score_shelves(positions, definition, ctx.bindings, outcomes, description, ctx.credit_policy)

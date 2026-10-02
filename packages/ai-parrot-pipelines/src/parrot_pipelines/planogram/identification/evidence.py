@@ -18,6 +18,7 @@ from parrot_pipelines.planogram.contracts import (
     Shape,
 )
 from parrot_pipelines.planogram.identification.verify import crop_and_encode
+from parrot_pipelines.planogram.perception.bands import band_box, banded_zones, fixture_box
 from parrot_pipelines.planogram.identification.vision import VisionError
 
 logger = logging.getLogger(__name__)
@@ -173,15 +174,24 @@ async def collect_rule_evidence(
     selectors = list(ctx.layout.zone_selectors) if ctx.layout is not None else []
     height, width = image.shape[:2]
     prompt = build_region_prompt()
+    fixture = fixture_box(zones)
     for selector in selectors:
-        if selector.zone_id not in presence_zone_ids or selector.region is None:
+        if selector.zone_id not in presence_zone_ids:
             continue
         target_id = ZONE_REGION_TARGET.format(image_id=perception.image_id, zone_id=selector.zone_id)
-        box = _region_box(selector.region, (width, height))
+        if selector.band is not None:
+            # No fixture observed: there is no band to inspect, the zone stays unknown.
+            if fixture is None or banded_zones(zones, selector.zone_id):
+                continue
+            box = band_box(fixture, selector.band)
+        elif selector.region is not None:
+            box = _region_box(selector.region, (width, height))
+        else:
+            continue
         if box is None:
             _record_failure(ctx, perception, target_id, ValueError("empty crop"))
             continue
-        if any(_centre_inside(zone, box) for zone in zones):
+        if selector.band is None and any(_centre_inside(zone, box) for zone in zones):
             continue
         try:
             png = await ctx.executor.run(crop_and_encode, image, box)

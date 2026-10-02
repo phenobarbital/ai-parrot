@@ -154,3 +154,14 @@ class ToolkitOptionsResponse(BaseModel):
     """``GET …/toolkits/{slug}/options/{param}``."""
 
     options: list[dict[str, str]] = Field(default_factory=list)
+
+
+class StudioCapabilities(BaseModel):
+    """``GET {prefix}/me`` body (FEAT-605 C7)."""
+
+    user_id: str | None
+    tenant: str | None
+    may_author: bool
+    may_administer: bool
+    enabled: bool
+    is_superuser: bool

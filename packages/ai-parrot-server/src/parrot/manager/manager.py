@@ -111,6 +111,7 @@ from ..handlers.credentials import setup_credentials_routes
 
 # Agent Studio — /api/v1/astudio/* route registration (FEAT-467)
 from ..handlers.studio import setup_studio_routes
+from ..handlers.scope import has_installed_resolver
 
 # CommCenter bulk notification sender (FEAT-417) — method-based handler,
 # mirrors ScrapingInfoHandler's instantiate-then-.setup(app) convention.
@@ -179,6 +180,8 @@ class ReloadResult(BaseModel):
     previous_instance_closed: bool
     warnings: List[str] = Field(default_factory=list)
 
+
+_REGISTRY_ONLY_APP_KEY = "_bot_manager_registry_only"
 
 class BotManager:
     """BotManager.
@@ -2244,11 +2247,15 @@ class BotManager:
         agent_mount_auth_template: Optional[MCPServerConfig] = None,
         agent_mount_pbac_resolver: Optional[PBACResolver] = None,
         agent_mount_audit_sink: Optional[AuditSink] = None,
+        studio_routes: bool = True,
     ) -> web.Application:
         """Register BotManager routes on `app`.
 
         Args:
             app: The aiohttp application to configure.
+            studio_routes: When ``False`` the default ``/api/v1/astudio``
+                mount is skipped (a host mounts Studio itself, e.g. under a
+                tenant prefix, via ``setup_studio_routes``).
             agent_mount_config: Optional FEAT-477 agent-as-MCP-server mount
                 configuration. When provided, one MCP endpoint per listed
                 agent (plus the optional aggregate) is registered alongside
@@ -2565,7 +2572,8 @@ class BotManager:
         # User credential management routes
         setup_credentials_routes(self.app)
         # Agent Studio — /api/v1/astudio/* management API (FEAT-467)
-        setup_studio_routes(self.app)
+        if studio_routes:
+            setup_studio_routes(self.app)
         # MCP helper routes (discovery, activation, management)
         setup_mcp_helper_routes(self.app)
         # Thales research flow routes (FEAT-425): POST + polling + artifacts
@@ -2736,6 +2744,67 @@ Available documentation UIs:
         for bot in self._bots.values():
             if getattr(bot, "_dataplane_guard", None) is None:
                 bot._dataplane_guard = guard  # noqa: SLF001
+
+    def setup_registry_only(
+        self, app: web.Application, *, import_modules: bool = False, load_definitions: bool = False
+    ) -> None:
+        """Mount the agent registry without ``setup()`` (no routes, no startup agents).
+
+        Idempotent per app. Appends exactly one ``on_startup``, one
+        ``on_shutdown`` and one ``on_cleanup`` hook; non-Studio bots only.
+        Incomplete lifecycle — not recommended to tenant hosts until W2.2
+        (TASK-3965) merges.
+
+        Args:
+            app: The aiohttp application.
+            import_modules: Import ``AGENTS_DIR`` modules at startup.
+            load_definitions: Load YAML agent definitions at startup.
+
+        Raises:
+            RuntimeError: When a scope resolver is installed on ``app`` and
+                either opt-in flag is True (tenant hosts never import
+                host-wide content).
+        """
+        if (import_modules or load_definitions) and has_installed_resolver(app):
+            raise RuntimeError("setup_registry_only: import_modules/load_definitions are refused in a tenant host")
+        if app.get(_REGISTRY_ONLY_APP_KEY):
+            self.logger.info("setup_registry_only: already installed on this app")
+            return
+        app[_REGISTRY_ONLY_APP_KEY] = {"import_modules": import_modules, "load_definitions": load_definitions}
+        self.app = app
+        app["bot_manager"] = self
+        app.on_startup.append(self._registry_only_startup)
+        app.on_shutdown.append(self._registry_only_shutdown)
+        app.on_cleanup.append(self._cleanup_all_bots)
+
+    async def _registry_only_startup(self, app: web.Application) -> None:
+        """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""
+        opts = app[_REGISTRY_ONLY_APP_KEY]
+        if (opts["import_modules"] or opts["load_definitions"]) and has_installed_resolver(app):
+            raise RuntimeError(
+                "setup_registry_only: import_modules/load_definitions are refused in a tenant host"
+            )
+        if self.enable_registry_bots:
+            self.registry.setup(app)
+            if opts["import_modules"]:
+                await self.registry.load_modules()
+            if opts["load_definitions"]:
+                definitions_dir = self.registry.agents_dir / "agents"
+                if definitions_dir.is_dir():
+                    self.registry.load_agent_definitions(definitions_dir)
+        self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
+
+    async def _registry_only_shutdown(self, app: web.Application) -> None:
+        """Cancel the legacy expiry loop (mirrors ``on_shutdown``)."""
+        task = self._cleanup_task
+        self._cleanup_task = None
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            self.logger.info("Stopped background cleanup task")
 
     async def on_startup(self, app: web.Application) -> None:
         """On startup."""

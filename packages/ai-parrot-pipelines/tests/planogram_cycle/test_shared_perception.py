@@ -1,6 +1,7 @@
 """Shared CV perception, geometry rebuild and usable-target counting (FEAT-612, Module 2)."""
 
 import pickle
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -102,6 +103,17 @@ async def test_cv_tag_below_geometry_matches_ink_wall(ink_image):
         for slot in perception.slots
         if not slot.inferred
     )
+
+
+async def test_bottom_row_is_not_synthesized_past_the_definition(ink_image):
+    """With every shelf of the definition anchored, the room below the wall is not a row."""
+    shelf = SimpleNamespace(facings=["facing"])
+    open_ctx = _ctx(_ink_profile())
+    full_ctx = _ctx(_ink_profile()).model_copy(update={"definition": SimpleNamespace(shelves=[shelf] * 3)})
+    taller_ctx = _ctx(_ink_profile()).model_copy(update={"definition": SimpleNamespace(shelves=[shelf] * 4)})
+    assert len({slot.row_index for slot in (await perceive_image(ink_image, "img0", open_ctx)).slots}) == 4
+    assert len({slot.row_index for slot in (await perceive_image(ink_image, "img0", full_ctx)).slots}) == 3
+    assert len({slot.row_index for slot in (await perceive_image(ink_image, "img0", taller_ctx)).slots}) == 4
 
 
 async def test_profile_overrides_reach_primitives(ink_image):

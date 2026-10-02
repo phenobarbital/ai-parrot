@@ -7,11 +7,13 @@ import numpy as np
 import pytest
 from pydantic import BaseModel
 
+from parrot.exceptions import TruncatedResponseError
 from parrot_pipelines.planogram.backend import ResolvedBackend
 from parrot_pipelines.planogram.identification import encode_png
 from parrot_pipelines.planogram.identification.vision import (
     VisionAdapter,
     VisionError,
+    VisionTruncatedError,
     cache_key,
     normalise_kwargs,
 )
@@ -192,6 +194,29 @@ async def test_provider_failure_and_empty_images(fake_vision_client):
         await _adapter(fake_vision_client).ask("q", [IMG], Answer, stage="s", prompt_version="v1")
     with pytest.raises(ValueError):
         await _adapter(fake_vision_client).ask("q", [], Answer, stage="s", prompt_version="v1")
+
+
+def _truncated() -> TruncatedResponseError:
+    return TruncatedResponseError("truncated (finish_reason='max_tokens')", finish_reason="max_tokens")
+
+
+async def test_truncated_answer_is_resent_once(fake_vision_client):
+    """An answer cut at the output-token limit is re-sent unchanged; the second answer is returned."""
+    fake_vision_client.queue("ask_to_image", _truncated(), '{"value": 3}')
+    result = await _adapter(fake_vision_client).ask("q", [IMG], Answer, stage="s", prompt_version="v1")
+    calls = fake_vision_client.calls_to("ask_to_image")
+    assert result.value == 3 and len(calls) == 2 and calls[0]["prompt"] == calls[1]["prompt"] == "q"
+
+
+async def test_truncation_retries_are_bounded(fake_vision_client):
+    """Truncated again after the retry ⇒ VisionTruncatedError; truncation_retries=0 ⇒ a single call."""
+    fake_vision_client.queue("ask_to_image", _truncated(), _truncated(), _truncated())
+    with pytest.raises(VisionTruncatedError, match="truncated"):
+        await _adapter(fake_vision_client).ask("q", [IMG], Answer, stage="s", prompt_version="v1")
+    assert len(fake_vision_client.calls_to("ask_to_image")) == 2
+    with pytest.raises(VisionTruncatedError):
+        await _adapter(fake_vision_client, truncation_retries=0).ask("q", [IMG], Answer, stage="s", prompt_version="v1")
+    assert len(fake_vision_client.calls_to("ask_to_image")) == 3
 
 
 def test_normalise_kwargs_unknown_raises():

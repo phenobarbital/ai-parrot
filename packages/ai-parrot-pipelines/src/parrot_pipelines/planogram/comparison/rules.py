@@ -11,6 +11,8 @@ from parrot.models.compliance import TextMatcher
 from parrot.models.detections import TextRequirement
 from parrot_pipelines.planogram.comparison.definition import RuleBinding, SlotsDefinition, ZoneDefinition
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration
+from parrot_pipelines.planogram.comparison.tags import slot_above, tag_price, tag_text
+from parrot_pipelines.planogram.perception.bands import banded_zones
 from parrot_pipelines.planogram.contracts import (
     CycleContext,
     FixtureMembership,
@@ -22,6 +24,8 @@ from parrot_pipelines.planogram.contracts import (
     RuleObservation,
     RuleOutcome,
     Shape,
+    ShapeKind,
+    Slot,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,15 +179,26 @@ def _zone_matches(
     definition: SlotsDefinition,
     selectors: Sequence[object],
 ) -> List[Tuple[str, ZoneDefinition, Optional[Shape], str]]:
-    """Return one selector decision for every definition zone and image."""
+    """Return the selector decisions for every definition zone and image.
+
+    A band selector yields one ``matched`` entry per observed fragment of its zone; any other zone
+    yields exactly one entry.
+    """
     zones = [zone for zone in definition.zones if zone.zone_id == target_id]
     if not zones:
         zones = [zone for zone in definition.zones if zone.shelf_id == target_id]
-    return [
-        (perception.image_id, zone, *match_zone(zone, perception, definition, selectors))
-        for perception in perceptions
-        for zone in zones
-    ]
+    banded = {getattr(item, "zone_id", None) for item in selectors if getattr(item, "band", None) is not None}
+    matches: List[Tuple[str, ZoneDefinition, Optional[Shape], str]] = []
+    for perception in perceptions:
+        for zone in zones:
+            if zone.zone_id not in banded:
+                matches.append((perception.image_id, zone, *match_zone(zone, perception, definition, selectors)))
+                continue
+            fragments = banded_zones(perception.zones, zone.zone_id)
+            matches.extend((perception.image_id, zone, fragment, "matched") for fragment in fragments)
+            if not fragments:
+                matches.append((perception.image_id, zone, None, "not_observed"))
+    return matches
 
 
 def _rule_observations(
@@ -263,6 +278,15 @@ def _entity_texts(
                         if text:
                             features.extend([f"ocr:{text}", text])
                     refs.append(_ref(image_id, identification.shape_id, identification.source))
+            # Phrases read off the zone's own crop (logos, headlines, inserts) are text evidence too.
+            for observation in result.rule_observations:
+                if (
+                    observation.target_id == shape.shape_id
+                    and observation.kind == "visual_features"
+                    and observation.assessed
+                    and isinstance(observation.value, (list, tuple))
+                ):
+                    features.extend(str(phrase) for phrase in observation.value if phrase)
     for image_id, identification in _registered_identifications(
         binding.target_id,
         registrations,
@@ -328,6 +352,21 @@ def _rule_zone_present(
     return _unassessed(binding, "zone visibility unknown")
 
 
+def _majority_state(votes: Sequence[Tuple[str, ObservationRef, int]]) -> List[Tuple[str, ObservationRef]]:
+    """Reduce the fragments of one zone in one image to the state covering the most area.
+
+    A tie keeps every vote, so the caller reports the conflict instead of picking a side.
+    """
+    totals: Dict[str, int] = {}
+    for state, _, area in votes:
+        totals[state] = totals.get(state, 0) + area
+    best = max(totals.values())
+    winners = {state for state, total in totals.items() if total == best}
+    if len(winners) != 1:
+        return [(state, ref) for state, ref, _area in votes]
+    return [(state, ref) for state, ref, _area in votes if state in winners]
+
+
 def _rule_illumination(
     binding: RuleBinding,
     perceptions: Sequence[PerceptionResult],
@@ -337,15 +376,18 @@ def _rule_illumination(
 ) -> RuleOutcome:
     """Evaluate illumination states already collected by the identification stage."""
     matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
-    states: List[Tuple[str, ObservationRef]] = []
+    votes: Dict[str, List[Tuple[str, ObservationRef, int]]] = {}
     for image_id, _zone, shape, status in matched:
         if status != "matched" or shape is None:
             continue
+        area = (shape.box.x2 - shape.box.x1) * (shape.box.y2 - shape.box.y1)
         for observation in _rule_observations(observations, image_id, [shape.shape_id], "illumination"):
             if isinstance(observation.value, str):
-                states.append(
-                    (observation.value.strip().lower(), _ref(image_id, observation.target_id, observation.source))
-                )
+                ref = _ref(image_id, observation.target_id, observation.source)
+                votes.setdefault(image_id, []).append((observation.value.strip().lower(), ref, area))
+    states: List[Tuple[str, ObservationRef]] = []
+    for image_votes in votes.values():
+        states.extend(_majority_state(image_votes))
     if not states:
         return _unassessed(binding, "illumination target not observed")
     distinct = {state for state, _ in states}
@@ -456,6 +498,82 @@ def _rule_visual(
     )
 
 
+_TAG_KINDS = frozenset({ShapeKind.FACT_TAG, ShapeKind.PRICE_TAG})
+
+
+def _rule_fact_tag(
+    binding: RuleBinding,
+    perceptions: Sequence[PerceptionResult],
+    identifications: Sequence[IdentificationResult],
+    registrations: Sequence[ImageRegistration],
+) -> RuleOutcome:
+    """Evaluate tag presence and an optionally required legible price for one facing."""
+    price_required = bool(binding.params.get("price_required"))
+    reads = {result.image_id: {item.shape_id: item for item in result.identifications} for result in identifications}
+    by_image = {registration.image_id: registration for registration in registrations}
+    seen = False
+    tagged: List[ObservationRef] = []
+    priced: List[ObservationRef] = []
+    facing_refs: List[ObservationRef] = []
+    for perception in perceptions:
+        registration = by_image.get(perception.image_id)
+        if registration is None:
+            continue
+        registered = {shape_id for shape_id, facing in registration.assignments.items() if facing == binding.target_id}
+        if not registered:
+            continue
+        seen = True
+        facing_slots = {
+            slot.slot_id
+            for slot in perception.slots
+            if slot.slot_id in registered or slot.anchor_shape_id in registered
+        }
+        anchors = {slot.anchor_shape_id for slot in perception.slots if slot.slot_id in facing_slots}
+        facing_refs.extend(_ref(perception.image_id, shape_id, ObservationSource.CV) for shape_id in registered)
+        for tag in perception.shapes:
+            if tag.kind not in _TAG_KINDS or tag.membership == FixtureMembership.OFF_FIXTURE:
+                continue
+            above: Optional[Slot] = slot_above(tag, perception.slots)
+            if tag.shape_id not in anchors and (above is None or above.slot_id not in facing_slots):
+                continue
+            tag_ref = _ref(perception.image_id, tag.shape_id, tag.source)
+            tagged.append(tag_ref)
+            text = tag_text(tag, perception.ocr_readings, reads.get(perception.image_id, {}))
+            if tag_price(text) is not None:
+                priced.append(tag_ref)
+
+    if not seen:
+        return _unassessed(binding, "facing not observed")
+    if tagged and (not price_required or priced):
+        return RuleOutcome(
+            rule_id=binding.rule_id,
+            assessed=True,
+            passed=True,
+            score=1.0,
+            penalty=0.0,
+            observations=_dedupe_refs(priced or tagged),
+        )
+    if tagged:
+        return RuleOutcome(
+            rule_id=binding.rule_id,
+            assessed=True,
+            passed=False,
+            score=0.0,
+            penalty=0.0,
+            detail="fact tag present, price not legible",
+            observations=_dedupe_refs(facing_refs),
+        )
+    return RuleOutcome(
+        rule_id=binding.rule_id,
+        assessed=True,
+        passed=False,
+        score=0.0,
+        penalty=0.0,
+        detail="fact tag not observed",
+        observations=_dedupe_refs(facing_refs),
+    )
+
+
 def evaluate_rules(
     perceptions: Sequence[PerceptionResult],
     identifications: Sequence[IdentificationResult],
@@ -481,6 +599,8 @@ def evaluate_rules(
                 outcome = _rule_visual(
                     binding, perceptions, identifications, registrations, observations, definition, selectors
                 )
+            elif binding.kind == "fact_tag_present":
+                outcome = _rule_fact_tag(binding, perceptions, identifications, registrations)
             else:
                 outcome = _unassessed(binding, "unknown rule kind")
         except Exception as exc:  # noqa: BLE001

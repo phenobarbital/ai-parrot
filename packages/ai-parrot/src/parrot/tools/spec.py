@@ -56,14 +56,24 @@ class NormalizedTooling(BaseModel):
     mcp_servers: list[AgentMCPServerSpec] = Field(default_factory=list)
 
 
-def toolkit_vault_name(slug: str, agent_name: str) -> str:
-    """Return ``f"toolkit_{slug}_{agent_name}"``."""
-    return f"toolkit_{slug}_{agent_name}"
+def toolkit_vault_name(slug: str, agent_ref: str) -> str:
+    """Return ``f"toolkit_{slug}_{agent_ref}"`` (agent_ref = tooling ref; a legacy agent's ref is its name)."""
+    return f"toolkit_{slug}_{agent_ref}"
 
 
-def mcp_vault_name(server: str, agent_name: str) -> str:
-    """Return ``f"mcp_agent_{server}_{agent_name}"`` (never collides with per-user ``mcp_``)."""
-    return f"mcp_agent_{server}_{agent_name}"
+def mcp_vault_name(server: str, agent_ref: str) -> str:
+    """Return ``f"mcp_agent_{server}_{agent_ref}"`` (never collides with per-user ``mcp_``)."""
+    return f"mcp_agent_{server}_{agent_ref}"
+
+
+def toolkit_override_vault_name(slug: str, agent_ref: str) -> str:
+    """Per-user override vault name (spec §2.5c): ``f"toolkit_{slug}_{agent_ref}_user"``."""
+    return f"toolkit_{slug}_{agent_ref}_user"
+
+
+def agent_tooling_ref(bot: Any) -> str:
+    """Immutable tooling identity: ``bot._tooling_ref`` for Studio agents, else ``bot.name`` (legacy)."""
+    return getattr(bot, "_tooling_ref", None) or bot.name
 
 
 def normalize_tooling(
@@ -186,6 +196,10 @@ async def hydrate_mcp(spec: AgentMCPServerSpec) -> dict[str, Any]:
     """Return ``MCPServerConfig`` kwargs with headers/auth_config/env restored from the vault."""
     base = spec.model_dump(exclude={"params", "secret_refs", "vault_owner"}, exclude_none=True)
     base.update(spec.params)
+    foreign = sorted(field for field in spec.secret_refs if field not in MCP_SECRET_FIELDS)
+    if foreign:
+        # FEAT-622: vault values may fill only headers/auth_config/env; never transport/command/etc.
+        raise ValueError(f"MCP secret_refs may only reference {MCP_SECRET_FIELDS}: {foreign}")
     grouped_fields: dict[str, list[str]] = {}
     for field, vault_name in spec.secret_refs.items():
         grouped_fields.setdefault(vault_name, []).append(field)
