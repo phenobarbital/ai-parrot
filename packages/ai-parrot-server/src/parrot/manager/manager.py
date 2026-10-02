@@ -2826,8 +2826,7 @@ Available documentation UIs:
 
         Idempotent per app. Appends exactly one ``on_startup``, one
         ``on_shutdown`` and one ``on_cleanup`` hook; non-Studio bots only.
-        Incomplete lifecycle — not recommended to tenant hosts until W2.2
-        (TASK-3965) merges.
+        Also installs the Studio runtime hooks once (``add_studio_runtime_hooks``).
 
         Args:
             app: The aiohttp application.
@@ -2850,6 +2849,9 @@ Available documentation UIs:
         app.on_startup.append(self._registry_only_startup)
         app.on_shutdown.append(self._registry_only_shutdown)
         app.on_cleanup.append(self._cleanup_all_bots)
+        from .studio_runtime import add_studio_runtime_hooks
+
+        add_studio_runtime_hooks(app)
 
     async def _registry_only_startup(self, app: web.Application) -> None:
         """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""

@@ -37,5 +37,5 @@ def test_mount_hooks_and_me_documented():
         assert needle in text, needle
 
 
-def test_registry_only_marked_incomplete():
-    assert "incomplete lifecycle" in _text().lower()
+def test_registry_only_no_longer_marked_incomplete():
+    assert "incomplete lifecycle" not in _text().lower()

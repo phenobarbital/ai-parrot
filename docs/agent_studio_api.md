@@ -947,7 +947,8 @@ BotManager.setup_registry_only(app, *, import_modules=False, load_definitions=Fa
   class; `None` skips them. `_scope()` is resolved lazily so the wrapper's prologue runs first.
 - `setup_studio_routes` is idempotent per prefix; startup hooks are installed once per app.
 - `setup_registry_only` is idempotent, registers no route and runs no startup agents.
-  **Incomplete lifecycle — not recommended to tenant hosts** until the Studio runtime wiring lands.
+  It installs the Studio runtime hooks (`add_studio_runtime_hooks`) once, so it is recommended for tenant
+  hosts; the documented order and its reverse behave the same.
   With an installed resolver, `import_modules=True` / `load_definitions=True` raise `RuntimeError`.
 - Documented mount order: install the resolver → `setup_registry_only` → `setup_studio_routes`.
 - The host reserves `astudio` as a tenant segment itself.
