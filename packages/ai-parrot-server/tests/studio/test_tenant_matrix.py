@@ -222,15 +222,20 @@ async def test_peer_rows(aiohttp_client, scoped_app):
     ids = await seed(client)
     peer, g_peer = who("u2"), who("u3", groups="g1")
     for kind in ("agents", "drafts", "skills"):
-        assert await listing(client, "acme", kind, peer) == {"m-tenant"} | ({"acme-only"} - {"acme-only"})
+        assert await listing(client, "acme", kind, peer) == {"m-tenant"}
         assert await listing(client, "acme", kind, g_peer) == {"m-tenant", "m-groups"}
     resp, body = await call(client, "acme", "get", "/agents/m-tenant", peer)
     assert resp.status == 200 and body["can_manage"] is False and body["access"] == "tenant"
     resp, body = await call(client, "acme", "get", "/agents/m-groups", g_peer)
     assert resp.status == 200 and body["access"] == "groups"
-    assert (await call(client, "acme", "get", "/agents/m-groups", peer))[0].status == 404
+    for row in ("m-priv", "m-groups"):  # a peer outside the audience: 404 on private and groups rows, every kind
+        for path in (f"/agents/{row}", f"/drafts/{row}", f"/skills/{ids[('acme', row)]}"):
+            assert (await call(client, "acme", "get", path, peer))[0].status == 404, path
     for label, method, path, body in manage_calls(ids):
         resp, data = await call(client, "acme", method, path, peer, body)
+        assert resp.status == 403 and data["code"] == "not_manageable", (label, resp.status, data)
+    for label, method, path, body in manage_calls(ids, name="m-groups"):  # a group member sees it, never manages it
+        resp, data = await call(client, "acme", method, path, g_peer, body)
         assert resp.status == 403 and data["code"] == "not_manageable", (label, resp.status, data)
 
 
@@ -272,14 +277,15 @@ async def test_other_tenant_identical_404(aiohttp_client, scoped_app):
         assert not await listing(client, "globex", kind, visitor) & {"acme-only"}
     sid = ids[("acme", "acme-only")]
     for label, method, path, body in manage_calls(ids, name="m-tenant"):
-        name = "acme-only"
-        real = path.replace("m-tenant", name).replace(ids[("acme", "m-tenant")], sid)
-        ghost = path.replace("m-tenant", "ghost-x").replace(ids[("acme", "m-tenant")], str(uuid.uuid4()))
+        real = path.replace("m-tenant", "acme-only").replace(ids[("acme", "m-tenant")], sid)
+        ghost_id = str(uuid.uuid4())
+        ghost = path.replace("m-tenant", "ghost-x").replace(ids[("acme", "m-tenant")], ghost_id)
         a, a_body = await call(client, "globex", method, real, visitor, body)
         b, b_body = await call(client, "globex", method, ghost, visitor, body)
         assert a.status == b.status == 404, (label, a.status, b.status)
-        norm = lambda d, n: repr(d).replace(n, "X")  # noqa: E731
-        assert norm(a_body, name) == norm(b_body, "ghost-x").replace(sid, "X") or a_body.get("code") == b_body.get("code")
+        norm_a = repr(a_body).replace("acme-only", "X").replace(sid, "X")
+        norm_b = repr(b_body).replace("ghost-x", "X").replace(ghost_id, "X")
+        assert norm_a == norm_b, (label, a_body, b_body)
 
 
 async def test_tenant_mismatch_403_before_record_access(aiohttp_client, scoped_app):
