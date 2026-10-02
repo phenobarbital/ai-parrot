@@ -87,6 +87,12 @@ Remember: Respond in a way that sounds natural when spoken aloud."""
 # inherits it via AbstractBot, so its capabilities (and cooperative __init__)
 # remain in the MRO. Listing it again before BaseBot makes the C3 linearization
 # impossible (an ancestor cannot precede its descendant) → TypeError on import.
+async def _run_gated(tool: Any, arguments: Dict[str, Any]) -> Any:
+    """Run ``tool`` through its gated public entry (``run``: scope gate + approval, fail closed), never ``_execute``."""
+    runner = getattr(tool, "run", None)
+    return await (runner(**arguments) if callable(runner) else tool._execute(**arguments))
+
+
 class VoiceBot(A2AEnabledMixin, BaseBot):
     """
     Bot with native voice interaction capabilities.
@@ -476,14 +482,14 @@ class VoiceBot(A2AEnabledMixin, BaseBot):
         for tool in self._voice_tools:
             if getattr(tool, "name", None) == tool_name:
                 if hasattr(tool, "_execute"):
-                    return await tool._execute(**arguments)
+                    return await _run_gated(tool, arguments)
                 elif callable(tool):
                     return await tool(**arguments)
 
         # Search in tool_manager
         if self.tool_manager:
             if tool := self.tool_manager.get_tool(tool_name):
-                return await tool._execute(**arguments)
+                return await _run_gated(tool, arguments)
 
         raise ValueError(f"Tool '{tool_name}' not found")
 

@@ -204,3 +204,39 @@ async def test_scope_error_is_structured_tool_result():
     assert result.status == "error"
     assert result.metadata["error_code"] == "tool_scope_unavailable"
     assert result.metadata["reason"] == "host_tenant_mismatch" and result.metadata["error_type"] == "ToolScopeUnavailable"
+
+
+async def test_run_is_gated_like_execute(host_plugins):  # noqa: F811
+    """``tool.run`` (raw result, no ToolResult) must not bypass the scope gate or the approval token."""
+    probe = _probe()
+    tool = probe.ProbeTool()
+    for reason in ("no_context", "no_scope", "no_tenant", "tenant_mismatch"):
+        token = _bind_for(reason)
+        try:
+            with pytest.raises(ToolScopeUnavailable) as exc:
+                await tool.run(value="x")
+        finally:
+            _current_ctx.reset(token)
+        assert exc.value.reason == reason
+    assert probe.COUNTERS["executed"] == 0
+    token = _bind(_Scope())
+    try:
+        with pytest.raises(PermissionError):                      # in scope, but a write without an approval token
+            await tool.run(value="x")
+        with _approved_call(tool, {"value": "x"}):
+            assert await tool.run(value="x") == {"ok": True}
+    finally:
+        _current_ctx.reset(token)
+    assert probe.COUNTERS["executed"] == 1
+
+
+async def test_voicebot_execute_tool_is_gated(host_plugins):  # noqa: F811
+    """VoiceBot dispatches tools through ``run`` (gated), never ``_execute`` directly."""
+    voice = pytest.importorskip("parrot.bots.voice")
+    probe = _probe()
+    bot = object.__new__(voice.VoiceBot)
+    bot._voice_tools = [probe.ProbeTool()]
+    bot.tool_manager = None
+    with pytest.raises(ToolScopeUnavailable):
+        await bot.execute_tool("tp_probe_tool", {"value": "x"})
+    assert probe.COUNTERS["executed"] == 0

@@ -129,6 +129,20 @@ def enforce_scope_and_approval(tool: "AbstractTool", kwargs: Dict[str, Any]) -> 
     return check_approval(tool, kwargs)
 
 
+def require_run_gate(tool: "AbstractTool", kwargs: Dict[str, Any]) -> None:
+    """The gates of ``execute`` for a caller that bypasses it (``tool.run`` / direct dispatch): raise on refusal.
+
+    Raises:
+        ToolScopeUnavailable: a tenant-bound tool with no valid scope.
+        PermissionError: a confirmation-enforced write without an approval token.
+    """
+    if is_tenant_bound(tool):
+        require_tool_scope(tool_name=tool.name)
+    refused = check_approval(tool, kwargs)
+    if refused is not None:
+        raise PermissionError(refused.error)
+
+
 async def pre_execute_refusal(
     tool: "AbstractTool", kwargs: Dict[str, Any], pctx: Any, resolver: Any
 ) -> Optional["ToolResult"]:

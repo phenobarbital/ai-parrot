@@ -1216,6 +1216,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         Public alias for executing the tool directly without the ToolResult wrapper.
         Provides a direct way to get raw results instead of calling _execute().
         """
+        gates.require_run_gate(self, kwargs)
         return await self._execute(*args, **kwargs)
 
     # Utility methods for file handling (inherited from BaseAbstractTool)
