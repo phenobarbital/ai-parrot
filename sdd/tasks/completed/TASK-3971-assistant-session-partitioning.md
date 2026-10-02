@@ -274,10 +274,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Assistant partition = `"<tenant|->:<user_id>"` (`_assistant_partition`). `session[SESSION_KEY]` is now a mapping
+`{partition: {"instance", "session_id"}}` (a non-mapping / malformed entry is ignored; a request reads and writes only its own
+partition); the app cache is keyed `(tenant|-, user_id, instance_name)` and each instance records its partition (a mismatch is a
+miss, so a tampered session / cache cannot reach another partition's instance); the toolset is built per instance; instances are
+built with `chatbot_id=f"agent_studio:{tenant|-}"` (tenant-qualified `memory_key_id`) and `bot.ask(question, user_id=…, session_id=
+<partition conversation id>)` passes the identity explicitly. `DELETE` pops only the caller's partition entry (the key disappears
+when it was the last) and cleans that instance once; `cleanup_studio_assistants(app)` is an `on_cleanup` hook appended once per
+app by `setup_studio_routes` (every host mode). An opted-in caller with no tenant now gets 422 `tenant_required` on POST and
+DELETE before any instance is touched (it used to surface as 500 `build_failed`).
+Mutations RED (restored): tenant out of the partition key; `chatbot_id` removed; explicit `user_id`/`session_id` removed; DELETE pops
+the whole mapping; recorded-partition check removed; tenant-required check; hook registration; app cleanup not awaited; DELETE cleanup.
+Tests: `test_assistant_partition.py` (8, one persistent real `SessionData` per user, real resolver, real Postgres pool).
+`test_meta_agent.py`: the fake assistant's `ask` accepts the new explicit kwargs. Server suite vs baseline-package: 0 new.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `_get_or_create_assistant(session, *, api_key, identity=None)` (identity defaults to the anonymous
+partition so the FEAT-621 toolset test still calls it bare). The ledger could not be written (read-only shared ledger).

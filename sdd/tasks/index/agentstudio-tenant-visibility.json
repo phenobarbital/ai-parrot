@@ -361,7 +361,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -372,9 +372,10 @@
       "parallelism_notes": "Uses _scope()/_opted_in/_tenant semantics from TASK-3959 (_base.py); serialised after TASK-3970 on studio/meta_agent.py (same file); its one hook registration in studio/__init__.py follows TASK-3957/05 (transitive via TASK-3970 → TASK-3964 → TASK-3960).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3971-assistant-session-partitioning.md",
-      "wave_label": "W3.6"
+      "completed_at": "2026-10-02T15:47:32+00:00",
+      "file": "sdd/tasks/completed/TASK-3971-assistant-session-partitioning.md",
+      "wave_label": "W3.6",
+      "verification": "verified"
     },
     {
       "id": "TASK-3972",
