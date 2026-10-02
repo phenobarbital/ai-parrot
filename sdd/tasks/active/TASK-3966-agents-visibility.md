@@ -125,6 +125,7 @@ class StudioAgentReloadHandler              # :443 ; post :450 ; result = await 
 Check order per addressed route: (automatic `_studio_gate`) → partition/`StudioTenantRequired` → lookup → `can_see` else `_not_found` → `can_manage` else 403 → `_require_author` where the row says so → write with `authorized_version`.
 
 ### Key Constraints
+- **Request fields (TASK-3964 review)**: TASK-3964 deliberately does NOT add `visibility`/`allowed_groups` to `CreateAgentRequest` (no handler read them, they would have been silently dropped). THIS task adds `visibility: Literal["private", "tenant", "groups"] = "private"` and `allowed_groups: list[str] = Field(default_factory=list)` to `CreateAgentRequest` in `models.py` together with the agents `POST` handler code that reads and stamps them (add `models.py` to this task's files if missing).
 - 404 body identical to absent (AC5); 409 `name_taken` body non-enumerating (AC11); 403 for visible-not-manageable (AC6) incl. reload when opted in.
 - Legacy path: FEAT-467 behaviour except the documented changes (`name_taken`, additive fields) — AC3.
 - `StudioStaleAuthorization` ⇒ re-read, re-authorise and retry once, then 409 `version_conflict` (X6).

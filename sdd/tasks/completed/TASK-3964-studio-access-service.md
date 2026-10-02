@@ -485,8 +485,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 5.5), single-task mode
+**Date**: 2026-10-01
+**Notes**: Implemented access.py, `_base.py` (`_studio_partition` override, `_access`, `_check_record_access`, `_tenant_required`), `VisibilityUpdateRequest`, and test_access.py. Review fixes: (1) `visibility`/`allowed_groups` are NOT added to `CreateAgentRequest`/`SkillPublishRequest` here (no handler reads them until W3.1/W3.3; TASK-3966/TASK-3968 notes now say they add them with the handler code); (2) legacy lookups fail closed with HTTP 503 `lookup_unavailable` on a DB error (never 404); `model.Meta.connection` is the class-attribute pattern shared by all FEAT-467 handlers (pre-existing, kept); (3) `stamp()` raises ValueError on an empty user_id; (4) request-level tests for `_access`/`_check_record_access` with the real default resolver and a real session; skill store-row + tenant isolation tests. 403 body code: `forbidden`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: request-model field pairs on CreateAgentRequest/SkillPublishRequest relocated back to TASK-3966/TASK-3968 (owner decision after review).
