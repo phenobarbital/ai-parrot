@@ -30,7 +30,6 @@ from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.infographic_toolkit import InfographicToolkit
 from parrot.tools.resolver import get_toolkit_resolver
-from parrot.tools.server_params import constructor_server_params
 from parrot.tools.tooling_policy import (
     TenantToolingRefused,
     ToolingSubject,
@@ -40,6 +39,7 @@ from parrot.tools.toolkit import AbstractToolkit
 from pydantic import BaseModel, Field, ValidationError
 
 from ._base import StudioBaseView, resolve_safe_path
+from ._assign_params import _ServerManagedAssignMixin, _ToolkitAssignError
 from .agents import _StudioAgentsMixin
 from .models import StudioError
 
@@ -74,18 +74,6 @@ class ToolkitAssignRequest(BaseModel):
 
     slug: str
     params: dict[str, Any] = Field(default_factory=dict)
-
-
-class _ToolkitAssignError(Exception):
-    """Raised by the per-toolkit assignment helpers; mapped to a response
-    by the handler."""
-
-    def __init__(self, status: int, code: str, message: str, details: dict | None = None) -> None:
-        self.status = status
-        self.code = code
-        self.message = message
-        self.details = details
-        super().__init__(message)
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +191,7 @@ def _validate_wiki_storage_dir(raw: Path) -> Path:
 
 @is_authenticated()
 @user_session()
-class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
+class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, StudioBaseView):
     """``/api/v1/astudio/toolkits/{slug}/schema`` and
     ``/api/v1/astudio/agents/{name}/toolkits``.
 
@@ -448,22 +436,6 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         known = _resolve_toolkit_class(slug)
         if known is not None:
             self._server_managed_inputs(known, params)
-
-    def _server_managed_inputs(self, cls: type, params: dict) -> dict:
-        """Constructor values the server fills (``source="app"`` from ``request.app``); refuses a client value (422)."""
-        declared = getattr(cls, "server_managed_params", None) or {}
-        sent = sorted(set(params) & set(declared))
-        if sent:
-            raise _ToolkitAssignError(
-                422, "server_managed", f"Server-managed parameters cannot be set: {', '.join(sent)}",
-                details={"params": sent},
-            )
-        app = self.request.app
-        return {
-            name: app[declared[name].key]
-            for name in constructor_server_params(cls)
-            if declared[name].source == "app" and app.get(declared[name].key) is not None
-        }
 
     def _assign_generic(self, bot, slug: str, params: dict) -> tuple[list[str], dict]:
         cls = _resolve_toolkit_class(slug)

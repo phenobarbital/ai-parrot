@@ -35,6 +35,7 @@ from parrot.tools.toolkit import AbstractToolkit
 from pydantic import ValidationError
 
 from .._base import StudioBaseView
+from .._assign_params import _ServerManagedAssignMixin, _ToolkitAssignError
 from ..access import StudioTenantRequired
 from ..agents import _StudioAgentsMixin
 from ..byok import resolve_user_api_key  # re-exported: tests patch ``testing.resolve_user_api_key``
@@ -198,7 +199,7 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
 
 @is_authenticated()
 @user_session()
-class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBaseView):
+class StudioToolAssignHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, _StudioTestingMixin, StudioBaseView):
     """``POST /api/v1/astudio/agents/{name}/tools`` — assign tools/toolkits.
 
     Mutates the LIVE agent instance's ``tool_manager`` (shared-instance
@@ -251,6 +252,11 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
         if (refused := await self._attach_refusal(assign_request)) is not None:
             return refused  # the tenant policy answers before any live-instance lookup
 
+        try:  # 422 server_managed, same as /toolkits: a refused request registers nothing
+            managed = self._managed_toolkit_params(assign_request.toolkits, _resolve_registry_class)
+        except _ToolkitAssignError as exc:
+            return self._assign_refusal(exc)
+
         manager = self._manager()
         if manager is None:
             return self._error("BotManager unavailable.", status=503, code="unavailable")
@@ -268,13 +274,13 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
             after = set(bot.tool_manager.list_tools())
             registered_names |= after - before
 
-        for entry in assign_request.toolkits:
+        for entry, params in zip(assign_request.toolkits, managed):
             cls = _resolve_registry_class(entry.slug)
             if cls is None or not (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
                 errors.append({"slug": entry.slug, "error": "Unknown toolkit."})
                 continue
             try:
-                registered = bot.tool_manager.register_toolkit(cls, **entry.params)
+                registered = bot.tool_manager.register_toolkit(cls, **params)
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.error(
                     "Studio: failed to register toolkit '%s' on '%s': %s",
