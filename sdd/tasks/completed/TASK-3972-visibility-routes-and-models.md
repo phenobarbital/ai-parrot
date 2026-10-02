@@ -217,10 +217,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Registered `PATCH /agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility` in `setup_studio_routes`
+(via the registrar; skills visibility before `/skills/{id}`, after `/skills/resync`). The three existing test modules no longer mount the handlers
+by hand (they would now clash) — every visibility PATCH test goes through `setup_studio_routes`. New `test_visibility_routes.py` (7 tests: mounted, prefix,
+order, resolve, request models, 403/404/200 across agents+drafts+skills on a real Postgres + real resolver).
+**C1 (owner decision)**: the 403 of `_check_record_access` (visible but not manageable) is now `not_manageable` (was `forbidden`) on EVERY Studio route
+(all route through that helper); tests updated (test_access, derivative_gates, drafts_db_mode). Legacy `_require_owner` (non-Studio FEAT-467 rows) is unchanged.
+Mutations (re-applied by editing): skills visibility after `/skills/{id}` ⇒ `test_skill_route_order` RED; agents route removed ⇒ 3 tests RED.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (tramo C)
+**Date**: 2026-10-02
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: touched `_base/_storage.py` + 3 existing test files (C1 code rename, owner-requested).

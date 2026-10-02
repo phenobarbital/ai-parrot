@@ -384,7 +384,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -398,9 +398,10 @@
       "parallelism_notes": "Registers StudioAgentVisibilityHandler (TASK-3966, agents.py), StudioDraftVisibilityHandler (TASK-3967, drafts.py), StudioSkillVisibilityHandler (TASK-3968, skills_catalog.py); edits studio/__init__.py after TASK-3960 (/me) and TASK-3971 (assistant cleanup hook) on the same file.",
       "assigned_to": null,
       "started_at": "2026-10-02T16:37:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3972-visibility-routes-and-models.md",
-      "wave_label": "W4.1"
+      "completed_at": "2026-10-02T16:37:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3972-visibility-routes-and-models.md",
+      "wave_label": "W4.1",
+      "verification": "verified"
     },
     {
       "id": "TASK-3973",
