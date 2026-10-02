@@ -602,6 +602,20 @@ class BaseWikiStore(ABC):
     @abstractmethod
     async def broken_edges(self) -> list[dict[str, Any]]: ...
 
+    async def rebuild_index(self) -> dict[str, Any]:
+        """Rebuild derived search indexes and repair ``meta``.
+
+        Default is a no-op for backends without derived indexes.
+
+        Returns:
+            ``{"rebuilt": [<index names>]}``.
+        """
+        return {"rebuilt": []}
+
+    async def index_drift(self) -> dict[str, int]:
+        """Return ``{index_name: row_count_delta}`` for drifted indexes; ``{}`` when clean."""
+        return {}
+
     @abstractmethod
     async def missing_bodies(self) -> list[str]: ...
 
@@ -2366,6 +2380,45 @@ class SQLiteWikiStore(BaseWikiStore):
         async with self._read() as conn:
             async with conn.execute("SELECT concept_id FROM pages WHERE body = ''") as cur:
                 return [row["concept_id"] for row in await cur.fetchall()]
+
+    async def rebuild_index(self) -> dict[str, Any]:
+        """Run FTS5 'rebuild' on pages_fts and symbols_fts and re-stamp schema_version.
+
+        Returns:
+            ``{"rebuilt": ["pages_fts", "symbols_fts"]}``.
+        """
+        rebuilt: list[str] = []
+        async with self._write("rebuild_index") as conn:
+            for table in ("pages_fts", "symbols_fts"):
+                await conn.execute(f"INSERT INTO {table}({table}) VALUES('rebuild')")
+                rebuilt.append(table)
+            await conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (SCHEMA_VERSION,),
+            )
+        return {"rebuilt": rebuilt}
+
+    async def index_drift(self) -> dict[str, int]:
+        """Compare content-table rows with indexed FTS documents.
+
+        The FTS tables are external-content, so ``COUNT(*)`` on them reads the
+        content table and can never drift; the ``<fts>_docsize`` shadow table
+        holds one row per actually-indexed document and is what is compared.
+
+        Returns:
+            ``{fts_table: content_count - indexed_count}`` for non-zero deltas only.
+        """
+        drift: dict[str, int] = {}
+        async with self._read() as conn:
+            for content, fts in (("pages", "pages_fts"), ("symbols", "symbols_fts")):
+                async with conn.execute(f"SELECT COUNT(*) FROM {content}") as cur:
+                    n_content = (await cur.fetchone())[0]
+                async with conn.execute(f"SELECT COUNT(*) FROM {fts}_docsize") as cur:
+                    n_index = (await cur.fetchone())[0]
+                if n_content != n_index:
+                    drift[fts] = n_content - n_index
+        return drift
 
 
 # Backwards-compatible alias — the SQLite plane was the only backend
