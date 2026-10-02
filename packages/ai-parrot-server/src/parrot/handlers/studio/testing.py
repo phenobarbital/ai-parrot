@@ -19,6 +19,7 @@ stashed in the caller's session and reused across calls.
 from __future__ import annotations
 
 import inspect
+import time
 import uuid
 from typing import Any
 
@@ -32,7 +33,9 @@ from pydantic import BaseModel, Field, ValidationError
 from ._base import StudioBaseView
 from .agents import _StudioAgentsMixin
 from .byok import resolve_user_api_key
+from .access import _store_record
 from .models import StudioError
+from .storage.models import StudioAgentKey, StudioNotFound, StudioStorageUnavailable
 
 SESSION_PREFIX = "_studio_test:"
 
@@ -230,9 +233,16 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
     call); DELETE tears the session instance down.
     """
 
+    _dispatch = _StudioAgentsMixin._dispatch  # one database/filesystem switch for every Studio view
+
     # -- POST: query the test agent (test/ask) --------------------------
 
     async def post(self):
+        """Query the test instance: Studio rows through ``manager.studio.use()`` (database mode), else legacy."""
+        gate = lambda: self._pbac_gate("testing", "astudio:testing:ask")  # noqa: E731
+        return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+    async def _legacy_post(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("testing", "astudio:testing:ask")) is not None:
             return denied
@@ -262,11 +272,15 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
         except RuntimeError as exc:
             return self._error(str(exc), status=503, code="unavailable")
 
+        return await self._ask_response(bot, agent_name, ask_request)
+
+    async def _ask_response(self, bot, agent_name: str, ask_request: TestAskRequest):
+        """Apply BYOK, run one ask on ``bot`` and shape the JSON response (shared by both backends)."""
         if ask_request.use_byok:
             await self._maybe_apply_byok(bot)
 
         try:
-            self.request.session = session
+            self.request.session = await self._resolve_session()
             async with bot.session(request=self.request, app=self.request.app) as live_bot:
                 response = await live_bot.ask(question=ask_request.query)
         except Exception as exc:  # pylint: disable=broad-except
@@ -284,6 +298,55 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
                 "metadata": metadata,
             }
         )
+
+    async def _parse_ask(self):
+        """``(TestAskRequest, None)`` or ``(None, 400 response)``."""
+        try:
+            payload = await self.request.json()
+        except Exception:  # pylint: disable=broad-except
+            return None, self._error("Invalid JSON body.", status=400, code="invalid_json")
+        try:
+            return TestAskRequest(**(payload or {})), None
+        except ValidationError as exc:
+            return None, self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
+
+    async def _db_post(self, storage, part):
+        """Studio row → the ask runs inside ``manager.studio.use()`` (lease held for the whole ask, §2.8/§2.7a)."""
+        agent_name = self.request.match_info.get("name")
+        rec = await storage.services.agents.get(part, agent_name) if agent_name else None
+        if rec is None and part.tenant is None:
+            return await self._legacy_post()
+        if not agent_name:
+            return self._error("Agent name is required.", status=400, code="missing_name")
+        ask_request, bad = await self._parse_ask()
+        if bad is not None:
+            return bad
+        if rec is None or not (await self._access()).can_see(_store_record("agent", rec.agent_id, rec)):
+            return self._not_found("agent", agent_name)
+        manager = self._manager()
+        if manager is None or manager.studio is None:
+            raise StudioStorageUnavailable("studio runtime is not installed")
+        key = StudioAgentKey(part.tenant, agent_name)
+        session = await self._resolve_session()
+        sid = self._studio_session_id(session, key)
+        try:
+            async with manager.studio.use(key, session_id=sid, request=self.request) as bot:
+                return await self._ask_response(bot, agent_name, ask_request)
+        except StudioNotFound:
+            return self._not_found("agent", agent_name)
+        except PermissionError as exc:   # AgentAccessDenied (PBAC deny, raised before any build)
+            return self._error(str(exc), status=403, code="access_denied")
+
+    @staticmethod
+    def _studio_session_id(session: Any, key: StudioAgentKey) -> str:
+        """The caller's test session id for ``key`` (``studio_test:<qualified>``); created once when absent."""
+        skey = f"studio_test:{key.qualified}"
+        sid = session.get(skey) if session is not None else None
+        if not sid:
+            sid = uuid.uuid4().hex[:12]
+            if session is not None:
+                session[skey] = sid
+        return sid
 
     async def _maybe_apply_byok(self, bot) -> None:
         """Swap ``bot.llm`` for a BYOK-keyed client, when a key is stored.
@@ -310,6 +373,29 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
     # -- DELETE: stop the test session -----------------------------------
 
     async def delete(self):
+        """End the test session: a Studio session entry is evicted from the runtime cache, else legacy."""
+        return await self._dispatch(self._legacy_delete, self._db_delete)
+
+    async def _db_delete(self, storage, part):
+        """Pop the Studio session id and retire that session entry; no Studio session → the legacy teardown."""
+        agent_name = self.request.match_info.get("name")
+        session = await self._resolve_session()
+        key = StudioAgentKey(part.tenant, agent_name) if agent_name else None
+        sid = session.pop(f"studio_test:{key.qualified}", None) if key and session is not None else None
+        if not sid:
+            if part.tenant is None:
+                return await self._legacy_delete()
+            return self.json_response({"message": f"No active test session for '{agent_name}'"}, status=200)
+        runtime = getattr(self._manager(), "studio", None)
+        if runtime is not None:
+            entry = runtime._cache.session(key.qualified, sid)  # pylint: disable=protected-access
+            if entry is not None:
+                runtime._cache.retire(entry, now=time.monotonic())  # pylint: disable=protected-access
+        return self.json_response(
+            {"message": f"Test session for '{agent_name}' stopped", "agent_name": agent_name}
+        )
+
+    async def _legacy_delete(self):
         agent_name = self.request.match_info.get("name")
         if not agent_name:
             return self._error("Agent name is required.", status=400, code="missing_name")
