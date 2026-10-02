@@ -9,6 +9,7 @@ from parrot.security.credentials_utils import decrypt_credential, encrypt_creden
 from parrot.security.vault_utils import get_vault_keyring
 
 from .repositories import _fetch_all, _fetch_one
+from .vault_targets import QUARANTINE_MARK
 
 logger = logging.getLogger("Parrot.AgentStudio.Storage")
 
@@ -21,8 +22,10 @@ _PUT_SQL = (
     "RETURNING provider"
 )
 _DELETE_SQL = "DELETE FROM navigator.ai_user_llm_keys WHERE user_id = $1 AND provider = $2 RETURNING provider"
+# Vault quarantine renames a row's ``provider`` with this marker; such rows are not live keys.
 _LIST_SQL = (
-    "SELECT provider, masked, created_at FROM navigator.ai_user_llm_keys WHERE user_id = $1 ORDER BY provider"
+    "SELECT provider, masked, created_at FROM navigator.ai_user_llm_keys "
+    "WHERE user_id = $1 AND position($2 in provider) = 0 ORDER BY provider"
 )
 
 
@@ -58,7 +61,7 @@ class PgUserLLMKeyStore:
     async def list_masked(self, user_id: Any) -> list[dict[str, Any]]:
         """Masked previews (no decryption), in ``StudioKeysHandler.get`` item shape."""
         async with self._pool.acquire() as conn:
-            rows = await _fetch_all(conn, _LIST_SQL, str(user_id))
+            rows = await _fetch_all(conn, _LIST_SQL, str(user_id), QUARANTINE_MARK)
         return [
             {"provider": r["provider"], "masked": r["masked"], "created_at": r["created_at"].isoformat()}
             for r in rows
@@ -66,6 +69,7 @@ class PgUserLLMKeyStore:
 
 
 _REGISTERED: "PgUserLLMKeyStore | None" = None
+STUDIO_BYOK_STORE_APP_KEY = "studio_byok_store"
 
 
 def register_byok_store(store: "PgUserLLMKeyStore | None") -> None:
@@ -75,10 +79,23 @@ def register_byok_store(store: "PgUserLLMKeyStore | None") -> None:
     set_user_llm_key_store(store)
 
 
+def install_byok_store(app: Any, pool: Any) -> PgUserLLMKeyStore:
+    """Startup: build the store over ``pool``, remember it on ``app`` and register it with the core resolver."""
+    store = PgUserLLMKeyStore(pool)
+    app[STUDIO_BYOK_STORE_APP_KEY] = store
+    register_byok_store(store)
+    return store
+
+
+def release_byok_store(store: "PgUserLLMKeyStore | None") -> None:
+    """Unregister ``store`` from the core resolver, but only while it is still the registered one."""
+    if store is not None and _REGISTERED is store:
+        register_byok_store(None)
+
+
 def get_byok_store(app: Any) -> PgUserLLMKeyStore:
-    """The store over ``app['database']``, registered with the core resolver (reused while the pool is unchanged)."""
-    store = _REGISTERED
-    if store is None or store._pool is not app["database"]:
-        store = PgUserLLMKeyStore(app["database"])
-        register_byok_store(store)
+    """The store registered for ``app`` at startup (``ensure_studio_storage``); never creates one lazily."""
+    store = app.get(STUDIO_BYOK_STORE_APP_KEY)
+    if store is None:
+        raise RuntimeError("BYOK_STORE=postgres but no Postgres BYOK store was registered at startup")
     return store

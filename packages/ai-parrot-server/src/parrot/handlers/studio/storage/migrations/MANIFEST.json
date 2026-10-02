@@ -1,6 +1,5 @@
 {
-  "required": 5,
-  "required_phase2": 8,
+  "required": 8,
   "migrations": [
     {
       "version": 1,

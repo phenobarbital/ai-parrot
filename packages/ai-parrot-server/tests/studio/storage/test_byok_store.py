@@ -98,12 +98,21 @@ async def test_documentdb_ciphertext_copied_verbatim_decrypts(pool):
     assert await PgUserLLMKeyStore(pool).get("u1", "openai") == KEY
 
 
-async def test_resolve_user_api_key_reads_postgres_without_documentdb(pool):
+async def test_startup_registers_byok_store_for_core_resolver_without_keys_call(pool, monkeypatch):
+    """D4: ``ensure_studio_storage`` registers the store; the real core factory/resolver finds the key, no /keys call."""
+    from parrot.auth.broker import CredentialResolverFactory
+    from parrot.handlers.studio.storage import backend as backend_module
+
+    monkeypatch.setenv("PARROT_STUDIO_STORAGE", "database")
+    await PgUserLLMKeyStore(pool).put("u1", "anthropic", KEY)          # a sealed key already sits in Postgres
+    register_byok_store(None)                                          # nothing registered yet
     app = web.Application()
     app["database"] = pool
-    await PgUserLLMKeyStore(pool).put("u1", "anthropic", KEY)
-    assert await resolve_user_api_key(app, "u1", "Anthropic") == KEY
-    assert await resolve_user_api_key(app, "u1", "openai") is None
+    assert (await backend_module.ensure_studio_storage(app)).backend == "database"
+    resolver = CredentialResolverFactory().build_user_llm_key_resolver()
+    assert await resolver.resolve("Anthropic", "u1") == KEY
+    assert await resolver.resolve("openai", "u1") is None
+    assert await resolve_user_api_key(app, "u1", "anthropic") == KEY
 
 
 async def test_resolver_fails_closed_when_postgres_store_unregistered(pool):
@@ -170,22 +179,16 @@ async def test_keys_handler_round_trip_through_postgres(aiohttp_client, pool):
     assert await PgUserLLMKeyStore(pool).get("u1", "anthropic") is None
 
 
-def _state(upto: int):
-    from parrot.handlers.studio.storage import migrate
+async def test_list_masked_excludes_quarantined_rows(pool):
+    """A quarantine run renames ``provider`` with ``#quarantined:<run>``; such rows are not live keys."""
+    from parrot.handlers.studio.storage.vault_targets import QUARANTINE_MARK
 
-    manifest = {m.version: m.checksum for m in migrate.list_migrations()}
-    return migrate.LedgerState(True, {v: manifest[v] for v in range(1, upto + 1)}, 170000)
-
-
-@pytest.mark.parametrize("switch", ["BYOK_STORE", "VAULT_STORE", "TOOLKIT_OVERRIDES_STORE"])
-def test_phase2_switch_raises_required_schema_version(monkeypatch, switch):
-    from parrot.handlers.studio.storage import backend as be
-
-    for name in ("BYOK_STORE", "VAULT_STORE", "TOOLKIT_OVERRIDES_STORE"):
-        monkeypatch.delenv(name, raising=False)
-    assert be._required_version() == 5
-    assert be._resolve("database", object(), _state(5)) == ("database", None)
-    monkeypatch.setenv(switch, "postgres")
-    assert be._required_version() == 8
-    backend, reason = be._resolve("database", object(), _state(6))
-    assert backend == "unavailable" and "missing 7" in reason and "missing 8" in reason
+    store = PgUserLLMKeyStore(pool)
+    await store.put("u1", "anthropic", KEY)
+    await store.put("u1", "openai", "sk-openai-5678")
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE navigator.ai_user_llm_keys SET provider = provider || $1 WHERE user_id = 'u1' AND provider = 'openai'",
+            QUARANTINE_MARK + "run1",
+        )
+    assert [k["provider"] for k in await store.list_masked("u1")] == ["anthropic"]

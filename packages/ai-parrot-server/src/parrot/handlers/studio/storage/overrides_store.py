@@ -89,19 +89,24 @@ class PgToolkitOverrideStore:
         return latest.isoformat() if latest is not None else ""
 
 
-def register_override_store(store: "PgToolkitOverrideStore | None") -> None:
-    """Called by the server at startup when TOOLKIT_OVERRIDES_STORE=postgres; read by ``ToolkitConfigService``."""
-    set_toolkit_override_store(store)
-
-
 _REGISTERED: "PgToolkitOverrideStore | None" = None
 
 
-def get_override_store(pool: Any) -> PgToolkitOverrideStore:
-    """The store over ``pool``, registered with ``ToolkitConfigService`` (reused while the pool is unchanged)."""
+def register_override_store(store: "PgToolkitOverrideStore | None") -> None:
+    """Called by the server at startup when TOOLKIT_OVERRIDES_STORE=postgres; read by ``ToolkitConfigService``."""
     global _REGISTERED
-    store = _REGISTERED
-    if store is None or store._pool is not pool:
-        store = _REGISTERED = PgToolkitOverrideStore(pool)
+    _REGISTERED = store
+    set_toolkit_override_store(store)
+
+
+def get_override_store(pool: Any) -> PgToolkitOverrideStore:
+    """A new store over ``pool``, registered with ``ToolkitConfigService`` (one per app)."""
+    store = PgToolkitOverrideStore(pool)
     register_override_store(store)
     return store
+
+
+def release_override_store(store: "PgToolkitOverrideStore | None") -> None:
+    """Unregister ``store`` from ``ToolkitConfigService``, but only while it is still the registered one."""
+    if store is not None and _REGISTERED is store:
+        register_override_store(None)

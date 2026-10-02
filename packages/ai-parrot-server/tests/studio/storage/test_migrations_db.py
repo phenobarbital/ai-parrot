@@ -170,6 +170,25 @@ async def test_migrations_detect_altered_and_missing(studio_pool) -> None:
     assert await _run(pool, "DELETE FROM navigator.ai_studio_migrations WHERE version = 99") is None
 
 
+async def test_cli_verifies_and_dry_runs_all_eight_versions(studio_pool, capsys) -> None:
+    """D3: the required schema is 1-8 (phase 2 included); a v5-only database fails ``--verify`` naming 6, 7 and 8."""
+    pool = studio_pool
+    assert STUDIO_SCHEMA_REQUIRED == 8 == max(ALL_VERSIONS)
+    await _empty(pool)
+    assert await asyncio.to_thread(_cli, "--dry-run") == 0
+    assert f"pending: {list(range(1, 9))}" in capsys.readouterr().out
+    await apply_studio_migrations(pool)
+    assert await asyncio.to_thread(_cli, "--verify") == 0
+    assert await _run(pool, "DELETE FROM navigator.ai_studio_migrations WHERE version >= 6") is None
+    capsys.readouterr()
+    assert await asyncio.to_thread(_cli, "--verify") == 1
+    out = capsys.readouterr().out
+    assert all(f"problem: missing {v}" in out for v in (6, 7, 8)) and "missing 5" not in out
+    assert await asyncio.to_thread(_cli, "--dry-run") == 0
+    assert "pending: [6, 7, 8]" in capsys.readouterr().out
+    assert await apply_studio_migrations(pool) == [6, 7, 8]
+
+
 async def _raw_per_file_runner(pool) -> None:
     """The FieldSync path: every packaged file's raw bytes (body + trailer) in one transaction."""
     for mig in list_migrations():

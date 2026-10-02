@@ -40,18 +40,20 @@ All keys are read through `navconfig` (environment variables or the host's `env/
 Each switch is independent. Ciphertexts keep the same format and the same AAD contexts in both stores, so a value
 sealed for DocumentDB opens unchanged from PostgreSQL (this is what makes the copy script a verbatim copy).
 
-A `postgres` value is honoured only when the Studio backend resolved to `database`. Otherwise the startup logs an error
-and that store stays on DocumentDB.
+A `postgres` value requires the Studio backend to resolve to `database`. Otherwise startup **fails** with an error
+naming the switch and the reason (fail closed: a store never silently stays on DocumentDB). The Postgres stores are
+registered in `ensure_studio_storage`, run by the `on_startup` resolve hook that `BotManager.setup()`,
+`setup_registry_only()` and `setup_studio_routes()` all install, so registration does not depend on Studio routes being
+mounted or on any `/keys` call. An `on_cleanup` hook clears the process-global registrations again.
 
 Keyring provisioning stays the host's job and is unchanged: `VAULT_MASTER_KEY_v{N}` and `VAULT_ACTIVE_KEY_ID` in the
 pod environment. Without a keyring, `/keys` and secret writes answer 503 `vault_unavailable`.
 
-**Required schema version.** `STUDIO_SCHEMA_REQUIRED = 5` (migrations 0001-0005) while all three switches are
-`documentdb`; `STUDIO_SCHEMA_REQUIRED_PHASE2 = 8` (migrations 0001-0008) as soon as any one of them is `postgres`.
-Both constants live in `parrot.handlers.studio.storage.migrate` and equal `required` / `required_phase2` of
-`MANIFEST.json`. The startup probe requires every version up to that number to be in the ledger with the manifest
-checksum. **Consequence:** flipping a switch to `postgres` on a database that is still at version 5 makes the probe
-fail, and the whole Studio backend resolves to `unavailable` (503), not only the secrets store. Apply 0006-0008 first.
+**Required schema version.** `STUDIO_SCHEMA_REQUIRED = 8` (migrations 0001-0008) whenever the Studio backend is
+`database`, regardless of the phase-2 switches (phase 2 is part of the release). The constant lives in
+`parrot.handlers.studio.storage.migrate` and equals `required` of `MANIFEST.json`. The startup probe requires every
+version up to 8 to be in the ledger with the manifest checksum; a database still at version 5 resolves to `unavailable`
+(503). Apply 0006-0008 first.
 
 ## Supported PostgreSQL
 
@@ -90,7 +92,7 @@ Format of one file:
 - **Trailer**: after the marker, one `INSERT INTO navigator.ai_studio_migrations (version, name, checksum) ...
   ON CONFLICT (version) DO NOTHING;` that records the file.
 - **Checksum**: sha256 of the body (every byte up to and including the line feed before the marker). The trailer is not
-  hashed. `MANIFEST.json` lists `version`, `name` and `sha256` for every file plus `required` and `required_phase2`;
+  hashed. `MANIFEST.json` lists `version`, `name` and `sha256` for every file plus `required`;
   loading fails if the files, the manifest and the trailers disagree.
 
 Versions must be contiguous from 1. Every file records itself through its own trailer, so the ledger looks the same
@@ -107,12 +109,11 @@ parrot-studio-migrate --dsn "$DSN" --print       # emit the pending files (body 
 parrot-studio-migrate --stamp                    # release tooling, repository checkout only: rewrite trailers + MANIFEST
 ```
 
-- Applying runs **all** pending files, 0006-0008 included. A host that has not opted into phase 2 can still apply them:
-  the tables are inert until a switch is flipped.
+- Applying runs **all** pending files, 0001-0008. The phase-2 tables are inert until a store switch is flipped.
 - `--print` pipes straight into `psql`: `parrot-studio-migrate --dsn "$DSN" --print | psql -1 -v ON_ERROR_STOP=1 "$DSN"`
   (`-1` is what makes each file one transaction; do not drop it).
-- `--verify` checks versions 1-5 against the manifest and flags any recorded version that is unknown or whose checksum
-  drifted. It does **not** require 6-8 to be present. After applying phase 2, confirm with `--dry-run` that nothing is
+- `--verify` checks versions 1-8 against the manifest and flags any missing version, any recorded version that is
+  unknown and any checksum that drifted. After applying phase 2, confirm with `--dry-run` that nothing is
   pending (`pending: []`).
 - A host deploy hook can call `await apply_studio_migrations(pool)` from `parrot.handlers.studio.storage.migrate`
   (also `dry_run=True`). It must never be called from `setup()` or an `on_startup` hook.
@@ -124,8 +125,7 @@ pinned `ai-parrot-server` wheel, or vendor them byte-for-byte into the host's mi
 numbers. Each file must be executed in one transaction, raw bytes, body then trailer. Because each file records itself,
 parrot's probe sees the same ledger with the same checksums whichever runner applied it; never edit a file after
 vendoring (the checksum would drift and the probe would resolve `unavailable`). The phase-2 files 0006-0008 follow the
-same rule: vendor them together with 0001-0005 when the host sets any of the phase-2 switches to `postgres`
-(FieldSync sets all three).
+same rule: vendor them together with 0001-0005: the probe requires all of 0001-0008.
 
 ## Moving existing secrets: `secrets_copy`
 
@@ -154,7 +154,7 @@ exception class only; no value or ciphertext is ever logged. Upserts are idempot
 Requirements and behaviour:
 
 - **Order of operations**: apply migrations 0006-0008 -> run `secrets_copy` -> only then flip the
-  `BYOK_STORE` / `VAULT_STORE` / `TOOLKIT_OVERRIDES_STORE` switch and roll the pods. The probe will not accept the
+  `BYOK_STORE` / `VAULT_STORE` / `TOOLKIT_OVERRIDES_STORE` switch and roll the pods. The probe will not accept the Studio backend
   switch before the schema is at version 8.
 - **Keyring**: a real copy of `--byok` needs the vault keyring in the environment (`VAULT_MASTER_KEY_v{N}`,
   `VAULT_ACTIVE_KEY_ID`) because the script opens each key once, read-only, to derive its `masked` preview. Run it with

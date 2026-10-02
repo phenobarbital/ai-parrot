@@ -57,9 +57,13 @@ def register_vault_store(store: "PgVaultCredentialStore | None") -> None:
 
 
 def get_vault_store(pool: Any) -> PgVaultCredentialStore:
-    """The store over ``pool``, registered with core (reused while the pool is unchanged)."""
-    store = _REGISTERED
-    if store is None or store._pool is not pool:
-        store = PgVaultCredentialStore(pool)
-        register_vault_store(store)
+    """A new store over ``pool``, registered with core (one per app, so an app's cleanup only drops its own)."""
+    store = PgVaultCredentialStore(pool)
+    register_vault_store(store)
     return store
+
+
+def release_vault_store(store: "PgVaultCredentialStore | None") -> None:
+    """Unregister ``store`` from core, but only while it is still the registered one."""
+    if store is not None and _REGISTERED is store:
+        register_vault_store(None)

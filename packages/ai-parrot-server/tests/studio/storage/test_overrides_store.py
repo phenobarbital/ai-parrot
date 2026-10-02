@@ -124,7 +124,8 @@ async def test_startup_registers_store_only_when_switch_is_postgres(pool, monkey
     monkeypatch.setenv("PARROT_STUDIO_STORAGE", "filesystem")
     app3 = web.Application()
     app3["database"] = pool
-    assert (await backend_module.ensure_studio_storage(app3)).backend == "filesystem"
+    with pytest.raises(backend_module.StudioStorageMisconfigured, match="TOOLKIT_OVERRIDES_STORE"):
+        await backend_module.ensure_studio_storage(app3)
     assert toolkit_persistence._PG_OVERRIDES is None
 
 

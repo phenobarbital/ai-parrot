@@ -59,8 +59,9 @@ async def resolve_user_api_key(app: Any, user_id: str, provider: str) -> str | N
     ``api_key=`` into ``LLMFactory.create(...)`` for test/ask runs.
     Delegates to :class:`parrot.auth.broker._UserLLMKeyResolver` (the
     SAME decrypt path this module's own GET uses) — this function takes
-    only ``app`` (no per-request session), so it always reads the
-    DocumentDB durable copy; the session-vault hot copy is a per-request
+    only ``app`` (no per-request session), so it reads the durable store
+    ``BYOK_STORE`` selects (DocumentDB, or the Postgres store registered at
+    startup by ``ensure_studio_storage``); the session-vault hot copy is a per-request
     fast path only reachable from inside a live Studio handler request
     (see :class:`StudioKeysHandler`).
 
@@ -76,10 +77,6 @@ async def resolve_user_api_key(app: Any, user_id: str, provider: str) -> str | N
         ``LLMFactory.create(..., api_key=api_key)``, whose own ``api_key
         =None`` default already falls back to the server's configured key.
     """
-    if byok_store_setting() == "postgres" and app.get("database") is not None:
-        from .storage.byok_store import get_byok_store
-
-        get_byok_store(app)  # registers the Postgres store with the core resolver
     resolver = _UserLLMKeyResolver()
     return await resolver.resolve(provider, user_id)
 

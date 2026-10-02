@@ -224,6 +224,7 @@ def setup_studio_routes(
     install_startup_hook_once(app, reconcile_skills_catalog)
     # Studio storage resolution (FEAT-621 §2.7): memoises ``studio_storage``
     # on the app; installed once per app regardless of the number of prefixes.
-    from .storage.backend import resolve_studio_storage
+    from .storage.backend import install_studio_storage_cleanup, resolve_studio_storage
 
     install_startup_hook_once(app, resolve_studio_storage)
+    install_studio_storage_cleanup(app)  # unregisters the Postgres stores at cleanup

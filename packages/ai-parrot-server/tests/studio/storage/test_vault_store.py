@@ -122,14 +122,14 @@ async def test_startup_registers_store_only_when_switch_is_postgres(pool, monkey
     assert vault_utils._PG_VAULT_STORE is None
 
 
-async def test_startup_does_not_register_when_backend_is_not_database(pool, monkeypatch):
-    """VAULT_STORE=postgres on a host whose studio backend is the filesystem must not wire an unmigrated pool."""
+async def test_startup_fails_closed_when_backend_is_not_database(pool, monkeypatch):
+    """VAULT_STORE=postgres on a host whose studio backend is the filesystem must not stay on DocumentDB."""
     monkeypatch.setenv("VAULT_STORE", "postgres")
     monkeypatch.setenv("PARROT_STUDIO_STORAGE", "filesystem")
     app = web.Application()
     app["database"] = pool
-    storage = await backend_module.ensure_studio_storage(app)
-    assert storage.backend == "filesystem"
+    with pytest.raises(backend_module.StudioStorageMisconfigured, match="VAULT_STORE"):
+        await backend_module.ensure_studio_storage(app)
     assert vault_utils._PG_VAULT_STORE is None
 
 

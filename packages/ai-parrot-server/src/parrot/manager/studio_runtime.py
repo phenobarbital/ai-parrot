@@ -16,7 +16,7 @@ from navconfig import config
 from parrot.auth.agent_guard import enforce_agent_access
 from parrot.registry import agent_registry
 
-from ..handlers.studio.storage.backend import ensure_studio_storage
+from ..handlers.studio.storage.backend import ensure_studio_storage, install_studio_storage_cleanup
 from ..handlers.studio.storage.models import (
     StudioAgentKey,
     StudioAgentSnapshot,
@@ -365,8 +365,9 @@ def add_studio_runtime_hooks(app: "web.Application") -> None:
     if app.get(_HOOKS_KEY):
         return
     app[_HOOKS_KEY] = True
-    app.on_startup.append(install_studio_runtime)
+    app.on_startup.append(install_studio_runtime)  # resolves storage first, which registers the Postgres stores
     app.on_cleanup.append(shutdown_studio_runtime)
+    install_studio_storage_cleanup(app)
 
 
 async def install_studio_runtime(app: "web.Application") -> None:
