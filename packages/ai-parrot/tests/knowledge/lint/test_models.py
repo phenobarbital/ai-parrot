@@ -1,4 +1,5 @@
 """Unit tests for lint engine data models and lazy context (FEAT-625)."""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,4 +1,5 @@
 """Lint engine data models (FEAT-625)."""
+
 from __future__ import annotations
 
 from pathlib import Path

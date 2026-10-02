@@ -1,4 +1,5 @@
 """LintRule protocol and fingerprint helper (FEAT-625)."""
+
 from __future__ import annotations
 
 import hashlib

@@ -1,4 +1,5 @@
 """Per-run lazy cache over the wiki store (FEAT-625)."""
+
 from __future__ import annotations
 
 import logging

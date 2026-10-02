@@ -1,4 +1,5 @@
 """Shared, backend-agnostic lint engine for the wiki graph (FEAT-625)."""
+
 from __future__ import annotations
 
 import importlib
