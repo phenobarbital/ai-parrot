@@ -10,7 +10,7 @@ tags: [wikitoolkit, lint, knowledge-graph, adr, mcp, data-integrity]
 **Feature ID**: FEAT-625
 **Date**: 2026-10-03
 **Author**: Jesus (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -680,7 +680,7 @@ There are no new dependencies. `difflib` from the stdlib covers anything beyond 
 - [x] Stale memory severity — *Resolved in brainstorm*: warning.
 - [x] Run in hook/CI — *Resolved in brainstorm*: in CI (`--fail-on error`); not in the post-commit hook.
 - [x] LLM model and pair cap — *Decided in spec (user deferred to spec)*: the order is `--llm-model` > `WIKI_LINT_LLM` > `WIKI_EXTRACT_LLM` > auto-detect; `LLMFactory.create(temperature=0)`; `--llm-max-pairs` defaults to 50.
-- [ ] LLM contradiction prompt and verdict schema — *Owner: implementer of M7, reviewed by Jesus*
+- [x] LLM contradiction prompt and verdict schema — *Owner: implementer of M7, reviewed by Jesus*: default suggestion
 - [ ] Should the default report dir `<storage_dir>/lint/` be git-ignored, or should it go under `artifacts/logs/`? — *Owner: Jesus* (can be decided during tasks)
 
 ---
