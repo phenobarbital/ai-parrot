@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.auth.confirmation import is_enforced_write_class
 from parrot.clients.factory import LLMFactory
@@ -194,15 +195,9 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
     """
 
     async def _agent_owner(self, name: str):
-        """``(owner, None)`` of a DB or registry agent, or ``(None, 404 response)`` when the agent is unknown."""
-        db_agent = await self._get_db_agent(name)
-        if db_agent is not None:
-            return (str(db_agent.created_by) if db_agent.created_by is not None else None), None
-        registry = self._registry()
-        meta = registry.get_metadata(name) if registry is not None else None
-        if meta is None:
-            return None, self._error(f"Agent '{name}' not found.", status=404, code="not_found")
-        return self._registry_agent_owner(meta), None
+        """``(owner, None)`` of the agent, or ``(None, response)`` (404 unknown/invisible, 403 not manageable)."""
+        owner = await self._assign_owner(name)
+        return (None, owner) if isinstance(owner, web.Response) else (owner, None)
 
     async def _attach_refusal(self, assign_request):
         """422 ``tooling_not_permitted`` for the first tool/toolkit slug the tenant policy refuses (phase ``attach``).
@@ -240,16 +235,16 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
         user = await self._get_user()
         self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
 
+        if (refused := await self._attach_refusal(assign_request)) is not None:
+            return refused  # the tenant policy answers before any live-instance lookup
+
         manager = self._manager()
         if manager is None:
             return self._error("BotManager unavailable.", status=503, code="unavailable")
 
-        bot = await manager.get_bot(name)
+        bot = await self._live_bot(manager, name)
         if bot is None:
             return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
-
-        if (refused := await self._attach_refusal(assign_request)) is not None:
-            return refused
 
         errors: list[dict[str, Any]] = []
         registered_names: set[str] = set()

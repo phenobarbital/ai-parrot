@@ -18,6 +18,7 @@ from parrot.tools.spec import SECRET_MASK, toolkit_override_vault_name
 
 from ..toolkit_persistence import ToolkitConfigService, UserToolkitOverride
 from ._base import StudioBaseView
+from .access import _store_record
 from .agents import _StudioAgentsMixin
 from .models import StudioError
 from .tooling_store import AgentToolingStore, ServerManagedParamsRejected, reject_server_managed
@@ -81,10 +82,22 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         """Build a Studio API error response."""
         return self.json_response(StudioError(message=message, code=code, details=details).model_dump(), status=status)
 
+    async def _visible_state(self, store, name: str):
+        """The tooling state of agent ``name``; ``LookupError`` (the one 404) when a Studio row is invisible to the caller.
+
+        No owner requirement: a caller who can see the agent edits its OWN override (FEAT-605 route row).
+        """
+        state = await store.load(name)
+        if getattr(state, "source", None) == "studio":
+            rec = state._studio[1]
+            if not (await self._access()).can_see(_store_record("agent", rec.agent_id, rec)):
+                raise LookupError(name)
+        return state
+
     async def _spec(self, name: str, slug: str):
         """Load the persisted agent toolkit spec and its schema."""
         store = AgentToolingStore(self)
-        state = await store.load(name)
+        state = await self._visible_state(store, name)
         spec = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
         if spec is None:
             raise LookupError(slug)
@@ -109,7 +122,7 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
 
     async def _tooling_ref(self, name: str) -> str:
         """Immutable tooling identity of agent ``name`` (spec §2.5c); the bare name for a legacy agent."""
-        state = await AgentToolingStore(self).load(name)
+        state = await self._visible_state(AgentToolingStore(self), name)
         return getattr(state, "tooling_ref", None) or name
 
     async def _body(self):

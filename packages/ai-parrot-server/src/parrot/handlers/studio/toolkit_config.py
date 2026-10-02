@@ -59,8 +59,16 @@ class _ToolingViewMixin(_StudioAgentsMixin):
             return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
         except (*_STUDIO_ERRORS, StudioTenantRequired) as exc:
             return self._studio_error(exc)
-        self._require_owner(state.owner, await self._get_user())
+        if (denied := await self._decide_access(state, name)) is not None:
+            return denied
         return store, state
+
+    async def _decide_access(self, state, name: str):
+        """404 invisible / 403 not manageable for a Studio row (the access rule); the FEAT-467 owner check otherwise."""
+        if getattr(state, "source", None) == "studio":
+            return await self._studio_authorize(state._studio[1], name, manage=True)
+        self._require_owner(state.owner, await self._get_user())
+        return None
 
     def _map_exc(self, exc: Exception):
         """Map persistence and vault exceptions to the Studio error contract."""
@@ -93,14 +101,10 @@ class _ToolingViewMixin(_StudioAgentsMixin):
             return None
         expected = self._expected_version(source)
         storage, part, user = self._studio_storage(), await self._studio_partition(), await self._get_user()
-
-        async def reauthorize(rec):
-            self._require_owner(rec.owner, user)  # the same owner decision as ``_authorize``
-
         result = await self._studio_write(
             lambda guard: call({"guard": guard, "actor": user.user_id}),
             record=state._studio[1], reread=lambda: storage.services.agents.get(part, name),
-            reauthorize=reauthorize, expected_version=expected,
+            reauthorize=self._reauthorize("agent", name), expected_version=expected,
         )
         return result if isinstance(result, web.Response) else None
 

@@ -188,5 +188,14 @@ async def test_live_assign_refused_before_construction(host_plugins):  # noqa: F
 
 
 async def test_live_assign_host_toolkit_allowed(host_plugins):  # noqa: F811
-    response, bot = await _assign("tp_probe", TenantToolingPolicy.deny_all(), "acme")
+    """The GLOBAL partition (the policy applied to it) still live-assigns an allowed host toolkit."""
+    response, bot = await _assign("tp_probe", TenantToolingPolicy(apply_to_global=True), None)
     assert response.status == 200 and bot.tool_manager.tool_count() > 0
+
+
+async def test_tenant_partition_never_looks_up_a_live_instance(host_plugins):  # noqa: F811
+    """FEAT-605 A2: ``manager.get_bot(name)`` on a tenant partition would resolve the bare name across tenants."""
+    response, bot = await _assign("tp_probe", TenantToolingPolicy.deny_all(), "acme")
+    # tp_probe is a host toolkit: allowed by the policy, but a tenant agent has no process-wide live instance
+    assert response.status == 404 and json.loads(response.body)["code"] == "not_found"
+    assert bot.tool_manager.tool_count() == 0

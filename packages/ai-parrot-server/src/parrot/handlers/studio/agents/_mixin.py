@@ -206,6 +206,44 @@ class _StudioAgentsMixin:
         rec = _legacy_record("agent", item["name"], item["name"], item.get("owner"))
         return {**item, **access.visibility_fields(rec)}
 
+    async def _assign_owner(self, name: str):
+        """The authorization subject for assigning tooling to agent ``name``, or a 404/403/Studio error response.
+
+        A Studio row is decided by the access rule (404 invisible, 403 not manageable; the caller's own id is
+        returned when allowed, so the owner check that follows is a no-op). A legacy DB row or a registry agent
+        keeps the FEAT-467 owner id.
+        """
+        from ..access import StudioTenantRequired
+        from ..storage import models as studio_models
+        from ..storage.services._common import StudioValidationError
+        from ..tooling_store import AgentToolingStore
+
+        try:
+            studio = await AgentToolingStore(self)._load_studio(name)
+        except (studio_models.StudioStorageUnavailable, StudioTenantRequired, StudioValidationError) as exc:
+            return self._studio_error(exc)
+        if studio is not None:
+            denied = await self._studio_authorize(studio._studio[1], name, manage=True)
+            return denied if denied is not None else (await self._get_user()).user_id
+        db_agent = await self._get_db_agent(name)
+        if db_agent is not None:
+            return str(db_agent.created_by) if db_agent.created_by is not None else None
+        registry = self._registry()
+        meta = registry.get_metadata(name) if registry is not None else None
+        if meta is None:
+            return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
+        return self._registry_agent_owner(meta)
+
+    async def _live_bot(self, manager, name: str):
+        """The live instance of agent ``name`` for a live assignment; ``None`` on a tenant partition.
+
+        A tenant agent has no process-wide instance: ``manager.get_bot(name)`` there would resolve the bare name
+        across tenants (FEAT-605 A2), so a tenant partition never takes it (tooling is persisted, not live-assigned).
+        """
+        if (await self._studio_partition()).tenant is not None:
+            return None
+        return await manager.get_bot(name)
+
     async def _legacy_items(self) -> list[dict]:
         """Legacy DB-origin plus registry agents (GLOBAL partition only)."""
         access = await self._access()

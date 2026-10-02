@@ -390,7 +390,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
             return target
         if write and (denied := await self._require_author()) is not None:
             return denied
-        rec, denied = await self._db_agent(storage, part, target[0], manage=write)
+        rec, denied = await self._db_agent(storage, part, target[0], manage=write or self._opted_in())
         if denied is not None:
             return denied
         if rec is None:

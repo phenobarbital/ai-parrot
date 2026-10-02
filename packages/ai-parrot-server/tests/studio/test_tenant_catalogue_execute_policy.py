@@ -86,7 +86,10 @@ async def test_attach_refused_before_registration(host_plugins):  # noqa: F811
     assert response.status == 422 and body["code"] == "tooling_not_permitted" and bot.tool_manager.tool_count() == 0
     response, bot = await _assign("acme", [], [{"slug": "dataset_manager", "params": {}}])
     assert response.status == 422 and bot.tool_manager.tool_count() == 0
+    # an allowed host toolkit passes the policy, but a tenant agent has no process-wide live instance (A2: never get_bot)
     response, bot = await _assign("acme", [], [{"slug": "tp_probe", "params": {}}])
+    assert response.status == 404 and bot.tool_manager.tool_count() == 0
+    response, bot = await _assign(None, [], [{"slug": "tp_probe", "params": {}}])    # GLOBAL: not policed, live
     assert response.status == 200 and bot.tool_manager.tool_count() > 0
 
 

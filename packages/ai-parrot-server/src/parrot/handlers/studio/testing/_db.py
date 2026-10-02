@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from parrot.clients.factory import LLMFactory
 
-from ..access import _store_record
+from ..access import _store_record, build_tool_scope
 from ..storage.models import StudioAgentKey, StudioNotFound, StudioStorageUnavailable
 from ._models import TestAskRequest
 
@@ -26,9 +26,18 @@ class _StudioTestingDbMixin:
         ask_request, bad = await self._parse_ask()
         if bad is not None:
             return bad
-        return await self._ask_studio(StudioAgentKey(part.tenant, agent_name), agent_name, ask_request)
+        ctx = await self._ask_context(rec)
+        return await self._ask_studio(StudioAgentKey(part.tenant, agent_name), agent_name, ask_request, ctx)
 
-    async def _ask_studio(self, key: StudioAgentKey, agent_name: str, ask_request: TestAskRequest):
+    async def _ask_context(self, rec) -> dict:
+        """``{"studio_scope": …}`` for an opted-in host (caller scope + the addressed agent); ``{}`` otherwise (C16)."""
+        if not self._opted_in():
+            return {}
+        access = await self._access()
+        record = _store_record("agent", rec.agent_id, rec)
+        return {"studio_scope": build_tool_scope(await self._scope(), access.agent_ref(record))}
+
+    async def _ask_studio(self, key: StudioAgentKey, agent_name: str, ask_request: TestAskRequest, ctx: dict):
         """Run one ask on the caller's session instance of ``key`` (a lease is held for the whole ask)."""
         manager = self._manager()
         if manager is None or manager.studio is None:
@@ -36,7 +45,7 @@ class _StudioTestingDbMixin:
         sid = self._studio_session_id(await self._resolve_session(), key)
         try:
             async with manager.studio.use(key, session_id=sid, request=self.request) as bot:
-                return await self._ask_response(bot, agent_name, ask_request)
+                return await self._ask_response(bot, agent_name, ask_request, **ctx)
         except StudioNotFound:
             return self._not_found("agent", agent_name)
         except PermissionError as exc:   # AgentAccessDenied (PBAC deny, raised before any build)
@@ -67,9 +76,17 @@ class _StudioTestingDbMixin:
             return
         bot.llm = LLMFactory.create(llm_raw, tool_manager=bot.tool_manager, api_key=api_key)
 
+    async def _invisible_agent(self, storage, part, name):
+        """The one 404 when the Studio agent is absent or invisible to the caller; ``None`` when it is visible."""
+        rec = await storage.services.agents.get(part, name) if name else None
+        record = _store_record("agent", rec.agent_id, rec) if rec else None
+        return await self._check_record_access(await self._access(), record, "agent", name or "")
+
     async def _db_delete(self, storage, part):
         """Pop the Studio session id and retire that session entry; no Studio session → the legacy teardown."""
         agent_name = self.request.match_info.get("name")
+        if part.tenant is not None and (refused := await self._invisible_agent(storage, part, agent_name)) is not None:
+            return refused  # 404 before the session entry is touched
         session = await self._resolve_session()
         key = StudioAgentKey(part.tenant, agent_name) if agent_name else None
         sid = session.pop(f"studio_test:{key.qualified}", None) if key and session is not None else None

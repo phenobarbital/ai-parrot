@@ -282,25 +282,21 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
-        owner = await self._assign_owner(name)
-        if isinstance(owner, web.Response):
-            return owner
-
         user = await self._get_user()
-        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
+        if (refused := await self._assign_refusal(name, assign_request.slug, user)) is not None:
+            return refused  # 404 / 403 / tooling_not_permitted: all before any live-instance lookup or construction
 
         manager = self._manager()
         if manager is None:
             return self._error("BotManager unavailable.", status=503, code="unavailable")
 
-        bot = await manager.get_bot(name)
+        bot = await self._live_bot(manager, name)
         if bot is None:
             return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
 
         slug = assign_request.slug
         params = assign_request.params
         try:
-            await self._enforce_assign_policy(slug, user)
             self._refuse_server_managed(slug, params)  # 422 server_managed on EVERY assign path
             if slug == "wiki":
                 registered_names, extra = await self._assign_wiki(bot, params)
@@ -323,6 +319,18 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         response.update(extra)
         return self.json_response(response, status=200)
 
+    async def _assign_refusal(self, name: str, slug: str, user: Any):
+        """404 / 403 on the agent (access rule or FEAT-467 owner), then 422 ``tooling_not_permitted``; else ``None``."""
+        owner = await self._assign_owner(name)
+        if isinstance(owner, web.Response):
+            return owner
+        self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
+        try:
+            await self._enforce_assign_policy(slug, user)
+        except _ToolkitAssignError as exc:
+            return self._error(exc.message, status=exc.status, code=exc.code, details=exc.details)
+        return None
+
     async def _enforce_assign_policy(self, slug: str, user: Any) -> None:
         """Tenant tooling policy for a live toolkit assignment (FEAT-622 M7, phase ``write``): before construction."""
         part = await self._studio_partition()
@@ -336,28 +344,6 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
             raise _ToolkitAssignError(
                 422, exc.code, str(exc), details={"reason": exc.reason, "item": exc.item}
             ) from exc
-
-    async def _assign_owner(self, name: str):
-        """Owner of agent ``name`` (Studio row, legacy DB row or registry), or a 404/Studio error response."""
-        from .access import StudioTenantRequired
-        from .storage import models as studio_models
-        from .storage.services._common import StudioValidationError
-        from .tooling_store import AgentToolingStore
-
-        try:
-            studio = await AgentToolingStore(self)._load_studio(name)
-        except (studio_models.StudioStorageUnavailable, StudioTenantRequired, StudioValidationError) as exc:
-            return self._studio_error(exc)
-        if studio is not None:
-            return studio.owner
-        db_agent = await self._get_db_agent(name)
-        if db_agent is not None:
-            return str(db_agent.created_by) if db_agent.created_by is not None else None
-        registry = self._registry()
-        meta = registry.get_metadata(name) if registry is not None else None
-        if meta is None:
-            return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
-        return self._registry_agent_owner(meta)
 
     # -- Per-toolkit assignment helpers ---------------------------------
 
