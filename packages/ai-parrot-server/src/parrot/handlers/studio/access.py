@@ -69,6 +69,20 @@ def bot_agent_ref(bot: Any) -> StudioAgentRef | None:
                           owner=getattr(bot, "_tooling_owner", None), tenant=key.tenant, visibility="private")
 
 
+async def studio_scope_kwargs(app: Any, request: web.Request, chatbot: Any) -> dict:
+    """``{"studio_scope": …}`` for ``chatbot.session(...)`` when the host installed a scope resolver; ``{}`` otherwise.
+
+    The scope is the caller's, with the Studio agent reference of ``chatbot`` (``None`` for a non-Studio bot). With no
+    resolver nothing is bound, so a tenant-bound tool refuses ``no_scope`` (FEAT-622 M5).
+    """
+    from parrot.handlers.scope import get_scope_resolver, has_installed_resolver
+
+    if not has_installed_resolver(app):
+        return {}
+    scope = await get_scope_resolver(app).resolve(request)
+    return {"studio_scope": build_tool_scope(scope, bot_agent_ref(chatbot))}
+
+
 def _store_record(kind: str, key: Any, rec: Any) -> StudioVisibilityRecord:
     """Map a FEAT-621 record (agent/draft/skill) to a visibility record."""
     return StudioVisibilityRecord(
