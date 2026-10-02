@@ -364,10 +364,10 @@ async def test_revalidate_ttl_skips_the_head_query(repos, tmp_path, monkeypatch)
 
     monkeypatch.setattr(repos.agents, "get_version", counting)
     first = await rt.get(_key())
-    assert await rt.get(_key()) is first and len(calls) == 1                         # second lookup inside the TTL
+    assert await rt.get(_key()) is first and len(calls) == 2                         # build = head + post-build recheck; none inside the TTL
     strict, _ = _runtime(repos, tmp_path / "strict")
     await strict.get(_key()), await strict.get(_key())
-    assert len(calls) == 3                                                           # TTL 0 revalidates every lookup
+    assert len(calls) == 5                                                           # TTL 0 revalidates every lookup
 
 
 async def test_sweep_task_runs_and_stops(repos, tmp_path):
@@ -481,3 +481,150 @@ async def test_session_lookup_refreshes_the_expiry(repos, tmp_path, monkeypatch)
     assert await rt.get_session(_key(), "t1") is session                 # used again just before it would expire
     assert await rt.sweep(now=1000.0 + SESSION_TTL + 5) == 0 and session.cleanup.await_count == 0
     assert await rt.sweep(now=1000.0 + 2 * SESSION_TTL) == 1
+
+
+# ---- W2 review fixes ----------------------------------------------------------------------------------------------
+async def test_lease_taken_between_reclaim_and_clean_is_honoured(repos, tmp_path, monkeypatch):
+    rt, _ = _runtime(repos, tmp_path, session_ttl=10.0)
+    await _create(repos)
+    first, second = await rt.get_session(_key(), "t1"), await rt.get_session(_key(), "t2")
+    entries = {e.bot: e for e in rt._cache.all_entries()}
+    real = runtime_module.cleanup_bot_instance
+    seen = []
+
+    async def cleaning_first_takes_a_lease_on_the_second(bot, *, label):
+        seen.append(bot)
+        entries[second].leases += 1                      # a request arrives while the sweep is awaiting
+        return await real(bot, label=label)
+
+    monkeypatch.setattr(runtime_module, "cleanup_bot_instance", cleaning_first_takes_a_lease_on_the_second)
+    later = time.monotonic() + 1000
+    assert await rt.sweep(now=later) == 1 and seen == [first] and second.cleanup.await_count == 0
+    monkeypatch.setattr(runtime_module, "cleanup_bot_instance", real)
+    entries[second].leases -= 1
+    assert await rt.sweep(now=later + GRACE + 1) == 1 and second.cleanup.await_count == 1
+
+
+async def test_due_entries_are_unreachable_before_the_first_await(repos, tmp_path, monkeypatch):
+    rt, builder = _runtime(repos, tmp_path, session_ttl=10.0)
+    await _create(repos)
+    await rt.get_session(_key(), "t1")
+    await rt.get_session(_key(), "t2")
+    observed = []
+    real = runtime_module.cleanup_bot_instance
+
+    async def lookup_during_clean(bot, *, label):
+        # the sweep is awaiting the FIRST clean-up: the second due entry must already be out of the lookup map
+        observed.append((rt._cache.session(_key().qualified, "t1"), rt._cache.session(_key().qualified, "t2")))
+        return await real(bot, label=label)
+
+    monkeypatch.setattr(runtime_module, "cleanup_bot_instance", lookup_during_clean)
+    assert await rt.sweep(now=time.monotonic() + 1000) == 2 and observed[0] == (None, None)
+    assert await rt.get_session(_key(), "t2") is builder.built[-1] and len(builder.built) == 3
+
+
+async def test_clean_skips_a_leased_entry_unless_forced(repos, tmp_path):
+    rt, _ = _runtime(repos, tmp_path)
+    await _create(repos)
+    bot = await rt.get(_key())
+    entry = rt._cache.current(_key().qualified)
+    entry.leases = 1
+    assert await rt._clean(entry) == 0 and bot.cleanup.await_count == 0
+    assert await rt._clean(entry, force=True) == 1 and bot.cleanup.await_count == 1
+
+
+async def test_shutdown_removes_only_its_own_directories(repos, tmp_path):
+    rt, builder = _runtime(repos, tmp_path)
+    root = builder.runtime_dir
+    foreign_dir = root / "11111111-1111-1111-1111-111111111111" / "v1"
+    foreign_dir.mkdir(parents=True)
+    (foreign_dir / "keep.md").write_text("another process")
+    (root / "notes.txt").write_text("not ours")
+    await rt.start()
+    rec = await _service(repos).create(GLOBAL, name="a1", owner="u1", definition=StudioAgentDefinition(),
+                                       assets=[StudioAssetInput(kind="kb", name="k.md", content="kb")])
+    bot = await rt.get(_key())
+    own = bot._agents_dir
+    assert own.exists() and own == root / str(rec.agent_id) / f"v{bot._studio_version}"
+    await rt.shutdown()
+    assert not own.exists() and not own.parent.exists()
+    assert (foreign_dir / "keep.md").read_text() == "another process" and (root / "notes.txt").exists()
+
+
+async def test_directory_removal_runs_off_the_event_loop(repos, tmp_path, monkeypatch):
+    calls = []
+    real = asyncio.to_thread
+
+    async def spy(func, *a, **k):
+        calls.append(getattr(func, "__name__", str(func)))
+        return await real(func, *a, **k)
+
+    monkeypatch.setattr(runtime_module.asyncio, "to_thread", spy)
+    rt, _ = _runtime(repos, tmp_path, session_ttl=0.0)
+    await _service(repos).create(GLOBAL, name="a1", owner="u1", definition=StudioAgentDefinition(),
+                                 assets=[StudioAssetInput(kind="kb", name="k.md", content="kb")])
+    await rt.get_session(_key(), "t1")
+    assert await rt.sweep(now=time.monotonic() + 5) == 1 and "_remove_dir" in calls
+    await rt.shutdown()
+    assert "_prune" in calls
+
+
+async def test_agent_disabled_while_building_is_not_installed(repos, tmp_path):
+    rt, builder = _runtime(repos, tmp_path)
+    await _create(repos)
+    real_build = builder.build
+
+    async def build_then_disable(snapshot, app, *, part):
+        result = await real_build(snapshot, app, part=part)
+        async with studio_transaction(repos.pool) as conn:
+            await repos.agents.set_status(conn, GLOBAL, "a1", "disabled")
+        return result
+
+    builder.build = build_then_disable
+    assert await rt.get(_key()) is None and rt._cache.all_entries() == []
+    bot = builder.built[0]
+    assert bot.cleanup.await_count == 1 and not bot._agents_dir.exists()
+    builder.build = real_build
+    assert await rt.get_session(_key(), "t1") is None
+
+
+async def test_agent_deleted_and_recreated_while_building_is_not_installed(repos, tmp_path):
+    rt, builder = _runtime(repos, tmp_path)
+    await _create(repos)
+    real_build = builder.build
+
+    async def build_then_replace(snapshot, app, *, part):
+        result = await real_build(snapshot, app, part=part)
+        await _service(repos).delete(GLOBAL, "a1", guard=NO_GUARD)
+        await _create(repos)
+        return result
+
+    builder.build = build_then_replace
+    assert await rt.get(_key()) is None and rt._cache.all_entries() == []     # the old identity is never served
+
+
+async def test_refused_memory_and_session_count_are_bounded(repos, tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime_module, "_REFUSED_CAP", 3)
+    rt, _ = _runtime(repos, tmp_path, max_sessions=2)
+    await _create(repos)
+    for n in range(10):
+        rt._refused[(n, 1)] = None
+    # the cap is applied when a refusal is recorded
+    from parrot.handlers.studio.storage.models import StudioToolingRefused as Refused
+
+    async def refuse(snapshot, app, *, part):
+        raise Refused("nope")
+
+    rt._builder.build = refuse
+    with pytest.raises(Refused):
+        await rt.get(_key())
+    assert len(rt._refused) <= 3
+    rt2, builder2 = _runtime(repos, tmp_path / "s", max_sessions=2)
+    sessions = []
+    for n in range(5):
+        sessions.append(await rt2.get_session(_key(), f"t{n}"))
+        await asyncio.sleep(0)
+    live = [e for e in rt2._cache.all_entries() if e.session_id and e.retired_at is None]
+    assert len(live) == 2 and [e.session_id for e in live] == ["t3", "t4"]        # the oldest were retired...
+    assert sessions[0].cleanup.await_count == 0                                   # ...not cleaned on the spot
+    assert await rt2.sweep(now=time.monotonic() + GRACE + 1) == 3

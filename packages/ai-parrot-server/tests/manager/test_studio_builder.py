@@ -290,3 +290,20 @@ async def test_failed_rebuild_keeps_a_version_directory_other_entries_use(config
 
 def test_runtime_dir_property(root):
     assert _builder(root).runtime_dir == root
+
+
+async def test_directory_removal_on_failure_runs_off_the_event_loop(configure, root, monkeypatch):
+    import parrot.manager.studio_builder as builder_module
+
+    calls = []
+    real = asyncio.to_thread
+
+    async def spy(func, *a, **k):
+        calls.append(getattr(func, "__name__", str(func)))
+        return await real(func, *a, **k)
+
+    monkeypatch.setattr(builder_module.asyncio, "to_thread", spy)
+    configure.side_effect = RuntimeError("boom")
+    with pytest.raises(AgentReloadError):
+        await _builder(root).build(_snapshot(assets=[("kb", "k.md", "x")]), web.Application(), part=GLOBAL)
+    assert calls == ["rmtree"]

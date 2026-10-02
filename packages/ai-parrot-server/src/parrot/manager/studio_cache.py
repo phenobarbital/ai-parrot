@@ -95,21 +95,40 @@ class StudioRuntimeCache:
 
     def reclaimable(self, *, now: float, grace: float, session_ttl: float, idle_ttl: float) -> list[StudioCacheEntry]:
         """Retire idle base entries, then list what may be cleaned now (sessions past TTL, retired past grace)."""
-        for entry in [e for e in self._base.values() if e.leases == 0 and now - e.last_used >= idle_ttl]:
+        self._retire_idle(now, idle_ttl)
+        return [*self._due_sessions(now, session_ttl), *self._due_retired(now, grace)]
+
+    def _retire_idle(self, now: float, idle_ttl: float) -> None:
+        for entry in [e for e in self._base.values() if self._idle(e, now, idle_ttl)]:
             self.retire(entry, now=now)
-        due = [e for e in self._sessions.values() if e.leases == 0 and self._session_expired(e, now, session_ttl)]
-        due += [
-            e
-            for e in self._retired
-            if not e.cleaned and e.leases == 0 and e.retired_at is not None and now - e.retired_at >= grace
+
+    @staticmethod
+    def _idle(entry: StudioCacheEntry, now: float, idle_ttl: float) -> bool:
+        return entry.leases == 0 and now - entry.last_used >= idle_ttl
+
+    def _due_sessions(self, now: float, session_ttl: float) -> list[StudioCacheEntry]:
+        return [
+            e for e in self._sessions.values() if e.leases == 0 and self._session_expired(e, now, session_ttl)
         ]
-        return due
+
+    def _due_retired(self, now: float, grace: float) -> list[StudioCacheEntry]:
+        return [e for e in self._retired if self._retired_due(e, now, grace)]
+
+    @staticmethod
+    def _retired_due(entry: StudioCacheEntry, now: float, grace: float) -> bool:
+        if entry.cleaned or entry.leases != 0 or entry.retired_at is None:
+            return False
+        return now - entry.retired_at >= grace
 
     @staticmethod
     def _session_expired(entry: StudioCacheEntry, now: float, session_ttl: float) -> bool:
         if entry.expires_at is not None and now >= entry.expires_at:
             return True
         return now - entry.last_used >= session_ttl
+
+    def live_sessions(self) -> list[StudioCacheEntry]:
+        """Session entries still installed (not retired), oldest ``last_used`` first."""
+        return sorted(self._sessions.values(), key=lambda e: e.last_used)
 
     # ---- asset directories ------------------------------------------------------------------------------------
     def acquire_dir(self, agent_id: UUID, version: int) -> int:

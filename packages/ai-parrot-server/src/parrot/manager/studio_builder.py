@@ -181,4 +181,4 @@ class StudioAgentBuilder:
 
             await asyncio.shield(cleanup_bot_instance(bot, label=label))
         if directory is not None:
-            shutil.rmtree(directory, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, directory, ignore_errors=True)
