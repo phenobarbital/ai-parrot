@@ -29,6 +29,11 @@ class ToolkitEntry(BaseModel, frozen=True):
     dotted_path: str | None  # None for built-in explicit entries (and walked classes)
     source: Literal["builtin", "parrot_tools", "host", "walk"]
 
+    @property
+    def is_host(self) -> bool:
+        """Host code: a declared ``plugins.tools`` entry or one found by the deprecated walk fallback."""
+        return self.source in ("host", "walk")
+
 
 def _builtin_classes() -> dict[str, type]:
     """Lazily import the built-in explicit toolkit classes."""
@@ -55,6 +60,13 @@ class ToolkitResolver:
         """Case-insensitive entry lookup; returns entries whose class cannot be imported too."""
         return self._ensure().get(slug.lower())
 
+    def is_host_class(self, cls: type) -> bool:
+        """True iff ``cls`` is the class of a host entry (declared ``host`` or walked), never stamped on the class."""
+        for entry in self.entries():
+            if entry.is_host and self.resolve(entry.slug) is cls:
+                return True
+        return False
+
     def resolve(self, slug: str) -> type | None:
         """Case-insensitive slug → class; ``None`` when unknown or unimportable."""
         found = self.entry(slug)
@@ -73,7 +85,7 @@ class ToolkitResolver:
         """Slug → dotted path of every non-host entry (built-ins from their class) (host paths are never listed)."""
         paths: dict[str, str] = {}
         for entry in self.entries():
-            if entry.source == "host":
+            if entry.is_host:
                 continue
             cls = self._classes.get(entry.slug.lower())
             dotted = entry.dotted_path or (f"{cls.__module__}.{cls.__qualname__}" if cls else None)

@@ -29,7 +29,8 @@ routes, tool execution, the bot build and the meta-agent. Resolution rules (firs
 2. a host entry's slug must start with `HOST_TOOL_PREFIX`, and a *toolkit* class must declare `tool_prefix` equal to that
    prefix without its trailing underscore (`HOST_TOOL_PREFIX = "fs_"` ⇒ `tool_prefix = "fs"`); a mismatch rejects the entry;
 3. a `plugins.tools` package without `TOOL_REGISTRY` falls back to a deprecated module walk (kept for one minor
-   version); declare the registry instead;
+   version); declare the registry instead. Walked entries (`source="walk"`) are still host code: their write tools are
+   confirmation-enforced and the tenant tooling policy treats them as host toolkits, never as built-ins;
 4. an entry whose class cannot be imported is rejected (or, once registered, resolves to nothing) — never a crash.
 
 Tenant-bound entries resolve like any other: the scope gate below runs in the framework, not in the host code.

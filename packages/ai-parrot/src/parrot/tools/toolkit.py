@@ -201,24 +201,14 @@ class ToolkitTool(AbstractTool):
 
 
 def _is_host_class(cls: type) -> bool:
-    """Return True iff ``cls`` is the class of a resolver entry with ``source="host"``.
+    """Return True iff ``cls`` is the class of a host resolver entry (``source`` ``"host"`` or ``"walk"``).
 
     Computed from resolver entries (never stamped on the class). The resolver is
     imported lazily because ``resolver`` imports ``discovery``, which imports this module.
     """
-    from importlib import import_module  # pylint: disable=import-outside-toplevel
     from .resolver import get_toolkit_resolver  # pylint: disable=import-outside-toplevel
 
-    for entry in get_toolkit_resolver().entries():
-        if entry.source != "host" or not entry.dotted_path:
-            continue
-        module_path, _, attr = entry.dotted_path.rpartition(".")
-        try:
-            if getattr(import_module(module_path), attr, None) is cls:
-                return True
-        except Exception:  # pylint: disable=broad-except
-            continue
-    return False
+    return get_toolkit_resolver().is_host_class(cls)
 
 
 def effective_access(cls: type, method_name: str) -> Optional[str]:

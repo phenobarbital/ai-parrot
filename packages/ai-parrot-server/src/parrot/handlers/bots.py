@@ -1211,7 +1211,7 @@ class ToolList(_PBACHandlerMixin, BaseView):
             resolver = get_toolkit_resolver()
             tools = {}
             for entry in resolver.entries():
-                if entry.source == "host":
+                if entry.is_host:
                     continue  # host entries are tenant-policed; never listed here
                 if entry.dotted_path:
                     tools[entry.slug] = {"tool_name": entry.slug, "module_path": entry.dotted_path}
