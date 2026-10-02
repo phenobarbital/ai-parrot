@@ -225,10 +225,8 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):  # :
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 386852635. Tooling/toolkit config/overrides/assign handler switch; 6 new tests on real PG; 7 mutations RED. editable=owner-not-None guard has no mutation (ai_agents.owner is NOT NULL, branch unreachable). toolkit_overrides.put stays at complexity 13 (pre-existing, not grown).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

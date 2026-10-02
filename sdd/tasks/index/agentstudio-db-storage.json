@@ -525,7 +525,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -536,8 +536,9 @@
       "parallelism_notes": "calls StudioToolingService via AgentToolingStore's studio branch from TASK-3934 (tooling_store.py, same file — serialised) and the helpers from TASK-3944 (_base.py); edits toolkit_overrides.py after TASK-3927 (transitive)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3946-handler-switch-tooling.md"
+      "completed_at": "2026-10-02T05:20:12+00:00",
+      "file": "sdd/tasks/completed/TASK-3946-handler-switch-tooling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3947",
