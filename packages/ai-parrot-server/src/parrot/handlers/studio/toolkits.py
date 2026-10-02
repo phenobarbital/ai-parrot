@@ -301,9 +301,7 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         params = assign_request.params
         try:
             await self._enforce_assign_policy(slug, user)
-            known = _resolve_toolkit_class(slug)
-            if known is not None:
-                self._server_managed_inputs(known, params)  # 422 server_managed on EVERY assign path
+            self._refuse_server_managed(slug, params)  # 422 server_managed on EVERY assign path
             if slug == "wiki":
                 registered_names, extra = await self._assign_wiki(bot, params)
             elif slug == "dataset_manager":
@@ -458,6 +456,12 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
             ) from exc
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
+
+    def _refuse_server_managed(self, slug: str, params: dict) -> None:
+        """422 ``server_managed`` when the client sent a name the server fills (any slug, before construction)."""
+        known = _resolve_toolkit_class(slug)
+        if known is not None:
+            self._server_managed_inputs(known, params)
 
     def _server_managed_inputs(self, cls: type, params: dict) -> dict:
         """Constructor values the server fills (``source="app"`` from ``request.app``); refuses a client value (422)."""
