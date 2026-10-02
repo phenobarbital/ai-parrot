@@ -13,6 +13,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+from aiohttp import web
 from asyncdb.exceptions import NoDataFound
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.bots.prompts.identity import IDENTITY_FILES
@@ -21,7 +22,9 @@ from parrot.skills.parsers import parse_skill_file
 
 from ..models import BotModel
 from ._base import StudioBaseView, is_valid_slug, resolve_safe_path
+from .access import _store_record
 from .models import StudioError
+from .storage.models import StudioAssetInput
 
 VALID_KINDS = ("identity", "kb", "skills")
 KB_EXTENSIONS = (".md", ".txt")
@@ -156,6 +159,26 @@ class _StudioFilesMixin:
             status=status,
         )
 
+    async def _dispatch(self, legacy, database, gate=None):
+        """Run ``database(storage, part)`` on the database backend, ``legacy()`` on the filesystem one.
+
+        ``gate`` is the verb's PBAC check, run before any database-mode work (the legacy bodies gate themselves).
+        """
+        storage = self.request.app.get("studio_storage")
+        if storage is not None:
+            try:
+                part = await self._studio_partition()
+                storage.require_for(part)
+                if storage.backend != "filesystem":
+                    if gate is not None and (denied := await gate()) is not None:
+                        return denied
+                    return await database(storage, part)
+            except web.HTTPException:
+                raise
+            except Exception as exc:  # pylint: disable=broad-except
+                return self._studio_error(exc)
+        return await legacy()
+
 
 @is_authenticated()
 @user_session()
@@ -167,7 +190,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
     file).
     """
 
-    async def get(self):
+    async def _legacy_get(self):
         agent_name = self.request.match_info.get("name")
         kind = self.request.match_info.get("kind")
         filename = self.request.match_info.get("filename")
@@ -213,7 +236,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         files = sorted(str(p.relative_to(base_dir)) for p in base_dir.rglob("*") if p.is_file())
         return self.json_response({"kind": kind, "files": files})
 
-    async def put(self):
+    async def _legacy_put(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("files", "astudio:files:write")) is not None:
             return denied
@@ -277,7 +300,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
             status=200,
         )
 
-    async def delete(self):
+    async def _legacy_delete(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("files", "astudio:files:delete")) is not None:
             return denied
@@ -318,3 +341,124 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         target.unlink()
 
         return self.json_response({"path": filename, "kind": kind, "deleted": True, "reload_required": True})
+
+
+    # -- database mode (StudioAssetService) --------------------------------
+
+    async def get(self):
+        """List a kind or read one file (database mode: ``StudioAssetService``)."""
+        return await self._dispatch(self._legacy_get, self._db_get)
+
+    async def put(self):
+        """Write one file (database mode: ``StudioAssetService``)."""
+        gate = lambda: self._pbac_gate("files", "astudio:files:write")  # noqa: E731
+        return await self._dispatch(self._legacy_put, self._db_put, gate)
+
+    async def delete(self):
+        """Delete one file (database mode: ``StudioAssetService``)."""
+        gate = lambda: self._pbac_gate("files", "astudio:files:delete")  # noqa: E731
+        return await self._dispatch(self._legacy_delete, self._db_delete, gate)
+
+    def _db_target(self, *, need_filename: bool):
+        """``(name, kind, filename)`` from the route, or a 400 response."""
+        name = self.request.match_info.get("name")
+        kind = self.request.match_info.get("kind")
+        filename = self.request.match_info.get("filename")
+        if not name or not is_valid_slug(name):
+            return self._error("Invalid agent name.", status=400, code="invalid_agent")
+        if kind not in VALID_KINDS:
+            return self._error(f"Unknown kind '{kind}'; must be one of {VALID_KINDS}.", status=400, code="invalid_kind")
+        if need_filename and not filename:
+            return self._error("Filename is required.", status=400, code="missing_filename")
+        return name, kind, filename
+
+    async def _db_agent(self, storage, part, name: str, *, manage: bool):
+        """``(record, None)`` of a visible Studio agent, ``(None, response)`` on 404/403, ``(None, None)`` = legacy."""
+        rec = await storage.services.agents.get(part, name)
+        if rec is None and part.tenant is None:
+            return None, None
+        denied = await self._check_record_access(
+            await self._access(), _store_record("agent", rec.agent_id, rec) if rec else None, "agent", name,
+            manage=manage,
+        )
+        return (None, denied) if denied is not None else (rec, None)
+
+    async def _db_prepare(self, storage, part, legacy, *, write: bool, need_filename: bool = True):
+        """Shared prologue: ``(name, kind, filename, rec)`` or a response; ``legacy()`` for non-Studio GLOBAL names."""
+        target = self._db_target(need_filename=need_filename)
+        if isinstance(target, web.Response):
+            return target
+        if write and (denied := await self._require_author()) is not None:
+            return denied
+        rec, denied = await self._db_agent(storage, part, target[0], manage=write)
+        if denied is not None:
+            return denied
+        if rec is None:
+            return await legacy()
+        return (*target, rec)
+
+    async def _db_get(self, storage, part):
+        """List a kind (``{kind, files}``) or read one file, from the asset rows."""
+        prep = await self._db_prepare(storage, part, self._legacy_get, write=False, need_filename=False)
+        if not isinstance(prep, tuple):
+            return prep
+        name, kind, filename, rec = prep
+        svc = storage.services.assets
+        if not filename:
+            rows = await svc.list(part, name, kind)
+            return self.json_response({"kind": kind, "files": sorted(r.name for r in rows)})
+        asset = await svc.get(part, name, kind, filename)
+        if asset is None:
+            return self._error(f"File '{filename}' not found.", status=404, code="not_found")
+        return self.json_response({"path": filename, "kind": kind, "size": asset.size, "content": asset.content,
+                                   "sha256": asset.sha256, "version": rec.version})
+
+    async def _put_body(self):
+        """The JSON body (a dict with ``content``), or an error response."""
+        try:
+            payload = await self.request.json()
+        except Exception:  # pylint: disable=broad-except
+            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+        payload = payload if isinstance(payload, dict) else {}
+        if payload.get("content") is None:
+            return self._error("'content' is required.", status=400, code="missing_content")
+        return payload
+
+    async def _db_put(self, storage, part):
+        """Write one asset through ``StudioAssetService.put`` under the version guard."""
+        prep = await self._db_prepare(storage, part, self._legacy_put, write=True)
+        if not isinstance(prep, tuple):
+            return prep
+        name, kind, filename, _rec = prep
+        body = await self._put_body()
+        if isinstance(body, web.Response):
+            return body
+        asset = StudioAssetInput(kind=kind, name=filename, content=body["content"],
+                                 content_type=body.get("content_type") or "text/markdown")
+        user = await self._get_user()
+        agents, assets = storage.services.agents, storage.services.assets
+        record, version = await self._studio_write(
+            lambda guard: assets.put(part, name, asset, actor=user.user_id, guard=guard),
+            reread=lambda: agents.get(part, name),
+            expected_version=self._expected_version(body),
+        )
+        return self.json_response({"path": filename, "kind": kind, "size": record.size, "reload_required": False,
+                                   "version": version, "sha256": record.sha256})
+
+    async def _db_delete(self, storage, part):
+        """Delete one asset through ``StudioAssetService.delete`` under the version guard."""
+        prep = await self._db_prepare(storage, part, self._legacy_delete, write=True)
+        if not isinstance(prep, tuple):
+            return prep
+        name, kind, filename, _rec = prep
+        user = await self._get_user()
+        agents, assets = storage.services.agents, storage.services.assets
+        existed, version = await self._studio_write(
+            lambda guard: assets.delete(part, name, kind, filename, actor=user.user_id, guard=guard),
+            reread=lambda: agents.get(part, name),
+            expected_version=self._expected_version(self.request.query),
+        )
+        if not existed:
+            return self._error(f"File '{filename}' not found.", status=404, code="not_found")
+        return self.json_response({"path": filename, "kind": kind, "deleted": True, "reload_required": False,
+                                   "version": version})
