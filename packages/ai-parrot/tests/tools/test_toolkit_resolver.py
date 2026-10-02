@@ -107,3 +107,41 @@ def test_malformed_dotted_path_is_unavailable(host_plugins):
     resolver._entries["tp_bad"] = ToolkitEntry(slug="tp_bad", dotted_path="nodots", source="host")
     assert resolver.entry("tp_bad") is not None
     assert resolver.resolve("tp_bad") is None
+
+
+def test_resolver_does_not_deadlock_when_host_module_instantiates_a_tool_at_import(host_plugins):
+    """A host module building a tool at import time re-enters the resolver; it must not hang (PR #1564 F1)."""
+    import threading
+
+    (host_plugins / "ping.py").write_text(
+        "from parrot.tools.abstract import AbstractTool\n"
+        "\n"
+        "\n"
+        "class PingTool(AbstractTool):\n"
+        '    """Host tool with no declared access, instantiated at import time."""\n'
+        '    name = "acme_ping"\n'
+        '    description = "ping"\n'
+        "    args_schema = None\n"
+        "\n"
+        "    async def _execute(self, **kwargs):\n"
+        "        return {}\n"
+        "\n"
+        "\n"
+        "SINGLETON = PingTool()\n"
+    )
+    (host_plugins / "__init__.py").write_text(
+        'HOST_TOOL_PREFIX = "acme_"\nTOOL_REGISTRY = {"acme_ping": "plugins.tools.ping.PingTool"}\n'
+    )
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    outcome: dict = {}
+
+    def build() -> None:
+        outcome["slugs"] = {e.slug for e in resolver.entries()}
+
+    worker = threading.Thread(target=build, daemon=True)
+    worker.start()
+    worker.join(timeout=15)
+    assert not worker.is_alive(), "resolver deadlocked: host module instantiated a tool at import time"
+    assert "acme_ping" in outcome["slugs"]
+    assert resolver.entry("acme_ping").source == "host"
