@@ -123,8 +123,8 @@ def filter_catalog_for(app: Any, subject: ToolingSubject | None, catalog: List[D
 
 
 def _redact_host_path(entry: Dict[str, Any]) -> Dict[str, Any]:
-    """Copy of ``entry`` without the dotted path when it is a host toolkit."""
-    if entry.get("source") != "host":
+    """Copy of ``entry`` without the dotted path when it is host code (declared ``host`` or walk-discovered)."""
+    if entry.get("source") not in ("host", "walk"):
         return entry
     return {**entry, "dotted_path": None}
 
