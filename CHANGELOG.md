@@ -7,28 +7,34 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+Everything below comes after `1.1.0`; the FEAT-605 early subset (request-scope seam, `RequestScope`,
+`setup_studio_routes(prefix=…, view_wrapper=…)`, `BotManager.setup_registry_only`, `GET /me`, scope-only route gates,
+draft-activation `name_taken`, D1/D3) already shipped in `1.1.0`.
+
 ### Added
 
-- **Agent Studio — tenant scope, owner-controlled visibility and host mount (FEAT-605).** Opt-in through an
-  installed `app["scope_resolver"]`; with none, Studio behaves as before. Adds `parrot.handlers.scope`
-  (`RequestScope`), `setup_studio_routes(app, prefix=…, view_wrapper=…)` (prefix may contain `{tenant}`),
-  `BotManager.setup_registry_only(app)`, `GET {prefix}/me`, per-record `visibility`
+- **Agent Studio — owner-controlled visibility (FEAT-605 W2+).** Per-record `visibility`
   (`private | tenant | groups`) with `allowed_groups`, and three new routes —
   `PATCH /astudio/agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility`. Every route
   follows one access rule (404 for an invisible record, identical to an absent one; 403 `not_manageable` for a
   visible record the caller cannot manage), the assistant is partitioned by (tenant, user), and tool calls from
   `test/ask`, chat and execute carry a `studio_scope`. Contract: `docs/agent_studio_api.md`; host guides
   `docs/agentstudio/db-storage.md` and `docs/toolkits/host-toolkits.md`.
-- New Studio error codes: `name_taken` (409), `declarative_only`, `tenant_required`, `groups_required`,
-  `groups_not_allowed` (422), `studio_disabled` (404), `tenant_mismatch`, `authoring_denied`, `not_manageable` (403),
-  `reserved_config_key` (400).
+- **Agent Studio database storage, waves 2–4 and phase 2 (FEAT-621).** Visibility columns and services over the
+  partitioned repositories, per-user LLM keys, credentials and toolkit overrides (migrations `0006`–`0008`).
+- **Agent Studio host toolkits, waves 2–4 (FEAT-622).** Tenant-bound tools and the scope gate, server-managed
+  parameters, strictly confirmed host write tools (walk-discovered host entries included) and the tenant tooling
+  policy on tooling writes.
+- New Studio error codes: `declarative_only`, `tenant_required`, `groups_required`, `groups_not_allowed` (422),
+  `studio_disabled` (404), `tenant_mismatch`, `authoring_denied`, `not_manageable` (403),
+  `reserved_config_key` (400); `name_taken` (409) now also covers agents, draft saves and skills.
 - `PUT`/`DELETE /astudio/agents/{name}/toolkits/{slug}` and `PUT …/mcp-servers` return the agent's `version` after the
   write when the agent is a database-backed Studio agent (additive).
 
 ### Changed
 
-- **Agent Studio, plain hosts too (FEAT-605):** duplicate names answer `409 name_taken` (no owner, source or tenant
-  in the body) on agents, drafts (save and activate) and skills — previously `duplicate` / `name_collision` /
+- **Agent Studio, plain hosts too (FEAT-605):** duplicate names on agents, draft saves and skills answer
+  `409 name_taken` (no owner, source or tenant in the body) — previously `duplicate` / `name_collision` /
   `not_owner`. Every agent/draft/skill item gains additive `tenant`, `owner`, `visibility`, `allowed_groups`,
   `access` (`"global"` without a resolver) and, on single-record reads, `can_manage`. Non-private visibility
   without a tenant is `422 tenant_required`. Reload, files GET and tool execute keep their old, ungated behaviour
