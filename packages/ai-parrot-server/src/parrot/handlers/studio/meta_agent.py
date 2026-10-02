@@ -21,6 +21,7 @@ from parrot.bots.studio import AgentStudioAgent
 from pydantic import BaseModel
 
 from ._base import StudioBaseView
+from .access import build_tool_scope
 from .byok import resolve_user_api_key
 from .models import StudioError
 
@@ -116,7 +117,8 @@ class StudioAssistantHandler(StudioBaseView):
             # user_id is REQUIRED by the meta-agent's mutating tools
             # (adversarial-review fix): they stamp/enforce ownership from
             # the RequestContext's user_id — without it they fail closed.
-            async with agent.session(request=self.request, app=self.request.app, user_id=user.user_id) as bot:
+            ctx = {"studio_scope": build_tool_scope(await self._scope())} if self._opted_in() else {}
+            async with agent.session(request=self.request, app=self.request.app, user_id=user.user_id, **ctx) as bot:
                 response = await bot.ask(question=ask_request.query)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.exception("Studio assistant query failed")

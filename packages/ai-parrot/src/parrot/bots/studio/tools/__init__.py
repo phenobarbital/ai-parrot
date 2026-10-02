@@ -42,11 +42,16 @@ from parrot.conf import AGENTS_DIR
 from parrot.utils.helpers import current_context
 
 from ._context import (
+    _can_manage_agent,
     _refusal_code,
     _refusing,
     _require_agent_owner,
     _require_app,
+    _require_author,
+    _require_python_drafts,
+    _require_tenantless_agent,
     _require_user_id,
+    _studio_caller,
     _studio_partition_and_services,
     _unscoped_refusal,
 )
@@ -70,6 +75,7 @@ __all__ = [
     "write_identity_file",
     "write_kb_file",
     "write_skill_file",
+    "_can_manage_agent",
     "_db_create_agent",
     "_db_publish_skill",
     "_db_put_asset",
@@ -78,7 +84,11 @@ __all__ = [
     "_refusing",
     "_require_agent_owner",
     "_require_app",
+    "_require_author",
+    "_require_python_drafts",
+    "_require_tenantless_agent",
     "_require_user_id",
+    "_studio_caller",
     "_studio_partition_and_services",
     "_unscoped_refusal",
     "_write_asset_file",

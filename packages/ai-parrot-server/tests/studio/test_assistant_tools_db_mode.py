@@ -105,7 +105,7 @@ async def test_tools_write_through_services(aiohttp_client, pool, tmp_path, monk
         )
         assert skill["owner"] == "u1" and skill["tenant"] is None
         dup = await _call(tools_module.create_yaml_agent, name="alpha", bot_class="BasicBot")
-        assert dup["error_code"] == "duplicate"
+        assert dup["error_code"] == "name_taken"
         with pytest.raises(ValueError):
             await _call(tools_module.create_yaml_agent, name="beta", bot_class="NoSuchClass")
     with _ctx(app, user_id="intruder"):

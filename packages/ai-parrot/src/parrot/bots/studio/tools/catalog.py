@@ -7,7 +7,7 @@ from typing import Any
 from parrot.bots.studio import tools as _pkg  # patched globals (``current_context``) are read at call time
 from parrot.tools import tool
 
-from ._context import _refusing, _require_app, _require_user_id, _studio_partition_and_services
+from ._context import _refusing, _require_app, _require_author, _require_user_id, _studio_partition_and_services
 
 
 @tool(
@@ -46,7 +46,9 @@ async def publish_skill_to_catalog(
     from parrot.handlers.studio.skills_catalog import StudioSkillsCatalogHandler
     from parrot.skills.models import SkillCategory
 
+    _require_author()
     app = _require_app()
+    user_id = _require_user_id()   # the REAL caller owns the skill — never a placeholder
     try:
         resolved_category = SkillCategory(category)
     except ValueError:
@@ -54,9 +56,7 @@ async def publish_skill_to_catalog(
     if (ps := await _studio_partition_and_services(app)) is not None:
         if isinstance(ps, dict):
             return ps
-        publish = _db_publish_skill(
-            app, ps, _require_user_id(), name, description, resolved_category.value, triggers, body
-        )
+        publish = _db_publish_skill(app, ps, user_id, name, description, resolved_category.value, triggers, body)
         return await _refusing(publish)
     if app.get("database") is None:
         raise RuntimeError("Database unavailable — cannot publish to the shared catalog.")
@@ -80,7 +80,7 @@ async def publish_skill_to_catalog(
         name=name,
         description=description,
         category=resolved_category.value,
-        owner="agent_studio",
+        owner=user_id,
         triggers=list(triggers),
         body=body,
         version=1,
@@ -89,7 +89,7 @@ async def publish_skill_to_catalog(
     )
     await helper._insert_entry(entry)  # pylint: disable=protected-access
 
-    stale = await helper._dual_write_to_registry(entry, "agent_studio")  # pylint: disable=protected-access
+    stale = await helper._dual_write_to_registry(entry, user_id)  # pylint: disable=protected-access
     if stale:
         await helper._flag_stale(entry)  # pylint: disable=protected-access
 

@@ -7,7 +7,14 @@ from pathlib import Path
 from parrot.bots.studio import tools as _pkg  # patched globals (``AGENTS_DIR``) are read at call time
 from parrot.tools import tool
 
-from ._context import _refusing, _require_app, _require_user_id, _studio_partition_and_services
+from ._context import (
+    _refusing,
+    _require_app,
+    _require_author,
+    _require_python_drafts,
+    _require_user_id,
+    _studio_partition_and_services,
+)
 
 
 @tool(
@@ -39,6 +46,8 @@ async def save_agent_draft(name: str, source: str) -> dict:
     if not is_valid_slug(name):
         raise ValueError(f"Invalid draft name '{name}'; must match ^[a-z0-9_-]+$.")
 
+    _require_author()
+    _require_python_drafts()   # a tenant partition never holds Python source
     app = _require_app()
     # Adversarial-review fix: stamp the REAL session user as the draft's
     # owner. The previous hardcoded "agent_studio" owner meant the
@@ -156,6 +165,7 @@ async def save_agent_bundle(name: str, bundle: dict) -> dict:
     """
     from parrot.handlers.studio._base import is_valid_slug
 
+    _require_author()
     app = _require_app()
     user_id = _require_user_id()
     ps = await _studio_partition_and_services(app)

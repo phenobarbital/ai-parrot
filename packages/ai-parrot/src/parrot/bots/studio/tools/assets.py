@@ -7,7 +7,15 @@ from pathlib import Path
 from parrot.bots.studio import tools as _pkg  # patched globals (``AGENTS_DIR``) are read at call time
 from parrot.tools import tool
 
-from ._context import _refusing, _require_agent_owner, _require_app, _require_user_id, _studio_partition_and_services
+from ._context import (
+    _can_manage_agent,
+    _refusing,
+    _require_agent_owner,
+    _require_app,
+    _require_author,
+    _require_user_id,
+    _studio_partition_and_services,
+)
 
 
 async def _write_asset_file(agent_name: str, kind: str, filename: str, content: str) -> dict:
@@ -34,6 +42,7 @@ async def _write_asset_file(agent_name: str, kind: str, filename: str, content: 
     # `_require_owner` before every write; this tool path previously had
     # NO ownership check at all — any user driving the assistant could
     # write into any other user's agent directories.
+    _require_author()
     app = _require_app()
     user_id = _require_user_id()
     ps = await _studio_partition_and_services(app)
@@ -127,7 +136,7 @@ async def _db_put_asset(ps: tuple, user_id: str, agent_name: str, kind: str, fil
     agent = await services.agents.get(part, agent_name)
     if agent is None:
         raise ValueError(f"Agent '{agent_name}' not found.")
-    if str(agent.owner) != str(user_id):
+    if not _can_manage_agent(agent, user_id):
         raise PermissionError(f"Agent '{agent_name}' is not owned by the calling user; refusing to write.")
     asset = StudioAssetInput(kind=kind, name=filename, content=content)
     record, version = await services.assets.put(part, agent_name, asset, actor=user_id, guard=StudioWriteGuard())

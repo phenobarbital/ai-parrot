@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from parrot.tools import tool
 
-from ._context import _require_app
+from ._context import _require_app, _studio_caller, _studio_partition_and_services
 
 
 @tool(
@@ -50,7 +50,26 @@ async def list_available_tools() -> list:
 async def list_existing_agents() -> list:
     """List registered agent names (registry-origin only)."""
     app = _require_app()
+    caller = _studio_caller()
+    if caller is not None:   # a bound scope: the Studio rows the caller can see in ITS partition, nothing global
+        return await _visible_studio_agents(app, caller)
+    from parrot.handlers.scope import has_installed_resolver  # lazy: server satellite
+
+    if has_installed_resolver(app):   # opted-in host, no scope bound: fail closed, never the global registry
+        return []
     manager = app.get("bot_manager")
     if manager is None or manager.registry is None:
         return []
     return [meta.name for meta in manager.registry.list_agents()]
+
+
+async def _visible_studio_agents(app, caller) -> list:
+    """Names of the agents of the caller's partition that the access rule lets it see (fail closed: ``[]``)."""
+    from parrot.handlers.studio.access import StudioAccess, _store_record  # lazy: server satellite
+
+    ps = await _studio_partition_and_services(app)
+    if ps is None or isinstance(ps, dict):
+        return []
+    part, services = ps
+    access = StudioAccess(caller, opted_in=True)
+    return [rec.name for rec in await services.agents.list(part) if access.can_see(_store_record("agent", rec.agent_id, rec))]

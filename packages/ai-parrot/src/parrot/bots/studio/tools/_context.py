@@ -47,6 +47,56 @@ def _require_user_id() -> str:
     return str(ctx.user_id)
 
 
+def _studio_caller() -> Any:
+    """``current_context().kwargs['studio_scope'].caller`` or ``None`` (duck-typed; core never imports the server)."""
+    kwargs = getattr(_pkg.current_context(), "kwargs", None)
+    scope = kwargs.get("studio_scope") if isinstance(kwargs, dict) else None
+    return getattr(scope, "caller", None)
+
+
+def _require_author() -> None:
+    """A bound caller that may not author is refused (``authoring_denied``); no bound scope (plain host) passes.
+
+    Raises:
+        PermissionError: ``authoring_denied`` — the host's ``may_author`` gate is false for the caller.
+    """
+    caller = _studio_caller()
+    if caller is not None and getattr(caller, "may_author", True) is not True:
+        raise PermissionError("authoring_denied")
+
+
+def _require_tenantless_agent(agent_name: str) -> None:
+    """A tenant caller never reaches a registry / legacy-DB agent: those carry no tenant, so they are "not found".
+
+    Raises:
+        ValueError: the caller's scope has a tenant.
+    """
+    caller = _studio_caller()
+    if caller is not None and getattr(caller, "tenant", None) is not None:
+        raise ValueError(f"Agent '{agent_name}' not found.")
+
+
+def _require_python_drafts() -> None:
+    """Python source is never accepted from a tenant caller (declarative drafts only, FEAT-605 C3).
+
+    Raises:
+        PermissionError: ``declarative_only`` — the bound caller has a tenant.
+    """
+    caller = _studio_caller()
+    if caller is not None and getattr(caller, "tenant", None) is not None:
+        raise PermissionError("declarative_only")
+
+
+def _can_manage_agent(agent: Any, user_id: str) -> bool:
+    """Whether the caller manages the Studio row ``agent``: the access rule under a bound scope, else its owner."""
+    caller = _studio_caller()
+    if caller is None:
+        return str(agent.owner) == str(user_id)
+    from parrot.handlers.studio.access import StudioAccess, _store_record  # lazy: server satellite
+
+    return StudioAccess(caller, opted_in=True).can_manage(_store_record("agent", agent.agent_id, agent))
+
+
 def _unscoped_refusal() -> dict:
     """The ``tool_scope_unavailable`` refusal (FEAT-605 X14) for a call on an opted-in host with no bound scope."""
     return {
@@ -63,12 +113,14 @@ async def _studio_partition_and_services(app: Any) -> tuple[Any, Any] | dict | N
     ``tool_scope_unavailable`` refusal dict is returned (callers return it as-is; nothing is written).
     """
     storage = app.get("studio_storage")
+    scope = (getattr(_pkg.current_context(), "kwargs", None) or {}).get("studio_scope")
     if storage is None or storage.backend != "database":
+        if getattr(getattr(scope, "caller", None), "tenant", None) is not None:   # never the tenant-less legacy path
+            return {"error": "Tenant partitions need database storage.", "error_code": "studio_storage_unavailable"}
         return None
     from parrot.handlers.scope import has_installed_resolver  # lazy: server satellite
     from parrot.handlers.studio.storage.models import StudioPartition  # lazy: server satellite
 
-    scope = (getattr(_pkg.current_context(), "kwargs", None) or {}).get("studio_scope")
     if scope is None and has_installed_resolver(app):
         return _unscoped_refusal()
     part = StudioPartition.from_scope(scope.caller) if scope is not None else StudioPartition.GLOBAL
@@ -88,7 +140,7 @@ def _refusal_code(exc: Exception) -> str | None:
     if isinstance(exc, (StudioValidationError, m.StudioAssetTooLarge)):
         return getattr(exc, "code", "validation_error")
     table = (
-        (m.StudioNameConflict, "duplicate"),
+        (m.StudioNameConflict, "name_taken"),
         (m.StudioNotFound, "not_found"),
         (m.StudioToolingRefused, "tooling_not_permitted"),
         ((m.StudioVersionConflict, m.StudioStaleAuthorization), "version_conflict"),
@@ -129,6 +181,7 @@ async def _require_agent_owner(app: Any, agent_name: str, user_id: str) -> None:
             (including unowned agents — fail closed, same posture as
             ``_require_owner``).
     """
+    _require_tenantless_agent(agent_name)   # registry / legacy-DB agents carry no tenant
     owner = None
     exists = False
 

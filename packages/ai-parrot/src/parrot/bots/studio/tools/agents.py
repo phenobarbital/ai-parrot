@@ -6,7 +6,7 @@ from typing import Any
 
 from parrot.tools import tool
 
-from ._context import _refusing, _require_app, _require_user_id, _studio_partition_and_services
+from ._context import _refusing, _require_app, _require_author, _require_user_id, _studio_partition_and_services
 
 
 @tool(
@@ -53,6 +53,7 @@ async def create_yaml_agent(
     from parrot.models.basic import ModelConfig
     from parrot.registry.registry import BotConfig
 
+    _require_author()
     app = _require_app()
     # Adversarial-review fix: stamp the real session user as owner (the
     # HTTP create path does the same server-side `created_by` stamping) —
