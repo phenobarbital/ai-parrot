@@ -223,10 +223,8 @@ async def _studio_partition_and_services(app: Any) -> tuple[Any, Any] | None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 593ad5562. Assistant tools route through services in database mode, new HITL save_agent_bundle, declarative_only for tenants; 7 new tests; 8 mutations RED. FLAGS: tools.py 738 lines (581 before); skill publish does not upload to the derived search index (resync rebuilds); tenant-required assistant POST still 500 build_failed (FEAT-605 W3.6).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
