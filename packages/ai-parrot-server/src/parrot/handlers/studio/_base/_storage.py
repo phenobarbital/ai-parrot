@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+from collections.abc import AsyncIterator
 from typing import Any
 
 from aiohttp import web
@@ -67,6 +69,24 @@ class _StudioStorageMixin:
         if code is None:
             return None
         return self.json_response(self._json_error(self._VISIBILITY_MESSAGES[code], code), status=422)
+
+    @contextlib.asynccontextmanager
+    async def _bound_scope(self, agent: Any = None) -> AsyncIterator[None]:
+        """Bind a ``RequestContext`` for the block (FEAT-622 M5): ``studio_scope`` only when a resolver is installed.
+
+        With no resolver nothing is bound beyond the request itself, so a tenant-bound tool refuses ``no_scope``.
+        The context is reset on exit, whatever the block did.
+        """
+        from parrot.utils.helpers import RequestContext, _current_ctx
+
+        from ..access import build_tool_scope
+
+        kwargs = {"studio_scope": build_tool_scope(await self._scope(), agent)} if self._opted_in() else {}
+        token = _current_ctx.set(RequestContext(request=self.request, app=self.request.app, **kwargs))
+        try:
+            yield
+        finally:
+            _current_ctx.reset(token)
 
     def _scope_refusal(self, cls: Any, slug: str) -> web.Response | None:
         """403 ``tool_scope_unavailable`` (``details.reason``) when a tenant-bound ``cls`` has no valid scope.

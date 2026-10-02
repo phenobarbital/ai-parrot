@@ -59,6 +59,16 @@ def build_tool_scope(scope: RequestScope, agent: StudioAgentRef | None = None) -
     return StudioToolScope(caller=scope, agent=agent)
 
 
+def bot_agent_ref(bot: Any) -> StudioAgentRef | None:
+    """The :class:`StudioAgentRef` of a Studio-built bot (``bot._studio_key``), or ``None`` for any other bot."""
+    key = getattr(bot, "_studio_key", None)
+    if key is None:
+        return None
+    agent_id = getattr(bot, "_studio_agent_id", None)
+    return StudioAgentRef(agent_id=None if agent_id is None else str(agent_id), name=key.name,
+                          owner=getattr(bot, "_tooling_owner", None), tenant=key.tenant, visibility="private")
+
+
 def _store_record(kind: str, key: Any, rec: Any) -> StudioVisibilityRecord:
     """Map a FEAT-621 record (agent/draft/skill) to a visibility record."""
     return StudioVisibilityRecord(

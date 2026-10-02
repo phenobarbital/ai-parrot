@@ -22,6 +22,7 @@ PROBE_INIT = textwrap.dedent(
         "tp_probe_managed": "plugins.tools.probe.ProbeManagedTool",
         "tp_tenant": "plugins.tools.probe.ProbeTenantToolkit",
         "tp_tenant_tool": "plugins.tools.probe.ProbeTenantTool",
+        "tp_tenant_mismatch_tool": "plugins.tools.probe.ProbeMismatchTool",
     }
     '''
 )
@@ -131,6 +132,21 @@ PROBE_MODULE = textwrap.dedent(
         async def _execute(self, **kwargs):
             COUNTERS["executed"] += 1
             return {"ok": True}
+
+
+    class ProbeMismatchTool(AbstractTool):
+        """Tenant-bound tool whose own check (host code) refuses: ``host_tenant_mismatch``."""
+
+        name = "tp_tenant_mismatch_tool"
+        description = "Probe tool refusing with host_tenant_mismatch"
+        args_schema = ProbeArgs
+        access = "read"
+        tenant_bound: ClassVar[bool] = True
+
+        async def _execute(self, **kwargs):
+            from parrot.tools.scope import ToolScopeUnavailable
+
+            raise ToolScopeUnavailable("host_tenant_mismatch", tool_name=self.name)
 
 
     class ProbeManagedTool(AbstractTool):

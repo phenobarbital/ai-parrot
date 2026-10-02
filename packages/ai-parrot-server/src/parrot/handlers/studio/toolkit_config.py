@@ -23,7 +23,7 @@ from .models import (
     ToolkitOptionsResponse,
     ToolkitPersistResponse,
 )
-from .access import StudioTenantRequired
+from .access import StudioTenantRequired, _store_record
 from .storage import models as _studio_models
 from .storage.services._common import StudioValidationError
 from .tooling_store import AgentToolingStore, ServerManagedParamsRejected
@@ -213,6 +213,18 @@ class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
             cls, _ = store.schema_for(slug)
         except LookupError as exc:
             return self._map_exc(exc)
+        async with self._bound_scope(await self._state_agent_ref(state)):   # the agent's own reference (C16)
+            return await self._load_options(cls, state, slug, param)
+
+    async def _state_agent_ref(self, state):
+        """The :class:`StudioAgentRef` of a Studio row (access rule view), or ``None`` for a legacy agent."""
+        if getattr(state, "source", None) != "studio":
+            return None
+        rec = state._studio[1]
+        return (await self._access()).agent_ref(_store_record("agent", rec.agent_id, rec))
+
+    async def _load_options(self, cls, state, slug: str, param: str):
+        """Scope gate, then the persisted spec's options (vault read and construction come after the gate)."""
         if (refused := self._options_refusal(cls, slug, param)) is not None:
             return refused  # the scope gate runs before hydrate_params (vault read) and before construction
         spec = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)

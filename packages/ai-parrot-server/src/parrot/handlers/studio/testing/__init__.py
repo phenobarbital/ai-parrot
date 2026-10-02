@@ -35,6 +35,7 @@ from parrot.tools.toolkit import AbstractToolkit
 from pydantic import ValidationError
 
 from .._base import StudioBaseView
+from ..access import StudioTenantRequired
 from ..agents import _StudioAgentsMixin
 from ..byok import resolve_user_api_key  # re-exported: tests patch ``testing.resolve_user_api_key``
 from ._ask import _StudioTestingAskMixin
@@ -154,6 +155,14 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
+        try:
+            async with self._bound_scope():   # agent=None: the caller's scope; nothing bound without a resolver
+                return await self._run_tool(slug, execute_request)
+        except StudioTenantRequired:
+            return self._tenant_required()    # an opted-in caller with no tenant
+
+    async def _run_tool(self, slug: str, execute_request):
+        """Refusals, construction and the call — all inside the bound request context (scope gate first, R-b)."""
         cls = _resolve_registry_class(slug)
         if (refused := await self._executable_refusal(slug, cls, execute_request.args)) is not None:
             return refused

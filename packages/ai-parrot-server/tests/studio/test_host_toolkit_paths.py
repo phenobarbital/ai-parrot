@@ -63,8 +63,19 @@ def _install_store(monkeypatch, module):
     monkeypatch.setattr(module, "AgentToolingStore", Store)
 
 
+class _AcmeResolver:
+    """A real scope resolver: every caller is user 42 of tenant ``acme`` (the app is opted in, FEAT-622 M5)."""
+
+    async def resolve(self, request):
+        from parrot.handlers.scope import RequestScope
+
+        return RequestScope(user_id="42", tenant="acme", groups=frozenset())
+
+
 def _tooling_handler(cls, match_info):
-    request = make_mocked_request("GET", "/x", match_info=match_info, app=web.Application())
+    app = web.Application()
+    app["scope_resolver"] = _AcmeResolver()
+    request = make_mocked_request("GET", "/x", match_info=match_info, app=app)
     handler = cls(request)
     handler._get_user = AsyncMock(return_value=StudioUser(user_id="42"))
     handler._pbac_gate = AsyncMock(return_value=None)
@@ -165,18 +176,7 @@ _DRIVERS = {
 @pytest.mark.parametrize("path", PATHS)
 async def test_every_studio_path_sees_host_toolkit(host_plugins, monkeypatch, path, variant):  # noqa: F811
     """Each Studio path finds the host toolkit, plain or tenant-bound (spec §4 integration row 1, R-c)."""
-    from parrot.handlers.scope import RequestScope
-    from parrot.handlers.studio.access import build_tool_scope
-    from parrot.utils.helpers import RequestContext, _current_ctx
-
     monkeypatch.setattr(V, "tk", VARIANTS[variant][0])
     monkeypatch.setattr(V, "tool", VARIANTS[variant][1])
     monkeypatch.setattr(V, "tool_path", VARIANTS[variant][2])
-    token = _current_ctx.set(RequestContext(
-        request=make_mocked_request("GET", "/x"),
-        studio_scope=build_tool_scope(RequestScope(user_id="42", tenant="acme", groups=frozenset())),
-    ))
-    try:
-        await _DRIVERS[path](monkeypatch)
-    finally:
-        _current_ctx.reset(token)
+    await _DRIVERS[path](monkeypatch)

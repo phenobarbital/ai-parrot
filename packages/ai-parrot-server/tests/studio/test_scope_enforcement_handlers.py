@@ -9,16 +9,21 @@ from aiohttp.test_utils import make_mocked_request
 
 from parrot.handlers.scope import RequestScope
 from parrot.handlers.studio import setup_studio_routes
-from parrot.handlers.studio.access import build_tool_scope
 from parrot.handlers.studio import toolkit_config as tc
 from parrot.tools.spec import ToolkitSpec
-from parrot.utils.helpers import RequestContext, _current_ctx
 
 from ._host_probe import host_plugins, probe_counters  # noqa: F401
 from .test_agents_db_mode import _session
 from .test_toolkit_config import _handler, _state, _store, _unwrap
 
 BASE = "/api/v1/astudio"
+
+
+class _Resolver:
+    """A real scope resolver (the host opted in): the caller is u1 of tenant ``acme``."""
+
+    async def resolve(self, request):
+        return RequestScope(user_id="u1", tenant="acme", groups=frozenset())
 
 
 def _plain_app() -> web.Application:
@@ -38,7 +43,7 @@ async def test_execute_standalone_refuses_without_scope(aiohttp_client, host_plu
     resp, body = await _execute(client, "tp_tenant_tool")
     counters = probe_counters()
     assert resp.status == 403 and body["code"] == "tool_scope_unavailable"
-    assert body["details"] == {"reason": "no_context"}
+    assert body["details"] == {"reason": "no_scope"}
     assert counters["constructed"] == 0 and counters["executed"] == 0
     resp, body = await _execute(client, "tp_probe_tool")          # a non-tenant-bound tool is unaffected
     assert resp.status == 200 and counters["executed"] == 1
@@ -57,8 +62,11 @@ async def test_execute_maps_a_structured_scope_result_to_403(host_plugins):  # n
     assert handler._execute_response(ToolResult(status="success", result=1)).status == 200
 
 
-def _options_handler():
-    return _handler(tc.StudioToolkitOptionsHandler, "GET", {"name": "agent", "slug": "tp_tenant", "param": "project"})
+def _options_handler(*, resolver: bool = False):
+    handler = _handler(tc.StudioToolkitOptionsHandler, "GET", {"name": "agent", "slug": "tp_tenant", "param": "project"})
+    if resolver:
+        handler.request.app["scope_resolver"] = _Resolver()
+    return handler
 
 
 async def test_options_refuse_before_vault_and_construction(host_plugins, monkeypatch):  # noqa: F811
@@ -74,18 +82,11 @@ async def test_options_refuse_before_vault_and_construction(host_plugins, monkey
     response = await _unwrap(tc.StudioToolkitOptionsHandler.get)(handler)
     body = json.loads(response.body)
     assert response.status == 403 and body["code"] == "tool_scope_unavailable"
-    assert body["details"] == {"reason": "no_context"}
+    assert body["details"] == {"reason": "no_scope"}
     hydrate.assert_not_awaited()                                   # the vault is never read
     assert counters["constructed"] == 0 and counters["options_calls"] == 0
-    # inside a valid scope the same request proceeds (and the toolkit's own gated config_options passes too)
-    token = _current_ctx.set(RequestContext(
-        request=make_mocked_request("GET", "/x"),
-        studio_scope=build_tool_scope(RequestScope(user_id="u1", tenant="acme", groups=frozenset())),
-    ))
-    try:
-        response = await _unwrap(tc.StudioToolkitOptionsHandler.get)(_options_handler())
-    finally:
-        _current_ctx.reset(token)
+    # an opted-in host binds the caller's scope itself: the same request proceeds (and the toolkit's own gate passes)
+    response = await _unwrap(tc.StudioToolkitOptionsHandler.get)(_options_handler(resolver=True))
     assert response.status == 200 and json.loads(response.body)["options"] == []
     hydrate.assert_awaited_once()
     assert counters["constructed"] == 1 and counters["options_calls"] == 1

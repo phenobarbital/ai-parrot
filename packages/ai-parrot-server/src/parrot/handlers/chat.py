@@ -44,6 +44,20 @@ class ChatHandler(BaseView):
     description: Chat Handler for Parrot Application.
     """
 
+    async def _studio_scope_kwargs(self, app, chatbot) -> dict:
+        """``{"studio_scope": …}`` when the host installed a scope resolver (FEAT-622 M5); ``{}`` otherwise.
+
+        The scope is the caller's, with the Studio agent reference of ``chatbot`` (``None`` for a non-Studio bot).
+        With no resolver nothing is bound, so a tenant-bound tool refuses ``no_scope``.
+        """
+        from parrot.handlers.scope import get_scope_resolver, has_installed_resolver
+        from parrot.handlers.studio.access import bot_agent_ref, build_tool_scope
+
+        if not has_installed_resolver(app):
+            return {}
+        scope = await get_scope_resolver(app).resolve(self.request)
+        return {"studio_scope": build_tool_scope(scope, bot_agent_ref(chatbot))}
+
     async def _check_pbac_chatbot_access(self, chatbot_name: str) -> "web.Response | None":
         """Check PBAC policy for chatbot access.
 
@@ -452,7 +466,8 @@ class ChatHandler(BaseView):
         if isinstance(stream, str):
             stream = stream.lower() == 'true'
         try:
-            async with chatbot.session(request=self.request, app=app, llm=llm) as bot:
+            scope_kwargs = await self._studio_scope_kwargs(app, chatbot)
+            async with chatbot.session(request=self.request, app=app, llm=llm, **scope_kwargs) as bot:
                 # Prioritize session_id from request data (conversation-specific)
                 # Generate new UUID if not provided - never use browser session
                 session_id = data.pop('session_id', None) or uuid.uuid4().hex
