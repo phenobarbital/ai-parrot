@@ -40,10 +40,8 @@ async def publish_skill_to_catalog(
     Returns:
         The published catalog entry, serialized.
     """
-    import logging as _logging
-
     from parrot.handlers.models.skills_catalog import SkillCatalogEntry
-    from parrot.handlers.studio.skills_catalog import StudioSkillsCatalogHandler
+    from parrot.handlers.studio.skills_catalog import SkillsCatalogGlue
     from parrot.skills.models import SkillCategory
 
     _require_author()
@@ -61,16 +59,9 @@ async def publish_skill_to_catalog(
     if app.get("database") is None:
         raise RuntimeError("Database unavailable — cannot publish to the shared catalog.")
 
-    # A bare, request-less instance of the handler's DB glue — its
-    # methods only need `.request.app` / `.logger`, never the full
-    # aiohttp request/response cycle (mirrors the `tool.execute()`
-    # `_pre_execute` seam, not a real HTTP dispatch — no duplicate
-    # persistence logic; this calls the SAME `_insert_entry`/
-    # `_dual_write_to_registry`/`_flag_stale` the POST /astudio/skills
-    # handler uses).
-    helper = object.__new__(StudioSkillsCatalogHandler)
-    helper.request = type("_FakeRequest", (), {"app": app})()
-    helper.logger = _logging.getLogger("Parrot.AgentStudio.PublishSkill")
+    # Request-less glue over the SAME `_insert_entry`/`_dual_write_to_registry`/`_flag_stale` the POST
+    # /astudio/skills handler uses (no duplicate persistence logic, no HTTP dispatch).
+    helper = SkillsCatalogGlue(app)
 
     existing = await helper._get_entry_by_name(name)  # pylint: disable=protected-access
     if existing is not None:

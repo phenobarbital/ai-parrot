@@ -178,3 +178,33 @@ async def test_assistant_binds_studio_scope(aiohttp_client, pool, monkeypatch): 
     resp = await plain.post("/api/v1/astudio/assistant", json={"query": "hi", "use_byok": False},
                             headers={"X-User": "u1"})
     assert resp.status == 200 and "studio_scope" not in seen                 # nothing bound without a resolver
+
+
+async def test_legacy_publish_path_builds_its_glue_and_stamps_the_real_user(monkeypatch):
+    """The legacy (non-database) publish used to die with ``AttributeError`` (read-only ``request`` on a handler)."""
+    from parrot.handlers.studio.skills_catalog import SkillsCatalogGlue
+
+    inserted: list = []
+
+    async def _insert(self, entry):
+        inserted.append(entry)
+
+    monkeypatch.setattr(SkillsCatalogGlue, "_get_entry_by_name", AsyncMock(return_value=None))
+    monkeypatch.setattr(SkillsCatalogGlue, "_insert_entry", _insert)
+    registry_calls = []
+
+    async def _dual(self, entry, owner):
+        registry_calls.append(owner)
+        return False
+
+    monkeypatch.setattr(SkillsCatalogGlue, "_dual_write_to_registry", _dual)
+    app = {"database": object()}
+    with ctx(app, user_id="u7"):
+        out = await _call(tools_module.publish_skill_to_catalog, **SKILL)
+    assert out["owner"] == "u7" and out["name"] == "s1"
+    assert inserted[0].owner == "u7" and registry_calls == ["u7"]                 # never "agent_studio"
+    monkeypatch.setattr(SkillsCatalogGlue, "_get_entry_by_name", AsyncMock(return_value=object()))
+    with ctx(app, user_id="u7"):
+        with pytest.raises(ValueError, match="already exists"):
+            await _call(tools_module.publish_skill_to_catalog, **SKILL)
+    assert len(inserted) == 1

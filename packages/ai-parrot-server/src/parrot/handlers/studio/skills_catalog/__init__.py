@@ -47,6 +47,7 @@ from ._helpers import (
     org_id_from_session,
     reconcile_skills_catalog,
 )
+from ._glue import SkillsCatalogGlue
 from ._import import _StudioSkillsImportDbMixin, _StudioSkillsImportLegacyMixin
 from ._mixin import _StudioSkillsMixin
 from ._resync import _StudioSkillsResyncDbMixin, _StudioSkillsResyncLegacyMixin
@@ -56,6 +57,7 @@ __all__ = [
     "AGENTS_DIR",
     "DEFAULT_ORG_ID",
     "SHARED_NAMESPACE_SUFFIX",
+    "SkillsCatalogGlue",
     "StudioSkillVisibilityHandler",
     "StudioSkillsCatalogHandler",
     "StudioSkillsImportHandler",
