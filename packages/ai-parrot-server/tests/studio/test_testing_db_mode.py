@@ -187,8 +187,8 @@ async def test_tenant_partition_never_serves_global_rows(aiohttp_client, pool, a
     assert asks == [] and app["bot_manager"].studio._cache.all_entries() == []
 
 
-class _LegacyBot(BasicBot):
-    """A registry (non-Studio) agent."""
+class _LegacyBot(BaseBot):
+    """A registry (non-Studio) agent; BaseBot so no default Google LLM is ever built."""
 
     async def ask(self, question=None, **_kw):
         return SimpleNamespace(content=f"echo:{question}", metadata={})
