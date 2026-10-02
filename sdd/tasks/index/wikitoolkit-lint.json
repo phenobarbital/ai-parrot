@@ -16,25 +16,25 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates parrot.knowledge.lint package (models.py, rule.py, context.py) every other task imports",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4009-lint-engine-models.md"
     },
     {
       "id": "TASK-4010",
       "slug": "lint-runner",
-      "title": "LintRunner: check \u2192 fix \u2192 re-check \u2192 route \u2192 audit",
+      "title": "LintRunner: check → fix → re-check → route → audit",
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "imports Finding/LintOptions/LintReport/LintRule/LintContext from TASK-4009 (lint/models.py, rule.py, context.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4010-lint-runner.md"
     },
@@ -54,14 +54,14 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: only touches wiki/store.py; TASK-4014 consumes rebuild_index/index_drift",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4011-store-rebuild-index.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": true,
       "parallelism_notes": "imports Finding/make_fingerprint from TASK-4009 (lint/models.py, lint/rule.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4012-lint-okf-pack.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -101,7 +101,7 @@
       "parallel": true,
       "parallelism_notes": "imports Finding/make_fingerprint/LintContext from TASK-4009 (lint/models.py, rule.py, context.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4013-lint-plane-pack.md"
     },
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": true,
       "parallelism_notes": "imports LintContext/Finding from TASK-4009 (lint/context.py, models.py); calls store.rebuild_index/index_drift added by TASK-4011 (wiki/store.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4014-lint-plane-fix-rules.md"
     },
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -142,7 +142,7 @@
       "parallel": true,
       "parallelism_notes": "imports Finding/LintContext/make_fingerprint from TASK-4009 (lint/models.py, context.py, rule.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4015-lint-export-pack.md"
     },
@@ -153,7 +153,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,7 +162,7 @@
       "parallel": true,
       "parallelism_notes": "imports Finding/LintContext from TASK-4009 (lint/models.py, context.py); LintContext.memories() also from TASK-4009",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4016-lint-adr-memory-packs.md"
     },
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -182,7 +182,7 @@
       "parallel": true,
       "parallelism_notes": "imports Finding/LintContext/make_fingerprint from TASK-4009 (lint/models.py, context.py, rule.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4017-lint-llm-pack.md"
     },
@@ -193,7 +193,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -202,7 +202,7 @@
       "parallel": true,
       "parallelism_notes": "imports Finding/LintReport/LintOptions from TASK-4009 (lint/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4018-lint-routing.md"
     },
@@ -213,7 +213,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -229,7 +229,7 @@
       "parallel": true,
       "parallelism_notes": "default_rules imports PLANE_RULES (TASK-4013 packs/plane.py), PLANE_FIX_RULES (TASK-4014 packs/plane_fix.py), EXPORT_RULES (TASK-4015), ADR_RULES/MEMORY_RULES (TASK-4016), build_llm_rule (TASK-4017); toolkit uses LintRunner (TASK-4010) + FindingRouter (TASK-4018); okf pack (TASK-4012) must exist so OKF output is engine-backed; modifies lint/packs/__init__.py created by TASK-4009",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4019-lint-default-rules-toolkit.md"
     },
@@ -240,16 +240,16 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-4019"
       ],
       "parallel": true,
-      "parallelism_notes": "uses default_rules/LintRunner/FindingRouter wired by TASK-4019 (lint/packs/__init__.py); cli.py/tools.py also edited by FEAT-569 \u2014 rebase-check before starting",
+      "parallelism_notes": "uses default_rules/LintRunner/FindingRouter wired by TASK-4019 (lint/packs/__init__.py); cli.py/tools.py also edited by FEAT-569 — rebase-check before starting",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4020-lint-cli-mcp.md"
     },
@@ -260,7 +260,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -269,7 +269,7 @@
       "parallel": true,
       "parallelism_notes": "invokes the `wikitoolkit lint` command created by TASK-4020 (wiki/cli.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T23:43:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4021-lint-ci-docs-e2e.md"
     }
