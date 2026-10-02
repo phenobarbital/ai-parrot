@@ -17,6 +17,27 @@ class _StudioTestingMixin:
         """Return the ``BotManager`` instance, or ``None`` if unavailable."""
         return self.request.app.get("bot_manager")
 
+    async def _policy_check(self, slug: str, *, phase: str, status: int):
+        """Tenant tooling policy on one tool/toolkit slug (FEAT-622 M7): an error response, or ``None`` when allowed.
+
+        A no-op for the GLOBAL partition unless the policy sets ``apply_to_global``. ``status`` is 403 on execute
+        and 422 on attach (X14), both with code ``tooling_not_permitted`` and ``details.reason`` / ``details.item``.
+        """
+        from parrot.tools.tooling_policy import TenantToolingRefused, ToolingSubject, get_tenant_tooling_policy
+
+        part = await self._studio_partition()
+        policy = get_tenant_tooling_policy(self.request.app)
+        if part.tenant is None and not policy.apply_to_global:
+            return None
+        user = await self._get_user()
+        subject = ToolingSubject(tenant=part.tenant, agent_id=None, actor=user.user_id, phase=phase)
+        try:
+            policy.check_tool(slug, subject=subject)
+        except TenantToolingRefused as exc:
+            error = StudioError(message=str(exc), code=exc.code, details={"reason": exc.reason, "item": exc.item})
+            return self.json_response(error.model_dump(), status=status)
+        return None
+
     def _error(self, message: str, *, status: int, code: str | None = None, details: dict | None = None):
         """Return a JSON error response shaped like :class:`StudioError`."""
         return self.json_response(

@@ -94,8 +94,9 @@ class StudioTestingHandler(
 class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
     """``POST /api/v1/astudio/tools/{slug}/execute`` — deterministic tool call."""
 
-    def _executable_refusal(self, slug: str, cls: type | None):
-        """404 for an unknown / non-tool slug; 403 ``confirmation_required`` for a host write tool.
+    async def _executable_refusal(self, slug: str, cls: type | None):
+        """404 for an unknown / non-tool slug; 403 ``tooling_not_permitted`` (tenant policy, phase ``execute``);
+        403 ``confirmation_required`` for a host write tool.
 
         A host standalone write tool has no approval channel on this path (FEAT-622 M8), so it is refused
         before any instantiation.
@@ -106,6 +107,8 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             or (isinstance(cls, type) and issubclass(cls, AbstractToolkit))
         ):
             return self._error(f"Unknown tool '{slug}'.", status=404, code="not_found")
+        if (refused := await self._policy_check(slug, phase="execute", status=403)) is not None:
+            return refused
         if is_enforced_write_class(cls):
             return self._error(
                 f"Tool '{slug}' requires confirmation and cannot be executed directly.",
@@ -136,7 +139,7 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         cls = _resolve_registry_class(slug)
-        if (refused := self._executable_refusal(slug, cls)) is not None:
+        if (refused := await self._executable_refusal(slug, cls)) is not None:
             return refused
 
         try:
@@ -176,6 +179,27 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
     ``persisted: false``.
     """
 
+    async def _agent_owner(self, name: str):
+        """``(owner, None)`` of a DB or registry agent, or ``(None, 404 response)`` when the agent is unknown."""
+        db_agent = await self._get_db_agent(name)
+        if db_agent is not None:
+            return (str(db_agent.created_by) if db_agent.created_by is not None else None), None
+        registry = self._registry()
+        meta = registry.get_metadata(name) if registry is not None else None
+        if meta is None:
+            return None, self._error(f"Agent '{name}' not found.", status=404, code="not_found")
+        return self._registry_agent_owner(meta), None
+
+    async def _attach_refusal(self, assign_request):
+        """422 ``tooling_not_permitted`` for the first tool/toolkit slug the tenant policy refuses (phase ``attach``).
+
+        Runs before any registration, so a refused request changes nothing on the live agent.
+        """
+        for slug in [*assign_request.tools, *(entry.slug for entry in assign_request.toolkits)]:
+            if (refused := await self._policy_check(slug, phase="attach", status=422)) is not None:
+                return refused
+        return None
+
     async def post(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("agents", "astudio:agents:assign_tools")) is not None:
@@ -195,15 +219,9 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
-        db_agent = await self._get_db_agent(name)
-        if db_agent is not None:
-            owner = str(db_agent.created_by) if db_agent.created_by is not None else None
-        else:
-            registry = self._registry()
-            meta = registry.get_metadata(name) if registry is not None else None
-            if meta is None:
-                return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
-            owner = self._registry_agent_owner(meta)
+        owner, missing = await self._agent_owner(name)
+        if missing is not None:
+            return missing
 
         user = await self._get_user()
         self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
@@ -215,6 +233,9 @@ class StudioToolAssignHandler(_StudioAgentsMixin, _StudioTestingMixin, StudioBas
         bot = await manager.get_bot(name)
         if bot is None:
             return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
+
+        if (refused := await self._attach_refusal(assign_request)) is not None:
+            return refused
 
         errors: list[dict[str, Any]] = []
         registered_names: set[str] = set()

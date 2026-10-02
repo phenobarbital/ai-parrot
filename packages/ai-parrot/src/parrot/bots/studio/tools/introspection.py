@@ -24,9 +24,20 @@ async def list_agent_base_classes() -> list:
 )
 async def list_available_tools() -> list:
     """List the tool catalog via the existing tools_catalog registry."""
-    from parrot.handlers.tools_catalog import _build_catalog
+    from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
+    from parrot.tools.scope import current_tool_scope
+    from parrot.tools.tooling_policy import ToolingSubject
+    from parrot.utils.helpers import current_context
 
-    return _build_catalog()
+    catalog = _build_catalog()
+    scope = current_tool_scope()
+    if scope is None:
+        return catalog
+    # A bound caller scope: list only what the tenant tooling policy permits (no app => fail closed: deny_all).
+    ctx = current_context()
+    app = getattr(ctx, "app", None) or {}
+    subject = ToolingSubject(tenant=scope.caller.tenant, agent_id=None, actor=scope.caller.user_id, phase="attach")
+    return filter_catalog_for(app, subject, catalog)
 
 
 @tool(
