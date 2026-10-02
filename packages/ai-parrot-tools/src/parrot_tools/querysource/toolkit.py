@@ -11,6 +11,7 @@ import asyncio
 import copy
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
@@ -353,7 +354,7 @@ class QuerysourceToolkit(AbstractToolkit):
         component: dict[str, Any],
         request: dict[str, Any] | None = None,
         tenant: str | None = None,
-        snapshot: bool = True,
+        snapshot: bool = False,
         surface_id: str | None = None,
         target_key: str | None = None,
         refresh: dict[str, Any] | None = None,
@@ -366,8 +367,12 @@ class QuerysourceToolkit(AbstractToolkit):
         ``filter``, ``fields``, ``ordering``, ``grouping``, ``limit``, and
         ``offset`` in the ``qs_execute_slug`` grammar. Relative dates use UDF
         keywords (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH,
-        LAST_YEAR); ``@variables`` are rejected. The slug always executes once
-        to validate columns. ``snapshot=True`` embeds up to 500 current rows.
+        LAST_YEAR); ``@variables`` are rejected. By default (``snapshot=False``)
+        the surface is definition-only: the slug is only probed with
+        ``querylimit=1`` to validate columns and dtypes, the envelope carries no
+        rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only
+        when viewers cannot fetch for themselves (share links, offline export):
+        it runs the full query and embeds up to 500 current rows.
         ``refresh`` accepts ``policy`` (on_mount, manual, interval) and
         ``interval_seconds``; ``transform`` accepts the linked transform DSL.
         """
@@ -379,7 +384,8 @@ class QuerysourceToolkit(AbstractToolkit):
         spec = DashboardSource(slug=slug, request=request, tenant=tenant, refresh=refresh, transform=transform)
         source = self._build_linked_source(spec, detail, key=key)
         self.logger.info("qs_build_linked_surface %s tenant=%s key=%s snapshot=%s", slug, tenant, key, snapshot)
-        execution = await execute_sources({key: source}, pctx=None, guard=None)
+        self._warn_manual_without_snapshot({key: refresh}, snapshot)
+        execution = await execute_sources({key: source}, pctx=None, guard=None, probe=not snapshot)
         outcome = execution.outcomes[key]
         if outcome.error:
             raise QuerysourceToolkitError(f"query '{slug}' failed while building the linked surface: {outcome.error}")
@@ -410,7 +416,7 @@ class QuerysourceToolkit(AbstractToolkit):
         widgets: list[dict[str, Any]],
         surface_id: str | None = None,
         title: str | None = None,
-        snapshot: bool = True,
+        snapshot: bool = False,
         sources: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Emit ONE linked A2UI dashboard surface whose data sources are owned by the dashboard.
@@ -422,8 +428,12 @@ class QuerysourceToolkit(AbstractToolkit):
         aggregation of the rows another widget shows in full), ``slug`` (its own query-slug source with
         ``request?``/``tenant?``/``refresh?``, refreshed independently), or ``data`` (inline rows, ≤500).
         Components are Chart, DataTable or KPICard without bindings; a KPICard names its column in ``value``.
-        KPIs, charts and tables are laid out in rows. Raises InvalidConditionsError on bad/duplicate keys,
-        unknown sources or grammar; QuerysourceToolkitError when a source fails to execute.
+        KPIs, charts and tables are laid out in rows. By default (``snapshot=False``) the dashboard is
+        definition-only: every slug is only probed with ``querylimit=1`` to validate columns and dtypes, the
+        envelope carries no rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only when viewers
+        cannot fetch for themselves (share links, offline export): it runs every query in full and embeds up to
+        500 rows per source. Raises InvalidConditionsError on bad/duplicate keys, unknown sources or grammar;
+        QuerysourceToolkitError when a source fails to execute.
         """
         from parrot.outputs.a2ui.builders import build_linked_surface as _build
         from parrot.outputs.a2ui.linked.executor import execute_sources
@@ -497,7 +507,14 @@ class QuerysourceToolkit(AbstractToolkit):
             len(inline),
             snapshot,
         )
-        execution = await execute_sources(linked, pctx=None, guard=None)
+        self._warn_manual_without_snapshot(
+            {
+                **{key: spec.refresh for key, spec in shared.items()},
+                **{w.key: w.refresh for w in parsed if w.origin == "slug"},
+            },
+            snapshot,
+        )
+        execution = await execute_sources(linked, pctx=None, guard=None, probe=not snapshot)
         # Sources fail independently; report every failure, not just the first in widget order.
         failures = [
             f"'{key}' ({self._source_label(linked[key])}): {outcome.error if outcome is not None else 'no outcome'}"
@@ -535,6 +552,20 @@ class QuerysourceToolkit(AbstractToolkit):
                 }
             ],
         }
+
+    def _warn_manual_without_snapshot(self, refreshes: Mapping[str, dict[str, Any] | None], snapshot: bool) -> None:
+        """The admin lane never runs a ``manual`` source on mount, so without a snapshot it renders empty.
+
+        ``refreshes`` maps each query-slug source key to its ``refresh`` payload.
+        """
+        if snapshot:
+            return
+        manual = [key for key, refresh in refreshes.items() if (refresh or {}).get("policy") == "manual"]
+        if manual:
+            self.logger.warning(
+                "linked source(s) %s use refresh.policy='manual' without a snapshot; they render empty until refreshed",
+                ", ".join(manual),
+            )
 
     @staticmethod
     def _check_key(key: str, what: str) -> None:

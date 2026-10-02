@@ -474,6 +474,8 @@ async def run_s5(ctx: E2EContext) -> list[ScenarioResult]:
             _canon(tenant_rows) == _canon(v2_rows) == _canon(v3_rows),
             f"tenant={len(tenant_rows)} v2={len(v2_rows)} v3={len(v3_rows)}",
         )
+    if v2_rows is not None and v3_rows is not None:
+        check(results, "s5.v2_equals_v3", _canon(v2_rows) == _canon(v3_rows), f"v2={len(v2_rows)} v3={len(v3_rows)}")
     refreshed: dict[str, list | None] = {}
     for label, tenant in (("default", None), ("public", "public")):
         component = {

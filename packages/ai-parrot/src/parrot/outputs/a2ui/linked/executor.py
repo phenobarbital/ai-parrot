@@ -11,12 +11,12 @@ import asyncio
 import copy
 import logging
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Collection, Mapping
 
 from pydantic import BaseModel, Field
 
 from parrot.outputs.a2ui.linked.conditions import derive_conditions
-from parrot.outputs.a2ui.linked.models import DerivedDataSource, Join, LinkedDataSource, LinkedSource, Union_
+from parrot.outputs.a2ui.linked.models import DerivedDataSource, Join, LinkedDataSource, LinkedSource, Pivot, Union_
 
 if TYPE_CHECKING:  # pragma: no cover
     import pandas as pd
@@ -40,6 +40,9 @@ _TENANT_CODE_MAP: dict[str, tuple[int, str]] = {
 
 #: Bounded walk of exc -> __cause__ -> __context__ (TASK-3779 chains errors as RuntimeError(...) from error).
 _MAX_CAUSE_DEPTH = 5
+
+#: ``querylimit`` of a probe execution: one row is enough to learn a source's columns and dtypes.
+PROBE_FETCH_ROWS = 1
 
 
 class SourceOutcome(BaseModel):
@@ -189,6 +192,42 @@ def _conditions_for(
     return conditions, ignored
 
 
+#: Exception class names QuerySource / asyncdb raise for a query that ran fine but matched no row.
+_EMPTY_RESULT_NAMES = frozenset({"DataNotFound", "NoDataFound"})
+
+
+def is_empty_result(exc: BaseException) -> bool:
+    """True when ``exc`` (or a cause within ``_MAX_CAUSE_DEPTH``) is QuerySource's "no rows" signal."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    depth = 0
+    while current is not None and depth < _MAX_CAUSE_DEPTH and id(current) not in seen:
+        seen.add(id(current))
+        if type(current).__name__ in _EMPTY_RESULT_NAMES:
+            return True
+        current = current.__cause__ or current.__context__
+        depth += 1
+    return False
+
+
+def _full_fetch_keys(sources: Mapping[str, LinkedSource]) -> set[str]:
+    """Keys a probe cannot stand in for: ``pivot`` output columns depend on the data.
+
+    A pivoting query_slug source needs its own full fetch; a pivoting ``derived`` view needs its parent's (walked up
+    the ``from`` chain to the query_slug source that is actually fetched).
+    """
+    full: set[str] = set()
+    for key, src in sources.items():
+        if src.transform is None or not any(isinstance(op, Pivot) for op in src.transform.ops or []):
+            continue
+        current: str | None = key
+        while current is not None and current in sources and current not in full:
+            full.add(current)
+            node = sources[current]
+            current = node.from_ if isinstance(node, DerivedDataSource) else None
+    return full
+
+
 async def _run_source(
     key: str,
     src: LinkedSource,
@@ -200,11 +239,13 @@ async def _run_source(
     pctx: "PermissionContext | None",
     guard: Any | None,
     max_fetch_rows: int,
+    probed: Collection[str] = (),
 ) -> "pd.DataFrame":
     """Produce ``key``'s frame: fetch + transform (query_slug) or transform the parent's frame (derived).
 
     ``overrides`` are the already-derived QuerySource conditions for a query_slug source (see
-    :func:`_conditions_for`) and are unused for a derived one.
+    :func:`_conditions_for`) and are unused for a derived one. ``probed`` names the sources fetched with the
+    one-row probe cap: a derived view over one of them is only being validated, so the fetch-cap warning is moot.
     """
     from parrot.outputs.a2ui.linked.dsl import apply_transform
 
@@ -212,7 +253,7 @@ async def _run_source(
         # Its base is the parent's FULL fetched frame (bounded by max_fetch_rows), never the parent's ≤500-row snapshot.
         base = frames[src.from_]
         parent = sources.get(src.from_)
-        if isinstance(parent, LinkedDataSource):
+        if isinstance(parent, LinkedDataSource) and src.from_ not in probed:
             cap = min(parent.request.limit or max_fetch_rows, max_fetch_rows)
             if len(base) >= cap:
                 logger.warning(
@@ -262,17 +303,34 @@ async def execute_sources(
     guard: Any | None = None,
     max_snapshot_rows: int | None = None,
     max_fetch_rows: int = 5000,
+    probe: bool = False,
 ) -> ExecutionOutcome:
     """Fetch + transform every source (dependencies first); per-source failure isolation (spec §3 M5).
 
     A ``derived`` source is never fetched: it is computed from its parent's frame once the parent has run, and a
     parent failure propagates to it through :func:`execution_order` (``data_stage``).
+
+    ``probe=True`` is the definition-only mode used by the surface builders: every query_slug source runs with
+    ``querylimit=PROBE_FETCH_ROWS`` (one row) so its columns and dtypes can be validated, the transformed
+    frame is kept in ``frames`` for that validation, and the outcome carries ``rows=None`` — a probe is never
+    a snapshot (``data_model_patch`` skips it). ``join``/``union`` on one-row sibling frames and a derived view
+    over a one-row parent keep the column set and dtypes, which is all axis validation reads; a ``pivot`` derives
+    its columns from the data, so a pivoting source (or the parent of a pivoting derived view) falls back to the
+    full fetch. ``ref`` transforms are skipped in Python either way. A probe that matches no row (QuerySource
+    raises ``DataNotFound``, the HTTP lanes see a 204) is NOT a failure: the source — and any derived view over
+    it — gets an empty, column-less frame and its axes go unvalidated (the renderer treats it as zero rows).
     """
+    import pandas as pd
+
     from parrot.outputs.a2ui.linked.dsl import frame_to_records
     from parrot.tools.dataset_manager.sources.query_slug import to_qs_principal
 
     principal = to_qs_principal(pctx, channel="ui_surfaces") if pctx is not None else None  # mapped ONCE
     order, failed = execution_order(sources)
+    full = _full_fetch_keys(sources) if probe else set()
+    # Query-slug sources fetched with the one-row probe cap; `unvalidated` are probes that matched no row.
+    probed = {k for k, v in sources.items() if probe and isinstance(v, LinkedDataSource) and k not in full}
+    unvalidated: set[str] = set()
     frames: dict[str, "pd.DataFrame"] = {}
     outcomes: dict[str, SourceOutcome] = {k: SourceOutcome(key=k, error=code) for k, code in failed.items()}
     for key in order:
@@ -283,13 +341,20 @@ async def execute_sources(
             conditions: dict[str, Any] = {}
             ignored = sorted(overrides)
         else:
-            conditions, ignored = _conditions_for(src, overrides, max_fetch_rows=max_fetch_rows)
+            cap = PROBE_FETCH_ROWS if key in probed else max_fetch_rows
+            conditions, ignored = _conditions_for(src, overrides, max_fetch_rows=cap)
         broken = [ref for ref in dependencies_of(src) if ref not in frames]
         if broken:
             # A dependency that was in `order` but failed at run time (fetch/transform error): never run this one,
             # and carry the dependency's own error code so the caller sees the root cause (404/503, not data_stage).
             code = next((outcomes[ref].error for ref in broken if outcomes.get(ref) and outcomes[ref].error), None)
             outcomes[key] = SourceOutcome(key=key, error=code or "data_stage", ignored_params=ignored)
+            continue
+        if isinstance(src, DerivedDataSource) and src.from_ in unvalidated:
+            # Its parent's probe matched no row: there are no columns to transform, so it stays unvalidated too.
+            unvalidated.add(key)
+            frames[key] = pd.DataFrame()
+            outcomes[key] = SourceOutcome(key=key, ignored_params=ignored)
             continue
         try:
             frame = await _run_source(
@@ -302,13 +367,25 @@ async def execute_sources(
                 pctx=pctx,
                 guard=guard,
                 max_fetch_rows=max_fetch_rows,
+                probed=probed,
             )
         except Exception as exc:  # noqa: BLE001 — data errors never fail siblings
+            if probe and is_empty_result(exc):
+                logger.warning(
+                    "linked source %r (%s): probe matched no row; columns left unvalidated", key, _describe(src)
+                )
+                unvalidated.add(key)
+                frames[key] = pd.DataFrame()
+                outcomes[key] = SourceOutcome(key=key, ignored_params=ignored)
+                continue
             status, code = map_query_error(exc)
             logger.warning("linked source %r (%s) failed: %s → %s", key, _describe(src), exc, status)
             outcomes[key] = SourceOutcome(key=key, error=code, ignored_params=ignored)
             continue
         frames[key] = frame
+        if probe:
+            outcomes[key] = SourceOutcome(key=key, ignored_params=ignored)
+            continue
         rows = frame_to_records(frame)
         truncated = False
         if max_snapshot_rows is not None and len(rows) > max_snapshot_rows:

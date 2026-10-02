@@ -63,9 +63,11 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Nine tools are al
   configuration (see `qs_validate_pipeline`). Results are bounded per frame.
 - **`qs_build_linked_surface`** — (FEAT-598) Emits a linked A2UI surface for a query-slug: checks the slug
   (and `tenant`) against the allowlist, derives `params` from `qs_describe_slug`, builds `conditions` (forced
-  keys become `locked`; `@variables` are rejected), **executes the slug once** to validate the component's
-  axes/columns against the real columns, and embeds ≤ 500 rows only when `snapshot=True`. Returns
-  `{a2ui_envelope, artifacts}`. See [A2UI linked surfaces](../outputs/a2ui-linked-surfaces.md).
+  keys become `locked`; `@variables` are rejected), **probes the slug with `querylimit=1`** to validate the
+  component's axes/columns and dtypes against the real columns, and returns a definition-only envelope
+  (`rows: []`, `snapshot_at: null`) that the renderer fills on mount. Pass `snapshot=True` only when viewers
+  cannot fetch for themselves (share links, offline export): it then runs the full query and embeds ≤ 500 rows.
+  Returns `{a2ui_envelope, artifacts}`. See [A2UI linked surfaces](../outputs/a2ui-linked-surfaces.md).
 - **`qs_build_linked_dashboard`** — (FEAT-610, linked dashboards) Emits ONE linked A2UI dashboard whose data
   sources are **owned by the dashboard**. `sources` maps a key to `{slug, request?, tenant?, refresh?,
   transform?}`; each is fetched once on load and shared by every widget that reads it. Each widget
@@ -83,6 +85,9 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Nine tools are al
   JSONB operators `@>`, `<@`, `@>|`, `->` and `->>` in the `{op: value}` filter form (querysource >= 5.1).
   Derived views aggregate what the parent fetched (bounded by the 5000-row fetch cap): when the full data set
   is larger, put the aggregation in the parent's `request` (`fields` + `grouping`) and derive from that.
+  Same `snapshot` semantics as `qs_build_linked_surface`: definition-only by default (one-row probe per
+  query-slug source; derived views are validated over the probed parent), full fetch + ≤ 500 rows per source
+  only with `snapshot=True`.
 - **`qs_save_multiquery`** *(only when `allow_write=True`)* — Persists a validated MultiQuery pipeline as a
   query-slug owned by `program` (forced to the single allowed program when this toolkit is tenant-restricted).
   Requires operator opt-in (`allow_write`) and user confirmation. Refuses to overwrite a slug owned by another

@@ -83,6 +83,10 @@ async def test_build_linked_dashboard_one_envelope(fake_core_qs):
     sources = env["metadata"]["extensions"]["parrot_data_sources"]
     assert len(sources) == 8
     assert len(fake_core_qs["qs"]) == 8
+    # Definition-only by default: every source is probed with one row and the envelope carries no rows.
+    assert all(call["conditions"]["querylimit"] == 1 for call in fake_core_qs["qs"])
+    assert all(env["dataModel"][key] == {"rows": []} for key in sources)
+    assert all(source["snapshot_at"] is None for source in sources.values())
     ids = [c["id"] for c in env["components"]]
     assert len(ids) == len(set(ids))
     assert {"root", "row_kpis", "row_charts", "table_0", "title"} <= set(ids)
@@ -175,7 +179,7 @@ async def test_build_linked_dashboard_shared_sources(fake_core_qs):
     """Two dashboard sources + one own-slug widget → three QuerySource calls for nine widgets."""
     toolkit = QuerysourceToolkit(dsn="postgres://fake")
     sources, widgets = _shared_dashboard()
-    result = await toolkit.build_linked_dashboard(widgets, sources=sources, title="Shared")
+    result = await toolkit.build_linked_dashboard(widgets, sources=sources, title="Shared", snapshot=True)
 
     env = result["a2ui_envelope"]
     descriptors = env["metadata"]["extensions"]["parrot_data_sources"]
@@ -198,6 +202,24 @@ async def test_build_linked_dashboard_shared_sources(fake_core_qs):
     assert artifact["shared"] == ["kpis", "rows"]
     assert artifact["derived"] == ["by_program", "by_day"]
     assert artifact["inline"] == ["static"]
+
+
+async def test_build_linked_dashboard_shared_sources_definition_only(fake_core_qs):
+    """Default (snapshot=False): shared and own sources are probed once each; derived views and query sources carry
+    no rows, inline data is still baked in."""
+    toolkit = QuerysourceToolkit(dsn="postgres://fake")
+    sources, widgets = _shared_dashboard()
+    result = await toolkit.build_linked_dashboard(widgets, sources=sources)
+
+    env = result["a2ui_envelope"]
+    descriptors = env["metadata"]["extensions"]["parrot_data_sources"]
+    assert len(fake_core_qs["qs"]) == 3
+    assert set(descriptors) == {"kpis", "rows", "by_program", "by_day", "own"}
+    assert all(descriptor.get("snapshot_at") is None for descriptor in descriptors.values())
+    for key in descriptors:
+        assert not env["dataModel"].get(key, {}).get("rows")
+    assert env["dataModel"]["static"] == {"rows": [{"k": "a", "v": 1}, {"k": "b", "v": 2}]}
+    validate_envelope(CreateSurface.model_validate(env), origin=ProducerOrigin.TOOL)
 
 
 @pytest.mark.parametrize(
@@ -267,3 +289,22 @@ async def test_build_linked_dashboard_jsonb_kpi(fake_core_qs):
     result = await toolkit.build_linked_dashboard(widgets)
     source = result["a2ui_envelope"]["metadata"]["extensions"]["parrot_data_sources"]["pilates"]
     assert source["conditions"]["filter"]["graduation_details"] == {"@>": [{"course": "Pilates Studio"}]}
+
+
+async def test_build_linked_dashboard_snapshot_true_embeds_rows(fake_core_qs):
+    """snapshot=True runs every query in full and embeds the rows."""
+    toolkit = QuerysourceToolkit(dsn="postgres://fake")
+    result = await toolkit.build_linked_dashboard(_widgets(), snapshot=True)
+    env = result["a2ui_envelope"]
+    assert all(call["conditions"]["querylimit"] == 5000 for call in fake_core_qs["qs"])
+    assert all(len(env["dataModel"][key]["rows"]) == 6 for key in env["dataModel"])
+
+
+async def test_build_linked_dashboard_manual_policy_warns_without_snapshot(fake_core_qs, caplog):
+    """A manual-refresh widget without a snapshot renders empty in the admin lane, so the toolkit warns."""
+    toolkit = QuerysourceToolkit(dsn="postgres://fake")
+    widgets = _widgets()
+    widgets[0]["refresh"] = {"policy": "manual"}
+    with caplog.at_level("WARNING"):
+        await toolkit.build_linked_dashboard(widgets)
+    assert any("kpi_0" in record.message and "manual" in record.message for record in caplog.records)
