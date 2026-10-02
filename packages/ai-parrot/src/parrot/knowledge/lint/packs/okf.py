@@ -75,9 +75,7 @@ def okf_findings(graph: Any, tree: dict, content_store: Any, stale_days: int = 9
                 inbound_count[target] += 1
     for cid in sorted(known_concepts):
         if inbound_count.get(cid, 0) == 0:
-            findings.append(
-                _finding("orphan", cid, f"Concept '{cid}' has zero inbound edges.", "warning")
-            )
+            findings.append(_finding("orphan", cid, f"Concept '{cid}' has zero inbound edges.", "warning"))
 
     # Check 2: broken links
     for broken in graph.broken_links():
