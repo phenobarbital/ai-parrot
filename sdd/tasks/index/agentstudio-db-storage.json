@@ -591,7 +591,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -602,8 +602,9 @@
       "parallelism_notes": "uses BotManager.studio.use from TASK-3943 (manager.py; runtime from TASK-3942) and helpers from TASK-3944 (_base.py); sole FEAT-621 writer of studio/testing.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3949-handler-switch-testing.md"
+      "completed_at": "2026-10-02T05:40:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3949-handler-switch-testing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3950",

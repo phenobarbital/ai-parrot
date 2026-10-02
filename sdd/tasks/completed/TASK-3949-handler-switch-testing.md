@@ -181,10 +181,8 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):  # :226 — pos
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 89deae75e. Database-mode test-chat via manager.studio.use with lease; 6 new tests; 5 mutations RED. FLAGS: testing.py 570 lines (>500); _db_delete uses private runtime._cache.session/retire (no public evict_session); no PBAC-deny test.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
