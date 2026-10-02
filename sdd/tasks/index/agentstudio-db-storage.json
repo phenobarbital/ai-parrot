@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T23:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-02T06:44:14+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -636,7 +636,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -652,8 +652,9 @@
       "parallelism_notes": "snapshots the final database-mode responses of each W3 handler: TASK-3944 (studio/agents.py), TASK-3945 (studio/files.py), TASK-3946 (studio/toolkit_config.py), TASK-3947 (studio/drafts.py), TASK-3948 (studio/skills_catalog.py), TASK-3949 (studio/testing.py), TASK-3950 (studio/meta_agent.py); creates only new test files and the host guide",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3951-shape-snapshot-host-guide.md"
+      "completed_at": "2026-10-02T06:44:14+00:00",
+      "file": "sdd/tasks/completed/TASK-3951-shape-snapshot-host-guide.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3952",

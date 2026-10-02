@@ -192,10 +192,8 @@ link to it, do not edit it.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 32c94cca9. test_shapes_db_mode.py (both modes), test_storage_gates.py (no-DDL incl. phase-2 modules, no migration at startup, ai_bots/_load_database_bots untouched vs merge-base), docs/agentstudio/db-storage.md incl. phase-2 switches/copy runbook; 6 tests, 9 mutations RED. Shape caveats: Studio GET /agents items lack six registry keys (at_startup,class_name,file_path,module,priority,tags); parrot-studio-migrate --verify only checks 1-5.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
