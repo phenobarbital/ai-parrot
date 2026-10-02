@@ -81,14 +81,25 @@ PROBE_MODULE = textwrap.dedent(
         read_tools: ClassVar[frozenset] = frozenset({"whoami"})
         options_params = frozenset({"project"})
 
+        server_managed_params = {
+            "tenant": ServerParam(source="tenant"),
+            "caller": ServerParam(source="caller"),
+            "agent": ServerParam(source="agent"),
+        }
+
         def __init__(self, token: str = "", **kwargs):
             super().__init__(**kwargs)
             COUNTERS["constructed"] += 1
             self.token = token
 
-        async def whoami(self) -> str:
-            """Read tool: report the probe identity."""
-            return "tenant-probe"
+        async def whoami(self, tenant: str | None = None, caller: object = None, agent: object = None) -> dict:
+            """Read tool: report the scope the SERVER bound to this call (never client input)."""
+            COUNTERS["executed"] += 1
+            return {
+                "tenant": tenant, "user_id": getattr(caller, "user_id", None),
+                "agent": None if agent is None else {
+                    "name": agent.name, "owner": agent.owner, "tenant": agent.tenant, "visibility": agent.visibility},
+            }
 
         @classmethod
         async def config_options(cls, *args, **kwargs):
