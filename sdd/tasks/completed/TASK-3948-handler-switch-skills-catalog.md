@@ -189,10 +189,8 @@ class StudioSkillsResyncHandler(_StudioSkillsMixin, StudioBaseView):        # :5
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commits a98a4037f, 807a0e964. Database-mode catalogue routes, import, resync, derived index under STUDIO_RUNTIME_DIR; 7 new tests; 9 mutations RED. Adjusted 2 tests in test_scope_route_gates.py (tenant partition without DB now 503). FLAGS: skills_catalog.py is 931 lines (>500 budget; legacy bodies verbatim, only that file allowed); catalogue service has no write guard so only import uses _studio_write; new skills always private (no visibility field in SkillPublishRequest).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
