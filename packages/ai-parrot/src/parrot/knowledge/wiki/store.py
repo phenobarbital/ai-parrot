@@ -1983,8 +1983,7 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         async with self._write("set_meta") as conn:
             await conn.execute(
-                "INSERT INTO meta (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                "INSERT INTO meta (key, value) VALUES (?, ?) " "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, value),
             )
 
