@@ -6,42 +6,14 @@ import inspect
 from typing import Any
 
 from parrot.tools.abstract import AbstractTool
-from parrot.tools.discovery import resolve_class
+from parrot.tools.resolver import get_toolkit_resolver
 
 from ._models import _KNOWN_APP_DEPS, _ServerManagedDepsError
 
 
 def _resolve_registry_class(slug: str) -> type | None:
-    """Resolve ``slug`` to a class via ``discover_all()`` + ``resolve_class()``.
-
-    Matches case-insensitively, mirroring
-    ``ToolManager._load_tool_from_registry``. Deliberately bypasses the
-    deprecated ``ToolkitRegistry`` string lookup (see TASK-2517 Codebase
-    Contract "Does NOT Exist").
-
-    Args:
-        slug: Candidate tool/toolkit slug.
-
-    Returns:
-        The resolved class, or ``None`` if the slug is unknown or
-        resolution fails.
-    """
-    # read from the package at call time: tests patch ``studio.testing.discover_all``
-    from parrot.handlers.studio import testing as _testing_pkg
-
-    registry = _testing_pkg.discover_all()
-    entry = registry.get(slug)
-    if entry is None:
-        lowered = {key.lower(): value for key, value in registry.items()}
-        entry = lowered.get(slug.lower())
-    if entry is None:
-        return None
-    if isinstance(entry, str):
-        try:
-            return resolve_class(entry)
-        except (ImportError, AttributeError):
-            return None
-    return entry
+    """Resolve ``slug`` through the shared ToolkitResolver (FEAT-622 M2 shim)."""
+    return get_toolkit_resolver().resolve(slug)
 
 
 def _instantiate_tool(cls: type, app: Any) -> AbstractTool:

@@ -28,8 +28,8 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.wiki import LLMWikiToolkit, WikiConfig
 from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
-from parrot.tools.discovery import discover_from_registry, resolve_class
 from parrot.tools.infographic_toolkit import InfographicToolkit
+from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import BaseModel, Field, ValidationError
 
@@ -155,30 +155,8 @@ def _missing_required_params(cls: type, provided: dict) -> list[str]:
 
 
 def _resolve_toolkit_class(slug: str) -> type | None:
-    """Resolve a generic toolkit slug via ``TOOL_REGISTRY`` (case-insensitive).
-
-    Deliberately uses ``discover_from_registry`` (declarative
-    ``TOOL_REGISTRY`` dicts only) rather than the full ``discover_all``
-    walk — matches the Codebase Contract's explicit "resolve via
-    TOOL_REGISTRY" guidance for generic slugs.
-
-    Args:
-        slug: Candidate toolkit slug.
-
-    Returns:
-        The resolved class, or ``None`` if unknown/unresolvable.
-    """
-    registry = discover_from_registry()
-    dotted_path = registry.get(slug)
-    if dotted_path is None:
-        lowered = {key.lower(): value for key, value in registry.items()}
-        dotted_path = lowered.get(slug.lower())
-    if dotted_path is None:
-        return None
-    try:
-        return resolve_class(dotted_path)
-    except (ImportError, AttributeError):
-        return None
+    """Resolve ``slug`` through the shared ToolkitResolver (FEAT-622 M2 shim)."""
+    return get_toolkit_resolver().resolve(slug)
 
 
 def _validate_wiki_storage_dir(raw: Path) -> Path:

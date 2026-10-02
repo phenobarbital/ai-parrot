@@ -12,15 +12,13 @@ import jsonschema
 from pydantic import ValidationError
 
 from parrot.conf import AGENTS_DIR
-from parrot.knowledge.wiki import LLMWikiToolkit
 from parrot.security.vault_utils import (
     delete_vault_credential,
     retrieve_vault_credential,
     store_vault_credential,
 )
 from parrot.tools.config_schema import build_schema_envelope, secret_paths
-from parrot.tools.dataset_manager.tool import DatasetManager
-from parrot.tools.infographic_toolkit import InfographicToolkit
+from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.spec import (
     MCP_SECRET_FIELDS,
     SECRET_MASK,
@@ -34,10 +32,8 @@ from parrot.tools.spec import (
 
 from ..models import BotModel
 from .storage.models import StudioStorageUnavailable, StudioWriteGuard
-from .toolkits import _resolve_toolkit_class
 
 logger = logging.getLogger(__name__)
-_EXPLICIT = {"dataset_manager": DatasetManager, "wiki": LLMWikiToolkit, "infographic": InfographicToolkit}
 _SERVER_MANAGED = {
     "wiki": frozenset({"pageindex_toolkit", "graphindex_toolkit", "okf_toolkit"}),
     "infographic": frozenset({"artifact_store"}),
@@ -99,7 +95,7 @@ async def flush_vault_writes(writes: list[VaultWrite]) -> None:
 
 def toolkit_schema_for(slug: str) -> tuple[type, dict[str, Any]]:
     """Return the class and JSON schema for ``slug`` (``LookupError`` when the toolkit is unknown)."""
-    cls = _EXPLICIT.get(slug) or _resolve_toolkit_class(slug)
+    cls = get_toolkit_resolver().resolve(slug)
     if cls is None:
         raise LookupError(slug)
     envelope = build_schema_envelope(slug, cls, server_managed=_SERVER_MANAGED.get(slug, frozenset()))

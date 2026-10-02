@@ -10,7 +10,7 @@ from typing import List, Union, Dict, Any, Callable
 
 from parrot.mcp import MCPServerConfig
 from parrot.tools.dataset_manager.tool import DatasetManager
-from parrot.tools.discovery import discover_from_registry, resolve_class
+from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
 from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject
 
@@ -176,15 +176,8 @@ class ToolInterface:
 
     @staticmethod
     def _resolve_spec_class(slug: str) -> type | None:
-        """Resolve a toolkit slug via TOOL_REGISTRY (case-insensitive); None when unknown."""
-        registry = discover_from_registry()
-        dotted = registry.get(slug) or {key.lower(): value for key, value in registry.items()}.get(slug.lower())
-        if dotted is None:
-            return None
-        try:
-            return resolve_class(dotted)
-        except (ImportError, AttributeError):
-            return None
+        """Resolve a toolkit slug through the shared ToolkitResolver (FEAT-622 M2)."""
+        return get_toolkit_resolver().resolve(slug)
 
     def bind_tooling_policy(
         self, policy: "TenantToolingPolicy | None", subject: "ToolingSubject", *, owner: str | None = None
