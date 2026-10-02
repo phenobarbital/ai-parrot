@@ -93,7 +93,7 @@ async def test_skills_unique_per_partition_409(aiohttp_client, pool, registry):
     resp, _ = await _publish(client)
     assert resp.status == 201
     resp, body = await _publish(client)
-    assert resp.status == 409 and body["code"] == "duplicate"
+    assert resp.status == 409 and body["code"] == "name_taken"
     resp = await client.post("/tenant/skills", json=PAYLOAD)
     tenant_body = await resp.json()
     assert resp.status == 201 and tenant_body["tenant"] == "acme"

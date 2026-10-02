@@ -90,6 +90,9 @@ class SkillPublishRequest(BaseModel):
             out-of-vocabulary values map to ``general`` (handler-side).
         triggers: Trigger phrases/commands for the skill.
         body: Skill markdown body (including frontmatter).
+        visibility: ``private`` | ``tenant`` | ``groups`` (FEAT-605; read by the publish handler, which validates it
+            against the caller's scope before stamping it).
+        allowed_groups: Groups granted access when ``visibility == "groups"``.
     """
 
     name: str
@@ -97,6 +100,8 @@ class SkillPublishRequest(BaseModel):
     category: SkillCategory
     triggers: list[str] = Field(default_factory=list)
     body: str
+    visibility: Literal["private", "tenant", "groups"] = "private"
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class ByokKeyRequest(BaseModel):

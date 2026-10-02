@@ -237,7 +237,7 @@ class TestSkillsPublish:
         await _publish(app, store, name="dup-skill")
         response = await _publish(app, store, name="dup-skill")
         assert response.status == 409
-        assert (await _decode(response))["code"] == "duplicate"
+        assert (await _decode(response))["code"] == "name_taken"
 
     async def test_publish_invalid_category_rejected_by_model(self, app, store):
         handler = _make_handler(
@@ -278,6 +278,10 @@ class TestSkillsListing:
         tool_names = [s["name"] for s in body["skills"]["tool_usage"]]
         assert tool_names == ["a-tool", "b-tool"]  # name-ordered within category
         assert body["count"] == 3
+        # FEAT-605 AC3/AC10: a plain host keeps the shape and adds the visibility fields (access "global")
+        items = [s for cat in body["skills"].values() for s in cat]
+        assert all(i["access"] == "global" and i["visibility"] == "private" and i["tenant"] is None
+                   and i["allowed_groups"] == [] and "can_manage" in i for i in items)
 
     async def test_owner_and_category_filters(self, app, store):
         await _publish(app, store, name="mine", owner="1", category="tool_usage")
@@ -324,6 +328,7 @@ class TestSkillsListing:
         response = await _unwrap(StudioSkillsCatalogHandler.get)(handler)
         body = await _decode(response)
         assert body["versions"] == [{"version_number": 0}]
+        assert body["access"] == "global" and body["visibility"] == "private" and body["tenant"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -50,11 +50,13 @@ from ._helpers import (
 from ._import import _StudioSkillsImportDbMixin, _StudioSkillsImportLegacyMixin
 from ._mixin import _StudioSkillsMixin
 from ._resync import _StudioSkillsResyncDbMixin, _StudioSkillsResyncLegacyMixin
+from ._visibility import _StudioSkillVisibilityMixin
 
 __all__ = [
     "AGENTS_DIR",
     "DEFAULT_ORG_ID",
     "SHARED_NAMESPACE_SUFFIX",
+    "StudioSkillVisibilityHandler",
     "StudioSkillsCatalogHandler",
     "StudioSkillsImportHandler",
     "StudioSkillsResyncHandler",
@@ -92,6 +94,8 @@ class StudioSkillsCatalogHandler(
 
     async def get(self):
         """List / read skills (database mode: ``StudioSkillCatalogService``)."""
+        if not self.request.match_info.get("id") and await self._tenantless():
+            return self.json_response({"skills": {}, "count": 0})  # an opted-in caller with no tenant sees nothing
         return await self._dispatch(self._legacy_get, self._db_get)
 
     async def post(self):
@@ -149,3 +153,13 @@ class StudioSkillsResyncHandler(
         """Resync the derived index (database mode: rebuilt from Postgres)."""
         gate = lambda: self._pbac_gate("skills", "astudio:skills:resync")  # noqa: E731
         return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+
+@is_authenticated()
+@user_session()
+class StudioSkillVisibilityHandler(_StudioSkillVisibilityMixin, _StudioSkillsMixin, StudioBaseView):
+    """``PATCH /api/v1/astudio/skills/{id}/visibility`` — change who can see a catalogue skill."""
+
+    async def patch(self):
+        """Set ``visibility`` / ``allowed_groups`` of a skill (404 invisible, 403 not manageable, 422 rules)."""
+        return await self._dispatch(self._visibility_unavailable, self._db_visibility)

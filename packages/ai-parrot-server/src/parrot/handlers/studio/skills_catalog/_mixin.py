@@ -14,10 +14,10 @@ from pydantic import ValidationError
 from parrot.handlers.studio import skills_catalog as _sc
 
 from ...models.skills_catalog import SkillCatalogEntry
-from ..access import _store_record
+from ..access import RESERVED_KEYS, _legacy_record, _store_record
 from ..files import _StudioFilesMixin
 from ..models import SkillPublishRequest, StudioError
-from ._helpers import DEFAULT_ORG_ID, index_published_skill, org_id_from_session
+from ._helpers import DEFAULT_ORG_ID, _skill_dict, index_published_skill, org_id_from_session
 
 
 class _StudioSkillsMixin:
@@ -112,6 +112,17 @@ class _StudioSkillsMixin:
             "search_index_stale": entry.search_index_stale,
         }
 
+    @staticmethod
+    def _legacy_skill_view(access: Any, item: dict) -> dict:
+        """A legacy catalogue item plus the additive visibility fields (``access: "global"``, FEAT-605 AC3/AC10)."""
+        rec = _legacy_record("skill", item["skill_id"], item["name"], item.get("owner"))
+        return {**item, **access.visibility_fields(rec)}
+
+    @staticmethod
+    def _skill_item_for(access: Any, rec: Any) -> dict:
+        """The Studio skill item with the visibility fields the caller's access decision yields (C14)."""
+        return {**_skill_dict(rec), **access.visibility_fields(_store_record("skill", rec.skill_id, rec))}
+
     def _error(self, message: str, *, status: int, code: str | None = None):
         return self.json_response(
             StudioError(message=message, code=code).model_dump(),
@@ -144,11 +155,18 @@ class _StudioSkillsMixin:
         refused = self._refuse_expected_version(payload)
         return payload if refused is None else refused
 
-    async def _db_request(self):
-        """The validated :class:`SkillPublishRequest` of a write, or an error response."""
+    async def _db_request(self, *, allow_visibility: bool = False):
+        """The validated :class:`SkillPublishRequest` of a write, or an error response.
+
+        The server-owned keys are refused with 400 ``reserved_config_key``; ``visibility`` / ``allowed_groups`` are
+        accepted only where a handler reads them (publish) — an update changes them through ``/visibility``.
+        """
         payload = await self._db_payload()
         if isinstance(payload, web.Response):
             return payload
+        reserved = RESERVED_KEYS - {"visibility", "allowed_groups"} if allow_visibility else RESERVED_KEYS
+        if key := next((k for k in sorted(reserved) if k in payload), None):
+            return self._error(f"Reserved key '{key}'.", status=400, code="reserved_config_key")
         try:
             return SkillPublishRequest(**payload)
         except ValidationError as exc:

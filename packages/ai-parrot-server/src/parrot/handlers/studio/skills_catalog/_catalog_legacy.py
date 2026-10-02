@@ -52,9 +52,10 @@ class _StudioSkillsCatalogLegacyMixin:
 
         entries = sorted(entries or [], key=lambda e: (e.category, e.name))
 
+        access = await self._access()
         grouped: dict[str, list[dict]] = {}
         for entry in entries:
-            grouped.setdefault(entry.category, []).append(self._entry_to_dict(entry))
+            grouped.setdefault(entry.category, []).append(self._legacy_skill_view(access, self._entry_to_dict(entry)))
 
         return self.json_response({"skills": grouped, "count": len(entries)})
 
@@ -62,7 +63,7 @@ class _StudioSkillsCatalogLegacyMixin:
         entry = await self._get_entry_by_id(skill_id)
         if entry is None:
             return self._error(f"Skill '{skill_id}' not found.", status=404, code="not_found")
-        data = self._entry_to_dict(entry)
+        data = self._legacy_skill_view(await self._access(), self._entry_to_dict(entry))
         try:
             registry = _sc._get_shared_skill_registry(self.request.app, await self._get_org_id())
             data["versions"] = await registry.get_skill_versions(str(entry.skill_id))
@@ -74,6 +75,14 @@ class _StudioSkillsCatalogLegacyMixin:
             )
             data["versions"] = []
         return self.json_response(data)
+
+    async def _legacy_publish_refusal(self, publish_request: SkillPublishRequest):
+        """422 for a visibility a tenant-less caller cannot hold; 409 ``name_taken`` for an existing name."""
+        access = await self._access()
+        refused = self._visibility_refusal(access, publish_request.visibility, publish_request.allowed_groups)
+        if refused is None and await self._get_entry_by_name(publish_request.name) is not None:
+            return self._name_taken(publish_request.name)
+        return refused
 
     async def _legacy_post(self):
         """Publish a new shared skill — PG insert first, registry
@@ -99,13 +108,8 @@ class _StudioSkillsCatalogLegacyMixin:
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
-        existing = await self._get_entry_by_name(publish_request.name)
-        if existing is not None:
-            return self._error(
-                f"Skill '{publish_request.name}' already exists.",
-                status=409,
-                code="duplicate",
-            )
+        if (refused := await self._legacy_publish_refusal(publish_request)) is not None:
+            return refused
 
         if self.request.app.get("database") is None:
             return self._error("Database unavailable.", status=503, code="unavailable")
