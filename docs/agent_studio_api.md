@@ -117,7 +117,7 @@ Every non-2xx Studio response is a `StudioError`:
 ```
 
 Common `code` values across endpoints: `invalid_json`, `invalid_request`,
-`missing_name`/`missing_id`, `invalid_name`, `not_found`, `duplicate`,
+`missing_name`/`missing_id`, `invalid_name`, `not_found`,
 `not_owner`, `name_taken` (409; agents, drafts and skills, see the FEAT-605
 section), `not_manageable` (403, visible but not manageable), `unavailable` (503, dependency not configured),
 `server_managed` (422, missing app-context dependency),
@@ -189,7 +189,7 @@ Create a simple, non-code-generated agent (`CreateAgentRequest`):
 
 **Response `201`:** `{ "name": "...", "persisted": true, "source": "registry", "file_path": "..." }`
 
-**Errors:** `400 invalid_name`/`invalid_bot_class`, `409 duplicate`.
+**Errors:** `400 invalid_name`/`invalid_bot_class`, `409 name_taken`.
 
 ### `POST /agents/{name}/reload`
 
@@ -329,7 +329,7 @@ Single entry + `versions` (fetched live from the shared `SkillRegistry`,
 }
 ```
 
-**Response `201`:** the created entry. **Errors:** `409 duplicate`, `503 unavailable`.
+**Response `201`:** the created entry. **Errors:** `409 name_taken`, `503 unavailable`.
 
 ### `PUT /skills/{id}` / `DELETE /skills/{id}`
 
