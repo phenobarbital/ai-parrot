@@ -20,6 +20,7 @@ from typing import Any, ClassVar
 
 from aiohttp import web
 from navigator.views import BaseView
+from pydantic import ValidationError
 
 try:
     from navigator_auth.conf import AUTH_SESSION_OBJECT
@@ -334,6 +335,8 @@ class StudioBaseView(BaseView):
         )
         if isinstance(exc, StudioTenantRequired):
             return self._tenant_required()
+        if isinstance(exc, ValidationError):
+            return self.json_response(self._json_error(f"Invalid request: {exc}", "validation_error"), status=422)
         for kinds, status, code in table:
             if isinstance(exc, kinds):
                 return self.json_response(self._json_error(str(exc) or code, code), status=status)

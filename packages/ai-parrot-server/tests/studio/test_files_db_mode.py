@@ -123,3 +123,12 @@ async def test_files_legacy_agent_takes_filesystem_path(aiohttp_client, pool, mo
     assert await (await client.get(url)).json() == {"kind": "kb", "files": ["n.md"]}
     got = await (await client.get(url + "/n.md")).json()
     assert got == {"path": "n.md", "kind": "kb", "size": 2, "content": "hi"}
+
+
+async def test_files_put_invalid_content_is_422_not_500(aiohttp_client, pool):
+    client = await aiohttp_client(_app(pool))
+    await _create(client)
+    resp = await client.put(_url("kb", "n.md"), json={"content": 123})
+    body = await resp.json()
+    assert resp.status == 422 and body["code"] == "validation_error"
+    assert await _row_count(client) == 0
