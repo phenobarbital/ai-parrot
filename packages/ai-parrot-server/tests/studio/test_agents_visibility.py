@@ -287,3 +287,22 @@ async def test_delete_checks_access_before_authoring(aiohttp_client, pool):  # n
     resp = await client.delete(f"{BASE}/agents/a-tenant", headers=who("u1", author=False))
     assert resp.status == 403 and (await resp.json())["code"] == "authoring_denied"
     assert (await client.delete(f"{BASE}/agents/a-tenant", headers=who("u1"))).status == 200
+
+
+async def test_patch_agent_asks_the_update_pbac_action(aiohttp_client, pool, monkeypatch):  # noqa: F811
+    """``PATCH /agents/{name}`` is gated by ``astudio:agents:update`` (the ``astudio:<area>:update`` verb of PUT /skills)."""
+    from parrot.handlers.studio.agents import StudioAgentsHandler
+
+    asked: list = []
+    real = StudioAgentsHandler._pbac_gate
+
+    async def spy(self, resource, action):
+        asked.append((resource, action))
+        return await real(self, resource, action)
+
+    monkeypatch.setattr(StudioAgentsHandler, "_pbac_gate", spy)
+    client = await aiohttp_client(tenant_app(pool))
+    await seed(client)
+    asked.clear()
+    resp = await client.patch(f"{BASE}/agents/a-private", json={"description": "x"}, headers=who("u1"))
+    assert resp.status == 200 and asked == [("agents", "astudio:agents:update")]

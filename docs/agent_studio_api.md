@@ -140,6 +140,9 @@ section), `unavailable` (503, dependency not configured),
   `astudio:keys`). **Fail-open** — when no PDP is configured, or on any
   evaluator error, access is allowed (matches `handlers/bots.py`'s
   `_PBACHandlerMixin` convention).
+  Mutating agent verbs use `astudio:agents:<verb>`: `create`, `update` (`PATCH /agents/{name}`),
+  `delete`, `reload`, `assign_tools`. Neither FEAT-605 nor the storage spec names a PATCH id; `update` follows the
+  `astudio:<area>:update` verb already used by `PUT /skills/{id}` (`astudio:skills:update`).
 - **Superuser bypass**: a caller whose session marks
   `superuser`/`is_superuser`, or who belongs to the `superuser` group,
   bypasses ownership checks everywhere.
