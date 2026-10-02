@@ -224,10 +224,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+`test_tenant_matrix.py` (16 tests): prefixed `setup_studio_routes(prefix="/api/v1/{tenant}/astudio", view_wrapper=seam)` over real Postgres, a real
+header-driven resolver (incl. `studio_enabled`), real `SessionData` and `setup_registry_only`; rows: owner, same-tenant peer (every manage route of the §2 table
+=> 403 `not_manageable`), tenant admin, global superuser (resync only for it), other tenant (404 identical to absent), tenant mismatch, resolver+tenant None,
+`studio_disabled` on every registered route but `/me`, `authoring_denied` on 6 paths, no resolver, names per tenant (`name_taken` for agents/drafts/skills/activation),
+seam prologue, assistant one-session-two-tenants, same-name agents on ONE `InMemoryConversation` (built by the real `StudioAgentBuilder`), registry-only hooks once,
+tooling policy rows. The fake store of the spec is not used: the real Postgres store is stricter.
+Mutation evidence is in the module docstring: chatbot_id, `_require_author`, `tenant_mismatch`, `studio_disabled`, `can_manage` gate and the `not_manageable` code go RED.
+HONEST NOTES: (1) `in_tenant` in `owns`/`administers` does NOT turn a route test red (the store partition already excludes other tenants' rows — defence in depth);
+only `test_access.py` does, documented in the table. (2) Resolver + tenant None on an ADDRESSED GET answers 422 `tenant_required` (spec host-mode table says 404; X5 allows
+"empty / 404 / 422"); the test asserts a non-enumerating answer (same status and code for an existing and an absent name). Flag for Jesus.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (tramo C)
+**Date**: 2026-10-02
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: real Postgres instead of the in-memory fake; see note (2).

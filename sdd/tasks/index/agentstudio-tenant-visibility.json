@@ -410,7 +410,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -427,9 +427,10 @@
       "parallelism_notes": "Matrix exercises routes/behaviour delivered by TASK-3966 (agents.py), TASK-3967 (drafts.py), TASK-3968 (skills_catalog.py), TASK-3969 (testing.py/files.py/toolkit_config.py gates and the test/ask context), TASK-3970 (meta-agent tools), TASK-3971 (assistant partition), TASK-3972 (visibility routes) and the registry-only Studio runtime from TASK-3965 (scoped_app fixture). Creates only tests/studio/test_tenant_matrix.py.",
       "assigned_to": null,
       "started_at": "2026-10-02T16:37:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3973-end-to-end-tenant-matrix.md",
-      "wave_label": "W4.2"
+      "completed_at": "2026-10-02T16:43:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3973-end-to-end-tenant-matrix.md",
+      "wave_label": "W4.2",
+      "verification": "verified"
     },
     {
       "id": "TASK-3974",
