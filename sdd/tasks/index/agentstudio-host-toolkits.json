@@ -239,7 +239,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 3,
@@ -251,8 +251,9 @@
       "parallelism_notes": "Depends on TASK-3981 (same files tools/toolkit.py and tests/tools/_host_probe.py) and TASK-3982 (same file tools/abstract.py) — serialise on those files. Sole editor of config_schema.py, knowledge/wiki/toolkit.py and tools/infographic_toolkit.py in this feature.",
       "assigned_to": null,
       "started_at": "2026-10-02T08:17:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3985-server-managed-params-declaration.md"
+      "completed_at": "2026-10-02T08:35:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3985-server-managed-params-declaration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3986",

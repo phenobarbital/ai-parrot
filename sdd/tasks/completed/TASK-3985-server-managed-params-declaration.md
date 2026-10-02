@@ -372,11 +372,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: ServerParam + constructor/method helpers (tools/server_params.py); server_managed_params ClassVar + __init_subclass__ ctor-scope-source TypeError on AbstractToolkit and AbstractTool; both schema paths honour constructor names; method params dropped from ToolkitTool generated args schema; wiki/infographic migrated; golden captured from pre-change code (build_schema_envelope with today's server dict) and equality asserted now WITHOUT the explicit server_managed kwarg. Core probe: ctor param app_store (source=app) + method param tenant on whoami. Test module intentionally has no 'from __future__ import annotations' (string annotations would make introspection mark every param server-managed).
+**Mutation evidence**: model-path marking disabled => both_schema_paths RED; introspection union removed => json_typed_ctor_param RED; toolkit __init_subclass__ validate removed => typeerror RED; tool validate removed => typeerror RED; method exclusion removed => generated_args_schema RED; restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)
