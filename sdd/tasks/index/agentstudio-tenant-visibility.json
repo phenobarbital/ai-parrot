@@ -384,7 +384,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -397,7 +397,7 @@
       "parallel": true,
       "parallelism_notes": "Registers StudioAgentVisibilityHandler (TASK-3966, agents.py), StudioDraftVisibilityHandler (TASK-3967, drafts.py), StudioSkillVisibilityHandler (TASK-3968, skills_catalog.py); edits studio/__init__.py after TASK-3960 (/me) and TASK-3971 (assistant cleanup hook) on the same file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T16:37:07+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3972-visibility-routes-and-models.md",
       "wave_label": "W4.1"
@@ -409,7 +409,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -425,7 +425,7 @@
       "parallel": true,
       "parallelism_notes": "Matrix exercises routes/behaviour delivered by TASK-3966 (agents.py), TASK-3967 (drafts.py), TASK-3968 (skills_catalog.py), TASK-3969 (testing.py/files.py/toolkit_config.py gates and the test/ask context), TASK-3970 (meta-agent tools), TASK-3971 (assistant partition), TASK-3972 (visibility routes) and the registry-only Studio runtime from TASK-3965 (scoped_app fixture). Creates only tests/studio/test_tenant_matrix.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T16:37:07+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3973-end-to-end-tenant-matrix.md",
       "wave_label": "W4.2"
@@ -437,7 +437,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -446,7 +446,7 @@
       "parallel": true,
       "parallelism_notes": "Final pass after the matrix (TASK-3973); edits docs/agent_studio_api.md and test_feat605_contract_doc.py after TASK-3958/10 (same files, transitive via TASK-3973 → TASK-3965 → TASK-3958).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-02T16:37:07+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3974-docs-changelog-version.md",
       "wave_label": "W4.3"
