@@ -227,4 +227,7 @@ def setup_studio_routes(
     from .storage.backend import install_studio_storage_cleanup, resolve_studio_storage
 
     install_startup_hook_once(app, resolve_studio_storage)
+    from .meta_agent import cleanup_studio_assistants
+
+    install_startup_hook_once(app, cleanup_studio_assistants, signal="on_cleanup")  # assistant instances, every mode
     install_studio_storage_cleanup(app)  # unregisters the Postgres stores at cleanup
