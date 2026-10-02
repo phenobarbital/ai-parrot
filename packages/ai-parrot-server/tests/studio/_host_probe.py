@@ -45,9 +45,10 @@ PROBE_MODULE = textwrap.dedent(
         options_params = frozenset({"project"})
         server_managed_params = {"app_store": ServerParam(source="app", key="probe_store")}
 
-        def __init__(self, app_store: object = None, **kwargs):
+        def __init__(self, app_store: object = None, token: str = "", **kwargs):
             super().__init__(**kwargs)
             self.app_store = app_store
+            self.token = token
 
         async def _open(self) -> None:
             COUNTERS["opened"] += 1
