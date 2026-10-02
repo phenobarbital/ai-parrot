@@ -123,3 +123,28 @@ async def test_execute_refuses_body_value_and_fills_from_classvar(host_plugins):
     handler = _execute("tp_probe_managed", {})  # no app dependency configured
     response = await _unwrap(StudioToolExecuteHandler.post)(handler)
     assert response.status == 422 and json.loads(response.body)["details"] == {"missing": ["store"]}
+
+
+async def _post_assign(slug, params):
+    bot = SimpleNamespace(tool_manager=ToolManager(), name="agent")
+    app = web.Application()
+    app["bot_manager"] = SimpleNamespace(get_bot=AsyncMock(return_value=bot))
+    request = make_mocked_request("POST", "/x", match_info={"name": "agent"}, app=app)
+    request.json = AsyncMock(return_value={"slug": slug, "params": params})
+    handler = StudioToolkitsHandler(request)
+    handler._get_user = AsyncMock(return_value=StudioUser(user_id="42"))
+    handler._pbac_gate = AsyncMock(return_value=None)
+    handler._studio_partition = AsyncMock(return_value=StudioPartition(None))
+    handler._assign_owner = AsyncMock(return_value="42")
+    handler._require_owner = lambda owner, user: None
+    handler._manager = lambda: app["bot_manager"]
+    response = await _unwrap(StudioToolkitsHandler.post)(handler)
+    return response, bot
+
+
+async def test_every_assign_path_refuses_server_managed_key():
+    for slug, key in (("infographic", "artifact_store"), ("wiki", "pageindex_toolkit")):
+        response, bot = await _post_assign(slug, {key: "FROM-CLIENT"})
+        body = json.loads(response.body)
+        assert response.status == 422 and body["code"] == "server_managed", slug
+        assert body["details"] == {"params": [key]} and bot.tool_manager.tool_count() == 0

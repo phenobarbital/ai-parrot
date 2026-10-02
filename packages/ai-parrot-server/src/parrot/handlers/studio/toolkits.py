@@ -301,6 +301,9 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         params = assign_request.params
         try:
             await self._enforce_assign_policy(slug, user)
+            known = _resolve_toolkit_class(slug)
+            if known is not None:
+                self._server_managed_inputs(known, params)  # 422 server_managed on EVERY assign path
             if slug == "wiki":
                 registered_names, extra = await self._assign_wiki(bot, params)
             elif slug == "dataset_manager":
