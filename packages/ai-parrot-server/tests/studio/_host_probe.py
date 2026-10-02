@@ -1,6 +1,7 @@
 """Server host fixture (spec §4): a tmp ``plugins/tools`` package with probe toolkit/tools and a write variant.
 
-The probe entries are NOT ``tenant_bound`` so the resolver (rule 5) keeps them resolvable until FEAT-622 M3b.
+``tp_probe*`` entries are NOT ``tenant_bound``; ``tp_tenant*`` entries are (resolver rule 5 is lifted: the core
+scope gate, FEAT-622 M3b, protects them) so every host path is also exercised with tenant-bound entries.
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ PROBE_INIT = textwrap.dedent(
         "tp_probe_tool": "plugins.tools.probe.ProbeTool",
         "tp_probe_tool_write": "plugins.tools.probe.ProbeWriteTool",
         "tp_probe_managed": "plugins.tools.probe.ProbeManagedTool",
+        "tp_tenant": "plugins.tools.probe.ProbeTenantToolkit",
+        "tp_tenant_tool": "plugins.tools.probe.ProbeTenantTool",
     }
     '''
 )
@@ -33,7 +36,7 @@ PROBE_MODULE = textwrap.dedent(
     from parrot.tools.server_params import ServerParam
     from parrot.tools.toolkit import AbstractToolkit
 
-    COUNTERS = {"opened": 0, "bump": 0, "options_calls": 0, "executed": 0, "written": 0}
+    COUNTERS = {"opened": 0, "bump": 0, "options_calls": 0, "executed": 0, "written": 0, "constructed": 0}
 
 
     class ProbeToolkit(AbstractToolkit):
@@ -69,6 +72,30 @@ PROBE_MODULE = textwrap.dedent(
             return []
 
 
+    class ProbeTenantToolkit(AbstractToolkit):
+        """Tenant-bound probe toolkit with NO scope checks of its own."""
+
+        tool_prefix = "tp"
+        tenant_bound: ClassVar[bool] = True
+        read_tools: ClassVar[frozenset] = frozenset({"whoami"})
+        options_params = frozenset({"project"})
+
+        def __init__(self, token: str = "", **kwargs):
+            super().__init__(**kwargs)
+            COUNTERS["constructed"] += 1
+            self.token = token
+
+        async def whoami(self) -> str:
+            """Read tool: report the probe identity."""
+            return "tenant-probe"
+
+        @classmethod
+        async def config_options(cls, *args, **kwargs):
+            """Options provider with no scope check."""
+            COUNTERS["options_calls"] += 1
+            return []
+
+
     class ProbeArgs(BaseModel):
         """Probe tool arguments."""
 
@@ -82,6 +109,24 @@ PROBE_MODULE = textwrap.dedent(
         description = "Probe tool"
         args_schema = ProbeArgs
         access = "read"
+
+        async def _execute(self, **kwargs):
+            COUNTERS["executed"] += 1
+            return {"ok": True}
+
+
+    class ProbeTenantTool(AbstractTool):
+        """Tenant-bound standalone read probe tool with NO scope check of its own."""
+
+        name = "tp_tenant_tool"
+        description = "Tenant-bound probe tool"
+        args_schema = ProbeArgs
+        access = "read"
+        tenant_bound: ClassVar[bool] = True
+
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            COUNTERS["constructed"] += 1
 
         async def _execute(self, **kwargs):
             COUNTERS["executed"] += 1

@@ -1,7 +1,7 @@
 """FEAT-622 M2: every Studio path (and the bot build) sees a host-declared toolkit (spec §4 integration row 1).
 
-Paths that need a tenant-bound class use the **non-tenant-bound** probe variant from ``_host_probe`` until the
-resolver's rule 5 is lifted (FEAT-622 M3b / TASK-3989).
+Every path runs twice: with the plain probe entries and with the **tenant-bound** ones (resolver rule 5 is lifted by
+FEAT-622 M3b / TASK-3989; the core scope gate protects them), the latter inside a bound ``studio_scope``.
 """
 
 from __future__ import annotations
@@ -28,6 +28,16 @@ from parrot.tools.spec import ToolkitSpec
 from ._host_probe import host_plugins  # noqa: F401
 from .test_testing_surface import _decode, _make_handler, _unwrap
 
+class V:
+    """The slugs the drivers use: switched by ``test_every_studio_path_sees_host_toolkit``."""
+
+    tk, tool, tool_path = "tp_probe", "tp_probe_tool", "plugins.tools.probe.ProbeTool"
+
+
+VARIANTS = {
+    "plain": ("tp_probe", "tp_probe_tool", "plugins.tools.probe.ProbeTool"),
+    "tenant_bound": ("tp_tenant", "tp_tenant_tool", "plugins.tools.probe.ProbeTenantTool"),
+}
 PATHS = ["catalog", "schema", "generic_assign", "feat593_get", "options", "me_override", "live_assign", "bot_build"]
 
 
@@ -36,7 +46,7 @@ def _state():
         owner="42",
         editable=True,
         reason=None,
-        tooling=SimpleNamespace(toolkits=[ToolkitSpec(slug="tp_probe", params={}, secret_refs={})], mcp_servers=[]),
+        tooling=SimpleNamespace(toolkits=[ToolkitSpec(slug=V.tk, params={}, secret_refs={})], mcp_servers=[]),
     )
 
 
@@ -64,13 +74,13 @@ def _tooling_handler(cls, match_info):
 async def _catalog(monkeypatch):
     monkeypatch.setattr(tools_catalog, "_CATALOG_CACHE", None)
     entries = tools_catalog._build_catalog()
-    entry = next(item for item in entries if item["slug"] == "tp_probe_tool")
-    assert entry["source"] == "host" and entry["dotted_path"] == "plugins.tools.probe.ProbeTool"
+    entry = next(item for item in entries if item["slug"] == V.tool)
+    assert entry["source"] == "host" and entry["dotted_path"] == V.tool_path
     assert any(item["slug"] == "wiki" and item["source"] == "builtin" for item in entries)
 
 
 async def _schema(monkeypatch):
-    handler = _make_handler(StudioToolkitsHandler, web.Application(), match_info={"slug": "tp_probe_tool"})
+    handler = _make_handler(StudioToolkitsHandler, web.Application(), match_info={"slug": V.tool})
     response = await _unwrap(StudioToolkitsHandler.get)(handler)
     assert response.status == 200
 
@@ -78,7 +88,7 @@ async def _schema(monkeypatch):
 async def _generic_assign(monkeypatch):
     bot = SimpleNamespace(tool_manager=ToolManager())
     handler = _make_handler(StudioToolkitsHandler, web.Application())
-    names, _ = handler._assign_generic(bot, "tp_probe", {})
+    names, _ = handler._assign_generic(bot, V.tk, {})
     assert "tp_whoami" in names
 
 
@@ -87,12 +97,12 @@ async def _feat593_get(monkeypatch):
     handler = _tooling_handler(tc.StudioAgentToolkitsHandler, {"name": "agent"})
     response = await _unwrap(tc.StudioAgentToolkitsHandler.get)(handler)
     body = json.loads(response.body)
-    assert body["unavailable"] == [] and [item["slug"] for item in body["toolkits"]] == ["tp_probe"]
+    assert body["unavailable"] == [] and [item["slug"] for item in body["toolkits"]] == [V.tk]
 
 
 async def _options(monkeypatch):
     _install_store(monkeypatch, tc)
-    handler = _tooling_handler(tc.StudioToolkitOptionsHandler, {"name": "agent", "slug": "tp_probe", "param": "project"})
+    handler = _tooling_handler(tc.StudioToolkitOptionsHandler, {"name": "agent", "slug": V.tk, "param": "project"})
     handler._authorize = AsyncMock(return_value=(_Store(), _state()))
     response = await _unwrap(tc.StudioToolkitOptionsHandler.get)(handler)
     assert response.status == 200 and json.loads(response.body)["options"] == []
@@ -104,9 +114,9 @@ class _Store:
 
 async def _me_override(monkeypatch):
     _install_store(monkeypatch, to)
-    handler = _tooling_handler(to.StudioUserToolkitOverrideHandler, {"name": "agent", "slug": "tp_probe"})
-    spec, _schema_ = await handler._spec("agent", "tp_probe")
-    assert spec.slug == "tp_probe"
+    handler = _tooling_handler(to.StudioUserToolkitOverrideHandler, {"name": "agent", "slug": V.tk})
+    spec, _schema_ = await handler._spec("agent", V.tk)
+    assert spec.slug == V.tk
 
 
 async def _live_assign(monkeypatch):
@@ -118,7 +128,7 @@ async def _live_assign(monkeypatch):
         app,
         method="POST",
         match_info={"name": "agent"},
-        json_body={"tools": [], "toolkits": [{"slug": "tp_probe", "params": {}}]},
+        json_body={"tools": [], "toolkits": [{"slug": V.tk, "params": {}}]},
     )
     handler._get_db_agent = AsyncMock(return_value=None)
     meta = SimpleNamespace(bot_config=SimpleNamespace(config={"created_by": "1"}))
@@ -134,7 +144,7 @@ async def _bot_build(monkeypatch):
             self.tool_manager = ToolManager()
 
     bot = Bot()
-    bot._initialize_tools([ToolkitSpec(slug="tp_probe", params={}, secret_refs={})])
+    bot._initialize_tools([ToolkitSpec(slug=V.tk, params={}, secret_refs={})])
     assert await bot.apply_tooling_specs()
     assert "tp_whoami" in bot.tool_manager.list_tools()
 
@@ -151,7 +161,22 @@ _DRIVERS = {
 }
 
 
+@pytest.mark.parametrize("variant", sorted(VARIANTS))
 @pytest.mark.parametrize("path", PATHS)
-async def test_every_studio_path_sees_host_toolkit(host_plugins, monkeypatch, path):  # noqa: F811
-    """Each Studio path finds the host toolkit (spec §4 integration row 1)."""
-    await _DRIVERS[path](monkeypatch)
+async def test_every_studio_path_sees_host_toolkit(host_plugins, monkeypatch, path, variant):  # noqa: F811
+    """Each Studio path finds the host toolkit, plain or tenant-bound (spec §4 integration row 1, R-c)."""
+    from parrot.handlers.scope import RequestScope
+    from parrot.handlers.studio.access import build_tool_scope
+    from parrot.utils.helpers import RequestContext, _current_ctx
+
+    monkeypatch.setattr(V, "tk", VARIANTS[variant][0])
+    monkeypatch.setattr(V, "tool", VARIANTS[variant][1])
+    monkeypatch.setattr(V, "tool_path", VARIANTS[variant][2])
+    token = _current_ctx.set(RequestContext(
+        request=make_mocked_request("GET", "/x"),
+        studio_scope=build_tool_scope(RequestScope(user_id="42", tenant="acme", groups=frozenset())),
+    ))
+    try:
+        await _DRIVERS[path](monkeypatch)
+    finally:
+        _current_ctx.reset(token)

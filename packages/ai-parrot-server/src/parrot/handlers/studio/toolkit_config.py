@@ -189,6 +189,14 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
 class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
     """GET dynamic options evaluated on the persisted spec only."""
 
+    def _options_refusal(self, cls, slug: str, param: str):
+        """403 ``tool_scope_unavailable`` for a tenant-bound toolkit without a scope; 404 for an unknown parameter."""
+        if (refused := self._scope_refusal(cls, slug)) is not None:
+            return refused
+        if param not in cls.options_params:
+            return self._error(f"Unknown options parameter '{param}'.", status=404, code="not_found")
+        return None
+
     async def get(self):
         """Return dynamic options without accepting request-provided configuration."""
         authorized = await self._authorize(self.request.match_info.get("name"), "astudio:toolkits:options")
@@ -201,8 +209,8 @@ class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
             cls, _ = store.schema_for(slug)
         except LookupError as exc:
             return self._map_exc(exc)
-        if param not in cls.options_params:
-            return self._error(f"Unknown options parameter '{param}'.", status=404, code="not_found")
+        if (refused := self._options_refusal(cls, slug, param)) is not None:
+            return refused  # the scope gate runs before hydrate_params (vault read) and before construction
         spec = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
         if spec is None:
             return self._error("Toolkit is not configured.", status=409, code="not_configured")

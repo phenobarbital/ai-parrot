@@ -108,6 +108,8 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             return self._error(f"Unknown tool '{slug}'.", status=404, code="not_found")
         if (refused := await self._policy_check(slug, phase="execute", status=403)) is not None:
             return refused
+        if (refused := self._scope_refusal(cls, slug)) is not None:
+            return refused  # before _instantiate_tool: no constructor side effect without a valid scope
         if is_enforced_write_class(cls):
             return self._error(
                 f"Tool '{slug}' requires confirmation and cannot be executed directly.",
@@ -122,6 +124,13 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
                 details={"params": sent},
             )
         return None
+
+    def _execute_response(self, result):
+        """200 with the result; a structured ``tool_scope_unavailable`` result is the same 403 as the pre-check."""
+        meta = result.metadata or {}
+        if meta.get("error_code") == "tool_scope_unavailable":
+            return self._scope_error_response(result.error or "tool_scope_unavailable", meta.get("reason"))
+        return self.json_response(result.model_dump(), status=200)
 
     async def post(self):
         if (denied := await self._require_author()) is not None:
@@ -170,8 +179,7 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
         except ValueError as exc:
             return self._error(f"Invalid arguments for '{slug}': {exc}", status=422, code="invalid_args")
 
-        result = await instance.execute(**execute_request.args)
-        return self.json_response(result.model_dump(), status=200)
+        return self._execute_response(await instance.execute(**execute_request.args))
 
 
 @is_authenticated()

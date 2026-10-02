@@ -68,6 +68,26 @@ class _StudioStorageMixin:
             return None
         return self.json_response(self._json_error(self._VISIBILITY_MESSAGES[code], code), status=422)
 
+    def _scope_refusal(self, cls: Any, slug: str) -> web.Response | None:
+        """403 ``tool_scope_unavailable`` (``details.reason``) when a tenant-bound ``cls`` has no valid scope.
+
+        Runs before any construction / vault read: a refused request has no side effect (FEAT-622 M3b, R-b).
+        """
+        from parrot.tools.scope import ToolScopeUnavailable, ensure_tool_scope
+
+        try:
+            ensure_tool_scope(cls, tool_name=slug)
+        except ToolScopeUnavailable as exc:
+            return self._scope_error_response(str(exc), exc.reason)
+        return None
+
+    def _scope_error_response(self, message: str, reason: str) -> web.Response:
+        """The 403 body of a scope refusal (``code`` + ``details.reason``)."""
+        from ..models import StudioError  # lazy: models imports the manager
+
+        body = StudioError(message=message, code="tool_scope_unavailable", details={"reason": reason})
+        return self.json_response(body.model_dump(), status=403)
+
     def _studio_storage(self) -> Any:
         """The resolved ``StudioStorage`` memoised on the app."""
         from ..storage.models import StudioStorageUnavailable
