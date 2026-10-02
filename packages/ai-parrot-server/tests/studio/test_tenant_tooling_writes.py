@@ -53,6 +53,18 @@ class _DB:
         return _Conn()
 
 
+@pytest.fixture(autouse=True)
+def _legacy_row_stands_in_for_a_tenant_row(monkeypatch):
+    """These tests exercise the tenant POLICY on a persisted row; a legacy row is the cheap stand-in for it.
+
+    A real tenant caller never reaches a legacy row (PR #1564 F2): that is pinned in ``test_tenant_legacy_agents``.
+    """
+    async def _no_tenant_guard(self) -> bool:
+        return False
+
+    monkeypatch.setattr(AgentToolingStore, "tenant_caller", _no_tenant_guard)
+
+
 @pytest.fixture
 def vault(monkeypatch):
     """Vault spies: any store/retrieve is recorded."""

@@ -237,7 +237,9 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         try:
             ref = await self._tooling_ref(name)
         except LookupError:
-            ref = name   # agent gone: orphan overrides stay deletable by the bare name
+            if await AgentToolingStore(self).tenant_caller():
+                return self._error("Requested toolkit was not found.", status=404, code="not_found")
+            ref = name   # agent gone: orphan overrides stay deletable by the bare name (never for a tenant)
         user = await self._get_user()
         try:
             await ToolkitConfigService().remove(user.user_id, ref, slug)

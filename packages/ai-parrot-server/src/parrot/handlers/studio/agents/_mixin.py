@@ -225,6 +225,12 @@ class _StudioAgentsMixin:
         if studio is not None:
             denied = await self._studio_authorize(studio._studio[1], name, manage=True)
             return denied if denied is not None else (await self._get_user()).user_id
+        try:
+            tenant_caller = await AgentToolingStore(self).tenant_caller()
+        except studio_models.StudioStorageUnavailable as exc:
+            return self._studio_error(exc)
+        if tenant_caller:  # never reveal (403) or manage a global agent from a tenant: the one 404
+            return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
         db_agent = await self._get_db_agent(name)
         if db_agent is not None:
             return str(db_agent.created_by) if db_agent.created_by is not None else None
