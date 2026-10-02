@@ -252,3 +252,24 @@ async def test_assign_resolves_studio_row_owner(aiohttp_client, pool, vault):
     assert body["agent"] == "alpha" and body["persisted"] is False
     resp = await client.post(f"{BASE}/agents/nobody/toolkits", json={"slug": "dataset_manager", "params": {}})
     assert resp.status == 404
+
+
+async def test_legacy_source_tooling_refuses_expected_version(aiohttp_client, pool, vault, monkeypatch):
+    """A non-Studio (registry) agent has no version to guard: ``expected_version`` is a 400, nothing written."""
+    from parrot.handlers.studio.tooling_store import AgentToolingStore, ToolingState
+    from parrot.tools.spec import normalize_tooling
+
+    async def _legacy_state(self, name):
+        return ToolingState(tooling=normalize_tooling([]), editable=True, reason=None, owner="u1",
+                            source="registry", tooling_ref=name)
+
+    monkeypatch.setattr(AgentToolingStore, "load", _legacy_state)
+    client = await aiohttp_client(_app(pool))
+    url = f"{BASE}/agents/legacy-one"
+    resp = await client.put(f"{url}/toolkits/jira", json={**JIRA, "expected_version": 1})
+    assert resp.status == 400 and (await resp.json())["code"] == "expected_version_unsupported"
+    resp = await client.delete(f"{url}/toolkits/jira", params={"expected_version": "1"})
+    assert resp.status == 400 and (await resp.json())["code"] == "expected_version_unsupported"
+    resp = await client.put(f"{url}/mcp-servers", json={"servers": [], "expected_version": 1})
+    assert resp.status == 400 and (await resp.json())["code"] == "expected_version_unsupported"
+    assert vault == {}

@@ -82,6 +82,8 @@ class _ToolingViewMixin(_StudioAgentsMixin):
         once on a stale one (spec §2.8). A legacy source has no version to guard: ``expected_version`` is a 400.
         """
         if getattr(state, "source", None) != "studio":
+            if (refused := self._refuse_expected_version(source)) is not None:
+                return refused
             await call({})
             return None
         expected = self._expected_version(source)
