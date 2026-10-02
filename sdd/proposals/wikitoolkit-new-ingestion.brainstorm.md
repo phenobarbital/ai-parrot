@@ -16,7 +16,7 @@ tags: [wiki, wikitoolkit, ingestion, inbox, charter, knowledge-graph, archive]
 
 **Date**: 2026-10-03
 **Author**: Jesus Lara (brainstorm: Claude session 2026-10-03)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
@@ -109,6 +109,47 @@ Decisions taken during discovery (Rounds 0–2) — binding for the spec:
   `self.logger`, `black`/`ruff` clean, tests under
   `packages/ai-parrot/tests/knowledge/wiki/`.
 
+Resolutions from the open-questions round (2026-10-03) — also binding:
+
+- **Separate classification call**: a dedicated `InboxClassification`
+  structured call on the lightweight tier; FEAT-402 triage prompts and
+  `TriageOutput` stay byte-identical. Discards never pay for it.
+- **Tags** are `tag:<slug>` pages (category `tag`, origin `authored`) joined
+  by `tagged` edges — no `pages` schema migration in any store. Tags are also
+  rendered in the OKF frontmatter.
+- **Document page**: a dedicated `doc:<slug>` page created by the inbox is
+  the carrier of category, summary, tags, links, frontmatter and the
+  markdown projection. The PageIndex pages the orchestrator creates stay as
+  children, each joined to the doc page by a `part_of` edge; the
+  orchestrator's own output is never rewritten.
+- **Git**: archiving a tracked original stages its deletion
+  (`git rm --cached` after the move). No `--commit` flag; the command never
+  commits.
+- **Duplicates**: an unchanged file re-dropped in the inbox is a Stage-0
+  heuristic reject → archived under `rejected/`, bookkeeper reason
+  `duplicate`; `--force` re-ingests.
+- **Markdown path**: `<storage_dir>/inbox/<category-plural>/<flat-id>.md`
+  (never `pages/`, which the `memory` backend owns).
+- **Default taxonomy**: six kinds — meeting→summary, briefing→overview,
+  decision→concept, report→synthesis, memo→summary, note→concept;
+  `default_kind: note`. **`decision` kinds additionally emit an ADR
+  candidate** into the FEAT-578 decisions plane (`origin="inferred"`,
+  `review_status="unreviewed"`) for `wikitoolkit adr review`.
+- **Relation vocabulary** (closed): `references`, `relates_to`, `mentions`,
+  `follows_up`, `supersedes`. `supersedes` is informational in v1 — no
+  ranking demotion.
+- **Link candidates**: at most 20 sent to the LLM (combined search top-k ∪
+  per-tag FTS, deduped); `sym:`/`file:` code pages enter the candidate set
+  only when the document names the symbol or path verbatim.
+- **MCP tool deferred**: no `wiki_inbox` tool in this feature (FEAT-569 is
+  in flight on `tools.py`/`mcp_server.py`); a ledger follow-up is opened at
+  `/sdd-done`. The processor is built so the tool is a thin wrapper later.
+- **Fireflies**: when a document carries a Fireflies id (frontmatter
+  `fireflies_id` / `external_id`, or a `fireflies:<id>` marker), the inbox
+  looks it up with `SourceCollectionManager.find_by_external_id`; a hit
+  re-ingests that existing source (`replace_source_slice`) and updates its
+  doc page instead of creating a second one.
+
 ---
 
 ## Options Explored
@@ -140,25 +181,38 @@ runs, per document in the configured inbox folder:
    existing FEAT-402/451 path (PageIndex pages, `summarizes` edges, source
    manifest `record_decision`, frontmatter, bookkeeper `ADMIT`/`DISCARD`).
    `discard` short-circuits with no pages.
-6. **Decorate** (new) — recover the generated page ids from
-   `SourceCollectionManager.get_source(source_id).pages_generated`, pick the
-   root page as the *document page*, re-upsert it with the taxonomy
-   category, the classification summary and a `## Related` section of
-   `[[wikilinks]]`; write `(doc_page, dst, rel, "asserted")` edges and
+6. **Document page** (new) — upsert a dedicated `doc:<slug>` page
+   (`origin="ingest"`, `asserted_by="agent:wikitoolkit-inbox"`,
+   `source_id` = the orchestrator's source) carrying the taxonomy category,
+   the classification title/summary, the FEAT-451 frontmatter and a
+   `## Related` section of `[[wikilinks]]`. Recover the orchestrator's page
+   ids from `SourceCollectionManager.get_source(source_id).pages_generated`
+   and join each to the doc page with a `part_of` edge. Write
+   `(doc_page, dst, rel, "asserted")` edges for the selected links and
    `tag:<slug>` pages + `tagged` edges (tags become graph nodes — no schema
-   change); `asserted_by = "agent:wikitoolkit-inbox"`.
+   change). For `kind == decision`, also save an ADR candidate
+   (`DecisionRecord(origin="inferred", review_status="unreviewed",
+   evidence=[EvidenceRef(kind="document", page_id=doc_page, …)])`) through
+   `DecisionRepository.save(record, None)` so `wikitoolkit adr review` can
+   accept or reject it.
 7. **Project markdown** (new) — render the document page as an OKF file
    under `<storage_dir>/inbox/<category-plural>/<flat-id>.md` using
    `page_frontmatter()` + the machine-field block, exactly as
    `SQLiteFileStore._render_page_file` does, written atomically
-   (temp + `os.replace`).
+   (temp + `os.replace`); regenerate `<storage_dir>/inbox/index.md`.
 8. **Archive** (new) — move the original to
    `<archive_dir>[/rejected]/<stem>.<YYYY-MM-DD>.<ext>` (suffix `-N` on
    collision); if the file is tracked, stage the deletion through
-   `git rm --cached`-equivalent (pattern: `cli.py:3192` already shells
-   out to `git -C <root>`); persist `archived_to` into the source's
+   `git rm --cached` (pattern: `cli.py:3192` already shells out to
+   `git -C <root>`); persist `archived_to` into the source's
    `DocumentMetadata.extra` via `record_document_metadata`; bookkeeper
-   `ARCHIVE_ORIGINAL` line.
+   `ARCHIVE_ORIGINAL` line. Duplicates (Stage-0 hash hit) and discards go
+   under `rejected/`.
+
+Before step 2, a **Fireflies pre-check**: a document carrying a Fireflies
+id is matched against `find_by_external_id("fireflies:<id>")`; on a hit the
+run re-ingests that existing source and updates its doc page instead of
+creating a new one.
 
 Charter gains an optional `taxonomy:` block (kinds with `id`, `description`,
 `category`, optional `tag_hints`; `default_kind`; `max_tags`). A missing block
@@ -168,7 +222,9 @@ yields the built-in default taxonomy, so existing charters keep validating.
 
 CLI: `wikitoolkit inbox [--dry-run] [--limit N] [--charter PATH]
 [--lightweight-model] [--model] [--no-archive] [--force] [--json]`.
-MCP: a `wiki_inbox` tool wrapping the same processor (dry-run default).
+MCP: **deferred** — `InboxProcessor` is designed so a later `wiki_inbox`
+tool is a thin wrapper, but no tool ships in this feature (FEAT-569 owns
+`tools.py`/`mcp_server.py` right now).
 
 ✅ **Pros:**
 - Reuses every hardened piece (loaders, triage cascade, manifest provenance,
@@ -187,11 +243,14 @@ MCP: a `wiki_inbox` tool wrapping the same processor (dry-run default).
 - Two extra LLM calls per admitted document (classify, link) on top of
   triage; cost scales with inbox size (mitigation: both on the lightweight
   tier; open question on merging classify into the triage prompt).
-- `IngestReport` does not return page ids, so the decorate stage must read
-  them back from the source manifest — a small indirection.
-- Re-upserting the root page after the orchestrator wrote it is a second
-  write; must preserve `content_hash`/`node_id` to keep `upsert`/`sync`
-  semantics intact.
+- `IngestReport` does not return page ids, so the document-page stage must
+  read them back from the source manifest — a small indirection.
+- One extra page per document (`doc:<slug>`) alongside the PageIndex pages;
+  consumers must learn that the doc page, not the PageIndex root, is the
+  entry point (mitigated by `part_of` edges and the markdown projection).
+- The ADR-candidate hook couples the inbox to `decisions/`; it must be
+  imported lazily (as `LazyAdrGroup` does for the CLI) so the hook fast path
+  and non-decision documents never pay for it.
 - `cli.py` is already 208 KB; the command must stay thin (delegate to
   `inbox.py`) and import the pipeline lazily like `ingest` does.
 
@@ -215,7 +274,8 @@ MCP: a `wiki_inbox` tool wrapping the same processor (dry-run default).
 - `parrot/knowledge/wiki/search.py` — `WikiCombinedSearch.search`; `store.search_fts`.
 - `parrot/knowledge/wiki/export.py` — `page_frontmatter`, `category_dir`; `file_store.py` — `_render_page_file` / `_write_page_file_atomic` as the rendering template; `okf/utils.flatten_concept_id_for_filename`.
 - `parrot/knowledge/wiki/cli.py` — `_resolve_project`, `_open_store`, `_open_sources`, `_run`, `_build_triage_adapters`, `_resolve_model_id`, `_authoring_identity`; the `remember` command (`cli.py:3806`) as the precedent for asserted edges and deterministic page ids.
-- `parrot/knowledge/wiki/tools.py` — `create_wiki_tools` + `AbstractTool` pattern (`WikiRememberTool`) for the MCP tool.
+- `parrot/knowledge/wiki/decisions/` — `DecisionRecord`, `EvidenceRef`, `DecisionRepository.save` for the ADR-candidate hook (lazy import).
+- `parrot/knowledge/wiki/sources.py` — `find_by_external_id` for the Fireflies pre-check.
 
 ---
 
@@ -354,11 +414,11 @@ concept id appears verbatim in the document text (same technique
   through the existing `related` surface.
 
 What is traded off: two more LLM calls per document than today's `--auto`
-ingest, and a second write of the root page in the decorate stage. Both are
-acceptable for a human-paced inbox (tens of documents per run, not
-thousands) and both have a clear optimisation path (merge classify into the
-Stage-1 triage prompt; pass category/summary into `_build_page_records`
-instead of re-upserting) recorded under Open Questions.
+ingest, and one extra `doc:<slug>` page per document. Both are acceptable
+for a human-paced inbox (tens of documents per run, not thousands). The
+user explicitly chose the separate classification call over merging it into
+the Stage-1 prompt, and the dedicated doc page over rewriting the
+orchestrator's root page (see the resolved questions at the end).
 
 ---
 
@@ -387,14 +447,16 @@ instead of re-upserting) recorded under Open Questions.
   holds `<stem>.<YYYY-MM-DD>.<ext>` originals (`rejected/` for discards), and
   `git status` shows the tracked originals as staged deletions. The command
   never commits.
-- `wikitoolkit query`, `page`, `related` immediately see the new document
-  page, its `tag:<slug>` neighbours and its outgoing `references`-family
-  edges; `.parrot/wiki/inbox/<category-plural>/<id>.md` is a readable OKF
-  file with frontmatter (`type`, `title`, `id`, `tags`, `timestamp`,
-  `summary`, `relates_to`, plus document and triage provenance).
-- Agents get the same capability through the `wiki_inbox` MCP tool
-  (dry-run by default; `apply=true` to archive), so a coding assistant can
-  file a briefing it just wrote.
+- `wikitoolkit query`, `page`, `related` immediately see the new
+  `doc:<slug>` page, its PageIndex children (`part_of`), its `tag:<slug>`
+  neighbours and its outgoing `references`-family edges;
+  `.parrot/wiki/inbox/<category-plural>/<id>.md` is a readable OKF file with
+  frontmatter (`type`, `title`, `id`, `tags`, `timestamp`, `summary`,
+  `relates_to`, plus document and triage provenance).
+- A document classified as a `decision` also shows up as an unreviewed
+  candidate in `wikitoolkit adr review`.
+- Agents run the same command through their shell; an MCP tool is a
+  documented follow-up.
 - Configuration lives in `.parrot/wiki.json`:
 
   ```json
@@ -459,14 +521,24 @@ instead of re-upserting) recorded under Open Questions.
      charter_version=charter.version, acquired=acquired)`; the triage
      `briefing` becomes the PageIndex hint; frontmatter carries document
      metadata + `TriageProvenance`.
-   - decorate → read `get_source(report.source_id).pages_generated`; the
-     first id is the document page; `upsert_pages` with
-     `category=<taxonomy category>` (or `archive` when the decision was
-     `archive`), `summary=<classification summary>`, body + `## Related`
-     wikilinks, `origin="ingest"`, `asserted_by="agent:wikitoolkit-inbox"`,
-     preserving `node_id`, `source_id`, `content_hash`; `add_edges` for the
+   - document page → `upsert_pages([WikiPageRecord(concept_id="doc:<slug>",
+     category=<taxonomy category> (or `archive` when the decision was
+     `archive`), title, summary=<classification summary>, body = frontmatter
+     + classification summary + `## Related` wikilinks + pointer to the
+     PageIndex children, source_id=report.source_id, origin="ingest",
+     asserted_by="agent:wikitoolkit-inbox")])`; `<slug>` is derived from the
+     title with a short hash suffix for stability; read
+     `get_source(report.source_id).pages_generated` and `add_edges`
+     `(child, doc_page, "part_of", "asserted")`; `add_edges` for the
      selected links and for `tag:<slug>` pages (created on first use with
      `category="tag"`, `origin="authored"`).
+   - ADR candidate (kind `decision` only) → lazily import `decisions`,
+     build `DecisionRecord(decision_id=candidate_decision_id(...),
+     origin="inferred", source_status="unknown", review_status="unreviewed",
+     external_id="inbox:<doc_page>", evidence=[EvidenceRef(kind="document",
+     page_id=doc_page, rel_path=<archived original>, start_line=1,
+     end_line=<n>)], …)` and `DecisionRepository.save(record, None)`;
+     failures here are logged and never fail the document.
    - project → render the document page to
      `<markdown_dir>/<category_dir(category)>/<flatten_concept_id>.md`
      atomically (temp file + `os.replace`); the frontmatter is
@@ -482,10 +554,10 @@ instead of re-upserting) recorded under Open Questions.
 4. **Report** aggregated counts and per-document rows (text or `--json`),
    write a run header line to the bookkeeper (`INBOX_RUN`, charter
    fingerprint, counts, models used).
-5. **MCP tool** `wiki_inbox` (in `tools.py`, registered by
-   `create_wiki_tools` when `root`/`config` are given) wraps steps 1–4 with
-   `dry_run=True` default; it reuses the CLI's adapter construction through
-   a shared helper moved out of the command body (no new LLM wiring).
+5. **Adapter construction** is factored out of the `ingest` command body
+   into a shared helper (no behaviour change for `ingest`), so the deferred
+   `wiki_inbox` MCP tool can later wrap `InboxProcessor` without new LLM
+   wiring. The tool itself is out of scope (FEAT-569 conflict).
 
 ### Edge Cases & Error Handling
 
@@ -496,10 +568,16 @@ instead of re-upserting) recorded under Open Questions.
   `rejected/`, acquisition failures stay in the inbox (they may need a
   loader extra installed).
 - **Duplicate content** (same hash already ingested) — Stage-0 reject with
-  `decision_source="heuristic"` → archived under `rejected/duplicate` is
-  *not* a separate dir in v1: the reason is recorded in the bookkeeper line
-  and report; `--force` bypasses the duplicate check and re-ingests
+  `decision_source="heuristic"`, archived under `rejected/` like any
+  discard; the reason `duplicate` is recorded in the bookkeeper line and the
+  report; `--force` bypasses the duplicate check and re-ingests
   (`replace_source_slice` prevents page duplication).
+- **Fireflies export already filed by FEAT-481** — `find_by_external_id`
+  hit → the existing source is re-ingested and its doc page updated; no
+  second doc page. Without an id, normal flow.
+- **ADR candidate save fails** (decisions plane disabled, model
+  unconfigured, repository error) — logged as `ADR_CANDIDATE_SKIPPED`; the
+  document still lands and is archived.
 - **Unknown kind from the LLM** — fall back to `default_kind`, flag
   `classification_source="fallback"` in the report; never raise.
 - **LLM failure in classify or link** — classification failure aborts that
@@ -530,17 +608,21 @@ instead of re-upserting) recorded under Open Questions.
 ## Capabilities
 
 ### New Capabilities
-- `wikitoolkit-inbox-ingestion`: autonomous `wikitoolkit inbox` command and
-  `wiki_inbox` MCP tool — acquire, triage, classify (charter taxonomy),
-  tag, link (retrieve → select → verify), ingest, project OKF markdown,
-  archive originals with date-stamped names.
+- `wikitoolkit-inbox-ingestion`: autonomous `wikitoolkit inbox` command —
+  acquire, triage, classify (charter taxonomy), tag, link (retrieve →
+  select → verify), ingest, `doc:<slug>` document page, ADR candidate for
+  decisions, project OKF markdown, archive originals with date-stamped
+  names. (MCP tool: follow-up ledger item, not this spec.)
 
 ### Modified Capabilities
 - `supervised-wiki-ingestion` (FEAT-402): `Charter` gains an optional
-  `taxonomy` block; `TriageOutput.category_hint` gets its first consumer.
+  `taxonomy` block. Triage prompts and `TriageOutput` unchanged
+  (`category_hint` stays dormant by decision).
 - `wikitoolkit-ingest-documents` (FEAT-451): `DocumentMetadata.extra`
   carries `archived_to`/`archived_at`; no model change.
-- `mcp-local-server-wikitoolkit`: one more tool in `create_wiki_tools`.
+- `sdd-spec-wiki-adr` (FEAT-578 decisions plane): a new producer of
+  `origin="inferred"` candidates (`external_id="inbox:<doc_page>"`); the
+  plane's models and repository are consumed, not modified.
 - `portable-wikitoolkit-config-paths` / `WikiProjectConfig`: optional
   `inbox` section.
 
@@ -554,9 +636,10 @@ instead of re-upserting) recorded under Open Questions.
 | `parrot/knowledge/wiki/charter.py` | extends | optional `taxonomy: Taxonomy` with default; fingerprint covers it |
 | `parrot/knowledge/wiki/project.py` | extends | optional `inbox: InboxConfig` on `WikiProjectConfig` (+ `WikiEnvOverlay`) |
 | `parrot/knowledge/wiki/cli.py` | extends | new `inbox` command; factor adapter/toolkit construction out of `ingest` into a reusable helper **without** changing `ingest` behavior |
-| `parrot/knowledge/wiki/tools.py`, `mcp_server.py` | extends | `wiki_inbox` tool (⚠ FEAT-569 in flight on both files) |
+| `parrot/knowledge/wiki/tools.py`, `mcp_server.py` | none (deferred) | `wiki_inbox` tool moved to a follow-up ledger item because FEAT-569 is in flight on both files |
+| `parrot/knowledge/wiki/decisions/` (`models.py`, `repository.py`, `generation.candidate_decision_id`) | depends on | lazily imported; ADR candidate for `decision` kinds; no changes to the plane |
 | `parrot/knowledge/wiki/ingest.py` | depends on | unchanged; consumed via `ingest(..., triage=, acquired=)` |
-| `parrot/knowledge/wiki/sources.py` | depends on | `record_decision`, `record_document_metadata`, `get_source` |
+| `parrot/knowledge/wiki/sources.py` | depends on | `record_decision`, `record_document_metadata`, `get_source`, `find_by_external_id` |
 | `parrot/knowledge/wiki/store.py` | depends on | `upsert_pages`, `add_edges`, `get_page`, `search_fts`; no schema change |
 | `parrot/knowledge/wiki/export.py`, `file_store.py` | depends on | `page_frontmatter`, `category_dir`; rendering mirrored, not imported from `file_store` (private methods) |
 | `.parrot/wiki.json` (repo) | config | add `inbox` block; `exclude_dirs` already covers `.parrot/wiki` |
@@ -762,11 +845,47 @@ def ingest(source, path_, charter_opt, dry_run, review_opt, interactive_flag, au
     # refs = resolve_sources(source, recursive=recursive); orch.ingest(..., triage=entry, acquired=acquired)
 def ingest_jira(...)                              # L5249
 
-# From packages/ai-parrot/src/parrot/knowledge/wiki/tools.py
-class WikiRememberTool(AbstractTool): name = "wiki_remember"   # L336  (pattern for a write tool with storage_dir)
+# From packages/ai-parrot/src/parrot/knowledge/wiki/tools.py  (reference only — NOT modified in this feature)
+class WikiRememberTool(AbstractTool): name = "wiki_remember"   # L336  (pattern for the deferred wiki_inbox tool)
 def create_wiki_tools(store: BaseWikiStore, root: Path | None = None,
                       config: WikiProjectConfig | None = None,
                       ledger_service: Union["LedgerService", None] = None) -> list[AbstractTool]  # L807
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/sources.py  (Fireflies pre-check)
+def find_by_external_id(self, external_id: str) -> SourceManifestEntry | None       # L822
+def set_external_id(self, source_id: str, external_id: str | None) -> SourceManifestEntry | None  # L927
+# external_id convention: "<source>:<id>" (sources.py L122), e.g. "fireflies:abc123" (store.py L83)
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/decisions/models.py  (ADR candidate hook, FEAT-578)
+class EvidenceRef(_Strict):                         # L78
+    page_id: str; rel_path: str; start_line: int (>=1); end_line: int (>=1); excerpt: str = ""
+    kind: Literal["adr", "code", "comment", "document"]
+class DecisionLink(_Strict):                        # L111
+    target_id: str; relation: Literal["explains","supported_by","supersedes"]
+    provenance: Literal["extracted","inferred","asserted"]; evidence_indexes: list[int]
+class DecisionRecord(_Strict):                      # L143
+    decision_id: str; revision: int = 1; title: str; context: str; decision: str (min_length=1)
+    consequences: str; source_status: Literal["unknown","proposed","accepted","rejected","deprecated","superseded"] = "unknown"
+    origin: Literal["documented", "inferred"]; review_status: Literal["unreviewed","accepted","rejected"] = "unreviewed"
+    source_path: str | None; external_id: str | None; evidence: list[EvidenceRef]; links: list[DecisionLink]
+    observations: list[str]; hypotheses: list[str]; review_history: list[ReviewEvent]
+    generation: GenerationInfo | None; content_fingerprint: str
+    # validator L170: origin="inferred" REQUIRES source_status="unknown"
+class CandidateDraft(_Strict): title; context; decision; consequences; observations; hypotheses; evidence_indexes  # L241
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/decisions/repository.py
+class DecisionRepository:                           # L26
+    def __init__(self, store: BaseWikiStore, max_records: int = 10_000) -> None   # L29
+    async def get(self, decision_id: str) -> tuple[DecisionRecord, str | None] | None  # L45
+    async def inventory(self) -> list[DecisionRecord]                             # L63
+    async def save(self, record: DecisionRecord, expected_content_hash: str | None) -> DecisionRecord  # L96  (None = create)
+
+# From packages/ai-parrot/src/parrot/knowledge/wiki/decisions/service.py
+class DecisionService:                              # L96
+    def __init__(self, store: BaseWikiStore, root: Path | None, config: DecisionConfig,
+                 structural: StructuralService | None = None, client: AbstractClient | None = None)  # L99
+    async def generate(self, target: str) -> GenerationResult   # L389 — uses candidate_decision_id(scope_id, fingerprint, PROMPT_VERSION, draft.decision) and DecisionRecord(origin="inferred") then self._repo.save(record, None)
+# generation.py exports candidate_decision_id(...) and PROMPT_VERSION (bumping it invalidates candidate ids)
 
 # From packages/ai-parrot/src/parrot/knowledge/wiki/entry.py
 def main() -> None   # console script `wikitoolkit` (pyproject.toml:204) → cli.main unless argv == ["claude-hook"]
@@ -794,8 +913,8 @@ from parrot.knowledge.wiki.models import WikiConfig, WikiPageCategory, SourceMan
 from parrot.knowledge.wiki.project import PARROT_DIR, WikiProjectConfig, WikiEnvOverlay  # project.py
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter  # llm_adapter.py L42
 from parrot.knowledge.pageindex.toolkit import PageIndexToolkit    # imported lazily in cli.ingest
-from parrot.knowledge.wiki.tools import create_wiki_tools          # tools.py L807
-from parrot.tools import AbstractTool, ToolResult                  # used by tools.py
+from parrot.knowledge.wiki.decisions.models import DecisionRecord, EvidenceRef, DecisionLink  # decisions/models.py (lazy import only)
+from parrot.knowledge.wiki.decisions.repository import DecisionRepository    # decisions/repository.py L26 (lazy import only)
 ```
 
 #### Key Attributes & Constants
@@ -811,7 +930,9 @@ from parrot.tools import AbstractTool, ToolResult                  # used by too
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot/knowledge/wiki/inbox.py`~~, ~~`archive.py`~~, ~~`classify.py`~~ — none exist; `inbox.py` is the module this feature creates.
-- ~~`wikitoolkit inbox`~~ command, ~~`wiki_inbox`~~ MCP tool — do not exist.
+- ~~`wikitoolkit inbox`~~ command — does not exist yet (created here). ~~`wiki_inbox`~~ MCP tool — does not exist and is **not** part of this feature (deferred).
+- ~~`doc:` concept-id prefix~~, ~~`tag:` pages~~, ~~`part_of` / `tagged` edges~~ — none exist today; this feature introduces them.
+- ~~`candidate_decision_id` import from `decisions.models`~~ — it lives in `decisions/generation.py`, not `models.py`.
 - ~~`WikiProjectConfig.inbox`~~, ~~`.inbox_dir`~~, ~~`.archive_dir`~~ — no such fields (project.py L382-520).
 - ~~`Charter.taxonomy`~~, ~~`Charter.kinds`~~ — not in `Charter` (charter.py L208-300).
 - ~~`WikiPageRecord.tags`~~ — there is no tags column; `page_frontmatter` emits `tags=[category]` only (export.py L95).
@@ -832,71 +953,74 @@ from parrot.tools import AbstractTool, ToolResult                  # used by too
   land: (a) charter `taxonomy` extension + default taxonomy; (b)
   `InboxConfig` on `WikiProjectConfig`/`WikiEnvOverlay`; (c) classification
   stage; (d) link-proposal stage; (e) markdown projection + archive helpers;
-  (f) `InboxProcessor` orchestration; (g) CLI command (+ factoring the
-  adapter construction out of `ingest`); (h) MCP tool; (i) docs. (c), (d),
-  (e) can be built and unit-tested in parallel once (a)/(b) and the Pydantic
-  models exist; (f)–(h) are sequential on them.
-- **Cross-feature independence**: **conflicts with FEAT-569
-  wikitoolkit-http-mcp** (in progress, 17 tasks) on `cli.py`, `tools.py`,
-  `mcp_server.py`, `project.py`; mild overlap with **FEAT-481
+  (f) doc-page + ADR-candidate stage; (g) `InboxProcessor` orchestration
+  incl. Fireflies pre-check; (h) CLI command (+ factoring the adapter
+  construction out of `ingest`); (i) docs. (c), (d), (e), (f) can be built
+  and unit-tested in parallel once (a)/(b) and the Pydantic models exist;
+  (g)–(h) are sequential on them.
+- **Cross-feature independence**: residual conflict with **FEAT-569
+  wikitoolkit-http-mcp** (in progress, 17 tasks) on `cli.py` and
+  `project.py` only — `tools.py`/`mcp_server.py` are no longer touched
+  because the MCP tool is deferred. Mild overlap with **FEAT-481
   fireflies-wiki-knowledgebase-agent** (in progress) on the *domain*
-  (meeting pages) and on `toolkit.py`/`models.py` — the inbox should accept
-  Fireflies exports without creating a second page for a meeting FEAT-481
-  already filed (`external_id` on the source manifest is the hook). No
-  overlap with `ingest.py`, `triage.py`, `documents.py`, `charter.py`,
-  `sources.py` (all read-only or additive here).
+  (meeting pages) and on `toolkit.py`/`models.py`; handled by the
+  `find_by_external_id` pre-check. Read-only use of `decisions/` (FEAT-578,
+  done). No overlap with `ingest.py`, `triage.py`, `documents.py`,
+  `charter.py`, `sources.py` (all read-only or additive here).
 - **Recommended isolation**: `per-spec` — one worktree, tasks sequential,
-  with the `cli.py` / `tools.py` / `mcp_server.py` tasks ordered **last** and
-  rebased on `dev` after FEAT-569 merges (or the MCP tool deferred to a
-  follow-up if FEAT-569 is still open at `/sdd-done` time).
-- **Rationale**: the hot files (`cli.py` at 208 KB, `tools.py`,
-  `mcp_server.py`) are single points of contention with an in-flight feature;
-  everything new is confined to one new module plus two additive model
-  fields, which does not justify multiple worktrees.
+  with the `cli.py` / `project.py` tasks ordered **last** and rebased on
+  `dev` after FEAT-569 merges if it lands first.
+- **Rationale**: the hot file (`cli.py` at 208 KB) is a single point of
+  contention with an in-flight feature; everything new is confined to one
+  new module plus two additive model fields, which does not justify multiple
+  worktrees.
 
 ---
 
 ## Open Questions
 
-- [ ] **Merge classification into the triage Stage-1 prompt** (one call
-  returning `TriageOutput` + kind/tags, using the dormant `category_hint`)
-  versus a separate `InboxClassification` call? Separate is cleaner and keeps
-  FEAT-402 prompts untouched; merged saves one LLM call per document. —
-  *Owner: Jesus*
-- [ ] **Tags representation**: `tag:<slug>` pages + `tagged` edges (no
-  migration, navigable) versus an additive `tags` column on `pages` in SQLite
-  and ArangoDB stores? Brainstorm recommends tag pages for v1. — *Owner:
-  Jesus*
-- [ ] **Document page identity**: decorate the PageIndex root page (keeps
-  FEAT-402 behaviour, one tree per document) or create a dedicated
-  `doc:<slug>` page like `remember` does and leave the PageIndex pages as
-  children? — *Owner: spec author*
-- [ ] **Git staging policy**: stage the deletion (`git rm --cached` after the
-  move) as decided, or additionally offer `--commit` with a conventional
-  message (`wiki: ingest inbox (<n> docs)`)? Default remains never-commit. —
-  *Owner: Jesus*
-- [ ] **Duplicate policy**: an unchanged file re-dropped in the inbox is a
-  Stage-0 heuristic reject → archived under `rejected/`. Acceptable, or
-  should exact duplicates be archived under the normal path with a
-  `duplicate` marker and no `rejected` stigma? — *Owner: Jesus*
-- [ ] **Markdown projection location**: `<storage_dir>/inbox/<category>/`
-  (recommended, avoids colliding with the memory backend's `pages/` bundle
-  name) versus `<storage_dir>/pages/` to be a valid OKF bundle root. —
-  *Owner: spec author*
-- [ ] **Default taxonomy** list and the kind → `WikiPageCategory` mapping to
-  ship (meeting→summary, briefing→overview, decision→concept,
-  report→synthesis, memo→summary, note→concept?). Should `decision` kinds
-  additionally feed the ADR plane (`wikitoolkit adr`, FEAT-578) as
-  candidates? — *Owner: Jesus*
-- [ ] **Link relation vocabulary**: `references`, `relates_to`, `mentions`,
-  `follows_up`, `supersedes` — final set, and whether `supersedes` should
-  demote the older page's ranking. — *Owner: spec author*
-- [ ] **Candidate cap and search mix**: top-k from `WikiCombinedSearch` plus
-  per-tag FTS; include `sym:`/`file:` code pages by default or only when the
-  document mentions a symbol verbatim? — *Owner: spec author*
-- [ ] **MCP tool timing**: implement `wiki_inbox` in this feature (conflicts
-  with FEAT-569 on `tools.py`/`mcp_server.py`) or defer to a follow-up after
-  FEAT-569 merges? — *Owner: Jesus*
-- [ ] **Fireflies overlap** (FEAT-481): should the inbox detect a Fireflies
-  export (`fireflies:<id>` external id) and update that page instead of
-  creating a new one? — *Owner: Jesus*
+All questions were resolved with the user on 2026-10-03.
+
+- [x] **Merge classification into the triage Stage-1 prompt** versus a
+  separate `InboxClassification` call? — *Owner: Jesus*: separate
+  `InboxClassification` call on the lightweight tier; FEAT-402 prompts and
+  `TriageOutput` stay byte-identical; discards never pay for it.
+- [x] **Tags representation**: `tag:<slug>` pages + `tagged` edges versus an
+  additive `tags` column? — *Owner: Jesus*: `tag:<slug>` pages + `tagged`
+  edges; no schema migration in any store; tags also rendered in the OKF
+  frontmatter.
+- [x] **Document page identity**: decorate the PageIndex root page or create
+  a dedicated `doc:<slug>` page? — *Owner: Jesus*: dedicated `doc:<slug>`
+  page created by the inbox carries category, summary, tags, links,
+  frontmatter and the markdown projection; PageIndex pages stay as children
+  joined by `part_of` edges; the orchestrator's output is never rewritten.
+- [x] **Git staging policy**: stage only, or also `--commit`? — *Owner:
+  Jesus*: stage the deletion only (`git rm --cached` after the move when
+  tracked); no `--commit` flag; the command never commits.
+- [x] **Duplicate policy**: unchanged file re-dropped in the inbox? —
+  *Owner: Jesus*: treat as rejected — Stage-0 heuristic reject archived
+  under `rejected/` with bookkeeper reason `duplicate`; `--force`
+  re-ingests.
+- [x] **Markdown projection location**? — *Owner: Jesus*:
+  `<storage_dir>/inbox/<category-plural>/<flat-id>.md`; never `pages/`
+  (owned by the `memory` backend bundle).
+- [x] **Default taxonomy** and ADR feed? — *Owner: Jesus*: six kinds —
+  meeting→summary, briefing→overview, decision→concept, report→synthesis,
+  memo→summary, note→concept, `default_kind: note`; **and** `decision`
+  kinds emit an `origin="inferred"`, `review_status="unreviewed"` candidate
+  into the FEAT-578 decisions plane via `DecisionRepository.save` for
+  `wikitoolkit adr review`.
+- [x] **Link relation vocabulary** and `supersedes` semantics? — *Owner:
+  Jesus*: closed set `references`, `relates_to`, `mentions`, `follows_up`,
+  `supersedes`; `supersedes` is informational only in v1 (no ranking
+  demotion).
+- [x] **Candidate cap and search mix**? — *Owner: Jesus*: at most 20
+  candidates (combined search top-k ∪ per-tag FTS, deduped); `sym:`/`file:`
+  code pages enter only when the document names the symbol or path verbatim.
+- [x] **MCP tool timing**? — *Owner: Jesus*: defer `wiki_inbox` to a
+  follow-up feature (ledger item opened at `/sdd-done`); this spec ships
+  the CLI only, with the processor shaped so the tool is a thin wrapper.
+- [x] **Fireflies overlap** (FEAT-481)? — *Owner: Jesus*: detect the
+  Fireflies id, look it up with `SourceCollectionManager.find_by_external_id`,
+  and on a hit re-ingest that source (`replace_source_slice`) and update its
+  doc page instead of creating a second one.
