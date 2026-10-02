@@ -29,13 +29,16 @@ async def list_available_tools() -> list:
     from parrot.tools.tooling_policy import ToolingSubject
     from parrot.utils.helpers import current_context
 
+    from parrot.handlers.scope import has_installed_resolver
+
     catalog = _build_catalog()
     scope = current_tool_scope()
-    if scope is None:
-        return catalog
-    # A bound caller scope: list only what the tenant tooling policy permits (no app => fail closed: deny_all).
     ctx = current_context()
     app = getattr(ctx, "app", None) or {}
+    if scope is None:
+        # An opted-in (tenant-aware) host with no resolved caller scope: fail closed, never the full catalogue.
+        return [] if has_installed_resolver(app) else catalog
+    # A bound caller scope: list only what the tenant tooling policy permits (no app => fail closed: deny_all).
     subject = ToolingSubject(tenant=scope.caller.tenant, agent_id=None, actor=scope.caller.user_id, phase="attach")
     return filter_catalog_for(app, subject, catalog)
 

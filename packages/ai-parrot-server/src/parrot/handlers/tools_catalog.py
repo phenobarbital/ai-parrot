@@ -28,6 +28,7 @@ from typing import Any, Dict, List
 from navconfig.logging import logging as nav_logging
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
+from parrot.handlers.scope import get_scope_resolver, has_installed_resolver
 from parrot.tools.resolver import ToolkitEntry, get_toolkit_resolver
 from parrot.tools.toolkit import AbstractToolkit, effective_access
 from parrot.tools.tooling_policy import TenantToolingRefused, ToolingSubject, get_tenant_tooling_policy
@@ -117,7 +118,19 @@ def _build_catalog() -> List[Dict[str, Any]]:
 
 
 def filter_catalog_for(app: Any, subject: ToolingSubject | None, catalog: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Entries the tenant policy permits; unchanged when the policy does not apply (GLOBAL partition)."""
+    """Entries the tenant policy permits (unchanged when it does not apply); host ``dotted_path`` is never exposed."""
+    return [_redact_host_path(entry) for entry in _permitted(app, subject, catalog)]
+
+
+def _redact_host_path(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Copy of ``entry`` without the dotted path when it is a host toolkit."""
+    if entry.get("source") != "host":
+        return entry
+    return {**entry, "dotted_path": None}
+
+
+def _permitted(app: Any, subject: ToolingSubject | None, catalog: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Policy filtering step of :func:`filter_catalog_for`."""
     if subject is None:
         return catalog
     policy = get_tenant_tooling_policy(app)
@@ -163,4 +176,10 @@ class ToolCatalogHandler(BaseView):
             _CATALOG_CACHE = await asyncio.to_thread(_build_catalog)
             self.logger.info("Tool catalog built: %d entries", len(_CATALOG_CACHE))
 
-        return self.json_response(_CATALOG_CACHE)
+        app = self.request.app
+        tenant = None
+        if has_installed_resolver(app):
+            scope = await get_scope_resolver(app).resolve(self.request)
+            tenant = scope.tenant or None
+        subject = ToolingSubject(tenant=tenant, agent_id=None, actor=None, phase="attach")
+        return self.json_response(filter_catalog_for(app, subject, _CATALOG_CACHE))
