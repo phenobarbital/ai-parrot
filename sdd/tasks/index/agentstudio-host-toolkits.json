@@ -100,7 +100,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -112,8 +112,9 @@
       "parallelism_notes": "Depends on TASK-3975 (get_toolkit_resolver in parrot/tools/resolver.py) and TASK-3978 (same file packages/ai-parrot/src/parrot/interfaces/tools.py — serialise, TK-04 first). Creates the server host fixture tests/studio/_host_probe.py reused by TASK-3980/08/09/10/13/16/17/18.",
       "assigned_to": null,
       "started_at": "2026-10-02T08:17:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3979-resolver-adoption-shims.md"
+      "completed_at": "2026-10-02T08:19:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3979-resolver-adoption-shims.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3980",

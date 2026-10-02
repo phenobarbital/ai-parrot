@@ -312,11 +312,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: Three resolvers are one-line shims over get_toolkit_resolver(); _EXPLICIT deleted; schema_for via resolver. testing.py is now testing/_helpers.py. test_testing_surface patched discover_all -> now patches the resolver via _patch_registry helper. Server probe is non-tenant-bound (rule 5) with tp_probe_tool_write.
+**Mutation evidence**: toolkits shim body -> return None => test_studio_shims_resolve_host_entry RED; restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)
