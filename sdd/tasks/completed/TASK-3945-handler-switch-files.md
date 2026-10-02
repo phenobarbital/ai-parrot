@@ -181,10 +181,8 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):   # :162 — get :1
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit a79b24b5e. Database-mode files routes via StudioAssetService; 6 new tests on real PG; 5 mutations RED. content_type read from body field (JSON header would always 415). GET unsafe name 404 (legacy 400). _legacy_put over-budget is the verbatim legacy body.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -503,7 +503,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -514,8 +514,9 @@
       "parallelism_notes": "calls StudioAssetService from TASK-3936 (services/assets.py) and the _studio_write/_studio_error helpers from TASK-3944 (_base.py); sole FEAT-621 writer of studio/files.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3945-handler-switch-files.md"
+      "completed_at": "2026-10-02T05:11:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3945-handler-switch-files.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3946",
