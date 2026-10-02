@@ -1,11 +1,14 @@
 """Agent Studio access service (FEAT-605 M2): one rule for every Studio record."""
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
+
+from aiohttp import web
 
 from parrot.handlers.scope import RequestScope, VisibilityLevel, normalize_visibility, scope_grants
 
@@ -146,7 +149,13 @@ class StudioAccess:
         return next((k for k in sorted(RESERVED_KEYS) if k in payload), None)
 
     def stamp(self, *, visibility: str, allowed_groups: list[str]) -> dict:
-        """Server-owned owner/tenant/visibility/allowed_groups for a store write (AC8)."""
+        """Server-owned owner/tenant/visibility/allowed_groups for a store write (AC8).
+
+        Raises:
+            ValueError: ``scope.user_id`` is empty (never stamp an ownerless row).
+        """
+        if not self.scope.user_id:
+            raise ValueError("cannot stamp a record without an authenticated user_id")
         return {"owner": self.scope.user_id, "tenant": self.scope.tenant,
                 "visibility": normalize_visibility(visibility), "allowed_groups": list(allowed_groups)}
 
@@ -206,7 +215,10 @@ class StudioAccess:
         return None if rec is None else _store_record("skill", rec.skill_id, rec)
 
     async def _legacy_row(self, model: Any, **where: Any) -> Any:
-        """Fetch one legacy row, ``None`` when absent or the database is unavailable."""
+        """Fetch one legacy row: ``None`` when absent or no database; HTTP 503 on a DB error (fail closed).
+
+        ``model.Meta.connection`` is the class-attribute pattern every FEAT-467 handler uses (pre-existing).
+        """
         from asyncdb.exceptions import NoDataFound
 
         db = self._app.get("database") if self._app is not None else None
@@ -219,9 +231,12 @@ class StudioAccess:
                     return await model.get(**where)
                 except NoDataFound:
                     return None
-        except Exception as exc:  # noqa: BLE001 - legacy lookups fail closed to "absent"
+        except Exception as exc:  # noqa: BLE001 - never turn a DB error into "absent"/404
             logger.error("Studio access: legacy lookup failed: %s", exc)
-            return None
+            raise web.HTTPServiceUnavailable(
+                text=json.dumps({"message": "Ownership lookup unavailable.", "code": "lookup_unavailable"}),
+                content_type="application/json",
+            ) from exc
 
     async def _legacy_agent(self, name: str) -> StudioVisibilityRecord | None:
         from ..models import BotModel
