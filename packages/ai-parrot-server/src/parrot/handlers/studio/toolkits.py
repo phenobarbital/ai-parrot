@@ -19,6 +19,7 @@ import inspect
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.conf import AGENTS_DIR
 from parrot.knowledge.graphindex.factory import build_graph_memory_toolkit
@@ -297,15 +298,9 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
-        db_agent = await self._get_db_agent(name)
-        if db_agent is not None:
-            owner = str(db_agent.created_by) if db_agent.created_by is not None else None
-        else:
-            registry = self._registry()
-            meta = registry.get_metadata(name) if registry is not None else None
-            if meta is None:
-                return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
-            owner = self._registry_agent_owner(meta)
+        owner = await self._assign_owner(name)
+        if isinstance(owner, web.Response):
+            return owner
 
         user = await self._get_user()
         self._require_owner(owner, user)  # raises web.HTTPForbidden on denial
@@ -341,6 +336,28 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         }
         response.update(extra)
         return self.json_response(response, status=200)
+
+    async def _assign_owner(self, name: str):
+        """Owner of agent ``name`` (Studio row, legacy DB row or registry), or a 404/Studio error response."""
+        from .access import StudioTenantRequired
+        from .storage import models as studio_models
+        from .storage.services._common import StudioValidationError
+        from .tooling_store import AgentToolingStore
+
+        try:
+            studio = await AgentToolingStore(self)._load_studio(name)
+        except (studio_models.StudioStorageUnavailable, StudioTenantRequired, StudioValidationError) as exc:
+            return self._studio_error(exc)
+        if studio is not None:
+            return studio.owner
+        db_agent = await self._get_db_agent(name)
+        if db_agent is not None:
+            return str(db_agent.created_by) if db_agent.created_by is not None else None
+        registry = self._registry()
+        meta = registry.get_metadata(name) if registry is not None else None
+        if meta is None:
+            return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
+        return self._registry_agent_owner(meta)
 
     # -- Per-toolkit assignment helpers ---------------------------------
 

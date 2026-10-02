@@ -21,7 +21,20 @@ from .models import (
     ToolkitOptionsResponse,
     ToolkitPersistResponse,
 )
+from .access import StudioTenantRequired
+from .storage import models as _studio_models
+from .storage.services._common import StudioValidationError
 from .tooling_store import AgentToolingStore
+
+_STUDIO_ERRORS = (
+    _studio_models.StudioStorageUnavailable,
+    _studio_models.StudioVersionConflict,
+    _studio_models.StudioStaleAuthorization,
+    _studio_models.StudioNameConflict,
+    _studio_models.StudioNotFound,
+    _studio_models.StudioToolingRefused,
+    StudioValidationError,
+)
 
 _OPTIONS_TIMEOUT_S = 15.0
 
@@ -42,11 +55,15 @@ class _ToolingViewMixin(_StudioAgentsMixin):
             state = await store.load(name)
         except LookupError:
             return self._error(f"Agent '{name}' not found.", status=404, code="not_found")
+        except (*_STUDIO_ERRORS, StudioTenantRequired) as exc:
+            return self._studio_error(exc)
         self._require_owner(state.owner, await self._get_user())
         return store, state
 
     def _map_exc(self, exc: Exception):
         """Map persistence and vault exceptions to the Studio error contract."""
+        if isinstance(exc, _STUDIO_ERRORS):
+            return self._studio_error(exc)
         if isinstance(exc, PermissionError):
             return self._error(str(exc), status=409, code="read_only_definition")
         if isinstance(exc, ValueError):
@@ -56,6 +73,18 @@ class _ToolingViewMixin(_StudioAgentsMixin):
         if isinstance(exc, LookupError):
             return self._error("Requested resource was not found.", status=404, code="not_found")
         raise exc
+
+    async def _write(self, state, name: str, source, call):
+        """Run ``call(kwargs)`` (``guard``/``actor`` on Studio rows only); Studio rows go through the guarded, retry-once write (spec §2.8)."""
+        if getattr(state, "source", None) != "studio":
+            return await call({})
+        expected = self._expected_version(source)
+        storage, part, user = self._studio_storage(), await self._studio_partition(), await self._get_user()
+        return await self._studio_write(
+            lambda guard: call({"guard": guard, "actor": user.user_id}),
+            reread=lambda: storage.services.agents.get(part, name),
+            expected_version=expected,
+        )
 
     @staticmethod
     def _is_error_response(value):
@@ -105,9 +134,12 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             request = ToolkitConfigPutRequest(**(payload or {}))
         except (ValidationError, ValueError) as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
-        store, _ = authorized
+        store, state = authorized
         try:
-            await store.put_toolkit(name, slug, request.params, request.user_overridable)
+            await self._write(
+                state, name, payload,
+                lambda kw: store.put_toolkit(name, slug, request.params, request.user_overridable, **kw),
+            )
         except Exception as exc:
             return self._map_exc(exc)
         return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
@@ -119,9 +151,12 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             return authorized
         name = self.request.match_info.get("name")
         slug = self.request.match_info.get("slug")
-        store, _ = authorized
+        store, state = authorized
         try:
-            await store.delete_toolkit(name, slug)
+            await self._write(
+                state, name, self.request.query,
+                lambda kw: store.delete_toolkit(name, slug, **kw),
+            )
         except Exception as exc:
             return self._map_exc(exc)
         return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
@@ -205,9 +240,12 @@ class StudioAgentMcpServersHandler(_ToolingViewMixin, StudioBaseView):
             request = AgentMcpServersPutRequest(**(payload or {}))
         except (ValidationError, ValueError) as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
-        store, _ = authorized
+        store, state = authorized
         try:
-            await store.put_mcp_servers(name, request.servers)
+            await self._write(
+                state, name, payload,
+                lambda kw: store.put_mcp_servers(name, request.servers, **kw),
+            )
         except Exception as exc:
             return self._map_exc(exc)
         return self.json_response(ToolkitPersistResponse(agent=name).model_dump())

@@ -281,9 +281,11 @@ class AgentToolingStore:
         if view is None:
             return None
         record = view.record
+        has_owner = record.owner is not None
         state = ToolingState(
-            tooling=view.tooling, editable=True, reason=None, owner=record.owner, source="studio",
-            tooling_ref=record.tooling_ref,
+            tooling=view.tooling, editable=has_owner,
+            reason=None if has_owner else "agent has no owner; cannot store secrets",
+            owner=record.owner, source="studio", tooling_ref=record.tooling_ref,
         )
         state._studio = (part, record, service)
         return state
@@ -319,9 +321,19 @@ class AgentToolingStore:
         reject_server_managed(schema, params)
 
     async def put_toolkit(
-        self, name: str, slug: str, params: dict[str, Any], user_overridable: list[str]
+        self,
+        name: str,
+        slug: str,
+        params: dict[str, Any],
+        user_overridable: list[str],
+        *,
+        guard: StudioWriteGuard | None = None,
+        actor: str | None = None,
     ) -> ToolkitSpec:
-        """Validate, vault secrets under the owner, and persist a toolkit specification."""
+        """Validate, vault secrets under the owner, and persist a toolkit specification.
+
+        ``guard``/``actor`` apply to Studio rows only; legacy sources ignore them.
+        """
         state = await self.load(name)
         if not state.editable:
             raise PermissionError(state.reason or "agent tooling is read-only")
@@ -329,21 +341,25 @@ class AgentToolingStore:
         self._reject_server_managed(schema, params)
         self._validate(cls, schema, params)
         if state.source == "studio":
-            return await self._studio_put_toolkit(state, name, slug, params, user_overridable)
+            return await self._studio_put_toolkit(state, name, slug, params, user_overridable, guard, actor)
         spec = await self._split_secrets(state, slug, name, schema, params, user_overridable)
         state.tooling.toolkits = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
         state.tooling.toolkits.append(spec)
         await self._persist(name, state)
         return spec
 
-    async def delete_toolkit(self, name: str, slug: str) -> None:
-        """Remove one toolkit specification and its owner-scoped vault entry."""
+    async def delete_toolkit(
+        self, name: str, slug: str, *, guard: StudioWriteGuard | None = None, actor: str | None = None
+    ) -> None:
+        """Remove one toolkit specification and its owner-scoped vault entry (``guard``/``actor``: Studio rows)."""
         state = await self.load(name)
         if not state.editable:
             raise PermissionError(state.reason or "agent tooling is read-only")
         if state.source == "studio":
             part, record, service = state._studio
-            await service.delete_toolkit(part, name, slug, actor=record.owner, guard=self._guard(record))
+            await service.delete_toolkit(
+                part, name, slug, actor=actor if actor is not None else record.owner, guard=guard or self._guard(record)
+            )
             return
         state.tooling.toolkits = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
         if state.owner is None:
@@ -351,14 +367,24 @@ class AgentToolingStore:
         await delete_vault_credential(state.owner, toolkit_vault_name(slug, state.tooling_ref))
         await self._persist(name, state)
 
-    async def put_mcp_servers(self, name: str, servers: list[dict[str, Any]]) -> list[AgentMCPServerSpec]:
-        """Vault MCP secret fields and replace the agent's complete server list."""
+    async def put_mcp_servers(
+        self,
+        name: str,
+        servers: list[dict[str, Any]],
+        *,
+        guard: StudioWriteGuard | None = None,
+        actor: str | None = None,
+    ) -> list[AgentMCPServerSpec]:
+        """Vault MCP secret fields and replace the complete server list (``guard``/``actor``: Studio rows)."""
         state = await self.load(name)
         if not state.editable or state.owner is None:
             raise PermissionError(state.reason or "agent has no owner; cannot store secrets")
         if state.source == "studio":
             part, record, service = state._studio
-            await service.put_mcp_servers(part, name, servers, actor=record.owner, guard=self._guard(record))
+            await service.put_mcp_servers(
+                part, name, servers, actor=actor if actor is not None else record.owner,
+                guard=guard or self._guard(record),
+            )
             return (await service.load(part, name)).tooling.mcp_servers
         specs, writes = split_mcp_secrets(
             owner=state.owner, ref=state.tooling_ref, servers=servers, previous=state.tooling.mcp_servers
@@ -373,12 +399,20 @@ class AgentToolingStore:
         return StudioWriteGuard(authorized_version=record.version)
 
     async def _studio_put_toolkit(
-        self, state: ToolingState, name: str, slug: str, params: dict[str, Any], user_overridable: list[str]
+        self,
+        state: ToolingState,
+        name: str,
+        slug: str,
+        params: dict[str, Any],
+        user_overridable: list[str],
+        guard: StudioWriteGuard | None = None,
+        actor: str | None = None,
     ) -> ToolkitSpec:
         """Studio rows: the service gates the FINAL tooling BEFORE any vault write (spec §2.5b), then commits."""
         part, record, service = state._studio
         await service.put_toolkit(
-            part, name, slug, params, user_overridable, actor=record.owner, guard=self._guard(record)
+            part, name, slug, params, user_overridable,
+            actor=actor if actor is not None else record.owner, guard=guard or self._guard(record),
         )
         view = await service.load(part, name)
         return next(item for item in view.tooling.toolkits if item.slug.lower() == slug.lower())

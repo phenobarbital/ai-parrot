@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 
 from parrot.security.vault_utils import (
@@ -95,6 +96,14 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         state = await AgentToolingStore(self).load(name)
         return getattr(state, "tooling_ref", None) or name
 
+    async def _body(self):
+        """The PUT JSON body, or a 400 response (invalid JSON, or an unsupported ``expected_version``)."""
+        try:
+            payload = await self.request.json()
+        except Exception:
+            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+        return self._refuse_expected_version(payload) or payload
+
     async def get(self):
         """Return the caller's masked override and current overridable parameters."""
         if (denied := await self._pbac_gate("toolkits", "astudio:toolkits:override")) is not None:
@@ -138,10 +147,9 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         slug = self.request.match_info.get("slug")
         if not name or not slug:
             return self._error("Agent name and toolkit slug are required.", status=400, code="missing_resource")
-        try:
-            payload = await self.request.json()
-        except Exception:
-            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+        payload = await self._body()
+        if isinstance(payload, web.Response):
+            return payload
         params = (payload or {}).get("params", {})
         if not isinstance(params, dict):
             return self._error("params must be an object.", status=400, code="invalid_request")
@@ -201,6 +209,8 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         slug = self.request.match_info.get("slug")
         if not name or not slug:
             return self._error("Agent name and toolkit slug are required.", status=400, code="missing_resource")
+        if (refused := self._refuse_expected_version(self.request.query)) is not None:
+            return refused
         try:
             ref = await self._tooling_ref(name)
         except LookupError:
