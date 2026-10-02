@@ -127,8 +127,12 @@ class StudioToolingService:
             agent_id, record, current = await self._open(conn, part, name, guard)
             current.toolkits = [t for t in current.toolkits if t.slug.lower() != slug.lower()]
             self._gate.enforce(part, current, agent_id=agent_id, actor=actor, phase="write")
+            version = await self._commit_rows(conn, part, name, agent_id, current)
+        try:   # only after a successful commit: a rolled-back delete must keep its credential
             await delete_vault_credential(record.owner, toolkit_vault_name(slug, record.tooling_ref))
-            return await self._commit_rows(conn, part, name, agent_id, current)
+        except Exception as exc:  # noqa: BLE001 — the rows are gone; a leftover entry is logged, never re-raised
+            logger.warning("studio toolkit %s: vault clean-up failed: %r", slug, exc)
+        return version
 
     async def put_mcp_servers(
         self,

@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from parrot.handlers.studio import tooling_store as store_module
+from parrot.handlers.studio.tooling_store import AgentToolingStore
 from parrot.handlers.studio.storage.models import (
     StudioAgentDefinition,
     StudioPartition,
@@ -58,6 +59,7 @@ def vault(monkeypatch):
     monkeypatch.setattr(store_module, "retrieve_vault_credential", _retrieve)
     monkeypatch.setattr(tooling_module, "delete_vault_credential", _delete)
     monkeypatch.setattr(tooling_module, "toolkit_schema_for", lambda slug: (_JiraToolkit, _SCHEMA))
+    monkeypatch.setattr(store_module, "toolkit_schema_for", lambda slug: (_JiraToolkit, _SCHEMA))
     data["__deleted__"] = deleted
     return data
 
@@ -172,3 +174,80 @@ async def test_tenant_allowed_server_without_secrets_carries_no_vault_trace(env,
     )
     rows = await _config_rows(repos.pool)
     assert len(rows) == 1 and rows[0]["vault_owner"] is None and json.loads(rows[0]["refs"]) == {}
+
+
+class _Handler:
+    """The slice of a Studio view ``AgentToolingStore`` uses for the database backend."""
+
+    def __init__(self, service, part):
+        self._svc, self._part = service, part
+
+    def _studio_storage(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(backend="database", services=SimpleNamespace(tooling=self._svc))
+
+    async def _studio_partition(self):
+        return self._part
+
+
+async def test_store_studio_path_gates_before_any_vault_call(env, vault, no_subprocess, monkeypatch):
+    """Review fix: the store used to vault secrets BEFORE the service's gate ran."""
+    repos, service, _ = env
+    rec = await _agent(repos, ACME)
+    calls = []
+
+    async def spy_store(*a, **k):
+        calls.append(("store", a))
+
+    async def spy_delete(*a, **k):
+        calls.append(("delete", a))
+
+    monkeypatch.setattr(store_module, "store_vault_credential", spy_store)
+    monkeypatch.setattr(store_module, "retrieve_vault_credential", spy_store)
+    monkeypatch.setattr(store_module, "delete_vault_credential", spy_delete)
+    monkeypatch.setattr(tooling_module, "delete_vault_credential", spy_delete)
+    store = AgentToolingStore(_Handler(service, ACME))
+    with pytest.raises(StudioToolingRefused):
+        await store.put_mcp_servers(
+            "a1", [{"name": "s", "transport": "stdio", "command": "/bin/sh", "headers": {"X-Key": "secret"}}]
+        )
+    with pytest.raises(StudioToolingRefused):
+        await store.put_toolkit("a1", "jira", {"server_url": "https://x", "token": "t0k"}, ["token"])
+    from datetime import datetime, timezone
+
+    from parrot.handlers.studio.storage.models import StudioToolingRecord
+
+    async with studio_transaction(repos.pool) as conn:       # a stored row the policy refuses (written behind the service)
+        await repos.tooling.replace(conn, rec.agent_id, toolkits=[], mcp_servers=[StudioToolingRecord(
+            None, "mcp", "s", 0, {"transport": "stdio", "command": "/bin/sh"}, {}, None, datetime.now(timezone.utc))])
+    with pytest.raises(StudioToolingRefused):
+        await store.delete_toolkit("a1", "jira")
+    assert calls == [] and len(await _config_rows(repos.pool)) == 1
+
+
+async def test_store_studio_path_still_writes_when_allowed(env, vault):
+    repos, service, _ = env
+    rec = await _agent(repos, GLOBAL)
+    store = AgentToolingStore(_Handler(service, GLOBAL))
+    spec = await store.put_toolkit("a1", "jira", {"server_url": "https://x", "token": "t0k"}, ["token"])
+    assert spec.slug == "jira" and vault[("u1", f"toolkit_jira_studio-agent:{rec.agent_id}")] == {"token": "t0k"}
+    servers = await store.put_mcp_servers("a1", [{"name": "remote", "url": "https://m/"}])
+    assert [s.name for s in servers] == ["remote"]
+    await store.delete_toolkit("a1", "jira")
+    assert vault["__deleted__"] == [("u1", f"toolkit_jira_studio-agent:{rec.agent_id}")]
+
+
+async def test_delete_toolkit_keeps_the_vault_entry_when_the_commit_fails(env, vault, monkeypatch):
+    repos, service, _ = env
+    await _agent(repos, GLOBAL)
+    await service.put_toolkit(GLOBAL, "a1", "jira", {"server_url": "https://x", "token": "t"}, ["token"],
+                              actor="u1", guard=NO_GUARD)
+
+    async def boom(*a, **k):
+        raise RuntimeError("commit exploded")
+
+    monkeypatch.setattr(service, "_commit_rows", boom)
+    with pytest.raises(RuntimeError):
+        await service.delete_toolkit(GLOBAL, "a1", "jira", actor="u1", guard=NO_GUARD)
+    assert vault["__deleted__"] == [] and len(await _config_rows(repos.pool)) == 1
