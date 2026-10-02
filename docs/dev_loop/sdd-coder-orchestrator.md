@@ -581,26 +581,38 @@ returning the scoped command the seat should run in its place.
 
 ### Core detection and escalation
 
-A changed source module is *core* when its transitive source fan-in — every source module that
-imports it, directly or indirectly, found by one AST pass over the worktree
+A changed source module is *core* when its **direct** source fan-in — the number of source
+modules that import it, found by one AST pass over the worktree
 (`test_scope/impact.py`'s `ImportIndex`/`source_fanin`) — is `≥ DEFAULT_CORE_FANIN_THRESHOLD`
-(50), or its path is listed in `CORE_PATHS` (the manual override for AST-under-counted dynamic
-imports/registries/the `parrot.tools.<x>` ↔ `parrot_tools.<x>` meta_path redirect — measured by
-the TASK-3318 spike; see `artifacts/logs/feat-563-core-fanin.tsv`). A core hit escalates the
-**package suite** of every distribution that (transitively) imports the changed module — never
-the whole repo — and only on the `merge` and `feature` tiers; the `task` tier never escalates,
-so a single sdd-coder attempt stays fast regardless of what it touches.
+(30), or its path is listed in `CORE_PATHS` (the override for AST-under-counted dynamic
+imports/registries/the `parrot.tools.<x>` ↔ `parrot_tools.<x>` meta_path redirect — regenerated
+by `scripts/sdd/regen_core_paths.py`, which `--check` re-verifies against the committed tuple).
 
-> **Cost callout (code review, 2026-09-17).** `CORE_PATHS` currently has 724 measured entries,
-> and the two files the spec itself uses as worked examples — `clients/base.py` and
-> `bots/abstract.py` — both escalate to ~25 of the repo's ~26 distributions (near-total-repo).
-> Spec R13 anticipates this cost class for exactly these two files and names the escalation
-> ledger plus a future xdist spike as mitigations; the ledger pays it once per core-file content
-> (see below), but `XDIST_SAFE_DISTRIBUTIONS` still ships empty (S3), so the *first* hit per
-> distinct content is a large serial run. If this magnitude proves too costly in practice, the
-> options are: raise `DEFAULT_CORE_FANIN_THRESHOLD` above 50, re-run the S4 measurement with a
-> narrower `CORE_PATHS` curation pass, or land an xdist-safety spike for the highest-cost
-> distributions — not something to change unilaterally without new measurement evidence.
+Direct, not transitive, since FEAT-620. A transitive walk inherits the upstream closure of any
+hub the module happens to be imported by, which saturates the metric: measured on `dev` at
+`76a7d7b22`, the self-contained leaf `outputs/a2ui/linked/dsl.py` scored **1041** against
+`clients/base.py`'s **1024** — the leaf ranked *higher* than genuine core, and every `ai-parrot`
+module landed in the same ~1024–1041 band, so no threshold could separate them. Direct importers
+do: 2 for that leaf against 35, 31 and 151 for `clients/base.py`, `bots/abstract.py` and
+`tools/abstract.py`.
+
+A core hit escalates the **package suite** of every distribution that (transitively) imports
+the changed module — never the whole repo — and only on the `merge` and `feature` tiers; the
+`task` tier never escalates, so a single sdd-coder attempt stays fast regardless of what it
+touches.
+
+> **Cost callout (code review, 2026-09-17) — resolved by FEAT-620, 2026-10-01.** As written,
+> `CORE_PATHS` had 724 measured entries, and the two files the spec uses as worked examples —
+> `clients/base.py` and `bots/abstract.py` — both escalated to ~25 of the repo's ~26
+> distributions (near-total-repo). The finding was right, and the cause turned out to be the
+> metric rather than the tuning: `source_fanin` was transitive and saturated, so `CORE_PATHS`
+> (derived from it) inherited the same flaw. FEAT-620 took the second of the three options this
+> callout listed — re-running the measurement with a narrower curation pass — after making the
+> metric direct: the list is now **29 entries**, every one carrying its measured direct-importer
+> count, and `DEFAULT_CORE_FANIN_THRESHOLD` is 30. `XDIST_SAFE_DISTRIBUTIONS` still ships empty
+> (S3), so a genuine core hit is still a large serial run the escalation ledger pays once per
+> core-file content (see below) — that part of the callout stands. Regenerate with
+> `python -m scripts.sdd.regen_core_paths --threshold 30`; do not hand-edit the tuple.
 
 ### Escalation ledger
 

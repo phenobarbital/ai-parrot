@@ -50,7 +50,7 @@ from .toolkit_persistence import ToolkitConfigService
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
 from parrot.security.vault_utils import retrieve_vault_credential
-from parrot.tools.spec import hydrate_params
+from parrot.tools.spec import agent_tooling_ref, hydrate_params
 
 # Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
 from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
@@ -982,10 +982,11 @@ class AgentTalk(BaseView):
         Configure tool manager and MCP servers from request data.
 
         Used by PATCH to persist a user's ToolManager into the session.
-        The resulting ToolManager is saved under '{agent_name}_tool_manager'.
+        The resulting ToolManager is saved under '{tooling_ref}_tool_manager'.
         """
+        ref = agent_tooling_ref(agent)
         try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=agent.name)
+            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=ref)
         except ValueError as exc:
             return self.error(str(exc), status=400)
 
@@ -1096,11 +1097,12 @@ class AgentTalk(BaseView):
             return tool_manager
         svc = ToolkitConfigService()
         try:
-            overrides = await svc.load(str(user_id), agent.name)
+            ref = agent_tooling_ref(agent)
+            overrides = await svc.load(str(user_id), ref)
             if not overrides:
                 return tool_manager
-            marker_key = f"{agent.name}_toolkit_overrides_rev"
-            marker = f"{getattr(agent, '_tooling_revision', '')}:{await svc.revision(str(user_id), agent.name)}"
+            marker_key = f"{ref}_toolkit_overrides_rev"
+            marker = f"{getattr(agent, '_tooling_revision', '')}:{await svc.revision(str(user_id), ref)}"
             if tool_manager is not None and request_session.get(marker_key) == marker:
                 return tool_manager
             base = tool_manager if tool_manager is not None else agent.tool_manager.clone()
@@ -1127,7 +1129,7 @@ class AgentTalk(BaseView):
                 }
                 filtered = {name: value for name, value in params.items() if name in accepted}
                 base.register_toolkit(cls(**filtered))
-            request_session[f"{agent.name}_tool_manager"] = base
+            request_session[f"{ref}_tool_manager"] = base
             request_session[marker_key] = marker
             return base
         except Exception as exc:  # noqa: BLE001
@@ -1610,7 +1612,7 @@ class AgentTalk(BaseView):
         # per-system-bot ToolManager swap is not applicable to them.
         user_tool_manager = None
         if request_session and not is_user_bot:
-            session_key = f"{agent.name}_tool_manager"
+            session_key = f"{agent_tooling_ref(agent)}_tool_manager"
             user_tool_manager = request_session.get(session_key)
             user_tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, user_tool_manager)
 
@@ -2122,7 +2124,7 @@ class AgentTalk(BaseView):
             summary: Dict[str, Any] = {
                 "agent": agent_name,
                 "message": "Tool configuration saved to session.",
-                "session_key": f"{agent_name}_tool_manager",
+                "session_key": f"{agent_tooling_ref(agent)}_tool_manager",
             }
             if tool_manager and isinstance(tool_manager, ToolManager):
                 summary["tool_count"] = tool_manager.tool_count()
@@ -2273,7 +2275,14 @@ class AgentTalk(BaseView):
 
             mcp_servers_list: list = []
             if request_session:
-                session_key = f"{agent_name}_tool_manager"
+                ref = agent_name
+                manager = self.request.app.get("bot_manager")
+                if manager is not None:
+                    try:
+                        ref = agent_tooling_ref(await manager.get_bot(agent_name))
+                    except Exception:   # unknown agent: legacy name-based key
+                        ref = agent_name
+                session_key = f"{ref}_tool_manager"
                 tool_manager = request_session.get(session_key)
                 if tool_manager and isinstance(tool_manager, ToolManager):
                     # Build serializable list from _mcp_configs

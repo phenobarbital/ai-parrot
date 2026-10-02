@@ -1,0 +1,72 @@
+{
+  "feature": "odoo-json2-domain-first-methods",
+  "feature_id": "FEAT-614",
+  "spec": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-30T21:47:41+00:00",
+  "completed_at": "2026-09-30T22:25:57+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3883",
+      "slug": "json2-domain-first-mapping",
+      "title": "JSON-2 transport — map domain-first ORM methods",
+      "feature_id": "FEAT-614",
+      "feature": "odoo-json2-domain-first-methods",
+      "spec": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependency: touches only json2.py and test_odoo_json2_transport.py, which no other FEAT-614 task edits; runs concurrently with TASK-3884.",
+      "assigned_to": null,
+      "started_at": "2026-09-30T21:52:14+00:00",
+      "completed_at": "2026-09-30T21:57:10+00:00",
+      "file": "sdd/tasks/completed/TASK-3883-json2-domain-first-mapping.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3884",
+      "slug": "aggregate-odoo19-drop-lazy",
+      "title": "aggregate_records — stop sending lazy to Odoo 19 formatted_read_group",
+      "feature_id": "FEAT-614",
+      "feature": "odoo-json2-domain-first-methods",
+      "spec": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependency: edits toolkit.py, models/inputs.py and test_odoo_toolkit.py, disjoint from TASK-3883's files; runs concurrently with TASK-3883.",
+      "assigned_to": null,
+      "started_at": "2026-09-30T21:52:14+00:00",
+      "completed_at": "2026-09-30T21:57:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3884-aggregate-odoo19-drop-lazy.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3885",
+      "slug": "aggregate-expose-having",
+      "title": "aggregate_records — expose Odoo 19 having",
+      "feature_id": "FEAT-614",
+      "feature": "odoo-json2-domain-first-methods",
+      "spec": "sdd/specs/odoo-json2-domain-first-methods.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3884"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-3884: both modify toolkit.py (the Odoo 19 kwargs dict in aggregate_records), models/inputs.py (AggregateRecordsInput) and test_odoo_toolkit.py.",
+      "assigned_to": null,
+      "started_at": "2026-09-30T21:52:14+00:00",
+      "completed_at": "2026-09-30T21:59:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3885-aggregate-expose-having.md",
+      "verification": "verified"
+    }
+  ]
+}

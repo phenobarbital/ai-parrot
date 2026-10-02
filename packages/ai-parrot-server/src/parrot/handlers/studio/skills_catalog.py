@@ -605,7 +605,8 @@ class StudioSkillsResyncHandler(_StudioSkillsMixin, StudioBaseView):
             return denied
 
         user = await self._get_user()
-        if not user.is_superuser:
+        is_superuser = (await self._scope()).is_superuser if self._opted_in() else user.is_superuser
+        if not is_superuser:
             return self._error("Admin privileges required.", status=403, code="admin_required")
 
         if self.request.app.get("database") is None:

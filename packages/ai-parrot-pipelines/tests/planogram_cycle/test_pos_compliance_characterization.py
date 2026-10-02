@@ -1,380 +1,317 @@
-"""Characterization tests: ProductOnShelves.check_planogram_compliance as it behaves TODAY (FEAT-574).
+"""Regression tests: ProductOnShelves business rules on the perceive -> identify -> compare cycle (FEAT-612).
 
-These tests pin legacy behaviour, quirks included. Do not "fix" an expectation
-without reading spec §7 — the migrated scoring formula lives elsewhere.
+Replaces the FEAT-574 legacy characterization. Pins retained behaviour (shelf order, facing statuses and
+credits, thresholds, zone and text rules, illumination), never legacy score formulas (spec section 4).
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 from unittest.mock import MagicMock
 
 import pytest
 
-from parrot.models.compliance import ComplianceResult, ComplianceStatus
-from parrot.models.detections import DetectionBox, IdentifiedProduct
+from parrot.models.detections import DetectionBox, PlanogramDescription
+from parrot.models.detections import AisleConfig, ShelfConfig
 from parrot_pipelines.models import PlanogramConfig
-from parrot_pipelines.planogram.types import ProductOnShelves
-
-#: ProductOnShelves requires a slots_definition since FEAT-574 (TASK-3445); these tests exercise the legacy
-#: methods directly, so any valid minimal definition satisfies construction.
-_MIN_SLOTS_DEFINITION = {
-    "shelves": [
-        {
-            "shelf_id": "shelf_1",
-            "shelf_number": 1,
-            "facings": [
-                {
-                    "facing_id": "f1",
-                    "shelf_id": "shelf_1",
-                    "slot": 1,
-                    "product": "P",
-                    "descriptors": {"display_name": "P"},
-                }
-            ],
-        }
-    ]
-}
+from parrot_pipelines.planogram.comparison.definition import RuleBinding, load_slots_definition
+from parrot_pipelines.planogram.contracts import (
+    AssessmentStatus,
+    ComparisonResult,
+    CreditPolicy,
+    CycleContext,
+    EvidenceWeights,
+    FacingStatus,
+    FixtureMembership,
+    Identification,
+    IdentificationResult,
+    ObservationSource,
+    PerceptionResult,
+    RuleObservation,
+    Shape,
+    ShapeKind,
+    Slot,
+)
+from parrot_pipelines.planogram.types.product_on_shelves import ProductOnShelves
 
 
-def shelf(level: str, products: List[Dict[str, Any]], **extra: Any) -> Dict[str, Any]:
-    """Raw shelf dict; ``extra`` carries compliance_threshold, allow_extra_products, *_weight…"""
-    return {"level": level, "height_ratio": 0.3, "products": products, **extra}
+class _RaisingVision:
+    """Any attribute access or call proves compare() tried to use the vision adapter (AC8)."""
+
+    def __getattr__(self, name: str) -> Any:
+        raise AssertionError(f"compare() must not touch vision ({name})")
 
 
-def expected(name: str, product_type: str = "product", **extra: Any) -> Dict[str, Any]:
-    """Raw expected-product dict; ``extra`` carries illumination_required / illumination_penalty / visual_features."""
-    return {"name": name, "product_type": product_type, **extra}
+def definition(shelves: Dict[str, List[str]], zones: Sequence[Dict[str, Any]] = ()) -> Dict[str, Any]:
+    """Raw definition: ``{"top": ["P-100", "P-200"], ...}`` in top-to-bottom order; generic labels only."""
+    rows = []
+    for number, (level, products) in enumerate(shelves.items()):
+        facings = [
+            {
+                "facing_id": f"{level}:{slot}",
+                "shelf_id": level,
+                "slot": slot,
+                "product": product,
+                "brand": "Acme",
+                "descriptors": {"display_name": product, "identifiers": [product]},
+            }
+            for slot, product in enumerate(products, start=1)
+        ]
+        rows.append({"shelf_id": level, "shelf_number": number, "level": level, "facings": facings})
+    return {"shelves": rows, "zones": list(zones)}
 
 
-def make_handler(shelves: List[Dict[str, Any]], **top_level: Any) -> ProductOnShelves:
-    """Build a real ProductOnShelves over a MagicMock pipeline.
-
-    Args:
-        shelves: Raw ``planogram_config["shelves"]``.
-        **top_level: Extra raw keys, e.g. ``advertisement_endcap={...}``, ``product_subtypes=[...]``.
-
-    Returns:
-        A handler whose config is a real ``PlanogramConfig``.
-    """
-    raw = {
-        "brand": "TestBrand",
-        "category": "TestCategory",
-        "aisle": {"name": "Electronics > Test", "lighting_conditions": "normal"},
-        "shelves": shelves,
-        **top_level,
-    }
-    config = PlanogramConfig(
-        config_name="characterization",
-        planogram_type="product_on_shelves",
-        planogram_config=raw,
-        roi_detection_prompt="roi",
-        object_identification_prompt="objects",
-        slots_definition=_MIN_SLOTS_DEFINITION,
-    )
+def handler(raw_definition: Dict[str, Any], threshold: Optional[float] = None) -> ProductOnShelves:
+    """ProductOnShelves over a MagicMock pipeline with a minimal migrated configuration."""
     pipeline = MagicMock()
-    pipeline.logger = logging.getLogger("test.pos.characterization")
+    pipeline.logger = logging.getLogger("test.pos.regression")
+    pipeline.reference_images = {}
+    config = MagicMock()
+    config.planogram_config = {"brand": "Acme"}
+    config.slots_definition = raw_definition
+    if threshold is None:
+        config.get_planogram_description.side_effect = ValueError("no legacy shelves")
+    else:
+        config.get_planogram_description.return_value = PlanogramDescription(
+            brand="Acme",
+            category="generic",
+            aisle=AisleConfig(name="aisle"),
+            shelves=[
+                ShelfConfig(level=shelf["level"], products=[], compliance_threshold=threshold)
+                for shelf in raw_definition["shelves"]
+            ],
+        )
     return ProductOnShelves(pipeline=pipeline, config=config)
 
 
-def prod(model: Optional[str], shelf_location: str, product_type: str = "product", **extra: Any) -> IdentifiedProduct:
-    """An identified product placed on ``shelf_location`` (extra: brand, visual_features, ocr_text)."""
-    return IdentifiedProduct(
-        product_type=product_type,
-        product_model=model,
-        confidence=0.9,
-        shelf_location=shelf_location,
-        detection_box=DetectionBox(x1=10, y1=10, x2=110, y2=110, confidence=0.9),
-        **extra,
+def ctx(raw_definition: Dict[str, Any], bindings: Sequence[Dict[str, Any]] = ()) -> CycleContext:
+    """Deterministic context: default credits/weights, POS default layout, vision that raises."""
+    return CycleContext(
+        definition=load_slots_definition(raw_definition),
+        bindings=[RuleBinding(**binding) for binding in bindings],
+        credit_policy=CreditPolicy.default(),
+        evidence_weights=EvidenceWeights(),
+        layout=ProductOnShelves.default_layout_profile(),
+        vision=_RaisingVision(),
     )
 
 
-def check(handler: ProductOnShelves, products: List[IdentifiedProduct]) -> Dict[str, ComplianceResult]:
-    """Run the method under test and index the results by shelf level (order asserted separately)."""
-    results = handler.check_planogram_compliance(products, handler.config.get_planogram_description())
-    return {r.shelf_level: r for r in results}
-
-
-# --------------------------------------------------------------------------- Part 2: scores and statuses
-
-
-def test_one_result_per_shelf_in_config_order() -> None:
-    """Returns exactly one ComplianceResult per configured shelf, in config order."""
-    handler = make_handler(
-        [
-            shelf("top", [expected("ES-400")]),
-            shelf("middle", [expected("RR-60")]),
-            shelf("bottom", [expected("DS-770")]),
-        ]
-    )
-    results = handler.check_planogram_compliance([], handler.config.get_planogram_description())
-    assert [r.shelf_level for r in results] == ["top", "middle", "bottom"]
-    assert all(isinstance(r, ComplianceResult) for r in results)
-
-
-def test_pos_basic_score_and_status_characterization() -> None:
-    """basic_score = matched/expected; COMPLIANT needs basic_score >= threshold; all-missing ⇒ MISSING."""
-    handler = make_handler(
-        [shelf("top", [expected("ES-400"), expected("RR-60")]), shelf("bottom", [expected("DS-770")])]
-    )
-    by = check(handler, [prod("ES-400", "top"), prod("RR-60", "top")])
-    assert by["top"].compliance_status == ComplianceStatus.COMPLIANT
-    assert by["top"].missing_products == []
-    assert by["bottom"].compliance_status == ComplianceStatus.MISSING  # basic 0.0 and expected > 0
-    assert by["bottom"].missing_products == ["DS-770"]
-    assert by["bottom"].compliance_score == pytest.approx(0.3)  # 0.0·0.8 + 1.0·0.1 + 1.0·0.2
-
-
-def test_pos_weights_sum_quirk_characterization() -> None:
-    """Non-header default weights are 0.8/0.1/0.2 (sum 1.1) — masked by the clamp at :777."""
-    handler = make_handler([shelf("top", [expected("ES-400"), expected("RR-60")])])
-    full = check(handler, [prod("ES-400", "top"), prod("RR-60", "top")])["top"]
-    half = check(handler, [prod("ES-400", "top")])["top"]
-    assert full.compliance_score == pytest.approx(1.0)  # 1.1 clamped
-    assert half.compliance_score == pytest.approx(0.7)  # 0.5·0.8 + 0.1 + 0.2 — NOT 0.636 (normalised)
-    assert half.compliance_status == ComplianceStatus.NON_COMPLIANT
-
-
-def test_pos_threshold_uses_basic_score_only_characterization() -> None:
-    """3 of 4 matched: combined 0.9 >= 0.8 but basic 0.75 < 0.8 ⇒ NON_COMPLIANT."""
-    names = ["ES-400", "RR-60", "DS-770", "WF-110"]
-    handler = make_handler([shelf("top", [expected(n) for n in names], compliance_threshold=0.8)])
-    res = check(handler, [prod(n, "top") for n in names[:3]])["top"]
-    assert res.compliance_score == pytest.approx(0.9)
-    assert res.compliance_status == ComplianceStatus.NON_COMPLIANT
-
-    lenient = make_handler([shelf("top", [expected(n) for n in names], compliance_threshold=0.7)])
-    res_lenient = check(lenient, [prod(n, "top") for n in names[:3]])["top"]
-    assert res_lenient.compliance_score == pytest.approx(0.9)
-    assert res_lenient.compliance_status == ComplianceStatus.COMPLIANT
-
-
-def test_pos_explicit_shelf_weights_characterization() -> None:
-    """shelf.product_weight / text_weight / visual_weight override the defaults."""
-    handler = make_handler(
-        [
-            shelf(
-                "top",
-                [expected("ES-400"), expected("RR-60")],
-                product_weight=0.5,
-                text_weight=0.25,
-                visual_weight=0.25,
+def observe(
+    rows: List[List[Optional[str]]],
+    image_id: str = "img0",
+    membership: FixtureMembership = FixtureMembership.ON_FIXTURE,
+    extra_shapes: Sequence[Shape] = (),
+    brand: str = "Acme",
+) -> tuple[PerceptionResult, IdentificationResult]:
+    """One product shape + slot per cell; ``None`` = observed empty; row 0 is the top row."""
+    shapes: List[Shape] = []
+    slots: List[Slot] = []
+    idents: List[Identification] = []
+    for r, row in enumerate(rows):
+        for s, label in enumerate(row, start=1):
+            shape_id = f"{image_id}:p{r}_{s}"
+            slot_id = f"{image_id}:r{r}:s{s}"
+            box = DetectionBox(
+                x1=20 + 150 * (s - 1), y1=100 + 200 * r, x2=150 + 150 * (s - 1), y2=250 + 200 * r, confidence=0.9
             )
-        ]
+            shapes.append(
+                Shape(
+                    shape_id=shape_id,
+                    image_id=image_id,
+                    kind=ShapeKind.PRODUCT,
+                    box=box,
+                    row_index=r,
+                    slot_index=s,
+                    membership=membership,
+                )
+            )
+            slots.append(
+                Slot(slot_id=slot_id, image_id=image_id, row_index=r, slot_index=s, box=box, anchor_shape_id=shape_id)
+            )
+            idents.append(
+                Identification(
+                    shape_id=slot_id,
+                    image_id=image_id,
+                    product=label,
+                    brand=brand if label else None,
+                    occupancy="occupied" if label else "empty",
+                    raw_confidence=0.9,
+                    evidence=[f"reads {label}"] if label else ["empty slot"],
+                )
+            )
+    perception = PerceptionResult(
+        image_id=image_id,
+        image_size=(1000, 1000),
+        shapes=[*shapes, *extra_shapes],
+        slots=slots,
+        zones=[shape for shape in extra_shapes if shape.kind == ShapeKind.ZONE],
+        row_count=len(rows),
     )
-    res = check(handler, [prod("ES-400", "top")])["top"]
-    assert res.compliance_score == pytest.approx(0.5 * 0.5 + 1.0 * 0.25 + 1.0 * 0.25)  # 0.75
+    return perception, IdentificationResult(image_id=image_id, identifications=idents)
 
 
-def test_pos_zone_only_shelf_characterization() -> None:
-    """Zero expected products ⇒ basic 0.0, NON_COMPLIANT (neither COMPLIANT nor MISSING), score 0.3."""
-    handler = make_handler([shelf("zone", []), shelf("top", [expected("ES-400")])])
-    zone = check(handler, [prod("ES-400", "top")])["zone"]
-    assert zone.compliance_status == ComplianceStatus.NON_COMPLIANT
-    assert zone.compliance_score == pytest.approx(0.3)
-
-    tags_only = make_handler(
-        [
-            shelf(
-                "tags",
-                [expected("Tag A", "fact_tag"), expected("Tag B", "price_tag"), expected("Slot C", "slot")],
-            ),
-            shelf("top", [expected("ES-400")]),
-        ]
-    )
-    tags = check(tags_only, [prod("ES-400", "top")])["tags"]
-    assert tags.expected_products == []
-    assert tags.compliance_status == ComplianceStatus.NON_COMPLIANT
-    assert tags.compliance_score == pytest.approx(0.3)
-
-
-def test_pos_never_emits_misplaced_characterization() -> None:
-    """A product expected on 'top' but found on 'bottom' yields MISSING/NON_COMPLIANT, never MISPLACED."""
-    handler = make_handler([shelf("top", [expected("ES-400")]), shelf("bottom", [expected("DS-770")])])
-    by = check(handler, [prod("ES-400", "bottom"), prod("DS-770", "bottom")])
-    assert all(r.compliance_status != ComplianceStatus.MISPLACED for r in by.values())
-    assert by["top"].compliance_status == ComplianceStatus.MISSING
-    assert by["bottom"].compliance_status == ComplianceStatus.COMPLIANT
-    assert not any("ES-400" in u for u in by["bottom"].unexpected_products)
-
-
-# --------------------------------------------------------------------------- Part 3: illumination, text, matching
-
-
-def test_pos_illumination_penalty_characterization() -> None:
-    """Nested illumination_required; default penalty 0.5 multiplies the UNCLAMPED combined score."""
-    handler = make_handler([shelf("top", [expected("ES-400", illumination_required="on")])])
-    res = check(handler, [prod("ES-400", "top", visual_features=["illumination_status: OFF"])])["top"]
-    assert res.compliance_score == pytest.approx(0.55)  # 1.1 · (1 - 0.5/1), clamp happens AFTER
-    assert res.compliance_status == ComplianceStatus.NON_COMPLIANT  # mismatch blocks COMPLIANT (:731)
-    assert any("backlight OFF (required: ON)" in m for m in res.missing_products)
-    assert any(label.endswith("(LIGHT_OFF)") for label in res.found_products)
-
-    # (a) explicit penalty 1.0 ⇒ score 0.0.
-    full_penalty = make_handler(
-        [shelf("top", [expected("ES-400", illumination_required="on", illumination_penalty=1.0)])]
-    )
-    res_a = check(full_penalty, [prod("ES-400", "top", visual_features=["illumination_status: OFF"])])["top"]
-    assert res_a.compliance_score == pytest.approx(0.0)
-    assert res_a.compliance_status == ComplianceStatus.NON_COMPLIANT
-
-    # (b) detected ON matches the requirement ⇒ no penalty, COMPLIANT.
-    res_b = check(handler, [prod("ES-400", "top", visual_features=["illumination_status: ON"])])["top"]
-    assert res_b.compliance_score == pytest.approx(1.0)
-    assert res_b.compliance_status == ComplianceStatus.COMPLIANT
-    assert res_b.missing_products == []
-
-    # (c) no illumination feature on the product ⇒ detected None ⇒ no penalty.
-    res_c = check(handler, [prod("ES-400", "top")])["top"]
-    assert res_c.compliance_score == pytest.approx(1.0)
-    assert res_c.compliance_status == ComplianceStatus.COMPLIANT
-
-
-HEADER_ENDCAP = {
-    "enabled": True,
-    "position": "header",
-    "text_requirements": [
-        {"required_text": "Hello Savings", "match_type": "contains", "mandatory": True},
-        {"required_text": "Goodbye Cartridges", "match_type": "contains", "mandatory": False},
-    ],
-}
-
-
-def _header_handler() -> ProductOnShelves:
-    return make_handler(
-        [shelf("header", [expected("TestBrand Backlit", "promotional_graphic")])],
-        advertisement_endcap=HEADER_ENDCAP,
+def zone_shape(image_id: str = "img0", ocr_text: Optional[str] = None) -> Shape:
+    """A header zone above the product rows."""
+    return Shape(
+        shape_id=f"{image_id}:zone",
+        image_id=image_id,
+        kind=ShapeKind.ZONE,
+        box=DetectionBox(x1=10, y1=5, x2=600, y2=80, confidence=0.9),
+        ocr_text=ocr_text,
+        membership=FixtureMembership.ON_FIXTURE,
     )
 
 
-def test_pos_header_text_requirements_characterization() -> None:
-    """Header: text_score = Σconf(found)/len(all reqs); mandatory miss ⇒ overall_text_compliant False."""
-    handler = _header_handler()
-    promo = prod(
-        "TestBrand Backlit",
-        "header",
-        "promotional_graphic",
-        brand="TestBrand",
-        visual_features=["ocr:Hello Savings"],
+async def _compare(h: ProductOnShelves, c: CycleContext, *images: Any) -> ComparisonResult:
+    """Run compare() over ``(perception, identification)`` pairs."""
+    return await h.compare([p for p, _ in images], [i for _, i in images], c)
+
+
+def with_observations(ident: IdentificationResult, observations: Sequence[RuleObservation]) -> IdentificationResult:
+    """Attach rule observations to an identification result."""
+    return ident.model_copy(update={"rule_observations": list(observations)})
+
+
+def illumination(value: Optional[str], image_id: str = "img0", assessed: bool = True) -> RuleObservation:
+    """An illumination observation of the header zone."""
+    return RuleObservation(
+        image_id=image_id,
+        target_id=f"{image_id}:zone",
+        kind="illumination",
+        value=value,
+        assessed=assessed,
+        source=ObservationSource.LLM,
     )
-    res = check(handler, [promo])["header"]
-    assert res.text_compliance_score == pytest.approx(0.5)  # 1 of 2 found, 'contains' confidence is binary 1.0
-    assert res.overall_text_compliant is True  # the missed requirement is optional
-    assert res.compliance_score == pytest.approx(0.64 + 0.5 * 0.2 + 0.16)  # header weights 0.64/0.2/0.16
-    assert res.compliance_status == ComplianceStatus.COMPLIANT
-
-    # Mandatory text missing ⇒ overall_text_compliant False ⇒ NON_COMPLIANT.
-    promo_optional_only = prod(
-        "TestBrand Backlit",
-        "header",
-        "promotional_graphic",
-        brand="TestBrand",
-        visual_features=["ocr:Goodbye Cartridges"],
-    )
-    res_missing = check(handler, [promo_optional_only])["header"]
-    assert res_missing.overall_text_compliant is False
-    assert res_missing.text_compliance_score == pytest.approx(0.5)
-    assert res_missing.compliance_status == ComplianceStatus.NON_COMPLIANT
 
 
-def test_pos_header_no_promos_keeps_text_score_characterization() -> None:
-    """No promo on the header: overall_text_compliant False, but text_compliance_score STAYS 1.0 (:686-697)."""
-    handler = _header_handler()
-    res = check(handler, [])["header"]
-    assert res.overall_text_compliant is False
-    assert res.text_compliance_score == pytest.approx(1.0)
-    assert res.compliance_score == pytest.approx(0.0 * 0.64 + 1.0 * 0.2 + 1.0 * 0.16)  # 0.36
-    assert all(t.found is False for t in res.text_compliance_results)
-    assert res.compliance_status == ComplianceStatus.NON_COMPLIANT
+HEADER_ZONE = {"zone_id": "zone_backlit", "kind": "backlit", "shelf_id": "header", "required": True}
 
 
-def test_pos_header_brand_gate_characterization() -> None:
-    """Header is NON_COMPLIANT when no identified product carries planogram.brand — brand never SCORES (weight 0.0)."""
-    handler = make_handler(
-        [
-            shelf("header", [expected("TestBrand Backlit", "promotional_graphic")]),
-            shelf("top", [expected("ES-400")]),
-        ],
-        advertisement_endcap=HEADER_ENDCAP,
-    )
-    with_brand = check(
-        handler,
-        [
-            prod(
-                "TestBrand Backlit",
-                "header",
-                "promotional_graphic",
-                brand="TestBrand",
-                visual_features=["ocr:Hello Savings"],
-            ),
-            prod("ES-400", "top"),
-        ],
-    )
-    without_brand = check(
-        handler,
-        [
-            prod(
-                "TestBrand Backlit",
-                "header",
-                "promotional_graphic",
-                brand=None,
-                visual_features=["ocr:Hello Savings"],
-            ),
-            prod("ES-400", "top"),
-        ],
-    )
-    assert with_brand["header"].compliance_status == ComplianceStatus.COMPLIANT
-    assert without_brand["header"].compliance_status == ComplianceStatus.NON_COMPLIANT
-    assert without_brand["header"].compliance_score == pytest.approx(with_brand["header"].compliance_score)
-    assert without_brand["header"].brand_compliance_result.found is False
-    assert without_brand["header"].brand_compliance_result is without_brand["top"].brand_compliance_result
+def _status(result: ComparisonResult) -> Dict[str, FacingStatus]:
+    """Facing id to status."""
+    return {position.facing_id: position.status for position in result.position_results}
 
 
-def test_pos_matching_rules_characterization() -> None:
-    """Type equivalence, empty-base wildcard, greedy 1:1 and skipped types."""
-    # (a) expected "printer" is matched by a found "product" with the same model.
-    handler_a = make_handler([shelf("top", [expected("ES-400", "printer")])])
-    res_a = check(handler_a, [prod("ES-400", "top", "product")])["top"]
-    assert res_a.missing_products == []
-    assert res_a.compliance_status == ComplianceStatus.COMPLIANT
-
-    # (b) a found product with no model (empty base) matches any expected item of an equivalent type.
-    handler_b = make_handler([shelf("top", [expected("RR-60", "product")])])
-    res_b = check(handler_b, [prod(None, "top", "product_box")])["top"]
-    assert res_b.missing_products == []
-    assert res_b.compliance_status == ComplianceStatus.COMPLIANT
-
-    # (c) two expected "ES-400" need two found products (greedy 1:1).
-    handler_c = make_handler([shelf("top", [expected("ES-400"), expected("ES-400")])])
-    res_c = check(handler_c, [prod("ES-400", "top")])["top"]
-    assert res_c.missing_products == ["ES-400"]
-    assert res_c.compliance_score == pytest.approx(0.5 * 0.8 + 0.1 + 0.2)  # basic 0.5
-
-    # (d) skipped found types neither match nor count as unexpected.
-    handler_d = make_handler([shelf("top", [expected("ES-400")])])
-    skipped = [prod("ES-400", "top", t) for t in ("fact_tag", "price_tag", "brand_logo", "gap", "shelf")]
-    res_d = check(handler_d, skipped)["top"]
-    assert res_d.missing_products == ["ES-400"]
-    assert res_d.unexpected_products == []
-    assert res_d.compliance_status == ComplianceStatus.MISSING
+async def test_one_result_per_definition_shelf_in_definition_order() -> None:
+    raw = definition({"top": ["P-100"], "middle": ["P-200"], "bottom": ["P-300"]})
+    result = await _compare(handler(raw), ctx(raw), observe([["P-100"], ["P-200"], ["P-300"]]))
+    assert [r.shelf_level for r in result.compliance_results] == ["top", "middle", "bottom"]
 
 
-def test_pos_unexpected_products_characterization() -> None:
-    """allow_extra_products, 'expected elsewhere' protection and the major_unexpected filter."""
-    # (a) unknown product on a fully matched shelf ⇒ unexpected and NON_COMPLIANT.
-    strict = make_handler([shelf("top", [expected("ES-400")])])
-    res_a = check(strict, [prod("ES-400", "top"), prod("ZZ-999", "top")])["top"]
-    assert any("ZZ-999" in u for u in res_a.unexpected_products)
-    assert res_a.compliance_status == ComplianceStatus.NON_COMPLIANT
+async def test_fully_matched_shelf_is_compliant_and_complete() -> None:
+    raw = definition({"top": ["P-100", "P-200"]})
+    result = await _compare(handler(raw), ctx(raw), observe([["P-100", "P-200"]]))
+    shelf = result.compliance_results[0]
+    assert shelf.compliance_status.value == "compliant"
+    assert shelf.assessment.assessment_status == "complete"
+    assert result.assessment_status == AssessmentStatus.COMPLETE
+    assert result.overall_compliant is True
+    assert all(p.status == FacingStatus.MATCH for p in result.position_results)
+    assert all(p.strict_credit == 1.0 and p.lenient_credit == 1.0 for p in result.position_results)
 
-    # (b) allow_extra_products=True ⇒ nothing unexpected, COMPLIANT.
-    lenient = make_handler([shelf("top", [expected("ES-400")], allow_extra_products=True)])
-    res_b = check(lenient, [prod("ES-400", "top"), prod("ZZ-999", "top")])["top"]
-    assert res_b.unexpected_products == []
-    assert res_b.compliance_status == ComplianceStatus.COMPLIANT
 
-    # (c) an "ink" label is listed but is not 'major' ⇒ shelf stays COMPLIANT.
-    res_c = check(strict, [prod("ES-400", "top"), prod("Ink Bottle 502", "top")])["top"]
-    assert any("ink" in u.lower() for u in res_c.unexpected_products)
-    assert res_c.compliance_status == ComplianceStatus.COMPLIANT
+async def test_empty_facing_is_missing_and_stays_in_denominator() -> None:
+    raw = definition({"top": ["P-100", "P-200"]})
+    result = await _compare(handler(raw), ctx(raw), observe([["P-100", None]]))
+    shelf = result.compliance_results[0]
+    positions = {p.facing_id: p for p in result.position_results}
+    assert shelf.missing_products == ["P-200"]
+    assert positions["top:2"].status == FacingStatus.EMPTY
+    assert positions["top:2"].strict_credit == 0.0 and positions["top:2"].lenient_credit == 0.0
+    assert result.shelf_scores[0].expected_facings == 2
+    assert result.shelf_scores[0].facing_lenient == pytest.approx(0.5)
+    assert result.overall_compliant is False
+
+
+@pytest.mark.parametrize("threshold,expected", [(0.8, "non_compliant"), (0.7, "compliant")])
+async def test_threshold_decides_status_on_the_same_evidence(threshold: float, expected: str) -> None:
+    raw = definition({"top": ["P-100", "P-200", "P-300", "P-400"]})
+    observed = observe([["P-100", "P-200", "P-300", None]])
+    result = await _compare(handler(raw, threshold=threshold), ctx(raw), observed)
+    assert result.shelf_scores[0].facing_lenient == pytest.approx(0.75)
+    assert result.compliance_results[0].compliance_status.value == expected
+
+
+async def test_expected_product_seen_at_another_facing_is_misplaced_half_credit() -> None:
+    raw = definition({"top": ["P-100", "P-200", "P-300"]})
+    result = await _compare(handler(raw), ctx(raw), observe([["P-300", "P-200", "P-100"]]))
+    positions = {p.facing_id: p for p in result.position_results}
+    assert _status(result) == {
+        "top:1": FacingStatus.MISPLACED,
+        "top:2": FacingStatus.MATCH,
+        "top:3": FacingStatus.MISPLACED,
+    }
+    misplaced = [positions["top:1"], positions["top:3"]]
+    for position in misplaced:
+        assert position.strict_credit == 0.0
+        assert position.lenient_credit == pytest.approx(0.5)
+
+
+async def test_different_product_at_expected_slot_is_mismatch() -> None:
+    raw = definition({"top": ["P-100", "P-200"]})
+    observed = observe([["P-100", "P-999"]], brand="Other")
+    result = await _compare(handler(raw), ctx(raw), observed)
+    positions = {p.facing_id: p for p in result.position_results}
+    assert positions["top:2"].status == FacingStatus.MISMATCH
+    assert positions["top:2"].strict_credit == 0.0 and positions["top:2"].lenient_credit == 0.0
+    assert result.compliance_results[0].compliance_status.value != "compliant"
+
+
+async def test_zone_only_header_with_unassessed_mandatory_rule_is_inconclusive() -> None:
+    raw = definition({"header": []}, zones=[HEADER_ZONE])
+    bindings = [{"rule_id": "zone", "kind": "zone_present", "target_id": "zone_backlit"}]
+    perception, ident = observe([])
+    result = await _compare(handler(raw), ctx(raw, bindings), (perception, ident))
+    header = result.compliance_results[0]
+    assert header.assessment.assessment_status == "inconclusive"
+    assert header.compliance_status.value != "compliant"
+    assert result.overall_compliant is False
+
+
+def _text_binding() -> List[Dict[str, Any]]:
+    return [
+        {"rule_id": "zone", "kind": "zone_present", "target_id": "zone_backlit"},
+        {
+            "rule_id": "text",
+            "kind": "text_requirements",
+            "target_id": "zone_backlit",
+            "params": {
+                "requirements": [
+                    {"required_text": "MANDATORY WORDS", "mandatory": True},
+                    {"required_text": "optional words", "mandatory": False},
+                ]
+            },
+        },
+    ]
+
+
+@pytest.mark.parametrize("ocr_text,passed", [("optional words only", False), ("mandatory words only", True)])
+async def test_mandatory_text_requirement_miss_fails_optional_does_not(ocr_text: str, passed: bool) -> None:
+    raw = definition({"header": []}, zones=[HEADER_ZONE])
+    observed = observe([], extra_shapes=[zone_shape(ocr_text=ocr_text)])
+    result = await _compare(handler(raw), ctx(raw, _text_binding()), observed)
+    outcomes = {o.rule_id: o for o in result.shelf_scores[0].rule_results}
+    assert outcomes["text"].assessed is True
+    assert outcomes["text"].passed is passed
+    assert (result.compliance_results[0].compliance_status.value == "compliant") is passed
+
+
+async def test_illumination_mismatch_penalty_applied_once() -> None:
+    raw = definition({"header": []}, zones=[HEADER_ZONE])
+    bindings = [
+        {"rule_id": "zone", "kind": "zone_present", "target_id": "zone_backlit"},
+        {
+            "rule_id": "ill",
+            "kind": "illumination",
+            "target_id": "zone_backlit",
+            "params": {"required": "on", "penalty": 0.5},
+        },
+    ]
+    perception, ident = observe([], extra_shapes=[zone_shape()])
+    ident = with_observations(ident, [illumination("off")])
+    result = await _compare(handler(raw), ctx(raw, bindings), (perception, ident))
+    score = result.shelf_scores[0]
+    assert score.lenient_score == pytest.approx(0.5)
+    assert result.compliance_results[0].compliance_status.value != "compliant"
+    assert len([o for o in result.compliance_results[0].missing_products if "backlight" in o]) == 1

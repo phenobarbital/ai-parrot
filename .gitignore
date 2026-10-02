@@ -451,3 +451,16 @@ examples/planogram/pipelines/*
 examples/planogram/aws/*
 !examples/planogram/aws/*.py
 !examples/planogram/aws/README.md
+# FEAT-612: live planogram E2E harness — code + README only.
+!examples/planogram/e2e/
+examples/planogram/e2e/*
+!examples/planogram/e2e/conftest.py
+!examples/planogram/e2e/models.py
+!examples/planogram/e2e/runner.py
+!examples/planogram/e2e/test_compliance.py
+!examples/planogram/e2e/README.md
+
+# Local/untracked work
+examples/clients/bestbuy_catalog/
+examples/planogram/pipelines/
+sdd/state/FEAT-585/

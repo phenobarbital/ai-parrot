@@ -90,16 +90,25 @@ order, the set of fetched keys, the ignored params and the rows every executor m
 Renderers fetch linked data by making authenticated requests to QuerySource endpoints:
 
 ```
-POST /api/v3/queries/{slug}                     # no tenant (used by the renderer when no tenant is set)
-POST /api/v1/{tenant}/queries/{slug}            # tenant store (used by the renderer when a tenant is set)
-POST /api/v1/queries/{schema}/{slug}            # alias, querysource >= 5.1.2
-POST /api/v2/services/queries/{slug}            # service route
+POST /api/v2/services/queries/{slug}            # DEFAULT: no tenant, regular slug → plain QS() (milliseconds)
+POST /api/v3/queries/{slug}                     # only when is_multiquery: MultiQS, the one HTTP lane that expands a pipeline
+POST /api/v1/{tenant}/queries/{slug}            # tenant store (used by the renderer whenever a tenant is set; kind-aware)
+POST /api/v1/queries/{schema}/{slug}            # alias of the tenant route, querysource >= 5.1.2
 ```
+
+Route rule (`ui/src/lib/api/querysource.ts::queryUrl`, mirrored by `examples/a2ui/static/linked.js` and
+`examples/a2ui/client.py`): `tenant` wins; else `is_multiquery` selects v3; else v2. The v3 route is served by
+MultiQS, which favours availability over latency (it loads the pipeline definitions, runs in threads and retries
+up to 3 times) — it is the data-pipeline/ETL lane, so a regular slug that `QS()` answers in milliseconds must
+never go through it. Only a real MultiQuery pipeline needs v3, because v2 executes single-query slugs only.
 
 With JWT authentication from the viewer's session. The request includes:
 - `refresh: true` only on a manual refresh; the field is omitted otherwise (never sent as false)
 - `querylimit` capped at 5000 rows per fetch (`DEFAULT_MAX_FETCH_ROWS`); `request.limit` may lower it, never raise it
 - All other request parameters from the descriptor
+
+An empty result is answered with HTTP 204 (`x-status: Empty Result`) and no body; the lane treats it as zero
+rows, never as an error.
 
 ### Per-source refresh
 

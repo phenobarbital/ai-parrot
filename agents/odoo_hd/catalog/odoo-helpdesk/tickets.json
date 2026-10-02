@@ -1,0 +1,29 @@
+{
+  "site": "odoo-helpdesk",
+  "name": "tickets",
+  "title": "Tickets",
+  "description": "Open the Helpdesk Tickets view (kanban/list of sh.helpdesk.ticket).",
+  "kind": "navigation",
+  "params": {},
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "https://pokemon.helpdesk.staging.trocdigital.io/odoo/action-sh_all_in_one_helpdesk.sh_helpdesk_ticket_action"
+    },
+    {
+      "action": "wait",
+      "condition": ".o_action_manager",
+      "condition_type": "selector",
+      "timeout": 30
+    }
+  ],
+  "compose": [],
+  "requires": [
+    "login"
+  ],
+  "tags": [],
+  "version": "1.0",
+  "source": "llm",
+  "created_at": "2026-09-30T18:45:10.919139Z",
+  "updated_at": null
+}

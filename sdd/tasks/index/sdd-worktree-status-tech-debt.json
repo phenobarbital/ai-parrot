@@ -1,0 +1,93 @@
+{
+  "feature": "sdd-worktree-status-tech-debt",
+  "feature_id": "FEAT-619",
+  "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-01T00:30:00+00:00",
+  "completed_at": "2026-10-01T00:40:19+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3915",
+      "slug": "non-sdd-worktree-reports",
+      "title": "Emit non-SDD worktree reports and make discovery order deterministic",
+      "feature_id": "FEAT-619",
+      "feature": "sdd-worktree-status-tech-debt",
+      "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies. Shares scripts/sdd/worktree_status.py and tests/sdd_scripts/test_worktree_status.py with TASK-3916 and TASK-3917, which depend on it (chain 3915 -> 3916 -> 3917) so the three never run concurrently.",
+      "assigned_to": null,
+      "started_at": "2026-10-01T00:31:15+00:00",
+      "completed_at": "2026-10-01T00:33:53+00:00",
+      "file": "sdd/tasks/completed/TASK-3915-non-sdd-worktree-reports.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3916",
+      "slug": "fail-closed-health-and-index-read",
+      "title": "Fail-closed health checks and a broadened worktree-index read",
+      "feature_id": "FEAT-619",
+      "feature": "sdd-worktree-status-tech-debt",
+      "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3915"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same two files TASK-3915 modifies (scripts/sdd/worktree_status.py, tests/sdd_scripts/test_worktree_status.py); serialized after it by file overlap.",
+      "assigned_to": null,
+      "started_at": "2026-10-01T00:34:24+00:00",
+      "completed_at": "2026-10-01T00:36:18+00:00",
+      "file": "sdd/tasks/completed/TASK-3916-fail-closed-health-and-index-read.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3917",
+      "slug": "cli-table-and-anchor-comment",
+      "title": "De-duplicate the CLI table, render unknown health, fix the WORKTREE_ROOT anchor",
+      "feature_id": "FEAT-619",
+      "feature": "sdd-worktree-status-tech-debt",
+      "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-3916"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same two files as TASK-3915/TASK-3916 (file overlap), and renders WorktreeHealth.dirty_unknown / unpushed_unknown which TASK-3916 creates in scripts/sdd/worktree_status.py.",
+      "assigned_to": null,
+      "started_at": "2026-10-01T00:36:36+00:00",
+      "completed_at": "2026-10-01T00:37:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3917-cli-table-and-anchor-comment.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3918",
+      "slug": "sdd-status-next-doc-twins",
+      "title": "Document the unknown health state and the non-SDD discriminator in the command twins",
+      "feature_id": "FEAT-619",
+      "feature": "sdd-worktree-status-tech-debt",
+      "spec": "sdd/specs/sdd-worktree-status-tech-debt.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Documentation only: touches the six .claude/.agent/.agents markdown copies of sdd-status and sdd-next, which no other task in this feature declares. Shares no file with the code chain, so it runs in wave 1 alongside TASK-3915.",
+      "assigned_to": null,
+      "started_at": "2026-10-01T00:38:15+00:00",
+      "completed_at": "2026-10-01T00:40:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3918-sdd-status-next-doc-twins.md",
+      "verification": "verified"
+    }
+  ]
+}

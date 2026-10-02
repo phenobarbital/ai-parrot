@@ -17,12 +17,17 @@ export class SourceUnavailable extends Error {
 export const isQuerySlug = (src) => (src.kind ?? 'query_slug') === 'query_slug';
 export const isDerived = (src) => src.kind === 'derived';
 
-export function queryUrl(baseUrl, slug, tenant) {
+/**
+ * Route rule (same as ui/.../api/querysource.ts): tenant → `/api/v1/{tenant}/queries/{slug}`; `isMultiquery` →
+ * `/api/v3/queries/{slug}` (MultiQS, the only HTTP lane that expands a MultiQuery pipeline); otherwise the plain
+ * `QS()` route `/api/v2/services/queries/{slug}`. MultiQS favours availability over latency (definition load, threads,
+ * retries) — it is the pipeline/ETL lane, never the lane for a regular slug.
+ */
+export function queryUrl(baseUrl, slug, tenant, isMultiquery = false) {
   const base = baseUrl.replace(/\/$/, '');
   const s = encodeURIComponent(slug);
-  return tenant
-    ? `${base}/api/v1/${encodeURIComponent(tenant)}/queries/${s}`
-    : `${base}/api/v3/queries/${s}`;
+  if (tenant) return `${base}/api/v1/${encodeURIComponent(tenant)}/queries/${s}`;
+  return isMultiquery ? `${base}/api/v3/queries/${s}` : `${base}/api/v2/services/queries/${s}`;
 }
 
 /**
@@ -56,7 +61,7 @@ export async function fetchSource(src, conditions, { baseUrl, token, maxFetchRow
   // deriveConditions never emits `limit` (TASK-3770/TASK-3793); the lane re-applies request.limit bounded by the cap (S8/AC17)
   const body = { ...conditions, querylimit: Math.min(src.request.limit ?? cap, cap) };
   if (body.refresh !== true) delete body.refresh;
-  const res = await fetch(queryUrl(baseUrl, src.slug, src.tenant ?? null), {
+  const res = await fetch(queryUrl(baseUrl, src.slug, src.tenant ?? null, src.is_multiquery === true), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
@@ -65,6 +70,7 @@ export async function fetchSource(src, conditions, { baseUrl, token, maxFetchRow
     if (res.status === 404) throw new SourceUnavailable(src.slug);
     throw new Error(`QuerySource ${res.status}`);
   }
+  if (res.status === 204) return []; // QuerySource "Empty Result": zero rows, no body
   return selectFrame(await res.json(), src);
 }
 

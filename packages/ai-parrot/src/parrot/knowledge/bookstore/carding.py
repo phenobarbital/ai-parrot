@@ -85,6 +85,42 @@ def unique_slug(base: str, taken: set[str]) -> str:
     return f"{base}-{n}"
 
 
+def _stem_to_title(stem: str) -> str:
+    """De-slugify a filename stem into a display title (``odoo19-cookbook_ch03`` → ``Odoo19 Cookbook Ch03``)."""
+    words = stem.replace("_", " ").replace("-", " ").strip()
+    return " ".join(part.capitalize() for part in words.split())
+
+
+def disambiguate_title(title: str, taken: set[str], *, toc_entries: list[TocEntry], stem: str) -> str:
+    """Return a normalized, unique display title.
+
+    Hint order: (1) the first ``toc_entries`` title whose casefold differs from
+    ``title``'s and whose combination is not taken; (2) the de-slugified
+    ``stem``; (3) ``"<title> — <stem> (N)"`` for the first free ``N >= 2``.
+    ``taken`` holds casefolded titles. Blank titles fall back to the
+    de-slugified stem, the stripped stem, or ``"Untitled"``. Never returns a
+    taken title.
+    """
+    title = title.strip() or _stem_to_title(stem) or stem.strip() or "Untitled"
+    if title.casefold() not in taken:
+        return title
+    for entry in toc_entries:
+        hint = entry.title.strip()
+        if not hint or hint.casefold() == title.casefold():
+            continue
+        candidate = f"{title} — {hint}"
+        if candidate.casefold() not in taken:
+            return candidate
+    stem_hint = _stem_to_title(stem) or stem or "copy"
+    candidate = f"{title} — {stem_hint}"
+    if candidate.casefold() not in taken:
+        return candidate
+    n = 2
+    while f"{candidate} ({n})".casefold() in taken:
+        n += 1
+    return f"{candidate} ({n})"
+
+
 def derive_toc(tree: dict[str, Any], max_depth: int = 2) -> tuple[list[TocEntry], str]:
     """Walk a PageIndex tree dict into ToC entries plus a text digest.
 
@@ -148,8 +184,7 @@ def fallback_card_fields(file_path: Path, toc_entries: list[TocEntry]) -> CardDr
         file_path: The ingested source file.
         toc_entries: Structured ToC from :func:`derive_toc`.
     """
-    stem = file_path.stem.replace("_", " ").replace("-", " ").strip()
-    title = " ".join(part.capitalize() for part in stem.split()) or file_path.name
+    title = _stem_to_title(file_path.stem) or file_path.name
     topics = [e.title for e in toc_entries if e.depth == 1][:10]
     return CardDraft(title=title, topics=topics)
 

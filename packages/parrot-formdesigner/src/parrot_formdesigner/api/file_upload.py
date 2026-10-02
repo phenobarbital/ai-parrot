@@ -129,6 +129,43 @@ async def _bytes_iter(data: bytes) -> AsyncGenerator[bytes, None]:
     yield data
 
 
+#: Client-chosen idempotency key for a whole upload (an offline device reuses
+#: it on every retry of the same file). See :func:`_client_blob_id`.
+CLIENT_UPLOAD_ID_HEADER = "X-Parrot-Client-Upload-Id"
+_MAX_CLIENT_UPLOAD_ID = 128
+
+
+def _client_blob_id(
+    request: web.Request, form: FormSchema, field: FormField, tenant: str | None
+) -> str | None:
+    """The client-id SEED for this upload's blob names, or ``None`` (random, as before).
+
+    A hash of the header with the tenant, form and field, so the raw header
+    never becomes a storage key and one client id can never collide across
+    tenants, forms or fields. The blob name itself is this seed hashed with
+    the FILE's own SHA-256 (:func:`_deterministic_blob_id`): a retry — even
+    one that sends the parts of a multi-upload in another order — names each
+    file's own blob, and two different files can never share one.
+
+    Raises:
+        web.HTTPBadRequest: The header is longer than 128 characters.
+    """
+    client_id = request.headers.get(CLIENT_UPLOAD_ID_HEADER)
+    if not client_id:
+        return None
+    if len(client_id) > _MAX_CLIENT_UPLOAD_ID:
+        raise web.HTTPBadRequest(reason=f"{CLIENT_UPLOAD_ID_HEADER} is longer than {_MAX_CLIENT_UPLOAD_ID} characters")
+    name = "\x1f".join((tenant or "", str(form.form_uid), str(field.field_uid), client_id))
+    return hashlib.sha256(name.encode("utf-8")).hexdigest()[:32]
+
+
+def _deterministic_blob_id(client_seed: str | None, checksum_hex: str) -> str | None:
+    """The blob name for one file: the client seed hashed with the file's SHA-256."""
+    if not client_seed:
+        return None
+    return hashlib.sha256(f"{client_seed}\x1f{checksum_hex}".encode("utf-8")).hexdigest()[:32]
+
+
 async def handle_file_upload(request: web.Request) -> web.Response:
     """Handle POST /api/v1/{tenant}/forms/{form_uid}/fields/{field_uid}/file-upload.
 
@@ -142,6 +179,11 @@ async def handle_file_upload(request: web.Request) -> web.Response:
     Accepts X-Parrot-Prior-Blob-Ref header for replacement uploads, and
     X-Parrot-Upload-Offset / X-Parrot-Upload-Length headers for basic
     chunked uploads.
+
+    Accepts ``X-Parrot-Client-Upload-Id`` (idempotency): the same id for the
+    same field names the same blob, so a retried upload (an offline device
+    replaying its queue) returns the same ``blob_ref`` and stores no duplicate.
+    Without it every upload gets a fresh random name, exactly as before.
 
     Args:
         request: The incoming aiohttp web.Request.
@@ -217,6 +259,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
             allowed_mimes,
             max_inline,
             thumbnail_base_path,
+            client_seed=_client_blob_id(request, form, field, blob_tenant),
         )
         if envelope is None:
             return web.json_response({"status": "chunk_received"}, status=202)
@@ -239,6 +282,11 @@ async def handle_file_upload(request: web.Request) -> web.Response:
                 # The first file was already persisted before we could see
                 # a second 'file' part arrive — clean it up (and any
                 # thumbnail) rather than leaving an orphaned blob behind.
+                # NOT under a client upload id: that name is deterministic and
+                # may be a blob an EARLIER request stored and a submission
+                # already references — an orphan is the lesser harm.
+                if request.headers.get(CLIENT_UPLOAD_ID_HEADER):
+                    raise web.HTTPBadRequest(reason=f"Field {field_id!r} accepts a single file only")
                 for orphan in envelopes:
                     for ref in (orphan.blob_ref, orphan.thumbnail_url):
                         if not ref:
@@ -263,6 +311,7 @@ async def handle_file_upload(request: web.Request) -> web.Response:
                 allowed_mimes,
                 max_inline,
                 thumbnail_base_path,
+                client_seed=_client_blob_id(request, form, field, blob_tenant),
             )
             envelopes.append(envelope)
 
@@ -272,7 +321,10 @@ async def handle_file_upload(request: web.Request) -> web.Response:
         result = envelopes[0] if single else envelopes
 
     prior_blob_ref = request.headers.get("X-Parrot-Prior-Blob-Ref")
-    if prior_blob_ref:
+    written = {env.blob_ref for env in (result if isinstance(result, list) else [result])}
+    # A retried idempotent upload names the SAME blob it replaces: deleting
+    # the "prior" ref would delete the file this request just wrote.
+    if prior_blob_ref and prior_blob_ref not in written:
         try:
             await blob_storage.delete(prior_blob_ref)
         except Exception as exc:
@@ -300,6 +352,8 @@ async def _process_file_part(
     allowed_mimes: list[str] | None,
     max_inline: int,
     thumbnail_base_path: str,
+    *,
+    client_seed: str | None = None,
 ) -> FileEnvelope:
     """Stream, validate, and persist a single multipart file part.
 
@@ -350,6 +404,7 @@ async def _process_file_part(
         blob_tenant,
         max_inline,
         thumbnail_base_path,
+        client_seed=client_seed,
     )
 
 
@@ -364,6 +419,8 @@ async def _handle_chunk(
     allowed_mimes: list[str] | None,
     max_inline: int,
     thumbnail_base_path: str,
+    *,
+    client_seed: str | None = None,
 ) -> FileEnvelope | None:
     """Handle one chunk of a basic chunked upload.
 
@@ -476,6 +533,7 @@ async def _handle_chunk(
         blob_tenant,
         max_inline,
         thumbnail_base_path,
+        client_seed=client_seed,
     )
 
 
@@ -491,6 +549,8 @@ async def _finalize_envelope(
     blob_tenant: str | None,
     max_inline: int,
     thumbnail_base_path: str,
+    *,
+    client_seed: str | None = None,
 ) -> FileEnvelope:
     """Persist file bytes to blob storage and build the FileEnvelope.
 
@@ -523,6 +583,7 @@ async def _finalize_envelope(
         tenant=blob_tenant,
         content_type=content_type,
         size_bytes=len(file_bytes),
+        blob_id=_deterministic_blob_id(client_seed, checksum_hex),
     )
 
     try:

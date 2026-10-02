@@ -342,6 +342,8 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
     """``POST /api/v1/astudio/tools/{slug}/execute`` — deterministic tool call."""
 
     async def post(self):
+        if (denied := await self._require_author()) is not None:
+            return denied
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("testing", "astudio:testing:execute")) is not None:
             return denied

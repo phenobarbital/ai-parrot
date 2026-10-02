@@ -18,10 +18,23 @@ export class QuerySourceHttpError extends Error {
   }
 }
 
-/** `/api/v3/queries/{slug}` or `/api/v1/{tenant}/queries/{slug}` (spec G3, AC4). */
-export function queryUrl(baseUrl: string, slug: string, tenant: string | null | undefined): string {
+/**
+ * Route rule (spec G3, AC4):
+ * - `tenant` set → `/api/v1/{tenant}/queries/{slug}` (kind-aware tenant handler);
+ * - `isMultiquery` → `/api/v3/queries/{slug}` (MultiQS — the only HTTP lane that expands a MultiQuery pipeline);
+ * - otherwise → `/api/v2/services/queries/{slug}` (plain `QS()`, milliseconds).
+ * MultiQS favours availability over latency (definition load, threads, up to 3 retries), so a regular slug
+ * must never go through v3 — it is the pipeline/ETL lane, not the query lane.
+ */
+export function queryUrl(
+  baseUrl: string,
+  slug: string,
+  tenant: string | null | undefined,
+  isMultiquery: boolean = false,
+): string {
   const s = encodeURIComponent(slug);
-  return tenant ? `${baseUrl}/api/v1/${encodeURIComponent(tenant)}/queries/${s}` : `${baseUrl}/api/v3/queries/${s}`;
+  if (tenant) return `${baseUrl}/api/v1/${encodeURIComponent(tenant)}/queries/${s}`;
+  return isMultiquery ? `${baseUrl}/api/v3/queries/${s}` : `${baseUrl}/api/v2/services/queries/${s}`;
 }
 
 export function querySourceHeaders(): HeadersInit {
@@ -31,5 +44,7 @@ export function querySourceHeaders(): HeadersInit {
 export async function postQuery(url: string, body: Record<string, unknown>, headers: HeadersInit): Promise<unknown> {
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) throw new QuerySourceHttpError(res.status, `QuerySource ${res.status}`);
+  // QuerySource answers an empty result with 204 `x-status: Empty Result` and no body — zero rows, not an error.
+  if (res.status === 204) return [];
   return res.json();
 }

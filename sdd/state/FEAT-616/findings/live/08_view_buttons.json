@@ -1,0 +1,397 @@
+[
+ {
+  "view": "sh.helpdesk.ticket.form.view",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_ticket_form_view",
+  "inherit": false,
+  "buttons": [
+   {
+    "name": "action_approve",
+    "type": "object",
+    "string": "Approve",
+    "invisible": "cancel_stage_boolean == True or done_stage_boolean == True or closed_stage_boolean == True"
+   },
+   {
+    "name": "action_reply",
+    "type": "object",
+    "string": "Reply",
+    "invisible": null
+   },
+   {
+    "name": "action_send_whatsapp",
+    "type": "object",
+    "string": "Send By Whatsapp",
+    "invisible": null
+   },
+   {
+    "name": "action_done",
+    "type": "object",
+    "string": "Resolved Ticket",
+    "invisible": "done_button_boolean == False"
+   },
+   {
+    "name": "action_closed",
+    "type": "object",
+    "string": "Close Ticket",
+    "invisible": "done_stage_boolean == False"
+   },
+   {
+    "name": "action_cancel",
+    "type": "object",
+    "string": "Cancel Ticket",
+    "invisible": "cancel_button_boolean == False"
+   },
+   {
+    "name": "action_open",
+    "type": "object",
+    "string": "Re-Open Ticket",
+    "invisible": "open_boolean == False"
+   },
+   {
+    "name": "preview_ticket",
+    "type": "object",
+    "string": "Preview",
+    "invisible": null
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.ticket.stage.change.history",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.view_sh_helpdesk_ticket_inherit",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.tickets.so.view.form",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_tickets_so_inherited_view_form",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": "action_sale_create_order",
+    "type": "object",
+    "string": "Create Sale Order",
+    "invisible": null
+   },
+   {
+    "name": "action_view_sale_orders",
+    "type": "object",
+    "string": null,
+    "invisible": "sale_order_count == 0"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.tickets.po.view.form",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_tickets_po_inherited_view_form",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": "action_create_purchase_order",
+    "type": "object",
+    "string": "Create Purchase Order",
+    "invisible": null
+   },
+   {
+    "name": "action_view_purchase_orders",
+    "type": "object",
+    "string": null,
+    "invisible": "purchase_order_count == 0"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.tickets.so.view.form",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_tickets_invoice_inherited_view_form",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": "action_create_invoice",
+    "type": "object",
+    "string": "Create Invoice",
+    "invisible": null
+   },
+   {
+    "name": "invoice_counts",
+    "type": "object",
+    "string": null,
+    "invisible": "invoice_count == 0"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.ticket",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_ticket_timesheet_view",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": null,
+    "type": null,
+    "string": null,
+    "invisible": null
+   },
+   {
+    "name": "action_ticket_start",
+    "type": "object",
+    "string": "Start Ticket",
+    "invisible": "ticket_run != False"
+   },
+   {
+    "name": "action_ticket_end",
+    "type": "object",
+    "string": "End Ticket",
+    "invisible": "ticket_run == False"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.tickets.crm.view.form",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_tickets_crm_inherited_view_form",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": "action_create_lead",
+    "type": "object",
+    "string": "Create Lead",
+    "invisible": null
+   },
+   {
+    "name": "action_create_opportunity",
+    "type": "object",
+    "string": "Create Opportunity",
+    "invisible": null
+   },
+   {
+    "name": "lead_counts",
+    "type": "object",
+    "string": null,
+    "invisible": "lead_count == 0"
+   },
+   {
+    "name": "opportunity_counts",
+    "type": "object",
+    "string": null,
+    "invisible": "opportunity_count == 0"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.ticket",
+  "type": "form",
+  "xml_id": "sh_all_in_one_helpdesk.sh_ticket_inherit_form_view",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": "view_task",
+    "type": "object",
+    "string": null,
+    "invisible": null
+   },
+   {
+    "name": "create_task",
+    "type": "object",
+    "string": "Create Task",
+    "invisible": null
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.dynamic.form.helpdesk",
+  "type": "form",
+  "xml_id": "dynamic_form_helpdesk.dynamic_form_helpdesk_ticket_form_view",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.extra_fields",
+  "type": "form",
+  "xml_id": "troc_helpdesk.sh_helpdesk_ticket_form_view_extra_fields",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": "560",
+    "type": "action",
+    "string": null,
+    "invisible": "extra_field_count == 0"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.as.buttons",
+  "type": "form",
+  "xml_id": "troc_helpdesk.sh_helpdesk_ticket_form_view_as_buttons",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": [
+   {
+    "name": "action_take_ticket",
+    "type": "object",
+    "string": null,
+    "invisible": "user_id == uid"
+   },
+   {
+    "name": "action_open_reassign",
+    "type": "object",
+    "string": null,
+    "invisible": "not user_id"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.crm.fix",
+  "type": "form",
+  "xml_id": "troc_helpdesk.sh_helpdesk_ticket_form_view_crm_fix",
+  "inherit": [
+   1619,
+   "sh.helpdesk.tickets.crm.view.form"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.invoice.fix",
+  "type": "form",
+  "xml_id": "troc_helpdesk.sh_helpdesk_ticket_form_view_invoice_fix",
+  "inherit": [
+   1607,
+   "sh.helpdesk.tickets.so.view.form"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.po.fix",
+  "type": "form",
+  "xml_id": "troc_helpdesk.sh_helpdesk_ticket_form_view_po_fix",
+  "inherit": [
+   1603,
+   "sh.helpdesk.tickets.po.view.form"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.so.fix",
+  "type": "form",
+  "xml_id": "troc_helpdesk.sh_helpdesk_ticket_form_view_so_fix",
+  "inherit": [
+   1599,
+   "sh.helpdesk.tickets.so.view.form"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.category.company.domain",
+  "type": "form",
+  "xml_id": "troc_helpdesk.sh_helpdesk_ticket_form_view_category_company_domain",
+  "inherit": [
+   1570,
+   "sh.helpdesk.ticket.form.view"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.form.hide.dynamic.form.unmapped",
+  "type": "form",
+  "xml_id": "troc_helpdesk_dynamic_forms.dynamic_form_unmapped_page_hidden",
+  "inherit": [
+   1627,
+   "sh.helpdesk.ticket.form.dynamic.form.helpdesk"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.kanban",
+  "type": "kanban",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_ticket_kanban",
+  "inherit": false,
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.time.kanban",
+  "type": "kanban",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_ticket_time_inherit_kanban_view",
+  "inherit": [
+   1573,
+   "sh.helpdesk.ticket.kanban"
+  ],
+  "buttons": [
+   {
+    "name": null,
+    "type": null,
+    "string": null,
+    "invisible": null
+   },
+   {
+    "name": "action_ticket_start",
+    "type": "object",
+    "string": "Start Ticket",
+    "invisible": "ticket_run != False"
+   },
+   {
+    "name": "action_ticket_end",
+    "type": "object",
+    "string": "End Ticket",
+    "invisible": "ticket_run == False"
+   }
+  ]
+ },
+ {
+  "view": "sh.helpdesk.ticket.tree.view",
+  "type": "list",
+  "xml_id": "sh_all_in_one_helpdesk.sh_helpdesk_ticket_tree_view",
+  "inherit": false,
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.tree.dynamic.form.helpdesk",
+  "type": "list",
+  "xml_id": "dynamic_form_helpdesk.dynamic_form_helpdesk_ticket_tree_view",
+  "inherit": [
+   1571,
+   "sh.helpdesk.ticket.tree.view"
+  ],
+  "buttons": []
+ },
+ {
+  "view": "sh.helpdesk.ticket.list.hide.dynamic.form.unmapped",
+  "type": "list",
+  "xml_id": "troc_helpdesk_dynamic_forms.dynamic_form_unmapped_column_removed",
+  "inherit": [
+   1628,
+   "sh.helpdesk.ticket.tree.dynamic.form.helpdesk"
+  ],
+  "buttons": []
+ }
+]

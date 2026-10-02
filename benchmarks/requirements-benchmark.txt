@@ -2,13 +2,13 @@
 # Install with: uv pip install -r benchmarks/requirements-benchmark.txt
 
 # Core embedding deps (should already be installed via parrot[all])
-uform>=3.1
+uform>=3.1.3
 torch>=2.0
 Pillow>=9.0
 numpy>=1.24
 
 # Optional: ONNX backend
-onnxruntime>=1.16
+onnxruntime>=1.30.0
 
 # Baseline model (HuggingFace sentence-transformers)
 sentence-transformers>=2.2
