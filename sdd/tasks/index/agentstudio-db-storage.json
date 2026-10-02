@@ -730,7 +730,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -740,9 +740,10 @@
       "parallelism_notes": "upserts through PgUserLLMKeyStore from TASK-3952 (storage/byok_store.py), PgVaultCredentialStore from TASK-3953 (storage/vault_store.py) and PgToolkitOverrideStore from TASK-3954 (storage/overrides_store.py); creates storage/secrets_copy.py only",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3955-p2-secrets-copy-script.md",
-      "phase": "P2"
+      "completed_at": "2026-10-02T06:14:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3955-p2-secrets-copy-script.md",
+      "phase": "P2",
+      "verification": "verified"
     }
   ]
 }

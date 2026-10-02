@@ -157,10 +157,8 @@ Collections: `user_llm_keys` (`byok.py:31`), `user_credentials` (`vault_utils.py
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 3ae4aee47. secrets_copy.py: verbatim idempotent DocumentDB→Postgres copy of BYOK/vault/overrides, value-free logs; 6 tests against real PG with an in-test fake DocumentDB (real DocumentDB never exercised); 6 mutations RED. BYOK/vault use own upsert SQL (stores re-seal plaintext); real copy needs the vault keyring env; _mask duplicated from byok._mask.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
