@@ -197,6 +197,7 @@ class _LegacyBot(BaseBot):
 async def test_legacy_agent_test_chat_unchanged(aiohttp_client, pool, asks):
     client = await _client(aiohttp_client, pool)
     client.app["bot_manager"].registry.register("legacy-one", _LegacyBot)
+    client.app["bot_manager"]._botdef["legacy-one"] = _LegacyBot        # get_bot(new=True) builds this class, never the BasicAgent default
     resp = await _ask(client, name="legacy-one")
     body = await resp.json()
     assert resp.status == 200 and body["response"] == "echo:hi"
