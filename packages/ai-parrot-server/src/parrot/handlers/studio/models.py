@@ -143,6 +143,7 @@ class ToolkitPersistResponse(BaseModel):
     slug: str | None = None
     reload_required: bool = True
     persisted: bool = True
+    version: int | None = None  # the agent's version after the write (Studio rows; ``None`` for a legacy agent)
 
 
 class AgentMcpServersPutRequest(BaseModel):

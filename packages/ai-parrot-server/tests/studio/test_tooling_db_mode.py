@@ -206,6 +206,24 @@ async def test_stale_tooling_writes(aiohttp_client, pool, vault):
     assert resp.status == 200
 
 
+async def test_persist_responses_carry_the_agent_version(aiohttp_client, pool, vault):
+    """FEAT-621 §2.9 (additive): every toolkit / MCP write answers the agent's version AFTER the write."""
+    client = await aiohttp_client(_app(pool))
+    await _create(client)
+    url = f"{BASE}/agents/alpha"
+    server = {"name": "docs", "url": "https://m.example.com/mcp", "headers": {"X-Key": "k"}}
+    seen = []
+    for call in (lambda: client.put(f"{url}/toolkits/jira", json=JIRA),
+                 lambda: client.put(f"{url}/mcp-servers", json={"servers": [server]}),
+                 lambda: client.delete(f"{url}/toolkits/jira")):
+        resp = await call()
+        body = await resp.json()
+        assert resp.status == 200, body
+        assert body["version"] == await _version(client), body        # the version after THIS write
+        seen.append(body["version"])
+    assert seen == sorted(set(seen))                                    # every write bumped it
+
+
 async def test_tooling_policy_http(aiohttp_client, pool, vault):
     client = await aiohttp_client(_tenant_app(pool, "acme"))
     await _tenant_agent(client, "acme")

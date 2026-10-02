@@ -41,6 +41,13 @@ _STUDIO_ERRORS = (
 _OPTIONS_TIMEOUT_S = 15.0
 
 
+def _persisted(store: object, name: str, slug: str | None = None) -> dict:
+    """The write response; ``version`` only for a Studio row (a legacy agent's body stays byte-for-byte)."""
+    version = getattr(store, "last_version", None)
+    response = ToolkitPersistResponse(agent=name, slug=slug, version=version)
+    return response.model_dump(exclude=None if version is not None else {"version"})
+
+
 class _ToolingViewMixin(_StudioAgentsMixin):
     """Shared authorization and error mapping for agent tooling endpoints."""
 
@@ -166,7 +173,7 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             return self._map_exc(exc)
         if refused is not None:
             return refused
-        return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
+        return self.json_response(_persisted(store, name, slug))
 
     async def delete(self):
         """Delete one agent-level toolkit specification."""
@@ -185,7 +192,7 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             return self._map_exc(exc)
         if refused is not None:
             return refused
-        return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
+        return self.json_response(_persisted(store, name, slug))
 
 
 @is_authenticated()
@@ -300,4 +307,4 @@ class StudioAgentMcpServersHandler(_ToolingViewMixin, StudioBaseView):
             return self._map_exc(exc)
         if refused is not None:
             return refused
-        return self.json_response(ToolkitPersistResponse(agent=name).model_dump())
+        return self.json_response(_persisted(store, name))

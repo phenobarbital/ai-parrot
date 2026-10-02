@@ -47,7 +47,7 @@ ADDED: dict[str, set[str]] = {
     "GET /drafts/{name}": {"kind", "tenant", "visibility", "allowed_groups", "version"},
     "POST /drafts/{name}/activate": set(),
     "GET toolkit-config": set(),
-    "PUT toolkits/{slug}": set(),
+    "PUT toolkits/{slug}": {"version"},
 }
 
 

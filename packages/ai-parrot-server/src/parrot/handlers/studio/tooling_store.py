@@ -220,7 +220,7 @@ class AgentToolingStore:
     """Load and persist agent-level toolkit / MCP configuration (DB row or agent YAML)."""
 
     def __init__(self, handler: Any) -> None:
-        self.handler = handler
+        self.handler, self.last_version = handler, None  # last_version: Studio version after the last write
 
     async def load(self, name: str) -> ToolingState:
         """Load agent tooling, raising ``LookupError`` when the agent is unknown."""
@@ -360,7 +360,7 @@ class AgentToolingStore:
             raise PermissionError(state.reason or "agent tooling is read-only")
         if state.source == "studio":
             part, record, service = state._studio
-            await service.delete_toolkit(
+            self.last_version = await service.delete_toolkit(
                 part, name, slug, actor=actor if actor is not None else record.owner, guard=guard or self._guard(record)
             )
             return
@@ -386,7 +386,7 @@ class AgentToolingStore:
             raise PermissionError(state.reason or "agent has no owner; cannot store secrets")
         if state.source == "studio":
             part, record, service = state._studio
-            await service.put_mcp_servers(
+            self.last_version = await service.put_mcp_servers(
                 part, name, servers, actor=actor if actor is not None else record.owner,
                 guard=guard or self._guard(record),
             )
@@ -416,7 +416,7 @@ class AgentToolingStore:
     ) -> ToolkitSpec:
         """Studio rows: the service gates the FINAL tooling BEFORE any vault write (spec §2.5b), then commits."""
         part, record, service = state._studio
-        await service.put_toolkit(
+        self.last_version = await service.put_toolkit(
             part, name, slug, params, user_overridable,
             actor=actor if actor is not None else record.owner, guard=guard or self._guard(record),
         )
