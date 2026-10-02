@@ -54,6 +54,13 @@ class StudioAssistantHandler(StudioBaseView):
     def _instances(self) -> dict[str, AgentStudioAgent]:
         return self.request.app.setdefault(_ASSISTANTS_APP_KEY, {})
 
+    async def _declarative_only(self) -> bool:
+        """Database mode: the toolset follows the partition's Python-draft policy (tenant ⇒ declarative only)."""
+        storage = self.request.app.get("studio_storage")
+        if storage is None or storage.backend != "database":
+            return False
+        return not storage.services.drafts.python_drafts_allowed(await self._studio_partition())
+
     async def _get_or_create_assistant(self, session: Any, *, api_key: str | None) -> AgentStudioAgent:
         """Return the reused assistant instance for this session, creating
         it once. Mirrors TASK-2517's ``_get_or_create_test_bot``."""
@@ -65,7 +72,9 @@ class StudioAssistantHandler(StudioBaseView):
                 return agent
             # Session referenced an instance that expired/was cleaned up.
 
-        agent = AgentStudioAgent(name=f"agent_studio_{uuid.uuid4().hex[:8]}", api_key=api_key)
+        agent = AgentStudioAgent(
+            name=f"agent_studio_{uuid.uuid4().hex[:8]}", api_key=api_key, declarative_only=await self._declarative_only()
+        )
         await agent.configure(self.request.app)
         instances[agent.name] = agent
         if session is not None:

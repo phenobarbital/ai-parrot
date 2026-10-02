@@ -81,6 +81,54 @@ def _require_user_id() -> str:
     return str(ctx.user_id)
 
 
+async def _studio_partition_and_services(app: Any) -> tuple[Any, Any] | None:
+    """``(partition, services)`` in database mode, else ``None`` (filesystem path).
+
+    The partition is the bound ``studio_scope.caller``'s (FEAT-605) when present, else GLOBAL (X11).
+    """
+    storage = app.get("studio_storage")
+    if storage is None or storage.backend != "database":
+        return None
+    from parrot.handlers.studio.storage.models import StudioPartition  # lazy: server satellite
+
+    scope = (getattr(current_context(), "kwargs", None) or {}).get("studio_scope")
+    part = StudioPartition.from_scope(scope.caller) if scope is not None else StudioPartition.GLOBAL
+    storage.require_for(part)
+    return part, storage.services
+
+
+def _refusal_code(exc: Exception) -> str | None:
+    """X14 code of a storage/service refusal, or ``None`` for anything that is not one."""
+    from pydantic import ValidationError
+
+    from parrot.handlers.studio.storage import models as m
+    from parrot.handlers.studio.storage.services._common import StudioValidationError
+
+    if isinstance(exc, ValidationError):
+        return "validation_error"
+    if isinstance(exc, (StudioValidationError, m.StudioAssetTooLarge)):
+        return getattr(exc, "code", "validation_error")
+    table = (
+        (m.StudioNameConflict, "duplicate"),
+        (m.StudioNotFound, "not_found"),
+        (m.StudioToolingRefused, "tooling_not_permitted"),
+        ((m.StudioVersionConflict, m.StudioStaleAuthorization), "version_conflict"),
+        (m.StudioStorageUnavailable, "studio_storage_unavailable"),
+    )
+    return next((code for kinds, code in table if isinstance(exc, kinds)), None)
+
+
+async def _refusing(awaitable: Any) -> dict:
+    """Await a service call; a policy/validation refusal becomes ``{error, error_code}`` (X14), the rest raises."""
+    try:
+        return await awaitable
+    except Exception as exc:  # pylint: disable=broad-except
+        code = _refusal_code(exc)
+        if code is None:
+            raise
+        return {"error": str(exc) or code, "error_code": code}
+
+
 async def _require_agent_owner(app: Any, agent_name: str, user_id: str) -> None:
     """Refuse unless ``user_id`` owns ``agent_name`` (adversarial-review fix).
 
@@ -309,6 +357,8 @@ async def create_yaml_agent(
     # without it, agents built via the assistant were unowned, which
     # fail-closed ownership checks then treat as "nobody may modify".
     user_id = _require_user_id()
+    if (ps := await _studio_partition_and_services(app)) is not None:
+        return await _refusing(_db_create_agent(app, ps, user_id, name, bot_class, llm, description, category))
     manager = app.get("bot_manager")
     if manager is None:
         raise RuntimeError("BotManager unavailable — cannot resolve bot_class.")
@@ -365,7 +415,9 @@ async def _write_asset_file(agent_name: str, kind: str, filename: str, content: 
     # write into any other user's agent directories.
     app = _require_app()
     user_id = _require_user_id()
-    await _require_agent_owner(app, agent_name, user_id)
+    ps = await _studio_partition_and_services(app)
+    if ps is None:
+        await _require_agent_owner(app, agent_name, user_id)
 
     base_dir = Path(AGENTS_DIR) / agent_name / kind
     target = resolve_safe_path(base_dir, filename)
@@ -382,6 +434,9 @@ async def _write_asset_file(agent_name: str, kind: str, filename: str, content: 
         content_error = _StudioFilesMixin._validate_skill_content(content)
         if content_error:
             raise ValueError(content_error)
+
+    if ps is not None:
+        return await _refusing(_db_put_asset(ps, user_id, agent_name, kind, filename, content))
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content)
@@ -483,13 +538,15 @@ async def publish_skill_to_catalog(
     from parrot.skills.models import SkillCategory
 
     app = _require_app()
-    if app.get("database") is None:
-        raise RuntimeError("Database unavailable — cannot publish to the shared catalog.")
-
     try:
         resolved_category = SkillCategory(category)
     except ValueError:
         resolved_category = SkillCategory.GENERAL
+    if (ps := await _studio_partition_and_services(app)) is not None:
+        publish = _db_publish_skill(ps, _require_user_id(), name, description, resolved_category.value, triggers, body)
+        return await _refusing(publish)
+    if app.get("database") is None:
+        raise RuntimeError("Database unavailable — cannot publish to the shared catalog.")
 
     # A bare, request-less instance of the handler's DB glue — its
     # methods only need `.request.app` / `.logger`, never the full
@@ -524,6 +581,101 @@ async def publish_skill_to_catalog(
         await helper._flag_stale(entry)  # pylint: disable=protected-access
 
     return helper._entry_to_dict(entry)  # pylint: disable=protected-access
+
+
+# ---------------------------------------------------------------------------
+# Database mode (FEAT-621 M9): the same tools, through the Studio services
+# ---------------------------------------------------------------------------
+
+
+async def _db_create_agent(app: Any, ps: tuple, user_id: str, name: str, bot_class: str, llm: str | None,
+                           description: str | None, category: str) -> dict:
+    """``StudioAgentService.create``; the non-tenant partition keeps the live ``get_bot_class`` resolution."""
+    from parrot.handlers.studio.storage.models import StudioAgentDefinition
+
+    part, services = ps
+    manager = app.get("bot_manager")
+    if part.tenant is None and manager is not None and manager.get_bot_class(bot_class) is None:
+        raise ValueError(f"Unknown bot_class '{bot_class}'.")
+    definition = StudioAgentDefinition(bot_class=bot_class, llm=llm, description=description, category=category)
+    rec = await services.agents.create(part, name=name, owner=user_id, definition=definition)
+    return {"agent_name": rec.name, "agent_id": str(rec.agent_id), "version": rec.version, "tenant": rec.tenant,
+            "source": "studio", "persisted": True, "registered": False, "yaml_path": None}
+
+
+async def _db_put_asset(ps: tuple, user_id: str, agent_name: str, kind: str, filename: str, content: str) -> dict:
+    """``StudioAssetService.put`` after the owner check on the agent row (fail closed, like the file path)."""
+    from parrot.handlers.studio.storage.models import StudioAssetInput, StudioWriteGuard
+
+    part, services = ps
+    agent = await services.agents.get(part, agent_name)
+    if agent is None:
+        raise ValueError(f"Agent '{agent_name}' not found.")
+    if str(agent.owner) != str(user_id):
+        raise PermissionError(f"Agent '{agent_name}' is not owned by the calling user; refusing to write.")
+    asset = StudioAssetInput(kind=kind, name=filename, content=content)
+    record, version = await services.assets.put(part, agent_name, asset, actor=user_id, guard=StudioWriteGuard())
+    return {"agent_name": agent_name, "kind": kind, "path": filename, "size": record.size, "version": version,
+            "reload_required": False}
+
+
+async def _db_publish_skill(ps: tuple, user_id: str, name: str, description: str, category: str,
+                            triggers: list[str], body: str) -> dict:
+    """``StudioSkillCatalogService.publish`` (the derived search index is rebuilt by the resync endpoint)."""
+    part, services = ps
+    rec = await services.skills.publish(part, owner=user_id, name=name, description=description, body=body,
+                                        category=category, triggers=list(triggers))
+    return {"skill_id": str(rec.skill_id), "name": rec.name, "description": rec.description,
+            "category": rec.category, "owner": rec.owner, "triggers": list(rec.triggers or []),
+            "version": rec.version, "status": rec.status, "tenant": rec.tenant, "visibility": rec.visibility,
+            "search_index_stale": rec.search_index_stale}
+
+
+async def _db_save_bundle(ps: tuple, user_id: str, name: str, bundle: dict) -> dict:
+    """``StudioDraftService.save_bundle`` for a bundle named ``name``; replacing another user's draft is refused."""
+    from parrot.handlers.studio.storage.models import StudioAgentBundle
+
+    part, services = ps
+    parsed = StudioAgentBundle.model_validate({**bundle, "name": bundle.get("name", name)})
+    if parsed.name != name:
+        raise ValueError(f"bundle.name '{parsed.name}' must equal the draft name '{name}'.")
+    existing = await services.drafts.get(part, name)
+    if existing is not None and str(existing.owner) != str(user_id):
+        raise PermissionError(f"Draft '{name}' is not owned by the calling user; refusing to write.")
+    rec = await services.drafts.save_bundle(part, owner=user_id, bundle=parsed)
+    return {"name": name, "status": rec.status, "file_path": None, "validation_report": rec.validation,
+            "kind": "declarative", "version": rec.version}
+
+
+@tool(
+    name="save_agent_bundle",
+    requires_confirmation=True,
+    confirm_template="Save the declarative agent bundle {name} as a draft? It will NOT be live until activated.",
+    description=(
+        "Save a declarative agent bundle (definition, toolkits, MCP servers, text assets) as a draft in the "
+        "database. The only draft tool on tenant partitions; NEVER activates it — activation is the separate, "
+        "explicit POST /astudio/drafts/{name}/activate endpoint."
+    ),
+)
+async def save_agent_bundle(name: str, bundle: dict) -> dict:
+    """Save a declarative agent draft through ``StudioDraftService`` (database mode only).
+
+    Args:
+        name: Draft slug (``^[a-z0-9_-]+$``); equals ``bundle["name"]`` when given.
+        bundle: ``{definition, toolkits, mcp_servers, assets}`` (no secrets).
+
+    Returns:
+        ``{name, status, validation_report, kind, version}``, or ``{error, error_code}`` on a policy refusal.
+    """
+    from parrot.handlers.studio._base import is_valid_slug
+
+    app = _require_app()
+    user_id = _require_user_id()
+    if (ps := await _studio_partition_and_services(app)) is None:
+        return {"error": "Declarative drafts need database storage.", "error_code": "studio_storage_unavailable"}
+    if not is_valid_slug(name):
+        raise ValueError(f"Invalid draft name '{name}'; must match ^[a-z0-9_-]+$.")
+    return await _refusing(_db_save_bundle(ps, user_id, name, bundle))
 
 
 # ---------------------------------------------------------------------------
@@ -566,10 +718,15 @@ async def list_existing_agents() -> list:
     return [meta.name for meta in manager.registry.list_agents()]
 
 
-def build_studio_tools() -> list:
-    """Return every AgentStudio meta-agent tool (FEAT-467 TASK-2521)."""
+def build_studio_tools(*, declarative_only: bool = False) -> list:
+    """Return every AgentStudio meta-agent tool (FEAT-467 TASK-2521).
+
+    ``declarative_only`` (tenant partitions, FEAT-621 X11) drops ``save_agent_draft`` (Python source) and adds
+    ``save_agent_bundle`` (declarative drafts).
+    """
+    drafts = [save_agent_bundle] if declarative_only else [save_agent_draft]
     return [
-        save_agent_draft,
+        *drafts,
         create_yaml_agent,
         write_identity_file,
         write_kb_file,
