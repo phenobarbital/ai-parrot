@@ -543,7 +543,9 @@ async def publish_skill_to_catalog(
     except ValueError:
         resolved_category = SkillCategory.GENERAL
     if (ps := await _studio_partition_and_services(app)) is not None:
-        publish = _db_publish_skill(ps, _require_user_id(), name, description, resolved_category.value, triggers, body)
+        publish = _db_publish_skill(
+            app, ps, _require_user_id(), name, description, resolved_category.value, triggers, body
+        )
         return await _refusing(publish)
     if app.get("database") is None:
         raise RuntimeError("Database unavailable — cannot publish to the shared catalog.")
@@ -619,12 +621,19 @@ async def _db_put_asset(ps: tuple, user_id: str, agent_name: str, kind: str, fil
             "reload_required": False}
 
 
-async def _db_publish_skill(ps: tuple, user_id: str, name: str, description: str, category: str,
+async def _db_publish_skill(app: Any, ps: tuple, user_id: str, name: str, description: str, category: str,
                             triggers: list[str], body: str) -> dict:
-    """``StudioSkillCatalogService.publish`` (the derived search index is rebuilt by the resync endpoint)."""
+    """``StudioSkillCatalogService.publish``, then the derived search index (the handler's own best-effort upload).
+
+    A failed upload leaves ``search_index_stale`` true (the resync endpoint repairs it); a success leaves it false.
+    """
+    from parrot.handlers.studio.skills_catalog import index_published_skill, org_id_from_session  # lazy: server
+
     part, services = ps
     rec = await services.skills.publish(part, owner=user_id, name=name, description=description, body=body,
                                         category=category, triggers=list(triggers))
+    session = getattr(getattr(current_context(), "request", None), "session", None)
+    rec = await index_published_skill(app, services.skills, part, rec, org_id_from_session(session))
     return {"skill_id": str(rec.skill_id), "name": rec.name, "description": rec.description,
             "category": rec.category, "owner": rec.owner, "triggers": list(rec.triggers or []),
             "version": rec.version, "status": rec.status, "tenant": rec.tenant, "visibility": rec.visibility,

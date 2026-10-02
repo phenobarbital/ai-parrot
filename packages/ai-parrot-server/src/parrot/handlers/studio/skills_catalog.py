@@ -195,6 +195,33 @@ async def _upload_to_index(registry: Any, rec: Any) -> None:
     )
 
 
+def org_id_from_session(session: Any) -> str:
+    """The shared-namespace org id carried by ``session`` (``userinfo.org_id``); ``"default"`` when absent."""
+    if not session or not hasattr(session, "get"):
+        return DEFAULT_ORG_ID
+    userinfo = session.get(AUTH_SESSION_OBJECT, {})
+    if not isinstance(userinfo, dict):
+        return DEFAULT_ORG_ID
+    org_id = userinfo.get("org_id") or userinfo.get("organization_id")
+    return str(org_id) if org_id else DEFAULT_ORG_ID
+
+
+async def index_published_skill(app: Any, svc: Any, part: Any, rec: Any, org_id: str = DEFAULT_ORG_ID) -> Any:
+    """Best-effort upload of a published/updated catalogue record to the partition's derived search index.
+
+    Shared by the HTTP handler and the assistant's ``publish_skill_to_catalog`` tool. A failure never raises: the
+    row is flagged ``search_index_stale`` (the resync endpoint / startup reconcile repairs it) and the returned
+    record carries the flag; on success the record is returned unchanged (flag cleared).
+    """
+    try:
+        await _upload_to_index(_get_shared_skill_registry(app, org_id, part), rec)
+        return rec
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.warning("Studio: registry dual-write failed for skill '%s': %s", rec.name, exc)
+    await svc.mark_stale(part, rec.skill_id)
+    return dataclasses.replace(rec, search_index_stale=True)
+
+
 async def _rebuild_index(svc: Any, part: Any, registry: Any, rows: list) -> tuple[int, int]:
     """Re-upload ``rows`` into the derived index, clearing ``search_index_stale``; returns ``(resynced, failed)``."""
     resynced = failed = 0
@@ -238,13 +265,7 @@ class _StudioSkillsMixin:
             session = await self._resolve_session()
         except Exception:  # pylint: disable=broad-except
             return DEFAULT_ORG_ID
-        if not session or not hasattr(session, "get"):
-            return DEFAULT_ORG_ID
-        userinfo = session.get(AUTH_SESSION_OBJECT, {})
-        if not isinstance(userinfo, dict):
-            return DEFAULT_ORG_ID
-        org_id = userinfo.get("org_id") or userinfo.get("organization_id")
-        return str(org_id) if org_id else DEFAULT_ORG_ID
+        return org_id_from_session(session)
 
     async def _get_entry_by_id(self, skill_id: str) -> SkillCatalogEntry | None:
         db = self.request.app.get("database")
@@ -380,13 +401,7 @@ class _StudioSkillsMixin:
 
     async def _db_index(self, svc: Any, part: Any, rec: Any) -> Any:
         """Best-effort upload to the derived index; a failure flags ``search_index_stale`` and never raises."""
-        try:
-            await _upload_to_index(await self._db_registry(part), rec)
-            return rec
-        except Exception as exc:  # pylint: disable=broad-except
-            self.logger.warning("Studio: registry dual-write failed for skill '%s': %s", rec.name, exc)
-        await svc.mark_stale(part, rec.skill_id)
-        return dataclasses.replace(rec, search_index_stale=True)
+        return await index_published_skill(self.request.app, svc, part, rec, await self._get_org_id())
 
 
 @is_authenticated()
@@ -423,17 +438,21 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
     async def _db_get(self, storage, part):
         """One skill (``/skills/{id}``, with the index versions) or the category-grouped list."""
         skill_id = self.request.match_info.get("id")
-        if skill_id:
-            rec, denied = await self._db_skill(storage, part, skill_id, manage=False)
-            if denied is not None:
-                return denied
-            data = _skill_dict(rec)
-            try:
-                data["versions"] = await (await self._db_registry(part)).get_skill_versions(str(rec.skill_id))
-            except Exception as exc:  # pylint: disable=broad-except
-                self.logger.warning("Studio: failed to fetch registry versions for '%s': %s", skill_id, exc)
-                data["versions"] = []
-            return self.json_response(data)
+        if not skill_id:
+            return await self._db_list(storage, part)
+        rec, denied = await self._db_skill(storage, part, skill_id, manage=False)
+        if denied is not None:
+            return denied
+        data = _skill_dict(rec)
+        try:
+            data["versions"] = await (await self._db_registry(part)).get_skill_versions(str(rec.skill_id))
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning("Studio: failed to fetch registry versions for '%s': %s", skill_id, exc)
+            data["versions"] = []
+        return self.json_response(data)
+
+    async def _db_list(self, storage, part):
+        """The visible skills grouped by category (optional ``category`` / ``owner`` filters)."""
         qs = self.request.rel_url.query
         valid = [c.value for c in SkillCategory]
         if qs.get("category") and qs["category"] not in valid:
@@ -449,14 +468,18 @@ class StudioSkillsCatalogHandler(_StudioSkillsMixin, StudioBaseView):
             grouped.setdefault(rec.category, []).append(_skill_dict(rec))
         return self.json_response({"skills": grouped, "count": len(recs)})
 
-    async def _db_post(self, storage, part):
-        """Publish: Postgres first, the derived index best-effort."""
+    async def _db_publish_request(self):
+        """The :class:`SkillPublishRequest` of a publish, or the refusal (route, author gate, body)."""
         if self.request.match_info.get("id"):
             return self._error("Use POST /astudio/skills (no id in the URL) to publish.", status=400,
                                code="invalid_route")
         if (denied := await self._require_author()) is not None:
             return denied
-        req = await self._db_request()
+        return await self._db_request()
+
+    async def _db_post(self, storage, part):
+        """Publish: Postgres first, the derived index best-effort."""
+        req = await self._db_publish_request()
         if isinstance(req, web.Response):
             return req
         user = await self._get_user()

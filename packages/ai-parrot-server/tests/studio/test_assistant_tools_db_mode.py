@@ -160,3 +160,61 @@ async def test_handler_assistant_gets_tenant_toolset(aiohttp_client, pool, monke
     agent = await handler._get_or_create_assistant(None, api_key="sk-ant-offline")
     names = _names(agent.agent_tools())
     assert "save_agent_bundle" in names and "save_agent_draft" not in names
+
+
+# ---- the assistant's publish updates the derived search index (review fix D7a) -----------------------------------
+SKILL = dict(name="s1", description="rotate the signing keys", category="general", triggers=["/rotate"],
+             body="---\nname: s1\ndescription: rotate the signing keys\n---\nrotate the signing keys monthly")
+
+
+def _embed_words(text: str):
+    """A deterministic offline embedder (bag of hashed words) — the REAL registry, no model download."""
+    import zlib
+
+    import numpy as np
+
+    vec = np.zeros(768, dtype=np.float32)
+    for word in text.lower().split():
+        vec[zlib.crc32(word.encode()) % 768] += 1.0
+    return vec
+
+
+async def _offline_index(app, embedder=None):
+    """The app's real derived GLOBAL index, configured with an offline embedder."""
+    from parrot.handlers.studio import skills_catalog as sc
+
+    async def _default(text):
+        return _embed_words(text)
+
+    registry = sc._get_shared_skill_registry(app, sc.DEFAULT_ORG_ID, StudioPartition.GLOBAL)
+    await registry.configure(embedding_model=embedder or _default)
+    return registry
+
+
+async def test_assistant_publish_updates_the_derived_index(aiohttp_client, pool, tmp_path):  # noqa: F811
+    client = await aiohttp_client(_app(pool))
+    app = client.app
+    registry = await _offline_index(app)
+    with _ctx(app):
+        skill = await _call(tools_module.publish_skill_to_catalog, **SKILL)
+    assert skill["search_index_stale"] is False
+    hits = await registry.search_skills("rotate the signing keys")            # searchable with no resync
+    assert [h.skill.metadata.name for h in hits] == ["s1"] and str(hits[0].skill.skill_id) == skill["skill_id"]
+    assert (tmp_path / "rt" / "_shared" / "-" / "skills" / "skills.json").exists()   # the derived location
+    row = await app["studio_storage"].services.skills.get(StudioPartition.GLOBAL, skill["skill_id"])
+    assert row.search_index_stale is False
+
+
+async def test_assistant_publish_flags_stale_when_the_index_fails(aiohttp_client, pool):  # noqa: F811
+    client = await aiohttp_client(_app(pool))
+    app = client.app
+
+    async def _broken(_text):
+        raise RuntimeError("embedding backend down")
+
+    await _offline_index(app, _broken)
+    with _ctx(app):
+        skill = await _call(tools_module.publish_skill_to_catalog, **SKILL)
+    assert skill["search_index_stale"] is True and skill["name"] == "s1"      # published, flagged for the resync
+    row = await app["studio_storage"].services.skills.get(StudioPartition.GLOBAL, skill["skill_id"])
+    assert row is not None and row.search_index_stale is True
