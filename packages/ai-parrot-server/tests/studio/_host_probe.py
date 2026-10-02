@@ -40,6 +40,7 @@ PROBE_MODULE = textwrap.dedent(
         tool_prefix = "tp"
         auto_open = True
         read_tools: ClassVar[frozenset] = frozenset({"whoami"})
+        options_params = frozenset({"project"})
 
         async def _open(self) -> None:
             COUNTERS["opened"] += 1

@@ -11,7 +11,7 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -94,6 +94,23 @@ def _reset_cache() -> None:
     _TC_MOD._CATALOG_CACHE = None
 
 
+def _registry(mapping: dict):
+    """Patch the catalogue's ToolkitResolver (FEAT-622 M2) with a fake over ``mapping`` (slug -> dotted path)."""
+    import importlib
+
+    from parrot.tools.resolver import ToolkitEntry
+
+    class _FakeResolver:
+        def entries(self):
+            return [ToolkitEntry(slug=k, dotted_path=v, source="parrot_tools") for k, v in sorted(mapping.items())]
+
+        def resolve(self, slug):
+            module_path, class_name = mapping[slug].rsplit(".", 1)
+            return getattr(importlib.import_module(module_path), class_name, None)
+
+    return patch.object(_TC_MOD, "get_toolkit_resolver", lambda: _FakeResolver())
+
+
 # ---------------------------------------------------------------------------
 # Tests — _build_catalog
 # ---------------------------------------------------------------------------
@@ -112,7 +129,7 @@ class TestBuildCatalog:
             "aaa-tool": "pkg.aaa.AAA",
             "mmm-tool": "pkg.mmm.MMM",
         }
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", registry):
+        with _registry(registry):
             result = _build_catalog()
 
         slugs = [e["slug"] for e in result]
@@ -121,7 +138,7 @@ class TestBuildCatalog:
     def test_each_entry_has_slug_and_dotted_path(self) -> None:
         """Every entry must contain slug and dotted_path."""
         registry = {"my-tool": "some.module.MyTool"}
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", registry):
+        with _registry(registry):
             result = _build_catalog()
 
         assert len(result) == 1
@@ -130,7 +147,7 @@ class TestBuildCatalog:
 
     def test_empty_registry_returns_empty_list(self) -> None:
         """An empty TOOL_REGISTRY yields an empty catalog."""
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", {}):
+        with _registry({}):
             result = _build_catalog()
         assert result == []
 
@@ -145,7 +162,7 @@ class TestBuildCatalog:
 
         registry = {"weather": "fake_pkg.fake_module._FakeTool"}
         with (
-            patch.object(_TC_MOD, "TOOL_REGISTRY", registry),
+            _registry(registry),
             patch.dict(sys.modules, {"fake_pkg.fake_module": fake_module}),
         ):
             result = _build_catalog()
@@ -156,7 +173,7 @@ class TestBuildCatalog:
     def test_missing_tool_class_does_not_raise(self) -> None:
         """An import error for a tool class should not crash the catalog build."""
         registry = {"broken-tool": "nonexistent_pkg.does_not_exist.BrokenTool"}
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", registry):
+        with _registry(registry):
             result = _build_catalog()  # must not raise
 
         assert len(result) == 1
@@ -176,7 +193,7 @@ class TestBuildCatalog:
 
         registry = {"cat-tool": "cat_pkg.mod._CategorisedTool"}
         with (
-            patch.object(_TC_MOD, "TOOL_REGISTRY", registry),
+            _registry(registry),
             patch.dict(sys.modules, {"cat_pkg.mod": fake_module}),
         ):
             result = _build_catalog()
@@ -222,7 +239,7 @@ class TestToolCatalogHandlerGet:
         """get() returns a list (possibly empty)."""
         stub = _StubHandler()
         registry = {"t1": "pkg.T1", "t2": "pkg.T2"}
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", registry):
+        with _registry(registry):
             result = await stub.get()
         assert isinstance(result, list)
         assert len(result) == 2
@@ -232,7 +249,7 @@ class TestToolCatalogHandlerGet:
         """get() returns entries sorted by slug."""
         stub = _StubHandler()
         registry = {"zzz": "p.Z", "aaa": "p.A"}
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", registry):
+        with _registry(registry):
             result = await stub.get()
         assert [e["slug"] for e in result] == ["aaa", "zzz"]
 
@@ -241,7 +258,7 @@ class TestToolCatalogHandlerGet:
         """Second call to get() reuses the cache (no second build)."""
         stub = _StubHandler()
         registry = {"only": "p.Only"}
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", registry):
+        with _registry(registry):
             await stub.get()
             first_cache = _TC_MOD._CATALOG_CACHE
             await stub.get()
@@ -252,7 +269,7 @@ class TestToolCatalogHandlerGet:
     async def test_get_with_empty_registry(self) -> None:
         """get() returns empty list when registry is empty."""
         stub = _StubHandler()
-        with patch.object(_TC_MOD, "TOOL_REGISTRY", {}):
+        with _registry({}):
             result = await stub.get()
         assert result == []
 

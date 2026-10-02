@@ -1,6 +1,6 @@
 """Handler for the tool catalog endpoint (FEAT-149 TASK-1039).
 
-Exposes the ``parrot_tools.TOOL_REGISTRY`` as a read-only JSON catalog so the
+Exposes the ToolkitResolver entries (built-ins, ``parrot_tools`` and host toolkits) as a read-only JSON catalog so the
 frontend can present available tools when configuring an ephemeral user agent.
 
 Route:
@@ -22,18 +22,12 @@ Items are sorted by ``slug`` for deterministic responses.
 from __future__ import annotations
 
 import asyncio
-import importlib
-import logging
 from typing import Any, Dict, List
 
 from navconfig.logging import logging as nav_logging
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
-
-try:
-    from parrot_tools import TOOL_REGISTRY  # type: ignore[import-untyped]
-except ImportError:  # pragma: no cover — parrot_tools may not be installed in all envs
-    TOOL_REGISTRY: Dict[str, str] = {}
+from parrot.tools.resolver import ToolkitEntry, get_toolkit_resolver
 
 _logger = nav_logging.getLogger("Parrot.ToolCatalogHandler")
 
@@ -41,43 +35,48 @@ _logger = nav_logging.getLogger("Parrot.ToolCatalogHandler")
 _CATALOG_CACHE: List[Dict[str, Any]] | None = None
 
 
+def _enrich(entry: Dict[str, Any], cls: type) -> None:
+    """Add the first docstring line as ``description`` and the ``category`` of ``cls`` to ``entry``."""
+    doc = (cls.__doc__ or "").strip()
+    if doc:
+        # Take only the first non-empty line as the description.
+        entry["description"] = doc.split("\n")[0].strip()
+    category = getattr(cls, "category", None)
+    if category:
+        entry["category"] = str(category)
+
+
+def _catalog_entry(item: ToolkitEntry, cls: type | None) -> Dict[str, Any]:
+    """Build one catalogue dict for a resolver entry; ``cls`` is its resolved class (if any)."""
+    dotted_path = item.dotted_path
+    if dotted_path is None and cls is not None:
+        dotted_path = f"{cls.__module__}.{cls.__qualname__}"
+    entry: Dict[str, Any] = {"slug": item.slug, "dotted_path": dotted_path, "source": item.source}
+    if cls is not None:
+        _enrich(entry, cls)
+    return entry
+
+
 def _build_catalog() -> List[Dict[str, Any]]:
-    """Build a sorted list of tool entries from ``TOOL_REGISTRY``.
+    """Build a sorted list of tool entries from the shared ToolkitResolver (FEAT-622 M2).
 
     Performs a best-effort import of each tool class to extract a
     description from its docstring.  Entries where the class cannot be
     imported still appear in the output — they just lack a ``description``.
 
     Returns:
-        Sorted list of ``{slug, dotted_path, description?, category?}`` dicts.
+        Sorted list of ``{slug, dotted_path, source, description?, category?}`` dicts.
     """
+    resolver = get_toolkit_resolver()
     entries: List[Dict[str, Any]] = []
-
-    for slug, dotted_path in sorted(TOOL_REGISTRY.items()):
-        entry: Dict[str, Any] = {
-            "slug": slug,
-            "dotted_path": dotted_path,
-        }
-
-        # Best-effort: extract docstring / category from the tool class.
+    for item in resolver.entries():
         try:
-            module_path, class_name = dotted_path.rsplit(".", 1)
-            mod = importlib.import_module(module_path)
-            cls = getattr(mod, class_name, None)
-            if cls is not None:
-                doc = (cls.__doc__ or "").strip()
-                if doc:
-                    # Take only the first non-empty line as the description.
-                    entry["description"] = doc.split("\n")[0].strip()
-                category = getattr(cls, "category", None)
-                if category:
-                    entry["category"] = str(category)
+            cls = resolver.resolve(item.slug)
         except Exception:  # noqa: BLE001
             # Never let an import error break the catalog response.
-            _logger.debug("Could not enrich tool %r (%s)", slug, dotted_path)
-
-        entries.append(entry)
-
+            _logger.debug("Could not enrich tool %r (%s)", item.slug, item.dotted_path)
+            cls = None
+        entries.append(_catalog_entry(item, cls))
     return entries
 
 
