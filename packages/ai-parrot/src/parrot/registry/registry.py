@@ -26,12 +26,12 @@ except ImportError:
     pass
 from navconfig.logging import logging
 from navconfig import BASE_DIR
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from aiohttp import web
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
 from ..models.stores import StoreConfig
-from ..models.basic import ModelConfig, ToolConfig
+from ..models.basic import ModelConfig, ToolConfig, normalize_tool_map
 from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig
 from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
@@ -234,7 +234,7 @@ class BotConfig(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
     # New attributes
     tools: Optional[ToolConfig] = Field(default=None)
-    toolkits: List[str] = Field(default_factory=list)
+    toolkits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
     model: Optional[ModelConfig] = Field(default=None)
     system_prompt: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
@@ -250,6 +250,11 @@ class BotConfig(BaseModel):
     # Each entry is a dict matching PolicyRuleConfig schema:
     #   {action: "agent:chat", effect: "allow", groups: ["engineering"]}
     policies: Optional[List["PolicyRuleConfig"]] = Field(default=None)
+
+    @field_validator("toolkits", mode="before")
+    @classmethod
+    def _coerce_toolkits(cls, v: Any) -> Dict[str, Dict[str, Any]]:
+        return normalize_tool_map(v)
 
 
 class AgentRegistry:
@@ -891,18 +896,18 @@ class AgentRegistry:
                 merged_args["temperature"] = config.model.temperature
                 merged_args["max_tokens"] = config.model.max_tokens
 
-            # 3. Handle Tools
-            # AbstractBot expects 'tools' list in init
-            tools_list = []
+            # 3. Handle Tools + Toolkits — merge both into one `tools=` list;
+            # each entry becomes a single-key {name: kwargs} dict, resolved
+            # and instantiated with those kwargs by
+            # AbstractBot._initialize_tools() (toolkits first, since that
+            # method already checks the toolkit registry before falling
+            # back to individual-tool lookup).
+            tools_list: List[Any] = []
             if config.tools:
-                # Add direct tools (list of dicts or strings)
-                if config.tools.tools:
-                    for tool_def in config.tools.tools:
-                        if isinstance(tool_def, str):
-                            tools_list.append(tool_def)
-                        elif isinstance(tool_def, dict) and "name" in tool_def:
-                            tools_list.append(tool_def["name"])
-                            # TODO: Handle detailed tool config if needed
+                for name, kwargs in config.tools.toolkits.items():
+                    tools_list.append({name: kwargs})
+                for name, kwargs in config.tools.tools.items():
+                    tools_list.append({name: kwargs})
 
             merged_args["tools"] = tools_list
 
@@ -938,17 +943,6 @@ class AgentRegistry:
                         await bot.add_mcp_server(mcp_obj)
                     except Exception as e:
                         self.logger.error(f"Failed to add MCP server to {config.name}: {e}")
-
-            # Handle Toolkits
-            if config.tools and config.tools.toolkits:
-                # If the bot has a tool_manager, we can use it to load toolkits
-                if hasattr(bot, "tool_manager"):
-                    for toolkit_name in config.tools.toolkits:
-                        try:
-                            # This assumes tool_manager has a way to load toolkits or we need to resolve them here
-                            pass
-                        except Exception as e:
-                            self.logger.error(f"Failed to load toolkit {toolkit_name} for {config.name}: {e}")
 
             return bot
 
@@ -1122,7 +1116,7 @@ class AgentRegistry:
             "origin": config.origin,
             "version": "1.0.0",
             "config": config.config,
-            "toolkits": list(config.toolkits),
+            "toolkits": config.toolkits,
             "mcp_servers": config.mcp_servers,
             "tags": sorted(config.tags) if config.tags else [],
             "singleton": config.singleton,

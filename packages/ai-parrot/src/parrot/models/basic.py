@@ -6,6 +6,7 @@ from pydantic import (
     ConfigDict,
     Field,
     computed_field,
+    field_validator,
 )
 
 
@@ -30,11 +31,71 @@ class ToolCall(BaseModel):
     execution_time: Optional[float] = None
 
 
+def normalize_tool_map(
+    value: Any, *, name_key: Optional[str] = None
+) -> Dict[str, Dict[str, Any]]:
+    """Normalize a tools/toolkits config entry to a ``name -> kwargs`` mapping.
+
+    Accepts the legacy list shapes (``["Name", ...]`` or, when *name_key* is
+    given, ``[{"name": "Name", ...kwargs}, ...]``) as well as the new
+    ``{"Name": {...kwargs}}`` mapping shape, so existing YAML keeps loading
+    unchanged while new YAML can attach per-entry constructor kwargs.
+
+    Args:
+        value: Raw field value as parsed from YAML/JSON (``None``, a list of
+            names/dicts, or a mapping of name to kwargs).
+        name_key: When entries are dicts, the key holding the tool/toolkit
+            name (e.g. ``"name"``). Required to disambiguate a multi-key
+            dict entry; a single-key dict entry is treated as
+            ``{name: kwargs}`` regardless of this argument.
+
+    Returns:
+        A mapping of tool/toolkit name to its constructor kwargs.
+
+    Raises:
+        ValueError: ``value`` is not a recognized shape, or a dict entry's
+            name cannot be determined.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return {name: dict(kwargs or {}) for name, kwargs in value.items()}
+    if isinstance(value, list):
+        result: Dict[str, Dict[str, Any]] = {}
+        for item in value:
+            if isinstance(item, str):
+                result[item] = {}
+            elif isinstance(item, dict):
+                if name_key and name_key in item:
+                    name = item[name_key]
+                    kwargs = {k: v for k, v in item.items() if k != name_key}
+                elif len(item) == 1:
+                    name, kwargs = next(iter(item.items()))
+                    kwargs = dict(kwargs or {})
+                else:
+                    raise ValueError(f"Ambiguous tool/toolkit entry, cannot determine name: {item!r}")
+                result[name] = kwargs
+            else:
+                raise ValueError(f"Invalid tool/toolkit entry: {item!r}")
+        return result
+    raise ValueError(f"Invalid tools/toolkits value: {value!r}")
+
+
 class ToolConfig(BaseModel):
     """Tool configuration for session-scoped ToolManager setup."""
-    tools: List[Dict[str, Any]] = Field(default_factory=list)
+    tools: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
-    toolkits: List[str] = Field(default_factory=list)
+    toolkits: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    @field_validator("tools", mode="before")
+    @classmethod
+    def _coerce_tools(cls, v: Any) -> Dict[str, Dict[str, Any]]:
+        return normalize_tool_map(v, name_key="name")
+
+    @field_validator("toolkits", mode="before")
+    @classmethod
+    def _coerce_toolkits(cls, v: Any) -> Dict[str, Dict[str, Any]]:
+        return normalize_tool_map(v)
 
 
 class ModelConfig(BaseModel):

@@ -82,7 +82,7 @@ class TestLoadAgentDefinitions:
         assert data["class_name"] == "BasicAgent"
         assert data["model"]["provider"] == "google"
         assert data["model"]["model"] == "gemini-2.5-flash"
-        assert data["tools"]["toolkits"] == ["JiraToolkit"]
+        assert data["tools"]["toolkits"] == {"JiraToolkit": {}}
         assert "system_prompt" in data
         assert data["enabled"] is True
 

@@ -24,11 +24,16 @@ class ToolInterface:
     - Configuring LLM clients
     """
 
-    def _initialize_tools(self, tools: List[Union[str, AbstractTool, ToolDefinition]]) -> None:
+    def _initialize_tools(
+        self, tools: List[Union[str, Dict[str, Dict[str, Any]], AbstractTool, ToolDefinition]]
+    ) -> None:
         """Initialize tools in the ToolManager.
 
         Supports multiple tool types:
         - String: Can be a toolkit name (e.g., "jira") or individual tool name
+        - Single-key dict ``{name: kwargs}``: Same resolution as the string
+          form, but ``kwargs`` is forwarded to the tool/toolkit constructor
+          (e.g. ``{"JiraToolkit": {"server_url": "https://..."}}``)
         - AbstractToolkit class or instance: Registers all tools from the toolkit
         - AbstractTool or ToolDefinition: Registers the tool directly
         """
@@ -37,7 +42,27 @@ class ToolInterface:
 
         for tool in tools:
             try:
-                if isinstance(tool, str):
+                if isinstance(tool, dict):
+                    if len(tool) != 1:
+                        self.logger.warning(f"Invalid tool/toolkit spec (expected a single-key mapping): {tool}")
+                        continue
+                    name, tool_kwargs = next(iter(tool.items()))
+                    tool_kwargs = tool_kwargs or {}
+
+                    # First check if it's a toolkit name in the registry
+                    if ToolkitRegistry.get(name.lower()) is not None:
+                        self.tool_manager.register_toolkit(name, **tool_kwargs)
+                        self.logger.info(f"Registered toolkit: {name}")
+                        continue
+
+                    # Then try individual tool loading
+                    if self.tool_manager.load_tool(name, **tool_kwargs):
+                        self.logger.info(f"Successfully loaded tool: {name}")
+                        continue
+
+                    self.logger.warning(f"Unknown tool or toolkit: {name}")
+
+                elif isinstance(tool, str):
                     # First check if it's a toolkit name in the registry
                     if ToolkitRegistry.get(tool.lower()) is not None:
                         self.tool_manager.register_toolkit(tool)

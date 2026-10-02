@@ -134,7 +134,7 @@ class TestRoundtripLossless:
         assert count == 1
 
         loaded = registry.get_metadata("minimal-agent").bot_config
-        assert loaded.toolkits == []
+        assert loaded.toolkits == {}
         assert loaded.prompt is None
         assert loaded.vector_store is None
         assert loaded.tags == set()
@@ -143,6 +143,31 @@ class TestRoundtripLossless:
         assert loaded.priority == 0
         assert loaded.at_startup is False
         assert loaded.singleton is False
+
+    def test_roundtrip_tools_and_toolkits_with_kwargs(self, registry):
+        """New dict-with-kwargs shape for tools/toolkits survives the
+        round trip losslessly, including per-entry constructor kwargs."""
+        config = BotConfig(
+            name="kwargs-agent",
+            class_name="BasicAgent",
+            module="parrot.bots.agent",
+            tools=ToolConfig(
+                tools={"DatasetManager": {"df_prefix": "df", "generate_guide": True}},
+                toolkits={"JiraToolkit": {"server_url": "https://x.atlassian.net", "auth_type": "basic"}},
+            ),
+            toolkits={"MyToolkit": {"scope": "read"}},
+        )
+        path = registry.create_agent_definition(config, category="general")
+        count = registry.load_agent_definitions(path.parent)
+        assert count == 1
+
+        loaded = registry.get_metadata("kwargs-agent").bot_config
+        assert loaded.tools == config.tools
+        assert loaded.tools.tools == {"DatasetManager": {"df_prefix": "df", "generate_guide": True}}
+        assert loaded.tools.toolkits == {
+            "JiraToolkit": {"server_url": "https://x.atlassian.net", "auth_type": "basic"}
+        }
+        assert loaded.toolkits == {"MyToolkit": {"scope": "read"}}
 
 
 class TestOldFormatCompat:
@@ -168,7 +193,7 @@ class TestOldFormatCompat:
 
         loaded = registry.get_metadata("legacy-agent").bot_config
         assert loaded.name == "legacy-agent"
-        assert loaded.toolkits == []
+        assert loaded.toolkits == {}
         assert loaded.vector_store is None
         assert loaded.tags == set()
         assert loaded.policies is None

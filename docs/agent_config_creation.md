@@ -73,6 +73,17 @@ tools:
   - "calculator"
 ```
 
+Tools that require constructor arguments can instead be given as a mapping
+of name to keyword arguments:
+
+```yaml
+tools:
+  google_search: {}
+  dataset_manager:
+    df_prefix: "df"
+    generate_guide: true
+```
+
 ### Toolkits
 
 List of toolkit names to register.
@@ -80,6 +91,17 @@ List of toolkit names to register.
 ```yaml
 toolkits:
   - "data_analysis_toolkit"
+```
+
+Toolkits that require configuration at construction time — e.g. credentials
+or a server URL — accept the same mapping-of-kwargs shape:
+
+```yaml
+toolkits:
+  JiraToolkit:
+    server_url: "https://mycompany.atlassian.net"
+    auth_type: "basic"
+    default_project: "ENG"
 ```
 
 ### MCP Servers (Model Context Protocol)
