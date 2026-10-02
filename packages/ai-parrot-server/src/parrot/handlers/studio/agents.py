@@ -213,6 +213,13 @@ class _StudioAgentsMixin:
             "updated_at": rec.updated_at.isoformat(),
             "visibility": rec.visibility,
             "allowed_groups": list(rec.allowed_groups),
+            # the registry-item keys stay (§2.9 is additive-only): a Studio row has no module/file/startup order
+            "class_name": rec.definition.bot_class,
+            "module": None,
+            "file_path": None,
+            "tags": [],
+            "priority": 0,
+            "at_startup": False,
         }
 
     async def _studio_authorize(self, rec: Any, name: str, *, manage: bool):

@@ -34,11 +34,6 @@ PY_SOURCE = (
     "@register_agent(name='shapedraft', replace=True)\n"
     "class ShapeDraft(BasicBot):\n    pass\n"
 )
-# A Studio agent is a NEW item kind (§2.9): it is not a registry class, so the registry-introspection keys of a
-# registry item have no value for it. Only these keys, only on the two GET routes, may be absent.
-REGISTRY_ONLY_KEYS = {"at_startup", "class_name", "file_path", "module", "priority", "tags"}
-REGISTRY_KIND_ROUTES = {"GET /agents item", "GET /agents/{name}"}
-
 # route label -> keys database mode adds on top of the filesystem-mode response (spec §2.9)
 ADDED: dict[str, set[str]] = {
     "POST /agents": {"agent_id", "version", "tenant"},
@@ -160,8 +155,7 @@ async def test_handlers_shapes_database_mode(snapshots):
     for label in fs:
         key = "GET /agents item" if label == "GET /agents" else label
         fs_keys, db_keys = _item_keys(label, fs[label][1]), _item_keys(label, db[label][1])
-        allowed_gap = REGISTRY_ONLY_KEYS if key in REGISTRY_KIND_ROUTES else set()
-        assert fs_keys - allowed_gap <= db_keys, (label, "removed in database mode", fs_keys - db_keys)
+        assert fs_keys <= db_keys, (label, "removed in database mode", fs_keys - db_keys)
         assert ADDED[key] <= db_keys, (label, "§2.9 key missing in database mode", ADDED[key] - db_keys)
         assert db_keys - fs_keys <= ADDED[key], (label, "key not listed in §2.9", db_keys - fs_keys - ADDED[key])
     assert db["POST /agents"][1]["source"] == "studio" and db["POST /agents"][1]["persisted"] is True

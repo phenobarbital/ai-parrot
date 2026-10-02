@@ -283,3 +283,15 @@ async def test_pbac_gate_applies_in_database_mode(aiohttp_client, pool):
     assert resp.status == 403 and body["code"] == "pbac_denied"
     assert (await client.patch(f"{BASE}/agents/alpha", json={"description": "x"})).status == 403
     assert (await client.get(f"{BASE}/agents")).status == 200
+
+
+async def test_studio_items_keep_the_registry_keys(aiohttp_client, pool):
+    """§2.9 is additive-only: a Studio item keeps the six registry keys of the filesystem-mode item."""
+    client = await aiohttp_client(_app(pool))
+    await _create(client)
+    keys = {"at_startup", "class_name", "file_path", "module", "priority", "tags"}
+    one = await (await client.get(f"{BASE}/agents/alpha")).json()
+    listed = (await (await client.get(f"{BASE}/agents")).json())["agents"][0]
+    for item in (one, listed):
+        assert keys <= set(item)
+        assert item["class_name"] == "BasicBot" and item["tags"] == [] and item["at_startup"] is False
