@@ -244,7 +244,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -254,8 +254,9 @@
       "parallelism_notes": "types StudioServices over StudioRepositories from TASK-3930 (storage/repositories.py); creates services/__init__.py (lazy export table, written once) and services/_common.py that TASK-3934..19 import",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3933-services-foundation-gate-limits.md"
+      "completed_at": "2026-10-01T21:58:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3933-services-foundation-gate-limits.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3934",
@@ -264,7 +265,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -275,8 +276,9 @@
       "parallelism_notes": "modifies studio/tooling_store.py after TASK-3927 (ToolingState.tooling_ref); uses StudioToolingGate/normalized_tooling_for from TASK-3933 (services/_common.py) and the tooling repository from TASK-3929 (transitive)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3934-tooling-service.md"
+      "completed_at": "2026-10-01T22:03:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3934-tooling-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3935",
@@ -285,7 +287,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -296,8 +298,9 @@
       "parallelism_notes": "constructor takes StudioToolingService from TASK-3934 (services/tooling.py) for bundle tooling validation; DB-free tests use InMemoryStudioRepositories from TASK-3931 (storage/testing.py); creates services/agents.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3935-agent-service.md"
+      "completed_at": "2026-10-01T22:14:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3935-agent-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3936",
@@ -306,7 +309,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -317,8 +320,9 @@
       "parallelism_notes": "uses validate_asset_input/normalized_tooling_for/StudioToolingGate from TASK-3933 (services/_common.py) and InMemoryStudioRepositories from TASK-3931 for DB-free tests; creates services/assets.py only (runs alongside TASK-3934/14)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3936-asset-service.md"
+      "completed_at": "2026-10-01T22:28:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3936-asset-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3937",
@@ -327,7 +331,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -337,8 +341,9 @@
       "parallelism_notes": "activation reuses StudioAgentService's create/validation path from TASK-3935 (services/agents.py); creates services/drafts.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3937-draft-service.md"
+      "completed_at": "2026-10-01T22:36:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3937-draft-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3938",
@@ -347,7 +352,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -357,8 +362,9 @@
       "parallelism_notes": "import_to_agent writes the asset through StudioAssetService from TASK-3936 (services/assets.py); creates services/catalog.py; sole FEAT-621 writer of handlers/models/skills_catalog.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3938-catalog-service.md"
+      "completed_at": "2026-10-01T22:38:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3938-catalog-service.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3939",
@@ -367,7 +373,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -375,8 +381,9 @@
       "parallelism_notes": "no dependency (pure bookkeeping over UUID/str keys); creates manager/studio_cache.py imported by TASK-3942",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3939-studio-runtime-cache.md"
+      "completed_at": "2026-10-01T22:39:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3939-studio-runtime-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3940",
@@ -385,7 +392,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -396,8 +403,9 @@
       "parallelism_notes": "sets bot._agents_dir for the KB hook from TASK-3923 (core stores/local.py); runs StudioToolingGate(phase='build') from TASK-3933 (services/_common.py); models from TASK-3922 arrive transitively; creates manager/studio_builder.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3940-studio-agent-builder.md"
+      "completed_at": "2026-10-01T22:48:06+00:00",
+      "file": "sdd/tasks/completed/TASK-3940-studio-agent-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3941",
@@ -406,7 +414,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -416,8 +424,9 @@
       "parallelism_notes": "imports STUDIO_KEY_PREFIX/STUDIO_TOOLING_REF_PREFIX from TASK-3922 (storage/models.py); first FEAT-621 writer of manager/manager.py (TASK-3943 follows); TASK-3942 imports cleanup_bot_instance",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3941-manager-studio-guards.md"
+      "completed_at": "2026-10-01T22:43:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3941-manager-studio-guards.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3942",
@@ -426,7 +435,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -439,8 +448,9 @@
       "parallelism_notes": "composes StudioRuntimeCache (TASK-3939, manager/studio_cache.py), StudioAgentBuilder (TASK-3940, manager/studio_builder.py), cleanup_bot_instance (TASK-3941, manager.py) and ensure_studio_storage + repos (TASK-3932, storage/backend.py); creates manager/studio_runtime.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3942-studio-agent-runtime.md"
+      "completed_at": "2026-10-01T23:08:01+00:00",
+      "file": "sdd/tasks/completed/TASK-3942-studio-agent-runtime.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3943",
@@ -449,7 +459,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -459,8 +469,9 @@
       "parallelism_notes": "calls StudioAgentRuntime/add_studio_runtime_hooks from TASK-3942 (manager/studio_runtime.py); second FEAT-621 edit of manager/manager.py after TASK-3941 (transitive)",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3943-manager-studio-lookup.md"
+      "completed_at": "2026-10-01T23:10:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3943-manager-studio-lookup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3944",

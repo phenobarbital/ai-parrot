@@ -198,10 +198,8 @@ class StudioRuntimeCache:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: manager/studio_cache.py: StudioCacheEntry + StudioRuntimeCache (current/session/install/retire/reclaimable/all_entries, acquire_dir/release_dir ref-counting per (agent_id, version)). Pure and synchronous. Added mark_cleaned(entry) (identity guard: leaves every structure, never returned again) and a private _unlink; install retires the replaced entry at entry.last_used. Session expiry = leases 0 AND (now>=expires_at or now-last_used>=session_ttl); idle base entries with 0 leases are retired inside reclaimable(). 8 tests pass; 10 mutations RED (the one survivor, the redundant cleaned filter, got its own test).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

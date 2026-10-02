@@ -213,10 +213,8 @@ class StudioSkillCatalogService:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: services/catalog.py StudioSkillCatalogService (publish/update/update_visibility/delete/get/list/mark_stale/list_stale/import_to_agent via StudioAssetService.put as skills/<name>.md under the agent lock) + shared_index_location (namespace <tenant or org_id>/_shared, dir STUDIO_RUNTIME_DIR/_shared/<tenant or ->/skills via studio_runtime_dir, refuses AGENTS_DIR). models/skills_catalog.py: tenant/visibility/allowed_groups fields + 0004 DDL docstring. 14 tests (memory+postgres) pass; mutations RED: visibility validation, tenant-namespace, asset name. Existing studio test_scaffold/test_integration/test_skills_catalog: no new failures vs baseline.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

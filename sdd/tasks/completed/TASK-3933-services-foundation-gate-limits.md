@@ -269,10 +269,8 @@ class StudioToolingGate:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sonnet)
+**Date**: 2026-10-01
+**Notes**: services/ package: lazy __init__, _common.py (limits, allowlist, gate, validators incl. safe asset names [no traversal/absolute/backslash/NUL] and per-kind 413, factory). 21 DB-free tests; 7 guards mutation-checked RED (text/ check, NUL/backslash, traversal, size cap, tenant config keys, tenant allowlist, GLOBAL-private visibility). Extra exceptions with X14 'code' defined in _common (StudioValidationError, StudioBinaryAssetRefused, StudioAssetFileTooLarge, StudioAgentAssetsQuota) because models.py is outside this task's file list; the gate sets code/reason/item on StudioToolingRefused instances. TOOLKITS tooling_policy verified present on this branch.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: added validate_visibility() helper and optional allowlist/visibility kwargs on validate_definition_for

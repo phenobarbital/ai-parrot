@@ -40,6 +40,20 @@ NAVIGATOR_SCHEMA = "navigator"
 
 
 @asynccontextmanager
+async def _conn_or_acquire(pool: Any, conn: Any | None) -> AsyncIterator[Any]:
+    """The caller's connection when given (a read INSIDE its transaction), else a pooled one.
+
+    Reading through ``pool.acquire()`` while a write transaction holds a connection needs a second connection
+    (a deadlock on a pool of one) and cannot see the transaction's own writes.
+    """
+    if conn is not None:
+        yield conn
+        return
+    async with pool.acquire() as acquired:
+        yield acquired
+
+
+@asynccontextmanager
 async def studio_transaction(pool: Any) -> AsyncIterator[Any]:
     """The ONLY way repositories open a transaction (asyncdb pg: transaction()/commit()/rollback())."""
     async with pool.acquire() as conn:
@@ -169,11 +183,11 @@ class StudioAgentRepository:
     def __init__(self, pool: Any) -> None:
         self.pool = pool
 
-    async def get(self, part: StudioPartition, name: str) -> StudioAgentRecord | None:
-        """The agent ``name`` of the partition, or None."""
+    async def get(self, part: StudioPartition, name: str, *, conn: Any | None = None) -> StudioAgentRecord | None:
+        """The agent ``name`` of the partition, or None. Pass ``conn`` to read inside an open transaction."""
         sql = f"SELECT {_AGENT_COLS} FROM {_A} WHERE tenant IS NOT DISTINCT FROM $1 AND name = $2"
-        async with self.pool.acquire() as conn:
-            row = await _fetch_one(conn, sql, part.tenant, name)
+        async with _conn_or_acquire(self.pool, conn) as c:
+            row = await _fetch_one(c, sql, part.tenant, name)
         return _agent_record(row) if row else None
 
     async def get_version(self, part: StudioPartition, name: str) -> StudioAgentHead | None:
@@ -352,14 +366,16 @@ class StudioAssetRepository:
             rows = await _fetch_all(conn, sql + " ORDER BY c.kind, c.name", *args)
         return [_asset_row(r["agent_id"], r) for r in rows]
 
-    async def get(self, part: StudioPartition, agent_name: str, kind: str, name: str) -> StudioAssetRecord | None:
-        """One asset including its content, or None."""
+    async def get(
+        self, part: StudioPartition, agent_name: str, kind: str, name: str, *, conn: Any | None = None
+    ) -> StudioAssetRecord | None:
+        """One asset including its content, or None. Pass ``conn`` to read inside an open transaction."""
         sql = (
             f"SELECT a.agent_id, {_ASSET_COLS_J} FROM {_AS} c JOIN {_A} a ON a.agent_id = c.agent_id "
             "WHERE a.tenant IS NOT DISTINCT FROM $1 AND a.name = $2 AND c.kind = $3 AND c.name = $4"
         )
-        async with self.pool.acquire() as conn:
-            row = await _fetch_one(conn, sql, part.tenant, agent_name, kind, name)
+        async with _conn_or_acquire(self.pool, conn) as c:
+            row = await _fetch_one(c, sql, part.tenant, agent_name, kind, name)
         return _asset_row(row["agent_id"], row) if row else None
 
     async def total_size(self, conn: Any, agent_id: UUID) -> int:
