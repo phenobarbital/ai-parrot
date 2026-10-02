@@ -353,6 +353,10 @@ class AbstractTool(EventEmitterMixin, ABC):
             from .server_params import validate_server_params  # pylint: disable=import-outside-toplevel
 
             validate_server_params(cls)
+        if cls.server_managed_params and ("server_managed_params" in cls.__dict__ or "args_schema" in cls.__dict__):
+            from .server_params import validate_custom_args_schema  # pylint: disable=import-outside-toplevel
+
+            validate_custom_args_schema(getattr(cls, "args_schema", None), cls.server_managed_params, cls.__name__)
 
     def __init__(
         self,

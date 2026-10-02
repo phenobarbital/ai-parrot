@@ -108,3 +108,45 @@ def test_builtin_schemas_match_golden(slug, cls):
     """The ClassVar declaration alone reproduces the schema the server dicts produced before the change."""
     now = json.loads(json.dumps(build_schema_envelope(slug, cls).model_dump(by_alias=True), sort_keys=True, default=str))
     assert now == GOLDEN[slug]
+
+
+class _TenantArgs(BaseModel):
+    """Hand-written schema that exposes a server-managed name."""
+
+    tenant: str = ""
+
+
+def test_standalone_custom_args_schema_declaring_managed_name_is_typeerror():
+    with pytest.raises(TypeError, match="server-managed"):
+
+        class _Bad(AbstractTool):
+            name = "bad"
+            description = "bad"
+            args_schema = _TenantArgs
+            server_managed_params = {"tenant": ServerParam(source="tenant")}
+
+            async def _execute(self, **kwargs):
+                return {}
+
+    class _Fine(AbstractTool):  # a schema without the managed name is fine
+        name = "fine"
+        description = "fine"
+        args_schema = BaseModel
+        server_managed_params = {"tenant": ServerParam(source="tenant")}
+
+        async def _execute(self, **kwargs):
+            return {}
+
+
+async def test_toolkit_method_custom_args_schema_declaring_managed_name_raises_at_generation():
+    class _Kit(AbstractToolkit):
+        server_managed_params = {"tenant": ServerParam(source="tenant")}
+
+        async def ask(self, tenant: str | None = None) -> str:
+            """Ask."""
+            return "ok"
+
+        ask._args_schema = _TenantArgs
+
+    with pytest.raises(TypeError, match="server-managed"):
+        _Kit().get_tools()

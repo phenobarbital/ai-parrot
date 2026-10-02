@@ -58,3 +58,11 @@ def validate_server_params(cls: type) -> None:
                 f"{cls.__name__}.server_managed_params[{name!r}]: a constructor parameter cannot take its value "
                 f"from the {declared[name].source!r} scope (instances are shared across callers)"
             )
+
+
+def validate_custom_args_schema(schema: object, declared: Mapping[str, ServerParam], owner: str) -> None:
+    """``TypeError`` when a hand-written ``args_schema`` exposes a server-managed name (the LLM could set it)."""
+    fields = getattr(schema, "model_fields", None) or {}
+    clash = sorted(set(fields) & set(declared))
+    if clash:
+        raise TypeError(f"{owner}: args_schema declares server-managed parameter(s) {clash}; the server fills them")

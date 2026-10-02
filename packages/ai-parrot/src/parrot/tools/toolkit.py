@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, create_model
 
 from ..conf import BASE_STATIC_URL
 from .abstract import AbstractTool, AbstractToolArgsSchema
-from .server_params import ServerParam, method_server_params, validate_server_params
+from .server_params import ServerParam, method_server_params, validate_custom_args_schema, validate_server_params
 
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
@@ -713,6 +713,8 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
 
         # Determine args schema - prioritize method-specific schema
         args_schema = getattr(bound_method, "_args_schema", None)
+        if args_schema:
+            validate_custom_args_schema(args_schema, self.server_managed_params, f"{type(self).__name__}.{name}")
 
         # If no custom schema is defined, always generate from method signature
         # This ensures each method only gets the parameters it actually needs
