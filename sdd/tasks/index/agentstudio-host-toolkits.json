@@ -143,7 +143,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -155,8 +155,9 @@
       "parallelism_notes": "Depends on TASK-3976 (same files tools/toolkit.py and tools/abstract.py — serialise) and TASK-3975 (resolver entries decide host vs built-in via get_toolkit_resolver; extends tests/tools/_host_probe.py it created). Lands together with TASK-3982 (M8) per spec §9 Wave 2.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3981-host-conventions-access-marker.md"
+      "completed_at": "2026-10-01T21:56:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3981-host-conventions-access-marker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3982",

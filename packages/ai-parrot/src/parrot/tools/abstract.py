@@ -342,6 +342,8 @@ class AbstractTool(EventEmitterMixin, ABC):
     delegate_description: Optional[str] = None
     # FEAT-622: standalone tools that read tenant data set this; see parrot.tools.scope.
     tenant_bound: ClassVar[bool] = False
+    # FEAT-622: "read" | "write" | None (unknown). Host standalone tools with None are treated as "write".
+    access: ClassVar[Optional[str]] = None
 
     def __init__(
         self,

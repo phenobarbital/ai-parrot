@@ -261,11 +261,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Sonnet 5.5)
+**Date**: 2026-10-01
+**Notes**: Added `read_tools` (AbstractToolkit), `access` (AbstractTool), module-level `_is_host_class` / `effective_access`
+in toolkit.py, strict marking in `_create_tool_from_method`. "Is host" derived from resolver entries (source="host") by
+importing the entry's dotted path and comparing identity; no new resolver API. Landing with TASK-3982 is a release
+constraint: TASK-3982 not implemented here (blocked, see worker summary).
+**Mutation evidence**: `effective_access` host→None ⇒ test_host_write_tool_strict_marking_and_access_meta RED;
+strict-marking block disabled (`if False`) ⇒ same test RED. Restored; 2 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
