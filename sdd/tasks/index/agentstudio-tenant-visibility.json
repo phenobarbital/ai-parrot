@@ -247,7 +247,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -257,9 +257,10 @@
       "parallelism_notes": "Uses StudioAccess/_access()/_studio_partition/VisibilityUpdateRequest from TASK-3964 (access.py, _base.py, models.py) and _require_author/_not_found/_name_taken from TASK-3959 (transitive). Only FEAT-605 task on studio/agents.py; parallel with TASK-3967..14.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3966-agents-visibility.md",
-      "wave_label": "W3.1"
+      "completed_at": "2026-10-02T14:32:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3966-agents-visibility.md",
+      "wave_label": "W3.1",
+      "verification": "verified"
     },
     {
       "id": "TASK-3967",

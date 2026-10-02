@@ -280,10 +280,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Agents visibility. `studio/agents/` package: list/GET return the visibility fields (`access`, `can_manage`, tenant, owner,
+visibility, allowed_groups) on the tenant/Studio path and the additive fields (`access: "global"`) on legacy items; an opted-in
+caller with no tenant gets an empty list. POST: `_require_author` → reserved keys (400 `reserved_config_key`, incl. `owner`) →
+`validate_visibility` (422 `tenant_required`/`groups_required`/`groups_not_allowed`) → `access.stamp` → `StudioNameConflict` →
+`name_taken` (the legacy preflight/registry collision answers `name_taken` too; the old `duplicate` code is gone for agents).
+`CreateAgentRequest` gains `visibility`/`allowed_groups` together with this reading code. PATCH /agents/{name}: absent/invisible →
+the one 404 (before `authoring_denied`, so there is no existence oracle), visible-not-manageable → 403, then `_require_author`,
+reserved keys → 400, write under the authorized-version guard (X6, existing `_studio_write`). Reload: 404/403 only when opted in
+(plain host stays ungated, G9). New `StudioAgentVisibilityHandler` (`agents/_visibility.py`) — route registration is TASK-3972;
+tests register it on their own app. Shared helper `_visibility_refusal` + `_tenantless` live in `_base/_storage.py`.
+Mutations (each re-applied by editing, RED, restored): drop `_require_author` on POST; reload `manage=True`/`False`; conflict →
+`duplicate`; reserved check off; visibility refusal no-op; PATCH authorize skipped; stamp ignores request visibility; list filter
+off; tenantless list; visibility handler `manage=False`; legacy fields dropped.
+Tests: `test_agents_visibility.py` (13, real resolver at `app["scope_resolver"]`, real SessionData, real Postgres). Helpers
+`tenant_app/who/create/seed` there are imported by the later W3 tests.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `models.py`, `agents/_visibility.py`, `agents/_mixin.py`, `agents/_legacy.py`, `agents/_reload.py`,
+`_base/_storage.py` (the package split of `agents.py`, plus the shared helper) and `test_agents_db_mode.py` (two `duplicate` →
+`name_taken` assertions) are touched beyond the literal file list. Studio-mode DB `_studio_error` still maps a bare
+`StudioNameConflict` to `duplicate` for the other routes (skills/files); each is switched by its own W3 task.
