@@ -20,6 +20,7 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
 from asyncdb.exceptions import NoDataFound
 from navigator_auth.decorators import is_authenticated, user_session
 from parrot.clients.factory import LLMFactory
@@ -33,7 +34,15 @@ from parrot.manager.manager import AgentNotFoundError, AgentReloadError
 
 from ..models import BotModel
 from ._base import StudioBaseView, is_valid_slug
+from .access import _store_record
 from .models import CreateAgentRequest, StudioError
+from .storage.models import (
+    RESERVED_CONFIG_KEY_MESSAGE,
+    StudioAgentDefinition,
+    StudioAgentKey,
+    StudioAgentPatch,
+    StudioStorageUnavailable,
+)
 
 
 class _StudioAgentsMixin:
@@ -161,6 +170,73 @@ class _StudioAgentsMixin:
             status=status,
         )
 
+    # -- database mode (FEAT-621 spec §2.8) ------------------------------
+
+    async def _dispatch(self, legacy, database, gate=None):
+        """Run ``database(storage, part)`` on the database backend, ``legacy()`` on the filesystem one.
+
+        ``gate`` is the verb's PBAC check, run before any database-mode work (the legacy bodies gate themselves).
+        A tenant partition on a non-database backend, or an unusable backend, is a 503 before any work; a bare
+        app without resolved storage keeps the legacy behaviour.
+        """
+        storage = self.request.app.get("studio_storage")
+        if storage is not None:
+            try:
+                part = await self._studio_partition()
+                storage.require_for(part)
+                if storage.backend != "filesystem":
+                    if gate is not None and (denied := await gate()) is not None:
+                        return denied
+                    return await database(storage, part)
+            except web.HTTPException:
+                raise
+            except Exception as exc:  # pylint: disable=broad-except
+                return self._studio_error(exc)
+        return await legacy()
+
+    async def _patch_unavailable(self):
+        """PATCH has no filesystem implementation (503 ``studio_storage_unavailable``)."""
+        return self._studio_error(StudioStorageUnavailable("PATCH /agents/{name} needs the database backend"))
+
+    @staticmethod
+    def _studio_item(rec: Any) -> dict:
+        """JSON item of a Studio agent (§2.9: the legacy keys plus the added ones)."""
+        return {
+            "name": rec.name,
+            "source": "studio",
+            "origin": "studio",
+            "owner": rec.owner,
+            "enabled": rec.status == "active",
+            "agent_id": str(rec.agent_id),
+            "tenant": rec.tenant,
+            "version": rec.version,
+            "updated_at": rec.updated_at.isoformat(),
+            "visibility": rec.visibility,
+            "allowed_groups": list(rec.allowed_groups),
+        }
+
+    async def _studio_authorize(self, rec: Any, name: str, *, manage: bool):
+        """404 when invisible, 403 when ``manage`` is required and denied; ``None`` when allowed."""
+        access = await self._access()
+        return await self._check_record_access(
+            access, _store_record("agent", rec.agent_id, rec), "agent", name, manage=manage
+        )
+
+    async def _legacy_items(self) -> list[dict]:
+        """Legacy DB-origin plus registry agents (GLOBAL partition only)."""
+        items = [self._db_agent_to_dict(a) for a in await self._get_all_db_agents()]
+        registry = self._registry()
+        taken = {i["name"] for i in items}
+        if registry is not None:
+            items += [self._registry_agent_to_dict(m) for m in registry.list_agents() if m.name not in taken]
+        return items
+
+    async def _studio_name_lookup(self, storage: Any, part: Any):
+        """``(name, record)`` of the request's agent; the record is ``None`` when absent or no name was given."""
+        name = self.request.match_info.get("name")
+        rec = await storage.services.agents.get(part, name) if name else None
+        return name, rec
+
 
 @is_authenticated()
 @user_session()
@@ -173,6 +249,10 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
     # -- GET ---------------------------------------------------------
 
     async def get(self):
+        """List all agents, or return a single agent by name (database mode: Studio rows + legacy on GLOBAL)."""
+        return await self._dispatch(self._legacy_get, self._db_get)
+
+    async def _legacy_get(self):
         """List all agents, or return a single agent by name."""
         name = self.request.match_info.get("name")
         if name:
@@ -207,6 +287,11 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
     # -- POST (create) -------------------------------------------------
 
     async def post(self):
+        """Create an agent: database mode persists a Studio row; filesystem mode registers (legacy)."""
+        gate = lambda: self._pbac_gate("agents", "astudio:agents:create")  # noqa: E731
+        return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+    async def _legacy_post(self):
         """Create a simple agent — registers into ``AgentRegistry``.
 
         With ``persist: true`` also writes a lossless ``agent:``-keyed
@@ -371,6 +456,16 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
     # -- DELETE ----------------------------------------------------------
 
     async def delete(self):
+        """Delete a Studio row (database mode) or a factory-origin YAML agent; DB agents are delegated."""
+        gate = lambda: self._pbac_gate("agents", "astudio:agents:delete")  # noqa: E731
+        return await self._dispatch(self._legacy_delete, self._db_delete, gate)
+
+    async def patch(self):
+        """``PATCH /agents/{name}`` — edit the General fields (database mode only, spec §2.9a)."""
+        gate = lambda: self._pbac_gate("agents", "astudio:agents:update")  # noqa: E731
+        return await self._dispatch(self._patch_unavailable, self._db_patch, gate)
+
+    async def _legacy_delete(self):
         """Delete a factory-origin YAML agent; DB agents are delegated."""
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("agents", "astudio:agents:delete")) is not None:
@@ -437,6 +532,156 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
 
         return self.json_response({"name": name, "deleted": True})
 
+    # -- database mode: GET / POST / DELETE / PATCH ------------------------
+
+    async def _db_get(self, storage, part):
+        """Studio rows of the partition; the GLOBAL partition also serves legacy agents (unchanged shapes)."""
+        name = self.request.match_info.get("name")
+        if name:
+            rec = await storage.services.agents.get(part, name)
+            if rec is None:
+                return await self._legacy_get() if part.tenant is None else self._not_found("agent", name)
+            if (denied := await self._studio_authorize(rec, name, manage=False)) is not None:
+                return denied
+            return self.json_response(self._studio_item(rec))
+        access = await self._access()
+        recs = await storage.services.agents.list(part)
+        agents = [self._studio_item(r) for r in recs if access.can_see(_store_record("agent", r.agent_id, r))]
+        if part.tenant is None:
+            seen = {a["name"] for a in agents}
+            agents += [i for i in await self._legacy_items() if i["name"] not in seen]
+        return self.json_response({"agents": agents, "count": len(agents)})
+
+    async def _create_request(self):
+        """Parse and validate the POST body: ``(request, slug)`` or an error response."""
+        try:
+            payload = await self.request.json()
+        except Exception:  # pylint: disable=broad-except
+            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+        if (refused := self._refuse_expected_version(payload)) is not None:
+            return refused
+        try:
+            create_request = CreateAgentRequest(**(payload or {}))
+            slug = slugify_name(create_request.name)
+        except (ValidationError, TypeError) as exc:
+            return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
+        except ValueError as exc:
+            return self._error(str(exc), status=400, code="invalid_name")
+        if not is_valid_slug(create_request.category):
+            return self._error(
+                f"Invalid category '{create_request.category}'; must match ^[a-z0-9_-]+$.",
+                status=400,
+                code="invalid_category",
+            )
+        return create_request, slug
+
+    async def _create_preflight(self, part, slug: str, create_request: CreateAgentRequest):
+        """GLOBAL partition: the duplicate check also covers the legacy registry and ``ai_bots``; bot class check."""
+        if part.tenant is not None:
+            return None  # the tenant allowlist is enforced by the service
+        if existing := await self._check_duplicate(slug):
+            return self._error(f"Agent '{slug}' already exists in {existing}.", status=409, code="duplicate")
+        manager = self._manager()
+        if manager is None:
+            return self._error("BotManager unavailable.", status=503, code="unavailable")
+        if manager.get_bot_class(create_request.bot_class) is None:
+            return self._error(
+                f"Unknown bot_class '{create_request.bot_class}'.", status=400, code="invalid_bot_class"
+            )
+        return None
+
+    async def _db_post(self, storage, part):
+        """Create a Studio agent row (always persisted; ``persist: false`` only adds a warning)."""
+        if (denied := await self._require_author()) is not None:
+            return denied
+        if self.request.match_info.get("name"):
+            return self._error("Use POST /astudio/agents (no name in the URL) to create.", status=400,
+                               code="invalid_route")
+        parsed = await self._create_request()
+        if isinstance(parsed, web.Response):
+            return parsed
+        create_request, slug = parsed
+        if (denied := await self._create_preflight(part, slug, create_request)) is not None:
+            return denied
+        try:
+            definition = StudioAgentDefinition.from_create_request(create_request)
+        except ValidationError as exc:
+            reserved = RESERVED_CONFIG_KEY_MESSAGE in str(exc)
+            return self._error(f"Invalid request: {exc}", status=400 if reserved else 422,
+                               code="reserved_config_key" if reserved else "unsupported_config_key")
+        user = await self._get_user()
+        rec = await storage.services.agents.create(part, name=slug, owner=user.user_id, definition=definition)
+        body = {"name": slug, "persisted": True, "source": "studio", "file_path": None,
+                "agent_id": str(rec.agent_id), "version": rec.version, "tenant": rec.tenant}
+        if "persist" in create_request.model_fields_set and not create_request.persist:
+            body["warnings"] = ["persist ignored: database storage always persists"]
+        return self.json_response(body, status=201)
+
+    async def _db_delete(self, storage, part):
+        """Guarded delete of a Studio row; a GLOBAL name that is not a Studio row takes the legacy path."""
+        name, rec = await self._studio_name_lookup(storage, part)
+        if rec is None and part.tenant is None:
+            return await self._legacy_delete()
+        if (denied := await self._require_author()) is not None:
+            return denied
+        if not name:
+            return self._error("Agent name is required.", status=400, code="missing_name")
+        if rec is None:
+            return self._not_found("agent", name)
+        if (denied := await self._studio_authorize(rec, name, manage=True)) is not None:
+            return denied
+        svc = storage.services.agents
+        deleted = await self._studio_write(
+            lambda guard: svc.delete(part, name, guard=guard),
+            reread=lambda: svc.get(part, name),
+            expected_version=self._expected_version(self.request.query),
+        )
+        if not deleted:
+            return self._not_found("agent", name)
+        if (runtime := getattr(self._manager(), "studio", None)) is not None:
+            runtime.evict(StudioAgentKey(part.tenant, name))
+        return self.json_response({"name": name, "deleted": True})
+
+    async def _patch_request(self):
+        """Parse the PATCH body: a ``StudioAgentPatch`` or an error response (``name`` is immutable)."""
+        try:
+            payload = await self.request.json()
+        except Exception:  # pylint: disable=broad-except
+            return self._error("Invalid JSON body.", status=400, code="invalid_json")
+        if not isinstance(payload, dict):
+            return self._error("The body must be a JSON object.", status=400, code="invalid_request")
+        if "name" in payload:
+            return self._error("An agent cannot be renamed.", status=422, code="name_immutable")
+        try:
+            return StudioAgentPatch(**payload)
+        except ValidationError as exc:
+            return self._error(f"Invalid request: {exc}", status=422, code="invalid_request")
+
+    async def _db_patch(self, storage, part):
+        """Edit the General fields of a Studio agent (§2.9a); a legacy agent is 409 ``not_studio_agent``."""
+        if (denied := await self._require_author()) is not None:
+            return denied
+        name, rec = await self._studio_name_lookup(storage, part)
+        if not name:
+            return self._error("Agent name is required.", status=400, code="missing_name")
+        patch = await self._patch_request()
+        if isinstance(patch, web.Response):
+            return patch
+        if rec is None:
+            if part.tenant is None and await self._check_duplicate(name):
+                return self._error(f"Agent '{name}' is not a Studio agent.", status=409, code="not_studio_agent")
+            return self._not_found("agent", name)
+        if (denied := await self._studio_authorize(rec, name, manage=True)) is not None:
+            return denied
+        user = await self._get_user()
+        svc = storage.services.agents
+        updated = await self._studio_write(
+            lambda guard: svc.patch(part, name, patch, guard=guard, actor=user.user_id),
+            reread=lambda: svc.get(part, name),
+            expected_version=patch.expected_version,
+        )
+        return self.json_response(self._studio_item(updated))
+
 
 @is_authenticated()
 @user_session()
@@ -448,6 +693,11 @@ class StudioAgentReloadHandler(_StudioAgentsMixin, StudioBaseView):
     """
 
     async def post(self):
+        """Reload a Studio agent through ``manager.studio`` (database mode) or ``reload_agent`` (legacy)."""
+        gate = lambda: self._pbac_gate("agents", "astudio:agents:reload")  # noqa: E731
+        return await self._dispatch(self._legacy_reload, self._db_reload, gate)
+
+    async def _legacy_reload(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
         if (denied := await self._pbac_gate("agents", "astudio:agents:reload")) is not None:
             return denied
@@ -475,4 +725,34 @@ class StudioAgentReloadHandler(_StudioAgentsMixin, StudioBaseView):
             )
             return self._error("Internal server error.", status=500, code="internal_error")
 
+        return self.json_response(result.model_dump(), status=200)
+
+    async def _db_reload(self, storage, part):
+        """Studio row → ``manager.studio.reload``; a GLOBAL name that is not a Studio row takes the legacy path."""
+        name, rec = await self._studio_name_lookup(storage, part)
+        if rec is None and part.tenant is None:
+            return await self._legacy_reload()
+        if (denied := await self._require_author()) is not None:
+            return denied
+        if not name:
+            return self._error("Agent name is required.", status=400, code="missing_name")
+        if (refused := self._refuse_expected_version(self.request.query)) is not None:
+            return refused
+        if rec is None:
+            return self._not_found("agent", name)
+        if (denied := await self._studio_authorize(rec, name, manage=False)) is not None:
+            return denied
+        return await self._studio_reload(StudioAgentKey(part.tenant, name))
+
+    async def _studio_reload(self, key: StudioAgentKey):
+        """``manager.studio.reload`` with the legacy error mapping (404 / 422)."""
+        runtime = getattr(self._manager(), "studio", None)
+        if runtime is None:
+            raise StudioStorageUnavailable("studio runtime is not installed")
+        try:
+            result = await runtime.reload(key)
+        except AgentNotFoundError as exc:
+            return self._error(str(exc), status=404, code="not_found")
+        except AgentReloadError as exc:
+            return self._error(str(exc), status=422, code="reload_failed")
         return self.json_response(result.model_dump(), status=200)

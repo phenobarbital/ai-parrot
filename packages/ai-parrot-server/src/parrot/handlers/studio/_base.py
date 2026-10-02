@@ -281,6 +281,66 @@ class StudioBaseView(BaseView):
             raise StudioStorageUnavailable("studio storage was not resolved at startup")
         return storage
 
+    async def _studio_write(self, write, *, reread, expected_version: int | None):
+        """Run ``write(guard)`` under the record version the access decision used; retry once on a stale one."""
+        from .storage.models import StudioStaleAuthorization, StudioVersionConflict, StudioWriteGuard
+
+        record = await reread()
+        for attempt in (1, 2):
+            guard = StudioWriteGuard(
+                authorized_version=record.version if record else None, expected_version=expected_version
+            )
+            try:
+                return await write(guard)
+            except StudioStaleAuthorization as exc:
+                if attempt == 2:
+                    raise StudioVersionConflict("authorization went stale twice") from exc
+                record = await reread()  # FEAT-605 re-runs its access decision on this record
+
+    def _studio_error(self, exc: Exception) -> web.Response:
+        """Map a storage/service exception to its X14 code and status (unmapped: logged, 500)."""
+        from .access import StudioTenantRequired
+        from .storage import models as m
+        from .storage.services._common import StudioValidationError
+
+        table = (
+            (m.StudioStorageUnavailable, 503, "studio_storage_unavailable"),
+            ((m.StudioVersionConflict, m.StudioStaleAuthorization), 409, "version_conflict"),
+            (m.StudioNameConflict, 409, "duplicate"),  # FEAT-605 v0.2 switches this to name_taken
+            (m.StudioNotFound, 404, "not_found"),
+            (m.StudioToolingRefused, 422, "tooling_not_permitted"),
+            (m.StudioAssetTooLarge, 413, getattr(exc, "code", "asset_too_large")),
+            (StudioValidationError, getattr(exc, "status", 422), getattr(exc, "code", "validation_error")),
+        )
+        if isinstance(exc, StudioTenantRequired):
+            return self._tenant_required()
+        for kinds, status, code in table:
+            if isinstance(exc, kinds):
+                return self.json_response(self._json_error(str(exc) or code, code), status=status)
+        self.logger.error("Studio: unexpected storage error: %r", exc, exc_info=exc)
+        return self.json_response(self._json_error("Internal server error.", "internal_error"), status=500)
+
+    @staticmethod
+    def _expected_version(source: Any) -> int | None:
+        """``expected_version`` from a body mapping or a query; a non-integer is a 400."""
+        from .storage.services._common import StudioValidationError
+
+        raw = source.get("expected_version") if hasattr(source, "get") else None
+        if raw is None or raw == "":
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise StudioValidationError("expected_version must be an integer", code="invalid_expected_version",
+                                        status=400) from exc
+
+    def _refuse_expected_version(self, source: Any) -> web.Response | None:
+        """400 ``expected_version_unsupported`` when an unsupported route was sent one; ``None`` otherwise."""
+        if not hasattr(source, "get") or source.get("expected_version") is None:
+            return None
+        body = self._json_error("expected_version is not supported on this route.", "expected_version_unsupported")
+        return self.json_response(body, status=400)
+
     async def _get_user(self) -> StudioUser:
         """Resolve the authenticated caller's identity from the session.
 
