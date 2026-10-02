@@ -317,11 +317,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: Approval ContextVar (confirmation.py: current_confirmed_call/_approved_call/is_enforced_write_class); ToolManager guard block extracted into _confirm_call + _call_tool_execute (execute_tool complexity 39->37); AbstractTool.execute approval+permission checks extracted into _pre_execute_refusal/_check_approval (execute complexity 28->27). Standalone host write tools are enforced via access='write' + host class (no routing_meta marker exists for standalone tools). Direct execute refuses in StudioToolExecuteHandler._executable_refusal (testing is a package; edited testing/__init__.py). Server probe write tool uses access='write'.
+**Mutation evidence**: abstract._check_approval allow-always => without_guard + forgeable RED; token compare loosened (any token) => forgeable RED; manager approved-gating removed => approved_executes_once RED; testing 403 check disabled => test_execute_refuses_host_write RED; all restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)

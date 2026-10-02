@@ -168,7 +168,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 2,
@@ -180,8 +180,9 @@
       "parallelism_notes": "Depends on TASK-3981 (consumes routing_meta['confirmation_enforced'] it sets; same file tools/abstract.py) and TASK-3979 (same file studio/testing.py; reuses tests/studio/_host_probe.py incl. tp_probe_tool_write).",
       "assigned_to": null,
       "started_at": "2026-10-02T08:17:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3982-host-write-confirmation-token.md"
+      "completed_at": "2026-10-02T08:24:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3982-host-write-confirmation-token.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3983",
