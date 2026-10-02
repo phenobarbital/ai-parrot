@@ -31,12 +31,13 @@ class _StudioDraftsDbMixin:
             if (denied := await self._check_record_access(access, _store_record("draft", rec.draft_id, rec),
                                                           "draft", name)) is not None:
                 return denied
-            return self.json_response(self._studio_draft_item(rec))
+            return self.json_response(self._studio_draft_item_for(access, rec))
         recs = [r for r in await svc.list(part) if access.can_see(_store_record("draft", r.draft_id, r))]
-        items = [self._studio_draft_item(r) for r in recs]
+        items = [self._studio_draft_item_for(access, r) for r in recs]
         if part.tenant is None:
             seen = {i["name"] for i in items}
-            items += [d for r in await self._get_all_draft_rows() if (d := self._draft_to_dict(r))["name"] not in seen]
+            items += [d for r in await self._get_all_draft_rows()
+                      if (d := self._legacy_draft_view(access, r))["name"] not in seen]
         return self.json_response({"drafts": items, "count": len(items)})
 
     async def _db_post_request(self):
@@ -63,12 +64,18 @@ class _StudioDraftsDbMixin:
         if not is_valid_slug(name) or name != parsed.bundle.name:
             return self._error(f"Invalid draft name '{name}'; must match ^[a-z0-9_-]+$ and equal bundle.name.",
                                status=400, code="invalid_name")
-        if part.tenant is None and (parsed.visibility != "private" or parsed.allowed_groups):
-            return self._tenant_required()  # the GLOBAL partition is always private (FEAT-605 plain-host rule)
-        return None
+        access = await self._access()
+        if (key := access.reject_reserved_keys(parsed.bundle.definition.config)) is not None:
+            return self._error(f"Reserved config key '{key}'.", status=400, code="reserved_config_key")
+        if part.tenant is None and parsed.allowed_groups:
+            return self._tenant_required()  # the GLOBAL partition has no groups either
+        # validate_visibility: tenant_required (also GLOBAL non-private), groups_required, groups_not_allowed
+        return self._visibility_refusal(access, parsed.visibility, parsed.allowed_groups)
 
     async def _db_post(self, storage, part):
         """Declarative ``bundle`` → ``StudioDraftService.save_bundle``; Python ``source`` only where the gate allows."""
+        if (denied := await self._require_author()) is not None:
+            return denied  # authoring_denied comes before declarative_only / body validation (spec route table)
         parsed = await self._db_post_request()
         if isinstance(parsed, web.Response):
             return parsed
@@ -82,14 +89,13 @@ class _StudioDraftsDbMixin:
             return denied
         name = parsed.name
         existing = await svc.get(part, name)
-        if existing is not None and (denied := await self._check_record_access(
-                await self._access(), _store_record("draft", existing.draft_id, existing), "draft", name,
-                manage=True)) is not None:
-            return denied
-        user = await self._get_user()
+        if existing is not None and not (await self._access()).can_manage(
+                _store_record("draft", existing.draft_id, existing)):
+            return self._name_taken(name)  # a draft the caller cannot manage: nothing is written, nothing disclosed
+        stamp = (await self._access()).stamp(visibility=parsed.visibility, allowed_groups=parsed.allowed_groups)
         rec = await self._studio_write(
-            lambda guard: svc.save_bundle(part, owner=user.user_id, bundle=parsed.bundle,
-                                          visibility=parsed.visibility, allowed_groups=parsed.allowed_groups,
+            lambda guard: svc.save_bundle(part, owner=stamp["owner"], bundle=parsed.bundle,
+                                          visibility=stamp["visibility"], allowed_groups=stamp["allowed_groups"],
                                           guard=guard),
             record=existing, reread=lambda: svc.get(part, name),
             reauthorize=self._reauthorize("draft", name, key="draft_id"), expected_version=parsed.expected_version,
@@ -154,14 +160,13 @@ class _StudioDraftActivateDbMixin:
 
     async def _activation_precheck(self, svc, part, name):
         """``(draft, refusal)``: the draft the caller may manage — access runs BEFORE any 409/400 (no leaks)."""
-        if (denied := await self._require_author()) is not None:
-            return None, denied
         if not name:
             return None, self._error("Draft name is required.", status=400, code="missing_name")
         rec = await svc.get(part, name)
         denied = await self._check_record_access(
             await self._access(), _store_record("draft", rec.draft_id, rec) if rec else None, "draft", name,
             manage=True)
+        denied = denied or await self._require_author()  # 404 / 403 first, then authoring_denied (no oracle)
         return (None, denied) if denied is not None else (rec, None)
 
     async def _db_post(self, storage, part):
@@ -181,10 +186,9 @@ class _StudioDraftActivateDbMixin:
         target, refusal = await self._activation_target(storage.services.agents, part, name, parsed.replace)
         if refusal is not None:
             return refusal
-        user = await self._get_user()
         target_guard = StudioWriteGuard.for_record(target, expected_version=parsed.target_expected_version)
         agent = await self._studio_write(
-            lambda guard: svc.activate(part, name, owner=user.user_id, replace=target is not None, guard=guard,
+            lambda guard: svc.activate(part, name, owner=rec.owner, replace=target is not None, guard=guard,
                                        target_guard=target_guard),
             record=rec, reread=lambda: svc.get(part, name),
             reauthorize=self._reauthorize("draft", name, key="draft_id"), expected_version=parsed.expected_version,

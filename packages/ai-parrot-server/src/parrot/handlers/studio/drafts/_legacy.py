@@ -27,14 +27,15 @@ class _StudioDraftsLegacyMixin:
         row = await self._get_draft_row(name)
         if row is None:
             return self._error(f"Draft '{name}' not found.", status=404, code="not_found")
-        data = self._draft_to_dict(row)
+        data = self._legacy_draft_view(await self._access(), row)
         draft_path = Path(row.file_path)
         data["source"] = draft_path.read_text() if draft_path.exists() else None
         return self.json_response(data)
 
     async def _get_all(self):
         rows = await self._get_all_draft_rows()
-        return self.json_response({"drafts": [self._draft_to_dict(r) for r in rows], "count": len(rows)})
+        access = await self._access()
+        return self.json_response({"drafts": [self._legacy_draft_view(access, r) for r in rows], "count": len(rows)})
 
     async def _legacy_post(self):
         """Save a draft — validation runs, but the draft is saved either way."""

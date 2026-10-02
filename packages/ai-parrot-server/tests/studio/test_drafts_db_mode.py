@@ -73,10 +73,16 @@ class _AcmeDrafts(StudioDraftsHandler):
     async def _studio_partition(self):
         return StudioPartition("acme")
 
+    async def _scope(self):  # the partition and the scope agree on the tenant (as an opted-in host would)
+        return RequestScope(user_id=None, tenant="acme", groups=frozenset())
+
 
 class _AcmeActivate(StudioDraftActivateHandler):
     async def _studio_partition(self):
         return StudioPartition("acme")
+
+    async def _scope(self):
+        return RequestScope(user_id=None, tenant="acme", groups=frozenset())
 
 
 def _app(pool) -> web.Application:
@@ -189,7 +195,7 @@ async def test_update_by_non_owner_refused(aiohttp_client, pool):
     client = await aiohttp_client(_app(pool))
     await _save(client)
     resp, body = await _save(client, user="u2")
-    assert resp.status == 403 and body["code"] == "forbidden"
+    assert resp.status == 409 and body["code"] == "name_taken"   # FEAT-605: a draft the caller cannot manage is name_taken
     resp, body = await _activate(client, user="u2")
     assert resp.status == 403 and body["code"] == "forbidden"
 

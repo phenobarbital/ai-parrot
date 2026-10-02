@@ -25,6 +25,7 @@ from ._db import _StudioDraftActivateDbMixin, _StudioDraftsDbMixin
 from ._legacy import _StudioDraftActivateLegacyMixin, _StudioDraftsLegacyMixin
 from ._mixin import _StudioDraftsMixin
 from ._models import DRAFTS_SUBDIR, ActivateDraftRequest, SaveDraftRequest
+from ._visibility import _StudioDraftVisibilityMixin
 
 __all__ = [
     "AGENTS_DIR",
@@ -33,6 +34,7 @@ __all__ = [
     "SaveDraftRequest",
     "StudioDraft",
     "StudioDraftActivateHandler",
+    "StudioDraftVisibilityHandler",
     "StudioDraftsHandler",
 ]
 
@@ -48,6 +50,8 @@ class StudioDraftsHandler(_StudioDraftsLegacyMixin, _StudioDraftsDbMixin, _Studi
 
     async def get(self):
         """List/read drafts: the declarative store (database mode) plus legacy Python drafts on GLOBAL."""
+        if not self.request.match_info.get("name") and await self._tenantless():
+            return self.json_response({"drafts": [], "count": 0})  # an opted-in caller with no tenant sees nothing
         return await self._dispatch(self._legacy_get, self._db_get)
 
     async def post(self):
@@ -78,3 +82,13 @@ class StudioDraftActivateHandler(
         """Activate a declarative draft atomically (database mode) or import a Python draft (legacy)."""
         gate = lambda: self._pbac_gate("drafts", "astudio:drafts:activate")  # noqa: E731
         return await self._dispatch(self._legacy_post, self._db_post, gate)
+
+
+@is_authenticated()
+@user_session()
+class StudioDraftVisibilityHandler(_StudioDraftVisibilityMixin, _StudioDraftsMixin, StudioBaseView):
+    """``PATCH /api/v1/astudio/drafts/{name}/visibility`` — change who can see a declarative draft."""
+
+    async def patch(self):
+        """Set ``visibility`` / ``allowed_groups`` of a declarative draft (404 invisible, 403 not manageable, 422)."""
+        return await self._dispatch(self._visibility_unavailable, self._db_visibility)

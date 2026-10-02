@@ -11,6 +11,7 @@ from aiohttp import web
 from asyncdb.exceptions import NoDataFound
 
 from ...models.studio_drafts import StudioDraft
+from ..access import _legacy_record, _store_record
 from ..agents import _StudioAgentsMixin
 from ..models import StudioError
 from ._models import DRAFTS_SUBDIR
@@ -133,6 +134,18 @@ class _StudioDraftsMixin:
             "allowed_groups": [],
             "version": None,
         }
+
+    @staticmethod
+    def _legacy_draft_view(access, row: StudioDraft) -> dict:
+        """A legacy draft item plus the additive visibility fields (``access: "global"``, FEAT-605 AC3/AC10)."""
+        rec = _legacy_record("draft", row.name, row.name, row.owner_user_id)
+        return {**_StudioDraftsMixin._draft_to_dict(row), **access.visibility_fields(rec)}
+
+    def _studio_draft_item_for(self, access, rec) -> dict:
+        """The declarative-draft item with the visibility fields the caller's access decision yields (C14)."""
+        item = self._studio_draft_item(rec)
+        item.update(access.visibility_fields(_store_record("draft", rec.draft_id, rec)))
+        return item
 
     @staticmethod
     def _studio_draft_item(rec) -> dict:
