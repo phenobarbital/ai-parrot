@@ -111,6 +111,7 @@ class StudioSkillsImportHandler            # :515 ; post :527 ; exists, owner = 
 Same check order as TASK-3966.
 
 ### Key Constraints
+- **Request fields (TASK-3964 review)**: TASK-3964 deliberately does NOT add `visibility`/`allowed_groups` to `SkillPublishRequest` (no handler read them, they would have been silently dropped). THIS task adds `visibility: Literal["private", "tenant", "groups"] = "private"` and `allowed_groups: list[str] = Field(default_factory=list)` to `SkillPublishRequest` in `models.py` together with the skills publish handler code that reads and stamps them (add `models.py` to this task's files if missing).
 - `_require_owner(entry.owner, user)` occurs twice (`:411`, `:456`): quote the preceding lookup per site to disambiguate (spec Edit Sites).
 - Skill import copies into the agent's assets; un-sharing does not revoke copies (FEAT-467 design).
 - Anchors below were verified at `32b1a45d4` (before FEAT-621 W3). FEAT-621 W3 rewrites these handler bodies (`_legacy_*` + store paths): re-run every `grep -c` after rebasing on it and re-locate each anchor; a count of `0` means drift — stop and report (spec §6 Edit Sites note).

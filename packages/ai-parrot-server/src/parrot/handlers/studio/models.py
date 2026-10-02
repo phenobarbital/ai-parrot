@@ -59,8 +59,6 @@ class CreateAgentRequest(BaseModel):
     persist: bool = False
     category: str = "general"
     config: dict[str, Any] = Field(default_factory=dict)
-    visibility: Literal["private", "tenant", "groups"] = "private"
-    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class DraftValidationReport(BaseModel):
@@ -94,8 +92,6 @@ class SkillPublishRequest(BaseModel):
     category: SkillCategory
     triggers: list[str] = Field(default_factory=list)
     body: str
-    visibility: Literal["private", "tenant", "groups"] = "private"
-    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class ByokKeyRequest(BaseModel):
