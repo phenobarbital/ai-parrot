@@ -269,11 +269,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: Legacy (database/registry) put_toolkit/put_mcp_servers/delete_toolkit call AgentToolingStore._enforce (resulting tooling, vault-owner normalised like the storage service) BEFORE any vault write or persistence; Studio rows were already gated by StudioToolingGate. _split_secrets split into a pure _toolkit_candidate + wrapper. _map_exc maps TenantToolingRefused -> 422 tooling_not_permitted with details. Live assign: StudioToolkitsHandler._enforce_assign_policy (check_tool, phase write, inside the existing try; skips non-tenant unless apply_to_global, mirroring enforce_tenant_tooling). FIX (pre-existing latent bug, in scope file): toolkit_schema_for returned envelope.schema (pydantic's deprecated .schema METHOD) instead of envelope.schema_, so a real put_toolkit crashed in secret_paths. Decision: the approved-host regression covers the write leg (PUT + put_toolkit); activation/build legs are exercised by FEAT-621 storage-service tests, no live MCP server was started. tooling_store.py is 499 lines.
+**Mutation evidence**: removed _enforce in put_mcp_servers => both stdio tests RED; in put_toolkit => toolkit_not_permitted RED; in delete_toolkit => delete_rechecks RED; _map_exc branch disabled => 422 tests RED; assign hook removed => live_assign_refused RED; all restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)
