@@ -1,6 +1,8 @@
 """FEAT-605 M2 — StudioAccess rule and _studio_partition override."""
 from __future__ import annotations
 
+import json as _json
+
 import pytest
 from aiohttp import web
 from navigator_session.data import SessionData
@@ -161,3 +163,111 @@ async def test_store_lookup_uses_tenant_partition():
     with pytest.raises(StudioTenantRequired):
         await StudioAccess(_scope(tenant=None), opted_in=True, app=app).agent("x")
     assert P.from_scope(acc.scope).tenant == "acme"
+
+
+# ---- request-level: _access / _check_record_access (real session + real default resolver) ----
+def _mw(userinfo: dict, user_id=7):
+    @web.middleware
+    async def mw(request, handler):
+        request["NAV_SESSION"] = SessionData(data={"session": {**userinfo, **({"user_id": user_id} if user_id else {})}})
+        request["authenticated"] = True
+        return await handler(request)
+
+    return mw
+
+
+class _CheckView(StudioBaseView):
+    """GET /check?present=1&tenant=&owner=&vis=&manage=1 -> body of the helper (or 'ok')."""
+
+    async def get(self):
+        from parrot.handlers.studio.access import StudioVisibilityRecord
+
+        q = self.request.query
+        access = await self._access()
+        rec = None
+        if q.get("present"):
+            rec = StudioVisibilityRecord("agent", "k", "bot", q.get("owner") or None, q.get("tenant") or None,
+                                         q.get("vis", "private"), (), "store")
+        resp = await self._check_record_access(access, rec, "agent", "bot", manage=bool(q.get("manage")))
+        return resp if resp is not None else self.json_response({"ok": True, "opted_in": access.opted_in,
+                                                                   "user_id": access.scope.user_id,
+                                                                   "groups": sorted(access.scope.groups),
+                                                                   "superuser": access.scope.is_superuser})
+
+
+async def _call(aiohttp_client, userinfo, query, *, opted_in=True):
+    from parrot.handlers.scope import SessionScopeResolver
+
+    app = web.Application(middlewares=[_mw(userinfo)])
+    if opted_in:
+        app["scope_resolver"] = SessionScopeResolver()  # the REAL default resolver, real session
+    app.router.add_view("/check", _CheckView)
+    resp = await (await aiohttp_client(app)).get("/check", params=query)
+    return resp.status, await resp.read()
+
+
+_INFO = {"programs": ["acme"], "groups": ["g1"], "superuser": False}
+
+
+async def test_check_record_access_matrix(aiohttp_client):
+    absent = await _call(aiohttp_client, _INFO, {})
+    other_tenant = await _call(aiohttp_client, _INFO, {"present": "1", "tenant": "beta", "owner": "7"})
+    assert absent[0] == 404 and absent == other_tenant  # byte-identical
+    peer = {"present": "1", "tenant": "acme", "owner": "1", "vis": "tenant"}
+    status, body = await _call(aiohttp_client, _INFO, {**peer, "manage": "1"})
+    assert status == 403 and b"forbidden" in body
+    assert (await _call(aiohttp_client, _INFO, peer))[0] == 200  # visible, no manage requested
+    own = {"present": "1", "tenant": "acme", "owner": "7", "manage": "1"}
+    status, body = await _call(aiohttp_client, _INFO, own)
+    assert status == 200 and _json.loads(body)["ok"] is True  # helper returned None
+
+
+async def test_access_not_opted_in_goes_through_get_user(aiohttp_client):
+    info = {"groups": ["g9", "superuser"]}  # superuser via group: only _get_user derives it
+    status, body = await _call(aiohttp_client, info, {"present": "1"}, opted_in=False)
+    data = _json.loads(body)
+    assert status == 200 and data["opted_in"] is False
+    assert data["user_id"] == "7" and data["groups"] == ["g9", "superuser"] and data["superuser"] is True
+
+
+async def test_access_not_opted_in_without_user_is_401(aiohttp_client):
+    app = web.Application(middlewares=[_mw({}, user_id=None)])
+    app.router.add_view("/check", _CheckView)
+    resp = await (await aiohttp_client(app)).get("/check")
+    assert resp.status in (401, 403)
+
+
+def test_stamp_requires_user_id():
+    with pytest.raises(ValueError):
+        _acc(_scope(user_id=None)).stamp(visibility="tenant", allowed_groups=[])
+    with pytest.raises(ValueError):
+        _acc(_scope(user_id="")).stamp(visibility="tenant", allowed_groups=[])
+
+
+class _BrokenDb:
+    async def acquire(self):
+        raise RuntimeError("db down")
+
+
+async def test_legacy_lookup_db_error_is_503_not_404():
+    acc = StudioAccess(_scope(user_id="7"), opted_in=False, app={"database": _BrokenDb()})
+    for call in (acc.agent("bot"), acc.draft("bot"), acc.skill("x")):
+        with pytest.raises(web.HTTPServiceUnavailable):
+            await call
+    no_db = StudioAccess(_scope(user_id="7"), opted_in=False, app={})
+    assert await no_db.draft("bot") is None
+
+
+async def test_skill_lookup_store_row_and_tenant_isolation():
+    repos = InMemoryStudioRepositories()
+    mine = await repos.skills.insert(None, StudioPartition("acme"), owner="1", name="s1", description="d",
+                                     body="b", visibility="groups", allowed_groups=["g1"])
+    theirs = await repos.skills.insert(None, StudioPartition("beta"), owner="7", name="s2", description="d", body="b")
+    app = {"studio_storage": type("S", (), {"repos": repos})()}
+    acc = StudioAccess(_scope(), opted_in=True, app=app)
+    rec = await acc.skill(str(mine.skill_id))
+    assert rec is not None and rec.kind == "skill" and rec.source == "store"
+    assert (rec.key, rec.name, rec.owner, rec.tenant) == (str(mine.skill_id), "s1", "1", "acme")
+    assert rec.visibility == "groups" and rec.allowed_groups == ("g1",)
+    assert acc.can_see(rec) and not acc.can_manage(rec)
+    assert await acc.skill(str(theirs.skill_id)) is None  # other tenant's row is never returned
