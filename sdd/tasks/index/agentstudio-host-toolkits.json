@@ -214,7 +214,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -228,8 +228,9 @@
       "parallelism_notes": "Depends on TASK-3982 (same file studio/testing.py — serialise), TASK-3980 (same file handlers/tools_catalog.py), TASK-3981 (effective_access from parrot/tools/toolkit.py for the catalogue `access` field) and TASK-3977 (check_tool / TenantToolingRefused from parrot/tools/tooling_policy.py). Sole editor of bots/studio/tools.py.",
       "assigned_to": null,
       "started_at": "2026-10-02T08:17:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3984-tenant-policy-wiring-attach-execute-catalogue.md"
+      "completed_at": "2026-10-02T08:32:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3984-tenant-policy-wiring-attach-execute-catalogue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3985",

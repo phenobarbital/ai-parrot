@@ -252,11 +252,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: _StudioTestingMixin._policy_check (async: partition lookup) used by execute (403, via StudioToolExecuteHandler._executable_refusal) and attach (422, StudioToolAssignHandler._attach_refusal before any registration); tools_catalog: access per entry (toolkit {read,write} summary / tool access / None) + filter_catalog_for(app, subject, catalog); meta-agent list_available_tools (bots/studio/tools/introspection.py) filtered when a studio_scope is bound (no app => fail closed). Spec ambiguity resolved: FEAT-605 _studio_partition exists on this branch so the Studio catalogue route (catalog.py::StudioCatalogHandler._tools_for_caller) IS wired (file outside the Files table; authorised by the task's Spec-ambiguity note). Assign post extracted _agent_owner to keep its complexity (14) from growing. Order on execute: 404 -> tenant policy 403 -> confirmation 403.
+**Mutation evidence**: filter no-op => catalogue + meta-agent tests RED; execute check removed => RED; attach check removed => RED; meta filter removed => RED; catalog route unfiltered => RED; access forced None => access test RED; all restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)
