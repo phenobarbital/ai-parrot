@@ -81,17 +81,30 @@ def _require_user_id() -> str:
     return str(ctx.user_id)
 
 
-async def _studio_partition_and_services(app: Any) -> tuple[Any, Any] | None:
+def _unscoped_refusal() -> dict:
+    """The ``tool_scope_unavailable`` refusal (FEAT-605 X14) for a call on an opted-in host with no bound scope."""
+    return {
+        "error": "tool_scope_unavailable: no studio_scope is bound to this tool call (reason: no_scope)",
+        "error_code": "tool_scope_unavailable",
+    }
+
+
+async def _studio_partition_and_services(app: Any) -> tuple[Any, Any] | dict | None:
     """``(partition, services)`` in database mode, else ``None`` (filesystem path).
 
-    The partition is the bound ``studio_scope.caller``'s (FEAT-605) when present, else GLOBAL (X11).
+    The partition is the bound ``studio_scope.caller``'s (FEAT-605) when present. With no bound scope it is GLOBAL
+    (X11) only on a plain host; when the host installed a scope resolver (opted in) the call FAILS CLOSED and the
+    ``tool_scope_unavailable`` refusal dict is returned (callers return it as-is; nothing is written).
     """
     storage = app.get("studio_storage")
     if storage is None or storage.backend != "database":
         return None
+    from parrot.handlers.scope import has_installed_resolver  # lazy: server satellite
     from parrot.handlers.studio.storage.models import StudioPartition  # lazy: server satellite
 
     scope = (getattr(current_context(), "kwargs", None) or {}).get("studio_scope")
+    if scope is None and has_installed_resolver(app):
+        return _unscoped_refusal()
     part = StudioPartition.from_scope(scope.caller) if scope is not None else StudioPartition.GLOBAL
     storage.require_for(part)
     return part, storage.services
@@ -358,6 +371,8 @@ async def create_yaml_agent(
     # fail-closed ownership checks then treat as "nobody may modify".
     user_id = _require_user_id()
     if (ps := await _studio_partition_and_services(app)) is not None:
+        if isinstance(ps, dict):
+            return ps
         return await _refusing(_db_create_agent(app, ps, user_id, name, bot_class, llm, description, category))
     manager = app.get("bot_manager")
     if manager is None:
@@ -416,6 +431,8 @@ async def _write_asset_file(agent_name: str, kind: str, filename: str, content: 
     app = _require_app()
     user_id = _require_user_id()
     ps = await _studio_partition_and_services(app)
+    if isinstance(ps, dict):
+        return ps
     if ps is None:
         await _require_agent_owner(app, agent_name, user_id)
 
@@ -543,6 +560,8 @@ async def publish_skill_to_catalog(
     except ValueError:
         resolved_category = SkillCategory.GENERAL
     if (ps := await _studio_partition_and_services(app)) is not None:
+        if isinstance(ps, dict):
+            return ps
         publish = _db_publish_skill(
             app, ps, _require_user_id(), name, description, resolved_category.value, triggers, body
         )
@@ -680,7 +699,10 @@ async def save_agent_bundle(name: str, bundle: dict) -> dict:
 
     app = _require_app()
     user_id = _require_user_id()
-    if (ps := await _studio_partition_and_services(app)) is None:
+    ps = await _studio_partition_and_services(app)
+    if isinstance(ps, dict):
+        return ps
+    if ps is None:
         return {"error": "Declarative drafts need database storage.", "error_code": "studio_storage_unavailable"}
     if not is_valid_slug(name):
         raise ValueError(f"Invalid draft name '{name}'; must match ^[a-z0-9_-]+$.")

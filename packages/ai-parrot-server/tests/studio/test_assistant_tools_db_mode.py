@@ -6,7 +6,6 @@ Real aiohttp app with a real Postgres pool; the tools run inside a real ``Reques
 from __future__ import annotations
 
 from contextlib import contextmanager
-from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
@@ -14,13 +13,16 @@ from aiohttp.test_utils import make_mocked_request
 
 from parrot.bots.studio import tools as tools_module
 from parrot.bots.studio.agent import AgentStudioAgent
+from parrot.handlers.scope import RequestScope
+from parrot.handlers.studio.access import StudioToolScope, build_tool_scope
 from parrot.handlers.studio.storage.models import StudioPartition
 from parrot.utils.helpers import RequestContext, _current_ctx
 
 from .test_agents_db_mode import _app, _offline, pool  # noqa: F401  (fixtures)
 
 KB = "kb"
-T1 = SimpleNamespace(caller=SimpleNamespace(tenant="t1"))
+T1 = build_tool_scope(RequestScope(user_id="u1", tenant="t1", groups=frozenset()))
+assert isinstance(T1, StudioToolScope)
 
 
 @contextmanager
@@ -218,3 +220,72 @@ async def test_assistant_publish_flags_stale_when_the_index_fails(aiohttp_client
     assert skill["search_index_stale"] is True and skill["name"] == "s1"      # published, flagged for the resync
     row = await app["studio_storage"].services.skills.get(StudioPartition.GLOBAL, skill["skill_id"])
     assert row is not None and row.search_index_stale is True
+
+
+# ---- review fix: fail closed when the host is opted in (resolver installed) but no studio_scope is bound -----------
+class _Resolver:
+    """A real ScopeResolver of an opted-in host (the tools never call it; only its presence matters)."""
+
+    async def resolve(self, request):
+        return RequestScope(user_id="u1", tenant="t1", groups=frozenset())
+
+
+_TABLES = ("ai_agents", "ai_agent_assets", "ai_agent_drafts", "ai_skills_catalog")
+
+
+async def _rows(pool_) -> dict:  # noqa: F811
+    async with pool_.acquire() as conn:
+        return {t: await conn.fetchval(f"SELECT count(*) FROM navigator.{t}") for t in _TABLES}
+
+
+def _write_calls():
+    c = _call
+    return [
+        lambda: c(tools_module.create_yaml_agent, name="gz", bot_class="BasicBot", description="d"),
+        lambda: c(tools_module.write_kb_file, agent_name="gz", filename="n.md", content="x"),
+        lambda: c(tools_module.write_identity_file, agent_name="gz", filename="identity.md", content="x"),
+        lambda: c(tools_module.write_skill_file, agent_name="gz", filename="s.md", content="x"),
+        lambda: c(tools_module.publish_skill_to_catalog, **SKILL),
+        lambda: c(tools_module.save_agent_bundle, name="gz", bundle={"definition": {"bot_class": "BasicBot"}}),
+    ]
+
+
+async def test_opted_in_host_without_scope_refuses_every_write_tool(aiohttp_client, pool, tmp_path, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path / "agents_dir")
+    app = _app(pool)
+    app["scope_resolver"] = _Resolver()
+    client = await aiohttp_client(app)
+    before = await _rows(pool)
+    with _ctx(client.app):                                                    # no studio_scope bound
+        for call in _write_calls():
+            res = await call()
+            assert res["error_code"] == "tool_scope_unavailable", res
+    assert await _rows(pool) == before                                       # nothing landed (GLOBAL included)
+    assert not (tmp_path / "agents_dir").exists()
+
+
+async def test_opted_in_host_with_real_scope_writes_to_the_tenant_partition(aiohttp_client, pool, tmp_path, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(tools_module, "AGENTS_DIR", tmp_path / "agents_dir")
+    app = _app(pool)
+    app["scope_resolver"] = _Resolver()
+    client = await aiohttp_client(app)
+    services = client.app["studio_storage"].services
+    t1 = StudioPartition("t1")
+    with _ctx(client.app, scope=T1):
+        made = await _call(tools_module.create_yaml_agent, name="ta", bot_class="BasicBot", description="d")
+        assert made["agent_name"] == "ta" and "error_code" not in made
+        res = await _call(tools_module.write_kb_file, agent_name="ta", filename="n.md", content="hi")
+        assert res["size"] == 2
+        skill = await _call(tools_module.publish_skill_to_catalog, **SKILL)
+        assert skill["tenant"] == "t1"
+    assert (await services.agents.get(t1, "ta")).owner == "u1"
+    assert (await services.assets.get(t1, "ta", KB, "n.md")).content == "hi"
+    assert await services.agents.list(StudioPartition.GLOBAL) == []
+
+
+async def test_plain_host_without_scope_keeps_the_global_fallback(aiohttp_client, pool):  # noqa: F811
+    client = await aiohttp_client(_app(pool))                                 # no resolver installed
+    with _ctx(client.app):
+        made = await _call(tools_module.create_yaml_agent, name="gp", bot_class="BasicBot")
+    assert made["agent_name"] == "gp" and "error_code" not in made
+    assert await client.app["studio_storage"].services.agents.get(StudioPartition.GLOBAL, "gp") is not None
