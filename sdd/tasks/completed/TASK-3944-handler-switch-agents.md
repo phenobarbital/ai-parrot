@@ -240,10 +240,8 @@ The `PATCH` route needs no new route line: `StudioAgentsHandler` is already moun
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 4c2988f29. Database-mode agents routes, PATCH, reload, _studio_write/_studio_error helpers; 13 new tests on real PG, 12 mutation checks RED. Missing app storage falls back to legacy path (test_agents_lifecycle unmodified). Flag: agents.py ~755 lines and _base.py ~533 exceed the 500-line module budget (task lists no helper module); _legacy_post/_legacy_delete are verbatim-moved over-budget bodies.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
