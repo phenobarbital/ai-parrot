@@ -271,7 +271,7 @@ class VideoReelHandler(BaseView):
     #
     # Pattern verified against this deployment's existing conventions
     # before writing any of it (TASK-3333 evidence gate): CredentialsHandler
-    # (credentials.py:57-59) and StudioBaseView (handlers/studio/_base.py)
+    # (credentials.py:57-59) and StudioBaseView (handlers/studio/_base/)
     # both decorate `@is_authenticated() @user_session()` and resolve the
     # caller's identity from the session, never from the request body.
     # `BaseView.get_userid()` is defined directly on navigator's `BaseView`

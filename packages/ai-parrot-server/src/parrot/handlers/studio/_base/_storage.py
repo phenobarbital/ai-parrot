@@ -1,0 +1,141 @@
+"""Storage/access mixin of :class:`StudioBaseView` — partition, record access, guarded writes, error mapping."""
+
+from __future__ import annotations
+
+import dataclasses
+from typing import Any
+
+from aiohttp import web
+from pydantic import ValidationError
+
+
+class _StudioStorageMixin:
+    """Database-mode plumbing shared by every Studio view (partition, access, TOCTOU-safe writes, X14 errors)."""
+
+    async def _studio_partition(self) -> Any:
+        """Storage partition: GLOBAL without a resolver; the caller's tenant when opted in (X5)."""
+        from ..access import StudioTenantRequired
+        from ..storage.models import StudioPartition
+
+        if not self._opted_in():
+            return StudioPartition.GLOBAL
+        scope = await self._scope()
+        if scope.tenant is None:
+            raise StudioTenantRequired
+        return StudioPartition.from_scope(scope)
+
+    async def _access(self) -> Any:
+        """Per-request :class:`StudioAccess` (lazy)."""
+        from ..access import StudioAccess  # local import: access.py must never import _base
+
+        if self._opted_in():
+            return StudioAccess(await self._scope(), opted_in=True, app=self.request.app)
+        user = await self._get_user()
+        scope = dataclasses.replace(
+            await self._scope(), user_id=user.user_id, is_superuser=user.is_superuser, groups=frozenset(user.groups)
+        )
+        return StudioAccess(scope, opted_in=False, app=self.request.app)
+
+    async def _check_record_access(
+        self, access: Any, rec: Any, kind: str, name: str, *, manage: bool = False
+    ) -> web.Response | None:
+        """404 when absent or invisible (one body, AC5); 403 when ``manage`` and not can_manage (AC6)."""
+        if rec is None or not access.can_see(rec):
+            return self._not_found(kind, name)
+        if manage and not access.can_manage(rec):
+            body = self._json_error("You do not have permission to modify this resource.", "forbidden")
+            return self.json_response(body, status=403)
+        return None
+
+    def _tenant_required(self) -> web.Response:
+        """422 ``tenant_required``."""
+        return self.json_response(self._json_error("A tenant scope is required.", "tenant_required"), status=422)
+
+    def _studio_storage(self) -> Any:
+        """The resolved ``StudioStorage`` memoised on the app."""
+        from ..storage.models import StudioStorageUnavailable
+
+        storage = self.request.app.get("studio_storage")
+        if storage is None:   # the startup hook did not run → 503 studio_storage_unavailable
+            raise StudioStorageUnavailable("studio storage was not resolved at startup")
+        return storage
+
+    def _reauthorize(self, kind: str, name: str, *, manage: bool = True, key: str = "agent_id"):
+        """A ``reauthorize(rec)`` callback: the caller's access decision re-run on a freshly read record."""
+        from ..access import _store_record  # local import: access.py must never import _base
+
+        async def check(rec: Any) -> web.Response | None:
+            access = await self._access()
+            return await self._check_record_access(
+                access, _store_record(kind, getattr(rec, key), rec), kind, name, manage=manage
+            )
+
+        return check
+
+    async def _studio_write(self, write, *, record, reread, reauthorize, expected_version: int | None):
+        """Run ``write(guard)`` under the version of ``record`` (the one the access decision authorized).
+
+        On a stale authorization the record is re-read and the access decision is re-run on it
+        (``reauthorize``): a refusal is returned (a ``web.Response``, nothing written); otherwise the write is
+        retried once under the re-read version. A second stale authorization is a 409 ``version_conflict``.
+        """
+        from ..storage.models import StudioNotFound, StudioStaleAuthorization, StudioVersionConflict, StudioWriteGuard
+
+        for attempt in (1, 2):
+            guard = StudioWriteGuard.for_record(record, expected_version=expected_version)
+            try:
+                return await write(guard)
+            except StudioStaleAuthorization as exc:
+                if attempt == 2:
+                    raise StudioVersionConflict("authorization went stale twice") from exc
+                record = await reread()
+                if record is None:
+                    raise StudioNotFound("record vanished before the write") from exc
+                if (denied := await reauthorize(record)) is not None:
+                    return denied
+
+    def _studio_error(self, exc: Exception) -> web.Response:
+        """Map a storage/service exception to its X14 code and status (unmapped: logged, 500)."""
+        from ..access import StudioTenantRequired
+        from ..storage import models as m
+        from ..storage.services._common import StudioValidationError
+
+        table = (
+            (m.StudioStorageUnavailable, 503, "studio_storage_unavailable"),
+            ((m.StudioVersionConflict, m.StudioStaleAuthorization), 409, "version_conflict"),
+            (m.StudioNameConflict, 409, "duplicate"),  # FEAT-605 v0.2 switches this to name_taken
+            (m.StudioNotFound, 404, "not_found"),
+            (m.StudioToolingRefused, 422, "tooling_not_permitted"),
+            (m.StudioAssetTooLarge, 413, getattr(exc, "code", "asset_too_large")),
+            (StudioValidationError, getattr(exc, "status", 422), getattr(exc, "code", "validation_error")),
+        )
+        if isinstance(exc, StudioTenantRequired):
+            return self._tenant_required()
+        if isinstance(exc, ValidationError):
+            return self.json_response(self._json_error(f"Invalid request: {exc}", "validation_error"), status=422)
+        for kinds, status, code in table:
+            if isinstance(exc, kinds):
+                return self.json_response(self._json_error(str(exc) or code, code), status=status)
+        self.logger.error("Studio: unexpected storage error: %r", exc, exc_info=exc)
+        return self.json_response(self._json_error("Internal server error.", "internal_error"), status=500)
+
+    @staticmethod
+    def _expected_version(source: Any) -> int | None:
+        """``expected_version`` from a body mapping or a query; a non-integer is a 400."""
+        from ..storage.services._common import StudioValidationError
+
+        raw = source.get("expected_version") if hasattr(source, "get") else None
+        if raw is None or raw == "":
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise StudioValidationError("expected_version must be an integer", code="invalid_expected_version",
+                                        status=400) from exc
+
+    def _refuse_expected_version(self, source: Any) -> web.Response | None:
+        """400 ``expected_version_unsupported`` when an unsupported route was sent one; ``None`` otherwise."""
+        if not hasattr(source, "get") or source.get("expected_version") is None:
+            return None
+        body = self._json_error("expected_version is not supported on this route.", "expected_version_unsupported")
+        return self.json_response(body, status=400)
