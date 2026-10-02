@@ -281,11 +281,27 @@ class StudioBaseView(BaseView):
             raise StudioStorageUnavailable("studio storage was not resolved at startup")
         return storage
 
-    async def _studio_write(self, write, *, reread, expected_version: int | None):
-        """Run ``write(guard)`` under the record version the access decision used; retry once on a stale one."""
-        from .storage.models import StudioStaleAuthorization, StudioVersionConflict, StudioWriteGuard
+    def _reauthorize(self, kind: str, name: str, *, manage: bool = True, key: str = "agent_id"):
+        """A ``reauthorize(rec)`` callback: the caller's access decision re-run on a freshly read record."""
+        from .access import _store_record  # local import: access.py must never import _base
 
-        record = await reread()
+        async def check(rec: Any) -> web.Response | None:
+            access = await self._access()
+            return await self._check_record_access(
+                access, _store_record(kind, getattr(rec, key), rec), kind, name, manage=manage
+            )
+
+        return check
+
+    async def _studio_write(self, write, *, record, reread, reauthorize, expected_version: int | None):
+        """Run ``write(guard)`` under the version of ``record`` (the one the access decision authorized).
+
+        On a stale authorization the record is re-read and the access decision is re-run on it
+        (``reauthorize``): a refusal is returned (a ``web.Response``, nothing written); otherwise the write is
+        retried once under the re-read version. A second stale authorization is a 409 ``version_conflict``.
+        """
+        from .storage.models import StudioNotFound, StudioStaleAuthorization, StudioVersionConflict, StudioWriteGuard
+
         for attempt in (1, 2):
             guard = StudioWriteGuard(
                 authorized_version=record.version if record else None, expected_version=expected_version
@@ -295,7 +311,11 @@ class StudioBaseView(BaseView):
             except StudioStaleAuthorization as exc:
                 if attempt == 2:
                     raise StudioVersionConflict("authorization went stale twice") from exc
-                record = await reread()  # FEAT-605 re-runs its access decision on this record
+                record = await reread()
+                if record is None:
+                    raise StudioNotFound("record vanished before the write") from exc
+                if (denied := await reauthorize(record)) is not None:
+                    return denied
 
     def _studio_error(self, exc: Exception) -> web.Response:
         """Map a storage/service exception to its X14 code and status (unmapped: logged, 500)."""

@@ -429,7 +429,7 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         prep = await self._db_prepare(storage, part, self._legacy_put, write=True)
         if not isinstance(prep, tuple):
             return prep
-        name, kind, filename, _rec = prep
+        name, kind, filename, rec = prep
         body = await self._put_body()
         if isinstance(body, web.Response):
             return body
@@ -437,11 +437,14 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
                                  content_type=body.get("content_type") or "text/markdown")
         user = await self._get_user()
         agents, assets = storage.services.agents, storage.services.assets
-        record, version = await self._studio_write(
+        written = await self._studio_write(
             lambda guard: assets.put(part, name, asset, actor=user.user_id, guard=guard),
-            reread=lambda: agents.get(part, name),
+            record=rec, reread=lambda: agents.get(part, name), reauthorize=self._reauthorize("agent", name),
             expected_version=self._expected_version(body),
         )
+        if isinstance(written, web.Response):
+            return written
+        record, version = written
         return self.json_response({"path": filename, "kind": kind, "size": record.size, "reload_required": False,
                                    "version": version, "sha256": record.sha256})
 
@@ -450,14 +453,17 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         prep = await self._db_prepare(storage, part, self._legacy_delete, write=True)
         if not isinstance(prep, tuple):
             return prep
-        name, kind, filename, _rec = prep
+        name, kind, filename, rec = prep
         user = await self._get_user()
         agents, assets = storage.services.agents, storage.services.assets
-        existed, version = await self._studio_write(
+        deleted = await self._studio_write(
             lambda guard: assets.delete(part, name, kind, filename, actor=user.user_id, guard=guard),
-            reread=lambda: agents.get(part, name),
+            record=rec, reread=lambda: agents.get(part, name), reauthorize=self._reauthorize("agent", name),
             expected_version=self._expected_version(self.request.query),
         )
+        if isinstance(deleted, web.Response):
+            return deleted
+        existed, version = deleted
         if not existed:
             return self._error(f"File '{filename}' not found.", status=404, code="not_found")
         return self.json_response({"path": filename, "kind": kind, "deleted": True, "reload_required": False,

@@ -788,10 +788,13 @@ class StudioSkillsImportHandler(_StudioSkillsMixin, _StudioFilesMixin, StudioBas
             return self._error(f"Skill file '{skill.name}.md' already exists for agent '{agent_name}'; "
                                "pass overwrite=true to replace.", status=409, code="collision")
         user = await self._get_user()
-        await self._studio_write(
+        refused = await self._studio_write(
             lambda guard: storage.services.skills.import_to_agent(
                 part, skill.skill_id, agent_name, actor=user.user_id, guard=guard),
-            reread=lambda: agents.get(part, agent_name), expected_version=None)
+            record=agent, reread=lambda: agents.get(part, agent_name),
+            reauthorize=self._reauthorize("agent", agent_name), expected_version=None)
+        if isinstance(refused, web.Response):
+            return refused
         return self.json_response({"agent": agent_name, "skill": skill.name, "file_path": None,
                                    "reload_required": False}, status=201)
 

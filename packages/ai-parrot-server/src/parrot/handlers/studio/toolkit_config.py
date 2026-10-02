@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 
+from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
 from pydantic import ValidationError
 
@@ -75,16 +76,26 @@ class _ToolingViewMixin(_StudioAgentsMixin):
         raise exc
 
     async def _write(self, state, name: str, source, call):
-        """Run ``call(kwargs)`` (``guard``/``actor`` on Studio rows only); Studio rows go through the guarded, retry-once write (spec §2.8)."""
+        """Run ``call(kwargs)``; ``None`` on success, a refusal response otherwise.
+
+        Studio rows go through the guarded write under the version the owner check authorized, re-authorized
+        once on a stale one (spec §2.8). A legacy source has no version to guard: ``expected_version`` is a 400.
+        """
         if getattr(state, "source", None) != "studio":
-            return await call({})
+            await call({})
+            return None
         expected = self._expected_version(source)
         storage, part, user = self._studio_storage(), await self._studio_partition(), await self._get_user()
-        return await self._studio_write(
+
+        async def reauthorize(rec):
+            self._require_owner(rec.owner, user)  # the same owner decision as ``_authorize``
+
+        result = await self._studio_write(
             lambda guard: call({"guard": guard, "actor": user.user_id}),
-            reread=lambda: storage.services.agents.get(part, name),
-            expected_version=expected,
+            record=state._studio[1], reread=lambda: storage.services.agents.get(part, name),
+            reauthorize=reauthorize, expected_version=expected,
         )
+        return result if isinstance(result, web.Response) else None
 
     @staticmethod
     def _is_error_response(value):
@@ -136,12 +147,14 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
         store, state = authorized
         try:
-            await self._write(
+            refused = await self._write(
                 state, name, payload,
                 lambda kw: store.put_toolkit(name, slug, request.params, request.user_overridable, **kw),
             )
         except Exception as exc:
             return self._map_exc(exc)
+        if refused is not None:
+            return refused
         return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
 
     async def delete(self):
@@ -153,12 +166,14 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
         slug = self.request.match_info.get("slug")
         store, state = authorized
         try:
-            await self._write(
+            refused = await self._write(
                 state, name, self.request.query,
                 lambda kw: store.delete_toolkit(name, slug, **kw),
             )
         except Exception as exc:
             return self._map_exc(exc)
+        if refused is not None:
+            return refused
         return self.json_response(ToolkitPersistResponse(agent=name, slug=slug).model_dump())
 
 
@@ -242,10 +257,12 @@ class StudioAgentMcpServersHandler(_ToolingViewMixin, StudioBaseView):
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
         store, state = authorized
         try:
-            await self._write(
+            refused = await self._write(
                 state, name, payload,
                 lambda kw: store.put_mcp_servers(name, request.servers, **kw),
             )
         except Exception as exc:
             return self._map_exc(exc)
+        if refused is not None:
+            return refused
         return self.json_response(ToolkitPersistResponse(agent=name).model_dump())

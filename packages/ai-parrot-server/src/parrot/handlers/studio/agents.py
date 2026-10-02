@@ -633,9 +633,11 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         svc = storage.services.agents
         deleted = await self._studio_write(
             lambda guard: svc.delete(part, name, guard=guard),
-            reread=lambda: svc.get(part, name),
+            record=rec, reread=lambda: svc.get(part, name), reauthorize=self._reauthorize("agent", name),
             expected_version=self._expected_version(self.request.query),
         )
+        if isinstance(deleted, web.Response):
+            return deleted
         if not deleted:
             return self._not_found("agent", name)
         if (runtime := getattr(self._manager(), "studio", None)) is not None:
@@ -677,9 +679,11 @@ class StudioAgentsHandler(_StudioAgentsMixin, StudioBaseView):
         svc = storage.services.agents
         updated = await self._studio_write(
             lambda guard: svc.patch(part, name, patch, guard=guard, actor=user.user_id),
-            reread=lambda: svc.get(part, name),
+            record=rec, reread=lambda: svc.get(part, name), reauthorize=self._reauthorize("agent", name),
             expected_version=patch.expected_version,
         )
+        if isinstance(updated, web.Response):
+            return updated
         return self.json_response(self._studio_item(updated))
 
 

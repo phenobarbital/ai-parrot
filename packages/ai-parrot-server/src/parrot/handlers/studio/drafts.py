@@ -290,8 +290,11 @@ class StudioDraftsHandler(_StudioDraftsMixin, StudioBaseView):
             lambda guard: svc.save_bundle(part, owner=user.user_id, bundle=parsed.bundle,
                                           visibility=parsed.visibility, allowed_groups=parsed.allowed_groups,
                                           guard=guard),
-            reread=lambda: svc.get(part, name), expected_version=parsed.expected_version,
+            record=existing, reread=lambda: svc.get(part, name),
+            reauthorize=self._reauthorize("draft", name, key="draft_id"), expected_version=parsed.expected_version,
         )
+        if isinstance(rec, web.Response):
+            return rec
         return self.json_response({"name": name, "status": rec.status, "file_path": None,
                                    "validation_report": rec.validation, "kind": "declarative",
                                    "version": rec.version}, status=201)
@@ -454,8 +457,13 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
         agent = await self._studio_write(
             lambda guard: svc.activate(part, name, owner=user.user_id, replace=target is not None, guard=guard,
                                        target_guard=target_guard),
-            reread=lambda: svc.get(part, name), expected_version=parsed.expected_version,
+            record=rec, reread=lambda: svc.get(part, name),
+            reauthorize=self._reauthorize("draft", name, key="draft_id"), expected_version=parsed.expected_version,
         )
+        return agent if isinstance(agent, web.Response) else self._activated_response(part, name, agent)
+
+    def _activated_response(self, part, name: str, agent) -> web.Response:
+        """Evict the cached runtime of the (re)activated agent and answer the activation body."""
         if (runtime := getattr(self.request.app.get("bot_manager"), "studio", None)) is not None:
             runtime.evict(StudioAgentKey(part.tenant, name))
         return self.json_response({"name": name, "activated": True, "file_path": None,
